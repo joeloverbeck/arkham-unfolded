@@ -31,7 +31,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y g++ pkg-config libx11-dev libxkbcommon-x11-0
       - name: Install pinned Rust toolchain
-        run: rustup show active-toolchain
+        run: |
+          selected_toolchain="$(rustup show active-toolchain)"
+          rustup default "${selected_toolchain%% *}"
+          # rust-cache hashes every installed toolchain, including unused ones.
+          rustup toolchain uninstall stable
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
