@@ -4,4 +4,4 @@ description: A relentless interview to sharpen a plan or design, which also crea
 disable-model-invocation: true
 ---
 
-Call the Skill tool twice, for "grilling" and "domain-modeling".
+Read and apply the [grilling](../grilling/SKILL.md) and [domain-modeling](../domain-modeling/SKILL.md) guides together. Native skill invocation may load them when available; otherwise read the linked files directly.

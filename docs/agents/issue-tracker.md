@@ -17,6 +17,8 @@ Write multiline bodies to a temporary file and pass `--body-file`. Read back the
 
 Publishing an issue or applying a readiness label follows the authority and feasibility rules in `CLAUDE.md` and the constitution. A draft spec or a closed dependency alone does not activate work.
 
+Before changing GitHub settings or diagnosing a publication refusal, read [GitHub administration](github-administration.md) for the accepted contribution/publication policy, the verified personal-repository request and recovery procedure. Read live settings as the authority; merge and issue acceptance remain separate decisions.
+
 ## Bounded context reads
 
 Start with issue metadata and the current body. Discover comments in small pages, then fetch the bodies needed to understand the decisions and current authority:
@@ -29,7 +31,15 @@ gh api repos/joeloverbeck/arkham-unfolded/issues/comments/<comment-id> --jq .bod
 
 Follow linked decisions and continue pages as needed for the requested coverage. An index locates evidence; it does not replace reading relevant comment bodies. Read back each write using its returned issue or comment identity.
 
-For long repository documents, locate headings or rule identifiers with `rg -n`, then read complete required sections in manageable ranges. Preserve mandatory reading and relevant surrounding context. Budget a batched tool call for the combined output of its commands, including the outer tool's output limit. If output truncates, narrow the next read to the missing material; treat that material as unread until retrieved completely.
+For long files, locate headings or rule identifiers with `rg -n`, then read the required inclusive range through the bounded reader:
+
+```sh
+python3 -B scripts/read_context.py docs/principles/principles-for-repos.md --start 130 --end 173
+```
+
+The reader prints verbatim source lines with number prefixes and caps the whole page at 6,000 UTF-8 bytes, including metadata. `NEXT` gives the exact arguments for the next page; rerun the same path with those arguments until `END`. The source hash rejects a continuation after the file changes. Preserve the required sections and their surrounding context; page boundaries do not reduce mandatory reading.
+
+Use the same reader on saved issue bodies (`gh api ... --jq .body > /tmp/issue-body.md`). `--max-bytes` accepts 512–12,000; a line that cannot fit is explicitly refused, never shortened or skipped. Budget the combined output of a batch against the outer tool limit as well. If the outer tool truncates a page, lower the byte limit and reread that page before continuing. The helper reads UTF-8 files only and never modifies them.
 
 ## Sub-issues and dependencies
 
