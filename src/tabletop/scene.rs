@@ -1,7 +1,7 @@
 //! Lifetime and motion of the displayed observation, independent of panel refreshes.
 
-use super::{Art, CARDS, GOLD, MUTED, MainCamera, PAPER, Tabletop, standees, text};
-use crate::{Observation, TokenStatus};
+use super::{Art, CARDS, GOLD, MUTED, MainCamera, PAPER, Tabletop, standees};
+use crate::{Observation, TokenStatus, tabletop_harm_text, tabletop_tokens};
 use bevy::prelude::*;
 
 /// Install the same scene lifecycle for the native tabletop and headless regressions.
@@ -16,7 +16,12 @@ pub(super) fn install(app: &mut App) {
                 .after(super::handle_actions)
                 .after(super::camera_controls)
                 .before(super::rebuild_panel),
-            (label_positions, animate_tokens, animate_reminder)
+            (
+                label_positions,
+                tabletop_tokens::position_labels,
+                animate_tokens,
+                animate_reminder,
+            )
                 .chain()
                 .after(super::rebuild_panel)
                 .before(super::button_colors)
@@ -83,9 +88,15 @@ fn setup_reminder(
         });
 }
 
-fn label(commands: &mut Commands, value: impl Into<String>, point: Vec3, color: Color) {
+fn label(
+    commands: &mut Commands,
+    value: impl Into<String>,
+    point: Vec3,
+    color: Color,
+    font: &Option<Handle<Font>>,
+) {
     commands.spawn((
-        text(value, 16.0, color),
+        tabletop_harm_text::ui(value, 16.0, color, font),
         Node {
             position_type: PositionType::Absolute,
             padding: UiRect::axes(px(8), px(4)),
@@ -136,6 +147,7 @@ fn synchronize(
         ),
         Vec3::new(4.55, 0.15, 2.65),
         if view.jacqueline_used { MUTED } else { GOLD },
+        &art.symbol_font,
     );
     let colors = [
         Color::srgb(0.66, 0.43, 0.20),
@@ -180,6 +192,7 @@ fn synchronize(
             ),
             Vec3::new(x, 2.05, z),
             PAPER,
+            &art.symbol_font,
         );
     }
     label(
@@ -190,6 +203,7 @@ fn synchronize(
         ),
         Vec3::new(-4.5, 1.2, 1.75),
         GOLD,
+        &art.symbol_font,
     );
     for (i, card) in CARDS.iter().enumerate() {
         let status = if i == 1 && view.promise_committed {
@@ -206,6 +220,7 @@ fn synchronize(
                 if card.landscape { 2.96 } else { 3.36 },
             ),
             PAPER,
+            &art.symbol_font,
         );
     }
     if view.promise_committed {
@@ -248,91 +263,37 @@ fn synchronize(
         } else {
             -1.8 + i as f32 * 1.30
         };
-        let color = match token.status {
-            TokenStatus::Pending => GOLD,
-            TokenStatus::Resolved => Color::srgb(0.28, 0.62, 0.51),
-            TokenStatus::Canceled => Color::srgb(0.37, 0.25, 0.28),
-        };
         let is_new = rendered_view.as_ref().is_none_or(|previous| {
             !previous
                 .tokens
                 .iter()
                 .any(|held| held.id == token.id && held.face == token.face)
         });
-        let mut token_entity = commands.spawn((
-            Mesh3d(meshes.add(Cylinder::new(0.46, 0.12))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: color,
-                metallic: 0.32,
-                perceptual_roughness: 0.5,
-                ..default()
-            })),
-            Transform::from_xyz(x, 0.15, -0.20).with_scale(Vec3::splat(if is_new {
-                0.5
-            } else {
-                1.0
-            })),
-            Pickable::IGNORE,
-            TransientScene,
-        ));
-        if is_new {
-            token_entity.insert(Appearing);
-        }
-        if let Some((_, image)) = art
+        let image = art
             .token_handles
             .iter()
             .find(|(face, _)| *face == token.face)
-        {
-            // The plane's UV top points toward -Z, upright from the default camera.
-            // Parenting carries the original face through the cylinder's reveal animation.
-            token_entity.with_child((
-                Mesh3d(meshes.add(Plane3d::default().mesh().size(0.88, 0.88))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: if canceled {
-                        Color::srgb(0.35, 0.35, 0.35)
-                    } else {
-                        Color::WHITE
-                    },
-                    base_color_texture: Some(image.clone()),
-                    alpha_mode: AlphaMode::Mask(0.5),
-                    unlit: true,
-                    ..default()
-                })),
-                Transform::from_xyz(0.0, 0.065, 0.0),
-                Pickable::IGNORE,
-            ));
+            .map(|(_, image)| image.clone());
+        let (disk, label) =
+            tabletop_tokens::spawn(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                tabletop_tokens::TokenVisual {
+                    face: token.face,
+                    status: token.status,
+                    ordinal: Some(usize::from(token.id) + 1),
+                    image,
+                    transform: Transform::from_xyz(x, 0.15, -0.20)
+                        .with_scale(Vec3::splat(if is_new { 0.5 } else { 1.0 })),
+                    label_offset: Vec3::new(0.0, -0.05, -1.0),
+                },
+            );
+        commands.entity(disk).insert(TransientScene);
+        commands.entity(label).insert(TransientScene);
+        if is_new {
+            commands.entity(disk).insert(Appearing);
         }
-        if canceled {
-            let crossed = materials.add(StandardMaterial {
-                base_color: Color::srgb(1.0, 0.55, 0.48),
-                unlit: true,
-                ..default()
-            });
-            for angle in [-std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_4] {
-                token_entity.with_child((
-                    Mesh3d(meshes.add(Cuboid::new(0.75, 0.02, 0.065))),
-                    MeshMaterial3d(crossed.clone()),
-                    Transform::from_xyz(0.0, 0.085, 0.0)
-                        .with_rotation(Quat::from_rotation_y(angle)),
-                    Pickable::IGNORE,
-                ));
-            }
-        }
-        let status = match token.status {
-            TokenStatus::Pending => "Revealed",
-            TokenStatus::Resolved => "Resolved",
-            TokenStatus::Canceled => "Canceled",
-        };
-        label(
-            &mut commands,
-            format!("#{}  {}\n{status}", token.id + 1, token.face.label()),
-            Vec3::new(x, 0.1, -1.2),
-            if token.status == TokenStatus::Canceled {
-                MUTED
-            } else {
-                PAPER
-            },
-        );
     }
     *rendered_view = Some(view.clone());
 }

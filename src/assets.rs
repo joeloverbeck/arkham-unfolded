@@ -104,6 +104,36 @@ fn selection() -> &'static Selection {
     })
 }
 
+fn tony_selection() -> &'static Selection {
+    static SELECTION: OnceLock<Selection> = OnceLock::new();
+    SELECTION.get_or_init(|| {
+        serde_json::from_str(include_str!("../resources/tony-asset-selection.json"))
+            .expect("the committed Tony asset selection must be valid")
+    })
+}
+
+// Recognize only the two earlier Tony selections: V1 lacks the player back,
+// and both lack harm counters and the symbol font. Neither is called complete.
+fn previous_tony_manifests(selection: &Selection) -> Vec<Manifest> {
+    if selection.collection != "arkham-unfolded-tony-turn-v3" {
+        return Vec::new();
+    }
+    [1, 2]
+        .into_iter()
+        .map(|version| {
+            let mut manifest = selection.manifest();
+            manifest.collection = format!("arkham-unfolded-tony-turn-v{version}");
+            manifest.assets.retain(|asset| {
+                !matches!(
+                    asset.role.as_str(),
+                    "token/damage" | "token/horror" | "font/symbols"
+                ) && (version == 2 || asset.role != "card-back/player")
+            });
+            manifest
+        })
+        .collect()
+}
+
 /// A recognized collection can be incomplete and still supply individually verified art.
 /// An unrelated or altered manifest supplies no assets. Gameplay can use substitutes.
 #[derive(Debug)]
@@ -153,6 +183,11 @@ pub fn inspect(root: &Path) -> CollectionReport {
     inspect_selection(root, selection())
 }
 
+/// Inspect the separately prepared Tony-turn collection, preserving legacy collections.
+pub fn inspect_tony(root: &Path) -> CollectionReport {
+    inspect_selection(root, tony_selection())
+}
+
 fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
     let mut report = CollectionReport {
         recognized: false,
@@ -166,8 +201,18 @@ fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
         let bytes = read_bounded(&path, MAX_MANIFEST_BYTES)?;
         Ok(serde_json::from_slice(&bytes)?)
     };
+    let mut current_manifest = false;
     match read_manifest() {
-        Ok(manifest) if manifest == selection.manifest() => report.recognized = true,
+        Ok(manifest) if manifest == selection.manifest() => {
+            report.recognized = true;
+            current_manifest = true;
+        }
+        Ok(manifest) if previous_tony_manifests(selection).contains(&manifest) => {
+            report.recognized = true;
+            report.diagnostics.push(
+                "Earlier Tony collection: prepare a fresh collection to include harm counters, symbols and any missing player-card back. The existing collection is preserved.".into(),
+            );
+        }
         Ok(_) => report.diagnostics.push(
             "manifest.json does not describe the assets expected by this application.".into(),
         ),
@@ -186,7 +231,7 @@ fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
             Err(error) => report.diagnostics.push(format!("{}: {error}", asset.path)),
         }
     }
-    report.complete = report.verified.len() == selection.assets.len();
+    report.complete = current_manifest && report.verified.len() == selection.assets.len();
     report
 }
 
@@ -223,6 +268,11 @@ impl From<serde_json::Error> for AssetError {
 /// Changed, incomplete or unknown destinations are refused. Source files are never written.
 pub fn prepare(source: &Path, output: &Path) -> Result<PrepareResult, AssetError> {
     prepare_selection(source, output, selection())
+}
+
+/// Prepare only the finite assets selected for the Tony-turn experiment.
+pub fn prepare_tony(source: &Path, output: &Path) -> Result<PrepareResult, AssetError> {
+    prepare_selection(source, output, tony_selection())
 }
 
 fn prepare_selection(
@@ -487,6 +537,23 @@ fn exact_contents(root: &Path, selection: &Selection) -> Result<bool, AssetError
 mod tests {
     use super::*;
 
+    fn tony_fixture(source: &Path) -> Selection {
+        let mut selected: Selection =
+            serde_json::from_str(include_str!("../resources/tony-asset-selection.json")).unwrap();
+        fs::create_dir_all(source).unwrap();
+        for (index, asset) in selected.assets.iter_mut().enumerate() {
+            let bytes = format!("fixture payload for {}", asset.role).into_bytes();
+            asset.sha256 = format!("{:x}", Sha256::digest(&bytes));
+            asset.bytes = bytes.len() as u64;
+            asset.source.path = index.to_string();
+            asset.source.sha256 = asset.sha256.clone();
+            asset.source.bytes = asset.bytes;
+            asset.transform = Transform::Copy;
+            fs::write(source.join(&asset.source.path), bytes).unwrap();
+        }
+        selected
+    }
+
     fn fixture(source: &Path) -> Selection {
         fs::create_dir_all(source).unwrap();
         let mut assets = Vec::new();
@@ -718,6 +785,157 @@ mod tests {
             assert_eq!(image.sha256, image.source.sha256);
             assert_eq!(image.bytes, image.source.bytes);
             assert!(matches!(image.transform, Transform::Copy));
+        }
+    }
+
+    #[test]
+    fn tony_harm_art_and_symbols_are_verified_individually() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let output = directory.path().join("assets");
+        let selected = tony_fixture(&source);
+        prepare_selection(&source, &output, &selected).unwrap();
+        let report = inspect_selection(&output, &selected);
+        assert_eq!(
+            report.verified_path("token/damage"),
+            Some("tokens/damage.png")
+        );
+        assert_eq!(
+            report.verified_path("token/horror"),
+            Some("tokens/horror.png")
+        );
+        assert_eq!(
+            report.verified_path("font/symbols"),
+            Some("fonts/arkham-symbols.ttf")
+        );
+        assert!(report.complete);
+
+        fs::remove_file(output.join("tokens/damage.png")).unwrap();
+        fs::write(output.join("tokens/horror.png"), b"changed horror").unwrap();
+        fs::remove_file(output.join("fonts/arkham-symbols.ttf")).unwrap();
+        let report = inspect_selection(&output, &selected);
+        assert!(report.recognized && !report.complete);
+        assert_eq!((report.valid_count(), report.expected_count()), (25, 28));
+        assert!(report.verified_path("token/damage").is_none());
+        assert!(report.verified_path("token/horror").is_none());
+        assert!(report.verified_path("font/symbols").is_none());
+        assert!(report.verified_path("card-back/player").is_some());
+    }
+
+    #[test]
+    fn tony_prior_versions_remain_readable_without_overwriting() {
+        for (version, count) in [(1, 24), (2, 25)] {
+            let directory = tempfile::tempdir().unwrap();
+            let source = directory.path().join("source");
+            let output = directory.path().join("assets");
+            let selected = tony_fixture(&source);
+            let mut earlier = tony_fixture(&source);
+            earlier.collection = format!("arkham-unfolded-tony-turn-v{version}");
+            earlier.assets.retain(|asset| {
+                !matches!(
+                    asset.role.as_str(),
+                    "token/damage" | "token/horror" | "font/symbols"
+                ) && (version == 2 || asset.role != "card-back/player")
+            });
+            prepare_selection(&source, &output, &earlier).unwrap();
+            let original_manifest = fs::read(output.join(MANIFEST)).unwrap();
+            let report = inspect_selection(&output, &selected);
+            assert!(report.recognized && !report.complete, "Tony V{version}");
+            assert_eq!((report.valid_count(), report.expected_count()), (count, 28));
+            assert!(report.verified_path("card/06003").is_some());
+            assert!(report.verified_path("token/damage").is_none());
+            assert!(report.verified_path("font/symbols").is_none());
+            assert!(prepare_selection(&source, &output, &selected).is_err());
+            assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), original_manifest);
+        }
+    }
+
+    #[test]
+    fn tony_compatibility_is_bound_to_the_exact_prior_collection() {
+        // Independently captured from V1 at b2cbdbd and V2 at 26f283f.
+        let hashes = previous_tony_manifests(tony_selection())
+            .iter()
+            .map(|previous| {
+                format!(
+                    "{:x}",
+                    Sha256::digest(serde_json::to_vec(previous).unwrap())
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            hashes,
+            [
+                "127d652276550b909d08b16010e1380145d6c20030a915aabb889454f353e865",
+                "106bd1fc4c107f60d9a426064009d52cebf841de0d4e22174cfcc867ef887bcc",
+            ]
+        );
+        assert!(previous_tony_manifests(selection()).is_empty());
+    }
+
+    #[test]
+    fn tony_back_integrity_and_prior_collection_preserve_available_art() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let output = directory.path().join("assets");
+        let selected = tony_fixture(&source);
+        prepare_selection(&source, &output, &selected).unwrap();
+        assert!(inspect_selection(&output, &selected).complete);
+        let back = output.join("cards/player-back.png");
+        let original = fs::read(&back).unwrap();
+        for replacement in [None, Some(vec![b'x'; original.len()])] {
+            if let Some(bytes) = replacement {
+                fs::write(&back, bytes).unwrap();
+            } else {
+                fs::remove_file(&back).unwrap();
+            }
+            let report = inspect_selection(&output, &selected);
+            assert!(report.recognized && !report.complete);
+            assert_eq!(report.valid_count(), 27);
+            assert_eq!(report.expected_count(), 28);
+            assert!(report.verified_path("card/06003").is_some());
+            assert!(report.verified_path("card-back/player").is_none());
+        }
+        fs::remove_file(&back).unwrap();
+        let previous = serde_json::to_vec(&previous_tony_manifests(&selected)[1]).unwrap();
+        fs::write(output.join(MANIFEST), &previous).unwrap();
+        let report = inspect_selection(&output, &selected);
+        assert!(report.recognized && !report.complete);
+        assert_eq!((report.valid_count(), report.expected_count()), (27, 28));
+        assert!(prepare_selection(&source, &output, &selected).is_err());
+        assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), previous);
+
+        // Adding bytes cannot upgrade an earlier manifest or permit overwriting it.
+        fs::write(&back, original).unwrap();
+        let report = inspect_selection(&output, &selected);
+        assert_eq!(report.valid_count(), 28);
+        assert!(!report.complete);
+        assert!(prepare_selection(&source, &output, &selected).is_err());
+    }
+
+    #[test]
+    fn tony_compatibility_does_not_accept_other_manifest_changes() {
+        let directory = tempfile::tempdir().unwrap();
+        let selected = tony_fixture(&directory.path().join("source"));
+        for previous in previous_tony_manifests(&selected) {
+            let original = serde_json::to_value(previous).unwrap();
+            let mut missing = original.clone();
+            missing["assets"].as_array_mut().unwrap().pop();
+            let mut altered = original.clone();
+            altered["assets"][0]["sha256"] = serde_json::json!("different");
+            let mut redirected = original.clone();
+            redirected["assets"][0]["path"] = serde_json::json!("../../other.png");
+            let mut renamed = original;
+            renamed["collection"] = serde_json::json!("arkham-unfolded-tony-turn-v3");
+            for manifest in [missing, altered, redirected, renamed] {
+                fs::write(
+                    directory.path().join(MANIFEST),
+                    serde_json::to_vec(&manifest).unwrap(),
+                )
+                .unwrap();
+                let report = inspect_selection(directory.path(), &selected);
+                assert!(!report.recognized && !report.complete);
+                assert_eq!(report.valid_count(), 0);
+            }
         }
     }
 }

@@ -3,7 +3,8 @@
 use std::path::Path;
 
 use crate::assets::CollectionReport;
-use bevy::prelude::{Assets, Font, Handle};
+use crate::tabletop_harm_text::HarmIcon;
+use bevy::prelude::{Assets, Color, Font, Handle};
 
 #[derive(Clone, Copy)]
 pub(super) enum Symbol {
@@ -19,7 +20,14 @@ impl Symbol {
             Self::Wild => "j",
             Self::Curse => "y",
             Self::Willpower => "f",
-            Self::Horror => "R",
+            Self::Horror => HarmIcon::Horror.glyph(),
+        }
+    }
+
+    pub(super) fn color(self) -> Option<Color> {
+        match self {
+            Self::Horror => Some(HarmIcon::Horror.color()),
+            _ => None,
         }
     }
 }
