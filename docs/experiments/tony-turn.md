@@ -6,7 +6,7 @@
 
 ```sh
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
+  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
 ```
 
 Use the visible legal choices to fight, evade, investigate, draw, gain a resource, engage an eligible enemy, remove Injury, or end early. Tony's first qualifying Fight/Engage automatically spends his additional action. Each skill test offers card commitments, then a genuinely random Standard token draw and its resolution. The fixed hidden draw pile begins Guts, Guts, On the Hunt. Guts has no matching icons in this turn.
@@ -15,9 +15,13 @@ Tony’s face-down deck has one card-thickness per remaining card, visible layer
 
 The panel explains remaining actions, costs and consequences. Inspect cards for readable text and available artwork. Camera controls remain right drag/arrow keys to orbit, wheel or +/- to zoom, and Home to reset. Manual movement overrides replay following.
 
+Actions that currently provoke show an amber **Attack of opportunity** warning, identifying Ghoul Minion and its damage/horror before you click. The warning changes with the enemy's readiness and engagement; taking that intentional risk remains legal.
+
+Each harm event has one presentation stage. Ghoul Minion's attack shows **+1 Damage** and **+1 Horror** together with the heart and brain marks. Separate effects, such as Tablet damage and later Internal Injury damage, remain separate stages. Live play advances automatically; **Finish animation** completes only the current stage; subsequent harm events still appear. Toggle **Motion: reduced** or **Motion: animated** to choose a session-local presentation preference. Reduced motion retains readable stages and amounts. Camera movement and card inspection remain available during presentation.
+
 Decisions autosave before taking effect. The default file is `local/experiment/tony.session.json`; reopening the same mode resumes it. Use **Save live turn** at a pending choice. **Undo** is available only when it does not cross a committed card or token reveal. It restores the whole deterministic change and adds a new recorded revision. Replay Previous is inspection, not undo.
 
-New attempts archive the previous run. Replay shows stored moments with Next/Previous, without executing rules or drawing again; return to live before saving. Corrupt or incompatible records are refused with originals intact. Keep the record and its `.previous` recovery copy when investigating a failure.
+New attempts archive the previous run. Replay shows stored moments with Next/Previous, pausing at each recorded harm event and the settled decision result without executing rules or drawing again; return to live before saving. Earlier Tony records retain their aggregate moments because their individual harm events were not recorded. Corrupt or incompatible records are refused with originals intact. Keep the record and its `.previous` recovery copy when investigating a failure. Closing during an animation preserves its already-committed result; reopening does not apply damage again.
 
 The original Jacqueline mode remains the default when `--experiment tony` is omitted and retains its existing compatible save/record reader. Use the [Jacqueline guide](jacqueline-curse.md) for those records. There is no automatic conversion between experiment kinds.
 
@@ -25,20 +29,20 @@ The original Jacqueline mode remains the default when `--experiment tony` is omi
 
 The remaining question is whether the actual native controls, explanations, interruption and replay let you play this turn without doing its bookkeeping, and whether choosing actions feels worthwhile. Automated rules and process-continuity checks have passed; native click automation could not calibrate reliably. Your inspection supplies the interaction and experience evidence those checks cannot establish.
 
-Allow **at most two sessions of 20 minutes each, including retries**. Stop sooner if a control blocks progress or the experience is not worth continuing, and report the point where that happened. Random failures are valid outcomes; do not restart to force a successful test. The routes below are suggestions, not a required winning sequence.
+Allow **at most two sessions of 20 minutes each, including retries**, counting playtesting already performed; presentation follow-ups do not reset that allowance. Stop sooner if a control blocks progress or the experience is not worth continuing, and report the point where that happened. Random failures are valid outcomes; do not restart to force a successful test. The routes below are suggestions, not a required winning sequence.
 
 Begin with a fresh turn. If the app resumes an earlier one, finish its pending test, then end the turn at an action boundary and use **Start another Tony turn**. The earlier record is archived.
 
 ### Session 1: manage the threat and resume an interrupted test
 
 1. Launch with the command above. Confirm the in-app heading says **Tony turn**. Inspect a card and its text, scroll where necessary, close with **Close** or `Esc`, and try orbit, zoom and `Home`. Check that labels and controls remain readable.
-2. Click **Gain 1 resource**, then **Undo last choice** before any reveal. Resources should return to five, damage/horror to zero, and ordinary actions to three; the bonus remains available. The history should retain an intelligible undo entry.
-3. Click **Remove Internal Injury**. Expect one ordinary action and the bonus remaining, one damage/one horror from a single opportunity attack, and Injury removed.
+2. Before choosing **Gain 1 resource**, check its attack-of-opportunity warning. Choose it and observe one attack stage with both **+1 Damage** and **+1 Horror**. After it finishes, **Undo last choice** before any reveal. Resources should return to five, damage/horror to zero, and ordinary actions to three; the bonus remains available. The history should retain an intelligible undo entry.
+3. Click **Remove Internal Injury**. Expect one ordinary action and the bonus remaining, one combined damage/horror attack stage, and Injury removed. Try **Finish animation** or reduced motion if useful; neither should repeat the attack or change the totals.
 4. Click **Fight Ghoul Minion**, choose a commitment or **Commit no cards**, and **Reveal chaos token**. Before resolving it, note the token, committed cards and counters; click **Save live turn**, close the window and relaunch with the same command. Those details should be identical, without another cost or attack. The reveal itself must not be undoable. Click **Resolve skill test** and finish with the available choices. The first Fight spends the bonus; later Fights spend ordinary actions. Two successful basic Fights defeat the Ghoul and pay one resource, but failures are legitimate.
 
 ### Session 2: try different tactics and narrate the record
 
-1. After the first turn ends, click **Start another Tony turn**. Try **Evade Ghoul Minion**, then investigate or gain resources. A successful Evade leaves the Ghoul exhausted and disengaged; a failure leaves its threat in place. Check that the choices and history explain the resulting costs. You can choose a different action sequence if it is more interesting.
+1. After the first turn ends, click **Start another Tony turn**. Try **Evade Ghoul Minion**, then investigate or gain resources. A successful Evade leaves the Ghoul exhausted and disengaged and removes opportunity-attack warnings; a failure leaves its threat in place. Check that the choices and history explain the resulting costs. You can choose a different action sequence if it is more interesting.
 2. At an action boundary, try **End Tony's turn** with actions remaining. If Injury is still present, it should deal one direct damage once. No companion turn or enemy phase should start.
 3. Click **Open recorded replay**, step with **Next moment** and **Previous moment**, and explain the turn aloud. Move the camera manually to override following. **Return to live turn** should restore the unchanged live state; replay should offer no live save or gameplay choices. Judge whether the steps, explanations and camera make narration comfortable.
 
@@ -46,16 +50,16 @@ Report any failed control, confusing consequence or unreadable view; whether sav
 
 ## External artwork and source custody
 
-Prepare the current 25-image collection, including the player-card back, in a fresh folder; earlier Tony and Jacqueline collections are retained:
+Prepare the current collection of 27 images and one symbol font, including the player-card back and damage/horror counters, in a fresh folder; earlier Tony and Jacqueline collections are retained:
 
 ```sh
 cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
-  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
+  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
 cargo run --locked --bin arkham-assets -- check-tony \
-  "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
+  "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
+  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
 ```
 
 Use the in-app asset folder selection to save a preference for later launches. `--art-root` is temporary; `--no-art` uses readable substitutes. The program reads verified prepared files, never the source archive. A new collection must use a fresh destination; partial/conflicting collections are preserved and reported. All third-party image/font bytes remain outside Git.

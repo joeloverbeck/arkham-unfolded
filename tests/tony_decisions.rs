@@ -1,6 +1,6 @@
 use arkham_unfolded_experiment::{
     TokenFace,
-    tony::{Session, Stage},
+    tony::{Harm, HarmRecipient, HarmSource, Session, Stage},
 };
 
 fn choose(game: &mut Session, id: &str) {
@@ -12,6 +12,147 @@ fn test(game: &mut Session, action: &str) {
     choose(game, "commit:none");
     choose(game, "reveal");
     choose(game, "resolve");
+}
+
+#[test]
+fn opportunity_attack_is_one_recorded_harm_event_with_both_amounts() {
+    let mut game = Session::with_draws(vec![]);
+    choose(&mut game, "investigate");
+    let view = serde_json::to_value(game.observe()).unwrap();
+    assert_eq!(
+        view.get("harm"),
+        Some(&serde_json::json!([{
+            "source": "opportunity_attack",
+            "recipient": "tony",
+            "damage": 1,
+            "horror": 1
+        }]))
+    );
+}
+
+#[test]
+fn a_final_tablet_fight_records_tablet_then_enemy_damage_then_injury() {
+    let mut game = Session::with_draws(vec![TokenFace::Zero, TokenFace::Tablet]);
+    test(&mut game, "fight");
+    choose(&mut game, "resource");
+    choose(&mut game, "resource");
+    test(&mut game, "fight");
+    let view = game.observe();
+    assert_eq!(view.stage, Stage::Ended);
+    assert_eq!(
+        view.harm,
+        Some(vec![
+            Harm {
+                source: HarmSource::Tablet,
+                recipient: HarmRecipient::Tony,
+                damage: 1,
+                horror: 0,
+            },
+            Harm {
+                source: HarmSource::BasicFight,
+                recipient: HarmRecipient::Ghoul,
+                damage: 1,
+                horror: 0,
+            },
+            Harm {
+                source: HarmSource::InternalInjury,
+                recipient: HarmRecipient::Tony,
+                damage: 1,
+                horror: 0,
+            },
+        ])
+    );
+    assert_eq!((view.damage, view.horror, view.ghoul.damage), (4, 2, 2));
+    assert_eq!((view.ghoul.alive, view.resources), (false, 8));
+}
+
+#[test]
+fn failed_cultist_evade_records_horror_and_undo_does_not_repeat_it() {
+    let mut game = Session::with_draws(vec![TokenFace::Cultist]);
+    test(&mut game, "evade");
+    assert_eq!(
+        game.observe().harm,
+        Some(vec![Harm {
+            source: HarmSource::Cultist,
+            recipient: HarmRecipient::Tony,
+            damage: 0,
+            horror: 1,
+        }])
+    );
+    choose(&mut game, "undo");
+    assert_eq!(game.observe().harm, Some(vec![]));
+    assert_eq!(game.observe().horror, 0);
+    game.validate().unwrap();
+    choose(&mut game, "resolve");
+    assert_eq!(game.observe().horror, 1);
+    assert_eq!(game.observe().harm.unwrap().len(), 1);
+}
+
+#[test]
+fn opportunity_preview_follows_current_offered_actions_and_enemy_readiness() {
+    let mut game = Session::with_draws(vec![TokenFace::Zero, TokenFace::Zero]);
+    let initial = game.observe();
+    for id in ["investigate", "resource", "draw", "injury"] {
+        let attack = initial.opportunity_attack(id).unwrap();
+        assert_eq!((attack.damage, attack.horror), (1, 1));
+        assert_eq!(attack.source, HarmSource::OpportunityAttack);
+    }
+    for id in ["fight", "evade", "engage", "end_turn", "play:03263", "undo"] {
+        assert_eq!(initial.opportunity_attack(id), None, "{id}");
+    }
+    choose(&mut game, "evade");
+    assert_eq!(game.observe().opportunity_attack("investigate"), None);
+    choose(&mut game, "commit:none");
+    choose(&mut game, "reveal");
+    choose(&mut game, "resolve");
+    for id in ["investigate", "resource", "draw", "injury"] {
+        assert_eq!(game.observe().opportunity_attack(id), None, "{id}");
+    }
+    choose(&mut game, "engage");
+    assert_eq!(game.observe().opportunity_attack("investigate"), None);
+    let before = game.clone();
+    assert!(game.choose(initial.revision, "investigate").is_err());
+    assert_eq!(game, before);
+}
+
+#[test]
+fn recorded_harm_refuses_split_attacks_missing_effects_and_reordered_sources() {
+    use arkham_unfolded_experiment::tony::validate_recording;
+    let mut attack = Session::with_draws(vec![]);
+    choose(&mut attack, "investigate");
+    let mut split = attack.recording();
+    split.moments[1].harm = Some(vec![
+        Harm {
+            source: HarmSource::OpportunityAttack,
+            recipient: HarmRecipient::Tony,
+            damage: 1,
+            horror: 0,
+        },
+        Harm {
+            source: HarmSource::OpportunityAttack,
+            recipient: HarmRecipient::Tony,
+            damage: 0,
+            horror: 1,
+        },
+    ]);
+    assert!(validate_recording(&split).is_err());
+    let mut missing = attack.recording();
+    missing.moments[1].harm = Some(vec![]);
+    assert!(validate_recording(&missing).is_err());
+
+    let mut fight = Session::with_draws(vec![TokenFace::Zero, TokenFace::Tablet]);
+    test(&mut fight, "fight");
+    test(&mut fight, "fight");
+    let mut reordered = fight.recording();
+    reordered
+        .moments
+        .last_mut()
+        .unwrap()
+        .harm
+        .as_mut()
+        .unwrap()
+        .reverse();
+    assert!(validate_recording(&reordered).is_err());
 }
 
 // Issue #22's independent witness: Tony/Contracts/Injury original faces,

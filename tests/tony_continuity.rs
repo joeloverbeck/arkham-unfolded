@@ -4,6 +4,30 @@ use arkham_unfolded_experiment::tony::{
 };
 
 #[test]
+fn replay_shows_one_combined_attack_before_the_injury_action_finishes() {
+    use arkham_unfolded_experiment::tony::continuity::Replay;
+    let mut game = Session::new().unwrap();
+    game.choose(0, "injury").unwrap();
+    let settled = game.observe();
+    let mut replay = Replay::new(game.recording()).unwrap();
+    assert_eq!(replay.len(), 3);
+    assert!(replay.next());
+    assert_eq!((replay.current().damage, replay.current().horror), (1, 1));
+    assert!(
+        replay.current().injury,
+        "the attack precedes removing Injury"
+    );
+    assert!(replay.current().choices.is_empty());
+    assert_eq!(replay.current().ordinary_actions, 1);
+    assert!(replay.next());
+    assert_eq!(replay.current(), &settled);
+    assert!(!replay.next());
+    assert!(replay.back());
+    assert_eq!((replay.current().damage, replay.current().horror), (1, 1));
+    assert_eq!(game.observe(), settled);
+}
+
+#[test]
 fn failed_save_preserves_the_pending_test_and_future_random_draw() {
     let directory = tempfile::tempdir().unwrap();
     let mut game = Session::new().unwrap();
@@ -55,9 +79,211 @@ fn undo_and_replay_keep_the_append_only_record_and_refuse_stale_saves() {
     assert_eq!(std::fs::read(&record_path).unwrap(), exported);
     let mut replay = Replay::new(load_recording(&record_path).unwrap()).unwrap();
     assert!(replay.next());
+    assert!(replay.harm().is_some());
+    assert!(replay.next());
     assert_eq!(replay.current(), &after_injury);
     assert!(replay.back());
     assert_eq!(load_session(&path).unwrap().observe(), restored);
+}
+
+#[test]
+fn original_tony_records_keep_aggregate_history_and_continue_without_reapplying_harm() {
+    use arkham_unfolded_experiment::tony::continuity::{Replay, load_recording, previous_path};
+    let directory = tempfile::tempdir().unwrap();
+    let session_path = directory.path().join("old.session.json");
+    let recording_path = directory.path().join("old.recording.json");
+    let session_bytes = include_bytes!("fixtures/tony-v1/injury.session.json");
+    let recording_bytes = include_bytes!("fixtures/tony-v1/injury.recording.json");
+    std::fs::write(&session_path, session_bytes).unwrap();
+    std::fs::write(&recording_path, recording_bytes).unwrap();
+    let mut session = load_session(&session_path).unwrap();
+    let mut replay = Replay::new(load_recording(&recording_path).unwrap()).unwrap();
+    assert_eq!(replay.len(), 2, "old history remains aggregate");
+    assert!(replay.next());
+    assert_eq!(replay.current(), &session.observe());
+    assert!(replay.harm().is_none());
+    save_session(&session_path, &session).unwrap();
+    assert_eq!(std::fs::read(&session_path).unwrap(), session_bytes);
+    commit_choice(&session_path, &mut session, 1, "resource").unwrap();
+    assert_eq!((session.observe().damage, session.observe().horror), (2, 2));
+    assert_eq!(load_session(&session_path).unwrap(), session);
+    assert_eq!(
+        std::fs::read(previous_path(&session_path)).unwrap(),
+        session_bytes
+    );
+    assert_eq!(std::fs::read(&recording_path).unwrap(), recording_bytes);
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&session_path).unwrap()).unwrap();
+    assert_eq!(written["format_version"], 2);
+    let mut resumed_replay = Replay::new(session.recording()).unwrap();
+    assert_eq!(resumed_replay.len(), 4);
+    assert!(resumed_replay.next());
+    assert!(resumed_replay.harm().is_none());
+    assert!(resumed_replay.next());
+    let hit = resumed_replay.harm().unwrap();
+    assert_eq!((hit.damage, hit.horror), (1, 1));
+}
+
+#[test]
+fn presentation_keeps_the_draw_hidden_until_the_combined_attack_has_been_shown() {
+    use arkham_unfolded_experiment::tony::presentation::stages;
+    let mut game = Session::new().unwrap();
+    let before = game.observe();
+    game.choose(0, "draw").unwrap();
+    let after = game.observe();
+    let shown = stages(&before, &after);
+    assert_eq!(shown.len(), 2);
+    assert_eq!(shown[0].view.hand, before.hand);
+    assert_eq!(shown[0].view.deck_count, 32);
+    assert!(shown[0].view.choices.is_empty());
+    assert!(!shown[0].view.can_undo);
+    assert!(
+        !shown[0]
+            .view
+            .history
+            .iter()
+            .any(|line| line.contains("Guts"))
+    );
+    assert_eq!((shown[0].view.damage, shown[0].view.horror), (1, 1));
+    assert_eq!(shown[1].view, after);
+    assert_eq!(shown[1].view.hand.len(), 2);
+    assert_eq!(shown[1].view.deck_count, 31);
+    assert!(!game.observe().can_undo);
+}
+
+#[test]
+fn final_draw_is_visible_before_the_later_internal_injury_stage() {
+    use arkham_unfolded_experiment::{
+        TokenFace,
+        tony::{HarmSource, presentation::stages},
+    };
+    let mut game = Session::with_draws(vec![TokenFace::Zero]);
+    for choice in ["fight", "commit:none", "reveal", "resolve", "draw", "draw"] {
+        game.choose(game.observe().revision, choice).unwrap();
+    }
+    let before = game.observe();
+    game.choose(before.revision, "draw").unwrap();
+    let after = game.observe();
+    let shown = stages(&before, &after);
+    assert_eq!(shown.len(), 3);
+    assert_eq!(shown[0].harm.unwrap().source, HarmSource::OpportunityAttack);
+    assert_eq!(shown[0].view.hand.len(), 3);
+    assert_eq!(shown[0].view.deck_count, 30);
+    assert_eq!((shown[0].view.damage, shown[0].view.horror), (3, 3));
+    assert_eq!(shown[1].harm.unwrap().source, HarmSource::InternalInjury);
+    assert_eq!(shown[1].view.hand, after.hand);
+    assert_eq!(shown[1].view.hand.len(), 4);
+    assert_eq!(shown[1].view.deck_count, 29);
+    assert_eq!((shown[1].view.damage, shown[1].view.horror), (4, 3));
+    assert!(shown[1].view.choices.is_empty());
+    assert!(!shown[1].view.can_undo);
+    assert_eq!(shown[2].view, after);
+    assert_eq!(game.observe(), after);
+}
+
+#[test]
+fn final_tablet_fight_and_injury_are_distinct_stages_before_the_settled_turn() {
+    use arkham_unfolded_experiment::{
+        TokenFace,
+        tony::{HarmSource, Stage, presentation::stages},
+    };
+    let mut game = Session::with_draws(vec![TokenFace::Zero, TokenFace::Tablet]);
+    for choice in [
+        "fight",
+        "commit:none",
+        "reveal",
+        "resolve",
+        "resource",
+        "resource",
+        "fight",
+        "commit:none",
+        "reveal",
+    ] {
+        game.choose(game.observe().revision, choice).unwrap();
+    }
+    let before = game.observe();
+    game.choose(before.revision, "resolve").unwrap();
+    let settled = game.observe();
+    let shown = stages(&before, &settled);
+    assert_eq!(shown.len(), 4);
+    assert_eq!(shown[0].harm.unwrap().source, HarmSource::Tablet);
+    assert_eq!((shown[0].view.damage, shown[0].view.ghoul.damage), (3, 1));
+    assert_eq!(shown[0].view.test.as_ref().unwrap().success, None);
+    assert_eq!(shown[0].view.test.as_ref().unwrap().modifier, None);
+    assert_eq!(shown[0].view.held_token, Some(TokenFace::Tablet));
+    assert_eq!(shown[0].view.bag_count, 15);
+    assert_eq!(shown[1].harm.unwrap().source, HarmSource::BasicFight);
+    assert_eq!(shown[1].view.ghoul.damage, 2);
+    assert_eq!(shown[1].view.test.as_ref().unwrap().success, Some(true));
+    assert_eq!(shown[1].view.test.as_ref().unwrap().modifier, Some(-2));
+    assert_eq!(shown[1].view.held_token, Some(TokenFace::Tablet));
+    assert_eq!(shown[1].view.bag_count, 15);
+    assert!(
+        shown[1].view.ghoul.alive,
+        "retain the card for its final impact"
+    );
+    assert_eq!(shown[2].harm.unwrap().source, HarmSource::InternalInjury);
+    assert_eq!(shown[2].view.damage, 4);
+    assert_eq!(shown[2].view.test.as_ref().unwrap().success, Some(true));
+    assert_eq!(shown[2].view.stage, Stage::Ended);
+    assert_eq!(shown[2].view.held_token, None);
+    assert_eq!(shown[2].view.bag_count, 16);
+    assert!(!shown[2].view.ghoul.alive);
+    assert_eq!(
+        shown[2].view.resources, 8,
+        "the earlier defeat paid its bounty"
+    );
+    assert!(shown[2].harm.unwrap().is_direct());
+    assert!(shown[3].harm.is_none());
+    assert_eq!(shown[3].view, settled);
+    assert!(!settled.ghoul.alive);
+    assert_eq!(settled.stage, Stage::Ended);
+    assert_eq!(game.recording().moments.last(), Some(&settled));
+}
+
+#[test]
+fn cultist_horror_shows_the_failed_test_before_returning_its_token() {
+    use arkham_unfolded_experiment::{
+        TokenFace,
+        tony::{HarmSource, presentation::stages},
+    };
+    let mut game = Session::with_draws(vec![TokenFace::Cultist]);
+    for choice in ["evade", "commit:none", "reveal"] {
+        game.choose(game.observe().revision, choice).unwrap();
+    }
+    let before = game.observe();
+    game.choose(before.revision, "resolve").unwrap();
+    let settled = game.observe();
+    let shown = stages(&before, &settled);
+    assert_eq!(shown.len(), 2);
+    assert_eq!(shown[0].harm.unwrap().source, HarmSource::Cultist);
+    assert_eq!(shown[0].view.test.as_ref().unwrap().success, Some(false));
+    assert_eq!(shown[0].view.test.as_ref().unwrap().modifier, Some(-1));
+    assert_eq!(shown[0].view.held_token, Some(TokenFace::Cultist));
+    assert_eq!(shown[0].view.bag_count, 15);
+    assert_eq!(shown[1].view, settled);
+    assert_eq!(shown[1].view.held_token, None);
+    assert_eq!(shown[1].view.bag_count, 16);
+}
+
+#[test]
+fn one_two_damage_application_uses_one_presentation_stage() {
+    use arkham_unfolded_experiment::tony::{Harm, HarmRecipient, HarmSource, presentation::stages};
+    // Presentation-only witness: no new two-damage action is claimed for Tony.
+    let before = Session::new().unwrap().observe();
+    let mut after = before.clone();
+    after.damage = 2;
+    after.harm = Some(vec![Harm {
+        source: HarmSource::Tablet,
+        recipient: HarmRecipient::Tony,
+        damage: 2,
+        horror: 0,
+    }]);
+    let shown = stages(&before, &after);
+    assert_eq!(shown.len(), 2);
+    assert_eq!(shown[0].harm.unwrap().damage, 2);
+    assert_eq!(shown[0].view.damage, 2);
+    assert_eq!(shown[1].view, after);
 }
 
 #[test]
@@ -120,6 +346,7 @@ fn malformed_or_incompatible_records_with_valid_checksums_are_refused_without_mu
         ("/payload/state/bag", serde_json::json!([])),
         ("/payload/state/clues", serde_json::json!(255)),
         ("/source_revision", serde_json::json!("unsupported-source")),
+        ("/format_version", serde_json::json!(1)),
     ] {
         let mut invalid = original.clone();
         *invalid.pointer_mut(pointer).unwrap() = value;

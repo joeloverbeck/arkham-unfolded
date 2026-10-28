@@ -14,7 +14,7 @@ On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 cd /home/joeloverbeck/src/arkham-unfolded
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
   --experiment tony \
-  --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
+  --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
 ```
 
 The `--experiment tony` option selects the new turn. The explicit asset folder selects its matching artwork even when a previous preference points to Jacqueline's collection. If that folder has not been prepared, use the preparation instructions below; missing artwork leaves readable substitutes.
@@ -23,9 +23,9 @@ If your checkout is elsewhere, replace the directory in the first line. This req
 
 In a fresh turn:
 
-1. Tony has three ordinary actions and an available bonus Fight/Engage action. A ready Ghoul Minion is engaged with him; Internal Injury is in his threat area. Choose one of the offered actions.
+1. Tony has three ordinary actions and an available bonus Fight/Engage action. A ready Ghoul Minion is engaged with him; Internal Injury is in his threat area. Actions that provoke show an amber **Attack of opportunity** warning with the source and amounts before you choose them.
 2. For a skill test, choose a card commitment or **Commit no cards**, then **Reveal chaos token** and **Resolve skill test**. Results are random. Use **Action history and rules reasons** to inspect costs and consequences.
-3. Click **Open recorded replay**, then **Next moment** or **Previous moment** to narrate stored events. **Return to live turn** restores the current live view.
+3. Each harm event has one visible stage: an attack dealing damage and horror shows both together. **Finish animation** completes the current stage; later harm events still appear; **Motion: reduced** retains readable stages without motion. Click **Open recorded replay**, then **Next moment** or **Previous moment** to narrate stored events. **Return to live turn** restores the current live view.
 
 Click a card or its inspection button for enlarged artwork and readable rules; **Close** or `Esc` returns to the table. Scroll the panel or card inspection when needed. Right-drag or use the arrow keys to orbit; the wheel or `+`/`-` zooms, and `Home` resets the camera. Moving the camera manually overrides replay's automatic following.
 
@@ -40,12 +40,12 @@ The developer/agent prepares the selected files once; ordinary play needs only t
 ```sh
 cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
-  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
+  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
 cargo run --locked --bin arkham-assets -- check-tony \
-  "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
+  "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
 ```
 
-This prepares 25 selected images, including the player-card back, in a separate collection. Earlier `tony-assets` collections remain usable for their existing artwork but lack the deck back; prepare the fresh `tony-assets-v2` folder and use the launch command above. The source archive and any existing Jacqueline collection stay unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
+This prepares 27 selected images and one symbol font, including the player-card back and damage/horror counters, in a separate collection. Earlier `tony-assets` and `tony-assets-v2` collections remain usable for their existing artwork but lack the new harm artwork/font; the original collection also lacks the deck back. Prepare the fresh `tony-assets-v3` folder and use the launch command above. The source archive and any existing Jacqueline collection stay unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
 
 **Choose asset folder** in the side panel checks a prepared folder and saves its location for the next launch. Scroll the panel if needed. The native folder dialog uses Ubuntu's `zenity` package. The preference is shared by the experiment modes; use the explicit `--art-root` commands in their guides when switching between their separate collections. Settings live in `$XDG_CONFIG_HOME/arkham-unfolded/config.toml`, normally `~/.config/arkham-unfolded/config.toml`. Relative XDG overrides are ignored. Without a command-line override or saved preference, the generic asset root is `$XDG_DATA_HOME/arkham-unfolded/assets`, normally `~/.local/share/arkham-unfolded/assets`.
 

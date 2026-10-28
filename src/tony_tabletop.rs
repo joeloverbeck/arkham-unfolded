@@ -6,8 +6,9 @@ use crate::{
     assets,
     tabletop::asset_settings::AssetSettings,
     tony::{
-        Observation, Session, Stage,
+        Harm, Observation, Session, Stage,
         continuity::{self, Replay},
+        presentation::{self, PresentationStage},
     },
 };
 use bevy::{
@@ -20,7 +21,13 @@ use bevy::{
     ui_widgets::{Activate, Button, ModalDialog, ModalDialogBarrier, RequestClose},
 };
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    path::PathBuf,
+};
+
+mod harm;
+use harm::{advance_presentation, animate_harm, harm_amounts, harm_scene};
 
 const PANEL_WIDTH: f32 = 430.0;
 const CARD_WIDTH: f32 = 1.35;
@@ -176,12 +183,29 @@ struct Table {
     inspect: Option<usize>,
     history: bool,
     dirty: bool,
+    presentation: VecDeque<PresentationStage>,
+    stage_elapsed: f32,
+    reduced_motion: bool,
 }
 impl Table {
     fn view(&self) -> Observation {
-        self.replay
-            .as_ref()
-            .map_or_else(|| self.session.observe(), |r| r.current().clone())
+        if let Some(replay) = &self.replay {
+            replay.current().clone()
+        } else if let Some(stage) = self.presentation.front() {
+            stage.view.clone()
+        } else {
+            self.session.observe()
+        }
+    }
+    fn harm(&self) -> Option<Harm> {
+        if let Some(replay) = &self.replay {
+            replay.harm().copied()
+        } else {
+            self.presentation.front().and_then(|s| s.harm)
+        }
+    }
+    fn presenting(&self) -> bool {
+        self.replay.is_none() && !self.presentation.is_empty()
     }
     fn modal(&self) -> bool {
         self.inspect.is_some() || self.history
@@ -190,6 +214,7 @@ impl Table {
 #[derive(Resource)]
 struct Art {
     handles: BTreeMap<String, Handle<Image>>,
+    symbol_font: Option<Handle<Font>>,
     status: String,
 }
 impl Art {
@@ -212,6 +237,8 @@ enum Action {
     History,
     Follow,
     AssetFolder,
+    FinishAnimation,
+    Motion,
 }
 #[derive(Resource, Default)]
 struct Actions(Vec<Action>);
@@ -224,9 +251,11 @@ struct PlayerDeck;
 #[derive(Component)]
 struct MainCamera;
 #[derive(Component)]
-struct WorldLabel(Vec3);
+struct WorldLabel(Vec3, f32);
 #[derive(Component)]
 struct Appearing;
+#[derive(Component)]
+struct ChaosToken;
 #[derive(Component)]
 struct ButtonColor(Color);
 #[derive(Resource)]
@@ -298,6 +327,9 @@ pub fn run() -> Result<(), String> {
             inspect: None,
             history: false,
             dirty: true,
+            presentation: VecDeque::new(),
+            stage_elapsed: 0.0,
+            reduced_motion: false,
         })
         .insert_resource(Actions::default())
         .insert_resource(Orbit::default())
@@ -333,11 +365,13 @@ pub fn run() -> Result<(), String> {
             (
                 poll_settings,
                 handle_actions,
+                advance_presentation,
                 camera_controls,
                 synchronize_scene,
                 rebuild_panel,
                 world_labels,
                 animate,
+                animate_harm,
                 button_colors,
                 capture_window,
             )
@@ -349,6 +383,7 @@ pub fn run() -> Result<(), String> {
         .iter()
         .map(|c| format!("card/{}", c.code))
         .chain(["card-back/player".to_owned()])
+        .chain(["token/damage".to_owned(), "token/horror".to_owned()])
         .chain(["06003", "06005", "60401"].map(|c| format!("standee/{c}")))
         .chain(
             [
@@ -371,7 +406,15 @@ pub fn run() -> Result<(), String> {
             handles.insert(role, server.load(path.to_owned()));
         }
     }
-    app.insert_resource(Art { handles, status });
+    let symbol_font = collection
+        .as_ref()
+        .and_then(|r| r.verified_path("font/symbols"))
+        .map(|path| server.load(path.to_owned()));
+    app.insert_resource(Art {
+        handles,
+        symbol_font,
+        status,
+    });
     app.run();
     Ok(())
 }
@@ -408,6 +451,52 @@ fn button(parent: &mut ChildSpawnerCommands, label: &str, action: Action, primar
         .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| queue.0.push(action.clone()))
         .with_child(text(label, 16.0, PAPER));
 }
+
+fn action_button(parent: &mut ChildSpawnerCommands, view: &Observation, choice: &crate::Choice) {
+    let action = Action::Choose(view.revision, choice.id.clone());
+    if let Some(attack) = view.opportunity_attack(&choice.id) {
+        let color = Color::srgb(0.24, 0.17, 0.07);
+        parent
+            .spawn((
+                Button,
+                Hovered::default(),
+                TabIndex(0),
+                Node {
+                    width: percent(100),
+                    padding: UiRect::all(px(10)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(5),
+                    border: UiRect::left(px(4)),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                BorderColor::all(GOLD),
+                BackgroundColor(color),
+                ButtonColor(color),
+            ))
+            .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
+                queue.0.push(action.clone())
+            })
+            .with_children(|p| {
+                p.spawn(text(format!("! {}", choice.label), 16.0, PAPER));
+                p.spawn(text(
+                    format!(
+                        "Attack of opportunity: Ghoul Minion\n{} damage + {} horror",
+                        attack.damage, attack.horror
+                    ),
+                    14.0,
+                    GOLD,
+                ));
+            });
+    } else {
+        button(
+            parent,
+            &choice.label,
+            action,
+            choice.id != "undo" && choice.id != "end_turn",
+        );
+    }
+}
 fn poll_settings(mut settings: ResMut<AssetSettings>, mut table: ResMut<Table>) {
     if let Some(notice) = settings.poll() {
         table.notice = notice;
@@ -429,15 +518,24 @@ fn handle_actions(
             continue;
         }
         match action {
-            Action::Choose(revision, id) if table.replay.is_none() => {
+            Action::Choose(revision, id) if table.replay.is_none() && !table.presenting() => {
                 let table = &mut *table;
+                let before = table.session.observe();
                 table.notice = match continuity::commit_choice(
                     &table.save_path,
                     &mut table.session,
                     revision,
                     &id,
                 ) {
-                    Ok(()) => "Decision saved. Close and reopen safely at any choice.".into(),
+                    Ok(()) => {
+                        table.presentation =
+                            presentation::stages(&before, &table.session.observe())
+                                .into_iter()
+                                .filter(|s| s.harm.is_some())
+                                .collect();
+                        table.stage_elapsed = 0.0;
+                        "Decision saved. Close and reopen safely at any choice.".into()
+                    }
                     Err(e) => format!("Decision not committed: {e}"),
                 };
             }
@@ -451,6 +549,7 @@ fn handle_actions(
                 match continuity::load_session(&table.save_path) {
                     Ok(session) => {
                         table.session = session;
+                        table.presentation.clear();
                         table.notice = "Reopened the exact saved choice and randomness.".into();
                     }
                     Err(e) => {
@@ -478,6 +577,8 @@ fn handle_actions(
                 {
                     Ok(replay) => {
                         table.replay = Some(replay);
+                        table.presentation.clear();
+                        table.stage_elapsed = 0.0;
                         orbit.follow = true;
                         table.notice = "Recorded replay. Each step pauses for narration.".into();
                     }
@@ -487,20 +588,25 @@ fn handle_actions(
             Action::Back => {
                 if let Some(r) = &mut table.replay {
                     r.back();
+                    table.stage_elapsed = 0.0;
                 }
             }
             Action::Next => {
                 if let Some(r) = &mut table.replay {
                     r.next();
+                    table.stage_elapsed = 0.0;
                 }
             }
             Action::Live => {
                 table.replay = None;
+                table.presentation.clear();
                 orbit.follow = false;
                 table.notice = "Returned to the unchanged live turn.".into();
             }
             Action::New
-                if table.replay.is_none() && table.session.observe().stage == Stage::Ended =>
+                if table.replay.is_none()
+                    && !table.presenting()
+                    && table.session.observe().stage == Stage::Ended =>
             {
                 match Session::new() {
                     Ok(session) => match continuity::restart_session(
@@ -510,6 +616,7 @@ fn handle_actions(
                     ) {
                         Ok(()) => {
                             table.session = session;
+                            table.presentation.clear();
                             orbit.follow = false;
                             table.notice =
                                 "New turn ready. The previous turn has been retained.".into();
@@ -525,6 +632,11 @@ fn handle_actions(
                 table.history = false;
             }
             Action::History => table.history = true,
+            Action::FinishAnimation if table.replay.is_none() => {
+                table.presentation.pop_front();
+                table.stage_elapsed = 0.0;
+            }
+            Action::Motion => table.reduced_motion = !table.reduced_motion,
             Action::Follow if table.replay.is_some() => orbit.follow = !orbit.follow,
             Action::AssetFolder => {
                 settings.choose();
@@ -534,7 +646,9 @@ fn handle_actions(
             _ => {}
         }
         if orbit.follow && table.replay.is_some() {
-            orbit.desired_target = if table.view().held_token.is_some() {
+            orbit.desired_target = if let Some(hit) = table.harm() {
+                harm::recipient_position(hit.recipient)
+            } else if table.view().held_token.is_some() {
                 Vec3::new(1.0, 0.0, 0.2)
             } else {
                 Vec3::new(2.2, 0.0, -0.7)
@@ -577,7 +691,7 @@ fn world_label(commands: &mut Commands, value: String, point: Vec3, color: Color
         },
         BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.92)),
         Pickable::IGNORE,
-        WorldLabel(point),
+        WorldLabel(point, 160.0),
         Scene,
     ));
 }
@@ -690,6 +804,7 @@ fn synchronize_scene(
     table: Res<Table>,
     art: Res<Art>,
     entities: Query<Entity, With<Scene>>,
+    token: Query<&Transform, With<ChaosToken>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rendered: Local<Option<Observation>>,
@@ -698,6 +813,16 @@ fn synchronize_scene(
     if rendered.as_ref() == Some(&view) {
         return;
     }
+    let token_scale = if table.reduced_motion {
+        Vec3::ONE
+    } else if rendered
+        .as_ref()
+        .is_some_and(|last| last.held_token == view.held_token)
+    {
+        token.single().map_or(Vec3::ONE, |t| t.scale)
+    } else {
+        Vec3::splat(0.1)
+    };
     for entity in &entities {
         commands.entity(entity).despawn();
     }
@@ -854,8 +979,9 @@ fn synchronize_scene(
             })),
             Transform::from_xyz(0.5, 0.2, 0.7)
                 .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2))
-                .with_scale(Vec3::splat(0.1)),
+                .with_scale(token_scale),
             Appearing,
+            ChaosToken,
             Scene,
             Pickable::IGNORE,
         ));
@@ -866,6 +992,14 @@ fn synchronize_scene(
             GOLD,
         );
     }
+    harm_scene(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &art,
+        &view,
+        table.harm(),
+    );
     *rendered = Some(view);
 }
 
@@ -941,15 +1075,23 @@ fn rebuild_panel(
                 p.spawn(text(format!("{}: skill {} vs {} · {}{}", test.kind.label(), test.skill_value, test.difficulty, outcome, test.modifier.map_or(String::new(), |m| format!(" · modifier {m:+}"))), 16.0, GOLD));
             }
             if let Some(face) = view.held_token { p.spawn(text(format!("Revealed {}", face.label()), 21.0, GOLD)); }
+            if let Some(hit) = table.harm() {
+                p.spawn(text(hit.source.label(), 19.0, GOLD));
+                p.spawn(text(format!("{} receives", hit.recipient.label()), 16.0, PAPER));
+                harm_amounts(p, &art, hit);
+            }
             if let Some(replay) = &table.replay {
                 if replay.index() + 1 < replay.len() { button(p, "Next moment →", Action::Next, true); }
                 if replay.index() > 0 { button(p, "← Previous moment", Action::Back, false); }
                 button(p, "Return to live turn", Action::Live, false);
                 button(p, if orbit.follow { "Camera following: on" } else { "Resume camera following" }, Action::Follow, false);
+            } else if table.presenting() {
+                button(p, "Finish animation", Action::FinishAnimation, false);
             } else {
-                for choice in &view.choices { button(p, &choice.label, Action::Choose(view.revision, choice.id.clone()), choice.id != "undo" && choice.id != "end_turn"); }
+                for choice in &view.choices { action_button(p, &view, choice); }
             }
             p.spawn(text(&table.notice, 13.0, MUTED));
+            button(p, if table.reduced_motion { "Motion: reduced" } else { "Motion: animated" }, Action::Motion, false);
             p.spawn(text("HAND", 13.0, GOLD));
             if view.hand.is_empty() { p.spawn(text("Empty", 14.0, MUTED)); }
             for card in &view.hand {
@@ -961,7 +1103,7 @@ fn rebuild_panel(
                 button(p, "Save live turn", Action::Save, false);
                 button(p, "Reopen saved turn", Action::Reopen, false);
                 button(p, "Open recorded replay", Action::Replay, false);
-                if view.stage == Stage::Ended { button(p, "Start another Tony turn", Action::New, true); }
+                if view.stage == Stage::Ended && !table.presenting() { button(p, "Start another Tony turn", Action::New, true); }
             }
             p.spawn(text("SCENARIO AND CARDS", 13.0, GOLD));
             for (index, card) in CARDS.iter().enumerate().filter(|(i, _)| *i < 5 || *i >= 7) { button(p, card.title, Action::Inspect(index), false); }
@@ -1070,9 +1212,13 @@ fn camera_controls(
     orbit.pitch = orbit.pitch.clamp(0.35, 1.35);
     orbit.distance = orbit.distance.clamp(8.0, 24.0);
     let target = orbit.desired_target;
-    orbit.target = orbit
-        .target
-        .lerp(target, (time.delta_secs() * 4.0).min(1.0));
+    orbit.target = if table.reduced_motion {
+        target
+    } else {
+        orbit
+            .target
+            .lerp(target, (time.delta_secs() * 4.0).min(1.0))
+    };
     let direction = Vec3::new(
         orbit.yaw.sin() * orbit.pitch.cos(),
         orbit.pitch.sin(),
@@ -1088,7 +1234,7 @@ fn world_labels(
     let (camera, transform) = *camera;
     for (label, mut node, mut visibility) in &mut labels {
         if let Ok(point) = camera.world_to_viewport(transform, label.0) {
-            node.left = px(point.x - 80.0);
+            node.left = px(point.x - label.1 / 2.0);
             node.top = px(point.y);
             *visibility = Visibility::Inherited;
         } else {
@@ -1096,9 +1242,17 @@ fn world_labels(
         }
     }
 }
-fn animate(time: Res<Time>, mut transforms: Query<&mut Transform, With<Appearing>>) {
+fn animate(
+    time: Res<Time>,
+    table: Res<Table>,
+    mut transforms: Query<&mut Transform, With<Appearing>>,
+) {
     for mut t in &mut transforms {
-        t.scale = t.scale.lerp(Vec3::ONE, (time.delta_secs() * 8.0).min(1.0));
+        t.scale = if table.reduced_motion {
+            Vec3::ONE
+        } else {
+            t.scale.lerp(Vec3::ONE, (time.delta_secs() * 8.0).min(1.0))
+        };
     }
 }
 fn button_colors(

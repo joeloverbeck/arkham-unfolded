@@ -130,7 +130,11 @@ fn replay_cannot_save_or_choose_and_player_commands_do_not_expose_hidden_state()
         ),
     );
     assert_eq!(responses[1]["ok"], true);
-    assert_eq!(responses[3]["observation"], responses[1]["observation"]);
+    assert_eq!(responses[3]["observation"]["damage"], 1);
+    assert_eq!(responses[3]["observation"]["horror"], 1);
+    assert_eq!(responses[3]["observation"]["injury"], true);
+    assert_eq!(responses[3]["replay"]["harm"]["damage"], 1);
+    assert_eq!(responses[3]["replay"]["harm"]["horror"], 1);
     assert_eq!(responses[4]["observation"], responses[0]["observation"]);
     for index in [5, 6, 7, 9] {
         assert_eq!(responses[index]["ok"], false);
@@ -146,4 +150,47 @@ fn replay_cannot_save_or_choose_and_player_commands_do_not_expose_hidden_state()
             assert!(!observation.contains_key(hidden));
         }
     }
+}
+
+#[test]
+fn player_warnings_and_replay_show_one_attack_before_revealing_the_drawn_card() {
+    let directory = tempfile::tempdir().unwrap();
+    let responses = run(
+        directory.path(),
+        &["--save", "turn.json"],
+        concat!(
+            "{\"op\":\"choose\",\"revision\":0,\"id\":\"draw\"}\n",
+            "{\"op\":\"replay\"}\n",
+            "{\"op\":\"next\"}\n",
+            "{\"op\":\"next\"}\n",
+            "{\"op\":\"back\"}\n",
+            "{\"op\":\"live\"}\n"
+        ),
+    );
+    let warnings = responses[0]["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 4);
+    for id in ["investigate", "draw", "resource", "injury"] {
+        let warning = warnings
+            .iter()
+            .find(|warning| warning["choice_id"] == id)
+            .unwrap();
+        assert_eq!(warning["attack"]["damage"], 1);
+        assert_eq!(warning["attack"]["horror"], 1);
+    }
+    assert_eq!(responses[2]["replay"]["length"], 3);
+    assert_eq!(
+        responses[3]["observation"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(responses[3]["replay"]["harm"]["damage"], 1);
+    assert_eq!(responses[3]["replay"]["harm"]["horror"], 1);
+    assert_eq!(responses[4]["observation"], responses[1]["observation"]);
+    assert!(responses[4]["replay"]["harm"].is_null());
+    assert_eq!(responses[5]["observation"], responses[3]["observation"]);
+    assert_eq!(responses[6]["observation"], responses[1]["observation"]);
+    let reopened = run(directory.path(), &["--load", "turn.json"], "");
+    assert_eq!(reopened[0]["observation"], responses[1]["observation"]);
 }

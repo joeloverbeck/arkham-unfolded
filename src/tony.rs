@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 
 pub mod continuity;
+mod harm;
+pub mod presentation;
+pub use harm::{Harm, HarmRecipient, HarmSource};
 
 pub const SOURCE_REVISION: &str = "fc37a4f:issue-22-tony-turn-v1";
 
@@ -93,6 +96,9 @@ pub struct Observation {
     pub investigators: Vec<InvestigatorView>,
     pub jacqueline_used: bool,
     pub jacqueline_arcane_research: u8,
+    /// None identifies an older observation without source-level harm facts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harm: Option<Vec<Harm>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +116,7 @@ pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
         ));
     }
     if recording.moments.is_empty()
+        || !harm::valid_recording(&recording.moments)
         || recording.moments.iter().enumerate().any(|(i, m)| {
             m.revision != i as u64
                 || m.health != 9
@@ -174,6 +181,8 @@ pub struct Session {
     history: Vec<String>,
     moments: Vec<Observation>,
     undo: Vec<Undo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    harm: Option<Vec<Harm>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -263,6 +272,7 @@ impl Session {
             history: vec!["Prepared position: Tony's turn in the Study, The Gathering on Standard. Three ordinary actions and one additional Fight/Engage action against an enemy with a bounty. Stop after Tony's end-of-turn effects; companions do not take turns.".into()],
             moments: vec![],
             undo: vec![],
+            harm: Some(vec![]),
         };
         game.moments.push(game.observe());
         game
@@ -325,6 +335,7 @@ impl Session {
             ],
             jacqueline_used: true,
             jacqueline_arcane_research: 2,
+            harm: self.harm.clone(),
         }
     }
 
@@ -406,6 +417,7 @@ impl Session {
             ));
         }
         let mut next = self.clone();
+        next.harm = Some(vec![]);
         if id == "undo" {
             let undo = next
                 .undo
@@ -469,7 +481,7 @@ impl Session {
                 self.state.ordinary_actions -= 1;
                 self.history
                     .push("Investigate costs one ordinary action.".into());
-                self.opportunity_attack();
+                self.opportunity_attack(id);
                 self.state.test = Some(TestView {
                     kind: TestKind::Investigate,
                     skill_value: 3,
@@ -491,7 +503,7 @@ impl Session {
             "injury" => {
                 self.state.ordinary_actions -= 2;
                 self.state.test = None;
-                self.opportunity_attack();
+                self.opportunity_attack(id);
                 self.state.injury = false;
                 self.state.discard.push(card(34, "02038"));
                 self.history
@@ -503,7 +515,7 @@ impl Session {
                 self.state.test = None;
                 self.history
                     .push("Spent one ordinary action to gain a resource.".into());
-                self.opportunity_attack();
+                self.opportunity_attack(id);
                 self.state.resources += 1;
                 self.finish_action();
             }
@@ -512,7 +524,7 @@ impl Session {
                 self.state.test = None;
                 self.history
                     .push("Spent one ordinary action to draw a card.".into());
-                self.opportunity_attack();
+                self.opportunity_attack(id);
                 let drawn = self.state.deck.remove(0);
                 self.history.push(format!(
                     "Drew {}. This hidden-information reveal cannot be undone.",
@@ -599,6 +611,12 @@ impl Session {
                 match face {
                     TokenFace::Tablet if self.state.ghoul.alive => {
                         self.state.damage += 1;
+                        self.harm.get_or_insert_default().push(Harm {
+                            source: HarmSource::Tablet,
+                            recipient: HarmRecipient::Tony,
+                            damage: 1,
+                            horror: 0,
+                        });
                         self.history.push("Tablet: −2 and 1 damage because a Ghoul is at the Study, even if exhausted (Gathering Standard reference).".into());
                     }
                     TokenFace::ElderSign => {
@@ -622,6 +640,12 @@ impl Session {
                 }
                 if face == TokenFace::Cultist && !success {
                     self.state.horror += 1;
+                    self.harm.get_or_insert_default().push(Harm {
+                        source: HarmSource::Cultist,
+                        recipient: HarmRecipient::Tony,
+                        damage: 0,
+                        horror: 1,
+                    });
                     self.history.push("Cultist: the test failed, so Tony takes 1 horror (Gathering Standard reference).".into());
                 }
                 self.history.push(format!(
@@ -637,6 +661,12 @@ impl Session {
                     match test.kind {
                         TestKind::Fight => {
                             self.state.ghoul.damage += 1;
+                            self.harm.get_or_insert_default().push(Harm {
+                                source: HarmSource::BasicFight,
+                                recipient: HarmRecipient::Ghoul,
+                                damage: 1,
+                                horror: 0,
+                            });
                             self.history.push(
                                 "Successful basic Fight deals 1 damage to Ghoul Minion.".into(),
                             );
@@ -697,6 +727,12 @@ impl Session {
         self.state.stage = Stage::Ended;
         if self.state.injury {
             self.state.damage += 1;
+            self.harm.get_or_insert_default().push(Harm {
+                source: HarmSource::InternalInjury,
+                recipient: HarmRecipient::Tony,
+                damage: 1,
+                horror: 0,
+            });
             self.history
                 .push("Internal Injury deals 1 direct damage at the end of Tony's turn.".into());
         }
@@ -704,10 +740,11 @@ impl Session {
             .push("Tony's turn ends. No companion turn or enemy phase is executed.".into());
     }
 
-    fn opportunity_attack(&mut self) {
-        if self.state.ghoul.alive && self.state.ghoul.ready && self.state.ghoul.engaged {
-            self.state.damage += 1;
-            self.state.horror += 1;
+    fn opportunity_attack(&mut self, choice: &str) {
+        if let Some(harm) = harm::opportunity_attack(&self.state.ghoul, choice) {
+            self.state.damage += harm.damage;
+            self.state.horror += harm.horror;
+            self.harm.get_or_insert_default().push(harm);
             self.history.push("Ghoul Minion makes one attack of opportunity: 1 damage and 1 horror. It remains ready (RR p5).".into());
         }
     }

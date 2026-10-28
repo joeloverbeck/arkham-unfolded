@@ -62,12 +62,23 @@ fn emit(output: &mut impl Write, value: &Value) -> Result<(), String> {
 }
 
 fn response(game: &Session, replay: Option<&Replay>, status: &str, error: Option<String>) -> Value {
+    let observation = replay.map_or_else(|| game.observe(), |replay| replay.current().clone());
+    let warnings: Vec<_> = observation
+        .choices
+        .iter()
+        .filter_map(|choice| {
+            observation
+                .opportunity_attack(&choice.id)
+                .map(|attack| json!({"choice_id": choice.id, "attack": attack}))
+        })
+        .collect();
     let mut response = json!({
         "ok": error.is_none(), "mode": if replay.is_some() { "replay" } else { "live" }, "status": status,
-        "observation": replay.map_or_else(|| game.observe(), |replay| replay.current().clone()),
+        "observation": observation, "warnings": warnings,
     });
     if let Some(replay) = replay {
-        response["replay"] = json!({"index": replay.index(), "length": replay.len()});
+        response["replay"] =
+            json!({"index": replay.index(), "length": replay.len(), "harm": replay.harm()});
     }
     if let Some(error) = error {
         response["error"] = json!(error);

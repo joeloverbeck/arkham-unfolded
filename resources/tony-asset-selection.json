@@ -1,8 +1,8 @@
 {
   "format_version": 1,
-  "collection": "arkham-unfolded-tony-turn-v2",
+  "collection": "arkham-unfolded-tony-turn-v3",
   "source_archive_release": "v1.22.11",
-  "selection": "Exact English card sides from GitHub #22; revealed Study uses its reverse. Original SCE circular chaos-token set, blue Elder Sign (not elder thing). Runtime uses only this prepared collection; original bytes remain outside Git. The standard player back is selected from the same On the Hunt variant for the face-down deck.",
+  "selection": "Exact English card sides from GitHub #22; revealed Study uses its reverse. Original SCE circular chaos-token set, blue Elder Sign (not elder thing). Runtime uses only this prepared collection; original bytes remain outside Git. The standard player back is selected from the same On the Hunt variant for the face-down deck. Damage and Horror use the transparent SCE counter images; the verified arkhamicons font supplies their matching inline symbols.",
   "assets": [
     {
       "role": "card/06003",
@@ -377,6 +377,56 @@
       "evidence": "GitHub #22 owner deck-presentation follow-up: visually inspected standard player back, 750x1050 PNG RGBA. Catalog card 03263, variant 3914f45d3bcf7d81, unique_back=false, back_is_hidden=true, 1x1 grid slot 0; original source bytes copied unchanged.",
       "transform": {
         "kind": "copy"
+      }
+    },
+    {
+      "role": "token/damage",
+      "path": "tokens/damage.png",
+      "sha256": "34156f8361c5adef67c8afe40cfd960aea36b1e69956da00046120c01a1b247d",
+      "bytes": 86002,
+      "source": {
+        "path": "images/other/unclassified/en/sce-base-save/Damage--ImageURL--081d03144a6650cd7f9e.png",
+        "sha256": "34156f8361c5adef67c8afe40cfd960aea36b1e69956da00046120c01a1b247d",
+        "bytes": 86002
+      },
+      "evidence": "docs/research/attack-opportunity-and-harm-presentation.md; visually inspected actual SCE contained counter, transparent PNG; original bytes copied unchanged.",
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "role": "token/horror",
+      "path": "tokens/horror.png",
+      "sha256": "cb7f3c7e20d1ecfcd133c605e7d6b01095b82d79acc2a18c9baee31d3b14d789",
+      "bytes": 104192,
+      "source": {
+        "path": "images/other/unclassified/en/sce-base-save/Horror--ImageURL--d429aca0b365fe75ed12.png",
+        "sha256": "cb7f3c7e20d1ecfcd133c605e7d6b01095b82d79acc2a18c9baee31d3b14d789",
+        "bytes": 104192
+      },
+      "evidence": "docs/research/attack-opportunity-and-harm-presentation.md; visually inspected actual SCE contained counter, transparent PNG; original bytes copied unchanged.",
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "role": "font/symbols",
+      "path": "fonts/arkham-symbols.ttf",
+      "sha256": "186176d7243c72d272a50c24e833fb77d983e7c4c6c99bc64f89c8322dbd8187",
+      "bytes": 144020,
+      "source": {
+        "path": "resources/other/unclassified/en/sce-base-save/font_arkhamicons--URL--49b407be28313ac7ad1b.unity3d",
+        "sha256": "ed518b255b4a177f246525d5fd6ed626c468cb46d843cca62cf72978faa1fb80",
+        "bytes": 66412
+      },
+      "evidence": "docs/experiments/symbol-art.json; existing exact bundle extraction",
+      "transform": {
+        "kind": "unity_font",
+        "block_offset": 130,
+        "block_length": 66282,
+        "decoded_length": 154116,
+        "font_offset": 9592,
+        "font_length": 144020
       }
     }
   ]

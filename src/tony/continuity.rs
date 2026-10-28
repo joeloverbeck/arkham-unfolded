@@ -1,6 +1,7 @@
 //! Offline continuity for the bounded Tony turn. Legacy records retain their own reader.
 
-use super::{Observation, Recording, SOURCE_REVISION, Session};
+use super::presentation::{PresentationStage, stages};
+use super::{Harm, Observation, Recording, SOURCE_REVISION, Session};
 use crate::APP_VERSION;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -10,24 +11,40 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 const MAX_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 
 pub struct Replay {
     recording: Recording,
+    stages: Vec<PresentationStage>,
     index: usize,
 }
 
 impl Replay {
     pub fn new(recording: Recording) -> Result<Self, ContinuityError> {
         validate_recording(&recording)?;
+        let mut presentation = vec![PresentationStage {
+            view: recording.moments[0].clone(),
+            harm: None,
+        }];
+        for pair in recording.moments.windows(2) {
+            presentation.extend(stages(&pair[0], &pair[1]));
+        }
         Ok(Self {
             recording,
+            stages: presentation,
             index: 0,
         })
     }
     pub fn current(&self) -> &Observation {
-        &self.recording.moments[self.index]
+        &self.stages[self.index].view
+    }
+    pub fn harm(&self) -> Option<&Harm> {
+        self.stages[self.index].harm.as_ref()
+    }
+    /// The original committed observations, never presentation-only views.
+    pub fn recording(&self) -> &Recording {
+        &self.recording
     }
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> bool {
@@ -48,10 +65,10 @@ impl Replay {
         self.index
     }
     pub fn len(&self) -> usize {
-        self.recording.moments.len()
+        self.stages.len()
     }
     pub fn is_empty(&self) -> bool {
-        self.recording.moments.is_empty()
+        self.stages.is_empty()
     }
 }
 
@@ -223,13 +240,25 @@ fn read_envelope(path: &Path, kind: &str) -> Result<(Vec<u8>, Envelope), Continu
             "Record checksum mismatch. The original file was left unchanged.".into(),
         ));
     }
-    if envelope.format_version != FORMAT_VERSION
+    if !matches!(envelope.format_version, 1 | FORMAT_VERSION)
         || envelope.kind != kind
         || envelope.source_revision != SOURCE_REVISION
         || envelope.app_version != APP_VERSION
     {
         return Err(ContinuityError(
             "This record requires a different compatible application/source version.".into(),
+        ));
+    }
+    // V1 had no typed harm facts. It is read as aggregate history, not upgraded
+    // by interpreting its prose or guessing blocks from counter differences.
+    if envelope.format_version == 1
+        && (envelope.payload.get("harm").is_some()
+            || envelope.payload["moments"]
+                .as_array()
+                .is_some_and(|moments| moments.iter().any(|m| m.get("harm").is_some())))
+    {
+        return Err(ContinuityError(
+            "A version-one Tony record cannot contain version-two harm facts.".into(),
         ));
     }
     Ok((bytes, envelope))
