@@ -6,7 +6,7 @@
 
 ```sh
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
+  --experiment tony
 ```
 
 Use the visible legal choices to fight, evade, investigate, draw, gain a resource, engage an eligible enemy, remove Injury, or end early. Tony's first qualifying Fight/Engage automatically spends his additional action. Each skill test offers card commitments, then a genuinely random Standard token draw and its resolution. The fixed hidden draw pile begins Guts, Guts, On the Hunt. Guts has no matching icons in this turn.
@@ -61,10 +61,10 @@ cargo run --locked --bin arkham-assets -- prepare-tony \
 cargo run --locked --bin arkham-assets -- check-tony \
   "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
+  --experiment tony
 ```
 
-Use the in-app asset folder selection to save a preference for later launches. `--art-root` is temporary; `--no-art` uses readable substitutes. The program reads verified prepared files, never the source archive. A new collection must use a fresh destination; partial/conflicting collections are preserved and reported. All third-party image/font bytes remain outside Git.
+Use the in-app asset folder selection to save a Tony-only preference in `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml` (normally `~/.config/arkham-unfolded/tony.toml`). Jacqueline keeps its existing `config.toml`. Without a saved choice, Tony selects `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v3` (normally `~/.local/share/arkham-unfolded/tony-assets-v3`); the launch command need not name a version. Startup reports the experiment, resolved folder and completeness. `--art-root` is temporary; `--no-art` uses readable substitutes. The program reads verified prepared files, never the source archive. A new collection must use a fresh destination; partial/conflicting collections are preserved and reported. All third-party image/font bytes remain outside Git.
 
 The implementation consumes the exact source contract and independent worked expectations in #22, with original English faces, Rules Reference, FAQ 2.5 and original campaign guide under the accepted precedence. It does not refresh taboo or prepare a campaign. The unchanged [source manifest](../research/issue-1-evidence.json) identifies retained PDFs and deck inputs. On 2026-10-28 all nine source files, ten selected card faces and Study's revealed reverse matched their declared hashes. Their exact bytes were also copied to owner-controlled external custody at `~/.local/share/arkham-unfolded/source-evidence/tony-turn-v1` and verified by readback. Its `manifest.json` SHA-256 is `fb3423f0efc23c2bff9b0b6755c8b5b567e6edd6b1d00ddc7173d45b1274d244`. This is retained same-machine evidence, not an independent backup; preserve it while source fidelity or recovery relies on it.
 
@@ -77,5 +77,29 @@ cargo run --locked --bin arkham-driver -- --experiment tony --save /tmp/new-tony
 The JSON-line protocol supports `observe`, `choose` with current `revision` and offered `id`, `save`, `replay`, `next`, `back`, `live`, `export` with a fresh `path`, and `quit`. Use `--load PATH` in another process to resume. Observations omit future card order and random state; deterministic token injection is a privileged test facility, never a player command. The UI and driver submit to the same rules and persistence authority.
 
 Run `scripts/check`. Decision tests use #22's independent witnesses, including additional-action spending, opportunity attacks, all Standard faces, commitment restrictions and reveal barriers. Continuity tests cover failed-save retry, record refusal, immutable exports and fresh-process continuation. Native inspection follows the existing [checked capture/input procedure](jacqueline-curse.md#developer-native-verification), using isolated saves/settings, prepared art and substitutes. Screenshots establish inspected rendering only; interaction and human acceptance require their own evidence.
+
+### Reproduce a visual state
+
+Use legal driver choices to reach a state, then pass its save to the immutable native launcher. This example produces an opportunity attack's combined damage/horror counters and a held random chaos token:
+
+```sh
+cargo build --locked --features tabletop --bin arkham-tabletop --bin arkham-driver
+tony_review=$(mktemp -d /tmp/arkham-tony-visual.XXXXXX)
+target/debug/arkham-driver --experiment tony --save "$tony_review/held.json" \
+  > "$tony_review/driver.jsonl" <<'CHOICES'
+{"op":"choose","revision":0,"id":"investigate"}
+{"op":"choose","revision":1,"id":"commit:none"}
+{"op":"choose","revision":2,"id":"reveal"}
+CHOICES
+python3 -B scripts/native_verify.py launch \
+  --binary target/debug/arkham-tabletop --output-dir "$tony_review/render" \
+  --experiment tony --load "$tony_review/held.json" \
+  --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v3" \
+  --screenshot held.png --quit-after-screenshot
+```
+
+Inspect the driver's returned observations for successful choices and `render/held.png` for the actual result. The launcher copies the save and preserves the original. For a lone damage counter, use a new driver save and only `{"op":"choose","revision":0,"id":"end_turn"}`; Internal Injury deals one damage. For missing-art layout, launch another fresh render directory with `--no-art` instead of `--art-root`.
+
+Reopening captures the committed state; it does not replay an interrupted live animation. To check motion, use a fresh live run and the checked native input path, or step the saved record through replay. Compare shared objects with the [existing visual behavior](jacqueline-curse.md#visual-and-wording-review) and record any unavailable interaction separately. For intermittent camera lag, use the [bounded profiling procedure](jacqueline-curse.md#capture-a-laggy-camera) while the symptom is present.
 
 Joel's two sessions have a combined ceiling of 40 minutes including retries: one threat-removal turn and one that evades or accepts opportunity costs for another benefit, with interruption and narrated replay. Only Joel judges clarity, pacing, control burden and whether the turn is worth playing. This experiment does not establish a playable scenario, campaign, reusable engine or recurrent fitness.

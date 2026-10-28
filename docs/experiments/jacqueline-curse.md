@@ -12,8 +12,7 @@ Open Terminal (`Ctrl` + `Alt` + `T`), then run the following. Replace the checko
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --art-root "$HOME/.local/share/arkham-unfolded/assets"
+cargo run --locked --features tabletop --bin arkham-tabletop
 ```
 
 The window is titled **Arkham Unfolded — Scripted Rules Experiment**. For development verification, run `scripts/check` from the same directory; checks are not a prerequisite to playing. For native rendering or interaction changes, also follow [developer native verification](#developer-native-verification).
@@ -27,7 +26,7 @@ cargo run --locked --features tabletop --bin arkham-tabletop -- --case autofail
 cargo run --locked --features tabletop --bin arkham-tabletop -- --no-art
 ```
 
-The normal asset root is `$XDG_DATA_HOME/arkham-unfolded/assets`, normally `~/.local/share/arkham-unfolded/assets`, or the saved per-user preference. Prepare this legacy collection with the commands below; Tony uses a separate selection. **Choose asset folder** in the side panel opens Ubuntu's `zenity` folder dialog, checks the selected collection, and offers to save it for the next launch. Scroll the panel if necessary. Restart to apply the choice. Canceling or a write failure preserves the previous setting; a failed write is reported. An incomplete recognized collection requires explicit confirmation to use readable substitutes; an unrecognized collection cannot be saved as a valid selection. The status in the panel distinguishes complete assets from substitutes.
+The normal asset root is `$XDG_DATA_HOME/arkham-unfolded/assets`, normally `~/.local/share/arkham-unfolded/assets`, or the saved per-user preference in `$XDG_CONFIG_HOME/arkham-unfolded/config.toml`. Prepare this legacy collection with the commands below; Tony uses a separate `tony.toml` preference. Startup reports the experiment, resolved folder and completeness. **Choose asset folder** in the side panel opens Ubuntu's `zenity` folder dialog, checks the selected collection, and offers to save it for the next launch. Scroll the panel if necessary. Restart to apply the choice. Canceling or a write failure preserves the previous setting; a failed write is reported. An incomplete recognized collection requires explicit confirmation to use readable substitutes; an unrecognized collection cannot be saved as a valid selection. The status in the panel distinguishes complete assets from substitutes.
 
 ```sh
 cargo run --locked --bin arkham-assets -- prepare \
@@ -88,21 +87,19 @@ Passing automated checks establishes the exercised decisions and continuity boun
 
 ## Developer native verification
 
-Use a separate save and temporary settings for diagnostics. The helper below supports the current Ubuntu GNOME/XWayland desktop; it needs system Python 3.11+, `python3-dbus`, `python3-gi`, `python3-pil`, `libX11` and `xdotool`. Its headless tests need only Python and Cargo and run in `scripts/check`. From the repository root, build the normal application and launch a disposable run:
+Use a separate save and temporary settings for diagnostics. The helper below supports the current Ubuntu GNOME/XWayland desktop; capture/input needs system Python 3.11+, `python3-dbus`, `python3-gi`, `python3-pil`, `libX11` and `xdotool`. Staging and headless tests use Python's standard library; the tests run in `scripts/check`. From the repository root, build the normal application and launch a disposable run:
 
 ```sh
 cargo build --locked --features tabletop --bin arkham-tabletop
 review_dir=$(mktemp -d /tmp/arkham-native.XXXXXX)
-mkdir -p "$review_dir/config" "$review_dir/data"
-env XDG_CONFIG_HOME="$review_dir/config" XDG_DATA_HOME="$review_dir/data" \
-  target/debug/arkham-tabletop \
-  --save "$review_dir/review.session.json" --no-art \
-  >"$review_dir/app.log" 2>&1 &
-native_pid=$!
-printf 'App PID: %s; evidence: %s\n' "$native_pid" "$review_dir"
+python3 -B scripts/native_verify.py launch \
+  --binary target/debug/arkham-tabletop --output-dir "$review_dir/run" \
+  --experiment jacqueline --no-art
 ```
 
-The example checks readable substitutes. For real artwork, replace `--no-art` with `--art-root /absolute/path/to/prepared-assets` and confirm the completeness in `app.log`. To inspect an existing save, first copy it into the new review directory and replace `--save` with `--load` pointing to that copy: the loaded path also becomes the autosave destination. Keep original saves, replays and settings untouched.
+The launcher copies and hashes the executable before starting it. Later builds cannot replace that running copy. It creates run-local configuration, data, cache, working directory and `session.json`; `--load SOURCE_SAVE` copies the supplied save before loading, because the loaded path is also the autosave destination. Original saves and settings stay untouched. The output directory must be new and outside the checkout. No-art checks readable substitutes; for real artwork use `--art-root /absolute/path/to/prepared-assets` and confirm completeness in `run/app.log`.
+
+The command stays open until the window closes and stops its own process group after 300 seconds (override with `--timeout-seconds`, maximum 3600), or on interruption. Its first JSON output and `run/run.json` identify the app PID, process start, staged executable hash, exact arguments and isolated environment. In another terminal set `review_dir` to the printed run directory (the directory ending in `/run`) and `native_pid` to the recorded **app** PID. A background launch command's `$!` is the supervisor PID, not the app PID.
 
 Run window discovery, focus, capture, process inspection and cleanup with the same desktop access and process visibility as the launch. Obtain any required tool permission for that context; a missing PID in an isolated shell does not establish that the launched process exited.
 
@@ -139,9 +136,9 @@ A `refused` command keeps the grant open. Diagnose once within that session; `{"
 
 Send `{"action":"stop"}` or close stdin when finished. EOF, fatal errors and handled interruption close the portal grant; a killed or crashed process loses its session when its D-Bus connection closes. `events.jsonl` records capture paths, pixel hashes, mapping, refusals and closure. It contains no artwork itself; keep it with the local captures.
 
-For folder persistence, exercise **Choose asset folder → check → Save folder → close**. Restart with the same temporary XDG directories and save, omitting both `--art-root` and `--no-art`, and verify that the saved path and asset status are restored. A screenshot establishes the inspected rendering; the actual interaction and restart establish their separate behavior. Any review of the owner's real preference uses its explicitly agreed scope instead of these diagnostic settings.
+For folder persistence, exercise **Choose asset folder → check → Save folder → close**. After the supervisor exits, relaunch the staged executable using the same working directory, XDG directories and save recorded in `run.json`, omitting both `--art-root` and `--no-art`. Verify that the saved path and asset status are restored; do not create a fresh isolated run for this restart check. Capture helpers must use the new PID. A screenshot establishes the inspected rendering; the actual interaction and restart establish their separate behavior. Any review of the owner's real preference uses its explicitly agreed scope instead of these diagnostic settings.
 
-Close the verification window normally and reap it with `wait "$native_pid"`. If cleanup is needed, confirm the recorded PID still belongs to this launch before terminating it, and stop only that launch and identified helper processes. Keep logs/captures local; record the revision, command, outcome and evidence location in the active issue. Remove temporary files only after the needed evidence has been retained.
+Close the verification window normally and let the launch supervisor report its exit. If cleanup is needed, interrupt that supervisor; for a manually restarted app, confirm its recorded identity before terminating it. Stop only the identified launch and helpers. Keep logs/captures local; record the revision, command, outcome and evidence location in the active issue. Remove temporary files only after the needed evidence has been retained.
 
 For a temporary instrumented source copy, use a fresh build directory outside both checkouts:
 
@@ -156,11 +153,26 @@ This runs offline, locked Cargo with an explicit separate `--target-dir`, record
 
 Protocol references: [RemoteDesktop](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html) and [ScreenCast](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html). Support and evidence remain limited to the desktop and journey actually exercised.
 
+### Capture a laggy camera
+
+When a running app is actually laggy and an owner-run CPU capture is needed, identify its PID and exact executable first. For a staged run, use `run.json`; for an ordinary launch, use `pgrep -a -x arkham-tabletop` and `readlink /proc/PID/exe`, then select the intended window/process. Do not rebuild that executable during the capture. With `perf`, `sudo` and `timeout` installed, run:
+
+```sh
+python3 -B scripts/profile_native.py \
+  --pid APP_PID --executable /absolute/path/to/arkham-tabletop \
+  --output-dir /tmp/arkham-camera-profile-UNUSED
+```
+
+The output directory must not exist. The command verifies process identity, announces the interaction, authenticates sudo, then counts down five seconds. **As the countdown starts, switch to the app and continuously right-drag to orbit and scroll to zoom. Continue through the ten-second capture.** The terminal reports completion, the `perf.data` path and byte size. `--seconds` accepts 1–60 and `--countdown` 1–10. Logs and failed/partial captures are preserved separately from a completed result; use a fresh directory for a retry.
+
+This wrapper does not change kernel profiling settings or run a permanent service. A nonempty capture proves collection, not that it contains the reported lag or explains its cause. Keep the capture local and record whether the symptom occurred during this interval before interpreting it.
+
 ### Visual and wording review
 
 Before handing a tabletop change to Joel, review the affected player journey through the native window, including existing cards and panels encountered along the way. Use the verification procedure above and record the states and viewport exercised. Apply the relevant checks below; a local change does not require replaying unrelated cases.
 
 - **Card inspection:** original faces are upright in their intended orientation, including landscape investigators. Printed text is readable in inspection; scrolling and Close remain usable at the exercised window size. Inspect the real artwork and the readable substitutes when their layout is affected.
+- **Existing visual behavior:** when a change introduces an already represented object, compare it with the established experiment at a comparable camera and viewport. Check token thickness, face artwork, label backing, colors and card orientation in both art and substitute modes as relevant. Preserve the useful existing behavior or explain the intentional difference in the PR; two implementations alone do not justify two visual standards.
 - **Decision states:** committing a card, spending a reaction and canceling or resolving a token are visibly distinguishable. Follow the transition as well as the final state. Replay navigation reflects whether another moment exists in that direction.
 - **Rules wording:** headings identify recognizable cards or events. Explanations connect modifiers, extra reveals and consequences to their cause. Distinguish an unchanged total from a new effect; wording such as “now has” must correspond to a change. Judge these statements against the accepted rules and recorded events.
 - **Results and continuity:** the outcome and its consequences are easy to find. Dismiss and reopen inspection/results along the affected path; settled pieces stay settled, an animation already in progress continues, and panel actions preserve game state. Walk the corresponding recorded moments forward and back, including manual camera override when camera or replay behavior changes.

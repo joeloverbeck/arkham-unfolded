@@ -2,6 +2,51 @@ use super::*;
 use bevy::camera::primitives::MeshAabb;
 use std::time::Duration;
 
+#[test]
+fn launch_uses_configured_root_without_creating_a_preference() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = dir.path().join("tony.toml");
+    let default_root = dir.path().join("prepared-tony");
+    let options = Options::parse_from(
+        ["--experiment", "tony"].map(str::to_owned),
+        AssetConfig::load_at(settings.clone(), default_root.clone()),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(options.art_root, Some(default_root));
+    assert!(!settings.exists());
+}
+
+#[test]
+fn launch_overrides_leave_saved_tony_preference_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = dir.path().join("tony.toml");
+    let default_root = dir.path().join("default-tony");
+    let chosen_root = dir.path().join("chosen-tony");
+    let mut config = AssetConfig::load_at(settings.clone(), default_root.clone());
+    config.save_root(&chosen_root).unwrap();
+    let saved_bytes = std::fs::read(&settings).unwrap();
+
+    for (args, expected) in [
+        (vec!["--experiment", "tony"], Some(chosen_root.clone())),
+        (
+            vec!["--experiment", "tony", "--art-root", "temporary-art"],
+            Some(PathBuf::from("temporary-art")),
+        ),
+        (vec!["--experiment", "tony", "--no-art"], None),
+    ] {
+        let options = Options::parse_from(
+            args.into_iter().map(str::to_owned),
+            AssetConfig::load_at(settings.clone(), default_root.clone()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(options.art_root, expected);
+        assert_eq!(options.config.root(), chosen_root);
+        assert_eq!(std::fs::read(&settings).unwrap(), saved_bytes);
+    }
+}
+
 fn presentation_app(path: PathBuf) -> App {
     let (mut app, _) = scene_app();
     app.world_mut().resource_mut::<Table>().save_path = path.clone();

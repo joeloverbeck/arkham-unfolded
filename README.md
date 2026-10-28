@@ -13,11 +13,10 @@ On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment tony \
-  --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
+  --experiment tony
 ```
 
-The `--experiment tony` option selects the new turn. The explicit asset folder selects its matching artwork even when a previous preference points to Jacqueline's collection. If that folder has not been prepared, use the preparation instructions below; missing artwork leaves readable substitutes.
+The `--experiment tony` option selects the new turn and its own artwork preference. Without a saved preference, it uses the current Tony collection below. The terminal reports the experiment, resolved artwork folder and completeness at startup. If artwork has not been prepared, use the preparation instructions below; missing artwork leaves readable substitutes.
 
 If your checkout is elsewhere, replace the directory in the first line. This requires Rust/Cargo 1.97.1 or later and an Ubuntu graphics session with X11/XWayland and Vulkan. The first launch downloads and compiles dependencies, which can take several minutes. Later launches reuse the build. Keep the terminal open while playing. The native window retains the title **Arkham Unfolded — Scripted Rules Experiment**; the heading inside must say **Tony turn / The Gathering / Standard**.
 
@@ -47,9 +46,11 @@ cargo run --locked --bin arkham-assets -- check-tony \
 
 This prepares 27 selected images and one symbol font, including the player-card back and damage/horror counters, in a separate collection. Earlier `tony-assets` and `tony-assets-v2` collections remain usable for their existing artwork but lack the new harm artwork/font; the original collection also lacks the deck back. Prepare the fresh `tony-assets-v3` folder and use the launch command above. The source archive and any existing Jacqueline collection stay unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
 
-These folder versions preserve earlier prepared files during development; they do not select different game rules. Ordinary Tony play uses the current collection above. Reusing an older launch command can leave new artwork and glyphs unavailable even after updating the application.
+These folder versions preserve earlier prepared files during development; they do not select different game rules. The ordinary launch command stays the same when the application's default collection changes. An explicitly saved folder or an old command containing `--art-root` continues to select that folder; use **Choose asset folder** to change a saved selection.
 
-**Choose asset folder** in the side panel checks a prepared folder and saves its location for the next launch. Scroll the panel if needed. The native folder dialog uses Ubuntu's `zenity` package. The preference is shared by the experiment modes; use the explicit `--art-root` commands in their guides when switching between their separate collections. Settings live in `$XDG_CONFIG_HOME/arkham-unfolded/config.toml`, normally `~/.config/arkham-unfolded/config.toml`. Relative XDG overrides are ignored. Without a command-line override or saved preference, the generic asset root is `$XDG_DATA_HOME/arkham-unfolded/assets`, normally `~/.local/share/arkham-unfolded/assets`.
+**Choose asset folder** in the side panel checks a prepared folder and saves its location for the next launch of that experiment. Scroll the panel if needed. The native folder dialog uses Ubuntu's `zenity` package. Settings are separate: Tony uses `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml`; Jacqueline retains `config.toml` in the same directory. The normal configuration directory is `~/.config/arkham-unfolded`. Existing `config.toml` contents remain unchanged and apply only to Jacqueline.
+
+Without a command-line override or saved preference, Tony uses `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v3` and Jacqueline uses `$XDG_DATA_HOME/arkham-unfolded/assets`. The normal data directory is `~/.local/share`; relative XDG overrides are ignored. Preparation examples above use that normal location; with a custom `XDG_DATA_HOME`, prepare there or save the actual folder through the app.
 
 A temporary `--art-root PATH` overrides the saved setting for that launch. Replace that option and its path with `--no-art` to use readable substitutes. Copy the whole prepared folder, including `manifest.json`, to relocate it:
 
@@ -63,11 +64,10 @@ The check reports missing or changed files and exits unsuccessfully for an incom
 
 ## Earlier Jacqueline experiment
 
-The no-argument application mode retains the earlier Jacqueline skill-test experiment and its records. To launch it with its prepared artwork:
+The no-argument application mode retains the earlier Jacqueline skill-test experiment, its records and its own artwork preference:
 
 ```sh
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --art-root "$HOME/.local/share/arkham-unfolded/assets"
+cargo run --locked --features tabletop --bin arkham-tabletop
 ```
 
 Its saves use `local/experiment/curse.session.json`. See the [Jacqueline guide](docs/experiments/jacqueline-curse.md#build-and-run) for the first clicks, alternate case and legacy asset preparation. Tony and Jacqueline records use separate readers; there is no automatic migration.

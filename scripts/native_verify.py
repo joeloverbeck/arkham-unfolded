@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -20,6 +21,16 @@ REPOSITORY = Path(__file__).resolve().parent.parent
 
 class Refused(RuntimeError):
     """A diagnostic precondition was not established; send no new press."""
+
+
+def process_identity(pid):
+    proc = Path("/proc") / str(pid)
+    try:
+        # comm may contain spaces or parentheses; starttime follows the final ')'.
+        start = (proc / "stat").read_text().rsplit(")", 1)[1].split()[19]
+        return start, os.readlink(proc / "exe")
+    except (OSError, IndexError) as error:
+        raise Refused("App process is absent or not visible here") from error
 
 
 def command(*args):
@@ -85,13 +96,7 @@ class Desktop:
         self.x.XSetErrorHandler(self.previous_handler)
 
     def process_identity(self):
-        proc = Path("/proc") / str(self.pid)
-        try:
-            # comm may contain spaces or parentheses; starttime follows the final ')'.
-            start = (proc / "stat").read_text().rsplit(")", 1)[1].split()[19]
-            return start, os.readlink(proc / "exe")
-        except (OSError, IndexError) as error:
-            raise Refused("App process is absent or not visible here") from error
+        return process_identity(self.pid)
 
     def focus(self):
         self.verify(require_focus=False)
@@ -376,6 +381,110 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def launch_diagnostic(args):
+    directory = args.output_dir.resolve()
+    binary = args.binary.resolve(strict=True)
+    source_save = args.load.resolve(strict=True) if args.load else None
+    if directory.is_relative_to(REPOSITORY):
+        raise Refused("Diagnostic run must be outside the source checkout")
+    if os.path.lexists(args.output_dir):
+        raise Refused("Use a fresh diagnostic directory; existing runs are preserved")
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        raise Refused("Selected binary must be an executable file")
+    if source_save and not source_save.is_file():
+        raise Refused("Selected save must be a file")
+    if not math.isfinite(args.timeout_seconds) or not 0 < args.timeout_seconds <= 3600:
+        raise Refused("Launch timeout must be greater than zero and at most 3600 seconds")
+    if args.quit_after_screenshot and not args.screenshot:
+        raise Refused("--quit-after-screenshot requires --screenshot NAME.png")
+    screenshot = capture_path(directory, args.screenshot) if args.screenshot else None
+    directory.mkdir(parents=True)
+    staged = directory / 'arkham-tabletop'
+    before = digest(binary)
+    shutil.copyfile(binary, staged)
+    if digest(staged) != before or digest(binary) != before:
+        raise Refused("Selected binary changed while staging; retry in a fresh directory")
+    staged.chmod(0o555)
+    save = directory / 'session.json'
+    save_digest = None
+    if source_save:
+        save_digest = digest(source_save)
+        shutil.copyfile(source_save, save)
+        if digest(save) != save_digest or digest(source_save) != save_digest:
+            raise Refused("Selected save changed while copying; retry in a fresh directory")
+    isolated = {name: str(directory / child) for name, child in (
+        ('XDG_CONFIG_HOME', 'config'), ('XDG_DATA_HOME', 'data'), ('XDG_CACHE_HOME', 'cache'))}
+    for path in isolated.values():
+        Path(path).mkdir()
+    argv = [str(staged)]
+    if args.experiment == 'tony':
+        argv += ['--experiment', 'tony']
+    argv += ['--load' if source_save else '--save', str(save)]
+    if args.art_root:
+        argv += ['--art-root', str(args.art_root.resolve())]
+    elif args.no_art:
+        argv += ['--no-art']
+    if screenshot:
+        argv += ['--screenshot', str(screenshot)]
+    if args.quit_after_screenshot:
+        argv += ['--quit-after-screenshot']
+    metadata = {
+        'status': 'staged', 'source_binary': str(binary), 'binary': str(staged),
+        'sha256': before, 'argv': argv, 'cwd': str(directory), 'environment': isolated,
+        'save': str(save), 'source_save': str(source_save) if source_save else None,
+        'source_save_sha256': save_digest, 'log': str(directory / 'app.log'),
+        'timeout_seconds': args.timeout_seconds,
+    }
+
+    def record():
+        temporary = directory / 'run.json.tmp'
+        temporary.write_text(json.dumps(metadata, indent=2) + '\n')
+        temporary.replace(directory / 'run.json')
+
+    record()
+    with (directory / 'app.log').open('xb') as log:
+        process = subprocess.Popen(argv, cwd=directory, env={**os.environ, **isolated},
+                                   stdin=subprocess.DEVNULL, stdout=log,
+                                   stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            metadata['pid'] = process.pid
+            start, executable = process_identity(process.pid)
+            metadata.update(status='running', start_ticks=start, executable=executable,
+                            executable_sha256=digest(Path('/proc') / str(process.pid) / 'exe'))
+            record()
+            print(json.dumps(metadata), flush=True)
+            try:
+                code = process.wait(timeout=args.timeout_seconds)
+                metadata['status'] = 'exited'
+            except subprocess.TimeoutExpired:
+                code = 124
+                metadata['status'] = 'timed-out'
+        except BaseException:
+            metadata['status'] = 'interrupted-or-failed'
+            raise
+        finally:
+            # Only this launch owns the new session/process group. Leave no app
+            # running when the supervisor times out, is interrupted, or fails.
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            finally:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=2)
+            metadata['returncode'] = process.returncode
+            record()
+    print(json.dumps(metadata), flush=True)
+    return code if code >= 0 else 128 - code
+
+
 def build_diagnostic(source, directory, reference):
     source, directory, reference = (Path(p).resolve() for p in (source, directory, reference))
     if directory.is_relative_to(source) or directory.is_relative_to(REPOSITORY):
@@ -413,12 +522,25 @@ def main():
     build.add_argument('--source', type=Path, default=REPOSITORY)
     build.add_argument('--output-dir', type=Path, required=True)
     build.add_argument('--reference', type=Path, default=REPOSITORY / 'target/debug/arkham-tabletop')
+    launch = modes.add_parser('launch', help='stage a fixed binary and supervise an isolated native run')
+    launch.add_argument('--binary', type=Path, default=REPOSITORY / 'target/debug/arkham-tabletop')
+    launch.add_argument('--output-dir', type=Path, required=True)
+    launch.add_argument('--experiment', choices=('jacqueline', 'tony'), default='jacqueline')
+    launch.add_argument('--load', type=Path, help='copy this save before opening it; never autosave to the original')
+    art = launch.add_mutually_exclusive_group()
+    art.add_argument('--art-root', type=Path)
+    art.add_argument('--no-art', action='store_true')
+    launch.add_argument('--screenshot', help='plain PNG filename inside the fresh run directory')
+    launch.add_argument('--quit-after-screenshot', action='store_true')
+    launch.add_argument('--timeout-seconds', type=float, default=300)
     args = parser.parse_args()
 
     def interrupted(_signum, _frame):
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, interrupted)
+    if args.mode == 'launch':
+        return launch_diagnostic(args)
     if args.mode == 'build':
         print(json.dumps(build_diagnostic(args.source, args.output_dir, args.reference)), flush=True)
         return
@@ -444,7 +566,7 @@ def main():
 
 if __name__ == '__main__':
     try:
-        main()
+        sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(130)
     except (Refused, OSError, ImportError, subprocess.CalledProcessError) as error:

@@ -1,8 +1,12 @@
 # Arkham Unfolded
 
-Terms for this application's game presentation and its external source material.
+Terms for this application's play, presentation and external source material.
 
 ## Language
+
+**Prepared position**:
+An explicitly arranged game state from which a bounded play task begins. It does not imply that campaign setup or the preceding turns have been played through.
+_Avoid_: Fresh campaign, scripted outcome
 
 **Source archive**:
 The externally owned Arkham Horror LCG resource collection from which material is selected for this application. It remains intact when selected assets are prepared for use.
