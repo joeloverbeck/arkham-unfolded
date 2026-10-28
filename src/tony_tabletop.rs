@@ -23,6 +23,10 @@ use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::PathBuf};
 
 const PANEL_WIDTH: f32 = 430.0;
+const CARD_WIDTH: f32 = 1.35;
+const CARD_LENGTH: f32 = 1.89;
+// Card-stock thickness at this scene's scale; 32 cards occupy 0.208 units.
+const CARD_THICKNESS: f32 = 0.0065;
 const INK: Color = Color::srgb(0.035, 0.055, 0.065);
 const PAPER: Color = Color::srgb(0.91, 0.89, 0.81);
 const MUTED: Color = Color::srgb(0.65, 0.74, 0.73);
@@ -216,6 +220,8 @@ struct Panel;
 #[derive(Component)]
 struct Scene;
 #[derive(Component)]
+struct PlayerDeck;
+#[derive(Component)]
 struct MainCamera;
 #[derive(Component)]
 struct WorldLabel(Vec3);
@@ -342,6 +348,7 @@ pub fn run() -> Result<(), String> {
     let roles = CARDS
         .iter()
         .map(|c| format!("card/{}", c.code))
+        .chain(["card-back/player".to_owned()])
         .chain(["06003", "06005", "60401"].map(|c| format!("standee/{c}")))
         .chain(
             [
@@ -602,7 +609,7 @@ fn card_mesh(
     };
     commands
         .spawn((
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(1.35, 1.89))),
+            Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
             MeshMaterial3d(material),
             Transform::from_translation(at).with_rotation(Quat::from_rotation_y(rotation)),
             Scene,
@@ -610,6 +617,56 @@ fn card_mesh(
         .observe(move |_: On<PointerClick>, mut queue: ResMut<Actions>| {
             queue.0.push(Action::Inspect(index))
         });
+}
+fn deck_mesh(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    art: &Art,
+    count: usize,
+) {
+    if count == 0 {
+        return;
+    }
+    // Sit on the tabletop. Shared geometry/materials keep the individual edges cheap.
+    let base = Vec3::new(4.8, -0.05, 2.5);
+    let card = meshes.add(Cuboid::new(CARD_WIDTH, CARD_THICKNESS, CARD_LENGTH));
+    let edges = [Color::srgb(0.76, 0.73, 0.65), Color::srgb(0.57, 0.55, 0.49)].map(|color| {
+        materials.add(StandardMaterial {
+            base_color: color,
+            perceptual_roughness: 1.0,
+            ..default()
+        })
+    });
+    for layer in 0..count {
+        commands.spawn((
+            Mesh3d(card.clone()),
+            MeshMaterial3d(edges[layer % edges.len()].clone()),
+            Transform::from_translation(base + Vec3::Y * ((layer as f32 + 0.5) * CARD_THICKNESS)),
+            Scene,
+            PlayerDeck,
+            Pickable::IGNORE,
+        ));
+    }
+    let image = art.image("card-back/player");
+    commands.spawn((
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: if image.is_some() {
+                Color::WHITE
+            } else {
+                Color::srgb(0.12, 0.19, 0.30)
+            },
+            base_color_texture: image,
+            unlit: true,
+            depth_bias: 1.0,
+            ..default()
+        })),
+        Transform::from_translation(base + Vec3::Y * (count as f32 * CARD_THICKNESS)),
+        Scene,
+        PlayerDeck,
+        Pickable::IGNORE,
+    ));
 }
 fn token_role(face: TokenFace) -> &'static str {
     match face {
@@ -758,13 +815,13 @@ fn synchronize_scene(
             );
         }
     }
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.2, 0.16, 1.7))),
-        MeshMaterial3d(materials.add(Color::srgb(0.16, 0.12, 0.20))),
-        Transform::from_xyz(4.8, 0.08, 2.5),
-        Scene,
-        Pickable::IGNORE,
-    ));
+    deck_mesh(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &art,
+        view.deck_count,
+    );
     world_label(
         &mut commands,
         format!("Tony's deck\n{} cards", view.deck_count),
@@ -1105,3 +1162,6 @@ fn capture_window(
         exit.write(AppExit::Success);
     }
 }
+
+#[cfg(test)]
+mod tests;

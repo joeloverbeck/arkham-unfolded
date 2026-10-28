@@ -6,10 +6,12 @@
 
 ```sh
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets"
+  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
 ```
 
 Use the visible legal choices to fight, evade, investigate, draw, gain a resource, engage an eligible enemy, remove Injury, or end early. Tony's first qualifying Fight/Engage automatically spends his additional action. Each skill test offers card commitments, then a genuinely random Standard token draw and its resolution. The fixed hidden draw pile begins Guts, Guts, On the Hunt. Guts has no matching icons in this turn.
+
+Tony’s face-down deck has one card-thickness per remaining card, visible layered edges and the standard player-card back on top. Drawing lowers the stack; replay shows the recorded deck count.
 
 The panel explains remaining actions, costs and consequences. Inspect cards for readable text and available artwork. Camera controls remain right drag/arrow keys to orbit, wheel or +/- to zoom, and Home to reset. Manual movement overrides replay following.
 
@@ -44,16 +46,16 @@ Report any failed control, confusing consequence or unreadable view; whether sav
 
 ## External artwork and source custody
 
-Prepare a separate collection; existing Jacqueline collections are retained:
+Prepare the current 25-image collection, including the player-card back, in a fresh folder; earlier Tony and Jacqueline collections are retained:
 
 ```sh
 cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
-  --output "$HOME/.local/share/arkham-unfolded/tony-assets"
+  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
 cargo run --locked --bin arkham-assets -- check-tony \
-  "$HOME/.local/share/arkham-unfolded/tony-assets"
+  "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets"
+  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
 ```
 
 Use the in-app asset folder selection to save a preference for later launches. `--art-root` is temporary; `--no-art` uses readable substitutes. The program reads verified prepared files, never the source archive. A new collection must use a fresh destination; partial/conflicting collections are preserved and reported. All third-party image/font bytes remain outside Git.

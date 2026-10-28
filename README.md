@@ -14,7 +14,7 @@ On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 cd /home/joeloverbeck/src/arkham-unfolded
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
   --experiment tony \
-  --art-root "$HOME/.local/share/arkham-unfolded/tony-assets"
+  --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
 ```
 
 The `--experiment tony` option selects the new turn. The explicit asset folder selects its matching artwork even when a previous preference points to Jacqueline's collection. If that folder has not been prepared, use the preparation instructions below; missing artwork leaves readable substitutes.
@@ -40,12 +40,12 @@ The developer/agent prepares the selected files once; ordinary play needs only t
 ```sh
 cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
-  --output "$HOME/.local/share/arkham-unfolded/tony-assets"
+  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
 cargo run --locked --bin arkham-assets -- check-tony \
-  "$HOME/.local/share/arkham-unfolded/tony-assets"
+  "$HOME/.local/share/arkham-unfolded/tony-assets-v2"
 ```
 
-This prepares 24 selected images in a separate collection. The source archive and any existing Jacqueline collection stay unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
+This prepares 25 selected images, including the player-card back, in a separate collection. Earlier `tony-assets` collections remain usable for their existing artwork but lack the deck back; prepare the fresh `tony-assets-v2` folder and use the launch command above. The source archive and any existing Jacqueline collection stay unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
 
 **Choose asset folder** in the side panel checks a prepared folder and saves its location for the next launch. Scroll the panel if needed. The native folder dialog uses Ubuntu's `zenity` package. The preference is shared by the experiment modes; use the explicit `--art-root` commands in their guides when switching between their separate collections. Settings live in `$XDG_CONFIG_HOME/arkham-unfolded/config.toml`, normally `~/.config/arkham-unfolded/config.toml`. Relative XDG overrides are ignored. Without a command-line override or saved preference, the generic asset root is `$XDG_DATA_HOME/arkham-unfolded/assets`, normally `~/.local/share/arkham-unfolded/assets`.
 

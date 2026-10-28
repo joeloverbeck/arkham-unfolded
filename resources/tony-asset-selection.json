@@ -1,8 +1,8 @@
 {
   "format_version": 1,
-  "collection": "arkham-unfolded-tony-turn-v1",
+  "collection": "arkham-unfolded-tony-turn-v2",
   "source_archive_release": "v1.22.11",
-  "selection": "Exact English card sides from GitHub #22; revealed Study uses its reverse. Original SCE circular chaos-token set, blue Elder Sign (not elder thing). Runtime uses only this prepared collection; original bytes remain outside Git.",
+  "selection": "Exact English card sides from GitHub #22; revealed Study uses its reverse. Original SCE circular chaos-token set, blue Elder Sign (not elder thing). Runtime uses only this prepared collection; original bytes remain outside Git. The standard player back is selected from the same On the Hunt variant for the face-down deck.",
   "assets": [
     {
       "role": "card/06003",
@@ -360,6 +360,21 @@
         "bytes": 1440502
       },
       "evidence": "Original SCE 1024px circular token set; token-p1; asset f831a012dce4da805274aa87e183b967fad5284ad563452cd9390c93e2f361ba",
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "role": "card-back/player",
+      "path": "cards/player-back.png",
+      "sha256": "f99036b94381c0699910654568ea69957d5004256b2f5a0d5657f92ae159a1d2",
+      "bytes": 1687056,
+      "source": {
+        "path": "images/cards/official/en/sce-base-save/The Path to Carcosa/03263--On the Hunt/3914f45d3bcf7d81/back.png",
+        "sha256": "f99036b94381c0699910654568ea69957d5004256b2f5a0d5657f92ae159a1d2",
+        "bytes": 1687056
+      },
+      "evidence": "GitHub #22 owner deck-presentation follow-up: visually inspected standard player back, 750x1050 PNG RGBA. Catalog card 03263, variant 3914f45d3bcf7d81, unique_back=false, back_is_hidden=true, 1x1 grid slot 0; original source bytes copied unchanged.",
       "transform": {
         "kind": "copy"
       }
