@@ -2,7 +2,7 @@
 
 use super::{
     Action, Actions, Art, BUTTON, ButtonTone, CARDS, GOLD, MUTED, PAPER, Panel, Run, Symbol,
-    scroll_panel, symbol_text, text,
+    scroll_panel, symbol_text,
 };
 use bevy::{
     input_focus::tab_navigation::{TabGroup, TabIndex},
@@ -76,7 +76,7 @@ pub(super) fn show(commands: &mut Commands, art: &Art, index: usize, viewport: V
                         })
                         .with_children(|header| {
                             header.spawn((
-                                text(card.title, 28.0, GOLD),
+                                art.text(card.title, 28.0, GOLD),
                                 Node {
                                     flex_grow: 1.0,
                                     min_width: px(0),
@@ -104,7 +104,7 @@ pub(super) fn show(commands: &mut Commands, art: &Art, index: usize, viewport: V
                                 .observe(|_: On<Activate>, mut queue: ResMut<Actions>| {
                                     queue.0.push(Action::CloseInspect);
                                 })
-                                .with_child(text("Close card", 16.0, PAPER));
+                                .with_child(art.text("Close card", 16.0, PAPER));
                         });
                     panel
                         .spawn((
@@ -212,7 +212,7 @@ fn show_text(parent: &mut ChildSpawnerCommands, art: &Art, index: usize) {
             MUTED,
         );
     } else {
-        parent.spawn(text(card.kind, 18.0, MUTED));
+        parent.spawn(art.text(card.kind, 18.0, MUTED));
     }
     match index {
         0 => symbol_text(
@@ -240,7 +240,7 @@ fn show_text(parent: &mut ChildSpawnerCommands, art: &Art, index: usize) {
             PAPER,
         ),
         _ => {
-            parent.spawn(text(card.text, 20.0, PAPER));
+            parent.spawn(art.text(card.text, 20.0, PAPER));
         }
     }
 }

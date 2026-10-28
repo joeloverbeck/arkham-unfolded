@@ -80,6 +80,40 @@ fn chaos_token_transform(app: &mut App) -> Transform {
 }
 
 #[test]
+fn revealed_chaos_token_has_a_thick_body_and_a_separate_face() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = presentation_app(directory.path().join("turn.json"));
+    let image = app
+        .world_mut()
+        .resource_mut::<Assets<Image>>()
+        .add(Image::default());
+    app.world_mut()
+        .resource_mut::<Art>()
+        .handles
+        .insert("token/tablet".into(), image);
+    final_tablet_reveal(&mut app);
+    let world = app.world_mut();
+    let (mesh, children) = world
+        .query_filtered::<(&Mesh3d, Option<&Children>), With<ChaosToken>>()
+        .single(world)
+        .unwrap();
+    let bounds = world
+        .resource::<Assets<Mesh>>()
+        .get(mesh)
+        .unwrap()
+        .get_aabb()
+        .unwrap();
+    assert!(
+        bounds.half_extents.min_element() > 0.04,
+        "a chaos token must have physical thickness"
+    );
+    assert!(
+        children.is_some_and(|c| !c.is_empty()),
+        "the face must sit on the disk body"
+    );
+}
+
+#[test]
 fn finishing_one_harm_preserves_the_following_fight_and_injury() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("turn.json");
@@ -168,6 +202,54 @@ fn risky_actions_show_the_attack_before_the_player_commits() {
     );
     assert_eq!(app.world().resource::<Table>().session.observe().damage, 0);
     assert!(!directory.path().join("turn.json").exists());
+}
+
+#[test]
+fn harm_symbols_reach_warnings_counts_stages_card_text_and_history() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = presentation_app(directory.path().join("turn.json"));
+    app.world_mut().resource_mut::<Art>().symbol_font = Some(Handle::default());
+    app.update();
+    fn check(app: &mut App, label_contains: &str, damage: bool, horror: bool) {
+        let world = app.world_mut();
+        let (_, children) = world
+            .query::<(&AccessibleLabel, &Children)>()
+            .iter(world)
+            .find(|(label, _)| label.0.contains(label_contains))
+            .unwrap_or_else(|| panic!("missing readable label: {label_contains}"));
+        let spans: Vec<_> = children
+            .iter()
+            .filter_map(|entity| {
+                Some((
+                    world.get::<TextSpan>(entity)?,
+                    world.get::<TextColor>(entity)?,
+                ))
+            })
+            .collect();
+        for (expected, glyph, color) in [
+            (damage, 'Q', crate::tabletop_harm_text::DAMAGE_COLOR),
+            (horror, 'R', crate::tabletop_harm_text::HORROR_COLOR),
+        ] {
+            if expected {
+                assert!(
+                    spans
+                        .iter()
+                        .any(|(text, tint)| text.0.contains(glyph) && tint.0 == color)
+                );
+            }
+        }
+    }
+    check(&mut app, "Attack of opportunity: Ghoul Minion", true, true);
+    check(&mut app, "Resources 5", true, true);
+    choose(&mut app, "investigate");
+    check(&mut app, "+1 Damage", true, false);
+    check(&mut app, "+1 Horror", false, true);
+    act(&mut app, Action::Inspect(2));
+    check(&mut app, "Attack: 1 damage and 1 horror", true, true);
+    act(&mut app, Action::Close);
+    act(&mut app, Action::FinishAnimation);
+    act(&mut app, Action::History);
+    check(&mut app, "1 damage and 1 horror", true, true);
 }
 
 #[test]

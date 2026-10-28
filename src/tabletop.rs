@@ -162,6 +162,12 @@ struct Art {
     status: String,
 }
 
+impl Art {
+    fn text(&self, value: impl Into<String>, size: f32, color: Color) -> impl Bundle {
+        crate::tabletop_harm_text::ui(value, size, color, &self.symbol_font)
+    }
+}
+
 #[derive(Resource)]
 struct Capture {
     path: Option<PathBuf>,
@@ -828,26 +834,25 @@ fn symbol_text(
         ))
         .with_children(|parent| {
             for run in runs {
-                let (value, text_font) = match run {
-                    Run::Icon(symbol) => (
-                        // Keep an adjacent quantity with its symbol across font runs.
-                        // NBSP can still break on overflow in the pinned renderer.
-                        format!("\u{2060}{}\u{2060}", symbol.glyph()),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(size.max(18.0) * 1.35),
-                            ..default()
-                        },
-                    ),
-                    Run::Words(words) => (
-                        readable_text((*words).to_owned()),
-                        TextFont {
-                            font_size: FontSize::Px(size),
-                            ..default()
-                        },
-                    ),
-                };
-                parent.spawn((TextSpan::new(value), text_font, TextColor(color)));
+                match run {
+                    Run::Icon(symbol) => {
+                        parent.spawn((
+                            // Keep an adjacent quantity with its symbol across font runs.
+                            TextSpan::new(format!("\u{2060}{}\u{2060}", symbol.glyph())),
+                            TextFont {
+                                font: font.clone().into(),
+                                font_size: FontSize::Px(size.max(18.0) * 1.35),
+                                ..default()
+                            },
+                            TextColor(symbol.color().unwrap_or(color)),
+                        ));
+                    }
+                    Run::Words(words) => {
+                        for span in crate::tabletop_harm_text::spans(words, size, color, font) {
+                            parent.spawn(span);
+                        }
+                    }
+                }
             }
         });
 }
@@ -877,7 +882,13 @@ fn skill_summary(
     );
 }
 
-fn button(parent: &mut ChildSpawnerCommands, label: &str, action: Action, primary: bool) {
+fn button(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    label: &str,
+    action: Action,
+    primary: bool,
+) {
     let tone = if primary { TEAL } else { BUTTON };
     parent
         .spawn((
@@ -896,7 +907,7 @@ fn button(parent: &mut ChildSpawnerCommands, label: &str, action: Action, primar
             ButtonTone(tone),
         ))
         .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| queue.0.push(action.clone()))
-        .with_child(text(label, 16.0, PAPER));
+        .with_child(art.text(label, 16.0, PAPER));
 }
 
 fn rebuild_panel(
@@ -929,13 +940,9 @@ fn rebuild_panel(
             Panel,
         ))
         .with_children(|parent| {
-            parent.spawn(text("ARKHAM  /  UNFOLDED", 28.0, GOLD));
-            parent.spawn(text(
-                "Scripted rules experiment · The Gathering",
-                16.0,
-                PAPER,
-            ));
-            parent.spawn(text(
+            parent.spawn(art.text("ARKHAM  /  UNFOLDED", 28.0, GOLD));
+            parent.spawn(art.text("Scripted rules experiment · The Gathering", 16.0, PAPER));
+            parent.spawn(art.text(
                 "Prepared token order · one skill-test rules case",
                 13.0,
                 MUTED,
@@ -952,7 +959,7 @@ fn rebuild_panel(
             Pickable::IGNORE,
             Panel,
         ))
-        .with_child(text(
+        .with_child(art.text(
             "Right drag / arrows: orbit    Wheel / + −: zoom    Home: reset    F12: capture",
             13.0,
             MUTED,
@@ -980,23 +987,24 @@ fn rebuild_panel(
             let mode = table.replay.as_ref().map_or("LIVE DECISION".into(), |r| {
                 format!("REPLAY  ·  MOMENT {} / {}", r.index() + 1, r.len())
             });
-            parent.spawn(text(mode, 13.0, GOLD));
-            parent.spawn(text("Rotting Remains", 27.0, PAPER));
+            parent.spawn(art.text(mode, 13.0, GOLD));
+            parent.spawn(art.text("Rotting Remains", 27.0, PAPER));
             skill_summary(parent, &art, &view, 17.0, GOLD);
             if view.stage == Stage::Finished && has_resolved_curse(&view) {
-                parent.spawn(text("Curse: −2. Reveal another token.", 19.0, GOLD));
-                parent.spawn(text(
+                parent.spawn(art.text("Curse: −2. Reveal another token.", 19.0, GOLD));
+                parent.spawn(art.text(
                     "Inspect the additional token, then choose Show test result when ready.",
                     16.0,
                     PAPER,
                 ));
             } else {
-                parent.spawn(text(&view.prompt, 19.0, PAPER));
+                parent.spawn(art.text(&view.prompt, 19.0, PAPER));
             }
             if table.replay.is_none() {
                 for choice in &view.choices {
                     button(
                         parent,
+                        &art,
                         &choice.label,
                         Action::Choose(view.revision, choice.id.clone()),
                         choice.id != "end",
@@ -1004,15 +1012,15 @@ fn rebuild_panel(
                 }
             } else if let Some(replay) = &table.replay {
                 if replay.index() + 1 < replay.len() {
-                    button(parent, "Next moment  →", Action::Next, true);
+                    button(parent, &art, "Next moment  →", Action::Next, true);
                 }
                 if replay.index() > 0 {
-                    button(parent, "←  Previous moment", Action::Back, false);
+                    button(parent, &art, "←  Previous moment", Action::Back, false);
                 }
-                button(parent, "Return to live session", Action::Live, false);
+                button(parent, &art, "Return to live session", Action::Live, false);
             }
             if matches!(view.stage, Stage::Finished) {
-                parent.spawn(text(
+                parent.spawn(art.text(
                     format!("{} horror from this test", view.horror_dealt),
                     20.0,
                     if view.horror_dealt > 0 {
@@ -1021,9 +1029,9 @@ fn rebuild_panel(
                         Color::srgb(0.50, 0.80, 0.67)
                     },
                 ));
-                button(parent, "Show test result", Action::ShowResult, true);
+                button(parent, &art, "Show test result", Action::ShowResult, true);
             }
-            parent.spawn(text(
+            parent.spawn(art.text(
                 format!(
                     "Curse pool: {} / 10\nJacqueline's reaction: {}",
                     view.curses_in_pool,
@@ -1036,21 +1044,22 @@ fn rebuild_panel(
                 14.0,
                 MUTED,
             ));
-            parent.spawn(text(&table.notice, 14.0, PAPER));
+            parent.spawn(art.text(&table.notice, 14.0, PAPER));
             parent.spawn((Node {
                 flex_grow: 1.0,
                 ..default()
             },));
-            button(parent, "Save live session", Action::Save, false);
-            button(parent, "Reopen saved session", Action::Reopen, false);
+            button(parent, &art, "Save live session", Action::Save, false);
+            button(parent, &art, "Reopen saved session", Action::Reopen, false);
             if table.replay.is_none() {
-                button(parent, "Open recorded replay", Action::Replay, false);
+                button(parent, &art, "Open recorded replay", Action::Replay, false);
             }
             if matches!(view.stage, Stage::Finished | Stage::Ended) {
-                button(parent, "Start another example", Action::New, false);
+                button(parent, &art, "Start another example", Action::New, false);
             }
             button(
                 parent,
+                &art,
                 if table.history {
                     "Hide action history"
                 } else {
@@ -1062,6 +1071,7 @@ fn rebuild_panel(
             if table.replay.is_some() {
                 button(
                     parent,
+                    &art,
                     if orbit.follow {
                         "Camera: following · switch to manual"
                     } else {
@@ -1071,9 +1081,15 @@ fn rebuild_panel(
                     false,
                 );
             }
-            button(parent, "Choose asset folder", Action::AssetFolder, false);
-            parent.spawn(text(&art.status, 12.0, MUTED));
-            parent.spawn(text(
+            button(
+                parent,
+                &art,
+                "Choose asset folder",
+                Action::AssetFolder,
+                false,
+            );
+            parent.spawn(art.text(&art.status, 12.0, MUTED));
+            parent.spawn(art.text(
                 if art.available == 3 {
                     "Original card faces available. Click any card to inspect."
                 } else {
@@ -1113,7 +1129,7 @@ fn rebuild_panel(
             ))
             .observe(scroll_panel)
             .with_children(|parent| {
-                parent.spawn(text("What happened — and why", 22.0, GOLD));
+                parent.spawn(art.text("What happened — and why", 22.0, GOLD));
                 for item in view
                     .history
                     .iter()
@@ -1123,16 +1139,16 @@ fn rebuild_panel(
                     .into_iter()
                     .rev()
                 {
-                    parent.spawn(text(item, 15.0, PAPER));
+                    parent.spawn(art.text(item, 15.0, PAPER));
                 }
                 if view.history.len() > 7 {
-                    parent.spawn(text(
+                    parent.spawn(art.text(
                         "Earlier entries are available by stepping back in the recorded replay.",
                         12.0,
                         MUTED,
                     ));
                 }
-                button(parent, "Close history", Action::History, false);
+                button(parent, &art, "Close history", Action::History, false);
             });
     }
     if table.result_open && view.stage == Stage::Finished {
@@ -1201,11 +1217,11 @@ fn show_result(commands: &mut Commands, view: &Observation, art: &Art) {
                         })
                         .with_children(|header| {
                             header.spawn((
-                                text("ROTTING REMAINS / SKILL TEST COMPLETE", 14.0, GOLD),
+                                art.text("ROTTING REMAINS / SKILL TEST COMPLETE", 14.0, GOLD),
                                 TextLayout::justify(Justify::Center),
                             ));
                             header.spawn((
-                                text(
+                                art.text(
                                     if failed {
                                         "TEST FAILED"
                                     } else {
@@ -1264,7 +1280,7 @@ fn show_result(commands: &mut Commands, view: &Observation, art: &Art) {
                                 );
                             }
                         });
-                    panel.spawn(text(
+                    panel.spawn(art.text(
                         format!(
                             "Resolved: {}",
                             explanation
@@ -1278,13 +1294,13 @@ fn show_result(commands: &mut Commands, view: &Observation, art: &Art) {
                         MUTED,
                     ));
                     if let Some(reason) = explanation.auto_fail_reason {
-                        panel.spawn(text(reason, 18.0, PAPER));
+                        panel.spawn(art.text(reason, 18.0, PAPER));
                     }
                     if let Some(reason) = explanation.curse_reason {
-                        panel.spawn(text("Why another token?", 22.0, GOLD));
-                        panel.spawn(text(reason, 18.0, PAPER));
+                        panel.spawn(art.text("Why another token?", 22.0, GOLD));
+                        panel.spawn(art.text(reason, 18.0, PAPER));
                         for continuation in explanation.continuation {
-                            panel.spawn(text(continuation, 16.0, MUTED));
+                            panel.spawn(art.text(continuation, 16.0, MUTED));
                         }
                     }
                     panel
@@ -1307,7 +1323,7 @@ fn show_result(commands: &mut Commands, view: &Observation, art: &Art) {
                         .observe(|_: On<Activate>, mut queue: ResMut<Actions>| {
                             queue.0.push(Action::DismissResult)
                         })
-                        .with_child(text("Return to table", 18.0, PAPER));
+                        .with_child(art.text("Return to table", 18.0, PAPER));
                 });
         });
 }
@@ -1373,5 +1389,82 @@ fn capture_window(
         && capture.path.as_ref().is_some_and(|path| path.is_file())
     {
         exit.write(AppExit::Success);
+    }
+}
+
+#[cfg(test)]
+mod harm_text_tests {
+    use super::*;
+    use crate::tabletop_harm_text::HORROR_COLOR;
+
+    fn art() -> Art {
+        Art {
+            handles: [None, None, None],
+            available: 0,
+            token_handles: Vec::new(),
+            reminder: None,
+            investigators: Vec::new(),
+            symbol_font: Some(Handle::default()),
+            status: "Readable card substitutes.".into(),
+        }
+    }
+
+    fn assert_horror_spelling(world: &mut World, english: &str) {
+        let entity = world
+            .query::<(Entity, &AccessibleLabel)>()
+            .iter(world)
+            .find(|(_, label)| label.0 == english)
+            .map(|(entity, _)| entity)
+            .unwrap_or_else(|| panic!("missing accessible label: {english}"));
+        let spans: Vec<_> = world
+            .get::<Children>(entity)
+            .unwrap()
+            .iter()
+            .filter_map(|child| {
+                Some((
+                    world.get::<TextSpan>(child)?,
+                    world.get::<TextColor>(child)?,
+                ))
+            })
+            .collect();
+        assert!(
+            spans
+                .iter()
+                .any(|(text, color)| { text.0 == "\u{2060}R\u{2060}" && color.0 == HORROR_COLOR })
+        );
+        assert!(spans.iter().all(|(text, _)| !text.0.contains("horror")));
+    }
+
+    #[test]
+    fn jacqueline_history_and_card_rules_use_blue_horror_with_english_labels() {
+        let session = Session::new(Fixture::curse());
+        let history = session.observe().history[0].clone();
+        let mut app = App::new();
+        app.insert_resource(Tabletop {
+            fixture: Fixture::curse(),
+            session,
+            replay: None,
+            save_path: PathBuf::from("unused-harm-text-test.json"),
+            notice: String::new(),
+            inspect: None,
+            history: true,
+            result_open: false,
+            dirty: true,
+        })
+        .insert_resource(Orbit::default())
+        .insert_resource(art())
+        .add_systems(Update, rebuild_panel);
+        app.update();
+        assert_horror_spelling(app.world_mut(), &history);
+
+        let mut queue = bevy::ecs::world::CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, app.world());
+        inspection::show(&mut commands, &art(), 0, Vec2::new(1200.0, 900.0));
+        queue.apply(app.world_mut());
+        assert_horror_spelling(app.world_mut(), CARDS[0].text);
+        assert_eq!(
+            app.world().resource::<Tabletop>().session.observe().history[0],
+            history
+        );
     }
 }

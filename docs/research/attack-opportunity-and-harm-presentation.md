@@ -126,3 +126,11 @@ Consulted constitution revision 2026-09-30.1: PURP-1–6, WORK-1–6, EVID-1–1
 [grimoire]: https://images-cdn.fantasyflightgames.com/filer_public/5c/c7/5cc79eb6-3d9c-4345-a5f1-27051251a6e4/arkham_grimoire_v11_web.pdf
 [color]: https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html
 [motion]: https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html
+
+## Owner playtest correction, 2026-10-28
+
+After implementation at `58aeda6`, Joel reported plain colored harm rectangles, awkward marker placement, a flat Tony chaos token and inconsistent textual damage/horror labels. He confirmed that his old launch command selected the earlier asset collection and that the current README command displays the actual heart/brain graphics. The v3 images were also inspected and matched their manifest hashes. This establishes the old collection as the missing-art cause; no GPU repair is inferred.
+
+The selected follow-up centers one or both counters at the landscape investigator's top edge, makes missing-art substitutes readable, shares Jacqueline's existing physical chaos-token and label rendering with Tony, and applies the same red/blue harm glyphs to visible text in both tabletops. Stored observations, rules, English history and accessible labels retain their original meanings. The shared helpers are local deduplication for these two current consumers, with no broader engine or future-consumer claim. Owner artwork, source archives, settings and saves remain outside the patch.
+
+This corrects the existing #22 playtest path under the current effort and owner-session allowance; it does not reset either allowance. Baseline is `58aeda6`; the next inspectable increment is the corrected tabletop with focused regression checks and native render evidence. Human readability/pacing acceptance remains separate. No remote publication or issue closeout is included. Consulted rules for this bounded follow-up: AUTH-1–3, PURP-1–6, WORK-1–6, EVID-1–10, SEM-1–2, REP-1–3, BOUND-1–5, INT-1–4, AGENT-1–5, OPS-1–7 and GOV-1–3, revision 2026-09-30.1.

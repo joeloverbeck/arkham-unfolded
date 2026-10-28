@@ -4,6 +4,10 @@ pub mod asset_config;
 pub mod assets;
 pub mod continuity;
 mod explanation;
+#[cfg(feature = "tabletop")]
+mod tabletop_harm_text;
+#[cfg(feature = "tabletop")]
+mod tabletop_tokens;
 pub mod tony;
 #[cfg(feature = "tabletop")]
 pub mod tony_tabletop;

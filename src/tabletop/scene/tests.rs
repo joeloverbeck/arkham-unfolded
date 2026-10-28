@@ -624,7 +624,7 @@ fn three_displayed_tokens_continue_to_four_with_only_the_new_token_revealing() {
         );
     }
     let labels: Vec<_> = world
-        .query_filtered::<&Text, With<WorldLabel>>()
+        .query_filtered::<&Text, Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
         .iter(world)
         .map(|text| text.0.as_str())
         .collect();
@@ -728,7 +728,7 @@ fn replay_back_next_and_live_compare_complete_observations_and_only_previous_tok
     let world = app.world_mut();
     assert!(
         world
-            .query_filtered::<&Text, With<WorldLabel>>()
+            .query_filtered::<&Text, Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
             .iter(world)
             .any(|text| text.0 == "#1  Curse\nRevealed")
     );
@@ -763,12 +763,13 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
                 Transform::from_xyz(0.0, 10.0, 0.0).looking_at(Vec3::ZERO, Vec3::NEG_Z),
             ),
             MainCamera,
+            Camera3d::default(),
         ))
         .id();
     app.update();
     let world = app.world_mut();
     let labels: Vec<_> = world
-        .query_filtered::<(Entity, &Node, &Visibility), With<WorldLabel>>()
+        .query_filtered::<(Entity, &Node, &Visibility), Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
         .iter(world)
         .map(|(entity, node, visibility)| {
             assert_eq!(
@@ -804,7 +805,7 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     assert_eq!(reminder_state(&mut app).0, reminder);
     let world = app.world_mut();
     let labels: Vec<_> = world
-        .query_filtered::<(&Node, &Visibility), With<WorldLabel>>()
+        .query_filtered::<(&Node, &Visibility), Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
         .iter(world)
         .collect();
     assert_eq!(labels.len(), 12);
@@ -846,7 +847,7 @@ fn world_labels_stay_below_panels_when_observations_change_with_history_open() {
     let assert_layers = |app: &mut App| {
         let world = app.world_mut();
         let labels: Vec<_> = world
-            .query_filtered::<Entity, With<WorldLabel>>()
+            .query_filtered::<Entity, Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
             .iter(world)
             .collect();
         let panels: Vec<_> = world
