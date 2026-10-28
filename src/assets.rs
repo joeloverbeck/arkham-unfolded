@@ -104,6 +104,14 @@ fn selection() -> &'static Selection {
     })
 }
 
+fn tony_selection() -> &'static Selection {
+    static SELECTION: OnceLock<Selection> = OnceLock::new();
+    SELECTION.get_or_init(|| {
+        serde_json::from_str(include_str!("../resources/tony-asset-selection.json"))
+            .expect("the committed Tony asset selection must be valid")
+    })
+}
+
 /// A recognized collection can be incomplete and still supply individually verified art.
 /// An unrelated or altered manifest supplies no assets. Gameplay can use substitutes.
 #[derive(Debug)]
@@ -151,6 +159,11 @@ impl CollectionReport {
 /// Check only the finite expected files. This never searches or falls back to an archive.
 pub fn inspect(root: &Path) -> CollectionReport {
     inspect_selection(root, selection())
+}
+
+/// Inspect the separately prepared Tony-turn collection, preserving legacy collections.
+pub fn inspect_tony(root: &Path) -> CollectionReport {
+    inspect_selection(root, tony_selection())
 }
 
 fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
@@ -223,6 +236,11 @@ impl From<serde_json::Error> for AssetError {
 /// Changed, incomplete or unknown destinations are refused. Source files are never written.
 pub fn prepare(source: &Path, output: &Path) -> Result<PrepareResult, AssetError> {
     prepare_selection(source, output, selection())
+}
+
+/// Prepare only the finite assets selected for the Tony-turn experiment.
+pub fn prepare_tony(source: &Path, output: &Path) -> Result<PrepareResult, AssetError> {
+    prepare_selection(source, output, tony_selection())
 }
 
 fn prepare_selection(

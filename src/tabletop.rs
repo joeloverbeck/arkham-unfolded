@@ -20,7 +20,7 @@ use bevy::{
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
-mod asset_settings;
+pub(crate) mod asset_settings;
 mod inspection;
 mod scene;
 mod standees;
@@ -787,7 +787,7 @@ fn text(value: impl Into<String>, size: f32, color: Color) -> impl Bundle {
     )
 }
 
-fn readable_text(value: String) -> String {
+pub(crate) fn readable_text(value: String) -> String {
     value
         .replace(['−', '–'], "-")
         .replace('§', "section ")

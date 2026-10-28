@@ -2,7 +2,9 @@
 
 An English-language Arkham Horror: The Card Game application for Ubuntu, planned with a Rust rules core and an animated 3D tabletop.
 
-**Status: one bounded, scripted Rust/3D experiment. The campaign is not playable yet.** The source assessment led to a selected Jacqueline/Patrice skill-test experiment; its implementation remains separate from acceptance of the full game.
+**Status: bounded Rust/3D experiments. The campaign is not playable yet.** The original Jacqueline/Patrice skill-test mode remains available. The new Tony mode offers a complete turn from a prepared Gathering position, pending separate owner acceptance under [#22](https://github.com/joeloverbeck/arkham-unfolded/issues/22).
+
+Launch the Tony turn with `cargo run --locked --features tabletop --bin arkham-tabletop -- --experiment tony`. See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, separate artwork collection, saves, undo, replay and player driver.
 
 ## Launch and play the current experiment
 

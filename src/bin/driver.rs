@@ -1,3 +1,6 @@
+#[path = "driver/tony.rs"]
+mod tony;
+
 use arkham_unfolded_experiment::continuity::{Replay, commit_choice, load_session, save_session};
 use arkham_unfolded_experiment::{Fixture, Session};
 use serde::Deserialize;
@@ -216,7 +219,8 @@ fn run() -> Result<(), String> {
 }
 
 fn main() {
-    if let Err(error) = run() {
+    let tony_mode = std::env::args().any(|arg| arg == "--experiment");
+    if let Err(error) = if tony_mode { tony::run() } else { run() } {
         let _ = emit(
             &mut io::stdout().lock(),
             &json!({"ok": false, "status": "error", "error": error}),

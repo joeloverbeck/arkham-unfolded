@@ -1,12 +1,14 @@
-use arkham_unfolded_experiment::assets::{PrepareResult, inspect, prepare};
+use arkham_unfolded_experiment::assets::{
+    PrepareResult, inspect, inspect_tony, prepare, prepare_tony,
+};
 use std::path::PathBuf;
 
-const USAGE: &str = "arkham-assets prepare --source PATH --output PATH\narkham-assets check PATH\n\nPreparation copies only the selected assets into a fresh external directory.\nIt never changes the source archive or overwrites an existing collection.";
+const USAGE: &str = "arkham-assets prepare --source PATH --output PATH\narkham-assets check PATH\narkham-assets prepare-tony --source PATH --output PATH\narkham-assets check-tony PATH\n\nPreparation copies only the selected assets into a fresh external directory.\nIt never changes the source archive or overwrites an existing collection.";
 
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        Some("prepare") => {
+        Some(command @ ("prepare" | "prepare-tony")) => {
             let mut source = None;
             let mut output = None;
             while let Some(argument) = args.next() {
@@ -21,6 +23,16 @@ fn run() -> Result<(), String> {
             }
             let source = source.ok_or("prepare requires --source PATH")?;
             let output = output.ok_or("prepare requires --output PATH")?;
+            let prepare = if command == "prepare-tony" {
+                prepare_tony
+            } else {
+                prepare
+            };
+            let inspect = if command == "prepare-tony" {
+                inspect_tony
+            } else {
+                inspect
+            };
             match prepare(&source, &output).map_err(|error| error.to_string())? {
                 PrepareResult::Created => println!("Prepared assets at {}", output.display()),
                 PrepareResult::AlreadyPresent => println!(
@@ -31,12 +43,16 @@ fn run() -> Result<(), String> {
             println!("{}", inspect(&output).summary());
             Ok(())
         }
-        Some("check") => {
+        Some(command @ ("check" | "check-tony")) => {
             let root = PathBuf::from(args.next().ok_or("check requires a collection path")?);
             if args.next().is_some() {
                 return Err("check accepts one collection path".into());
             }
-            let report = inspect(&root);
+            let report = if command == "check-tony" {
+                inspect_tony(&root)
+            } else {
+                inspect(&root)
+            };
             println!("{}", report.summary());
             for diagnostic in &report.diagnostics {
                 println!("- {diagnostic}");

@@ -4,6 +4,9 @@ pub mod asset_config;
 pub mod assets;
 pub mod continuity;
 mod explanation;
+pub mod tony;
+#[cfg(feature = "tabletop")]
+pub mod tony_tabletop;
 
 #[cfg(feature = "tabletop")]
 pub mod tabletop;
