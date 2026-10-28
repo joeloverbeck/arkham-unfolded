@@ -1,6 +1,11 @@
 # Build output
 /target/
 
+# Python verification-tool output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 # External inputs and private runtime data are not repository content.
 /assets/
 /data/
