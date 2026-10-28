@@ -134,7 +134,13 @@ struct Options {
 
 impl Options {
     fn parse() -> Result<Option<Self>, String> {
-        let config = AssetConfig::load()?;
+        Self::parse_from(std::env::args().skip(1), AssetConfig::load_tony()?)
+    }
+
+    fn parse_from(
+        args: impl IntoIterator<Item = String>,
+        config: AssetConfig,
+    ) -> Result<Option<Self>, String> {
         let mut result = Self {
             save: "local/experiment/tony.session.json".into(),
             load: None,
@@ -143,7 +149,7 @@ impl Options {
             screenshot: None,
             quit_after_screenshot: false,
         };
-        let mut args = std::env::args().skip(1);
+        let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{arg} needs a value"));
             match arg.as_str() {
@@ -315,6 +321,11 @@ pub fn run() -> Result<(), String> {
         || "Artwork disabled; readable substitutes are active.".into(),
         |r| r.summary(),
     );
+    eprintln!("Experiment: Tony turn (--experiment tony)");
+    match &root {
+        Some(root) => eprintln!("Artwork root: {}", root.display()),
+        None => eprintln!("Artwork root: disabled for this launch (--no-art)"),
+    }
     eprintln!("{status}");
     let notice = options.config.warning().map_or_else(
         || "Choose your actions. Every committed decision is saved.".into(),

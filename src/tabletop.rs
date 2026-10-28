@@ -281,6 +281,11 @@ pub fn run() -> Result<(), String> {
         || "Artwork disabled for this launch; readable substitutes are active.".into(),
         CollectionReport::summary,
     );
+    eprintln!("Experiment: Jacqueline skill test");
+    match &art_root {
+        Some(root) => eprintln!("Artwork root: {}", root.display()),
+        None => eprintln!("Artwork root: disabled for this launch (--no-art)"),
+    }
     eprintln!("{status}");
     if let Some(report) = &collection {
         for diagnostic in &report.diagnostics {
