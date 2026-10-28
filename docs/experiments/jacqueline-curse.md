@@ -6,16 +6,19 @@ The task is to decide whether Patrice commits Promise of Power, decide when Jacq
 
 ## Build and run
 
-Start with the [README launch walkthrough](../../README.md#launch-and-play-the-current-experiment) for the first clicks and basic controls. Requires Rust/Cargo 1.97.1 or later and a working Ubuntu X11/XWayland graphics session with Vulkan support. The lockfile pins the experiment's dependencies, including Bevy 0.20.0. First dependency acquisition/build requires network access and can take several minutes; the resulting application, saving and replay run offline.
+This is the earlier Jacqueline mode; the [README](../../README.md#launch-and-play-the-tony-turn) leads with the new Tony turn. Requires Rust/Cargo 1.97.1 or later and a working Ubuntu X11/XWayland graphics session with Vulkan support. The lockfile pins the experiment's dependencies, including Bevy 0.20.0. First dependency acquisition/build requires network access and can take several minutes; the resulting application, saving and replay run offline.
 
 Open Terminal (`Ctrl` + `Alt` + `T`), then run the following. Replace the checkout directory if yours is elsewhere. Keep the terminal open while the native window is running.
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
-cargo run --locked --features tabletop --bin arkham-tabletop
+cargo run --locked --features tabletop --bin arkham-tabletop -- \
+  --art-root "$HOME/.local/share/arkham-unfolded/assets"
 ```
 
 The window is titled **Arkham Unfolded — Scripted Rules Experiment**. For development verification, run `scripts/check` from the same directory; checks are not a prerequisite to playing. For native rendering or interaction changes, also follow [developer native verification](#developer-native-verification).
+
+In a fresh case, click **Commit Promise of Power**, then **Use Jacqueline: reveal 3, then choose cancellations**. Choose which tokens to cancel. If a curse resolves, watch its additional token appear, then click **Show test result**; other completed tests open the result automatically. Use **Return to table**, then **Open recorded replay** to step through stored moments. **Close card** or `Esc` dismisses card inspection. Decisions save to `local/experiment/curse.session.json`; relaunching resumes it. Use **Save live session** to retain the initial state, or **Start another example** after a completed/ended case to archive it and begin again.
 
 For the other prepared case or a deliberate artwork-absence check:
 
@@ -24,7 +27,14 @@ cargo run --locked --features tabletop --bin arkham-tabletop -- --case autofail
 cargo run --locked --features tabletop --bin arkham-tabletop -- --no-art
 ```
 
-The normal asset root is `$XDG_DATA_HOME/arkham-unfolded/assets`, normally `~/.local/share/arkham-unfolded/assets`, or the saved per-user preference. Prepare the collection using the [README instructions](../../README.md#prepare-the-external-assets). **Choose asset folder** in the side panel opens Ubuntu's `zenity` folder dialog, checks the selected collection, and offers to save it for the next launch. Scroll the panel if necessary. Restart to apply the choice. Canceling or a write failure preserves the previous setting; a failed write is reported. An incomplete recognized collection requires explicit confirmation to use readable substitutes; an unrecognized collection cannot be saved as a valid selection. The status in the panel distinguishes complete assets from substitutes.
+The normal asset root is `$XDG_DATA_HOME/arkham-unfolded/assets`, normally `~/.local/share/arkham-unfolded/assets`, or the saved per-user preference. Prepare this legacy collection with the commands below; Tony uses a separate selection. **Choose asset folder** in the side panel opens Ubuntu's `zenity` folder dialog, checks the selected collection, and offers to save it for the next launch. Scroll the panel if necessary. Restart to apply the choice. Canceling or a write failure preserves the previous setting; a failed write is reported. An incomplete recognized collection requires explicit confirmation to use readable substitutes; an unrecognized collection cannot be saved as a valid selection. The status in the panel distinguishes complete assets from substitutes.
+
+```sh
+cargo run --locked --bin arkham-assets -- prepare \
+  --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
+  --output "$HOME/.local/share/arkham-unfolded/assets"
+cargo run --locked --bin arkham-assets -- check "$HOME/.local/share/arkham-unfolded/assets"
+```
 
 `--art-root PATH` selects another prepared collection for that launch without rewriting the preference; `--no-art` deliberately uses substitutes. The source archive is never a runtime fallback. Copying the whole prepared folder, including `manifest.json`, is sufficient to relocate the selected presentation assets. Personal saves and settings stay separate. Missing or changed files use readable substitutes, and original image/font bytes stay outside Git. A card's presence or absence never changes legal choices, rules outcomes or record compatibility. The [evidence manifest](../research/issue-1-evidence.json) preserves the source identities for the three original faces.
 

@@ -4,53 +4,71 @@ An English-language Arkham Horror: The Card Game application for Ubuntu, planned
 
 **Status: bounded Rust/3D experiments. The campaign is not playable yet.** The original Jacqueline/Patrice skill-test mode remains available. The new Tony mode offers a complete turn from a prepared Gathering position, pending separate owner acceptance under [#22](https://github.com/joeloverbeck/arkham-unfolded/issues/22).
 
-Launch the Tony turn with `cargo run --locked --features tabletop --bin arkham-tabletop -- --experiment tony`. See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, separate artwork collection, saves, undo, replay and player driver.
+See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, saves, undo, replay and player driver, including the [two-session verification walkthrough](docs/experiments/tony-turn.md#owner-verification).
 
-## Launch and play the current experiment
+## Launch and play the Tony turn
 
 On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
-cargo run --locked --features tabletop --bin arkham-tabletop
+cargo run --locked --features tabletop --bin arkham-tabletop -- \
+  --experiment tony \
+  --art-root "$HOME/.local/share/arkham-unfolded/tony-assets"
 ```
 
-If your checkout is elsewhere, replace the directory in the first line. This requires Rust/Cargo 1.97.1 or later and an Ubuntu graphics session with X11/XWayland and Vulkan. The first launch downloads and compiles dependencies, which can take several minutes. Later launches reuse the build. Keep the terminal open while playing; the native window is titled **Arkham Unfolded — Scripted Rules Experiment**.
+The `--experiment tony` option selects the new turn. The explicit asset folder selects its matching artwork even when a previous preference points to Jacqueline's collection. If that folder has not been prepared, use the preparation instructions below; missing artwork leaves readable substitutes.
 
-In a fresh case:
+If your checkout is elsewhere, replace the directory in the first line. This requires Rust/Cargo 1.97.1 or later and an Ubuntu graphics session with X11/XWayland and Vulkan. The first launch downloads and compiles dependencies, which can take several minutes. Later launches reuse the build. Keep the terminal open while playing. The native window retains the title **Arkham Unfolded — Scripted Rules Experiment**; the heading inside must say **Tony turn / The Gathering / Standard**.
 
-1. Click **Commit Promise of Power**, then **Use Jacqueline: reveal 3, then choose cancellations**.
-2. Choose which tokens to cancel. If a curse resolves, watch the additional token appear on the table, then click **Show test result** when ready. Other completed tests open the result automatically. The centered result window explains the outcome; click **Return to table** to continue.
-3. Click **Open recorded replay**. Use **Next moment** and **Previous moment** to step through it. Those buttons appear only when another moment exists in that direction.
+In a fresh turn:
 
-Click any card to open its enlarged artwork and readable rules. Use **Close card** or `Esc` to return; on a smaller window, scroll inside the inspection to see the whole card and text. Right-drag or use the arrow keys to orbit the camera; the wheel or `+`/`-` zooms, and `Home` resets it. Moving the camera manually overrides replay's automatic following.
+1. Tony has three ordinary actions and an available bonus Fight/Engage action. A ready Ghoul Minion is engaged with him; Internal Injury is in his threat area. Choose one of the offered actions.
+2. For a skill test, choose a card commitment or **Commit no cards**, then **Reveal chaos token** and **Resolve skill test**. Results are random. Use **Action history and rules reasons** to inspect costs and consequences.
+3. Click **Open recorded replay**, then **Next moment** or **Previous moment** to narrate stored events. **Return to live turn** restores the current live view.
 
-**Close and resume:** decisions autosave to `local/experiment/curse.session.json`. Close the window and run the same command to resume. Before any decision, use **Save live session** if you want to retain that initial state. If a completed result opens on launch, click **Return to table**, then **Start another example** for a fresh run; the previous run is archived. From an unfinished case, **End this experiment** makes that restart control available.
+Click a card or its inspection button for enlarged artwork and readable rules; **Close** or `Esc` returns to the table. Scroll the panel or card inspection when needed. Right-drag or use the arrow keys to orbit; the wheel or `+`/`-` zooms, and `Home` resets the camera. Moving the camera manually overrides replay's automatic following.
 
-Card, token and standee images and the symbol font load from a small prepared asset collection. Missing artwork uses readable substitutes. Use **Choose asset folder** in the side panel to select a prepared folder, check its completeness and save its location for the next launch. Scroll the panel if needed. The native folder dialog uses Ubuntu's `zenity` package. See the [experiment guide](docs/experiments/jacqueline-curse.md) for preparation, alternate cases, save selection and recovery.
+**Close and resume:** decisions autosave to `local/experiment/tony.session.json`. Close the window and run the same command to resume. **Save live turn** also saves at a pending choice, including before resolving a revealed token. **Reopen saved turn** reloads the save. At the end, **Start another Tony turn** archives the previous run. **End Tony's turn** is available at an action boundary; it cannot skip a pending test.
 
-## Prepare the external assets
+For the remaining acceptance check, follow the [owner verification walkthrough](docs/experiments/tony-turn.md#owner-verification): two sessions of at most 20 minutes each, including retries.
+
+## Prepare the Tony artwork
 
 The developer/agent prepares the selected files once; ordinary play needs only the resulting folder. From this checkout, with the original archive available:
 
 ```sh
-cargo run --locked --bin arkham-assets -- prepare \
+cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
-  --output "$HOME/.local/share/arkham-unfolded/assets"
+  --output "$HOME/.local/share/arkham-unfolded/tony-assets"
+cargo run --locked --bin arkham-assets -- check-tony \
+  "$HOME/.local/share/arkham-unfolded/tony-assets"
 ```
 
-This example uses the default location. If you set an absolute `XDG_DATA_HOME`, use that directory followed by `/arkham-unfolded/assets` as the output instead. This copies the 12 selected PNGs and extracts the verified font into ordinary files (about 11.57 MiB plus a small manifest). The source archive stays unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported. To prepare an updated selection, choose a new output folder and select it in the app after verification.
+This prepares 24 selected images in a separate collection. The source archive and any existing Jacqueline collection stay unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
 
-The default runtime folder is `$XDG_DATA_HOME/arkham-unfolded/assets`, normally `~/.local/share/arkham-unfolded/assets`. A saved choice lives in `$XDG_CONFIG_HOME/arkham-unfolded/config.toml`, normally `~/.config/arkham-unfolded/config.toml`, as `asset_root = "/absolute/path/to/assets"`. Relative XDG overrides are ignored. Folder selection takes effect after restarting the app. A temporary `--art-root PATH` overrides the saved setting for that launch; `--no-art` deliberately uses substitutes.
+**Choose asset folder** in the side panel checks a prepared folder and saves its location for the next launch. Scroll the panel if needed. The native folder dialog uses Ubuntu's `zenity` package. The preference is shared by the experiment modes; use the explicit `--art-root` commands in their guides when switching between their separate collections. Settings live in `$XDG_CONFIG_HOME/arkham-unfolded/config.toml`, normally `~/.config/arkham-unfolded/config.toml`. Relative XDG overrides are ignored. Without a command-line override or saved preference, the generic asset root is `$XDG_DATA_HOME/arkham-unfolded/assets`, normally `~/.local/share/arkham-unfolded/assets`.
 
-Copy the whole prepared folder, including `manifest.json`, to relocate it. The same compatible app build can check and use that copy without the original archive:
+A temporary `--art-root PATH` overrides the saved setting for that launch. Replace that option and its path with `--no-art` to use readable substitutes. Copy the whole prepared folder, including `manifest.json`, to relocate it:
 
 ```sh
-cargo run --locked --bin arkham-assets -- check /absolute/path/to/copied-assets
-cargo run --locked --features tabletop --bin arkham-tabletop -- --art-root /absolute/path/to/copied-assets
+cargo run --locked --bin arkham-assets -- check-tony /absolute/path/to/copied-assets
+cargo run --locked --features tabletop --bin arkham-tabletop -- \
+  --experiment tony --art-root /absolute/path/to/copied-assets
 ```
 
-The check reports missing or changed files and exits unsuccessfully for an incomplete collection. The app remains playable with readable substitutes. Personal saves, recordings, research documents and configuration are separate from this folder. Asset portability does not expand the supported game content or authorize redistribution of third-party material.
+The check reports missing or changed files and exits unsuccessfully for an incomplete collection. Personal saves, recordings, research and configuration remain separate. Asset portability does not expand supported game content or authorize redistribution of third-party material.
+
+## Earlier Jacqueline experiment
+
+The no-argument application mode retains the earlier Jacqueline skill-test experiment and its records. To launch it with its prepared artwork:
+
+```sh
+cargo run --locked --features tabletop --bin arkham-tabletop -- \
+  --art-root "$HOME/.local/share/arkham-unfolded/assets"
+```
+
+Its saves use `local/experiment/curse.session.json`. See the [Jacqueline guide](docs/experiments/jacqueline-curse.md#build-and-run) for the first clicks, alternate case and legacy asset preparation. Tony and Jacqueline records use separate readers; there is no automatic migration.
 
 ## Project aim
 
@@ -77,7 +95,8 @@ Content support follows the owner's actual use. Starting decks, campaign content
 - [Sources and verification](docs/foundation/sources-and-verification.md)
 - [Prepared asset collection decision](docs/adr/0001-prepared-runtime-assets.md)
 - [Issue #1 feasibility assessment](docs/research/issue-1-assessment.md) — accepted source baseline and evidence for the selected bounded experiment
-- [Run the selected skill-test experiment](docs/experiments/jacqueline-curse.md) — native tabletop, player-equivalent driver, save/reopen and recorded replay under [issue #2](https://github.com/joeloverbeck/arkham-unfolded/issues/2)
+- [Run the Tony turn and verify its native experience](docs/experiments/tony-turn.md) — prepared turn under [issue #22](https://github.com/joeloverbeck/arkham-unfolded/issues/22)
+- [Run the earlier Jacqueline skill-test experiment](docs/experiments/jacqueline-curse.md) — native tabletop, player-equivalent driver, save/reopen and recorded replay under [issue #2](https://github.com/joeloverbeck/arkham-unfolded/issues/2)
 - [Repository principles](docs/principles/principles-for-repos.md)
 
 [GitHub Issues](https://github.com/joeloverbeck/arkham-unfolded/issues) and pull requests are the work-control plane. Foundations record the intended product and accepted decisions; they are not a second work queue. `CLAUDE.md` contains the agent bootstrap; both `AGENTS.md` and `AGENT.md` link to it.
