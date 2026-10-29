@@ -8,6 +8,8 @@ mod explanation;
 mod tabletop_harm_text;
 #[cfg(feature = "tabletop")]
 mod tabletop_layout;
+#[cfg(all(test, feature = "tabletop"))]
+mod tabletop_standee_checks;
 #[cfg(feature = "tabletop")]
 mod tabletop_standees;
 #[cfg(feature = "tabletop")]

@@ -89,6 +89,12 @@ Passing automated checks establishes the exercised decisions and continuity boun
 
 ## Developer native verification
 
+For a reported physical-input failure, establish the failing boundary before repeating gestures or changing camera code:
+
+1. Check whether the **same physical button or key** works in another application. Reuse an observation already supplied by the owner; otherwise ask for one brief comparison. A working left button does not establish that right-button presses reach Arkham. A failure elsewhere identifies a wider input problem, without deciding whether its cause is hardware or desktop software.
+2. If the failure is confined to Arkham, distinguish input arrival from input handling. Check window focus and, when needed, use bounded diagnostic logging of cursor movement and mouse-button press/release events at Bevy's input boundary. Missing right-button events and received events rejected by UI/camera capture are different findings. Repeat an owner gesture only when it will distinguish the remaining explanations.
+3. When the expected event arrives, exercise the affected UI/camera path. Independently reproduced application defects can coexist with a desktop-input failure. A portal-generated right-drag verifies the synthetic input path only; it does not establish that the physical button works. A failed portal calibration follows the bounded recovery below and is not evidence of a camera defect.
+
 Use a separate save and temporary settings for diagnostics. The helper below supports the current Ubuntu GNOME/XWayland desktop; capture/input needs system Python 3.11+, `python3-dbus`, `python3-gi`, `python3-pil`, `libX11` and `xdotool`. Staging and headless tests use Python's standard library; the tests run in `scripts/check`. From the repository root, build the normal application and launch a disposable run:
 
 ```sh
@@ -123,7 +129,7 @@ For interaction, keep one helper process and its input open for the entire diagn
   --pid "$native_pid" --window "$native_window" --output-dir "$review_dir/interaction"
 ```
 
-The output directory must be new. The helper saves `initial.png` before requesting consent. In GNOME's dialog, select the monitor containing Arkham, enable **Allow Remote Interaction**, and click **Share**. One nonpersistent, pointer-only grant covers the run. Keep Arkham covering the monitor's central 10% and leave the pointer idle during calibration. The helper measures the portal-to-X11 mapping and checks it at an independent point; it does not reuse a previous monitor's scale. Wait for `ready`, then inspect `initial.png` before choosing a target. Coordinates are pixels relative to the captured client, not a resized image in the conversation. A calibration `refused` result retains the session for the bounded recovery below.
+The output directory must be new. The helper saves `initial.png` before requesting consent. In GNOME's dialog, select the monitor containing Arkham, enable **Allow Remote Interaction**, and click **Share**. One nonpersistent, pointer-only grant covers the run. Keep Arkham covering the monitor's central 10%. Coordinate one short idle-desktop interval for the check, keeping the keyboard and pointer idle throughout calibration and gestures. The helper measures the portal-to-X11 mapping and checks it at an independent point; it does not reuse a previous monitor's scale. Wait for `ready`, then inspect `initial.png` before choosing a target. Coordinates are pixels relative to the captured client, not a resized image in the conversation. A calibration `refused` result retains the session for the bounded recovery below.
 
 Send one JSON command per line on the same process's stdin. For example, after replacing `X` and `Y` with a target identified in the inspected image:
 
@@ -132,9 +138,18 @@ Send one JSON command per line on the same process's stdin. For example, after r
 {"action":"capture","name":"after-result.png"}
 ```
 
-Wait for `clicked` and allow the visible transition to settle before capturing; inspect the result before choosing another action. A completed press is input evidence only. The helper checks process identity, focus, unchanged geometry and the measured client pointer position immediately before each press. It refuses off-window, off-monitor and mismapped targets. It releases an attempted press even when interrupted.
+For an orbit check, choose a start and end on exposed table space in the inspected capture, then send a bounded right-drag. For example, after checking that these client coordinates are appropriate:
 
-A `refused` command keeps the grant open. Diagnose once within that session; `{"action":"focus"}` restores focus explicitly and `{"action":"calibrate"}` remeasures a changed monitor mapping. Inspect a new capture before retrying a target. Stop after one failed capture/focus/click attempt plus at most one bounded diagnosis attempt. If interaction remains unavailable, report the limitation and use the already-agreed owner check within its remaining allowance. Do not interpret a stale image as evidence against what the owner sees on the desktop.
+```text
+{"action":"right-drag","x":800,"y":450,"dx":120,"dy":30,"duration_seconds":0.6}
+{"action":"capture","name":"after-orbit.png"}
+```
+
+`dx` and `dy` are displacement in client pixels. The nonzero gesture is limited to `abs(dx) + abs(dy) <= 600`; `duration_seconds` defaults to 0.6 and accepts 0.2–2.0 seconds, with 20 movement steps. Desktop verification adds time to the requested movement duration. The helper validates the whole path before pressing, rechecks the window and measured pointer during movement, and releases the right button on failure or interruption. A path that fails preflight sends no press.
+
+Wait for `clicked` or `right-dragged` and allow the visible transition to settle before capturing; inspect the result before choosing another action. A completed gesture is input evidence only: compare the captures to establish camera movement. The helper checks process identity, focus, unchanged geometry and the measured client pointer position immediately before each press. It refuses off-window, off-monitor and mismapped targets. It releases an attempted press even when interrupted.
+
+A `refused` command keeps the grant open. Diagnose once within that session; `{"action":"focus"}` restores focus explicitly and `{"action":"calibrate"}` remeasures a changed monitor mapping. Inspect a new capture before retrying a target. Stop after one failed capture/focus/click/drag attempt plus at most one bounded diagnosis attempt. If interaction remains unavailable, report the limitation and use the already-agreed owner check within its remaining allowance. Do not interpret a stale image as evidence against what the owner sees on the desktop.
 
 Send `{"action":"stop"}` or close stdin when finished. EOF, fatal errors and handled interruption close the portal grant; a killed or crashed process loses its session when its D-Bus connection closes. `events.jsonl` records capture paths, pixel hashes, mapping, refusals and closure. It contains no artwork itself; keep it with the local captures.
 

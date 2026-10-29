@@ -2,11 +2,60 @@ use super::super::*;
 use super::*;
 use std::time::Duration;
 
+use crate::tabletop_standee_checks as standee_checks;
+
 fn pending_app(path: PathBuf) -> App {
     let mut session = Session::new(Fixture::curse());
     session.choose(0, "commit-promise").unwrap();
     session.choose(1, "use-jacqueline").unwrap();
     app_for_session(session, path)
+}
+
+#[test]
+fn production_scene_keeps_physical_standees_and_readable_missing_portraits() {
+    use crate::tabletop_layout::InvestigatorClass::{Mystic, Rogue, Survivor};
+
+    let dir = tempfile::tempdir().unwrap();
+    for missing in [None, Some(1)] {
+        let mut app = app_for_session(
+            Session::new(Fixture::curse()),
+            dir.path().join("standees.json"),
+        );
+        app.init_resource::<Assets<Image>>();
+        let mut expected = Vec::new();
+        for (index, (name, class)) in [
+            ("Tony Morgan", Rogue),
+            ("Patrice Hathaway", Survivor),
+            ("Jacqueline Fine", Mystic),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let image = (missing != Some(index)).then(|| {
+                app.world_mut()
+                    .resource_mut::<Assets<Image>>()
+                    .add(Image::default())
+            });
+            if let Some(image) = &image {
+                app.world_mut()
+                    .resource_mut::<Art>()
+                    .investigators
+                    .push((name.into(), image.clone()));
+            }
+            expected.push((class, image));
+        }
+        app.update();
+        standee_checks::assert_standees(app.world_mut(), &expected);
+        for name in ["Tony", "Patrice", "Jacqueline"] {
+            assert!(
+                app.world_mut()
+                    .query_filtered::<&Text, With<WorldLabel>>()
+                    .iter(app.world())
+                    .any(|label| label.0.contains(name)),
+                "{name} remains readable with or without a portrait"
+            );
+        }
+    }
 }
 
 #[test]
