@@ -4,6 +4,10 @@
 use super::*;
 use crate::tabletop_layout::{self, Area};
 
+/// Receives empty-space dismissal clicks without capturing camera gestures.
+#[derive(Component)]
+pub(super) struct DismissalBackdrop;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Source {
     Card(usize),
@@ -256,6 +260,7 @@ pub(super) fn show(
                 ..default()
             },
             GlobalZIndex(65),
+            DismissalBackdrop,
             Panel,
         ))
         .observe(|event: On<PointerClick>, mut queue: ResMut<Actions>| {
@@ -286,6 +291,22 @@ pub(super) fn show(
         ))
         .observe(scroll_panel)
         .with_children(|parent| {
+            // A modal tab group must acquire focus before Tab can navigate it.
+            let mut first_button = true;
+            let mut menu_button = |parent: &mut ChildSpawnerCommands,
+                                   art: &Art,
+                                   label: &str,
+                                   action: Action,
+                                   primary: bool| {
+                let entity = button(parent, art, label, action, primary);
+                if first_button {
+                    parent
+                        .commands()
+                        .entity(entity)
+                        .insert(bevy::input_focus::AutoFocus);
+                    first_button = false;
+                }
+            };
             parent.spawn(art.text(title, 17.0, GOLD));
             if table.replay.is_some() {
                 parent.spawn(art.text("Recorded view / inspection only", 14.0, MUTED));
@@ -315,7 +336,7 @@ pub(super) fn show(
                                     Source::Bag => "Reveal token",
                                     _ => "Choose",
                                 };
-                                button(
+                                menu_button(
                                     slot,
                                     art,
                                     label,
@@ -339,7 +360,7 @@ pub(super) fn show(
                                 ..default()
                             })
                             .with_children(|slot| {
-                                button(slot, art, "Inspect", Action::Inspect(index), false)
+                                menu_button(slot, art, "Inspect", Action::Inspect(index), false)
                             });
                         }
                         ring.spawn(Node {
@@ -350,7 +371,7 @@ pub(super) fn show(
                             ..default()
                         })
                         .with_children(|slot| {
-                            button(slot, art, "Dismiss", Action::DismissContext, false)
+                            menu_button(slot, art, "Dismiss", Action::DismissContext, false)
                         });
                     });
                 for choice in &choices {
@@ -363,7 +384,7 @@ pub(super) fn show(
                 for choice in choices {
                     if matches!(source, Source::Token(_)) {
                         let marked = context.pending.as_deref() == Some(choice.id.as_str());
-                        button(
+                        menu_button(
                             parent,
                             art,
                             &cancellation_label(choice),
@@ -371,7 +392,7 @@ pub(super) fn show(
                             marked,
                         );
                     } else {
-                        button(
+                        menu_button(
                             parent,
                             art,
                             &choice.label,
@@ -385,7 +406,7 @@ pub(super) fn show(
                     .as_ref()
                     .filter(|_| table.replay.is_none() && matches!(source, Source::Token(_)))
                 {
-                    button(
+                    menu_button(
                         parent,
                         art,
                         "Confirm cancellation",
@@ -394,9 +415,9 @@ pub(super) fn show(
                     );
                 }
                 if let Source::Card(index) = source {
-                    button(parent, art, "Inspect", Action::Inspect(index), false);
+                    menu_button(parent, art, "Inspect", Action::Inspect(index), false);
                 }
-                button(parent, art, "Dismiss", Action::DismissContext, false);
+                menu_button(parent, art, "Dismiss", Action::DismissContext, false);
             }
         });
 }

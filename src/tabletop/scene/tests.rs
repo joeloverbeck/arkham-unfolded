@@ -259,8 +259,11 @@ fn camera_pans_with_window_focus_but_captures_menu_modal_and_button_input() {
 }
 
 fn app_for_session(session: Session, path: PathBuf) -> App {
+    app_for_session_in(App::new(), session, path)
+}
+
+fn app_for_session_in(mut app: App, session: Session, path: PathBuf) -> App {
     let config = AssetConfig::load_at(path.with_extension("toml"), path.with_extension("assets"));
-    let mut app = App::new();
     app.insert_resource(Tabletop {
         fixture: session.fixture.clone(),
         session,
@@ -1218,6 +1221,205 @@ fn orbit_mouse_app() -> (App, Entity) {
     app.world_mut().spawn((MainCamera, Transform::default()));
     app.update();
     (app, window)
+}
+
+fn contextual_input_app(session: Session, path: PathBuf) -> (App, Entity, Entity) {
+    use bevy::{
+        camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
+        input_focus::{InputDispatchPlugin, InputFocusPlugin, tab_navigation::TabNavigationPlugin},
+        picking::pointer::{Location, PointerId, PointerLocation},
+        window::{PrimaryWindow, WindowRef},
+    };
+
+    // Exercise the rendered menu through Bevy layout, UI picking and keyboard
+    // dispatch, without a desktop window or a replacement interaction model.
+    let mut app = App::new();
+    app.add_plugins((
+        bevy::app::TaskPoolPlugin::default(),
+        bevy::asset::AssetPlugin::default(),
+        bevy::image::ImagePlugin::default(),
+        bevy::text::TextPlugin,
+        bevy::transform::TransformPlugin,
+        bevy::camera::visibility::VisibilityPlugin,
+        bevy::input::InputPlugin,
+        InputFocusPlugin,
+        InputDispatchPlugin,
+        TabNavigationPlugin,
+        bevy::picking::PickingPlugin,
+        bevy::picking::InteractionPlugin,
+        bevy::ui::UiPlugin,
+        bevy::ui_widgets::ButtonPlugin,
+    ))
+    .init_resource::<Assets<TextureAtlasLayout>>()
+    .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
+    .init_resource::<Time<Real>>()
+    .add_message::<bevy::window::CursorMoved>();
+    let mut app = app_for_session_in(app, session, path);
+    app.add_systems(
+        Update,
+        camera_controls.after(handle_actions).before(rebuild_panel),
+    );
+    let window = app
+        .world_mut()
+        .query_filtered::<Entity, With<Window>>()
+        .single(app.world())
+        .unwrap();
+    app.world_mut().entity_mut(window).insert(PrimaryWindow);
+    {
+        let mut window = app.world_mut().get_mut::<Window>(window).unwrap();
+        window.resolution = (1600, 1000).into();
+        window.focused = true;
+        window.set_cursor_position(Some(Vec2::new(800.0, 400.0)));
+    }
+    let target = RenderTarget::Window(WindowRef::Entity(window));
+    app.world_mut().spawn((
+        MainCamera,
+        Transform::default(),
+        Camera {
+            computed: ComputedCameraValues {
+                target_info: Some(RenderTargetInfo {
+                    physical_size: UVec2::new(1600, 1000),
+                    scale_factor: 1.0,
+                }),
+                ..default()
+            },
+            ..default()
+        },
+        target.clone(),
+    ));
+    let pointer = app
+        .world_mut()
+        .spawn((
+            PointerId::Mouse,
+            PointerLocation::new(Location {
+                target: target.normalize(Some(window)).unwrap(),
+                position: Vec2::new(800.0, 400.0),
+            }),
+        ))
+        .id();
+    app.update();
+    (app, window, pointer)
+}
+
+fn contextual_cursor(app: &mut App, window: Entity, pointer: Entity, position: Vec2) {
+    app.world_mut()
+        .get_mut::<bevy::picking::pointer::PointerLocation>(pointer)
+        .unwrap()
+        .location
+        .as_mut()
+        .unwrap()
+        .position = position;
+    orbit_cursor(app, window, position);
+}
+
+#[test]
+fn contextual_menu_backdrop_allows_orbit_and_still_dismisses_on_left_click() {
+    use bevy::picking::pointer::{PointerAction, PointerId, PointerInput, PointerLocation};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut app, window, pointer) =
+        contextual_input_app(Session::new(Fixture::curse()), dir.path().join("menu.json"));
+    let before = app.world().resource::<Tabletop>().view();
+    act(
+        &mut app,
+        Action::Select(Source::Card(1), Vec2::new(200.0, 200.0)),
+    );
+    contextual_cursor(&mut app, window, pointer, Vec2::new(800.0, 400.0));
+    let yaw = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    contextual_cursor(&mut app, window, pointer, Vec2::new(840.0, 410.0));
+    assert_ne!(app.world().resource::<Orbit>().yaw, yaw);
+    assert!(!app.world().resource::<Context>().open);
+    assert_eq!(app.world().resource::<Tabletop>().view(), before);
+    orbit_button(&mut app, window, bevy::input::ButtonState::Released);
+
+    act(
+        &mut app,
+        Action::Select(Source::Card(1), Vec2::new(200.0, 200.0)),
+    );
+    contextual_cursor(&mut app, window, pointer, Vec2::new(800.0, 400.0));
+    for action in [
+        PointerAction::Press(PointerButton::Primary),
+        PointerAction::Release(PointerButton::Primary),
+    ] {
+        let location = app
+            .world()
+            .get::<PointerLocation>(pointer)
+            .unwrap()
+            .location
+            .clone()
+            .unwrap();
+        app.world_mut()
+            .write_message(PointerInput::new(PointerId::Mouse, location, action));
+        app.update();
+    }
+    assert!(!app.world().resource::<Context>().open);
+    assert_eq!(app.world().resource::<Tabletop>().view(), before);
+}
+
+fn contextual_key(app: &mut App, window: Entity, key_code: KeyCode) {
+    use bevy::input::{
+        ButtonState,
+        keyboard::{Key, KeyboardInput},
+    };
+    let logical_key = match key_code {
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::KeyW => Key::Character("w".into()),
+        _ => unreachable!(),
+    };
+    for state in [ButtonState::Pressed, ButtonState::Released] {
+        app.world_mut().write_message(KeyboardInput {
+            key_code,
+            logical_key: logical_key.clone(),
+            state,
+            text: None,
+            repeat: false,
+            window,
+        });
+        app.update();
+    }
+}
+
+#[test]
+fn contextual_menu_tab_navigation_inspects_then_commits_without_moving_camera() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut app, window, _) =
+        contextual_input_app(Session::new(Fixture::curse()), dir.path().join("keys.json"));
+    let before = app.world().resource::<Tabletop>().view();
+    act(
+        &mut app,
+        Action::Select(Source::Card(1), Vec2::new(200.0, 200.0)),
+    );
+    let target = app.world().resource::<Orbit>().target;
+    let yaw = app.world().resource::<Orbit>().yaw;
+    app.world_mut()
+        .resource_mut::<Time>()
+        .advance_by(Duration::from_millis(100));
+    contextual_key(&mut app, window, KeyCode::Tab); // Inspect.
+    contextual_key(&mut app, window, KeyCode::KeyW);
+    assert_eq!(app.world().resource::<Orbit>().target, target);
+    assert_eq!(app.world().resource::<Orbit>().yaw, yaw);
+    contextual_key(&mut app, window, KeyCode::Enter);
+    assert_eq!(app.world().resource::<Tabletop>().inspect, Some(1));
+    assert_eq!(app.world().resource::<Tabletop>().view(), before);
+    assert_eq!(
+        app.world().resource::<Context>().selected,
+        Some(Source::Card(1))
+    );
+
+    act(&mut app, Action::CloseInspect);
+    assert_eq!(app.world().resource::<Tabletop>().view(), before);
+    act(
+        &mut app,
+        Action::Select(Source::Card(1), Vec2::new(200.0, 200.0)),
+    );
+    // The first action acquires focus when its contextual menu opens.
+    contextual_key(&mut app, window, KeyCode::Enter);
+    let after = app.world().resource::<Tabletop>().view();
+    assert_eq!(after.stage, Stage::BeforeReveal);
+    assert_eq!(after.revision, before.revision + 1);
+    assert_eq!(app.world().resource::<Orbit>().target, target);
 }
 
 fn orbit_button(app: &mut App, window: Entity, state: bevy::input::ButtonState) {

@@ -810,7 +810,7 @@ fn camera_controls(
     input_focus: Option<Res<bevy::input_focus::InputFocus>>,
     focusable: Query<(), With<Button>>,
     hover: Option<Res<bevy::picking::hover::HoverMap>>,
-    ui_nodes: Query<(), With<Node>>,
+    ui_nodes: Query<(), (With<Node>, Without<context::DismissalBackdrop>)>,
     mut drag: Local<Option<Vec2>>,
 ) {
     let modal_open = table.result_open
@@ -1036,11 +1036,12 @@ fn button(
     label: &str,
     action: Action,
     primary: bool,
-) {
+) -> Entity {
     let tone = if primary { TEAL } else { BUTTON };
     parent
         .spawn((
             Button,
+            TabIndex(0),
             Hovered::default(),
             Node {
                 width: percent(100),
@@ -1055,7 +1056,8 @@ fn button(
             ButtonTone(tone),
         ))
         .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| queue.0.push(action.clone()))
-        .with_child(art.text(label, 16.0, PAPER));
+        .with_child(art.text(label, 16.0, PAPER))
+        .id()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1117,7 +1119,7 @@ fn rebuild_panel(
         parent.spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, column_gap: px(8), row_gap: px(5), ..default() })
             .with_children(|row| {
                 let mut control = |label: &str, action: Action, primary| {
-                    row.spawn(Node { width: px(210), ..default() }).with_children(|slot| button(slot, &art, label, action, primary));
+                    row.spawn(Node { width: px(210), ..default() }).with_children(|slot| { button(slot, &art, label, action, primary); });
                 };
                 if table.replay.is_none() {
                     for choice in view.choices.iter().filter(|choice| context::source_less(&choice.id)) {
