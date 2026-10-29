@@ -34,7 +34,7 @@ Follow linked decisions and continue pages as needed for the requested coverage.
 For long files, locate headings or rule identifiers with `rg -n`, then read the required inclusive range through the bounded reader:
 
 ```sh
-python3 -B scripts/read_context.py docs/principles/principles-for-repos.md --start 130 --end 173
+scripts/tools read-context docs/principles/principles-for-repos.md --start 130 --end 173
 ```
 
 The reader prints verbatim source lines with number prefixes and caps the whole page at 6,000 UTF-8 bytes, including metadata. `NEXT` gives the exact arguments for the next page; rerun the same path with those arguments until `END`. The source hash rejects a continuation after the file changes. Preserve the required sections and their surrounding context; page boundaries do not reduce mandatory reading.
