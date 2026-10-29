@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -50,6 +51,8 @@ class Portal:
     def __init__(self, desktop):
         self.desktop = desktop
         self.events = []
+        self.button_codes = []
+        self.moves = []
         self.last_move = None
         self.lose_focus = False
         self.starts = 0
@@ -63,12 +66,15 @@ class Portal:
 
     def move(self, x, y):
         self.last_move = (x, y)
+        self.moves.append((x, y))
         self.desktop.root = (round(100 + x * 1.6), round(60 + y * 1.6))
         if self.lose_focus:
             self.desktop.focused = False
 
-    def button(self, pressed):
+    def button(self, pressed, button=272):
         self.events.append(pressed)
+        self.button_codes.append(button)
+        self.desktop.mask = (1 << (8 if button == 272 else 10)) if pressed else 0
 
 
 class NativeCommands(unittest.TestCase):
@@ -196,6 +202,200 @@ class NativeCommands(unittest.TestCase):
         with self.assertRaises(native.Refused):
             controller.click(400, 250)
         self.assertEqual(portal.events, [])
+
+    def test_right_drag_reaches_endpoint_through_measured_mapping(self):
+        desktop = Desktop()
+        portal = Portal(desktop)
+        controller = native.Controller(desktop, portal, pause=lambda _: None)
+        controller.calibrate()
+        portal.moves.clear()
+        controller.right_drag(300, 250, 120, -50)
+        self.assertEqual(len(portal.moves), 21)
+        self.assertAlmostEqual(desktop.pointer()[1][0], 420, delta=2)
+        self.assertAlmostEqual(desktop.pointer()[1][1], 200, delta=2)
+        self.assertEqual(portal.events, [True, False])
+        self.assertEqual(portal.button_codes, [273, 273])
+        self.assertEqual(desktop.mask, 0)
+
+    def test_bad_drag_values_and_endpoints_never_move_or_press(self):
+        desktop = Desktop()
+        portal = Portal(desktop)
+        controller = native.Controller(desktop, portal, pause=lambda _: None)
+        with self.assertRaises(native.Refused):
+            controller.right_drag(300, 250, 120, -50)
+        self.assertEqual(portal.moves, [])
+        controller.calibrate()
+        portal.moves.clear()
+        for args in [
+            (-1, 250, 120, -50), (300, 600, 120, -50),
+            (300, 250, 500, 0), (300, 250, 0, -251),
+            (float('nan'), 250, 120, -50), (300, 250, float('inf'), 0),
+            (True, 250, 120, -50), ('300', 250, 120, -50),
+            (None, 250, 120, -50), (10 ** 400, 250, 120, -50),
+            (300, 250, 0, 0), (300, 250, 400, 201),
+            (300, 250, 120, -50, 0.19), (300, 250, 120, -50, 2.01),
+            (300, 250, 120, -50, float('nan')), (300, 250, 120, -50, True),
+        ]:
+            with self.subTest(args=args), self.assertRaises(native.Refused):
+                controller.right_drag(*args)
+        desktop.bounds = (4700, 500, 800, 600)
+        for args in [(100, 250, 300, 0), (600, 250, -300, 0)]:
+            with self.subTest(monitor=args), self.assertRaises(native.Refused):
+                controller.right_drag(*args)
+        self.assertEqual(portal.moves, [])
+        self.assertEqual(portal.events, [])
+
+    def test_changed_drag_preconditions_never_press(self):
+        for change in ('focus', 'identity', 'geometry', 'mapping', 'button'):
+            with self.subTest(change=change):
+                desktop = Desktop()
+                portal = Portal(desktop)
+                controller = native.Controller(desktop, portal, pause=lambda _: None)
+                controller.calibrate()
+                move = portal.move
+
+                def changed_move(x, y):
+                    move(x, y)
+                    if change == 'focus':
+                        desktop.focused = False
+                    elif change == 'identity':
+                        desktop.valid_identity = False
+                    elif change == 'geometry':
+                        desktop.bounds = (1000, 500, 801, 600)
+                    elif change == 'mapping':
+                        desktop.root = (desktop.root[0] + 30, desktop.root[1])
+                    else:
+                        desktop.mask = 256
+
+                portal.move = changed_move
+                with self.assertRaises(native.Refused):
+                    controller.right_drag(300, 250, 120, -50)
+                self.assertEqual(portal.events, [])
+
+    def test_changed_state_during_drag_stops_movement_and_releases_right_button(self):
+        cases = [(change, phase) for change in ('focus', 'identity', 'geometry', 'mapping', 'button')
+                 for phase in ('after-press', 'after-movement')]
+        for change, phase in cases:
+            with self.subTest(change=change, phase=phase):
+                desktop = Desktop()
+                portal = Portal(desktop)
+                controller = native.Controller(desktop, portal, pause=lambda _: None)
+                controller.calibrate()
+                portal.moves.clear()
+                move, button = portal.move, portal.button
+
+                def change_state():
+                    if change == 'focus':
+                        desktop.focused = False
+                    elif change == 'identity':
+                        desktop.valid_identity = False
+                    elif change == 'geometry':
+                        desktop.bounds = (1000, 500, 801, 600)
+                    elif change == 'mapping':
+                        desktop.root = (desktop.root[0] + 30, desktop.root[1])
+                    else:
+                        desktop.mask = 1280  # Unexpected left button alongside right.
+
+                def changed_move(x, y):
+                    move(x, y)
+                    if portal.events and phase == 'after-movement':
+                        change_state()
+
+                def changed_button(pressed, code=272):
+                    button(pressed, code)
+                    if pressed and phase == 'after-press':
+                        change_state()
+
+                portal.move = changed_move
+                portal.button = changed_button
+                with self.assertRaises(native.Refused):
+                    controller.right_drag(300, 250, 120, -50)
+                self.assertEqual(len(portal.moves), 1 if phase == 'after-press' else 2)
+                self.assertEqual(portal.events, [True, False])
+                self.assertEqual(portal.button_codes, [273, 273])
+                self.assertEqual(desktop.mask, 0)
+
+    def test_interrupted_drag_releases_right_button_and_closes_grant(self):
+        for interrupt in ('press', 'movement', 'pause', 'release'):
+            with self.subTest(interrupt=interrupt):
+                desktop = Desktop()
+                portal = Portal(desktop)
+                button, move = portal.button, portal.move
+                attempts = []
+
+                def interrupted_button(pressed, code=272):
+                    attempts.append((pressed, code))
+                    if interrupt == 'release' and not pressed and len(attempts) == 2:
+                        raise KeyboardInterrupt
+                    button(pressed, code)
+                    if interrupt == 'press' and pressed:
+                        raise KeyboardInterrupt
+
+                def interrupted_move(x, y):
+                    move(x, y)
+                    if interrupt == 'movement' and desktop.mask:
+                        raise KeyboardInterrupt
+
+                def interrupted_pause(_):
+                    if interrupt == 'pause' and desktop.mask:
+                        raise KeyboardInterrupt
+
+                portal.button, portal.move = interrupted_button, interrupted_move
+                events = []
+                with tempfile.TemporaryDirectory() as directory:
+                    with self.assertRaises(KeyboardInterrupt):
+                        native.run_session(desktop, portal, Path(directory),
+                                           ['{"action":"right-drag","x":300,"y":250,"dx":120,"dy":-50}'],
+                                           events.append, pause=interrupted_pause)
+                self.assertEqual(attempts[0], (True, 273))
+                self.assertEqual(attempts[-1], (False, 273))
+                self.assertEqual(sum(not pressed for pressed, _ in attempts),
+                                 2 if interrupt == 'release' else 1)
+                self.assertEqual(desktop.mask, 0)
+                self.assertEqual(portal.closes, 1)
+                self.assertNotIn('right-dragged', [event['status'] for event in events])
+
+    def test_drag_dispatch_refuses_bad_requests_then_performs_one_bounded_gesture(self):
+        desktop = Desktop()
+        portal = Portal(desktop)
+        events = []
+        valid = {'action': 'right-drag', 'x': 300, 'y': 250, 'dx': 120, 'dy': -50}
+        invalid = [
+            '{', 'null', '[]', json.dumps({key: value for key, value in valid.items() if key != 'dy'}),
+            *[json.dumps({**valid, key: value}) for key, value in
+              [('x', True), ('dx', '120'), ('duration_seconds', False), ('duration_seconds', float('nan')),
+               ('duration_seconds', 3), ('x', -1), ('dx', 500)]],
+        ]
+
+        def commands():
+            moves = len(portal.moves)
+            for request in invalid:
+                yield request
+                self.assertEqual(len(portal.moves), moves)
+                self.assertEqual(portal.events, [])
+            yield json.dumps(valid)
+            yield '{"action":"stop"}'
+
+        with tempfile.TemporaryDirectory() as directory:
+            native.run_session(desktop, portal, Path(directory), commands(), events.append, pause=lambda _: None)
+        self.assertEqual(sum(event['status'] == 'refused' for event in events), len(invalid))
+        self.assertIn({'status': 'right-dragged', 'client': [300, 250], 'delta': [120, -50],
+                       'duration_seconds': 0.6}, events)
+        self.assertEqual(portal.events, [True, False])
+        self.assertEqual(portal.button_codes, [273, 273])
+        self.assertEqual(portal.closes, 1)
+
+    def test_portal_sends_right_press_and_release_without_changing_left_click_default(self):
+        calls = []
+        portal = native.Portal.__new__(native.Portal)
+        portal.session = 'test-session'
+        portal.dbus = SimpleNamespace(Int32=int, UInt32=int)
+        portal.remote = SimpleNamespace(NotifyPointerButton=lambda *args: calls.append(args))
+        portal.button(True, 273)
+        portal.button(False, 273)
+        portal.button(True)
+        self.assertEqual(calls, [('test-session', {}, 273, 1), ('test-session', {}, 273, 0),
+                                 ('test-session', {}, 272, 1)])
 
 
 class DiagnosticBuild(unittest.TestCase):

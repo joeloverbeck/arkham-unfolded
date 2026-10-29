@@ -2,6 +2,8 @@ use super::*;
 use bevy::camera::primitives::MeshAabb;
 use std::time::Duration;
 
+use crate::tabletop_standee_checks as standee_checks;
+
 #[test]
 fn launch_uses_configured_root_without_creating_a_preference() {
     let dir = tempfile::tempdir().unwrap();
@@ -550,6 +552,45 @@ fn scene_app_in(mut app: App) -> (App, Handle<Image>) {
     (app, back)
 }
 
+#[test]
+fn production_scene_keeps_physical_standees_and_readable_missing_portraits() {
+    use crate::tabletop_layout::InvestigatorClass::{Mystic, Rogue, Survivor};
+
+    for missing in [None, Some(1)] {
+        let (mut app, _) = scene_app();
+        let mut expected = Vec::new();
+        for (index, (code, class)) in [("06003", Rogue), ("06005", Survivor), ("60401", Mystic)]
+            .into_iter()
+            .enumerate()
+        {
+            let image = (missing != Some(index)).then(|| {
+                app.world_mut()
+                    .resource_mut::<Assets<Image>>()
+                    .add(Image::default())
+            });
+            if let Some(image) = &image {
+                app.world_mut()
+                    .resource_mut::<Art>()
+                    .handles
+                    .insert(format!("standee/{code}"), image.clone());
+            }
+            expected.push((class, image));
+        }
+        app.add_systems(Update, synchronize_scene);
+        app.update();
+        standee_checks::assert_standees(app.world_mut(), &expected);
+        for name in ["Tony", "Patrice", "Jacqueline"] {
+            assert!(
+                app.world_mut()
+                    .query_filtered::<&Text, With<WorldLabel>>()
+                    .iter(app.world())
+                    .any(|label| label.0.contains(name)),
+                "{name} remains readable with or without a portrait"
+            );
+        }
+    }
+}
+
 fn deck_bounds_and_top(app: &mut App) -> (f32, Option<Handle<Image>>) {
     let world = app.world_mut();
     let mut query = world.query_filtered::<
@@ -665,6 +706,222 @@ fn selecting_and_inspecting_two_copies_preserves_the_complete_commitment() {
             .commitments
             .is_empty()
     );
+}
+
+fn keyboard_menu_app(path: PathBuf) -> (App, Entity) {
+    use bevy::{
+        camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
+        input_focus::{InputDispatchPlugin, InputFocusPlugin, tab_navigation::TabNavigationPlugin},
+        window::{PrimaryWindow, WindowRef},
+    };
+
+    let mut app = App::new();
+    app.add_plugins((
+        bevy::app::TaskPoolPlugin::default(),
+        bevy::asset::AssetPlugin::default(),
+        bevy::image::ImagePlugin::default(),
+        bevy::text::TextPlugin,
+        bevy::transform::TransformPlugin,
+        bevy::camera::visibility::VisibilityPlugin,
+        bevy::input::InputPlugin,
+        InputFocusPlugin,
+        InputDispatchPlugin,
+        TabNavigationPlugin,
+        bevy::picking::PickingPlugin,
+        bevy::picking::InteractionPlugin,
+        bevy::ui::UiPlugin,
+        bevy::ui_widgets::ButtonPlugin,
+    ))
+    .init_resource::<Assets<TextureAtlasLayout>>()
+    .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
+    .init_resource::<Time<Real>>();
+    let mut app = presentation_app_in(app, path);
+    app.add_message::<bevy::window::CursorMoved>().add_systems(
+        Update,
+        camera_controls.after(handle_actions).before(rebuild_panel),
+    );
+    let window = app
+        .world_mut()
+        .query_filtered::<Entity, With<Window>>()
+        .single(app.world())
+        .unwrap();
+    {
+        let mut window = app.world_mut().get_mut::<Window>(window).unwrap();
+        window.resolution = (1600, 1000).into();
+        window.focused = true;
+    }
+    // TabNavigationPlugin attaches to the primary window during startup.
+    app.world_mut().entity_mut(window).insert(PrimaryWindow);
+    app.world_mut().spawn((
+        MainCamera,
+        Transform::default(),
+        Camera {
+            computed: ComputedCameraValues {
+                target_info: Some(RenderTargetInfo {
+                    physical_size: UVec2::new(1600, 1000),
+                    scale_factor: 1.0,
+                }),
+                ..default()
+            },
+            ..default()
+        },
+        RenderTarget::Window(WindowRef::Entity(window)),
+    ));
+    app.update();
+    (app, window)
+}
+
+fn keyboard_press(app: &mut App, window: Entity, key_code: KeyCode) {
+    use bevy::input::{
+        ButtonState,
+        keyboard::{Key, KeyboardInput},
+    };
+    let logical_key = match key_code {
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::Escape => Key::Escape,
+        KeyCode::KeyW => Key::Character("w".into()),
+        KeyCode::ArrowLeft => Key::ArrowLeft,
+        _ => unreachable!(),
+    };
+    for state in [ButtonState::Pressed, ButtonState::Released] {
+        app.world_mut().write_message(KeyboardInput {
+            key_code,
+            logical_key: logical_key.clone(),
+            state,
+            text: None,
+            repeat: false,
+            window,
+        });
+        advance(app, 0.1);
+    }
+}
+
+fn focused_button_label(app: &App) -> Option<&str> {
+    let entity = app.world().resource::<InputFocus>().get()?;
+    app.world()
+        .get::<Children>(entity)?
+        .iter()
+        .find_map(|child| app.world().get::<Text>(child).map(|text| text.0.as_str()))
+}
+
+#[test]
+fn keyboard_menu_inspection_preserves_staged_copies_until_explicit_confirmation() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("keyboard.json");
+    let (mut app, window) = keyboard_menu_app(path.clone());
+    let initial_target = app.world().resource::<Orbit>().target;
+    keyboard_press(&mut app, window, KeyCode::KeyW);
+    assert_ne!(app.world().resource::<Orbit>().target, initial_target);
+    for _ in 0..3 {
+        choose(&mut app, "draw");
+        act(&mut app, Action::FinishAnimation);
+    }
+    choose(&mut app, "fight");
+    let before = app.world().resource::<Table>().session.clone();
+    let revision = before.observe().revision;
+    let saved = std::fs::read(&path).unwrap();
+    let target = app.world().resource::<Orbit>().target;
+    let yaw = app.world().resource::<Orbit>().yaw;
+    for id in [0, 3] {
+        act(
+            &mut app,
+            Action::Select(revision, Source::Hand(id), Vec3::ZERO),
+        );
+        assert_eq!(focused_button_label(&app), Some("Select to commit +1"));
+        keyboard_press(&mut app, window, KeyCode::KeyW);
+        keyboard_press(&mut app, window, KeyCode::ArrowLeft);
+        assert_eq!(app.world().resource::<Orbit>().target, target);
+        assert_eq!(app.world().resource::<Orbit>().yaw, yaw);
+        keyboard_press(&mut app, window, KeyCode::Enter);
+    }
+    act(
+        &mut app,
+        Action::Select(revision, Source::Hand(3), Vec3::ZERO),
+    );
+    keyboard_press(&mut app, window, KeyCode::Tab);
+    assert_eq!(focused_button_label(&app), Some("Inspect"));
+    keyboard_press(&mut app, window, KeyCode::Enter);
+    assert_eq!(app.world().resource::<Table>().inspect, Some(5));
+    keyboard_press(&mut app, window, KeyCode::KeyW);
+    keyboard_press(&mut app, window, KeyCode::ArrowLeft);
+    assert_eq!(app.world().resource::<Orbit>().target, target);
+    assert_eq!(app.world().resource::<Orbit>().yaw, yaw);
+    keyboard_press(&mut app, window, KeyCode::Escape);
+    assert!(app.world().resource::<Table>().inspect.is_none());
+    assert_eq!(
+        app.world().resource::<Table>().context.commitments,
+        [0, 3].into()
+    );
+    assert_eq!(app.world().resource::<Table>().session, before);
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
+
+    // The ordinary decision panel is outside the contextual tab group. Exercise
+    // its explicit confirmation through production UI picking, not an Action.
+    let confirm = app
+        .world_mut()
+        .query_filtered::<(Entity, &Children), With<Button>>()
+        .iter(app.world())
+        .find_map(|(entity, children)| {
+            children
+                .iter()
+                .any(|child| {
+                    app.world().get::<Text>(child).is_some_and(|text| {
+                        text.0.starts_with("Commit selected") && text.0.ends_with("+2")
+                    })
+                })
+                .then_some(entity)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "confirmation button missing from {:?}",
+                visible_text(&mut app)
+            )
+        });
+    let position = app
+        .world()
+        .get::<bevy::ui::UiGlobalTransform>(confirm)
+        .unwrap()
+        .translation;
+    use bevy::{
+        camera::RenderTarget,
+        picking::pointer::{Location, PointerAction, PointerId, PointerInput, PointerLocation},
+        window::WindowRef,
+    };
+    let location = Location {
+        target: RenderTarget::Window(WindowRef::Entity(window))
+            .normalize(Some(window))
+            .unwrap(),
+        position,
+    };
+    app.world_mut()
+        .spawn((PointerId::Mouse, PointerLocation::new(location.clone())));
+    app.update();
+    assert_eq!(app.world().resource::<Table>().session, before);
+    for action in [
+        PointerAction::Press(PointerButton::Primary),
+        PointerAction::Release(PointerButton::Primary),
+    ] {
+        app.world_mut().write_message(PointerInput::new(
+            PointerId::Mouse,
+            location.clone(),
+            action,
+        ));
+        app.update();
+    }
+    let after = app.world().resource::<Table>().view();
+    assert_eq!(after.stage, Stage::Reveal);
+    assert_eq!(after.revision, revision + 1);
+    assert_eq!(
+        after
+            .committed
+            .iter()
+            .map(|card| card.id)
+            .collect::<Vec<_>>(),
+        [0, 3]
+    );
+    assert_eq!(app.world().resource::<Orbit>().target, target);
+    assert_eq!(app.world().resource::<Orbit>().yaw, yaw);
 }
 
 #[test]

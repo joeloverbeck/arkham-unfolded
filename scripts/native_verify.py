@@ -238,6 +238,58 @@ class Controller:
         finally:
             self.portal.button(False)
 
+    def right_drag(self, x, y, dx, dy, duration_seconds=0.6):
+        values = (x, y, dx, dy, duration_seconds)
+        try:
+            if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in values):
+                raise ValueError
+            x, y, dx, dy, duration_seconds = (float(value) for value in values)
+            if not all(math.isfinite(value) for value in (x, y, dx, dy, duration_seconds)):
+                raise ValueError
+        except (ValueError, OverflowError) as error:
+            raise Refused("Drag coordinates and duration must be finite numbers") from error
+        if not 0.2 <= duration_seconds <= 2 or not 0 < abs(dx) + abs(dy) <= 600:
+            raise Refused("Drag pacing must be 0.2–2 seconds with nonzero travel of at most 600 client pixels")
+        if self.mapping is None:
+            raise Refused("Calibrate before dragging")
+        self.desktop.verify()
+        geometry = self.desktop.geometry()
+        left, top, width, height = geometry
+        sx, sy, ox, oy = self.mapping
+        points = [(x + dx * step / 20, y + dy * step / 20) for step in range(21)]
+        mapped = [((left + cx - ox) / sx, (top + cy - oy) / sy) for cx, cy in points]
+        if any(not (0 <= cx < width and 0 <= cy < height) for cx, cy in points):
+            raise Refused("Drag leaves the app client")
+        if any(not (0 <= px < self.portal.size[0] and 0 <= py < self.portal.size[1]) for px, py in mapped):
+            raise Refused("Drag leaves the selected monitor mapping")
+
+        def verify_pointer(expected, expected_mask):
+            self.desktop.verify()
+            _, actual, mask = self.desktop.pointer()
+            if (self.desktop.geometry() != geometry or mask != expected_mask
+                    or any(abs(a - b) > 2 for a, b in zip(actual, expected))):
+                raise Refused("Window, pointer, or button state changed during right-drag")
+
+        self.sample(*mapped[0])
+        verify_pointer(points[0], 0)
+        try:
+            self.portal.button(True, 273)  # Linux BTN_RIGHT, X11 Button3Mask below.
+            self.pause(0.1)
+            previous = points[0]
+            for expected, target in zip(points[1:], mapped[1:]):
+                verify_pointer(previous, 1 << 10)
+                self.portal.move(*target)
+                self.pause(duration_seconds / 20)
+                verify_pointer(expected, 1 << 10)
+                previous = expected
+        finally:
+            try:
+                self.portal.button(False, 273)
+            except KeyboardInterrupt:
+                # A second release is safe if interruption obscured delivery.
+                self.portal.button(False, 273)
+                raise
+
 
 class Portal:
     def __init__(self, emit):
@@ -316,8 +368,8 @@ class Portal:
         self.remote.NotifyPointerMotionAbsolute(self.session, {}, self.dbus.UInt32(self.stream),
                                                 self.dbus.Double(x), self.dbus.Double(y))
 
-    def button(self, pressed):
-        self.remote.NotifyPointerButton(self.session, {}, self.dbus.Int32(272), self.dbus.UInt32(pressed))
+    def button(self, pressed, button=272):
+        self.remote.NotifyPointerButton(self.session, {}, self.dbus.Int32(button), self.dbus.UInt32(pressed))
 
     def close(self):
         if self.session is not None:
@@ -362,13 +414,18 @@ def run_session(desktop, portal, directory, commands, emit, pause=time.sleep):
                 elif action == "click":
                     controller.click(float(request["x"]), float(request["y"]))
                     emit({"status": "clicked", "client": [request["x"], request["y"]]})
+                elif action == "right-drag":
+                    duration = request.get("duration_seconds", 0.6)
+                    controller.right_drag(request["x"], request["y"], request["dx"], request["dy"], duration)
+                    emit({"status": "right-dragged", "client": [request["x"], request["y"]],
+                          "delta": [request["dx"], request["dy"]], "duration_seconds": duration})
                 elif action == "focus":
                     desktop.focus()
                     emit({"status": "focused"})
                 elif action == "calibrate":
                     emit({"status": "ready", "mapping": controller.calibrate()})
                 else:
-                    raise Refused("Unknown action: use capture, click, focus, calibrate, or stop")
+                    raise Refused("Unknown action: use capture, click, right-drag, focus, calibrate, or stop")
             except (Refused, ValueError, TypeError, KeyError) as error:
                 emit({"status": "refused", "reason": str(error)})
     finally:
