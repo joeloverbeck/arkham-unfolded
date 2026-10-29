@@ -48,7 +48,9 @@ If applicable text cannot be located or read, substantive work is not authorized
 
 ## Project orientation
 
-The owner is `joeloverbeck`. This is one English-only, personal-use Arkham Horror: The Card Game application for Ubuntu, with a Rust core and an intended 3D tabletop. Bevy is the leading presentation candidate, subject to the bounded real-use evidence described in the foundations.
+The owner is `joeloverbeck`. This is one English-only, personal-use Arkham Horror: The Card Game application for Ubuntu, implemented in Rust with an intended 3D tabletop. Bevy is the leading presentation candidate, subject to the bounded real-use evidence described in the foundations.
+
+Before adding or changing executable code, tools, tests, prototypes, generated code or skill templates, apply the [implementation-language contract](docs/foundation/mission.md#implementation-language). It also governs code produced from generic skill examples.
 
 The first complete delivery is the original Night of the Zealot campaign on Standard with the three named investigator decks and the content actually selected for their campaign. Consult the play contract for decisions about upgrades, weaknesses, taboo versions, recording, replay, controls, and asset absence.
 
