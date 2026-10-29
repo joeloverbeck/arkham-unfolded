@@ -95,12 +95,12 @@ For a reported physical-input failure, establish the failing boundary before rep
 2. If the failure is confined to Arkham, distinguish input arrival from input handling. Check window focus and, when needed, use bounded diagnostic logging of cursor movement and mouse-button press/release events at Bevy's input boundary. Missing right-button events and received events rejected by UI/camera capture are different findings. Repeat an owner gesture only when it will distinguish the remaining explanations.
 3. When the expected event arrives, exercise the affected UI/camera path. Independently reproduced application defects can coexist with a desktop-input failure. A portal-generated right-drag verifies the synthetic input path only; it does not establish that the physical button works. A failed portal calibration follows the bounded recovery below and is not evidence of a camera defect.
 
-Use a separate save and temporary settings for diagnostics. The helper below supports the current Ubuntu GNOME/XWayland desktop; capture/input needs system Python 3.11+, `python3-dbus`, `python3-gi`, `python3-pil`, `libX11` and `xdotool`. Staging and headless tests use Python's standard library; the tests run in `scripts/check`. From the repository root, build the normal application and launch a disposable run:
+Use a separate save and temporary settings for diagnostics. The Rust helper below targets the current Ubuntu GNOME/XWayland desktop; capture/input needs access to X11, the desktop session bus and its RemoteDesktop/ScreenCast portal, plus `xdotool` for explicit focus. `scripts/tools` builds only the small `arkham-tools` package. Its headless tests run in `scripts/check`, using a private `dbus-daemon` for protocol tests; no real desktop grant is requested by the tests. From the repository root, build the normal application and launch a disposable run:
 
 ```sh
 cargo build --locked --features tabletop --bin arkham-tabletop
 review_dir=$(mktemp -d /tmp/arkham-native.XXXXXX)
-python3 -B scripts/native_verify.py launch \
+scripts/tools native launch \
   --binary target/debug/arkham-tabletop --output-dir "$review_dir/run" \
   --experiment jacqueline --no-art
 ```
@@ -116,22 +116,22 @@ Identify visible windows by that PID (`xdotool search --onlyvisible --pid "$nati
 For capture alone, run:
 
 ```sh
-timeout 10s /usr/bin/python3 -B scripts/native_verify.py capture \
+timeout 10s scripts/tools native capture \
   --pid "$native_pid" --window "$native_window" --output "$review_dir/client.png"
 ```
 
-This captures the client buffer through `XGetImage`, independently of the app's screenshot path. Inspect the image and reported pixel size. A new filename, timestamp or pixel hash does not establish the expected state: F12 produced new files with stale table contents during #14. Use independent captures before and after a visible transition, and inspect the actual result. Startup `--screenshot` remains a rendering check only.
+This captures the client buffer through X11 `GetImage`, independently of the app's screenshot path. Inspect the image and reported pixel size. A new filename, timestamp or pixel hash does not establish the expected state: F12 produced new files with stale table contents during #14. Use independent captures before and after a visible transition, and inspect the actual result. Startup `--screenshot` remains a rendering check only.
 
 For interaction, keep one helper process and its input open for the entire diagnostic:
 
 ```sh
-/usr/bin/python3 -B scripts/native_verify.py session \
+scripts/tools native session \
   --pid "$native_pid" --window "$native_window" --output-dir "$review_dir/interaction"
 ```
 
-The output directory must be new. The helper saves `initial.png` before requesting consent. In GNOME's dialog, select the monitor containing Arkham, enable **Allow Remote Interaction**, and click **Share**. One nonpersistent, pointer-only grant covers the run. Keep Arkham covering the monitor's central 10%. Coordinate one short idle-desktop interval for the check, keeping the keyboard and pointer idle throughout calibration and gestures. The helper measures the portal-to-X11 mapping and checks it at an independent point; it does not reuse a previous monitor's scale. Wait for `ready`, then inspect `initial.png` before choosing a target. Coordinates are pixels relative to the captured client, not a resized image in the conversation. A calibration `refused` result retains the session for the bounded recovery below.
+The output directory must be new. The helper saves `initial.png` before requesting consent. In GNOME's dialog, select the monitor containing Arkham, enable **Allow Remote Interaction**, and click **Share**. One nonpersistent, pointer-only grant covers the run. The total session limit is 600 seconds, including consent and idle input; `--timeout-seconds` can shorten it. Keep Arkham covering the monitor's central 10%. Coordinate one short idle-desktop interval for the check, keeping the keyboard and pointer idle throughout calibration and gestures. The helper measures the portal-to-X11 mapping and checks it at an independent point; it does not reuse a previous monitor's scale. Wait for `ready`, then inspect `initial.png` before choosing a target. Coordinates are pixels relative to the captured client, not a resized image in the conversation. A calibration `refused` result retains the session for the bounded recovery below.
 
-Send one JSON command per line on the same process's stdin. For example, after replacing `X` and `Y` with a target identified in the inspected image:
+Send one JSON command per line on the same process's stdin, waiting for responses rather than streaming a backlog. The input queue holds at most eight pending commands; overflow stops the input reader and cancels portal activity. EOF or a read error during pending consent cancels the request without waiting for approval. For example, after replacing `X` and `Y` with a target identified in the inspected image:
 
 ```text
 {"action":"click","x":X,"y":Y}
@@ -149,6 +149,8 @@ For an orbit check, choose a start and end on exposed table space in the inspect
 
 Wait for `clicked` or `right-dragged` and allow the visible transition to settle before capturing; inspect the result before choosing another action. A completed gesture is input evidence only: compare the captures to establish camera movement. The helper checks process identity, focus, unchanged geometry and the measured client pointer position immediately before each press. It refuses off-window, off-monitor and mismapped targets. It releases an attempted press even when interrupted.
 
+Switching to a terminal or agent interface can take focus from Arkham between commands. Use an explicit `{"action":"focus"}` immediately before the next operation when needed. Send the gesture first, let the application render, then request the capture; a capture queued immediately after release can still show the preceding frame. Inspect pixels rather than interpreting an intended-state filename as proof.
+
 A `refused` command keeps the grant open. Diagnose once within that session; `{"action":"focus"}` restores focus explicitly and `{"action":"calibrate"}` remeasures a changed monitor mapping. Inspect a new capture before retrying a target. Stop after one failed capture/focus/click/drag attempt plus at most one bounded diagnosis attempt. If interaction remains unavailable, report the limitation and use the already-agreed owner check within its remaining allowance. Do not interpret a stale image as evidence against what the owner sees on the desktop.
 
 Send `{"action":"stop"}` or close stdin when finished. EOF, fatal errors and handled interruption close the portal grant; a killed or crashed process loses its session when its D-Bus connection closes. `events.jsonl` records capture paths, pixel hashes, mapping, refusals and closure. It contains no artwork itself; keep it with the local captures.
@@ -160,7 +162,7 @@ Close the verification window normally and let the launch supervisor report its 
 For a temporary instrumented source copy, use a fresh build directory outside both checkouts:
 
 ```sh
-/usr/bin/python3 -B scripts/native_verify.py build \
+scripts/tools native build \
   --source /absolute/path/to/diagnostic-source \
   --output-dir "$review_dir/diagnostic-build" \
   --reference "$PWD/target/debug/arkham-tabletop"
@@ -175,7 +177,7 @@ Protocol references: [RemoteDesktop](https://flatpak.github.io/xdg-desktop-porta
 When a running app is actually laggy and an owner-run CPU capture is needed, identify its PID and exact executable first. For a staged run, use `run.json`; for an ordinary launch, use `pgrep -a -x arkham-tabletop` and `readlink /proc/PID/exe`, then select the intended window/process. Do not rebuild that executable during the capture. With `perf`, `sudo` and `timeout` installed, run:
 
 ```sh
-python3 -B scripts/profile_native.py \
+scripts/tools profile-native \
   --pid APP_PID --executable /absolute/path/to/arkham-tabletop \
   --output-dir /tmp/arkham-camera-profile-UNUSED
 ```

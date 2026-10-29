@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec cargo run --quiet --locked --manifest-path "$(dirname -- "${BASH_SOURCE[0]}")/../Cargo.toml" -p arkham-tools -- "$@"

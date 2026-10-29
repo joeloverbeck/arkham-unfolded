@@ -97,7 +97,7 @@ target/debug/arkham-driver --experiment tony --save "$tony_review/held.json" \
 {"op":"choose","revision":1,"id":"commit:none"}
 {"op":"choose","revision":2,"id":"reveal"}
 CHOICES
-python3 -B scripts/native_verify.py launch \
+scripts/tools native launch \
   --binary target/debug/arkham-tabletop --output-dir "$tony_review/render" \
   --experiment tony --load "$tony_review/held.json" \
   --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v3" \
