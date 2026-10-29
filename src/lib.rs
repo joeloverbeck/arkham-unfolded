@@ -7,6 +7,10 @@ mod explanation;
 #[cfg(feature = "tabletop")]
 mod tabletop_harm_text;
 #[cfg(feature = "tabletop")]
+mod tabletop_layout;
+#[cfg(feature = "tabletop")]
+mod tabletop_standees;
+#[cfg(feature = "tabletop")]
 mod tabletop_tokens;
 pub mod tony;
 #[cfg(feature = "tabletop")]

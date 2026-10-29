@@ -9,7 +9,7 @@ use crate::{
     explanation::explain_result,
 };
 use bevy::{
-    input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
+    input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
     input_focus::tab_navigation::{TabGroup, TabIndex},
     picking::hover::Hovered,
     prelude::*,
@@ -21,14 +21,16 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 pub(crate) mod asset_settings;
+mod context;
 mod inspection;
+use crate::tabletop_layout::{self, Area};
+use context::{Context, Source};
 mod scene;
-mod standees;
 mod symbols;
 use asset_settings::AssetSettings;
 use symbols::Symbol;
 
-const PANEL: f32 = 390.0;
+const PANEL: f32 = 190.0;
 const INK: Color = Color::srgb(0.035, 0.055, 0.065);
 const PAPER: Color = Color::srgb(0.91, 0.89, 0.81);
 const MUTED: Color = Color::srgb(0.62, 0.71, 0.70);
@@ -107,6 +109,13 @@ fn result_opens_automatically(view: &Observation) -> bool {
 #[derive(Clone)]
 enum Action {
     Choose(u64, String),
+    Select(Source, Vec2),
+    ContextChoose(u64, u64, String),
+    PrepareCancellation(u64, String),
+    DismissContext,
+    Focus(Area),
+    Utilities,
+    SourceLess(u64, u64, String),
     Save,
     Reopen,
     Replay,
@@ -141,11 +150,11 @@ impl Default for Orbit {
     fn default() -> Self {
         Self {
             yaw: 0.0,
-            pitch: 0.88,
-            distance: 13.8,
-            desired_distance: 13.8,
-            target: Vec3::new(1.9, 0.0, 0.0),
-            desired_target: Vec3::new(1.9, 0.0, 0.0),
+            pitch: 1.0,
+            distance: 44.0,
+            desired_distance: 44.0,
+            target: Vec3::new(0.0, 0.0, 4.0),
+            desired_target: Vec3::new(0.0, 0.0, 4.0),
             follow: false,
         }
     }
@@ -235,7 +244,7 @@ impl Options {
                 "--quit-after-screenshot" => options.quit_after_screenshot = true,
                 "--help" | "-h" => {
                     println!(
-                        "Arkham Unfolded — scripted rules experiment\n\n--case curse|autofail  Choose the privileged starting fixture\n--save PATH            Session save and autosave path\n--load PATH            Reopen a saved pending decision\n--art-root PATH        Use a prepared asset collection for this launch\n--no-art               Use readable substitutes\n--screenshot PATH      Capture the actual window once ready\n--quit-after-screenshot\n\nCamera: right drag or arrow keys; wheel or +/- to zoom; Home to reset. F12 saves a screenshot."
+                        "Arkham Unfolded — scripted rules experiment\n\n--case curse|autofail  Choose the privileged starting fixture\n--save PATH            Session save and autosave path\n--load PATH            Reopen a saved pending decision\n--art-root PATH        Use a prepared asset collection for this launch\n--no-art               Use readable substitutes\n--screenshot PATH      Capture the actual window once ready\n--quit-after-screenshot\n\nCamera: WASD to pan; right drag or arrow keys to orbit; wheel or +/- to zoom; Home to reset. F12 saves a screenshot."
                     );
                     return Ok(None);
                 }
@@ -347,7 +356,9 @@ pub fn run() -> Result<(), String> {
             (
                 mark_window_resized,
                 poll_asset_settings,
+                context::keyboard,
                 handle_actions,
+                context::synchronize,
                 camera_controls,
                 rebuild_panel,
                 button_colors,
@@ -432,94 +443,44 @@ fn setup_table(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    art: Res<Art>,
 ) {
-    let velvet = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.035, 0.16, 0.15),
-        perceptual_roughness: 0.95,
-        ..default()
-    });
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(12.4, 0.3, 8.2))),
-        MeshMaterial3d(velvet),
-        Transform::from_xyz(0.0, -0.2, 0.0),
-        Pickable::IGNORE,
-    ));
-    let brass = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.45, 0.31, 0.13),
-        metallic: 0.7,
-        perceptual_roughness: 0.5,
-        ..default()
-    });
-    for (size, at) in [
-        (Vec3::new(12.6, 0.15, 0.12), Vec3::new(0.0, -0.01, -4.1)),
-        (Vec3::new(12.6, 0.15, 0.12), Vec3::new(0.0, -0.01, 4.1)),
-        (Vec3::new(0.12, 0.15, 8.2), Vec3::new(-6.2, -0.01, 0.0)),
-        (Vec3::new(0.12, 0.15, 8.2), Vec3::new(6.2, -0.01, 0.0)),
-    ] {
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::from_size(size))),
-            MeshMaterial3d(brass.clone()),
-            Transform::from_translation(at),
-            Pickable::IGNORE,
-        ));
-    }
-    let zone = materials.add(Color::srgb(0.065, 0.22, 0.21));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(10.6, 0.035, 2.45))),
-        MeshMaterial3d(zone),
-        Transform::from_xyz(0.0, -0.02, -2.4),
-        Pickable::IGNORE,
-    ));
+    tabletop_layout::spawn_surfaces(&mut commands, &mut meshes, &mut materials);
+    commands
+        .spawn((
+            Mesh3d(meshes.add(Plane3d::default().mesh().size(60.0, 60.0))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgba(0.0, 0.0, 0.0, 0.0),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..default()
+            })),
+            Transform::from_xyz(0.0, -0.055, 4.0),
+        ))
+        .observe(|event: On<PointerClick>, mut queue: ResMut<Actions>| {
+            if event.button == PointerButton::Primary {
+                queue.0.push(Action::DismissContext);
+            }
+        });
     let bag = materials.add(Color::srgb(0.18, 0.10, 0.16));
-    commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(0.65, 0.9))),
-        MeshMaterial3d(bag),
-        Transform::from_xyz(-4.5, 0.48, 1.75),
-        Pickable::IGNORE,
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(0.46, 0.025))),
-        MeshMaterial3d(materials.add(Color::BLACK)),
-        Transform::from_xyz(-4.5, 0.95, 1.75),
-        Pickable::IGNORE,
-    ));
-    for (i, card) in CARDS.iter().enumerate() {
-        let x = -2.0 + i as f32 * 2.4;
-        // The source stores Jacqueline sideways in a portrait-shaped image.
-        // Rotating the original face preserves both its artwork and proportions.
-        let rotation = Quat::from_rotation_y(if card.landscape {
-            std::f32::consts::FRAC_PI_2
-        } else {
-            0.0
+    commands
+        .spawn((
+            Mesh3d(meshes.add(Cylinder::new(0.65, 0.9))),
+            MeshMaterial3d(bag),
+            Transform::from_xyz(-6.4, 0.48, 0.5),
+            context::Selectable(Source::Bag),
+        ))
+        .observe(|event: On<PointerClick>, mut queue: ResMut<Actions>| {
+            context::select(event, Source::Bag, &mut queue)
         });
-        let material = materials.add(StandardMaterial {
-            base_color: if art.handles[i].is_some() {
-                Color::WHITE
-            } else {
-                card.color
-            },
-            base_color_texture: art.handles[i].clone(),
-            perceptual_roughness: 0.9,
-            unlit: true,
-            ..default()
+    commands
+        .spawn((
+            Mesh3d(meshes.add(Cylinder::new(0.46, 0.025))),
+            MeshMaterial3d(materials.add(Color::BLACK)),
+            Transform::from_xyz(-6.4, 0.95, 0.5),
+        ))
+        .observe(|event: On<PointerClick>, mut queue: ResMut<Actions>| {
+            context::select(event, Source::Bag, &mut queue)
         });
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(1.85, 0.07, 2.60))),
-            MeshMaterial3d(materials.add(Color::srgb(0.14, 0.12, 0.10))),
-            Transform::from_xyz(x, 0.08, 1.9).with_rotation(rotation),
-            Pickable::IGNORE,
-        ));
-        commands
-            .spawn((
-                Mesh3d(meshes.add(Plane3d::default().mesh().size(1.80, 2.52))),
-                MeshMaterial3d(material),
-                Transform::from_xyz(x, 0.125, 1.9).with_rotation(rotation),
-            ))
-            .observe(move |_: On<PointerClick>, mut queue: ResMut<Actions>| {
-                queue.0.push(Action::Inspect(i))
-            });
-    }
     commands.spawn((
         DirectionalLight {
             illuminance: 7_000.0,
@@ -544,8 +505,10 @@ fn handle_actions(
     mut table: ResMut<Tabletop>,
     mut orbit: ResMut<Orbit>,
     mut settings: Option<ResMut<AssetSettings>>,
+    mut context: Option<ResMut<Context>>,
+    mut input_focus: Option<ResMut<bevy::input_focus::InputFocus>>,
 ) {
-    for action in queue.0.drain(..) {
+    for mut action in queue.0.drain(..) {
         if settings.as_ref().is_some_and(|settings| settings.is_busy()) {
             continue;
         }
@@ -555,8 +518,120 @@ fn handle_actions(
         {
             continue;
         }
+        if matches!(
+            action,
+            Action::Reopen
+                | Action::Replay
+                | Action::Back
+                | Action::Next
+                | Action::Live
+                | Action::New
+        ) && let Some(context) = context.as_mut()
+        {
+            context.invalidate();
+        }
+        if let Action::SourceLess(generation, revision, ref id) = action {
+            if table.replay.is_some()
+                || !context::source_less(id)
+                || !context
+                    .as_ref()
+                    .is_some_and(|context| context.generation == generation)
+                || !table.view().choices.iter().any(|choice| choice.id == *id)
+            {
+                continue;
+            }
+            action = Action::Choose(revision, id.clone());
+        }
+        if let Action::ContextChoose(generation, revision, ref id) = action {
+            let valid = context.as_ref().is_some_and(|context| {
+                context.open
+                    && context.generation == generation
+                    && context.current(&table)
+                    && (!id.starts_with("cancel-") || context.pending.as_ref() == Some(id))
+                    && context.selected.is_some_and(|source| {
+                        context::choices(&table.view(), source)
+                            .iter()
+                            .any(|choice| choice.id == *id)
+                    })
+            });
+            if !valid || table.replay.is_some() {
+                continue;
+            }
+            action = Action::Choose(revision, id.clone());
+        }
         match action {
+            Action::Select(source, anchor) => {
+                if let Some(context) = context.as_mut() {
+                    if !context.current(&table) {
+                        context.pending = None;
+                    }
+                    context.generation += 1;
+                    context.selected = Some(source);
+                    context.anchor = anchor;
+                    context.open = true;
+                    context.snapshot =
+                        Some((table.view(), table.replay.as_ref().map(Replay::index)));
+                }
+                if let Some(focus) = input_focus.as_mut() {
+                    focus.clear();
+                }
+            }
+            Action::PrepareCancellation(generation, id) => {
+                if let Some(context) = context.as_mut()
+                    && context.generation == generation
+                    && context.current(&table)
+                    && table.replay.is_none()
+                    && context.selected.is_some_and(|source| {
+                        matches!(source, Source::Token(_))
+                            && context::choices(&table.view(), source)
+                                .iter()
+                                .any(|choice| choice.id == id)
+                    })
+                {
+                    context.pending = Some(id);
+                }
+            }
+            Action::Utilities => {
+                if let Some(context) = context.as_mut() {
+                    context.utilities = !context.utilities;
+                    context.open = false;
+                    context.generation += 1;
+                }
+                if let Some(focus) = input_focus.as_mut() {
+                    focus.clear();
+                }
+            }
+            Action::DismissContext => {
+                if let Some(context) = context.as_mut() {
+                    context.open = false;
+                    context.utilities = false;
+                    context.generation += 1;
+                }
+                if let Some(focus) = input_focus.as_mut() {
+                    focus.clear();
+                }
+            }
+            Action::Focus(area) => {
+                let (target, distance) = tabletop_layout::focus(area);
+                orbit.yaw = 0.0;
+                orbit.pitch = 1.0;
+                orbit.target = target;
+                orbit.desired_target = target;
+                orbit.distance = distance;
+                orbit.desired_distance = distance;
+                orbit.follow = false;
+                if let Some(context) = context.as_mut() {
+                    context.open = false;
+                    context.generation += 1;
+                }
+                if let Some(focus) = input_focus.as_mut() {
+                    focus.clear();
+                }
+            }
             Action::Choose(revision, id) if table.replay.is_none() => {
+                if let Some(focus) = input_focus.as_mut() {
+                    focus.clear();
+                }
                 let table = &mut *table;
                 match continuity::commit_choice(&table.save_path, &mut table.session, revision, &id)
                 {
@@ -653,10 +728,19 @@ fn handle_actions(
                 }
             }
             Action::Inspect(i) => {
+                if let Some(context) = context.as_mut() {
+                    context.open = false;
+                    context.generation += 1;
+                }
                 table.inspect = Some(i);
                 table.history = false;
             }
-            Action::CloseInspect => table.inspect = None,
+            Action::CloseInspect => {
+                table.inspect = None;
+                if let Some(focus) = input_focus.as_mut() {
+                    focus.clear();
+                }
+            }
             Action::History => {
                 table.history = !table.history;
                 table.inspect = None;
@@ -674,19 +758,21 @@ fn handle_actions(
                     table.notice = "Choose a prepared asset folder in the file dialog. The current game stays unchanged.".into();
                 }
             }
-            Action::Choose(_, _) => {}
+            Action::Choose(_, _) | Action::ContextChoose(_, _, _) | Action::SourceLess(_, _, _) => {
+            }
+        }
+        if let Some(context) = context.as_mut()
+            && context.snapshot.is_some()
+            && !context.current(&table)
+        {
+            context.invalidate();
         }
         if !orbit.follow {
             orbit.desired_target = orbit.target;
             orbit.desired_distance = orbit.distance;
         }
         if orbit.follow && table.replay.is_some() {
-            let (target, distance) = match table.view().stage {
-                Stage::Commit => (Vec3::new(1.5, 0.2, -1.5), 13.8),
-                Stage::BeforeReveal => (Vec3::new(1.6, 0.0, 0.5), 13.0),
-                Stage::Cancellation => (Vec3::new(1.6, 0.0, 0.2), 11.7),
-                Stage::Finished | Stage::Ended => (Vec3::new(1.7, 0.2, -1.2), 13.2),
-            };
+            let (target, distance) = tabletop_layout::focus(Area::Test);
             orbit.desired_target = target;
             orbit.desired_distance = distance;
         }
@@ -713,7 +799,6 @@ fn mark_window_resized(
 fn camera_controls(
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
-    motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
     window: Single<&Window>,
     mut table: ResMut<Tabletop>,
@@ -721,23 +806,66 @@ fn camera_controls(
     mut orbit: ResMut<Orbit>,
     mut camera: Single<&mut Transform, With<MainCamera>>,
     settings: Option<Res<AssetSettings>>,
+    mut context: Option<ResMut<Context>>,
+    input_focus: Option<Res<bevy::input_focus::InputFocus>>,
+    focusable: Query<(), With<Button>>,
+    hover: Option<Res<bevy::picking::hover::HoverMap>>,
+    ui_nodes: Query<(), (With<Node>, Without<context::DismissalBackdrop>)>,
+    mut drag: Local<Option<Vec2>>,
 ) {
     let modal_open = table.result_open
         || table.inspect.is_some()
         || settings.as_ref().is_some_and(|settings| settings.is_busy());
-    let scene_pointer = !modal_open
-        && !table.history
-        && window
-            .cursor_position()
-            .is_some_and(|p| p.x < window.width() - PANEL);
+    let pointer_enabled = window.focused && !modal_open && !table.history;
+    let over_ui = hover
+        .as_ref()
+        .and_then(|hover| hover.get(&bevy::picking::pointer::PointerId::Mouse))
+        .is_some_and(|hits| hits.keys().any(|entity| ui_nodes.contains(*entity)));
+    let cursor = window.cursor_position();
+    let scene_pointer = pointer_enabled && cursor.is_some() && !over_ui;
+    // Capture a scene drag at its start, then keep it across UI. Window cursor
+    // positions use logical pixels and work without raw device-motion events.
+    let motion = match cursor {
+        Some(position) if pointer_enabled && buttons.pressed(MouseButton::Right) => {
+            if buttons.just_pressed(MouseButton::Right) {
+                *drag = scene_pointer.then_some(position);
+                Vec2::ZERO
+            } else if let Some(previous) = drag.as_mut() {
+                let delta = position - *previous;
+                *previous = position;
+                delta
+            } else {
+                Vec2::ZERO
+            }
+        }
+        _ => {
+            *drag = None;
+            Vec2::ZERO
+        }
+    };
+    let keyboard_captured = modal_open
+        || table.history
+        || context
+            .as_ref()
+            .is_some_and(|context| context.open || context.utilities)
+        || input_focus
+            .as_ref()
+            .and_then(|focus| focus.get())
+            .is_some_and(|entity| focusable.contains(entity))
+        || keys.just_pressed(KeyCode::Escape);
     let was_following = orbit.follow;
     let mut changed = false;
-    if buttons.pressed(MouseButton::Right) && scene_pointer && motion.delta != Vec2::ZERO {
-        orbit.yaw -= motion.delta.x * 0.006;
-        orbit.pitch += motion.delta.y * 0.004;
+    if motion != Vec2::ZERO {
+        orbit.yaw -= motion.x * 0.006;
+        orbit.pitch += motion.y * 0.004;
         changed = true;
     }
-    if scene_pointer && scroll.delta.y != 0.0 {
+    if scene_pointer
+        && !context
+            .as_ref()
+            .is_some_and(|context| context.open || context.utilities)
+        && scroll.delta.y != 0.0
+    {
         orbit.distance -= scroll.delta.y * 0.6;
         changed = true;
     }
@@ -749,18 +877,33 @@ fn camera_controls(
         (KeyCode::Equal, 0.0, 0.0, -5.0),
         (KeyCode::Minus, 0.0, 0.0, 5.0),
     ] {
-        if !modal_open && keys.pressed(key) {
+        if !keyboard_captured && window.focused && keys.pressed(key) {
             orbit.yaw += yaw * time.delta_secs();
             orbit.pitch += pitch * time.delta_secs();
             orbit.distance += zoom * time.delta_secs();
             changed = true;
         }
     }
-    if !modal_open && keys.just_pressed(KeyCode::Home) {
+    if !keyboard_captured && window.focused && keys.just_pressed(KeyCode::Home) {
         *orbit = Orbit::default();
         changed = true;
     }
+    if !keyboard_captured && window.focused {
+        let delta = tabletop_layout::pan_delta(&keys, orbit.yaw, time.delta_secs(), orbit.distance);
+        if delta != Vec3::ZERO {
+            orbit.target += delta;
+            orbit.desired_target = orbit.target;
+            changed = true;
+        }
+    }
     if changed {
+        if let Some(context) = context.as_mut()
+            && context.open
+        {
+            context.open = false;
+            context.generation += 1;
+            table.dirty = true;
+        }
         if was_following {
             table.dirty = true;
         }
@@ -769,7 +912,7 @@ fn camera_controls(
         orbit.desired_distance = orbit.distance;
     }
     orbit.pitch = orbit.pitch.clamp(0.35, 1.35);
-    orbit.distance = orbit.distance.clamp(8.0, 22.0);
+    orbit.distance = orbit.distance.clamp(6.0, 55.0);
     let blend = (time.delta_secs() * 4.0).min(1.0);
     orbit.distance += (orbit.desired_distance - orbit.distance) * blend;
     let desired = orbit.desired_target;
@@ -893,11 +1036,12 @@ fn button(
     label: &str,
     action: Action,
     primary: bool,
-) {
+) -> Entity {
     let tone = if primary { TEAL } else { BUTTON };
     parent
         .spawn((
             Button,
+            TabIndex(0),
             Hovered::default(),
             Node {
                 width: percent(100),
@@ -912,9 +1056,11 @@ fn button(
             ButtonTone(tone),
         ))
         .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| queue.0.push(action.clone()))
-        .with_child(art.text(label, 16.0, PAPER));
+        .with_child(art.text(label, 16.0, PAPER))
+        .id()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rebuild_panel(
     mut commands: Commands,
     mut table: ResMut<Tabletop>,
@@ -922,7 +1068,22 @@ fn rebuild_panel(
     art: Res<Art>,
     panels: Query<Entity, With<Panel>>,
     windows: Query<&Window>,
+    context: Option<Res<Context>>,
+    images: Option<Res<Assets<Image>>>,
+    mut last_portrait_readiness: Local<[bool; 3]>,
 ) {
+    let readiness = ["Tony Morgan", "Patrice Hathaway", "Jacqueline Fine"].map(|name| {
+        art.investigators.iter().any(|(found, handle)| {
+            found == name
+                && images
+                    .as_ref()
+                    .is_some_and(|images| images.get(handle).is_some())
+        })
+    });
+    if *last_portrait_readiness != readiness {
+        *last_portrait_readiness = readiness;
+        table.dirty = true;
+    }
     if !table.dirty {
         return;
     }
@@ -931,179 +1092,172 @@ fn rebuild_panel(
         commands.entity(entity).despawn();
     }
     let view = table.view();
+    let viewport = windows
+        .iter()
+        .next()
+        .map_or(Vec2::new(1600.0, 1000.0), |window| {
+            Vec2::new(window.width(), window.height())
+        });
+    let generation = context.as_ref().map_or(0, |context| context.generation);
+    commands.spawn((Node { position_type: PositionType::Absolute, left: px(16), top: px(12),
+        max_width: px((viewport.x - PANEL - 48.0).max(180.0)), padding: UiRect::all(px(10)),
+        flex_direction: FlexDirection::Column, row_gap: px(5), ..default()
+    }, BackgroundColor(Color::srgba(0.035, 0.055, 0.065, 0.94)), Panel))
+    .with_children(|parent| {
+        let mode = table.replay.as_ref().map_or("LIVE DECISION".into(), |r| format!("REPLAY / MOMENT {} / {}", r.index() + 1, r.len()));
+        parent.spawn(art.text(format!("{mode} / Decision: {} / Test: Jacqueline", context::actor(&view)), 15.0, GOLD));
+        skill_summary(parent, &art, &view, 16.0, PAPER);
+        parent.spawn(art.text(&view.prompt, 16.0, PAPER));
+        let hint = match view.stage {
+            Stage::Commit => "Focus Patrice, then select Promise of Power to commit it.",
+            Stage::BeforeReveal => "Select Jacqueline's card for her reaction, or the chaos bag to reveal.",
+            Stage::Cancellation => "Focus Test and select any revealed token to choose a complete cancellation set.",
+            Stage::Finished => "Inspect the tokens and Show test result when ready.",
+            Stage::Ended => "This bounded experiment has ended; its record is preserved.",
+        };
+        parent.spawn(art.text(hint, 12.0, MUTED));
+        parent.spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, column_gap: px(8), row_gap: px(5), ..default() })
+            .with_children(|row| {
+                let mut control = |label: &str, action: Action, primary| {
+                    row.spawn(Node { width: px(210), ..default() }).with_children(|slot| { button(slot, &art, label, action, primary); });
+                };
+                if table.replay.is_none() {
+                    for choice in view.choices.iter().filter(|choice| context::source_less(&choice.id)) {
+                        control(&choice.label, Action::SourceLess(generation, view.revision, choice.id.clone()), choice.id != "end");
+                    }
+                } else if let Some(replay) = &table.replay {
+                    if replay.index() + 1 < replay.len() { control("Next moment", Action::Next, true); }
+                    if replay.index() > 0 { control("Previous moment", Action::Back, false); }
+                    control("Return to live session", Action::Live, false);
+                }
+                if view.stage == Stage::Finished { control("Show test result", Action::ShowResult, true); }
+                if view.stage == Stage::Ended { control("Start another example", Action::New, false); }
+            });
+        if view.stage == Stage::Finished && has_resolved_curse(&view) {
+            parent.spawn(art.text("Curse: -2. Reveal another token.", 13.0, GOLD));
+        }
+        if !table.notice.is_empty() { parent.spawn(art.text(&table.notice, 12.0, MUTED)); }
+    });
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                left: px(25),
-                top: px(20),
+                right: px(10),
+                top: px(12),
+                width: px(PANEL),
+                max_height: px((viewport.y - 55.0).max(180.0)),
                 flex_direction: FlexDirection::Column,
-                row_gap: px(5),
+                row_gap: px(7),
+                overflow: Overflow::scroll_y(),
                 ..default()
             },
+            ScrollPosition::default(),
             Pickable::IGNORE,
             Panel,
         ))
+        .observe(scroll_panel)
         .with_children(|parent| {
-            parent.spawn(art.text("ARKHAM  /  UNFOLDED", 28.0, GOLD));
-            parent.spawn(art.text("Scripted rules experiment · The Gathering", 16.0, PAPER));
-            parent.spawn(art.text(
-                "Prepared token order · one skill-test rules case",
-                13.0,
-                MUTED,
-            ));
+            button(parent, &art, "Menu", Action::Utilities, false);
+            context::focus_strip(parent, &art, images.as_deref());
         });
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                left: px(25),
-                bottom: px(16),
+                left: px(16),
+                bottom: px(10),
+                max_width: percent(85),
                 ..default()
             },
             Pickable::IGNORE,
             Panel,
         ))
         .with_child(art.text(
-            "Right drag / arrows: orbit    Wheel / + −: zoom    Home: reset    F12: capture",
-            13.0,
+            "WASD: pan / Right drag or arrows: orbit / Wheel or +/-: zoom / Home: overview",
+            12.0,
             MUTED,
         ));
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                right: px(0),
-                top: px(0),
-                bottom: px(0),
-                width: px(PANEL),
-                padding: UiRect::all(px(24)),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(12),
-                overflow: Overflow::scroll_y(),
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.055, 0.085, 0.10)),
-            ScrollPosition::default(),
-            Panel,
-        ))
-        .observe(scroll_panel)
-        .with_children(|parent| {
-            let mode = table.replay.as_ref().map_or("LIVE DECISION".into(), |r| {
-                format!("REPLAY  ·  MOMENT {} / {}", r.index() + 1, r.len())
-            });
-            parent.spawn(art.text(mode, 13.0, GOLD));
-            parent.spawn(art.text("Rotting Remains", 27.0, PAPER));
-            skill_summary(parent, &art, &view, 17.0, GOLD);
-            if view.stage == Stage::Finished && has_resolved_curse(&view) {
-                parent.spawn(art.text("Curse: −2. Reveal another token.", 19.0, GOLD));
-                parent.spawn(art.text(
-                    "Inspect the additional token, then choose Show test result when ready.",
-                    16.0,
-                    PAPER,
-                ));
-            } else {
-                parent.spawn(art.text(&view.prompt, 19.0, PAPER));
-            }
-            if table.replay.is_none() {
-                for choice in &view.choices {
-                    button(
-                        parent,
-                        &art,
-                        &choice.label,
-                        Action::Choose(view.revision, choice.id.clone()),
-                        choice.id != "end",
-                    );
-                }
-            } else if let Some(replay) = &table.replay {
-                if replay.index() + 1 < replay.len() {
-                    button(parent, &art, "Next moment  →", Action::Next, true);
-                }
-                if replay.index() > 0 {
-                    button(parent, &art, "←  Previous moment", Action::Back, false);
-                }
-                button(parent, &art, "Return to live session", Action::Live, false);
-            }
-            if matches!(view.stage, Stage::Finished) {
-                parent.spawn(art.text(
-                    format!("{} horror from this test", view.horror_dealt),
-                    20.0,
-                    if view.horror_dealt > 0 {
-                        Color::srgb(0.95, 0.59, 0.49)
-                    } else {
-                        Color::srgb(0.50, 0.80, 0.67)
-                    },
-                ));
-                button(parent, &art, "Show test result", Action::ShowResult, true);
-            }
-            parent.spawn(art.text(
-                format!(
-                    "Curse pool: {} / 10\nJacqueline's reaction: {}",
-                    view.curses_in_pool,
-                    if view.jacqueline_used {
-                        "used this round"
-                    } else {
-                        "available"
-                    }
-                ),
-                14.0,
-                MUTED,
-            ));
-            parent.spawn(art.text(&table.notice, 14.0, PAPER));
-            parent.spawn((Node {
-                flex_grow: 1.0,
-                ..default()
-            },));
-            button(parent, &art, "Save live session", Action::Save, false);
-            button(parent, &art, "Reopen saved session", Action::Reopen, false);
-            if table.replay.is_none() {
-                button(parent, &art, "Open recorded replay", Action::Replay, false);
-            }
-            if matches!(view.stage, Stage::Finished | Stage::Ended) {
-                button(parent, &art, "Start another example", Action::New, false);
-            }
-            button(
-                parent,
-                &art,
-                if table.history {
-                    "Hide action history"
-                } else {
-                    "Explain / action history"
+    if context.as_ref().is_some_and(|context| context.utilities) {
+        commands
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: px(12),
+                    top: px(62),
+                    width: px(305.0_f32.min(viewport.x - 24.0)),
+                    max_height: px((viewport.y - 160.0).max(150.0)),
+                    padding: UiRect::all(px(12)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(7),
+                    overflow: Overflow::scroll_y(),
+                    ..default()
                 },
-                Action::History,
-                false,
-            );
-            if table.replay.is_some() {
+                BackgroundColor(INK),
+                GlobalZIndex(45),
+                ScrollPosition::default(),
+                Panel,
+            ))
+            .observe(scroll_panel)
+            .with_children(|parent| {
                 button(
                     parent,
                     &art,
-                    if orbit.follow {
-                        "Camera: following · switch to manual"
-                    } else {
-                        "Camera: manual · follow replay"
-                    },
-                    Action::Follow,
+                    "Explain / action history",
+                    Action::History,
                     false,
                 );
-            }
-            button(
-                parent,
-                &art,
-                "Choose asset folder",
-                Action::AssetFolder,
-                false,
-            );
-            parent.spawn(art.text(&art.status, 12.0, MUTED));
-            parent.spawn(art.text(
-                if art.available == 3 {
-                    "Original card faces available. Click any card to inspect."
+                if table.replay.is_none() {
+                    button(parent, &art, "Save live session", Action::Save, false);
+                    button(parent, &art, "Reopen saved session", Action::Reopen, false);
+                    button(parent, &art, "Open recorded replay", Action::Replay, false);
                 } else {
-                    "Readable card substitutes are active. Click any card to inspect."
-                },
-                12.0,
-                MUTED,
-            ));
-        });
+                    button(
+                        parent,
+                        &art,
+                        if orbit.follow {
+                            "Camera following: on"
+                        } else {
+                            "Resume camera following"
+                        },
+                        Action::Follow,
+                        false,
+                    );
+                }
+                if matches!(view.stage, Stage::Finished | Stage::Ended) {
+                    button(parent, &art, "Start another example", Action::New, false);
+                }
+                parent.spawn(art.text(
+                    format!(
+                        "Curse pool: {} / 10 / Jacqueline reaction: {}",
+                        view.curses_in_pool,
+                        if view.jacqueline_used {
+                            "used"
+                        } else {
+                            "available"
+                        }
+                    ),
+                    13.0,
+                    MUTED,
+                ));
+                parent.spawn(art.text(&art.status, 12.0, MUTED));
+                parent.spawn(art.text(
+                    format!("{}/3 original card faces available", art.available),
+                    12.0,
+                    MUTED,
+                ));
+                button(
+                    parent,
+                    &art,
+                    "Choose asset folder",
+                    Action::AssetFolder,
+                    false,
+                );
+                button(parent, &art, "Close menu", Action::DismissContext, false);
+            });
+    }
+    if let Some(context) = context.as_ref() {
+        context::show(&mut commands, context, &table, &art, viewport);
+    }
     if let Some(index) = table.inspect {
         let viewport = windows
             .iter()
