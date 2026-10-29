@@ -5,6 +5,7 @@ use crate::{
     asset_config::AssetConfig,
     assets,
     tabletop::asset_settings::AssetSettings,
+    tabletop_layout::{self as layout, Area},
     tony::{
         Harm, Observation, Session, Stage,
         continuity::{self, Replay},
@@ -12,8 +13,11 @@ use crate::{
     },
 };
 use bevy::{
-    input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
-    input_focus::tab_navigation::{TabGroup, TabIndex},
+    input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
+    input_focus::{
+        InputFocus,
+        tab_navigation::{TabGroup, TabIndex},
+    },
     picking::hover::Hovered,
     prelude::*,
     render::view::screenshot::{Capturing, Screenshot, save_to_disk},
@@ -26,10 +30,13 @@ use std::{
     path::PathBuf,
 };
 
+mod controls;
 mod harm;
+mod scene;
+use controls::{Context, Source};
 use harm::{advance_presentation, animate_harm, harm_amounts, harm_scene};
+use scene::synchronize_scene;
 
-const PANEL_WIDTH: f32 = 430.0;
 const CARD_WIDTH: f32 = 1.35;
 const CARD_LENGTH: f32 = 1.89;
 // Card-stock thickness at this scene's scale; 32 cards occupy 0.208 units.
@@ -192,6 +199,7 @@ struct Table {
     presentation: VecDeque<PresentationStage>,
     stage_elapsed: f32,
     reduced_motion: bool,
+    context: Context,
 }
 impl Table {
     fn view(&self) -> Observation {
@@ -248,6 +256,13 @@ enum Action {
     AssetFolder,
     FinishAnimation,
     Motion,
+    Select(u64, Source, Vec3),
+    ContextChoice(u64, u64, String),
+    ToggleCommit(u64, u64, u8),
+    ConfirmCommit(u64),
+    DismissMenu,
+    Focus(Area),
+    Utilities,
 }
 #[derive(Resource, Default)]
 struct Actions(Vec<Action>);
@@ -261,6 +276,8 @@ struct PlayerDeck;
 struct MainCamera;
 #[derive(Component)]
 struct WorldLabel(Vec3, f32);
+#[derive(Component)]
+struct OverviewHeading;
 #[derive(Component)]
 struct Appearing;
 #[derive(Component)]
@@ -281,9 +298,9 @@ impl Default for Orbit {
         Self {
             yaw: 0.0,
             pitch: 1.0,
-            distance: 16.0,
-            target: Vec3::new(2.2, 0.0, 0.0),
-            desired_target: Vec3::new(2.2, 0.0, 0.0),
+            distance: layout::focus(Area::Investigator(0)).1,
+            target: layout::focus(Area::Investigator(0)).0,
+            desired_target: layout::focus(Area::Investigator(0)).0,
             follow: false,
         }
     }
@@ -344,6 +361,7 @@ pub fn run() -> Result<(), String> {
             presentation: VecDeque::new(),
             stage_elapsed: 0.0,
             reduced_motion: false,
+            context: Context::default(),
         })
         .insert_resource(Actions::default())
         .insert_resource(Orbit::default())
@@ -381,10 +399,13 @@ pub fn run() -> Result<(), String> {
                 handle_actions,
                 advance_presentation,
                 camera_controls,
+                controls::invalidate,
                 synchronize_scene,
                 rebuild_panel,
+                controls::draw_menu,
                 world_labels,
                 crate::tabletop_tokens::position_labels,
+                hide_overview_token_labels,
                 animate,
                 animate_harm,
                 button_colors,
@@ -440,7 +461,7 @@ fn button(
     label: &str,
     action: Action,
     primary: bool,
-) {
+) -> Entity {
     let color = if primary { PRIMARY } else { BUTTON };
     parent
         .spawn((
@@ -460,60 +481,10 @@ fn button(
             ButtonColor(color),
         ))
         .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| queue.0.push(action.clone()))
-        .with_child(art.text(label, 16.0, PAPER));
+        .with_child(art.text(label, 16.0, PAPER))
+        .id()
 }
 
-fn action_button(
-    art: &Art,
-    parent: &mut ChildSpawnerCommands,
-    view: &Observation,
-    choice: &crate::Choice,
-) {
-    let action = Action::Choose(view.revision, choice.id.clone());
-    if let Some(attack) = view.opportunity_attack(&choice.id) {
-        let color = Color::srgb(0.24, 0.17, 0.07);
-        parent
-            .spawn((
-                Button,
-                Hovered::default(),
-                TabIndex(0),
-                Node {
-                    width: percent(100),
-                    padding: UiRect::all(px(10)),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: px(5),
-                    border: UiRect::left(px(4)),
-                    flex_shrink: 0.0,
-                    ..default()
-                },
-                BorderColor::all(GOLD),
-                BackgroundColor(color),
-                ButtonColor(color),
-            ))
-            .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
-                queue.0.push(action.clone())
-            })
-            .with_children(|p| {
-                p.spawn(art.text(format!("! {}", choice.label), 16.0, PAPER));
-                p.spawn(art.text(
-                    format!(
-                        "Attack of opportunity: Ghoul Minion\n{} damage + {} horror",
-                        attack.damage, attack.horror
-                    ),
-                    14.0,
-                    GOLD,
-                ));
-            });
-    } else {
-        button(
-            art,
-            parent,
-            &choice.label,
-            action,
-            choice.id != "undo" && choice.id != "end_turn",
-        );
-    }
-}
 fn poll_settings(mut settings: ResMut<AssetSettings>, mut table: ResMut<Table>) {
     if let Some(notice) = settings.poll() {
         table.notice = notice;
@@ -526,14 +497,37 @@ fn handle_actions(
     mut orbit: ResMut<Orbit>,
     mut settings: ResMut<AssetSettings>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut focus: Option<ResMut<InputFocus>>,
 ) {
+    let view = table.view();
+    let replay = table.replay.as_ref().map(Replay::index);
+    table.context.sync(view.revision, replay);
     if keys.just_pressed(KeyCode::Escape) && table.modal() {
         queue.0.push(Action::Close);
+    } else if keys.just_pressed(KeyCode::Escape) {
+        queue.0.push(Action::DismissMenu);
     }
     for action in queue.0.drain(..) {
         if settings.is_busy() || (table.modal() && !matches!(action, Action::Close)) {
             continue;
         }
+        let action = match action {
+            Action::ContextChoice(epoch, revision, id) => {
+                if !table.context.accepts(epoch) {
+                    continue;
+                }
+                Action::Choose(revision, id)
+            }
+            Action::ConfirmCommit(revision) => {
+                let Some(id) =
+                    controls::commitment_choice(&table.view(), &table.context.commitments)
+                else {
+                    continue;
+                };
+                Action::Choose(revision, id)
+            }
+            action => action,
+        };
         match action {
             Action::Choose(revision, id) if table.replay.is_none() && !table.presenting() => {
                 let table = &mut *table;
@@ -643,12 +637,62 @@ fn handle_actions(
                     Err(e) => table.notice = format!("Could not start another turn: {e}"),
                 }
             }
-            Action::Inspect(index) => table.inspect = Some(index),
+            Action::Select(revision, source, at)
+                if revision == table.view().revision && controls::exists(&table.view(), source) =>
+            {
+                table.context.select(source, at);
+                if let Some(focus) = focus.as_mut() {
+                    focus.clear();
+                }
+            }
+            Action::ToggleCommit(epoch, revision, id)
+                if table.context.accepts(epoch)
+                    && table.replay.is_none()
+                    && !table.presenting()
+                    && revision == table.view().revision
+                    && controls::committable(&table.view(), id) =>
+            {
+                if !table.context.commitments.remove(&id) {
+                    table.context.commitments.insert(id);
+                }
+                table.context.dismiss();
+            }
+            Action::DismissMenu => {
+                table.context.dismiss();
+                table.context.utilities = false;
+                if let Some(focus) = focus.as_mut() {
+                    focus.clear();
+                }
+            }
+            Action::Focus(area) => {
+                let (at, distance) = layout::focus(area);
+                orbit.target = at;
+                orbit.desired_target = at;
+                orbit.distance = distance;
+                orbit.yaw = 0.0;
+                orbit.pitch = 1.0;
+                orbit.follow = false;
+                table.context.dismiss();
+                if let Some(focus) = focus.as_mut() {
+                    focus.clear();
+                }
+            }
+            Action::Utilities => {
+                table.context.utilities = !table.context.utilities;
+                table.context.dismiss();
+            }
+            Action::Inspect(index) => {
+                table.context.dismiss();
+                table.inspect = Some(index);
+            }
             Action::Close => {
                 table.inspect = None;
                 table.history = false;
             }
-            Action::History => table.history = true,
+            Action::History => {
+                table.context.dismiss();
+                table.history = true;
+            }
             Action::FinishAnimation if table.replay.is_none() => {
                 table.presentation.pop_front();
                 table.stage_elapsed = 0.0;
@@ -664,13 +708,17 @@ fn handle_actions(
         }
         if orbit.follow && table.replay.is_some() {
             orbit.desired_target = if let Some(hit) = table.harm() {
-                harm::recipient_position(hit.recipient)
+                harm::recipient_position(hit.recipient, &table.view())
             } else if table.view().held_token.is_some() {
-                Vec3::new(1.0, 0.0, 0.2)
+                layout::TEST_CENTER
             } else {
-                Vec3::new(2.2, 0.0, -0.7)
+                layout::investigator_center(0, 3)
             };
+            orbit.distance = 16.0;
         }
+        let view = table.view();
+        let replay = table.replay.as_ref().map(Replay::index);
+        table.context.sync(view.revision, replay);
         table.dirty = true;
     }
 }
@@ -680,12 +728,19 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(14.0, 0.3, 10.5))),
-        MeshMaterial3d(materials.add(Color::srgb(0.035, 0.16, 0.15))),
-        Transform::from_xyz(0.0, -0.2, 0.0),
-        Pickable::IGNORE,
-    ));
+    layout::spawn_surfaces(&mut commands, &mut meshes, &mut materials);
+    // A background hit target dismisses controls on empty felt and outside the mats.
+    commands
+        .spawn((
+            Mesh3d(meshes.add(Plane3d::default().mesh().size(200.0, 200.0))),
+            MeshMaterial3d(materials.add(INK)),
+            Transform::from_xyz(0.0, -0.5, 0.0),
+        ))
+        .observe(|event: On<PointerClick>, mut queue: ResMut<Actions>| {
+            if event.button == bevy::picking::pointer::PointerButton::Primary {
+                queue.0.push(Action::DismissMenu);
+            }
+        });
     commands.spawn((
         DirectionalLight {
             illuminance: 7_000.0,
@@ -696,22 +751,35 @@ fn setup(
     ));
     commands.spawn((Camera3d::default(), Transform::default(), MainCamera));
 }
-fn world_label(commands: &mut Commands, art: &Art, value: String, point: Vec3, color: Color) {
-    commands.spawn((
-        art.text(value, 13.0, color),
-        Node {
-            position_type: PositionType::Absolute,
-            width: px(160),
-            padding: UiRect::axes(px(5), px(3)),
-            border_radius: BorderRadius::all(px(3)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.92)),
-        Pickable::IGNORE,
-        WorldLabel(point, 160.0),
-        Scene,
-    ));
+fn world_label(
+    commands: &mut Commands,
+    art: &Art,
+    value: String,
+    point: Vec3,
+    color: Color,
+) -> Entity {
+    commands
+        .spawn((
+            art.text(value, 13.0, color),
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(160),
+                padding: UiRect::axes(px(5), px(3)),
+                border_radius: BorderRadius::all(px(3)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.92)),
+            Pickable::IGNORE,
+            WorldLabel(point, 160.0),
+            Scene,
+        ))
+        .id()
 }
+fn area_heading(commands: &mut Commands, art: &Art, value: String, point: Vec3) {
+    let entity = world_label(commands, art, value, point, GOLD);
+    commands.entity(entity).insert(OverviewHeading);
+}
+#[allow(clippy::too_many_arguments)]
 fn card_mesh(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -720,6 +788,7 @@ fn card_mesh(
     index: usize,
     at: Vec3,
     exhausted: bool,
+    selection: (u64, Source),
 ) {
     let card = &CARDS[index];
     let image = art.image(&format!("card/{}", card.code));
@@ -745,8 +814,10 @@ fn card_mesh(
             Transform::from_translation(at).with_rotation(Quat::from_rotation_y(rotation)),
             Scene,
         ))
-        .observe(move |_: On<PointerClick>, mut queue: ResMut<Actions>| {
-            queue.0.push(Action::Inspect(index))
+        .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
+            if event.button == bevy::picking::pointer::PointerButton::Primary {
+                queue.0.push(Action::Select(selection.0, selection.1, at));
+            }
         });
 }
 fn deck_mesh(
@@ -755,12 +826,13 @@ fn deck_mesh(
     materials: &mut Assets<StandardMaterial>,
     art: &Art,
     count: usize,
+    revision: u64,
 ) {
     if count == 0 {
         return;
     }
     // Sit on the tabletop. Shared geometry/materials keep the individual edges cheap.
-    let base = Vec3::new(4.8, -0.05, 2.5);
+    let base = scene::DECK_AT;
     let card = meshes.add(Cuboid::new(CARD_WIDTH, CARD_THICKNESS, CARD_LENGTH));
     let edges = [Color::srgb(0.76, 0.73, 0.65), Color::srgb(0.57, 0.55, 0.49)].map(|color| {
         materials.add(StandardMaterial {
@@ -780,24 +852,29 @@ fn deck_mesh(
         ));
     }
     let image = art.image("card-back/player");
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: if image.is_some() {
-                Color::WHITE
-            } else {
-                Color::srgb(0.12, 0.19, 0.30)
-            },
-            base_color_texture: image,
-            unlit: true,
-            depth_bias: 1.0,
-            ..default()
-        })),
-        Transform::from_translation(base + Vec3::Y * (count as f32 * CARD_THICKNESS)),
-        Scene,
-        PlayerDeck,
-        Pickable::IGNORE,
-    ));
+    commands
+        .spawn((
+            Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: if image.is_some() {
+                    Color::WHITE
+                } else {
+                    Color::srgb(0.12, 0.19, 0.30)
+                },
+                base_color_texture: image,
+                unlit: true,
+                depth_bias: 1.0,
+                ..default()
+            })),
+            Transform::from_translation(base + Vec3::Y * (count as f32 * CARD_THICKNESS)),
+            Scene,
+            PlayerDeck,
+        ))
+        .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
+            if event.button == bevy::picking::pointer::PointerButton::Primary {
+                queue.0.push(Action::Select(revision, Source::Deck, base));
+            }
+        });
 }
 fn token_role(face: TokenFace) -> &'static str {
     match face {
@@ -816,220 +893,6 @@ fn token_role(face: TokenFace) -> &'static str {
     }
 }
 #[allow(clippy::too_many_arguments)]
-fn synchronize_scene(
-    mut commands: Commands,
-    table: Res<Table>,
-    art: Res<Art>,
-    entities: Query<Entity, With<Scene>>,
-    token: Query<&Transform, With<ChaosToken>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut rendered: Local<Option<Observation>>,
-) {
-    let view = table.view();
-    if rendered.as_ref() == Some(&view) {
-        return;
-    }
-    let token_scale = if table.reduced_motion {
-        Vec3::ONE
-    } else if rendered
-        .as_ref()
-        .is_some_and(|last| last.held_token == view.held_token)
-    {
-        token.single().map_or(Vec3::ONE, |t| t.scale)
-    } else {
-        Vec3::splat(0.1)
-    };
-    for entity in &entities {
-        commands.entity(entity).despawn();
-    }
-    for (index, at, caption, exhausted) in [
-        (
-            0,
-            Vec3::new(-4.7, 0.05, 1.2),
-            format!("Tony\nDamage {}/9\nHorror {}/5", view.damage, view.horror),
-            false,
-        ),
-        (
-            1,
-            Vec3::new(-4.7, 0.05, -1.9),
-            format!("Study\n{} clues · Shroud 2", view.study_clues),
-            false,
-        ),
-        (
-            2,
-            Vec3::new(-2.1, 0.05, -1.9),
-            if view.ghoul.alive {
-                format!(
-                    "Ghoul Minion\nDamage {}/2\n{} / {}\nBounty {}",
-                    view.ghoul.damage,
-                    if view.ghoul.ready {
-                        "Ready"
-                    } else {
-                        "Exhausted"
-                    },
-                    if view.ghoul.engaged {
-                        "Engaged"
-                    } else {
-                        "Unengaged"
-                    },
-                    view.ghoul.bounties
-                )
-            } else {
-                "Ghoul defeated".into()
-            },
-            !view.ghoul.ready,
-        ),
-        (
-            3,
-            Vec3::new(0.5, 0.05, -1.9),
-            format!("Bounty Contracts\n{} bounties", view.contracts_bounties),
-            false,
-        ),
-        (
-            4,
-            Vec3::new(3.0, 0.05, -1.9),
-            if view.injury {
-                "Internal Injury\nIn Tony's threat area".into()
-            } else {
-                "Internal Injury discarded".into()
-            },
-            false,
-        ),
-    ] {
-        if (index != 2 || view.ghoul.alive) && (index != 4 || view.injury) {
-            card_mesh(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                &art,
-                index,
-                at,
-                exhausted,
-            );
-        }
-        world_label(
-            &mut commands,
-            &art,
-            caption,
-            at + Vec3::new(0.0, 0.1, 1.2),
-            PAPER,
-        );
-    }
-    for (i, investigator) in view.investigators.iter().enumerate() {
-        let code = ["06003", "06005", "60401"][i];
-        let x = -3.7 + i as f32 * 2.8;
-        let image = art.image(&format!("standee/{code}"));
-        commands.spawn((
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(0.85, 1.2))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: if image.is_some() { Color::WHITE } else { GOLD },
-                base_color_texture: image,
-                alpha_mode: AlphaMode::Mask(0.5),
-                unlit: true,
-                double_sided: true,
-                cull_mode: None,
-                ..default()
-            })),
-            Transform::from_xyz(x, 0.65, -4.15)
-                .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
-            Scene,
-            Pickable::IGNORE,
-        ));
-        world_label(
-            &mut commands,
-            &art,
-            format!("{}\nStudy", investigator.name),
-            Vec3::new(x, 1.3, -4.1),
-            MUTED,
-        );
-    }
-    for (i, card) in view.hand.iter().enumerate() {
-        if let Some(index) = CARDS.iter().position(|c| c.code == card.code) {
-            let at = Vec3::new(-2.5 + i as f32 * 1.7, 0.05, 2.5);
-            card_mesh(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                &art,
-                index,
-                at,
-                false,
-            );
-            world_label(
-                &mut commands,
-                &art,
-                card.title.clone(),
-                at + Vec3::new(0.0, 0.1, 1.15),
-                PAPER,
-            );
-        }
-    }
-    deck_mesh(
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        &art,
-        view.deck_count,
-    );
-    world_label(
-        &mut commands,
-        &art,
-        format!("Tony's deck\n{} cards", view.deck_count),
-        Vec3::new(4.8, 0.2, 3.6),
-        MUTED,
-    );
-    commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(0.45, 0.7))),
-        MeshMaterial3d(materials.add(Color::srgb(0.18, 0.10, 0.16))),
-        Transform::from_xyz(4.8, 0.35, 0.0),
-        Scene,
-        Pickable::IGNORE,
-    ));
-    world_label(
-        &mut commands,
-        &art,
-        format!("Chaos bag\n{} tokens", view.bag_count),
-        Vec3::new(4.8, 0.9, 0.8),
-        GOLD,
-    );
-    if let Some(face) = view.held_token {
-        let status = if view
-            .test
-            .as_ref()
-            .is_some_and(|test| test.success.is_some())
-        {
-            crate::TokenStatus::Resolved
-        } else {
-            crate::TokenStatus::Pending
-        };
-        let (disk, label) = crate::tabletop_tokens::spawn(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            crate::tabletop_tokens::TokenVisual {
-                face,
-                status,
-                ordinal: None,
-                image: art.image(&format!("token/{}", token_role(face))),
-                transform: Transform::from_xyz(0.5, 0.2, 0.7).with_scale(token_scale),
-                label_offset: Vec3::new(0.0, 0.0, 1.05),
-            },
-        );
-        commands.entity(disk).insert((Appearing, ChaosToken, Scene));
-        commands.entity(label).insert(Scene);
-    }
-    harm_scene(
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        &art,
-        &view,
-        table.harm(),
-    );
-    *rendered = Some(view);
-}
-
 fn rebuild_panel(
     mut commands: Commands,
     mut table: ResMut<Table>,
@@ -1038,7 +901,22 @@ fn rebuild_panel(
     panels: Query<Entity, With<Panel>>,
     window: Single<&Window>,
     mut last_size: Local<Vec2>,
+    images: Option<Res<Assets<Image>>>,
+    mut last_portrait_readiness: Local<[bool; 3]>,
 ) {
+    let portraits = ["06003", "06005", "60401"].map(|code| {
+        art.image(&format!("standee/{code}")).and_then(|handle| {
+            images
+                .as_ref()
+                .and_then(|images| images.get(&handle))
+                .map(|image| (handle, image.size_f32()))
+        })
+    });
+    let readiness = portraits.each_ref().map(Option::is_some);
+    if *last_portrait_readiness != readiness {
+        *last_portrait_readiness = readiness;
+        table.dirty = true;
+    }
     let size = Vec2::new(window.width(), window.height());
     if *last_size != size {
         *last_size = size;
@@ -1052,88 +930,216 @@ fn rebuild_panel(
         commands.entity(entity).despawn();
     }
     let view = table.view();
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(20),
-                top: px(18),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(5),
-                ..default()
-            },
-            Pickable::IGNORE,
-            Panel,
-        ))
+    commands.spawn((Node { position_type: PositionType::Absolute, left: px(16), top: px(10), right: px(125),
+        flex_direction: FlexDirection::Column, row_gap: px(3), ..default() }, Pickable::IGNORE, Panel))
         .with_children(|p| {
-            p.spawn(art.text("ARKHAM / UNFOLDED", 25.0, GOLD));
-            p.spawn(art.text("Tony turn · The Gathering · Standard", 18.0, PAPER));
-            p.spawn(art.text("Prepared position · Ends after Tony's turn", 14.0, MUTED));
+            p.spawn(art.text("Tony turn · The Gathering · Standard · Prepared position", 19.0, GOLD));
+            p.spawn(art.text(format!("Resources {} · Clues {} · Damage {}/{} · Horror {}/{}   |   {} ordinary actions · Bonus Fight/Engage: {}",
+                view.resources, view.clues, view.damage, view.health, view.horror, view.sanity, view.ordinary_actions,
+                if view.bonus_action { "available" } else { "spent" }), 14.0, PAPER));
         });
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                left: px(20),
-                bottom: px(12),
+                right: px(12),
+                top: px(12),
+                width: px(108),
+                ..default()
+            },
+            Panel,
+        ))
+        .with_children(|p| {
+            button(&art, p, "Menu", Action::Utilities, false);
+        });
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(10),
+                top: px(76),
+                bottom: px(180),
+                width: px(124),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(7),
+                overflow: Overflow::scroll_y(),
                 ..default()
             },
             Pickable::IGNORE,
             Panel,
         ))
-        .with_child(art.text(
-            "Right drag / arrows: orbit   Wheel / +/-: zoom   Home: reset   F12: capture",
-            12.0,
-            MUTED,
-        ));
-    commands.spawn((Node { position_type: PositionType::Absolute, right: px(0), top: px(0), bottom: px(0), width: px(PANEL_WIDTH.min(size.x * 0.48)), padding: UiRect::all(px(18)), flex_direction: FlexDirection::Column, row_gap: px(9), overflow: Overflow::scroll_y(), ..default() }, BackgroundColor(Color::srgb(0.055, 0.085, 0.10)), ScrollPosition::default(), Panel))
         .observe(scroll_panel)
         .with_children(|p| {
-            p.spawn(art.text(table.replay.as_ref().map_or_else(|| "LIVE TURN".into(), |r| format!("REPLAY · MOMENT {} / {}", r.index() + 1, r.len())), 13.0, GOLD));
-            p.spawn(art.text(format!("{} ordinary actions\nBonus Fight/Engage: {}", view.ordinary_actions, if view.bonus_action { "available" } else { "spent" }), 20.0, PAPER));
-            p.spawn(art.text(format!("Resources {} · Clues {}\nDamage {}/{} · Horror {}/{}\nContracts {} bounties · Injury {}", view.resources, view.clues, view.damage, view.health, view.horror, view.sanity, view.contracts_bounties, if view.injury { "present" } else { "removed" }), 15.0, MUTED));
-            p.spawn(art.text(&view.prompt, 19.0, PAPER));
-            if let Some(test) = &view.test {
-                let outcome = test.success.map_or("Pending", |ok| if ok { "Success" } else { "Failure" });
-                p.spawn(art.text(format!("{}: skill {} vs {} · {}{}", test.kind.label(), test.skill_value, test.difficulty, outcome, test.modifier.map_or(String::new(), |m| format!(" · modifier {m:+}"))), 16.0, GOLD));
+            for (index, name) in ["Tony", "Patrice", "Jacqueline"].into_iter().enumerate() {
+                let color = layout::investigator_color(index);
+                let portrait = portraits[index]
+                    .as_ref()
+                    .map(|(image, size)| (image, size * (108.0 / size.x).min(82.0 / size.y)));
+                p.spawn((
+                    Button,
+                    Hovered::default(),
+                    TabIndex(0),
+                    AccessibleLabel::new(format!("Focus {name}")),
+                    Node {
+                        width: portrait.map_or(percent(100), |(_, size)| px(size.x + 10.0)),
+                        min_height: px(portrait.map_or(94.0, |(_, size)| size.y + 10.0)),
+                        padding: UiRect::all(px(5)),
+                        align_self: AlignSelf::Center,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        flex_shrink: 0.0,
+                        ..default()
+                    },
+                    BackgroundColor(color),
+                    ButtonColor(color),
+                ))
+                .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
+                    queue.0.push(Action::Focus(Area::Investigator(index)))
+                })
+                .with_children(|p| {
+                    if let Some((image, size)) = portrait {
+                        p.spawn((
+                            ImageNode::new(image.clone()),
+                            Node {
+                                width: px(size.x),
+                                height: px(size.y),
+                                ..default()
+                            },
+                            Pickable::IGNORE,
+                        ));
+                    } else {
+                        p.spawn(art.text(name, 14.0, PAPER));
+                    }
+                });
             }
-            if let Some(face) = view.held_token { p.spawn(art.text(format!("Revealed {}", face.label()), 21.0, GOLD)); }
+            for (label, area) in [
+                ("Scenario", Area::Scenario),
+                ("Test", Area::Test),
+                ("Overview", Area::Overview),
+            ] {
+                button(&art, p, label, Action::Focus(area), false);
+            }
+            p.spawn(art.text(
+                "WASD: pan\nRight drag: orbit\nWheel: zoom\nHome: Tony",
+                11.0,
+                MUTED,
+            ));
+        });
+    commands.spawn((Node { position_type: PositionType::Absolute, left: px(150), right: px(12), bottom: px(10),
+        max_height: px((size.y * 0.29).min(250.0)), padding: UiRect::all(px(12)), flex_direction: FlexDirection::Column,
+        row_gap: px(5), overflow: Overflow::scroll_y(), ..default() }, BackgroundColor(INK), Panel))
+        .observe(scroll_panel).with_children(|p| {
+            p.spawn(art.text(table.replay.as_ref().map_or_else(|| "TONY · LIVE DECISION".into(),
+                |r| format!("REPLAY · MOMENT {} / {}", r.index() + 1, r.len())), 12.0, GOLD));
+            p.spawn(art.text(&view.prompt, 18.0, PAPER));
+            if let Some(test) = &view.test {
+                p.spawn(art.text(format!("{}: skill {} vs {} · {}{}", test.kind.label(), test.skill_value, test.difficulty,
+                    test.success.map_or("Pending", |ok| if ok { "Success" } else { "Failure" }),
+                    test.modifier.map_or(String::new(), |m| format!(" · modifier {m:+}"))), 15.0, GOLD));
+            }
             if let Some(hit) = table.harm() {
                 p.spawn(art.text(hit.source.label(), 19.0, GOLD));
-                p.spawn(art.text(format!("{} receives", hit.recipient.label()), 16.0, PAPER));
                 harm_amounts(p, &art, hit);
             }
-            if let Some(replay) = &table.replay {
-                if replay.index() + 1 < replay.len() { button(&art, p, "Next moment →", Action::Next, true); }
-                if replay.index() > 0 { button(&art, p, "← Previous moment", Action::Back, false); }
-                button(&art, p, "Return to live turn", Action::Live, false);
-                button(&art, p, if orbit.follow { "Camera following: on" } else { "Resume camera following" }, Action::Follow, false);
-            } else if table.presenting() {
-                button(&art, p, "Finish animation", Action::FinishAnimation, false);
-            } else {
-                for choice in &view.choices { action_button(&art, p, &view, choice); }
+            p.spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, column_gap: px(8), row_gap: px(5), ..default() })
+                .with_children(|row| {
+                    let mut control = |label: &str, action: Action, primary| {
+                        row.spawn(Node { width: px(230), ..default() }).with_children(|p| { button(&art, p, label, action, primary); });
+                    };
+                    if let Some(replay) = &table.replay {
+                        if replay.index() > 0 { control("← Previous moment", Action::Back, false); }
+                        if replay.index() + 1 < replay.len() { control("Next moment →", Action::Next, true); }
+                        control("Return to live turn", Action::Live, false);
+                    } else if table.presenting() { control("Finish animation", Action::FinishAnimation, false); }
+                    else {
+                        for choice in &view.choices {
+                            if matches!(choice.id.as_str(), "end_turn" | "undo" | "commit:none") {
+                                control(&choice.label, Action::Choose(view.revision, choice.id.clone()), choice.id == "commit:none");
+                            }
+                        }
+                        if controls::commitment_choice(&view, &table.context.commitments).is_some() {
+                            control(&format!("Commit selected · +{}", table.context.commitments.len()), Action::ConfirmCommit(view.revision), true);
+                        }
+                        if view.stage == Stage::Ended { control("Start another Tony turn", Action::New, true); }
+                    }
+                });
+            if !table.context.commitments.is_empty() {
+                p.spawn(art.text(format!("Selected On the Hunt copies: {} · select another card to change this set",
+                    table.context.commitments.iter().map(|id| (id + 1).to_string()).collect::<Vec<_>>().join(", ")), 13.0, GOLD));
             }
-            p.spawn(art.text(&table.notice, 13.0, MUTED));
-            button(&art, p, if table.reduced_motion { "Motion: reduced" } else { "Motion: animated" }, Action::Motion, false);
-            p.spawn(art.text("HAND", 13.0, GOLD));
-            if view.hand.is_empty() { p.spawn(art.text("Empty", 14.0, MUTED)); }
-            for card in &view.hand {
-                if let Some(index) = CARDS.iter().position(|c| c.code == card.code) { button(&art, p, &format!("Inspect {}", card.title), Action::Inspect(index), false); }
+            if table.replay.is_none() && !table.presenting() {
+                let hint = match view.stage {
+                    Stage::Action => "Select a component: Ghoul for Fight/Evade, Study for Investigate, Tony for Resource, deck for Draw.",
+                    Stage::Commit => "Select cards in Tony's hand, then Commit selected; or commit no cards.",
+                    Stage::Reveal => "Focus Test or Scenario, then select the chaos bag to reveal.",
+                    Stage::Resolve => "Focus Test, then select the revealed token to resolve.",
+                    Stage::Ended => "Only Tony's prepared turn has ended. Companions do not take turns here.",
+                };
+                p.spawn(art.text(hint, 12.0, MUTED));
             }
-            if !view.committed.is_empty() { p.spawn(art.text(format!("Committed: {}", view.committed.iter().map(|c| c.title.as_str()).collect::<Vec<_>>().join(", ")), 15.0, GOLD)); }
-            button(&art, p, "Action history and rules reasons", Action::History, false);
-            if table.replay.is_none() {
-                button(&art, p, "Save live turn", Action::Save, false);
-                button(&art, p, "Reopen saved turn", Action::Reopen, false);
-                button(&art, p, "Open recorded replay", Action::Replay, false);
-                if view.stage == Stage::Ended && !table.presenting() { button(&art, p, "Start another Tony turn", Action::New, true); }
-            }
-            p.spawn(art.text("SCENARIO AND CARDS", 13.0, GOLD));
-            for (index, card) in CARDS.iter().enumerate().filter(|(i, _)| *i < 5 || *i >= 7) { button(&art, p, card.title, Action::Inspect(index), false); }
-            p.spawn(art.text("Only Tony acts. The companions remain at the Study. No next investigator or enemy phase runs. Movement has no destination; the six-clue act threshold cannot be reached this turn.", 14.0, MUTED));
-            p.spawn(art.text(&art.status, 13.0, MUTED));
-            button(&art, p, "Choose asset folder", Action::AssetFolder, false);
+            if !table.notice.is_empty() { p.spawn(art.text(&table.notice, 12.0, MUTED)); }
         });
+    if table.context.utilities {
+        commands
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: px(12),
+                    top: px(62),
+                    width: px(305),
+                    max_height: px((size.y - 220.0).max(150.0)),
+                    padding: UiRect::all(px(12)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(7),
+                    overflow: Overflow::scroll_y(),
+                    ..default()
+                },
+                BackgroundColor(INK),
+                GlobalZIndex(45),
+                Panel,
+            ))
+            .observe(scroll_panel)
+            .with_children(|p| {
+                button(
+                    &art,
+                    p,
+                    "Action history and rules reasons",
+                    Action::History,
+                    false,
+                );
+                button(
+                    &art,
+                    p,
+                    if table.reduced_motion {
+                        "Motion: reduced"
+                    } else {
+                        "Motion: animated"
+                    },
+                    Action::Motion,
+                    false,
+                );
+                if table.replay.is_none() {
+                    button(&art, p, "Save live turn", Action::Save, false);
+                    button(&art, p, "Reopen saved turn", Action::Reopen, false);
+                    button(&art, p, "Open recorded replay", Action::Replay, false);
+                } else {
+                    button(
+                        &art,
+                        p,
+                        if orbit.follow {
+                            "Camera following: on"
+                        } else {
+                            "Resume camera following"
+                        },
+                        Action::Follow,
+                        false,
+                    );
+                }
+                p.spawn(art.text(&art.status, 12.0, MUTED));
+                button(&art, p, "Choose asset folder", Action::AssetFolder, false);
+                button(&art, p, "Close menu", Action::DismissMenu, false);
+            });
+    }
     if table.modal() {
         inspection(&mut commands, &table, &view, &art, size);
     }
@@ -1184,7 +1190,6 @@ fn inspection(
 fn camera_controls(
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
-    motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
     window: Single<&Window>,
     mut table: ResMut<Table>,
@@ -1192,19 +1197,55 @@ fn camera_controls(
     mut orbit: ResMut<Orbit>,
     mut camera: Single<&mut Transform, With<MainCamera>>,
     settings: Res<AssetSettings>,
+    focus: Option<Res<InputFocus>>,
+    focusable: Query<(), With<Button>>,
+    hover: Option<Res<bevy::picking::hover::HoverMap>>,
+    ui_nodes: Query<(), With<Node>>,
+    mut drag: Local<Option<Vec2>>,
 ) {
     let modal = table.modal() || settings.is_busy();
-    let scene_pointer = !modal
-        && window
-            .cursor_position()
-            .is_some_and(|p| p.x < window.width() - PANEL_WIDTH.min(window.width() * 0.48));
+    let captures_keys = !window.focused
+        || modal
+        || table.context.open
+        || table.context.utilities
+        || focus
+            .as_ref()
+            .and_then(|focus| focus.get())
+            .is_some_and(|entity| focusable.contains(entity));
+    let pointer_enabled = window.focused && !modal;
+    let over_ui = hover
+        .as_ref()
+        .and_then(|hover| hover.get(&bevy::picking::pointer::PointerId::Mouse))
+        .is_some_and(|hits| hits.keys().any(|entity| ui_nodes.contains(*entity)));
+    let cursor = window.cursor_position();
+    let scene_pointer = pointer_enabled && cursor.is_some() && !over_ui;
+    // Capture a scene drag at its start, then keep it across UI. Window cursor
+    // positions use logical pixels and work without raw device-motion events.
+    let motion = match cursor {
+        Some(position) if pointer_enabled && buttons.pressed(MouseButton::Right) => {
+            if buttons.just_pressed(MouseButton::Right) {
+                *drag = scene_pointer.then_some(position);
+                Vec2::ZERO
+            } else if let Some(previous) = drag.as_mut() {
+                let delta = position - *previous;
+                *previous = position;
+                delta
+            } else {
+                Vec2::ZERO
+            }
+        }
+        _ => {
+            *drag = None;
+            Vec2::ZERO
+        }
+    };
     let mut changed = false;
-    if scene_pointer && buttons.pressed(MouseButton::Right) && motion.delta != Vec2::ZERO {
-        orbit.yaw -= motion.delta.x * 0.006;
-        orbit.pitch += motion.delta.y * 0.004;
+    if motion != Vec2::ZERO {
+        orbit.yaw -= motion.x * 0.006;
+        orbit.pitch += motion.y * 0.004;
         changed = true;
     }
-    if scene_pointer && scroll.delta.y != 0.0 {
+    if scene_pointer && !table.context.open && scroll.delta.y != 0.0 {
         orbit.distance -= scroll.delta.y * 0.6;
         changed = true;
     }
@@ -1216,24 +1257,33 @@ fn camera_controls(
         (KeyCode::Equal, 0.0, 0.0, -5.0),
         (KeyCode::Minus, 0.0, 0.0, 5.0),
     ] {
-        if !modal && keys.pressed(key) {
+        if !captures_keys && keys.pressed(key) {
             orbit.yaw += yaw * time.delta_secs();
             orbit.pitch += pitch * time.delta_secs();
             orbit.distance += zoom * time.delta_secs();
             changed = true;
         }
     }
-    if !modal && keys.just_pressed(KeyCode::Home) {
+    if !captures_keys && keys.just_pressed(KeyCode::Home) {
         *orbit = Orbit::default();
         changed = true;
     }
+    if !captures_keys {
+        let delta = layout::pan_delta(&keys, orbit.yaw, time.delta_secs(), orbit.distance);
+        if delta != Vec3::ZERO {
+            orbit.target += delta;
+            orbit.desired_target = orbit.target;
+            changed = true;
+        }
+    }
     if changed {
+        table.context.dismiss();
         orbit.follow = false;
         orbit.desired_target = orbit.target;
         table.dirty = true;
     }
     orbit.pitch = orbit.pitch.clamp(0.35, 1.35);
-    orbit.distance = orbit.distance.clamp(8.0, 24.0);
+    orbit.distance = orbit.distance.clamp(6.0, 60.0);
     let target = orbit.desired_target;
     orbit.target = if table.reduced_motion {
         target
@@ -1252,15 +1302,35 @@ fn camera_controls(
 }
 fn world_labels(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
-    mut labels: Query<(&WorldLabel, &mut Node, &mut Visibility)>,
+    orbit: Res<Orbit>,
+    mut labels: Query<(
+        &WorldLabel,
+        Has<OverviewHeading>,
+        &mut Node,
+        &mut Visibility,
+    )>,
 ) {
     let (camera, transform) = *camera;
-    for (label, mut node, mut visibility) in &mut labels {
+    for (label, heading, mut node, mut visibility) in &mut labels {
+        if orbit.distance > 30.0 && !heading {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
         if let Ok(point) = camera.world_to_viewport(transform, label.0) {
             node.left = px(point.x - label.1 / 2.0);
             node.top = px(point.y);
             *visibility = Visibility::Inherited;
         } else {
+            *visibility = Visibility::Hidden;
+        }
+    }
+}
+fn hide_overview_token_labels(
+    orbit: Res<Orbit>,
+    mut labels: Query<&mut Visibility, With<crate::tabletop_tokens::TokenLabel>>,
+) {
+    if orbit.distance > 30.0 {
+        for mut visibility in &mut labels {
             *visibility = Visibility::Hidden;
         }
     }
@@ -1278,13 +1348,24 @@ fn animate(
         };
     }
 }
+#[allow(clippy::type_complexity)]
 fn button_colors(
-    mut buttons: Query<(&Hovered, Has<Pressed>, &ButtonColor, &mut BackgroundColor), With<Button>>,
+    mut buttons: Query<
+        (
+            Entity,
+            &Hovered,
+            Has<Pressed>,
+            &ButtonColor,
+            &mut BackgroundColor,
+        ),
+        With<Button>,
+    >,
+    focus: Res<InputFocus>,
 ) {
-    for (hover, pressed, tone, mut background) in &mut buttons {
+    for (entity, hover, pressed, tone, mut background) in &mut buttons {
         background.0 = if pressed {
             GOLD
-        } else if hover.0 {
+        } else if hover.0 || focus.get() == Some(entity) {
             Color::srgb(0.24, 0.40, 0.39)
         } else {
             tone.0

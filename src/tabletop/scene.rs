@@ -1,33 +1,40 @@
 //! Lifetime and motion of the displayed observation, independent of panel refreshes.
 
-use super::{Art, CARDS, GOLD, MUTED, MainCamera, PAPER, Tabletop, standees};
+use super::{Art, CARDS, GOLD, MUTED, MainCamera, PAPER, Tabletop};
 use crate::{Observation, TokenStatus, tabletop_harm_text, tabletop_tokens};
+use crate::{tabletop_layout, tabletop_standees as standees};
 use bevy::prelude::*;
 
 /// Install the same scene lifecycle for the native tabletop and headless regressions.
 /// The host supplies Tabletop, Art, meshes/materials, time and the main camera.
 pub(super) fn install(app: &mut App) {
-    app.add_systems(Startup, setup_reminder).add_systems(
-        Update,
-        (
-            // Preserve world-label creation before the equal-z panel roots, so
-            // observation replacement keeps labels beneath sidebar/history content.
-            synchronize
-                .after(super::handle_actions)
-                .after(super::camera_controls)
-                .before(super::rebuild_panel),
+    app.init_resource::<super::Context>()
+        .add_systems(Startup, setup_reminder)
+        .add_systems(
+            Update,
             (
-                label_positions,
-                tabletop_tokens::position_labels,
-                animate_tokens,
-                animate_reminder,
-            )
-                .chain()
-                .after(super::rebuild_panel)
-                .before(super::button_colors)
-                .before(super::capture_window),
-        ),
-    );
+                // Preserve world-label creation before the equal-z panel roots, so
+                // observation replacement keeps labels beneath sidebar/history content.
+                synchronize
+                    .after(super::handle_actions)
+                    .after(super::camera_controls)
+                    .before(super::rebuild_panel),
+                super::context::highlight
+                    .after(synchronize)
+                    .before(super::rebuild_panel),
+                (
+                    label_positions,
+                    tabletop_tokens::position_labels,
+                    token_label_visibility,
+                    animate_tokens,
+                    animate_reminder,
+                )
+                    .chain()
+                    .after(super::rebuild_panel)
+                    .before(super::button_colors)
+                    .before(super::capture_window),
+            ),
+        );
 }
 
 #[derive(Component)]
@@ -41,6 +48,22 @@ struct ReminderPose {
 }
 #[derive(Component)]
 struct WorldLabel(Vec3);
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+enum LabelDisplay {
+    Detail,
+    Overview,
+    Always,
+}
+
+impl LabelDisplay {
+    fn visible(self, distance: f32) -> bool {
+        match self {
+            Self::Detail => distance <= 30.0,
+            Self::Overview => distance > 30.0,
+            Self::Always => true,
+        }
+    }
+}
 
 fn setup_reminder(
     mut commands: Commands,
@@ -52,7 +75,7 @@ fn setup_reminder(
         .spawn((
             Mesh3d(meshes.add(Cylinder::new(0.20, 0.06))),
             MeshMaterial3d(materials.add(Color::srgb(0.35, 0.35, 0.35))),
-            Transform::from_xyz(4.55, 0.22, 1.9),
+            Transform::from_xyz(13.5, 0.22, 10.0),
             Pickable::IGNORE,
             ReminderPose {
                 angle: 0.0,
@@ -94,20 +117,25 @@ fn label(
     point: Vec3,
     color: Color,
     font: &Option<Handle<Font>>,
-) {
-    commands.spawn((
-        tabletop_harm_text::ui(value, 16.0, color, font),
-        Node {
-            position_type: PositionType::Absolute,
-            padding: UiRect::axes(px(8), px(4)),
-            border_radius: BorderRadius::all(px(4)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.90)),
-        Pickable::IGNORE,
-        WorldLabel(point),
-        TransientScene,
-    ));
+) -> Entity {
+    commands
+        .spawn((
+            tabletop_harm_text::ui(value, 14.0, color, font),
+            TextLayout::justify(Justify::Center),
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(148),
+                padding: UiRect::axes(px(8), px(4)),
+                border_radius: BorderRadius::all(px(4)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.90)),
+            Pickable::IGNORE,
+            WorldLabel(point),
+            LabelDisplay::Detail,
+            TransientScene,
+        ))
+        .id()
 }
 
 // Each dependency is supplied explicitly by Bevy; panel refresh state is not one of them.
@@ -145,21 +173,16 @@ fn synchronize(
                 "READY"
             }
         ),
-        Vec3::new(4.55, 0.15, 2.65),
+        Vec3::new(13.5, 0.15, 10.9),
         if view.jacqueline_used { MUTED } else { GOLD },
         &art.symbol_font,
     );
-    let colors = [
-        Color::srgb(0.66, 0.43, 0.20),
-        Color::srgb(0.62, 0.23, 0.26),
-        Color::srgb(0.37, 0.28, 0.64),
-    ];
     for (i, investigator) in view.investigators.iter().enumerate() {
         let here = investigator.location == "Study";
         let (x, z) = if here {
-            (-3.4 + i as f32 * 3.3, -2.3)
+            (-3.4 + i as f32 * 3.3, -4.4)
         } else {
-            (-4.6, -0.35)
+            (-6.5, -3.4)
         };
         if !here {
             commands.spawn((
@@ -181,7 +204,7 @@ fn synchronize(
             &mut materials,
             image,
             Vec3::new(x, 0.0, z),
-            colors[i % colors.len()],
+            tabletop_layout::investigator_class(i),
         );
         commands.entity(standee).insert(TransientScene);
         label(
@@ -190,7 +213,7 @@ fn synchronize(
                 "{}\n{} · Horror {}/{}",
                 investigator.name, investigator.location, investigator.horror, investigator.sanity
             ),
-            Vec3::new(x, 2.05, z),
+            Vec3::new(x, 3.8, z),
             PAPER,
             &art.symbol_font,
         );
@@ -201,47 +224,169 @@ fn synchronize(
             "Chaos bag · {}\n{} curse in bag",
             view.bag_count, view.curses_in_bag
         ),
-        Vec3::new(-4.5, 1.2, 1.75),
+        Vec3::new(-6.4, 1.2, 0.5),
+        GOLD,
+        &art.symbol_font,
+    );
+    for (index, investigator) in view.investigators.iter().enumerate() {
+        let center = crate::tabletop_layout::investigator_center(index, 3);
+        let name = label(
+            &mut commands,
+            &investigator.name,
+            center + Vec3::new(0.0, 0.2, -4.05),
+            GOLD,
+            &art.symbol_font,
+        );
+        commands.entity(name).insert(LabelDisplay::Always);
+        label(
+            &mut commands,
+            format!(
+                "{}\nHorror {}/{}",
+                investigator.location, investigator.horror, investigator.sanity
+            ),
+            center + Vec3::new(-3.5, 0.2, -2.7),
+            PAPER,
+            &art.symbol_font,
+        );
+        label(
+            &mut commands,
+            "Threat area",
+            center + Vec3::new(0.0, 0.1, -2.7),
+            MUTED,
+            &art.symbol_font,
+        );
+        label(
+            &mut commands,
+            "Assets",
+            center + Vec3::new(0.0, 0.1, -0.7),
+            MUTED,
+            &art.symbol_font,
+        );
+        label(
+            &mut commands,
+            "Hand",
+            center + Vec3::new(-3.4, 0.1, 3.8),
+            MUTED,
+            &art.symbol_font,
+        );
+        label(
+            &mut commands,
+            "Deck / discard\nNot represented",
+            center + Vec3::new(3.6, 0.1, 2.5),
+            MUTED,
+            &art.symbol_font,
+        );
+    }
+    let scenario_name = label(
+        &mut commands,
+        "Scenario / Study",
+        Vec3::new(0.0, 0.1, -10.2),
+        GOLD,
+        &art.symbol_font,
+    );
+    commands.entity(scenario_name).insert(LabelDisplay::Always);
+    label(
+        &mut commands,
+        "Encounter deck / discard\nReserved / not represented",
+        Vec3::new(7.2, 0.1, -7.4),
+        MUTED,
+        &art.symbol_font,
+    );
+    label(
+        &mut commands,
+        "Act / agenda / victory display\nReserved / not represented",
+        Vec3::new(-7.2, 0.1, -7.4),
+        MUTED,
+        &art.symbol_font,
+    );
+    label(
+        &mut commands,
+        "Shared test area",
+        Vec3::new(0.0, 0.1, 2.2),
         GOLD,
         &art.symbol_font,
     );
     for (i, card) in CARDS.iter().enumerate() {
-        let status = if i == 1 && view.promise_committed {
-            "Committed · +4"
+        let position = super::context::card_position(i, &view);
+        let rotation = Quat::from_rotation_y(if card.landscape {
+            std::f32::consts::FRAC_PI_2
         } else {
-            "Click to inspect"
-        };
-        label(
-            &mut commands,
-            format!("{}\n{status}", card.title),
-            Vec3::new(
-                -2.0 + i as f32 * 2.4,
-                0.2,
-                if card.landscape { 2.96 } else { 3.36 },
-            ),
-            PAPER,
-            &art.symbol_font,
-        );
-    }
-    if view.promise_committed {
-        let frame = materials.add(StandardMaterial {
-            base_color: GOLD,
+            0.0
+        });
+        let material = materials.add(StandardMaterial {
+            base_color: if art.handles[i].is_some() {
+                Color::WHITE
+            } else {
+                card.color
+            },
+            base_color_texture: art.handles[i].clone(),
+            perceptual_roughness: 0.9,
             unlit: true,
             ..default()
         });
-        for (size, at) in [
-            (Vec3::new(2.0, 0.055, 0.09), Vec3::new(0.4, 0.15, 0.57)),
-            (Vec3::new(2.0, 0.055, 0.09), Vec3::new(0.4, 0.15, 3.23)),
-            (Vec3::new(0.09, 0.055, 2.7), Vec3::new(-0.57, 0.15, 1.9)),
-            (Vec3::new(0.09, 0.055, 2.7), Vec3::new(1.37, 0.15, 1.9)),
-        ] {
-            commands.spawn((
-                Mesh3d(meshes.add(Cuboid::from_size(size))),
-                MeshMaterial3d(frame.clone()),
-                Transform::from_translation(at),
-                Pickable::IGNORE,
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(1.85, 0.07, 2.60))),
+            MeshMaterial3d(materials.add(Color::srgb(0.14, 0.12, 0.10))),
+            Transform::from_translation(position - Vec3::Y * 0.045).with_rotation(rotation),
+            Pickable::IGNORE,
+            TransientScene,
+        ));
+        commands
+            .spawn((
+                Mesh3d(meshes.add(Plane3d::default().mesh().size(1.80, 2.52))),
+                MeshMaterial3d(material),
+                Transform::from_translation(position).with_rotation(rotation),
                 TransientScene,
-            ));
+                super::context::Selectable(super::Source::Card(i)),
+            ))
+            .observe(
+                move |event: On<PointerClick>, mut queue: ResMut<super::Actions>| {
+                    super::context::select(event, super::Source::Card(i), &mut queue);
+                },
+            );
+        let status = if i == 1 && view.promise_committed {
+            "Committed / +4"
+        } else if i == 1 {
+            "Patrice's hand"
+        } else {
+            "Select for actions / Inspect"
+        };
+        let caption_position =
+            position + Vec3::new(0.0, 0.07, if card.landscape { 1.25 } else { -1.65 });
+        let caption = label(
+            &mut commands,
+            format!("{}\n{status}", card.title),
+            caption_position,
+            PAPER,
+            &art.symbol_font,
+        );
+        commands.entity(caption).insert((
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(108),
+                padding: UiRect::all(px(4)),
+                border_radius: BorderRadius::all(px(4)),
+                ..default()
+            },
+            TextFont {
+                font_size: FontSize::Px(12.0),
+                ..default()
+            },
+        ));
+        if art.handles[i].is_none() {
+            let overview_position = if i == 1 && view.promise_committed {
+                caption_position + Vec3::Z * 2.9
+            } else {
+                caption_position
+            };
+            let title = label(
+                &mut commands,
+                card.title,
+                overview_position,
+                PAPER,
+                &art.symbol_font,
+            );
+            commands.entity(title).insert(LabelDisplay::Overview);
         }
     }
     let mut canceled_index = 0;
@@ -284,12 +429,24 @@ fn synchronize(
                     status: token.status,
                     ordinal: Some(usize::from(token.id) + 1),
                     image,
-                    transform: Transform::from_xyz(x, 0.15, -0.20)
+                    transform: Transform::from_xyz(x, 0.15, 1.2)
                         .with_scale(Vec3::splat(if is_new { 0.5 } else { 1.0 })),
                     label_offset: Vec3::new(0.0, -0.05, -1.0),
                 },
             );
-        commands.entity(disk).insert(TransientScene);
+        let token_id = token.id;
+        commands
+            .entity(disk)
+            .insert((
+                TransientScene,
+                Pickable::default(),
+                super::context::Selectable(super::Source::Token(token_id)),
+            ))
+            .observe(
+                move |event: On<PointerClick>, mut queue: ResMut<super::Actions>| {
+                    super::context::select(event, super::Source::Token(token_id), &mut queue);
+                },
+            );
         commands.entity(label).insert(TransientScene);
         if is_new {
             commands.entity(disk).insert(Appearing);
@@ -300,14 +457,31 @@ fn synchronize(
 
 fn label_positions(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
-    mut labels: Query<(&WorldLabel, &mut Node, &mut Visibility)>,
+    orbit: Res<super::Orbit>,
+    mut labels: Query<(&WorldLabel, &LabelDisplay, &mut Node, &mut Visibility)>,
 ) {
-    for (anchor, mut node, mut visibility) in &mut labels {
+    for (anchor, display, mut node, mut visibility) in &mut labels {
         if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor.0) {
-            node.left = px(point.x - 65.0);
+            let Val::Px(width) = node.width else { continue };
+            node.left = px(point.x - width / 2.0);
             node.top = px(point.y - 16.0);
-            *visibility = Visibility::Visible;
+            *visibility = if display.visible(orbit.distance) {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
         } else {
+            *visibility = Visibility::Hidden;
+        }
+    }
+}
+
+fn token_label_visibility(
+    orbit: Res<super::Orbit>,
+    mut labels: Query<&mut Visibility, With<tabletop_tokens::TokenLabel>>,
+) {
+    if orbit.distance > 30.0 {
+        for mut visibility in &mut labels {
             *visibility = Visibility::Hidden;
         }
     }

@@ -28,10 +28,10 @@ pub(super) fn advance_presentation(
     }
 }
 
-pub(super) fn recipient_position(recipient: HarmRecipient) -> Vec3 {
+pub(super) fn recipient_position(recipient: HarmRecipient, view: &Observation) -> Vec3 {
     match recipient {
-        HarmRecipient::Tony => Vec3::new(-4.7, 0.05, 1.2),
-        HarmRecipient::Ghoul => Vec3::new(-2.1, 0.05, -1.9),
+        HarmRecipient::Tony => scene::INVESTIGATOR_AT,
+        HarmRecipient::Ghoul => scene::ghoul_at(view),
     }
 }
 
@@ -169,7 +169,7 @@ pub(super) fn harm_scene(
         if !visible {
             continue;
         }
-        let at = recipient_position(recipient);
+        let at = recipient_position(recipient, view);
         // Center the *visible bounds* as one row. Damage is narrower than
         // horror, so symmetric center offsets would still leave the pair askew.
         let counters: Vec<_> = [(damage, false, 0.35), (horror, true, 0.43)]
@@ -251,7 +251,7 @@ pub(super) fn harm_scene(
     let Some(hit) = hit else {
         return;
     };
-    let target = recipient_position(hit.recipient);
+    let target = recipient_position(hit.recipient, view);
     let target_size = if hit.recipient == HarmRecipient::Tony {
         Vec2::new(CARD_LENGTH + 0.1, CARD_WIDTH + 0.1)
     } else {
@@ -260,18 +260,18 @@ pub(super) fn harm_scene(
     outline(commands, meshes, materials, target, target_size, PAPER);
     let (source, size) = match hit.source {
         HarmSource::OpportunityAttack => (
-            recipient_position(HarmRecipient::Ghoul),
+            recipient_position(HarmRecipient::Ghoul, view),
             Vec2::new(CARD_WIDTH + 0.1, CARD_LENGTH + 0.1),
         ),
         HarmSource::BasicFight => (
-            recipient_position(HarmRecipient::Tony),
+            recipient_position(HarmRecipient::Tony, view),
             Vec2::new(CARD_LENGTH + 0.1, CARD_WIDTH + 0.1),
         ),
         HarmSource::InternalInjury => (
-            Vec3::new(3.0, 0.05, -1.9),
+            scene::INJURY_AT,
             Vec2::new(CARD_WIDTH + 0.1, CARD_LENGTH + 0.1),
         ),
-        HarmSource::Tablet | HarmSource::Cultist => (Vec3::new(0.5, 0.2, 0.7), Vec2::splat(1.4)),
+        HarmSource::Tablet | HarmSource::Cultist => (scene::TOKEN_AT, Vec2::splat(1.4)),
     };
     outline(commands, meshes, materials, source, size, GOLD);
     let mut amounts = Vec::new();
@@ -373,7 +373,7 @@ mod tests {
             let meshes = world.resource::<Assets<Mesh>>();
             let mut left = f32::INFINITY;
             let mut right = f32::NEG_INFINITY;
-            let center = recipient_position(HarmRecipient::Tony);
+            let center = scene::INVESTIGATOR_AT;
             for (mesh, transform) in query.iter(world) {
                 let aabb = meshes.get(mesh).unwrap().get_aabb().unwrap();
                 left = left.min(transform.translation.x - aabb.half_extents.x);

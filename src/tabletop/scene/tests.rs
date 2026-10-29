@@ -9,6 +9,255 @@ fn pending_app(path: PathBuf) -> App {
     app_for_session(session, path)
 }
 
+#[test]
+fn contextual_controls_preserve_every_offered_choice_and_token_identity() {
+    for (fixture, expected) in [
+        (
+            Fixture::curse(),
+            vec!["cancel-0-1", "cancel-0-2", "cancel-1-2"],
+        ),
+        (Fixture::auto_fail(), vec!["cancel-0", "cancel-1-2"]),
+    ] {
+        let mut session = Session::new(fixture);
+        for next in [Some("commit-promise"), Some("use-jacqueline"), None] {
+            let view = session.observe();
+            let mut exposed: Vec<_> = view
+                .choices
+                .iter()
+                .filter(|choice| context::source_less(&choice.id))
+                .map(|choice| choice.id.as_str())
+                .collect();
+            for source in [
+                Source::Card(0),
+                Source::Card(1),
+                Source::Card(2),
+                Source::Bag,
+                Source::Token(0),
+            ] {
+                exposed.extend(
+                    context::choices(&view, source)
+                        .iter()
+                        .map(|choice| choice.id.as_str()),
+                );
+            }
+            exposed.sort();
+            let mut offered: Vec<_> = view
+                .choices
+                .iter()
+                .map(|choice| choice.id.as_str())
+                .collect();
+            offered.sort();
+            assert_eq!(
+                exposed, offered,
+                "the physical and source-less controls cover exactly the legal choices"
+            );
+            if let Some(id) = next {
+                session.choose(view.revision, id).unwrap();
+            }
+        }
+        let view = session.observe();
+        for token in &view.tokens {
+            let ids: Vec<_> = context::choices(&view, Source::Token(token.id))
+                .iter()
+                .map(|choice| choice.id.as_str())
+                .collect();
+            assert_eq!(
+                ids, expected,
+                "each physical token exposes all complete cancellation alternatives"
+            );
+        }
+    }
+}
+
+#[test]
+fn contextual_selection_inspection_and_cancellation_preserve_decision_until_confirmation() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = pending_app(dir.path().join("context.json"));
+    app.update();
+    let before = app.world().resource::<Tabletop>().session.observe();
+    act(
+        &mut app,
+        Action::Select(Source::Token(0), Vec2::new(150.0, 200.0)),
+    );
+    let old_generation = app.world().resource::<Context>().generation;
+    act(
+        &mut app,
+        Action::PrepareCancellation(old_generation, "cancel-1-2".into()),
+    );
+    assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
+    act(&mut app, Action::DismissContext);
+    act(&mut app, Action::Select(Source::Card(2), Vec2::ZERO));
+    let card_generation = app.world().resource::<Context>().generation;
+    act(
+        &mut app,
+        Action::ContextChoose(card_generation, before.revision, "cancel-1-2".into()),
+    );
+    assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
+    act(&mut app, Action::Inspect(2));
+    act(&mut app, Action::CloseInspect);
+    let context = app.world().resource::<Context>();
+    assert_eq!(context.selected, Some(Source::Card(2)));
+    assert_eq!(context.pending.as_deref(), Some("cancel-1-2"));
+    assert!(!context.open);
+    act(
+        &mut app,
+        Action::ContextChoose(old_generation, before.revision, "cancel-1-2".into()),
+    );
+    assert_eq!(
+        app.world().resource::<Tabletop>().session.observe(),
+        before,
+        "an old pre-inspection button cannot act"
+    );
+    act(&mut app, Action::Focus(tabletop_layout::Area::Test));
+    act(
+        &mut app,
+        Action::Select(Source::Token(0), Vec2::new(150.0, 200.0)),
+    );
+    let generation = app.world().resource::<Context>().generation;
+    assert_eq!(
+        app.world().resource::<Context>().pending.as_deref(),
+        Some("cancel-1-2")
+    );
+    act(
+        &mut app,
+        Action::ContextChoose(generation, before.revision, "cancel-1-2".into()),
+    );
+    assert_eq!(
+        app.world()
+            .resource::<Tabletop>()
+            .session
+            .observe()
+            .revision,
+        before.revision + 1
+    );
+}
+
+#[test]
+fn contextual_actions_cannot_cross_replay_or_reopen_boundaries() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = pending_app(dir.path().join("modes.json"));
+    app.update();
+    act(&mut app, Action::Save);
+    act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
+    let generation = app.world().resource::<Context>().generation;
+    let before = app.world().resource::<Tabletop>().session.observe();
+    act(&mut app, Action::Replay);
+    act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
+    act(
+        &mut app,
+        Action::ContextChoose(generation, before.revision, "cancel-1-2".into()),
+    );
+    act(&mut app, Action::Live);
+    act(
+        &mut app,
+        Action::ContextChoose(generation, before.revision, "cancel-1-2".into()),
+    );
+    assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
+    act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
+    let generation = app.world().resource::<Context>().generation;
+    act(&mut app, Action::Reopen);
+    act(
+        &mut app,
+        Action::ContextChoose(generation, before.revision, "cancel-1-2".into()),
+    );
+    assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
+}
+
+#[test]
+fn promise_moves_from_patrice_hand_to_shared_test_without_changing_rules() {
+    let mut session = Session::new(Fixture::curse());
+    let before = session.observe();
+    let hand = context::card_position(1, &before);
+    assert!(hand.z > 10.0 && hand.x.abs() < 5.7);
+    session.choose(before.revision, "commit-promise").unwrap();
+    let committed = context::card_position(1, &session.observe());
+    assert!(committed.z < 3.0);
+    assert_eq!(
+        context::card_position(2, &before),
+        context::card_position(2, &session.observe())
+    );
+}
+
+#[test]
+fn camera_pans_with_window_focus_but_captures_menu_modal_and_button_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = pending_app(dir.path().join("camera.json"));
+    app.init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<ButtonInput<MouseButton>>()
+        .init_resource::<AccumulatedMouseScroll>()
+        .init_resource::<bevy::input_focus::InputFocus>()
+        .add_systems(
+            Update,
+            camera_controls.after(handle_actions).before(rebuild_panel),
+        );
+    let window = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, With<Window>>()
+            .single(world)
+            .unwrap()
+    };
+    app.world_mut().get_mut::<Window>(window).unwrap().focused = true;
+    app.world_mut()
+        .resource_mut::<bevy::input_focus::InputFocus>()
+        .set(window, bevy::input_focus::FocusCause::Navigated);
+    app.world_mut().spawn((MainCamera, Transform::default()));
+    app.world_mut()
+        .resource_mut::<Time>()
+        .advance_by(Duration::from_millis(100));
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::KeyW);
+    let start = app.world().resource::<Orbit>().target;
+    app.update();
+    let panned = app.world().resource::<Orbit>().target;
+    assert!(
+        panned.z < start.z,
+        "initial window focus must permit plain WASD"
+    );
+    assert_eq!(panned, app.world().resource::<Orbit>().desired_target);
+
+    app.world_mut().resource_mut::<Context>().open = true;
+    app.update();
+    assert_eq!(
+        app.world().resource::<Orbit>().target,
+        panned,
+        "menu navigation captures WASD"
+    );
+    app.world_mut().resource_mut::<Context>().open = false;
+    app.world_mut().resource_mut::<Tabletop>().inspect = Some(2);
+    app.update();
+    assert_eq!(
+        app.world().resource::<Orbit>().target,
+        panned,
+        "inspection captures WASD"
+    );
+    app.world_mut().resource_mut::<Tabletop>().inspect = None;
+    let button = app.world_mut().spawn(Button).id();
+    app.world_mut()
+        .resource_mut::<bevy::input_focus::InputFocus>()
+        .set(button, bevy::input_focus::FocusCause::Navigated);
+    app.update();
+    assert_eq!(
+        app.world().resource::<Orbit>().target,
+        panned,
+        "focused UI captures WASD"
+    );
+
+    app.world_mut()
+        .resource_mut::<bevy::input_focus::InputFocus>()
+        .set(window, bevy::input_focus::FocusCause::Navigated);
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .release(KeyCode::KeyW);
+    app.update();
+    assert_eq!(
+        app.world().resource::<Orbit>().target,
+        panned,
+        "pan stops without inertia"
+    );
+}
+
 fn app_for_session(session: Session, path: PathBuf) -> App {
     let config = AssetConfig::load_at(path.with_extension("toml"), path.with_extension("assets"));
     let mut app = App::new();
@@ -588,7 +837,7 @@ fn three_displayed_tokens_continue_to_four_with_only_the_new_token_revealing() {
             Option<&Children>,
         ), With<TransientScene>>()
         .iter(world)
-        .filter(|(transform, _, _)| transform.translation.z == -0.20)
+        .filter(|(transform, _, _)| transform.translation.z == 1.2)
         .map(|(transform, material, children)| {
             (
                 *transform,
@@ -739,6 +988,7 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     use bevy::camera::{CameraProjection, ComputedCameraValues, RenderTargetInfo};
     let dir = tempfile::tempdir().unwrap();
     let mut app = pending_app(dir.path().join("live.json"));
+    app.world_mut().resource_mut::<Orbit>().distance = 23.0;
     let camera = app
         .world_mut()
         .spawn((
@@ -769,12 +1019,12 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     app.update();
     let world = app.world_mut();
     let labels: Vec<_> = world
-        .query_filtered::<(Entity, &Node, &Visibility), Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
+        .query_filtered::<(Entity, &Node, &Visibility, Option<&LabelDisplay>), Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
         .iter(world)
-        .map(|(entity, node, visibility)| {
+        .map(|(entity, node, visibility, display)| {
             assert_eq!(
                 *visibility,
-                Visibility::Visible,
+                if display == Some(&LabelDisplay::Overview) { Visibility::Hidden } else { Visibility::Visible },
                 "new labels must reach projection in their spawn frame"
             );
             let Val::Px(left) = node.left else {
@@ -783,7 +1033,11 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
             (entity, left)
         })
         .collect();
-    assert_eq!(labels.len(), 11);
+    assert!(
+        labels.len() >= 11,
+        "the expanded table retains the test labels"
+    );
+    let initial_label_count = labels.len();
     let reminder = reminder_state(&mut app).0;
     // Pan one world unit right: this orthographic camera maps that to 100 pixels left.
     app.world_mut()
@@ -805,16 +1059,79 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     assert_eq!(reminder_state(&mut app).0, reminder);
     let world = app.world_mut();
     let labels: Vec<_> = world
-        .query_filtered::<(&Node, &Visibility), Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
+        .query_filtered::<(&Node, &Visibility, Option<&LabelDisplay>), Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
         .iter(world)
         .collect();
-    assert_eq!(labels.len(), 12);
-    assert!(
-        labels
-            .iter()
-            .all(|(node, visibility)| matches!(node.left, Val::Px(_))
-                && **visibility == Visibility::Visible)
+    assert_eq!(labels.len(), initial_label_count + 1);
+    assert!(labels.iter().all(
+        |(node, visibility, display)| matches!(node.left, Val::Px(_))
+            && **visibility
+                == if *display == Some(&LabelDisplay::Overview) {
+                    Visibility::Hidden
+                } else {
+                    Visibility::Visible
+                }
+    ));
+
+    let original_entities: Vec<_> = world
+        .query_filtered::<Entity, With<WorldLabel>>()
+        .iter(world)
+        .collect();
+    world.resource_mut::<Orbit>().distance = 44.0;
+    app.update();
+    let world = app.world_mut();
+    let mut visible_labels = Vec::new();
+    for (entity, display, visibility, text) in world
+        .query::<(Entity, &LabelDisplay, &Visibility, &Text)>()
+        .iter(world)
+    {
+        assert!(
+            original_entities.contains(&entity),
+            "zoom must preserve the observation scene"
+        );
+        assert_eq!(
+            *visibility,
+            if *display == LabelDisplay::Detail {
+                Visibility::Hidden
+            } else {
+                Visibility::Visible
+            }
+        );
+        if *visibility == Visibility::Visible {
+            visible_labels.push(text.0.as_str());
+        }
+    }
+    assert_eq!(
+        visible_labels.len(),
+        7,
+        "overview shows four area names and three absent-art card names"
     );
+    for name in [
+        "Tony Morgan",
+        "Patrice Hathaway",
+        "Jacqueline Fine",
+        "Scenario / Study",
+        "Promise of Power",
+        "Rotting Remains",
+    ] {
+        assert!(
+            visible_labels.contains(&name),
+            "missing overview identity: {name}"
+        );
+    }
+    world.resource_mut::<Orbit>().distance = 16.0;
+    app.update();
+    for entity in original_entities {
+        let display = app.world().get::<LabelDisplay>(entity).unwrap();
+        assert_eq!(
+            *app.world().get::<Visibility>(entity).unwrap(),
+            if *display == LabelDisplay::Overview {
+                Visibility::Hidden
+            } else {
+                Visibility::Visible
+            }
+        );
+    }
 }
 
 #[test]
@@ -875,4 +1192,177 @@ fn world_labels_stay_below_panels_when_observations_change_with_history_open() {
     assert_layers(&mut app);
     act(&mut app, Action::DismissResult);
     assert_layers(&mut app);
+}
+
+fn orbit_mouse_app() -> (App, Entity) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = pending_app(directory.path().join("orbit.json"));
+    app.add_plugins(bevy::input::InputPlugin)
+        .add_message::<bevy::window::CursorMoved>()
+        .init_resource::<bevy::picking::hover::HoverMap>()
+        .add_systems(
+            Update,
+            camera_controls.after(handle_actions).before(rebuild_panel),
+        );
+    let window = app
+        .world_mut()
+        .query_filtered::<Entity, With<Window>>()
+        .single(app.world())
+        .unwrap();
+    {
+        let mut window = app.world_mut().get_mut::<Window>(window).unwrap();
+        window.resolution = (1600, 1000).into();
+        window.focused = true;
+        window.set_cursor_position(Some(Vec2::new(800.0, 400.0)));
+    }
+    app.world_mut().spawn((MainCamera, Transform::default()));
+    app.update();
+    (app, window)
+}
+
+fn orbit_button(app: &mut App, window: Entity, state: bevy::input::ButtonState) {
+    app.world_mut()
+        .write_message(bevy::input::mouse::MouseButtonInput {
+            button: MouseButton::Right,
+            state,
+            window,
+        });
+    app.update();
+}
+
+fn orbit_cursor(app: &mut App, window: Entity, position: Vec2) {
+    let delta = {
+        let mut window = app.world_mut().get_mut::<Window>(window).unwrap();
+        let delta = window.cursor_position().map(|previous| position - previous);
+        window.set_cursor_position(Some(position));
+        delta
+    };
+    // This is the window-event path used by Winit, independently of raw motion.
+    app.world_mut().write_message(bevy::window::CursorMoved {
+        window,
+        position,
+        delta,
+    });
+    app.update();
+}
+
+fn orbit_hover_ui(app: &mut App, hovered: bool) {
+    let entity = app.world_mut().spawn(Node::default()).id();
+    let mut hover = app
+        .world_mut()
+        .resource_mut::<bevy::picking::hover::HoverMap>();
+    hover.clear();
+    if hovered {
+        hover
+            .entry(bevy::picking::pointer::PointerId::Mouse)
+            .or_default()
+            .insert(
+                entity,
+                bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+            );
+    }
+}
+
+#[test]
+fn right_drag_orbits_from_window_cursor_input_without_raw_device_motion() {
+    let (mut app, window) = orbit_mouse_app();
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+    assert_ne!(
+        app.world().resource::<Orbit>().yaw,
+        before,
+        "right-dragged window cursor must orbit even when no raw device-motion message arrives"
+    );
+}
+
+#[test]
+fn right_drag_uses_logical_cursor_distance_once_when_raw_motion_also_arrives() {
+    let (mut app, window) = orbit_mouse_app();
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    // A high-DPI device can report a larger physical delta for the same cursor move.
+    app.world_mut()
+        .write_message(bevy::input::mouse::MouseMotion {
+            delta: Vec2::new(80.0, 20.0),
+        });
+    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+    assert!((app.world().resource::<Orbit>().yaw - (before - 40.0 * 0.006)).abs() < 0.00001);
+}
+
+#[test]
+fn right_drag_orbits_in_unobscured_space_below_the_portrait_strip() {
+    let (mut app, window) = orbit_mouse_app();
+    let start = Vec2::new(1500.0, 850.0);
+    orbit_cursor(&mut app, window, start);
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_cursor(&mut app, window, start + Vec2::new(40.0, 10.0));
+    assert_ne!(
+        app.world().resource::<Orbit>().yaw,
+        before,
+        "unused screen space is still the table, not an invisible input blocker"
+    );
+}
+
+#[test]
+fn right_drag_starting_on_ui_does_not_capture_after_leaving_it() {
+    let (mut app, window) = orbit_mouse_app();
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_hover_ui(&mut app, true);
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+    orbit_hover_ui(&mut app, false);
+    orbit_cursor(&mut app, window, Vec2::new(880.0, 420.0));
+    assert_eq!(app.world().resource::<Orbit>().yaw, before);
+    orbit_button(&mut app, window, bevy::input::ButtonState::Released);
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_cursor(&mut app, window, Vec2::new(920.0, 430.0));
+    assert_ne!(app.world().resource::<Orbit>().yaw, before);
+}
+
+#[test]
+fn right_drag_captured_on_scene_crosses_ui_and_stops_on_release() {
+    let (mut app, window) = orbit_mouse_app();
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_hover_ui(&mut app, true);
+    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+    let moved = app.world().resource::<Orbit>().yaw;
+    assert_ne!(moved, before);
+    orbit_button(&mut app, window, bevy::input::ButtonState::Released);
+    orbit_cursor(&mut app, window, Vec2::new(880.0, 420.0));
+    assert_eq!(app.world().resource::<Orbit>().yaw, moved);
+}
+
+#[test]
+fn right_drag_cancels_on_focus_loss_modal_or_cursor_exit_without_a_resume_jump() {
+    for interruption in 0..3 {
+        let (mut app, window) = orbit_mouse_app();
+        orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+        orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+        let before = app.world().resource::<Orbit>().yaw;
+        match interruption {
+            0 => app.world_mut().get_mut::<Window>(window).unwrap().focused = false,
+            1 => app.world_mut().resource_mut::<Tabletop>().inspect = Some(0),
+            _ => app
+                .world_mut()
+                .get_mut::<Window>(window)
+                .unwrap()
+                .set_cursor_position(None),
+        }
+        app.update();
+        app.world_mut().get_mut::<Window>(window).unwrap().focused = true;
+        app.world_mut().resource_mut::<Tabletop>().inspect = None;
+        orbit_cursor(&mut app, window, Vec2::new(1000.0, 500.0));
+        assert_eq!(
+            app.world().resource::<Orbit>().yaw,
+            before,
+            "capture must reset at interruption {interruption}"
+        );
+        orbit_button(&mut app, window, bevy::input::ButtonState::Released);
+        orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+        orbit_cursor(&mut app, window, Vec2::new(1040.0, 510.0));
+        assert_ne!(app.world().resource::<Orbit>().yaw, before);
+    }
 }

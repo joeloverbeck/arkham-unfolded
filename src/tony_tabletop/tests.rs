@@ -48,7 +48,11 @@ fn launch_overrides_leave_saved_tony_preference_unchanged() {
 }
 
 fn presentation_app(path: PathBuf) -> App {
-    let (mut app, _) = scene_app();
+    presentation_app_in(App::new(), path)
+}
+
+fn presentation_app_in(app: App, path: PathBuf) -> App {
+    let (mut app, _) = scene_app_in(app);
     app.world_mut().resource_mut::<Table>().save_path = path.clone();
     app.insert_resource(Orbit::default())
         .insert_resource(Actions::default())
@@ -65,6 +69,7 @@ fn presentation_app(path: PathBuf) -> App {
                 advance_presentation,
                 synchronize_scene,
                 rebuild_panel,
+                controls::draw_menu,
                 animate,
                 animate_harm,
             )
@@ -236,15 +241,17 @@ fn reduced_motion_shows_the_revealed_chaos_token_at_its_final_size() {
 fn risky_actions_show_the_attack_before_the_player_commits() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = presentation_app(directory.path().join("turn.json"));
-    app.update();
-    let texts = visible_text(&mut app);
-    assert_eq!(
-        texts
-            .iter()
-            .filter(|t| t.as_str() == "Attack of opportunity: Ghoul Minion\n1 damage + 1 horror")
-            .count(),
-        4
-    );
+    for source in [
+        Source::Card(0),
+        Source::Card(1),
+        Source::Card(4),
+        Source::Deck,
+    ] {
+        act(&mut app, Action::Select(0, source, Vec3::ZERO));
+        let texts = visible_text(&mut app);
+        assert_eq!(texts.iter().filter(|t| t.as_str() == "Attack of opportunity: Ghoul Minion\n1 damage + 1 horror").count(), 1,
+            "the selected component exposes its own warning before activation");
+    }
     assert_eq!(app.world().resource::<Table>().session.observe().damage, 0);
     assert!(!directory.path().join("turn.json").exists());
 }
@@ -284,6 +291,7 @@ fn harm_symbols_reach_warnings_counts_stages_card_text_and_history() {
             }
         }
     }
+    act(&mut app, Action::Select(0, Source::Card(1), Vec3::ZERO));
     check(&mut app, "Attack of opportunity: Ghoul Minion", true, true);
     check(&mut app, "Resources 5", true, true);
     choose(&mut app, "investigate");
@@ -424,7 +432,7 @@ fn reduced_motion_keeps_both_amounts_and_still_settles_the_attack() {
     act(&mut app, Action::Motion);
     choose(&mut app, "investigate");
     let texts = visible_text(&mut app);
-    assert!(texts.iter().any(|t| t == "Motion: reduced"));
+    assert!(app.world().resource::<Table>().reduced_motion);
     assert!(texts.iter().any(|t| t == "+1 Damage"));
     assert!(texts.iter().any(|t| t == "+1 Horror"));
     let positions = |app: &mut App| {
@@ -512,7 +520,10 @@ fn the_ghouls_final_hit_is_visible_before_its_removal_and_bounty() {
 }
 
 fn scene_app() -> (App, Handle<Image>) {
-    let mut app = App::new();
+    scene_app_in(App::new())
+}
+
+fn scene_app_in(mut app: App) -> (App, Handle<Image>) {
     let mut images = Assets::<Image>::default();
     let back = images.add(Image::default());
     app.insert_resource(images);
@@ -527,6 +538,7 @@ fn scene_app() -> (App, Handle<Image>) {
         presentation: VecDeque::new(),
         stage_elapsed: 0.0,
         reduced_motion: false,
+        context: Context::default(),
     })
     .insert_resource(Art {
         handles: [("card-back/player".into(), back.clone())].into(),
@@ -600,4 +612,439 @@ fn deck_height_and_back_follow_draws_and_recorded_replay() {
     app.world_mut().resource_mut::<Table>().replay = None;
     app.update();
     assert!((deck_bounds_and_top(&mut app).0 - 0.1885).abs() < 0.00001);
+}
+
+#[test]
+fn selecting_and_inspecting_two_copies_preserves_the_complete_commitment() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("turn.json");
+    let mut app = presentation_app(path.clone());
+    for _ in 0..3 {
+        choose(&mut app, "draw");
+        act(&mut app, Action::FinishAnimation);
+    }
+    choose(&mut app, "fight");
+    let before = app.world().resource::<Table>().session.clone();
+    let revision = before.observe().revision;
+    let saved = std::fs::read(&path).unwrap();
+    for id in [0, 3] {
+        act(
+            &mut app,
+            Action::Select(revision, Source::Hand(id), Vec3::ZERO),
+        );
+        let epoch = app.world().resource::<Table>().context.epoch;
+        act(&mut app, Action::ToggleCommit(epoch, revision, id));
+    }
+    act(&mut app, Action::Inspect(5));
+    act(&mut app, Action::Close);
+    assert_eq!(
+        app.world().resource::<Table>().context.commitments,
+        [0, 3].into()
+    );
+    assert_eq!(app.world().resource::<Table>().session, before);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        saved,
+        "inspection and staging do not save a choice"
+    );
+    act(&mut app, Action::ConfirmCommit(revision));
+    let view = app.world().resource::<Table>().session.observe();
+    assert_eq!(view.stage, Stage::Reveal);
+    assert_eq!(
+        view.committed
+            .iter()
+            .map(|card| card.id)
+            .collect::<Vec<_>>(),
+        vec![0, 3]
+    );
+    assert_eq!(view.test.unwrap().skill_value, 7);
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .context
+            .commitments
+            .is_empty()
+    );
+}
+
+#[test]
+fn dismissed_stale_and_replayed_component_choices_never_dispatch() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = presentation_app(dir.path().join("turn.json"));
+    act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
+    let epoch = app.world().resource::<Table>().context.epoch;
+    let original = app.world().resource::<Table>().session.clone();
+    act(&mut app, Action::Inspect(2));
+    act(&mut app, Action::Close);
+    act(&mut app, Action::ContextChoice(epoch, 0, "fight".into()));
+    assert_eq!(
+        app.world().resource::<Table>().session,
+        original,
+        "opening inspection invalidates old menu callbacks"
+    );
+    act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
+    let epoch = app.world().resource::<Table>().context.epoch;
+    choose(&mut app, "resource");
+    act(&mut app, Action::FinishAnimation);
+    let current = app.world().resource::<Table>().session.clone();
+    act(&mut app, Action::ContextChoice(epoch, 0, "fight".into()));
+    assert_eq!(app.world().resource::<Table>().session, current);
+    act(&mut app, Action::Replay);
+    let revision = app.world().resource::<Table>().view().revision;
+    act(
+        &mut app,
+        Action::Select(revision, Source::Card(2), Vec3::ZERO),
+    );
+    let epoch = app.world().resource::<Table>().context.epoch;
+    act(
+        &mut app,
+        Action::ContextChoice(epoch, revision, "fight".into()),
+    );
+    assert_eq!(
+        app.world().resource::<Table>().session,
+        current,
+        "replay remains inspection-only"
+    );
+    assert!(app.world().resource::<Table>().replay.is_some());
+}
+
+#[test]
+fn component_action_mapping_covers_exact_offered_choices_without_relabeling_actor() {
+    let game = Session::new().unwrap();
+    let view = game.observe();
+    let sources = [
+        Source::Card(0),
+        Source::Card(1),
+        Source::Card(2),
+        Source::Card(4),
+        Source::Deck,
+        Source::Bag,
+        Source::Token,
+    ];
+    let mapped: std::collections::BTreeSet<_> = sources
+        .into_iter()
+        .flat_map(|source| {
+            controls::source_choices(&view, source)
+                .into_iter()
+                .map(|choice| choice.id.as_str())
+        })
+        .collect();
+    let offered: std::collections::BTreeSet<_> = view
+        .choices
+        .iter()
+        .filter(|c| c.id != "end_turn")
+        .map(|c| c.id.as_str())
+        .collect();
+    assert_eq!(mapped, offered);
+    assert!(
+        controls::source_choices(&view, Source::Card(3)).is_empty(),
+        "Contracts has no triggered player choice here"
+    );
+}
+
+fn orbit_mouse_app() -> (App, Entity) {
+    orbit_mouse_app_in(App::new())
+}
+
+fn orbit_mouse_app_in(app: App) -> (App, Entity) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = presentation_app_in(app, directory.path().join("orbit.json"));
+    app.add_plugins(bevy::input::InputPlugin)
+        .add_message::<bevy::window::CursorMoved>()
+        .init_resource::<bevy::picking::hover::HoverMap>()
+        .add_systems(
+            Update,
+            camera_controls.after(handle_actions).before(rebuild_panel),
+        );
+    let window = app
+        .world_mut()
+        .query_filtered::<Entity, With<Window>>()
+        .single(app.world())
+        .unwrap();
+    {
+        let mut window = app.world_mut().get_mut::<Window>(window).unwrap();
+        window.resolution = (1600, 1000).into();
+        window.focused = true;
+        window.set_cursor_position(Some(Vec2::new(800.0, 400.0)));
+    }
+    app.world_mut().spawn((MainCamera, Transform::default()));
+    app.update();
+    (app, window)
+}
+
+fn orbit_button(app: &mut App, window: Entity, state: bevy::input::ButtonState) {
+    app.world_mut()
+        .write_message(bevy::input::mouse::MouseButtonInput {
+            button: MouseButton::Right,
+            state,
+            window,
+        });
+    app.update();
+}
+
+fn orbit_cursor(app: &mut App, window: Entity, position: Vec2) {
+    let delta = {
+        let mut window = app.world_mut().get_mut::<Window>(window).unwrap();
+        let delta = window.cursor_position().map(|previous| position - previous);
+        window.set_cursor_position(Some(position));
+        delta
+    };
+    // This is the window-event path used by Winit, independently of raw motion.
+    app.world_mut().write_message(bevy::window::CursorMoved {
+        window,
+        position,
+        delta,
+    });
+    app.update();
+}
+
+fn orbit_hover_ui(app: &mut App, hovered: bool) {
+    let entity = app.world_mut().spawn(Node::default()).id();
+    let mut hover = app
+        .world_mut()
+        .resource_mut::<bevy::picking::hover::HoverMap>();
+    hover.clear();
+    if hovered {
+        hover
+            .entry(bevy::picking::pointer::PointerId::Mouse)
+            .or_default()
+            .insert(
+                entity,
+                bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+            );
+    }
+}
+
+#[test]
+fn right_drag_orbits_from_window_cursor_input_without_raw_device_motion() {
+    let (mut app, window) = orbit_mouse_app();
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+    assert_ne!(
+        app.world().resource::<Orbit>().yaw,
+        before,
+        "right-dragged window cursor must orbit even when no raw device-motion message arrives"
+    );
+}
+
+#[test]
+fn right_drag_uses_logical_cursor_distance_once_when_raw_motion_also_arrives() {
+    let (mut app, window) = orbit_mouse_app();
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    // A high-DPI device can report a larger physical delta for the same cursor move.
+    app.world_mut()
+        .write_message(bevy::input::mouse::MouseMotion {
+            delta: Vec2::new(80.0, 20.0),
+        });
+    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+    assert!((app.world().resource::<Orbit>().yaw - (before - 40.0 * 0.006)).abs() < 0.00001);
+}
+
+#[test]
+fn right_drag_orbits_in_unobscured_space_below_the_portrait_strip() {
+    let (mut app, window) = orbit_mouse_app();
+    let start = Vec2::new(60.0, 930.0);
+    orbit_cursor(&mut app, window, start);
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_cursor(&mut app, window, start + Vec2::new(40.0, 10.0));
+    assert_ne!(
+        app.world().resource::<Orbit>().yaw,
+        before,
+        "unused screen space is still the table, not an invisible input blocker"
+    );
+}
+
+#[test]
+fn right_drag_starting_on_ui_does_not_capture_after_leaving_it() {
+    let (mut app, window) = orbit_mouse_app();
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_hover_ui(&mut app, true);
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+    orbit_hover_ui(&mut app, false);
+    orbit_cursor(&mut app, window, Vec2::new(880.0, 420.0));
+    assert_eq!(app.world().resource::<Orbit>().yaw, before);
+    orbit_button(&mut app, window, bevy::input::ButtonState::Released);
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_cursor(&mut app, window, Vec2::new(920.0, 430.0));
+    assert_ne!(app.world().resource::<Orbit>().yaw, before);
+}
+
+#[test]
+fn right_drag_captured_on_scene_crosses_ui_and_stops_on_release() {
+    let (mut app, window) = orbit_mouse_app();
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    orbit_hover_ui(&mut app, true);
+    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+    let moved = app.world().resource::<Orbit>().yaw;
+    assert_ne!(moved, before);
+    orbit_button(&mut app, window, bevy::input::ButtonState::Released);
+    orbit_cursor(&mut app, window, Vec2::new(880.0, 420.0));
+    assert_eq!(app.world().resource::<Orbit>().yaw, moved);
+}
+
+#[test]
+fn right_drag_cancels_on_focus_loss_modal_or_cursor_exit_without_a_resume_jump() {
+    for interruption in 0..3 {
+        let (mut app, window) = orbit_mouse_app();
+        orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+        orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
+        let before = app.world().resource::<Orbit>().yaw;
+        match interruption {
+            0 => app.world_mut().get_mut::<Window>(window).unwrap().focused = false,
+            1 => app.world_mut().resource_mut::<Table>().inspect = Some(0),
+            _ => app
+                .world_mut()
+                .get_mut::<Window>(window)
+                .unwrap()
+                .set_cursor_position(None),
+        }
+        app.update();
+        app.world_mut().get_mut::<Window>(window).unwrap().focused = true;
+        app.world_mut().resource_mut::<Table>().inspect = None;
+        orbit_cursor(&mut app, window, Vec2::new(1000.0, 500.0));
+        assert_eq!(
+            app.world().resource::<Orbit>().yaw,
+            before,
+            "capture must reset at interruption {interruption}"
+        );
+        orbit_button(&mut app, window, bevy::input::ButtonState::Released);
+        orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+        orbit_cursor(&mut app, window, Vec2::new(1040.0, 510.0));
+        assert_ne!(app.world().resource::<Orbit>().yaw, before);
+    }
+}
+
+#[test]
+fn right_drag_through_real_navigation_layout_ignores_empty_space_but_not_buttons() {
+    use bevy::{
+        camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
+        picking::{
+            hover::HoverMap,
+            pointer::{Location, PointerId, PointerLocation},
+        },
+        window::{PrimaryWindow, WindowRef},
+    };
+
+    // Use the production panel, Bevy layout, and UI picking. In particular, do
+    // not inject a HoverMap that silently omits the transparent navigation root.
+    let mut app = App::new();
+    app.add_plugins((
+        bevy::app::TaskPoolPlugin::default(),
+        bevy::asset::AssetPlugin::default(),
+        bevy::image::ImagePlugin::default(),
+        bevy::text::TextPlugin,
+        bevy::transform::TransformPlugin,
+        bevy::camera::visibility::VisibilityPlugin,
+        bevy::picking::PickingPlugin,
+        bevy::picking::InteractionPlugin,
+        bevy::ui::UiPlugin,
+    ))
+    .init_resource::<Assets<TextureAtlasLayout>>()
+    .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
+    .init_resource::<Time<Real>>();
+    let (mut app, window) = orbit_mouse_app_in(app);
+    app.world_mut().entity_mut(window).insert(PrimaryWindow);
+    let camera = app
+        .world_mut()
+        .query_filtered::<Entity, With<MainCamera>>()
+        .single(app.world())
+        .unwrap();
+    let target = RenderTarget::Window(WindowRef::Entity(window));
+    app.world_mut().entity_mut(camera).insert((
+        Camera {
+            computed: ComputedCameraValues {
+                target_info: Some(RenderTargetInfo {
+                    physical_size: UVec2::new(1600, 1000),
+                    scale_factor: 1.0,
+                }),
+                ..default()
+            },
+            ..default()
+        },
+        target.clone(),
+    ));
+    let pointer = app
+        .world_mut()
+        .spawn((
+            PointerId::Mouse,
+            PointerLocation::new(Location {
+                target: target.normalize(Some(window)).unwrap(),
+                position: Vec2::new(60.0, 700.0),
+            }),
+        ))
+        .id();
+    for _ in 0..3 {
+        app.update();
+    }
+    let nav = app
+        .world_mut()
+        .query_filtered::<(Entity, &Node), With<Panel>>()
+        .iter(app.world())
+        .find(|(_, node)| node.left == px(10) && node.top == px(76))
+        .map(|(entity, _)| entity)
+        .unwrap();
+    assert_eq!(
+        app.world().get::<ComputedNode>(nav).unwrap().size,
+        Vec2::new(124.0, 744.0)
+    );
+    let move_cursor = |app: &mut App, position: Vec2| {
+        app.world_mut()
+            .get_mut::<PointerLocation>(pointer)
+            .unwrap()
+            .location
+            .as_mut()
+            .unwrap()
+            .position = position;
+        orbit_cursor(app, window, position);
+    };
+    move_cursor(&mut app, Vec2::new(60.0, 700.0));
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    move_cursor(&mut app, Vec2::new(100.0, 710.0));
+    assert_ne!(
+        app.world().resource::<Orbit>().yaw,
+        before,
+        "the actual empty navigation root {nav:?} must not consume a scene drag; actual hover: {:?}",
+        app.world().resource::<HoverMap>().get(&PointerId::Mouse)
+    );
+    orbit_button(&mut app, window, bevy::input::ButtonState::Released);
+    // Camera movement rebuilds the production panel; use its current entities.
+    let nav = app
+        .world_mut()
+        .query_filtered::<(Entity, &Node), With<Panel>>()
+        .iter(app.world())
+        .find(|(_, node)| node.left == px(10) && node.top == px(76))
+        .map(|(entity, _)| entity)
+        .unwrap();
+    let button = app
+        .world()
+        .get::<Children>(nav)
+        .unwrap()
+        .iter()
+        .find(|entity| app.world().get::<Button>(*entity).is_some())
+        .unwrap();
+    let button_position = app
+        .world()
+        .get::<bevy::ui::UiGlobalTransform>(button)
+        .unwrap()
+        .translation;
+    move_cursor(&mut app, button_position);
+    assert!(
+        app.world().resource::<HoverMap>()[&PointerId::Mouse]
+            .keys()
+            .any(|entity| *entity == button
+                || app
+                    .world()
+                    .get::<ChildOf>(*entity)
+                    .is_some_and(|parent| parent.parent() == button))
+    );
+    let before = app.world().resource::<Orbit>().yaw;
+    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
+    move_cursor(&mut app, button_position + Vec2::new(5.0, 0.0));
+    assert_eq!(app.world().resource::<Orbit>().yaw, before);
 }

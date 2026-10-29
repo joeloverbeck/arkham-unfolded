@@ -1,24 +1,26 @@
-//! The three inspected miniature-card portraits used by this experiment.
+//! Standard physical investigator standees for the tabletop.
+//! Both prepared scenes use this same rounded base, holder and two-sided portrait.
 
-use super::GOLD;
+use crate::tabletop_layout::InvestigatorClass;
 use bevy::prelude::*;
 use std::f32::consts::PI;
 
-pub(super) fn spawn(
+pub(crate) fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     image: Option<&Handle<Image>>,
     position: Vec3,
-    color: Color,
+    class: InvestigatorClass,
 ) -> Entity {
+    let color = class.color();
     let base = materials.add(StandardMaterial {
         base_color: color,
         perceptual_roughness: 0.75,
         ..default()
     });
     let trim = materials.add(StandardMaterial {
-        base_color: GOLD,
+        base_color: color.mix(&Color::WHITE, 0.25),
         metallic: 0.4,
         perceptual_roughness: 0.45,
         ..default()
