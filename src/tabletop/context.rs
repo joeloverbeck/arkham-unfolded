@@ -4,6 +4,9 @@
 use super::*;
 use crate::tabletop_layout::{self, Area};
 
+#[cfg(test)]
+mod tests;
+
 /// Receives empty-space dismissal clicks without capturing camera gestures.
 #[derive(Component)]
 pub(super) struct DismissalBackdrop;
@@ -32,7 +35,7 @@ pub(super) fn highlight(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut previous: Local<Option<(Source, Vec3)>>,
 ) {
-    let selected = context.selected.and_then(|source| {
+    let selected = context.selected_source().and_then(|source| {
         objects
             .iter()
             .find(|(object, _)| object.0 == source)
@@ -88,26 +91,157 @@ pub(super) fn highlight(
 
 #[derive(Resource, Default)]
 pub(super) struct Context {
-    pub selected: Option<Source>,
-    pub open: bool,
-    pub utilities: bool,
-    pub anchor: Vec2,
-    pub generation: u64,
-    pub snapshot: Option<(Observation, Option<usize>)>,
-    pub pending: Option<String>,
+    selected: Option<Source>,
+    open: bool,
+    utilities: bool,
+    anchor: Vec2,
+    generation: u64,
+    snapshot: Option<(Observation, Option<usize>)>,
+    pending: Option<String>,
 }
 
 impl Context {
-    pub fn invalidate(&mut self) {
+    pub fn selected_source(&self) -> Option<Source> {
+        self.selected
+    }
+
+    pub fn menu_open(&self) -> bool {
+        self.open
+    }
+
+    pub fn utilities_open(&self) -> bool {
+        self.utilities
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn pending_cancellation(&self) -> Option<&str> {
+        self.pending.as_deref()
+    }
+
+    pub fn select(
+        &mut self,
+        view: &Observation,
+        replay_index: Option<usize>,
+        source: Source,
+        anchor: Vec2,
+    ) {
+        if !self.current(view, replay_index) {
+            self.pending = None;
+        }
+        self.generation += 1;
+        self.selected = Some(source);
+        self.anchor = anchor;
+        self.open = true;
+        self.snapshot = Some((view.clone(), replay_index));
+    }
+
+    /// Inspection and focus close the menu but retain selection and utilities.
+    pub fn close_menu(&mut self) {
         self.open = false;
-        self.selected = None;
-        self.pending = None;
-        self.snapshot = None;
         self.generation += 1;
     }
 
-    pub fn current(&self, table: &Tabletop) -> bool {
-        self.snapshot.as_ref() == Some(&(table.view(), table.replay.as_ref().map(Replay::index)))
+    pub fn dismiss(&mut self) {
+        self.close_menu();
+        self.utilities = false;
+    }
+
+    pub fn toggle_utilities(&mut self) {
+        self.close_menu();
+        self.utilities = !self.utilities;
+    }
+
+    /// Camera movement invalidates callbacks only while closing an open menu.
+    pub fn camera_moved(&mut self) -> bool {
+        if !self.open {
+            return false;
+        }
+        self.close_menu();
+        true
+    }
+
+    /// Mode transitions invalidate even when their attempted operation fails or
+    /// leaves an identical observation. Anchor and utilities retain their state.
+    pub fn invalidate(&mut self) {
+        self.close_menu();
+        self.selected = None;
+        self.pending = None;
+        self.snapshot = None;
+    }
+
+    /// Call at the existing post-action/synchronization points, not before
+    /// admission: source-less callbacks deliberately do not require a snapshot.
+    pub fn synchronize(&mut self, view: &Observation, replay_index: Option<usize>) -> bool {
+        if self.snapshot.is_none() || self.current(view, replay_index) {
+            return false;
+        }
+        self.invalidate();
+        true
+    }
+
+    fn current(&self, view: &Observation, replay_index: Option<usize>) -> bool {
+        self.snapshot
+            .as_ref()
+            .is_some_and(|(snapshot, index)| snapshot == view && *index == replay_index)
+    }
+
+    pub fn prepare_cancellation(
+        &mut self,
+        view: &Observation,
+        replay_index: Option<usize>,
+        generation: u64,
+        id: &str,
+    ) {
+        // Preserve preparation's existing lack of a menu-open check. Each token
+        // offers every complete cancellation, including sets without that token.
+        if replay_index.is_none()
+            && self.generation == generation
+            && self.current(view, replay_index)
+            && self.selected.is_some_and(|source| {
+                matches!(source, Source::Token(_))
+                    && choices(view, source).iter().any(|choice| choice.id == id)
+            })
+        {
+            self.pending = Some(id.to_owned());
+        }
+    }
+
+    /// Admit an exact offered choice without committing it. The continuity
+    /// boundary still owns revision checking, save-before-install and failure.
+    pub fn offered_choice<'a>(
+        &self,
+        view: &'a Observation,
+        replay_index: Option<usize>,
+        generation: u64,
+        id: &str,
+    ) -> Option<&'a crate::Choice> {
+        if replay_index.is_some()
+            || !self.open
+            || self.generation != generation
+            || !self.current(view, replay_index)
+            || (id.starts_with("cancel-") && self.pending_cancellation() != Some(id))
+        {
+            return None;
+        }
+        choices(view, self.selected?)
+            .into_iter()
+            .find(|choice| choice.id == id)
+    }
+
+    pub fn offered_source_less<'a>(
+        &self,
+        view: &'a Observation,
+        replay_index: Option<usize>,
+        generation: u64,
+        id: &str,
+    ) -> Option<&'a crate::Choice> {
+        if replay_index.is_some() || self.generation != generation || !source_less(id) {
+            return None;
+        }
+        view.choices.iter().find(|choice| choice.id == id)
     }
 }
 
@@ -172,8 +306,7 @@ pub(super) fn keyboard(
 }
 
 pub(super) fn synchronize(mut context: ResMut<Context>, mut table: ResMut<Tabletop>) {
-    if context.snapshot.is_some() && !context.current(&table) {
-        context.invalidate();
+    if context.synchronize(&table.view(), table.replay.as_ref().map(Replay::index)) {
         table.dirty = true;
     }
 }
@@ -197,7 +330,7 @@ pub(super) fn show(
     viewport: Vec2,
 ) {
     if !context.open
-        || !context.current(table)
+        || !context.current(&table.view(), table.replay.as_ref().map(Replay::index))
         || table.inspect.is_some()
         || table.result_open
         || table.history

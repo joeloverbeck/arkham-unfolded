@@ -128,7 +128,7 @@ fn contextual_selection_inspection_and_cancellation_preserve_decision_until_conf
         &mut app,
         Action::Select(Source::Token(0), Vec2::new(150.0, 200.0)),
     );
-    let old_generation = app.world().resource::<Context>().generation;
+    let old_generation = app.world().resource::<Context>().generation();
     act(
         &mut app,
         Action::PrepareCancellation(old_generation, "cancel-1-2".into()),
@@ -136,7 +136,7 @@ fn contextual_selection_inspection_and_cancellation_preserve_decision_until_conf
     assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
     act(&mut app, Action::DismissContext);
     act(&mut app, Action::Select(Source::Card(2), Vec2::ZERO));
-    let card_generation = app.world().resource::<Context>().generation;
+    let card_generation = app.world().resource::<Context>().generation();
     act(
         &mut app,
         Action::ContextChoose(card_generation, before.revision, "cancel-1-2".into()),
@@ -145,9 +145,9 @@ fn contextual_selection_inspection_and_cancellation_preserve_decision_until_conf
     act(&mut app, Action::Inspect(2));
     act(&mut app, Action::CloseInspect);
     let context = app.world().resource::<Context>();
-    assert_eq!(context.selected, Some(Source::Card(2)));
-    assert_eq!(context.pending.as_deref(), Some("cancel-1-2"));
-    assert!(!context.open);
+    assert_eq!(context.selected_source(), Some(Source::Card(2)));
+    assert_eq!(context.pending_cancellation(), Some("cancel-1-2"));
+    assert!(!context.menu_open());
     act(
         &mut app,
         Action::ContextChoose(old_generation, before.revision, "cancel-1-2".into()),
@@ -162,10 +162,19 @@ fn contextual_selection_inspection_and_cancellation_preserve_decision_until_conf
         &mut app,
         Action::Select(Source::Token(0), Vec2::new(150.0, 200.0)),
     );
-    let generation = app.world().resource::<Context>().generation;
+    let generation = app.world().resource::<Context>().generation();
     assert_eq!(
-        app.world().resource::<Context>().pending.as_deref(),
+        app.world().resource::<Context>().pending_cancellation(),
         Some("cancel-1-2")
+    );
+    act(
+        &mut app,
+        Action::ContextChoose(old_generation, before.revision, "cancel-1-2".into()),
+    );
+    assert_eq!(
+        app.world().resource::<Tabletop>().session.observe(),
+        before,
+        "the same token, observation and staged cancellation still reject an old callback"
     );
     act(
         &mut app,
@@ -188,8 +197,12 @@ fn contextual_actions_cannot_cross_replay_or_reopen_boundaries() {
     app.update();
     act(&mut app, Action::Save);
     act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
-    let generation = app.world().resource::<Context>().generation;
+    let generation = app.world().resource::<Context>().generation();
     let before = app.world().resource::<Tabletop>().session.observe();
+    act(
+        &mut app,
+        Action::PrepareCancellation(generation, "cancel-1-2".into()),
+    );
     act(&mut app, Action::Replay);
     act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
     act(
@@ -203,13 +216,175 @@ fn contextual_actions_cannot_cross_replay_or_reopen_boundaries() {
     );
     assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
     act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
-    let generation = app.world().resource::<Context>().generation;
+    let generation = app.world().resource::<Context>().generation();
+    act(
+        &mut app,
+        Action::PrepareCancellation(generation, "cancel-1-2".into()),
+    );
     act(&mut app, Action::Reopen);
     act(
         &mut app,
         Action::ContextChoose(generation, before.revision, "cancel-1-2".into()),
     );
     assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
+}
+
+#[test]
+fn contextual_cancellation_survives_failed_commits_and_manual_save() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = pending_app(dir.path().to_path_buf()); // A directory cannot be a save file.
+    act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
+    let generation = app.world().resource::<Context>().generation();
+    let before = app.world().resource::<Tabletop>().session.observe();
+    act(
+        &mut app,
+        Action::PrepareCancellation(generation, "cancel-1-2".into()),
+    );
+    for revision in [before.revision - 1, before.revision] {
+        act(
+            &mut app,
+            Action::ContextChoose(generation, revision, "cancel-1-2".into()),
+        );
+        let table = app.world().resource::<Tabletop>();
+        assert_eq!(table.session.observe(), before);
+        assert!(table.notice.starts_with("Decision was not committed:"));
+    }
+    act(&mut app, Action::Save);
+    assert!(
+        app.world()
+            .resource::<Tabletop>()
+            .notice
+            .starts_with("Save failed;")
+    );
+
+    let path = dir.path().join("saved.json");
+    app.world_mut().resource_mut::<Tabletop>().save_path = path.clone();
+    act(&mut app, Action::Save);
+    assert_eq!(continuity::load_session(&path).unwrap().observe(), before);
+    assert_eq!(
+        app.world().resource::<Context>().pending_cancellation(),
+        Some("cancel-1-2")
+    );
+    act(
+        &mut app,
+        Action::ContextChoose(generation, before.revision, "cancel-1-2".into()),
+    );
+    let after = app.world().resource::<Tabletop>().session.observe();
+    assert_eq!(after.revision, before.revision + 1);
+    assert_eq!(continuity::load_session(&path).unwrap().observe(), after);
+}
+
+#[test]
+fn contextual_failed_and_no_op_transitions_expire_callbacks_before_attempting_the_operation() {
+    let dir = tempfile::tempdir().unwrap();
+    let blocked = dir.path().join("not-a-directory");
+    std::fs::write(&blocked, "blocks all session and replay writes").unwrap();
+    for (index, transition) in [
+        Action::Reopen,
+        Action::Replay,
+        Action::New,
+        Action::Back,
+        Action::Next,
+        Action::Live,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut app = pending_app(blocked.join("session.json"));
+        act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
+        let old = app.world().resource::<Context>().generation();
+        let before = app.world().resource::<Tabletop>().session.observe();
+        act(
+            &mut app,
+            Action::PrepareCancellation(old, "cancel-1-2".into()),
+        );
+        act(&mut app, transition);
+        if index < 3 {
+            assert!(
+                app.world()
+                    .resource::<Tabletop>()
+                    .notice
+                    .starts_with("Could not")
+            );
+        }
+        assert_eq!(app.world().resource::<Tabletop>().view(), before);
+
+        // Make persistence possible so refusal cannot be attributed to a bad path.
+        app.world_mut().resource_mut::<Tabletop>().save_path =
+            dir.path().join(format!("retry-{index}.json"));
+        act(
+            &mut app,
+            Action::SourceLess(old, before.revision, "end".into()),
+        );
+        assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
+        act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
+        let current = app.world().resource::<Context>().generation();
+        act(
+            &mut app,
+            Action::ContextChoose(current, before.revision, "cancel-1-2".into()),
+        );
+        assert_eq!(
+            app.world().resource::<Tabletop>().session.observe(),
+            before,
+            "a failed or no-op mode transition discards the staged cancellation"
+        );
+        act(
+            &mut app,
+            Action::PrepareCancellation(current, "cancel-1-2".into()),
+        );
+        act(
+            &mut app,
+            Action::ContextChoose(current, before.revision, "cancel-1-2".into()),
+        );
+        assert_eq!(
+            app.world()
+                .resource::<Tabletop>()
+                .session
+                .observe()
+                .revision,
+            before.revision + 1
+        );
+    }
+}
+
+#[test]
+fn contextual_callbacks_are_checked_after_each_action_in_one_update() {
+    let dir = tempfile::tempdir().unwrap();
+    for preceding in [
+        Action::Select(Source::Token(0), Vec2::new(20.0, 30.0)),
+        Action::DismissContext,
+    ] {
+        let mut app = pending_app(dir.path().join("queued.json"));
+        act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
+        let generation = app.world().resource::<Context>().generation();
+        let before = app.world().resource::<Tabletop>().session.observe();
+        act(
+            &mut app,
+            Action::PrepareCancellation(generation, "cancel-1-2".into()),
+        );
+        app.world_mut().resource_mut::<Actions>().0.extend([
+            preceding,
+            Action::ContextChoose(generation, before.revision, "cancel-1-2".into()),
+        ]);
+        app.update();
+        assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
+    }
+
+    let path = dir.path().join("commit.json");
+    let mut app = app_for_session(Session::new(Fixture::curse()), path.clone());
+    act(&mut app, Action::Select(Source::Card(1), Vec2::ZERO));
+    let generation = app.world().resource::<Context>().generation();
+    app.world_mut().resource_mut::<Actions>().0.extend([
+        Action::ContextChoose(generation, 0, "commit-promise".into()),
+        // End remains offered after commitment; even a matching new revision
+        // cannot make a callback from before the successful choice current.
+        Action::SourceLess(generation, 1, "end".into()),
+    ]);
+    app.update();
+    let after = app.world().resource::<Tabletop>().session.observe();
+    assert_eq!(after.stage, Stage::BeforeReveal);
+    assert_eq!(after.revision, 1);
+    assert_eq!(continuity::load_session(&path).unwrap().observe(), after);
 }
 
 #[test]
@@ -265,16 +440,13 @@ fn camera_pans_with_window_focus_but_captures_menu_modal_and_button_input() {
         "initial window focus must permit plain WASD"
     );
 
-    app.world_mut().resource_mut::<Context>().open = true;
-    app.update();
+    act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
         panned,
         "menu navigation captures WASD"
     );
-    app.world_mut().resource_mut::<Context>().open = false;
-    app.world_mut().resource_mut::<Tabletop>().inspect = Some(2);
-    app.update();
+    act(&mut app, Action::Inspect(2));
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
         panned,
@@ -782,6 +954,8 @@ fn panel_refreshes_preserve_scene_entities_and_in_flight_motion() {
         .resource_mut::<Time>()
         .advance_by(Duration::ZERO);
     for action in [
+        Action::Select(Source::Token(0), Vec2::ZERO),
+        Action::DismissContext,
         Action::Inspect(2),
         Action::CloseInspect,
         Action::History,
@@ -1383,7 +1557,7 @@ fn contextual_menu_backdrop_allows_orbit_and_still_dismisses_on_left_click() {
     orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
     contextual_cursor(&mut app, window, pointer, Vec2::new(840.0, 410.0));
     assert_ne!(app.world().resource::<Orbit>().pose().yaw, yaw);
-    assert!(!app.world().resource::<Context>().open);
+    assert!(!app.world().resource::<Context>().menu_open());
     assert_eq!(app.world().resource::<Tabletop>().view(), before);
     orbit_button(&mut app, window, bevy::input::ButtonState::Released);
 
@@ -1407,7 +1581,7 @@ fn contextual_menu_backdrop_allows_orbit_and_still_dismisses_on_left_click() {
             .write_message(PointerInput::new(PointerId::Mouse, location, action));
         app.update();
     }
-    assert!(!app.world().resource::<Context>().open);
+    assert!(!app.world().resource::<Context>().menu_open());
     assert_eq!(app.world().resource::<Tabletop>().view(), before);
 }
 
@@ -1458,7 +1632,7 @@ fn contextual_menu_tab_navigation_inspects_then_commits_without_moving_camera() 
     assert_eq!(app.world().resource::<Tabletop>().inspect, Some(1));
     assert_eq!(app.world().resource::<Tabletop>().view(), before);
     assert_eq!(
-        app.world().resource::<Context>().selected,
+        app.world().resource::<Context>().selected_source(),
         Some(Source::Card(1))
     );
 
@@ -1529,10 +1703,10 @@ fn camera_adapter_blocks_jacqueline_utilities_wheel_results_and_escape_frame_key
         .resource_mut::<AccumulatedMouseScroll>()
         .delta
         .y = 1.0;
-    app.world_mut().resource_mut::<Context>().utilities = true;
+    app.world_mut().resource_mut::<Context>().toggle_utilities();
     app.world_mut().run_system_once(camera_controls).unwrap();
     assert_eq!(app.world().resource::<Orbit>().pose(), before);
-    app.world_mut().resource_mut::<Context>().utilities = false;
+    app.world_mut().resource_mut::<Context>().toggle_utilities();
     app.world_mut().resource_mut::<Tabletop>().result_open = true;
     app.world_mut().run_system_once(camera_controls).unwrap();
     assert_eq!(app.world().resource::<Orbit>().pose(), before);
