@@ -60,6 +60,69 @@ fn production_scene_keeps_physical_standees_and_readable_missing_portraits() {
 }
 
 #[test]
+fn named_location_markers_keep_elsewhere_patrice_separate_from_study() {
+    let dir = tempfile::tempdir().unwrap();
+    for elsewhere in [false, true] {
+        let fixture = if elsewhere {
+            Fixture::curse().with_patrice_elsewhere()
+        } else {
+            Fixture::curse()
+        };
+        let mut app = app_for_session(Session::new(fixture), dir.path().join("locations.json"));
+        let choices = app.world().resource::<Tabletop>().view().choices;
+        app.update();
+        assert_eq!(app.world().resource::<Tabletop>().view().choices, choices);
+        let world = app.world_mut();
+        let markers: Vec<_> = world
+            .query::<&Name>()
+            .iter(world)
+            .filter(|name| name.as_str().starts_with("Location marker:"))
+            .map(|name| name.as_str().to_owned())
+            .collect();
+        assert!(markers.iter().any(|name| name == "Location marker: Study"));
+        assert_eq!(
+            markers
+                .iter()
+                .any(|name| name == "Location marker: Hallway"),
+            elsewhere
+        );
+        let labels: Vec<_> = world
+            .query::<(&Text, &WorldLabel, &StandeeLabel)>()
+            .iter(world)
+            .map(|(text, anchor, _)| (text.0.clone(), anchor.0))
+            .collect();
+        let patrice = labels
+            .iter()
+            .find(|(text, _)| text.starts_with("Patrice\n"))
+            .unwrap()
+            .1;
+        let tony = labels
+            .iter()
+            .find(|(text, _)| text.starts_with("Tony\n"))
+            .unwrap()
+            .1;
+        assert!(tony.x > HALLWAY_AT.x + LOCATION_SIZE.x);
+        if elsewhere {
+            assert!(patrice.x < HALLWAY_AT.x);
+        } else {
+            assert!((patrice.x - tony.x).abs() < 0.001);
+            assert!(patrice.z > tony.z);
+        }
+        let roots: Vec<_> = world
+            .query::<(&Name, &Transform)>()
+            .iter(world)
+            .filter(|(name, _)| name.as_str() == "Investigator standee")
+            .map(|(_, transform)| *transform)
+            .collect();
+        assert_eq!(roots.len(), 3);
+        for root in roots {
+            assert!(root.scale.x > 0.25 && root.scale.x < 0.5);
+            assert_eq!(root.scale, Vec3::splat(root.scale.x));
+        }
+    }
+}
+
+#[test]
 fn contextual_controls_preserve_every_offered_choice_and_token_identity() {
     for (fixture, expected) in [
         (

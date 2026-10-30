@@ -13,6 +13,48 @@ pub(crate) enum Area {
 
 pub(crate) const TEST_CENTER: Vec3 = Vec3::new(0.0, 0.0, 0.8);
 
+/// Positions beside a location, ordered far-left, near-left, far-right, near-right.
+/// The complete rounded bases clear the card; the caller supplies real occupants.
+pub(crate) fn location_standee_position(
+    center: Vec3,
+    card_size: Vec2,
+    slot: usize,
+) -> Option<Vec3> {
+    let (side, row) = match slot {
+        0 => (-1.0, -1.0),
+        1 => (-1.0, 1.0),
+        2 => (1.0, -1.0),
+        3 => (1.0, 1.0),
+        _ => return None,
+    };
+    let offset = card_size.x / 2.0 + crate::tabletop_standees::BASE_RADIUS + 0.10;
+    Some(center + Vec3::new(side * offset, 0.0, row * card_size.y / 4.0))
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ScenarioBookSide {
+    Agenda,
+    Act,
+}
+
+/// Existing sideways artwork becomes two landscape pages on one backward-leaning plane.
+pub(crate) fn scenario_book_card_transform(
+    side: ScenarioBookSide,
+    portrait_size: Vec2,
+) -> Transform {
+    let tilt = 75.0_f32.to_radians();
+    let side = match side {
+        ScenarioBookSide::Agenda => -1.0,
+        ScenarioBookSide::Act => 1.0,
+    };
+    Transform::from_xyz(
+        side * portrait_size.y / 2.0,
+        0.05 + portrait_size.x / 2.0 * tilt.sin(),
+        -7.2,
+    )
+    .with_rotation(Quat::from_rotation_x(tilt) * Quat::from_rotation_y(std::f32::consts::FRAC_PI_2))
+}
+
 pub(crate) fn investigator_center(index: usize, count: usize) -> Vec3 {
     Vec3::new(
         (index as f32 - count.saturating_sub(1) as f32 / 2.0) * 12.0,
@@ -137,6 +179,54 @@ fn surface(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn four_location_standees_clear_cards_and_each_other() {
+        use crate::tabletop_standees::BASE_RADIUS;
+        for size in [Vec2::new(1.35, 1.89), Vec2::new(1.80, 2.52)] {
+            let center = Vec3::new(-2.5, 0.0, -3.8);
+            for count in 1..=4 {
+                let points: Vec<_> = (0..count)
+                    .map(|slot| location_standee_position(center, size, slot).unwrap())
+                    .collect();
+                for (index, point) in points.iter().enumerate() {
+                    assert!((point.x - center.x).abs() - BASE_RADIUS > size.x / 2.0);
+                    assert!((point.z - center.z).abs() + BASE_RADIUS < size.y / 2.0);
+                    assert_eq!(point.y, center.y);
+                    assert_eq!(point.x < center.x, index < 2);
+                    for other in &points[..index] {
+                        assert!(point.distance(*other) > BASE_RADIUS * 2.0);
+                    }
+                }
+                if count >= 2 {
+                    assert!(points[0].z < points[1].z);
+                }
+            }
+            assert!(location_standee_position(center, size, 4).is_none());
+        }
+    }
+
+    #[test]
+    fn scenario_book_joins_landscape_pages_above_the_table() {
+        let size = Vec2::new(1.35, 1.89);
+        let agenda = scenario_book_card_transform(ScenarioBookSide::Agenda, size);
+        let act = scenario_book_card_transform(ScenarioBookSide::Act, size);
+        assert!(agenda.translation.x < act.translation.x);
+        for x in [-size.x / 2.0, size.x / 2.0] {
+            let agenda_edge = agenda.transform_point(Vec3::new(x, 0.0, size.y / 2.0));
+            let act_edge = act.transform_point(Vec3::new(x, 0.0, -size.y / 2.0));
+            assert!(agenda_edge.abs_diff_eq(act_edge, 0.0001));
+            assert!(agenda_edge.x.abs() < 0.0001);
+        }
+        for page in [agenda, act] {
+            let bottom = page.transform_point(Vec3::new(-size.x / 2.0, 0.0, 0.0));
+            let top = page.transform_point(Vec3::new(size.x / 2.0, 0.0, 0.0));
+            assert!((bottom.y - 0.05).abs() < 0.0001);
+            assert!(top.y - bottom.y > size.x * 0.9);
+            assert!(top.z < bottom.z, "the top leans away from the viewing side");
+            assert!((page.rotation * Vec3::Y).z > 0.9);
+        }
+    }
 
     #[test]
     fn participating_areas_are_centered_without_changing_spacing() {

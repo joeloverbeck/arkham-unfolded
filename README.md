@@ -22,6 +22,8 @@ If your checkout is elsewhere, replace the directory in the first line. This req
 
 The shared scenario surface holds the map and test area. Tony, Patrice and Jacqueline have separate personal surfaces in a centered row, with hands along their near edges. The portrait buttons focus each investigator; **Scenario**, **Test** and **Overview** move between the shared areas and the whole table. Focusing an investigator does not change who is acting. The current actor, decision and test stay visible while you navigate.
 
+In **Scenario** view, the agenda and act stand together at the far center as an open book, with the agenda on the left. Smaller investigator standees sit beside their location, with two positions along each side and a clear gap from the card. The earlier Jacqueline experiment uses named Study and Hallway markers for its supplied locations. Full card inspection remains available; manual orbit can naturally place figures in front of cards from some angles.
+
 In a fresh turn:
 
 1. Tony has three ordinary actions and an available bonus Fight/Engage action. A ready Ghoul Minion is engaged with him; Internal Injury is in his threat area. Left-click a component to open its nearby labeled actions, then click the action to perform it. Selecting the component alone changes no game state. Actions that provoke show an amber **Attack of opportunity** warning with the source and amounts before you choose them.

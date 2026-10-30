@@ -275,6 +275,12 @@ struct PlayerDeck;
 struct MainCamera;
 #[derive(Component)]
 struct WorldLabel(Vec3, f32);
+
+/// Anchor a caption outward from a card or paired component.
+#[derive(Component)]
+struct OuterLabel {
+    left: bool,
+}
 #[derive(Component)]
 struct OverviewHeading;
 #[derive(Component)]
@@ -773,21 +779,21 @@ fn card_mesh(
         unlit: true,
         ..default()
     });
-    let rotation = if card.landscape || exhausted {
-        std::f32::consts::FRAC_PI_2
-    } else {
-        0.0
-    };
+    let transform = scene::card_transform(index, at, exhausted);
+    let anchor = transform.translation;
     commands
         .spawn((
+            Name::new(format!("Card {}", card.code)),
             Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
             MeshMaterial3d(material),
-            Transform::from_translation(at).with_rotation(Quat::from_rotation_y(rotation)),
+            transform,
             Scene,
         ))
         .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
             if event.button == bevy::picking::pointer::PointerButton::Primary {
-                queue.0.push(Action::Select(selection.0, selection.1, at));
+                queue
+                    .0
+                    .push(Action::Select(selection.0, selection.1, anchor));
             }
         });
 }
@@ -1206,24 +1212,28 @@ fn camera_controls(
     **camera = step.transform;
 }
 
+#[allow(clippy::type_complexity)]
 fn world_labels(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     orbit: Res<Orbit>,
     mut labels: Query<(
         &WorldLabel,
         Has<OverviewHeading>,
+        Option<&OuterLabel>,
         &mut Node,
         &mut Visibility,
     )>,
 ) {
     let (camera, transform) = *camera;
-    for (label, heading, mut node, mut visibility) in &mut labels {
+    for (label, heading, standee, mut node, mut visibility) in &mut labels {
         if orbit.pose().distance > 30.0 && !heading {
             *visibility = Visibility::Hidden;
             continue;
         }
         if let Ok(point) = camera.world_to_viewport(transform, label.0) {
-            node.left = px(point.x - label.1 / 2.0);
+            let offset =
+                standee.map_or(label.1 / 2.0, |side| if side.left { label.1 } else { 0.0 });
+            node.left = px(point.x - offset);
             node.top = px(point.y);
             *visibility = Visibility::Inherited;
         } else {

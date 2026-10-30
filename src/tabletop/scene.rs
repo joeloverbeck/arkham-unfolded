@@ -51,6 +51,15 @@ struct ReminderPose {
 }
 #[derive(Component)]
 struct WorldLabel(Vec3);
+#[derive(Component)]
+struct StandeeLabel {
+    left: bool,
+}
+
+const LOCATION_SIZE: Vec2 = Vec2::new(1.80, 2.52);
+const STUDY_AT: Vec3 = Vec3::new(-1.8, 0.0, -5.8);
+const HALLWAY_AT: Vec3 = Vec3::new(-6.2, 0.0, -4.3);
+
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum LabelDisplay {
     Detail,
@@ -180,46 +189,88 @@ fn synchronize(
         if view.jacqueline_used { MUTED } else { GOLD },
         &art.symbol_font,
     );
-    for (i, investigator) in view.investigators.iter().enumerate() {
-        let here = investigator.location == "Study";
-        let (x, z) = if here {
-            (-3.4 + i as f32 * 3.3, -4.4)
-        } else {
-            (-6.5, -3.4)
-        };
-        if !here {
-            commands.spawn((
-                Mesh3d(meshes.add(Cuboid::new(2.2, 0.035, 1.6))),
-                MeshMaterial3d(materials.add(Color::srgb(0.12, 0.20, 0.22))),
-                Transform::from_xyz(x, -0.02, z),
-                Pickable::IGNORE,
-                TransientScene,
-            ));
-        }
-        let image = art
+    for (location, center) in [("Study", STUDY_AT), ("Hallway", HALLWAY_AT)] {
+        let occupants: Vec<_> = view
             .investigators
             .iter()
-            .find(|(name, _)| name == &investigator.name)
-            .map(|(_, image)| image);
-        let standee = standees::spawn(
+            .enumerate()
+            .filter(|(_, investigator)| investigator.location == location)
+            .collect();
+        if occupants.is_empty() {
+            continue;
+        }
+        // Named footprints describe only locations supplied by this experiment.
+        // No location rules, card faces or new selectable actions are introduced.
+        commands.spawn((
+            Name::new(format!("Location marker: {location}")),
+            Mesh3d(meshes.add(Cuboid::new(LOCATION_SIZE.x, 0.035, LOCATION_SIZE.y))),
+            MeshMaterial3d(materials.add(Color::srgb(0.26, 0.30, 0.29))),
+            Transform::from_translation(center + Vec3::Y * 0.02),
+            Pickable::IGNORE,
+            TransientScene,
+        ));
+        let marker_name = label(
             &mut commands,
-            &mut meshes,
-            &mut materials,
-            image,
-            Vec3::new(x, 0.0, z),
-            tabletop_layout::investigator_class(i),
-        );
-        commands.entity(standee).insert(TransientScene);
-        label(
-            &mut commands,
-            format!(
-                "{}\n{} · Horror {}/{}",
-                investigator.name, investigator.location, investigator.horror, investigator.sanity
-            ),
-            Vec3::new(x, 3.8, z),
+            location,
+            center + Vec3::Y * 0.06,
             PAPER,
             &art.symbol_font,
         );
+        commands
+            .entity(marker_name)
+            .entry::<Node>()
+            .and_modify(|mut node| {
+                node.width = px(66);
+                node.padding = UiRect::all(px(2));
+            });
+        for (slot, (i, investigator)) in occupants.into_iter().enumerate() {
+            let position = tabletop_layout::location_standee_position(center, LOCATION_SIZE, slot)
+                .expect("the prepared experiment has at most three investigators per location");
+            let image = art
+                .investigators
+                .iter()
+                .find(|(name, _)| name == &investigator.name)
+                .map(|(_, image)| image);
+            let standee = standees::spawn(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                image,
+                position,
+                tabletop_layout::investigator_class(i),
+            );
+            commands.entity(standee).insert(TransientScene);
+            let left = slot < 2;
+            let label_at = position
+                + Vec3::new(
+                    if left { -1.0 } else { 1.0 } * (standees::BASE_RADIUS + 0.10),
+                    standees::HEIGHT / 2.0,
+                    0.0,
+                );
+            let name = investigator
+                .name
+                .split_whitespace()
+                .next()
+                .unwrap_or(&investigator.name);
+            let name_label = label(
+                &mut commands,
+                format!(
+                    "{name}\nHorror {}/{}",
+                    investigator.horror, investigator.sanity
+                ),
+                label_at,
+                PAPER,
+                &art.symbol_font,
+            );
+            commands.entity(name_label).insert(StandeeLabel { left });
+            commands
+                .entity(name_label)
+                .entry::<Node>()
+                .and_modify(|mut node| {
+                    node.width = px(100);
+                    node.padding = UiRect::all(px(3));
+                });
+        }
     }
     label(
         &mut commands,
@@ -461,12 +512,22 @@ fn synchronize(
 fn label_positions(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     orbit: Res<super::Orbit>,
-    mut labels: Query<(&WorldLabel, &LabelDisplay, &mut Node, &mut Visibility)>,
+    mut labels: Query<(
+        &WorldLabel,
+        &LabelDisplay,
+        Option<&StandeeLabel>,
+        &mut Node,
+        &mut Visibility,
+    )>,
 ) {
-    for (anchor, display, mut node, mut visibility) in &mut labels {
+    for (anchor, display, standee, mut node, mut visibility) in &mut labels {
         if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor.0) {
             let Val::Px(width) = node.width else { continue };
-            node.left = px(point.x - width / 2.0);
+            node.left = px(match standee {
+                Some(label) if label.left => point.x - width,
+                Some(_) => point.x,
+                None => point.x - width / 2.0,
+            });
             node.top = px(point.y - 16.0);
             *visibility = if display.visible(orbit.pose().distance) {
                 Visibility::Visible

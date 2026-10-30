@@ -5,6 +5,11 @@ use crate::tabletop_layout::InvestigatorClass;
 use bevy::prelude::*;
 use std::f32::consts::PI;
 
+pub(crate) const SCALE: f32 = 0.38;
+const BASE_RADIUS_UNSCALED: f32 = 0.52;
+pub(crate) const BASE_RADIUS: f32 = BASE_RADIUS_UNSCALED * SCALE;
+pub(crate) const HEIGHT: f32 = (0.20 + 744.0 / 484.0 + 0.0125) * SCALE;
+
 pub(crate) fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -28,13 +33,13 @@ pub(crate) fn spawn(
     commands
         .spawn((
             Name::new("Investigator standee"),
-            Transform::from_translation(position),
+            Transform::from_translation(position).with_scale(Vec3::splat(SCALE)),
             Visibility::default(),
             Pickable::IGNORE,
         ))
         .with_children(|standee| {
             standee.spawn((
-                Mesh3d(meshes.add(Cylinder::new(0.52, 0.08))),
+                Mesh3d(meshes.add(Cylinder::new(BASE_RADIUS_UNSCALED, 0.08))),
                 MeshMaterial3d(trim),
                 Transform::from_xyz(0.0, 0.04, 0.0),
                 Pickable::IGNORE,
