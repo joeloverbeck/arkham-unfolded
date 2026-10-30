@@ -54,6 +54,8 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
             "--screenshot",
             "render.png",
             "--quit-after-screenshot",
+            "--initial-view",
+            "scenario",
             "--timeout-seconds",
             "5",
         ])
@@ -62,6 +64,7 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
         .spawn()
         .unwrap();
     let metadata = running(&directory);
+    assert_eq!(metadata["initial_view"], "scenario");
     let process_exe =
         fs::read_link(format!("/proc/{}/exe", metadata["pid"].as_u64().unwrap())).unwrap();
     assert_eq!(process_exe, directory.join("arkham-tabletop"));
@@ -78,6 +81,7 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
     let completed: Value =
         serde_json::from_slice(&fs::read(directory.join("run.json")).unwrap()).unwrap();
     assert_eq!(completed["status"], "exited");
+    assert_eq!(completed["initial_view"], "scenario");
     assert_eq!(
         fs::read(directory.join("arkham-tabletop")).unwrap(),
         original
@@ -111,7 +115,9 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
             root.path().join("art"),
             "--screenshot",
             directory.join("render.png"),
-            "--quit-after-screenshot"
+            "--quit-after-screenshot",
+            "--initial-view",
+            "scenario"
         ])
     );
 }
@@ -134,6 +140,7 @@ fn launch_preserves_existing_paths_and_refuses_escape_or_unbounded_timeout() {
         ["--timeout-seconds", "NaN"],
         ["--timeout-seconds", "0"],
         ["--timeout-seconds", "3601"],
+        ["--initial-view", "missing"],
     ] {
         let fresh = root.path().join("fresh");
         let result = launch(&binary, &fresh).args(flags).output().unwrap();
@@ -253,6 +260,14 @@ fn interruption_cleans_owned_child_and_records_honest_status() {
         .spawn()
         .unwrap();
     let metadata = running(&directory);
+    assert!(metadata.get("initial_view").is_some_and(Value::is_null));
+    assert!(
+        metadata["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|arg| arg != "--initial-view")
+    );
     // SAFETY: signal only the supervisor spawned and still owned by this test.
     assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
     let output = child.wait_with_output().unwrap();

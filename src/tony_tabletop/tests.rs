@@ -9,6 +9,40 @@ use crate::tabletop_standee_checks as standee_checks;
 mod harm_lifetime;
 
 #[test]
+fn diagnostic_initial_view_parses_without_changing_default_framing_or_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let parse = |args: &[&str]| {
+        Options::parse_from(
+            ["--experiment", "tony"]
+                .into_iter()
+                .chain(args.iter().copied())
+                .map(str::to_owned),
+            AssetConfig::load_at(
+                directory.path().join("settings.toml"),
+                directory.path().join("assets"),
+            ),
+        )
+    };
+    assert_eq!(parse(&[]).unwrap().unwrap().initial_view, None);
+    for (name, area) in [
+        ("overview", Area::Overview),
+        ("scenario", Area::Scenario),
+        ("test", Area::Test),
+    ] {
+        assert_eq!(
+            parse(&["--initial-view", name])
+                .unwrap()
+                .unwrap()
+                .initial_view,
+            Some(area)
+        );
+    }
+    assert!(parse(&["--initial-view"]).is_err());
+    assert!(parse(&["--initial-view", "missing"]).is_err());
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[test]
 fn launch_uses_configured_root_without_creating_a_preference() {
     let dir = tempfile::tempdir().unwrap();
     let settings = dir.path().join("tony.toml");

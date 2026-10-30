@@ -129,6 +129,9 @@ pub struct Launch {
     screenshot: Option<String>,
     #[arg(long, requires = "screenshot")]
     quit_after_screenshot: bool,
+    /// Diagnostic startup framing; leaves the app's Home behavior unchanged.
+    #[arg(long, value_parser = ["overview", "scenario", "test"])]
+    initial_view: Option<String>,
     /// App lifetime for owner review, independent of any desktop-control grant.
     #[arg(long, default_value_t = 1800.0)]
     timeout_seconds: f64,
@@ -515,13 +518,17 @@ fn launch(args: Launch) -> Result<u8> {
     if args.quit_after_screenshot {
         command.arg("--quit-after-screenshot");
     }
+    if let Some(view) = &args.initial_view {
+        command.args(["--initial-view", view]);
+    }
     let argv: Vec<_> = std::iter::once(command.get_program())
         .chain(command.get_args())
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     let mut metadata = json!({"status":"staged", "source_binary":binary, "binary":staged, "sha256":hash,
         "argv":argv, "cwd":directory, "environment":isolated, "save":save, "source_save":source_save,
-        "source_save_sha256":save_hash, "log":directory.join("app.log"), "timeout_seconds":args.timeout_seconds});
+        "source_save_sha256":save_hash, "log":directory.join("app.log"), "timeout_seconds":args.timeout_seconds,
+        "initial_view":args.initial_view});
     record(&directory, &metadata)?;
     let log = new_file(&directory.join("app.log"))?;
     command

@@ -123,6 +123,59 @@ fn named_location_markers_keep_elsewhere_patrice_separate_from_study() {
 }
 
 #[test]
+fn study_marker_clears_rotting_remains_card_footprint() {
+    use bevy::mesh::VertexAttributeValues;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = app_for_session(
+        Session::new(Fixture::curse()),
+        dir.path().join("spacing.json"),
+    );
+    app.update();
+    let world = app.world_mut();
+    let (study_mesh, study_transform) = world
+        .query::<(&Name, &Mesh3d, &Transform)>()
+        .iter(world)
+        .find(|(name, _, _)| name.as_str() == "Location marker: Study")
+        .map(|(_, mesh, transform)| (mesh.0.clone(), *transform))
+        .expect("the production scene must show the occupied Study");
+    let remains = CARDS.iter().position(|card| card.code == "01163").unwrap();
+    let (card_mesh, card_transform) = world
+        .query::<(&context::Selectable, &Mesh3d, &Transform)>()
+        .iter(world)
+        .find(|(source, _, _)| source.0 == Source::Card(remains))
+        .map(|(_, mesh, transform)| (mesh.0.clone(), *transform))
+        .expect("the production scene must show Rotting Remains");
+    let meshes = world.resource::<Assets<Mesh>>();
+    let footprint = |handle: &Handle<Mesh>, transform: Transform| {
+        let mesh = meshes.get(handle).unwrap();
+        let Some(VertexAttributeValues::Float32x3(vertices)) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            panic!("the rendered footprint must have vertex positions");
+        };
+        assert!(!vertices.is_empty());
+        vertices.iter().fold(
+            (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY)),
+            |(min, max), vertex| {
+                let position = transform.transform_point(Vec3::from_array(*vertex)).xz();
+                (min.min(position), max.max(position))
+            },
+        )
+    };
+    let (study_min, study_max) = footprint(&study_mesh, study_transform);
+    let (card_min, card_max) = footprint(&card_mesh, card_transform);
+    assert!(
+        study_max.x < card_min.x
+            || card_max.x < study_min.x
+            || study_max.y < card_min.y
+            || card_max.y < study_min.y,
+        "Study and Rotting Remains need a positive gap on the table: \
+         Study {study_min:?}..{study_max:?}, card {card_min:?}..{card_max:?}"
+    );
+}
+
+#[test]
 fn contextual_controls_preserve_every_offered_choice_and_token_identity() {
     for (fixture, expected) in [
         (
