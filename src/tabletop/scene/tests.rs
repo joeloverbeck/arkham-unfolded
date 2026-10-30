@@ -257,19 +257,18 @@ fn camera_pans_with_window_focus_but_captures_menu_modal_and_button_input() {
     app.world_mut()
         .resource_mut::<ButtonInput<KeyCode>>()
         .press(KeyCode::KeyW);
-    let start = app.world().resource::<Orbit>().target;
+    let start = app.world().resource::<Orbit>().pose().target;
     app.update();
-    let panned = app.world().resource::<Orbit>().target;
+    let panned = app.world().resource::<Orbit>().pose().target;
     assert!(
         panned.z < start.z,
         "initial window focus must permit plain WASD"
     );
-    assert_eq!(panned, app.world().resource::<Orbit>().desired_target);
 
     app.world_mut().resource_mut::<Context>().open = true;
     app.update();
     assert_eq!(
-        app.world().resource::<Orbit>().target,
+        app.world().resource::<Orbit>().pose().target,
         panned,
         "menu navigation captures WASD"
     );
@@ -277,7 +276,7 @@ fn camera_pans_with_window_focus_but_captures_menu_modal_and_button_input() {
     app.world_mut().resource_mut::<Tabletop>().inspect = Some(2);
     app.update();
     assert_eq!(
-        app.world().resource::<Orbit>().target,
+        app.world().resource::<Orbit>().pose().target,
         panned,
         "inspection captures WASD"
     );
@@ -288,7 +287,7 @@ fn camera_pans_with_window_focus_but_captures_menu_modal_and_button_input() {
         .set(button, bevy::input_focus::FocusCause::Navigated);
     app.update();
     assert_eq!(
-        app.world().resource::<Orbit>().target,
+        app.world().resource::<Orbit>().pose().target,
         panned,
         "focused UI captures WASD"
     );
@@ -301,7 +300,7 @@ fn camera_pans_with_window_focus_but_captures_menu_modal_and_button_input() {
         .release(KeyCode::KeyW);
     app.update();
     assert_eq!(
-        app.world().resource::<Orbit>().target,
+        app.world().resource::<Orbit>().pose().target,
         panned,
         "pan stops without inertia"
     );
@@ -324,7 +323,7 @@ fn app_for_session_in(mut app: App, session: Session, path: PathBuf) -> App {
         result_open: false,
         dirty: true,
     })
-    .insert_resource(Orbit::default())
+    .insert_resource(Orbit::new(CameraMode::Jacqueline))
     .insert_resource(Actions::default())
     .insert_resource(AssetSettings::new(config))
     .init_resource::<Assets<Mesh>>()
@@ -840,9 +839,9 @@ fn panel_refreshes_preserve_scene_entities_and_in_flight_motion() {
         .advance_by(Duration::ZERO);
     let before_follow = scene_snapshot(&mut app);
     let reminder = reminder_state(&mut app);
-    assert!(app.world().resource::<Orbit>().follow);
+    assert!(app.world().resource::<Orbit>().is_following());
     act(&mut app, Action::Follow);
-    assert!(!app.world().resource::<Orbit>().follow);
+    assert!(!app.world().resource::<Orbit>().is_following());
     assert_eq!(scene_snapshot(&mut app), before_follow);
     assert_eq!(reminder_state(&mut app), reminder);
 }
@@ -1040,7 +1039,9 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     use bevy::camera::{CameraProjection, ComputedCameraValues, RenderTargetInfo};
     let dir = tempfile::tempdir().unwrap();
     let mut app = pending_app(dir.path().join("live.json"));
-    app.world_mut().resource_mut::<Orbit>().distance = 23.0;
+    app.world_mut()
+        .resource_mut::<Orbit>()
+        .focus(tabletop_layout::focus(Area::Scenario));
     let camera = app
         .world_mut()
         .spawn((
@@ -1129,7 +1130,9 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
         .query_filtered::<Entity, With<WorldLabel>>()
         .iter(world)
         .collect();
-    world.resource_mut::<Orbit>().distance = 44.0;
+    world
+        .resource_mut::<Orbit>()
+        .focus(tabletop_layout::focus(Area::Overview));
     app.update();
     let world = app.world_mut();
     let mut visible_labels = Vec::new();
@@ -1171,7 +1174,9 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
             "missing overview identity: {name}"
         );
     }
-    world.resource_mut::<Orbit>().distance = 16.0;
+    world
+        .resource_mut::<Orbit>()
+        .focus(tabletop_layout::focus(Area::Investigator(0)));
     app.update();
     for entity in original_entities {
         let display = app.world().get::<LabelDisplay>(entity).unwrap();
@@ -1374,10 +1379,10 @@ fn contextual_menu_backdrop_allows_orbit_and_still_dismisses_on_left_click() {
         Action::Select(Source::Card(1), Vec2::new(200.0, 200.0)),
     );
     contextual_cursor(&mut app, window, pointer, Vec2::new(800.0, 400.0));
-    let yaw = app.world().resource::<Orbit>().yaw;
+    let yaw = app.world().resource::<Orbit>().pose().yaw;
     orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
     contextual_cursor(&mut app, window, pointer, Vec2::new(840.0, 410.0));
-    assert_ne!(app.world().resource::<Orbit>().yaw, yaw);
+    assert_ne!(app.world().resource::<Orbit>().pose().yaw, yaw);
     assert!(!app.world().resource::<Context>().open);
     assert_eq!(app.world().resource::<Tabletop>().view(), before);
     orbit_button(&mut app, window, bevy::input::ButtonState::Released);
@@ -1440,15 +1445,15 @@ fn contextual_menu_tab_navigation_inspects_then_commits_without_moving_camera() 
         &mut app,
         Action::Select(Source::Card(1), Vec2::new(200.0, 200.0)),
     );
-    let target = app.world().resource::<Orbit>().target;
-    let yaw = app.world().resource::<Orbit>().yaw;
+    let target = app.world().resource::<Orbit>().pose().target;
+    let yaw = app.world().resource::<Orbit>().pose().yaw;
     app.world_mut()
         .resource_mut::<Time>()
         .advance_by(Duration::from_millis(100));
     contextual_key(&mut app, window, KeyCode::Tab); // Inspect.
     contextual_key(&mut app, window, KeyCode::KeyW);
-    assert_eq!(app.world().resource::<Orbit>().target, target);
-    assert_eq!(app.world().resource::<Orbit>().yaw, yaw);
+    assert_eq!(app.world().resource::<Orbit>().pose().target, target);
+    assert_eq!(app.world().resource::<Orbit>().pose().yaw, yaw);
     contextual_key(&mut app, window, KeyCode::Enter);
     assert_eq!(app.world().resource::<Tabletop>().inspect, Some(1));
     assert_eq!(app.world().resource::<Tabletop>().view(), before);
@@ -1468,7 +1473,7 @@ fn contextual_menu_tab_navigation_inspects_then_commits_without_moving_camera() 
     let after = app.world().resource::<Tabletop>().view();
     assert_eq!(after.stage, Stage::BeforeReveal);
     assert_eq!(after.revision, before.revision + 1);
-    assert_eq!(app.world().resource::<Orbit>().target, target);
+    assert_eq!(app.world().resource::<Orbit>().pose().target, target);
 }
 
 fn orbit_button(app: &mut App, window: Entity, state: bevy::input::ButtonState) {
@@ -1497,40 +1502,10 @@ fn orbit_cursor(app: &mut App, window: Entity, position: Vec2) {
     app.update();
 }
 
-fn orbit_hover_ui(app: &mut App, hovered: bool) {
-    let entity = app.world_mut().spawn(Node::default()).id();
-    let mut hover = app
-        .world_mut()
-        .resource_mut::<bevy::picking::hover::HoverMap>();
-    hover.clear();
-    if hovered {
-        hover
-            .entry(bevy::picking::pointer::PointerId::Mouse)
-            .or_default()
-            .insert(
-                entity,
-                bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            );
-    }
-}
-
-#[test]
-fn right_drag_orbits_from_window_cursor_input_without_raw_device_motion() {
-    let (mut app, window) = orbit_mouse_app();
-    let before = app.world().resource::<Orbit>().yaw;
-    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
-    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
-    assert_ne!(
-        app.world().resource::<Orbit>().yaw,
-        before,
-        "right-dragged window cursor must orbit even when no raw device-motion message arrives"
-    );
-}
-
 #[test]
 fn right_drag_uses_logical_cursor_distance_once_when_raw_motion_also_arrives() {
     let (mut app, window) = orbit_mouse_app();
-    let before = app.world().resource::<Orbit>().yaw;
+    let before = app.world().resource::<Orbit>().pose().yaw;
     orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
     // A high-DPI device can report a larger physical delta for the same cursor move.
     app.world_mut()
@@ -1538,82 +1513,66 @@ fn right_drag_uses_logical_cursor_distance_once_when_raw_motion_also_arrives() {
             delta: Vec2::new(80.0, 20.0),
         });
     orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
-    assert!((app.world().resource::<Orbit>().yaw - (before - 40.0 * 0.006)).abs() < 0.00001);
+    assert!((app.world().resource::<Orbit>().pose().yaw - (before - 40.0 * 0.006)).abs() < 0.00001);
 }
 
 #[test]
-fn right_drag_orbits_in_unobscured_space_below_the_portrait_strip() {
-    let (mut app, window) = orbit_mouse_app();
-    let start = Vec2::new(1500.0, 850.0);
-    orbit_cursor(&mut app, window, start);
-    let before = app.world().resource::<Orbit>().yaw;
-    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
-    orbit_cursor(&mut app, window, start + Vec2::new(40.0, 10.0));
-    assert_ne!(
-        app.world().resource::<Orbit>().yaw,
-        before,
-        "unused screen space is still the table, not an invisible input blocker"
-    );
-}
+fn camera_adapter_blocks_jacqueline_utilities_wheel_results_and_escape_frame_keys() {
+    use bevy::ecs::system::RunSystemOnce;
 
-#[test]
-fn right_drag_starting_on_ui_does_not_capture_after_leaving_it() {
-    let (mut app, window) = orbit_mouse_app();
-    let before = app.world().resource::<Orbit>().yaw;
-    orbit_hover_ui(&mut app, true);
-    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
-    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
-    orbit_hover_ui(&mut app, false);
-    orbit_cursor(&mut app, window, Vec2::new(880.0, 420.0));
-    assert_eq!(app.world().resource::<Orbit>().yaw, before);
-    orbit_button(&mut app, window, bevy::input::ButtonState::Released);
-    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
-    orbit_cursor(&mut app, window, Vec2::new(920.0, 430.0));
-    assert_ne!(app.world().resource::<Orbit>().yaw, before);
-}
-
-#[test]
-fn right_drag_captured_on_scene_crosses_ui_and_stops_on_release() {
-    let (mut app, window) = orbit_mouse_app();
-    let before = app.world().resource::<Orbit>().yaw;
-    orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
-    orbit_hover_ui(&mut app, true);
-    orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
-    let moved = app.world().resource::<Orbit>().yaw;
-    assert_ne!(moved, before);
-    orbit_button(&mut app, window, bevy::input::ButtonState::Released);
-    orbit_cursor(&mut app, window, Vec2::new(880.0, 420.0));
-    assert_eq!(app.world().resource::<Orbit>().yaw, moved);
-}
-
-#[test]
-fn right_drag_cancels_on_focus_loss_modal_or_cursor_exit_without_a_resume_jump() {
-    for interruption in 0..3 {
-        let (mut app, window) = orbit_mouse_app();
-        orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
-        orbit_cursor(&mut app, window, Vec2::new(840.0, 410.0));
-        let before = app.world().resource::<Orbit>().yaw;
-        match interruption {
-            0 => app.world_mut().get_mut::<Window>(window).unwrap().focused = false,
-            1 => app.world_mut().resource_mut::<Tabletop>().inspect = Some(0),
-            _ => app
-                .world_mut()
-                .get_mut::<Window>(window)
-                .unwrap()
-                .set_cursor_position(None),
-        }
-        app.update();
-        app.world_mut().get_mut::<Window>(window).unwrap().focused = true;
-        app.world_mut().resource_mut::<Tabletop>().inspect = None;
-        orbit_cursor(&mut app, window, Vec2::new(1000.0, 500.0));
-        assert_eq!(
-            app.world().resource::<Orbit>().yaw,
-            before,
-            "capture must reset at interruption {interruption}"
-        );
-        orbit_button(&mut app, window, bevy::input::ButtonState::Released);
-        orbit_button(&mut app, window, bevy::input::ButtonState::Pressed);
-        orbit_cursor(&mut app, window, Vec2::new(1040.0, 510.0));
-        assert_ne!(app.world().resource::<Orbit>().yaw, before);
+    let (mut app, _) = orbit_mouse_app();
+    let before = app.world().resource::<Orbit>().pose();
+    app.world_mut()
+        .resource_mut::<Time>()
+        .advance_by(Duration::from_millis(100));
+    app.world_mut()
+        .resource_mut::<AccumulatedMouseScroll>()
+        .delta
+        .y = 1.0;
+    app.world_mut().resource_mut::<Context>().utilities = true;
+    app.world_mut().run_system_once(camera_controls).unwrap();
+    assert_eq!(app.world().resource::<Orbit>().pose(), before);
+    app.world_mut().resource_mut::<Context>().utilities = false;
+    app.world_mut().resource_mut::<Tabletop>().result_open = true;
+    app.world_mut().run_system_once(camera_controls).unwrap();
+    assert_eq!(app.world().resource::<Orbit>().pose(), before);
+    app.world_mut().resource_mut::<Tabletop>().result_open = false;
+    app.world_mut()
+        .resource_mut::<AccumulatedMouseScroll>()
+        .delta
+        .y = 0.0;
+    {
+        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        keys.press(KeyCode::Escape);
+        keys.press(KeyCode::KeyW);
     }
+    app.world_mut().run_system_once(camera_controls).unwrap();
+    assert_eq!(app.world().resource::<Orbit>().pose(), before);
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .clear();
+    app.world_mut().run_system_once(camera_controls).unwrap();
+    assert!(app.world().resource::<Orbit>().pose().target.z < before.target.z);
+}
+
+#[test]
+fn camera_adapter_keeps_jacqueline_replay_framing_and_freezes_on_follow_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut app, _) = orbit_mouse_app();
+    app.world_mut().resource_mut::<Tabletop>().save_path = dir.path().join("replay.json");
+    act(&mut app, Action::Focus(Area::Overview));
+    act(&mut app, Action::Replay);
+    app.world_mut()
+        .resource_mut::<Time>()
+        .advance_by(Duration::from_millis(100));
+    app.update();
+    let moving = app.world().resource::<Orbit>().pose();
+    assert!((moving.distance - 31.2).abs() < 0.00001);
+    assert!((moving.target.z - 2.72).abs() < 0.00001);
+    act(&mut app, Action::Follow);
+    assert!(!app.world().resource::<Orbit>().is_following());
+    app.update();
+    let stopped = app.world().resource::<Orbit>().pose();
+    assert_eq!(stopped.distance, moving.distance);
+    assert!(stopped.target.distance(moving.target) < 0.00001);
 }

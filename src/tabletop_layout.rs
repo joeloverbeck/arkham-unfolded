@@ -78,30 +78,6 @@ pub(crate) fn focus(area: Area) -> (Vec3, f32) {
     }
 }
 
-/// Unmodified WASD pans in the camera's horizontal plane at a zoom-scaled rate.
-/// Callers own input capture; this function also rejects modified shortcuts.
-pub(crate) fn pan_delta(keys: &ButtonInput<KeyCode>, yaw: f32, dt: f32, distance: f32) -> Vec3 {
-    if keys.any_pressed([
-        KeyCode::ShiftLeft,
-        KeyCode::ShiftRight,
-        KeyCode::ControlLeft,
-        KeyCode::ControlRight,
-        KeyCode::AltLeft,
-        KeyCode::AltRight,
-        KeyCode::SuperLeft,
-        KeyCode::SuperRight,
-    ]) {
-        return Vec3::ZERO;
-    }
-    let horizontal =
-        f32::from(keys.pressed(KeyCode::KeyD)) - f32::from(keys.pressed(KeyCode::KeyA));
-    let forward = f32::from(keys.pressed(KeyCode::KeyW)) - f32::from(keys.pressed(KeyCode::KeyS));
-    let direction = Vec2::new(horizontal, forward).normalize_or_zero();
-    let right = Vec3::new(yaw.cos(), 0.0, -yaw.sin());
-    let ahead = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
-    (right * direction.x + ahead * direction.y) * dt * distance * 0.55
-}
-
 pub(crate) fn spawn_surfaces(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -173,21 +149,5 @@ mod tests {
                 assert_eq!(pair[1].x - pair[0].x, 12.0);
             }
         }
-    }
-
-    #[test]
-    fn pan_is_camera_relative_normalized_and_stops_on_release() {
-        let mut keys = ButtonInput::default();
-        keys.press(KeyCode::KeyW);
-        let forward = pan_delta(&keys, 0.0, 0.1, 16.0);
-        assert!(forward.z < 0.0 && forward.y == 0.0);
-        let turned = pan_delta(&keys, std::f32::consts::FRAC_PI_2, 0.1, 16.0);
-        assert!(turned.x < 0.0 && turned.z.abs() < 0.00001);
-        keys.press(KeyCode::KeyD);
-        assert!((forward.length() - pan_delta(&keys, 0.0, 0.1, 16.0).length()).abs() < 0.00001);
-        keys.press(KeyCode::ControlLeft);
-        assert_eq!(pan_delta(&keys, 0.0, 0.1, 16.0), Vec3::ZERO);
-        keys.reset_all();
-        assert_eq!(pan_delta(&keys, 0.0, 0.1, 16.0), Vec3::ZERO);
     }
 }

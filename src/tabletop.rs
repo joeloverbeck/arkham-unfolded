@@ -1,6 +1,7 @@
 //! The replaceable tabletop for the single, explicitly scripted rules experiment.
 //! Every displayed decision and replay moment comes from the shared rules interface.
 
+use crate::tabletop_camera::{CameraMode, Capture as CameraCapture, FrameInput, Orbit};
 use crate::{
     Fixture, Observation, Session, Stage, TokenFace, TokenStatus,
     asset_config::AssetConfig,
@@ -134,31 +135,6 @@ enum Action {
 
 #[derive(Resource, Default)]
 struct Actions(Vec<Action>);
-
-#[derive(Resource)]
-struct Orbit {
-    yaw: f32,
-    pitch: f32,
-    distance: f32,
-    desired_distance: f32,
-    target: Vec3,
-    desired_target: Vec3,
-    follow: bool,
-}
-
-impl Default for Orbit {
-    fn default() -> Self {
-        Self {
-            yaw: 0.0,
-            pitch: 1.0,
-            distance: 44.0,
-            desired_distance: 44.0,
-            target: Vec3::new(0.0, 0.0, 4.0),
-            desired_target: Vec3::new(0.0, 0.0, 4.0),
-            follow: false,
-        }
-    }
-}
 
 #[derive(Resource)]
 struct Art {
@@ -325,7 +301,7 @@ pub fn run() -> Result<(), String> {
             history: false,
             dirty: true,
         })
-        .insert_resource(Orbit::default())
+        .insert_resource(Orbit::new(CameraMode::Jacqueline))
         .insert_resource(Actions::default())
         .insert_resource(AssetSettings::new(options.config))
         .insert_resource(Capture {
@@ -612,14 +588,7 @@ fn handle_actions(
                 }
             }
             Action::Focus(area) => {
-                let (target, distance) = tabletop_layout::focus(area);
-                orbit.yaw = 0.0;
-                orbit.pitch = 1.0;
-                orbit.target = target;
-                orbit.desired_target = target;
-                orbit.distance = distance;
-                orbit.desired_distance = distance;
-                orbit.follow = false;
+                orbit.focus(tabletop_layout::focus(area));
                 if let Some(context) = context.as_mut() {
                     context.open = false;
                     context.generation += 1;
@@ -654,7 +623,7 @@ fn handle_actions(
                     table.result_open = result_opens_automatically(&session.observe());
                     table.session = session;
                     table.replay = None;
-                    orbit.follow = false;
+                    orbit.set_following(false);
                     table.notice = "Saved session reopened. The pending choice and revealed tokens are preserved.".into();
                 }
                 Err(e) => {
@@ -683,7 +652,7 @@ fn handle_actions(
                     Ok(replay) => {
                         table.replay = Some(replay);
                         table.result_open = false;
-                        orbit.follow = true;
+                        orbit.set_following(true);
                         table.notice = "Replay reopened from its saved record. Next advances one moment and pauses.".into();
                     }
                     Err(e) => table.notice = format!("Could not reopen the replay: {e}"),
@@ -706,7 +675,7 @@ fn handle_actions(
             Action::Live => {
                 table.replay = None;
                 table.result_open = result_opens_automatically(&table.session.observe());
-                orbit.follow = false;
+                orbit.set_following(false);
                 table.notice = "Returned to the live session; replay made no changes to it.".into();
             }
             Action::New => {
@@ -716,7 +685,7 @@ fn handle_actions(
                         table.session = session;
                         table.replay = None;
                         table.result_open = false;
-                        orbit.follow = false;
+                        orbit.set_following(false);
                         table.notice =
                             "New example ready. The previous session has been retained.".into();
                     }
@@ -747,7 +716,8 @@ fn handle_actions(
             }
             Action::Follow => {
                 if table.replay.is_some() {
-                    orbit.follow = !orbit.follow;
+                    let following = !orbit.is_following();
+                    orbit.set_following(following);
                 }
             }
             Action::ShowResult => table.result_open = table.view().stage == Stage::Finished,
@@ -767,15 +737,9 @@ fn handle_actions(
         {
             context.invalidate();
         }
-        if !orbit.follow {
-            orbit.desired_target = orbit.target;
-            orbit.desired_distance = orbit.distance;
-        }
-        if orbit.follow && table.replay.is_some() {
-            let (target, distance) = tabletop_layout::focus(Area::Test);
-            orbit.desired_target = target;
-            orbit.desired_distance = distance;
-        }
+        let framing = (orbit.is_following() && table.replay.is_some())
+            .then(|| tabletop_layout::focus(Area::Test));
+        orbit.update_follow_target(framing);
         table.dirty = true;
     }
 }
@@ -811,38 +775,14 @@ fn camera_controls(
     focusable: Query<(), With<Button>>,
     hover: Option<Res<bevy::picking::hover::HoverMap>>,
     ui_nodes: Query<(), (With<Node>, Without<context::DismissalBackdrop>)>,
-    mut drag: Local<Option<Vec2>>,
 ) {
     let modal_open = table.result_open
         || table.inspect.is_some()
         || settings.as_ref().is_some_and(|settings| settings.is_busy());
-    let pointer_enabled = window.focused && !modal_open && !table.history;
     let over_ui = hover
         .as_ref()
         .and_then(|hover| hover.get(&bevy::picking::pointer::PointerId::Mouse))
         .is_some_and(|hits| hits.keys().any(|entity| ui_nodes.contains(*entity)));
-    let cursor = window.cursor_position();
-    let scene_pointer = pointer_enabled && cursor.is_some() && !over_ui;
-    // Capture a scene drag at its start, then keep it across UI. Window cursor
-    // positions use logical pixels and work without raw device-motion events.
-    let motion = match cursor {
-        Some(position) if pointer_enabled && buttons.pressed(MouseButton::Right) => {
-            if buttons.just_pressed(MouseButton::Right) {
-                *drag = scene_pointer.then_some(position);
-                Vec2::ZERO
-            } else if let Some(previous) = drag.as_mut() {
-                let delta = position - *previous;
-                *previous = position;
-                delta
-            } else {
-                Vec2::ZERO
-            }
-        }
-        _ => {
-            *drag = None;
-            Vec2::ZERO
-        }
-    };
     let keyboard_captured = modal_open
         || table.history
         || context
@@ -853,50 +793,23 @@ fn camera_controls(
             .and_then(|focus| focus.get())
             .is_some_and(|entity| focusable.contains(entity))
         || keys.just_pressed(KeyCode::Escape);
-    let was_following = orbit.follow;
-    let mut changed = false;
-    if motion != Vec2::ZERO {
-        orbit.yaw -= motion.x * 0.006;
-        orbit.pitch += motion.y * 0.004;
-        changed = true;
-    }
-    if scene_pointer
-        && !context
-            .as_ref()
-            .is_some_and(|context| context.open || context.utilities)
-        && scroll.delta.y != 0.0
-    {
-        orbit.distance -= scroll.delta.y * 0.6;
-        changed = true;
-    }
-    for (key, yaw, pitch, zoom) in [
-        (KeyCode::ArrowLeft, 1.0, 0.0, 0.0),
-        (KeyCode::ArrowRight, -1.0, 0.0, 0.0),
-        (KeyCode::ArrowUp, 0.0, 0.7, 0.0),
-        (KeyCode::ArrowDown, 0.0, -0.7, 0.0),
-        (KeyCode::Equal, 0.0, 0.0, -5.0),
-        (KeyCode::Minus, 0.0, 0.0, 5.0),
-    ] {
-        if !keyboard_captured && window.focused && keys.pressed(key) {
-            orbit.yaw += yaw * time.delta_secs();
-            orbit.pitch += pitch * time.delta_secs();
-            orbit.distance += zoom * time.delta_secs();
-            changed = true;
-        }
-    }
-    if !keyboard_captured && window.focused && keys.just_pressed(KeyCode::Home) {
-        *orbit = Orbit::default();
-        changed = true;
-    }
-    if !keyboard_captured && window.focused {
-        let delta = tabletop_layout::pan_delta(&keys, orbit.yaw, time.delta_secs(), orbit.distance);
-        if delta != Vec3::ZERO {
-            orbit.target += delta;
-            orbit.desired_target = orbit.target;
-            changed = true;
-        }
-    }
-    if changed {
+    let step = orbit.step(FrameInput {
+        keys: &keys,
+        buttons: &buttons,
+        window: &window,
+        scroll_y: scroll.delta.y,
+        dt: time.delta_secs(),
+        capture: CameraCapture {
+            pointer_blocked: modal_open || table.history,
+            over_ui,
+            keyboard: keyboard_captured,
+            wheel: context
+                .as_ref()
+                .is_some_and(|context| context.open || context.utilities),
+        },
+        reduced_motion: false,
+    });
+    if step.manual_navigation {
         if let Some(context) = context.as_mut()
             && context.open
         {
@@ -904,28 +817,11 @@ fn camera_controls(
             context.generation += 1;
             table.dirty = true;
         }
-        if was_following {
+        if step.stopped_following {
             table.dirty = true;
         }
-        orbit.follow = false;
-        orbit.desired_target = orbit.target;
-        orbit.desired_distance = orbit.distance;
     }
-    orbit.pitch = orbit.pitch.clamp(0.35, 1.35);
-    orbit.distance = orbit.distance.clamp(6.0, 55.0);
-    let blend = (time.delta_secs() * 4.0).min(1.0);
-    orbit.distance += (orbit.desired_distance - orbit.distance) * blend;
-    let desired = orbit.desired_target;
-    orbit.target = orbit
-        .target
-        .lerp(desired, (time.delta_secs() * 4.0).min(1.0));
-    let direction = Vec3::new(
-        orbit.yaw.sin() * orbit.pitch.cos(),
-        orbit.pitch.sin(),
-        orbit.yaw.cos() * orbit.pitch.cos(),
-    );
-    **camera = Transform::from_translation(orbit.target + direction * orbit.distance)
-        .looking_at(orbit.target, Vec3::Y);
+    **camera = step.transform;
 }
 
 fn text(value: impl Into<String>, size: f32, color: Color) -> impl Bundle {
@@ -1214,7 +1110,7 @@ fn rebuild_panel(
                     button(
                         parent,
                         &art,
-                        if orbit.follow {
+                        if orbit.is_following() {
                             "Camera following: on"
                         } else {
                             "Resume camera following"
@@ -1610,7 +1506,7 @@ mod harm_text_tests {
             result_open: false,
             dirty: true,
         })
-        .insert_resource(Orbit::default())
+        .insert_resource(Orbit::new(CameraMode::Jacqueline))
         .insert_resource(art())
         .add_systems(Update, rebuild_panel);
         app.update();

@@ -465,7 +465,7 @@ fn label_positions(
             let Val::Px(width) = node.width else { continue };
             node.left = px(point.x - width / 2.0);
             node.top = px(point.y - 16.0);
-            *visibility = if display.visible(orbit.distance) {
+            *visibility = if display.visible(orbit.pose().distance) {
                 Visibility::Visible
             } else {
                 Visibility::Hidden
@@ -480,7 +480,7 @@ fn token_label_visibility(
     orbit: Res<super::Orbit>,
     mut labels: Query<&mut Visibility, With<tabletop_tokens::TokenLabel>>,
 ) {
-    if orbit.distance > 30.0 {
+    if orbit.pose().distance > 30.0 {
         for mut visibility in &mut labels {
             *visibility = Visibility::Hidden;
         }
