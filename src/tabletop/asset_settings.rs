@@ -40,6 +40,14 @@ impl AssetSettings {
         self.pending.is_some()
     }
 
+    /// Hold the external folder-selection seam without opening a desktop dialog.
+    #[cfg(test)]
+    pub(crate) fn with_pending_selection(mut self) -> Self {
+        let (_, receiver) = mpsc::channel();
+        self.pending = Some(Mutex::new(receiver));
+        self
+    }
+
     pub(crate) fn configured_root(&self) -> &Path {
         self.config.root()
     }

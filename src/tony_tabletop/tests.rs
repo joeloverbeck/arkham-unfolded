@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use crate::tabletop_standee_checks as standee_checks;
 
+mod harm_lifetime;
+
 #[test]
 fn launch_uses_configured_root_without_creating_a_preference() {
     let dir = tempfile::tempdir().unwrap();
@@ -537,8 +539,7 @@ fn scene_app_in(mut app: App) -> (App, Handle<Image>) {
         inspect: None,
         history: false,
         dirty: true,
-        presentation: VecDeque::new(),
-        stage_elapsed: 0.0,
+        presentation: HarmPresentation::default(),
         reduced_motion: false,
         context: Context::default(),
     })

@@ -247,7 +247,8 @@ pub(super) fn synchronize_scene(
     for (text, at) in [
         ("Tony's threats", Vec3::new(-15.8, 0.1, 6.0)),
         ("Hand", Vec3::new(-10.4, 0.1, 11.65)),
-        ("Assets in play", Vec3::new(-15.8, 0.1, 8.6)),
+        // Reserve the space above Tony for harm amounts, counters and totals.
+        ("Assets in play", Vec3::new(-15.8, 0.1, 6.9)),
         (
             "Encounter deck\nReserved · not modeled",
             Vec3::new(4.0, 0.1, -3.7),

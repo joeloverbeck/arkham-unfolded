@@ -4,8 +4,6 @@ use super::*;
 use crate::tabletop_harm_text::{DAMAGE_COLOR, HORROR_COLOR};
 use crate::tony::{HarmRecipient, HarmSource};
 
-const STAGE_SECONDS: f32 = 1.2;
-
 #[derive(Component)]
 pub(super) struct HarmVisual {
     rest: Vec3,
@@ -17,13 +15,14 @@ pub(super) fn advance_presentation(
     mut table: ResMut<Table>,
     settings: Res<AssetSettings>,
 ) {
-    if table.modal() || settings.is_busy() || table.harm().is_none() {
-        return;
-    }
-    table.stage_elapsed += time.delta_secs();
-    if table.presenting() && table.stage_elapsed >= STAGE_SECONDS {
-        table.presentation.pop_front();
-        table.stage_elapsed = 0.0;
+    let paused = table.modal() || settings.is_busy();
+    let playback = table
+        .replay
+        .as_ref()
+        .map_or(Playback::Live, |replay| Playback::Replay {
+            harm_visible: replay.harm().is_some(),
+        });
+    if table.presentation.tick(time.delta_secs(), paused, playback) {
         table.dirty = true;
     }
 }
@@ -185,10 +184,18 @@ pub(super) fn harm_scene(
         } else {
             -CARD_LENGTH / 2.0
         };
+        // Leave room for the whole token and its screen-sized total between
+        // Tony's counter row and the landscape card, not just the token center.
+        let row_z = top_edge
+            - if recipient == HarmRecipient::Tony {
+                0.9
+            } else {
+                0.0
+            };
         let needs_substitute = (damage > 0 && art.image("token/damage").is_none())
             || (horror > 0 && art.image("token/horror").is_none());
         for (amount, is_horror, width) in counters {
-            let position = at + Vec3::new(left + width / 2.0, 0.06, top_edge);
+            let position = at + Vec3::new(left + width / 2.0, 0.06, row_z);
             left += width + gap;
             let arriving = hit.is_some_and(|h| {
                 h.recipient == recipient
@@ -242,7 +249,7 @@ pub(super) fn harm_scene(
                     ..default()
                 },
                 BackgroundColor(INK),
-                WorldLabel(at + Vec3::new(0.0, 0.14, top_edge + 0.23), 160.0),
+                WorldLabel(at + Vec3::new(0.0, 0.14, row_z + 0.23), 160.0),
                 Scene,
                 Pickable::IGNORE,
             ));
@@ -293,13 +300,22 @@ pub(super) fn harm_scene(
         commands,
         art,
         amounts.join("\n"),
-        target + Vec3::new(0.0, 0.45, -0.9),
+        target
+            + Vec3::new(
+                0.0,
+                0.45,
+                if hit.recipient == HarmRecipient::Tony {
+                    -2.4
+                } else {
+                    -0.9
+                },
+            ),
         GOLD,
     );
 }
 
 pub(super) fn animate_harm(table: Res<Table>, mut visuals: Query<(&HarmVisual, &mut Transform)>) {
-    let progress = (table.stage_elapsed / 0.5).clamp(0.0, 1.0);
+    let progress = table.presentation.animation_progress();
     for (visual, mut transform) in &mut visuals {
         transform.translation = visual.rest;
         transform.scale = Vec3::ONE;
@@ -364,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn harm_counters_center_along_the_landscape_investigators_top_edge() {
+    fn harm_counters_center_above_the_landscape_investigator_without_covering_it() {
         use bevy::camera::primitives::MeshAabb;
         for (damage, horror) in [(1, 1), (2, 0), (0, 1)] {
             let mut app = counters(damage, horror, true);
@@ -379,8 +395,8 @@ mod tests {
                 left = left.min(transform.translation.x - aabb.half_extents.x);
                 right = right.max(transform.translation.x + aabb.half_extents.x);
                 assert!(
-                    (transform.translation.z - (center.z - CARD_WIDTH / 2.0)).abs() < 0.001,
-                    "the counter row must sit on the top long edge of the landscape card"
+                    transform.translation.z + aabb.half_extents.z < center.z - CARD_WIDTH / 2.0,
+                    "the entire counter must clear the top long edge of the landscape card"
                 );
             }
             assert!(

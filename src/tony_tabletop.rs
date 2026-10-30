@@ -10,7 +10,6 @@ use crate::{
     tony::{
         Harm, Observation, Session, Stage,
         continuity::{self, Replay},
-        presentation::{self, PresentationStage},
     },
 };
 use bevy::{
@@ -26,16 +25,15 @@ use bevy::{
     ui_widgets::{Activate, Button, ModalDialog, ModalDialogBarrier, RequestClose},
 };
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{BTreeMap, VecDeque},
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, path::PathBuf};
 
 mod controls;
 mod harm;
+mod harm_lifetime;
 mod scene;
 use controls::{Context, Source};
 use harm::{advance_presentation, animate_harm, harm_amounts, harm_scene};
+use harm_lifetime::{HarmPresentation, Playback};
 use scene::synchronize_scene;
 
 const CARD_WIDTH: f32 = 1.35;
@@ -197,8 +195,7 @@ struct Table {
     inspect: Option<usize>,
     history: bool,
     dirty: bool,
-    presentation: VecDeque<PresentationStage>,
-    stage_elapsed: f32,
+    presentation: HarmPresentation,
     reduced_motion: bool,
     context: Context,
 }
@@ -206,7 +203,7 @@ impl Table {
     fn view(&self) -> Observation {
         if let Some(replay) = &self.replay {
             replay.current().clone()
-        } else if let Some(stage) = self.presentation.front() {
+        } else if let Some(stage) = self.presentation.current_stage() {
             stage.view.clone()
         } else {
             self.session.observe()
@@ -216,11 +213,11 @@ impl Table {
         if let Some(replay) = &self.replay {
             replay.harm().copied()
         } else {
-            self.presentation.front().and_then(|s| s.harm)
+            self.presentation.current_stage().and_then(|s| s.harm)
         }
     }
     fn presenting(&self) -> bool {
-        self.replay.is_none() && !self.presentation.is_empty()
+        self.replay.is_none() && self.presentation.has_pending()
     }
     fn modal(&self) -> bool {
         self.inspect.is_some() || self.history
@@ -338,8 +335,7 @@ pub fn run() -> Result<(), String> {
             inspect: None,
             history: false,
             dirty: true,
-            presentation: VecDeque::new(),
-            stage_elapsed: 0.0,
+            presentation: HarmPresentation::default(),
             reduced_motion: false,
             context: Context::default(),
         })
@@ -519,12 +515,9 @@ fn handle_actions(
                     &id,
                 ) {
                     Ok(()) => {
-                        table.presentation =
-                            presentation::stages(&before, &table.session.observe())
-                                .into_iter()
-                                .filter(|s| s.harm.is_some())
-                                .collect();
-                        table.stage_elapsed = 0.0;
+                        table
+                            .presentation
+                            .committed_choice(&before, &table.session.observe());
                         "Decision saved. Close and reopen safely at any choice.".into()
                     }
                     Err(e) => format!("Decision not committed: {e}"),
@@ -540,7 +533,7 @@ fn handle_actions(
                 match continuity::load_session(&table.save_path) {
                     Ok(session) => {
                         table.session = session;
-                        table.presentation.clear();
+                        table.presentation.discard_staging();
                         table.notice = "Reopened the exact saved choice and randomness.".into();
                     }
                     Err(e) => {
@@ -568,8 +561,7 @@ fn handle_actions(
                 {
                     Ok(replay) => {
                         table.replay = Some(replay);
-                        table.presentation.clear();
-                        table.stage_elapsed = 0.0;
+                        table.presentation.discard_staging();
                         orbit.set_following(true);
                         table.notice = "Recorded replay. Each step pauses for narration.".into();
                     }
@@ -579,18 +571,18 @@ fn handle_actions(
             Action::Back => {
                 if let Some(r) = &mut table.replay {
                     r.back();
-                    table.stage_elapsed = 0.0;
+                    table.presentation.replay_navigated();
                 }
             }
             Action::Next => {
                 if let Some(r) = &mut table.replay {
                     r.next();
-                    table.stage_elapsed = 0.0;
+                    table.presentation.replay_navigated();
                 }
             }
             Action::Live => {
                 table.replay = None;
-                table.presentation.clear();
+                table.presentation.discard_staging();
                 orbit.set_following(false);
                 table.notice = "Returned to the unchanged live turn.".into();
             }
@@ -607,7 +599,7 @@ fn handle_actions(
                     ) {
                         Ok(()) => {
                             table.session = session;
-                            table.presentation.clear();
+                            table.presentation.discard_staging();
                             orbit.set_following(false);
                             table.notice =
                                 "New turn ready. The previous turn has been retained.".into();
@@ -668,8 +660,7 @@ fn handle_actions(
                 table.history = true;
             }
             Action::FinishAnimation if table.replay.is_none() => {
-                table.presentation.pop_front();
-                table.stage_elapsed = 0.0;
+                table.presentation.finish_live_stage();
             }
             Action::Motion => table.reduced_motion = !table.reduced_motion,
             Action::Follow if table.replay.is_some() => {
