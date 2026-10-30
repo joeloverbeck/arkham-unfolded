@@ -88,6 +88,7 @@ struct Tabletop {
     inspect: Option<usize>,
     history: bool,
     result_open: bool,
+    reduced_motion: bool,
     dirty: bool,
 }
 
@@ -119,6 +120,7 @@ enum Action {
     DismissContext,
     Focus(Area),
     Utilities,
+    Motion,
     SourceLess(u64, u64, String),
     Save,
     Reopen,
@@ -311,6 +313,7 @@ pub fn run() -> Result<(), String> {
             notice,
             inspect: None,
             history: false,
+            reduced_motion: false,
             dirty: true,
         })
         .insert_resource(Orbit::new(CameraMode::Jacqueline).with_initial_view(options.initial_view))
@@ -550,13 +553,31 @@ fn handle_actions(
         }
         match action {
             Action::Select(source, anchor) => {
+                let view = table.view();
+                let inspect_only = match source {
+                    Source::Card(index)
+                        if index < CARDS.len()
+                            && (table.replay.is_some()
+                                || context::choices(&view, source).is_empty()) =>
+                    {
+                        Some(index)
+                    }
+                    _ => None,
+                };
                 if let Some(context) = context.as_mut() {
                     context.select(
-                        &table.view(),
+                        &view,
                         table.replay.as_ref().map(Replay::index),
                         source,
                         anchor,
                     );
+                    if inspect_only.is_some() {
+                        context.close_menu();
+                    }
+                }
+                if let Some(index) = inspect_only {
+                    table.inspect = Some(index);
+                    table.history = false;
                 }
                 if let Some(focus) = input_focus.as_mut() {
                     focus.clear();
@@ -580,6 +601,7 @@ fn handle_actions(
                     focus.clear();
                 }
             }
+            Action::Motion => table.reduced_motion = !table.reduced_motion,
             Action::DismissContext => {
                 if let Some(context) = context.as_mut() {
                     context.dismiss();
@@ -1119,6 +1141,17 @@ fn rebuild_panel(
                 if matches!(view.stage, Stage::Finished | Stage::Ended) {
                     button(parent, &art, "Start another example", Action::New, false);
                 }
+                button(
+                    parent,
+                    &art,
+                    if table.reduced_motion {
+                        "Card feedback motion: reduced"
+                    } else {
+                        "Card feedback motion: animated"
+                    },
+                    Action::Motion,
+                    false,
+                );
                 parent.spawn(art.text(
                     format!(
                         "Curse pool: {} / 10 / Jacqueline reaction: {}",
@@ -1380,8 +1413,15 @@ fn show_result(commands: &mut Commands, view: &Observation, art: &Art) {
         });
 }
 
+#[allow(clippy::type_complexity)]
 fn button_colors(
-    mut buttons: Query<(&Hovered, Has<Pressed>, &ButtonTone, &mut BackgroundColor), With<Button>>,
+    mut buttons: Query<
+        (&Hovered, Has<Pressed>, &ButtonTone, &mut BackgroundColor),
+        (
+            With<Button>,
+            Without<crate::tabletop_feedback::ContextButton>,
+        ),
+    >,
 ) {
     for (hovered, pressed, tone, mut color) in &mut buttons {
         if pressed {
@@ -1551,6 +1591,7 @@ mod harm_text_tests {
             inspect: None,
             history: true,
             result_open: false,
+            reduced_motion: false,
             dirty: true,
         })
         .insert_resource(Orbit::new(CameraMode::Jacqueline))

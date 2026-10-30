@@ -34,6 +34,10 @@ Choose **Inspect** from a card's contextual controls for the existing enlarged a
 
 **Menu** at the upper right opens history, motion settings, save/reopen, recorded replay and artwork settings.
 
+In a contextual menu, the yellow outline marks keyboard focus. **Tab** moves to the next option, **Shift+Tab** moves to the previous option, **Enter** or **Space** activates it, and **Esc** closes the menu. Arrow keys do not navigate these menus; camera keys are suspended while the menu has focus.
+
+In both experiments, clicking a card opens inspection immediately when **Inspect** is its only option, including during replay. Otherwise its nearby actions share the same resting color, brighten on hover and show keyboard focus with a separate outline. Inspectable cards gain a brief fading hover frame; it clears when the pointer leaves. A short blue marker remains while that card's menu is open, and gold corner marks identify pending commitments or token cancellations. **Motion: reduced** in Tony and **Card feedback motion: reduced** in Jacqueline make the hover frame static. These are the interaction conventions for future experiments and the full game as those consumers are implemented.
+
 **Close and resume:** decisions autosave to `local/experiment/tony.session.json`. Close the window and run the same command to resume. **Save live turn** also saves at a pending choice, including before resolving a revealed token. **Reopen saved turn** reloads the save. At the end, **Start another Tony turn** archives the previous run. **End Tony's turn** is available at an action boundary; it cannot skip a pending test.
 
 For the remaining acceptance check, follow the [owner verification walkthrough](docs/experiments/tony-turn.md#owner-verification): two sessions of at most 20 minutes each, including retries.

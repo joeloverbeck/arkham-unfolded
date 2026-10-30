@@ -248,6 +248,24 @@ fn entries(table: &Table, view: &Observation, source: Source) -> Vec<Entry> {
     entries
 }
 
+pub(super) fn inspection_only(table: &Table, view: &Observation, source: Source) -> Option<usize> {
+    if !matches!(
+        source,
+        Source::Card(_) | Source::Hand(_) | Source::Committed(_)
+    ) {
+        return None;
+    }
+    match entries(table, view, source).as_slice() {
+        [
+            Entry {
+                action: Action::Inspect(index),
+                ..
+            },
+        ] => Some(*index),
+        _ => None,
+    }
+}
+
 type MenuSnapshot = (u64, u64, bool, Vec2, bool, bool, BTreeSet<u8>);
 
 pub(super) fn draw_menu(
@@ -301,9 +319,9 @@ pub(super) fn draw_menu(
     };
     let bottom_reserved = (size.y * 0.29).min(250.0) + 20.0;
     let height = if radial {
-        224.0
+        260.0
     } else {
-        (100.0 + entries.len() as f32 * 90.0).min((size.y - bottom_reserved - 80.0).max(120.0))
+        (136.0 + entries.len() as f32 * 90.0).min((size.y - bottom_reserved - 80.0).max(120.0))
     };
     let left_edge = if size.x >= 650.0 { 145.0 } else { 12.0 };
     let at = Vec2::new(
@@ -333,8 +351,9 @@ pub(super) fn draw_menu(
         .with_children(|p| {
             p.spawn(art.text(
                 format!(
-                    "{}\nTony's decision · Tab: navigate · Esc: close",
-                    source_name(&view, selection.source)
+                    "{} · Tony's decision\n{}",
+                    source_name(&view, selection.source),
+                    feedback::KEYBOARD_HINT,
                 ),
                 14.0,
                 GOLD,
@@ -342,7 +361,7 @@ pub(super) fn draw_menu(
             if radial {
                 for (index, entry) in entries.into_iter().enumerate() {
                     let (x, y) =
-                        [(145.0, 60.0), (290.0, 112.0), (145.0, 164.0), (0.0, 112.0)][entry.slot];
+                        [(145.0, 96.0), (290.0, 148.0), (145.0, 200.0), (0.0, 148.0)][entry.slot];
                     p.spawn(Node {
                         position_type: PositionType::Absolute,
                         left: px(x + 6.0),
@@ -351,7 +370,10 @@ pub(super) fn draw_menu(
                         ..default()
                     })
                     .with_children(|p| {
-                        let entity = button(&art, p, &entry.label, entry.action, entry.slot != 3);
+                        let entity = button(&art, p, &entry.label, entry.action, false);
+                        p.commands()
+                            .entity(entity)
+                            .insert(feedback::context_button());
                         if index == 0 {
                             p.commands()
                                 .entity(entity)
@@ -364,7 +386,10 @@ pub(super) fn draw_menu(
                     p.spawn(art.text("No cards or legal actions here.", 15.0, MUTED));
                 }
                 for (index, entry) in entries.into_iter().enumerate() {
-                    let entity = button(&art, p, &entry.label, entry.action, entry.slot != 3);
+                    let entity = button(&art, p, &entry.label, entry.action, false);
+                    p.commands()
+                        .entity(entity)
+                        .insert(feedback::context_button());
                     if index == 0 {
                         p.commands()
                             .entity(entity)

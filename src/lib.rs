@@ -7,6 +7,8 @@ mod explanation;
 #[cfg(feature = "tabletop")]
 mod tabletop_camera;
 #[cfg(feature = "tabletop")]
+mod tabletop_feedback;
+#[cfg(feature = "tabletop")]
 mod tabletop_harm_text;
 #[cfg(feature = "tabletop")]
 mod tabletop_layout;

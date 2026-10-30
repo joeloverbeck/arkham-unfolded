@@ -102,12 +102,14 @@ fn presentation_app_in(app: App, path: PathBuf) -> App {
         )))
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<Time>()
+        .init_resource::<FeedbackSettings>()
         .add_systems(
             Update,
             (
                 handle_actions,
                 advance_presentation,
                 synchronize_scene,
+                synchronize_feedback,
                 rebuild_panel,
                 controls::draw_menu,
                 animate,
@@ -564,7 +566,7 @@ fn scene_app() -> (App, Handle<Image>) {
 }
 
 #[test]
-fn book_cards_keep_their_pose_highlight_inspection_and_reopened_state() {
+fn book_cards_keep_their_pose_direct_inspection_and_reopened_state() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = presentation_app(directory.path().join("turn.json"));
     advance(&mut app, 0.0);
@@ -589,16 +591,8 @@ fn book_cards_keep_their_pose_highlight_inspection_and_reopened_state() {
             &mut app,
             Action::Select(0, Source::Card(index), card.translation),
         );
-        let outline = pose(&mut app, "Selected card outline");
-        assert!(outline.rotation.abs_diff_eq(card.rotation, 0.001));
-        assert!(
-            (outline.translation - card.translation)
-                .cross(normal)
-                .length()
-                < 0.001
-        );
-        act(&mut app, Action::Inspect(index));
         assert_eq!(app.world().resource::<Table>().inspect, Some(index));
+        assert!(!app.world().resource::<Table>().context.open);
         act(&mut app, Action::Close);
         assert_eq!(app.world().resource::<Table>().session, before);
     }
@@ -612,6 +606,80 @@ fn book_cards_keep_their_pose_highlight_inspection_and_reopened_state() {
     assert_eq!(pose(&mut app, "Card 01108"), act_card);
     act(&mut app, Action::Live);
     assert_eq!(app.world().resource::<Table>().session, before);
+}
+
+#[test]
+fn inspect_only_cards_open_directly_without_changing_live_or_replayed_choices() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = presentation_app(directory.path().join("turn.json"));
+    advance(&mut app, 0.0);
+    let before = app.world().resource::<Table>().session.clone();
+    act(&mut app, Action::Select(0, Source::Card(3), Vec3::ZERO));
+    assert_eq!(app.world().resource::<Table>().inspect, Some(3));
+    assert!(!app.world().resource::<Table>().context.open);
+    act(&mut app, Action::Close);
+    assert_eq!(app.world().resource::<Table>().session, before);
+    act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
+    assert!(app.world().resource::<Table>().context.open);
+    assert_eq!(app.world().resource::<Table>().inspect, None);
+    act(&mut app, Action::Replay);
+    act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
+    assert_eq!(app.world().resource::<Table>().inspect, Some(2));
+    assert!(!app.world().resource::<Table>().context.open);
+    assert_eq!(app.world().resource::<Table>().session, before);
+}
+
+#[test]
+fn source_marks_follow_open_menus_without_rebuilding_cards_or_erasing_commitments() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = presentation_app(directory.path().join("turn.json"));
+    advance(&mut app, 0.0);
+    let card = |app: &mut App, source| {
+        let world = app.world_mut();
+        world
+            .query::<(Entity, &CardSource)>()
+            .iter(world)
+            .find(|(_, candidate)| candidate.0 == source)
+            .unwrap()
+            .0
+    };
+    let ghoul = card(&mut app, Source::Card(2));
+    act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
+    assert!(app.world().get::<CardFeedback>(ghoul).unwrap().menu_source);
+    act(&mut app, Action::DismissMenu);
+    assert!(!app.world().get::<CardFeedback>(ghoul).unwrap().menu_source);
+    assert_eq!(ghoul, card(&mut app, Source::Card(2)));
+    choose(&mut app, "fight");
+    let revision = app.world().resource::<Table>().view().revision;
+    act(
+        &mut app,
+        Action::Select(revision, Source::Hand(0), Vec3::ZERO),
+    );
+    let epoch = app.world().resource::<Table>().context.epoch;
+    act(&mut app, Action::ToggleCommit(epoch, revision, 0));
+    let hand = card(&mut app, Source::Hand(0));
+    assert!(
+        app.world()
+            .get::<CardFeedback>(hand)
+            .unwrap()
+            .pending_choice
+    );
+    act(
+        &mut app,
+        Action::Select(revision, Source::Card(3), Vec3::ZERO),
+    );
+    assert_eq!(app.world().resource::<Table>().inspect, Some(3));
+    assert!(app.world().resource::<FeedbackSettings>().blocked);
+    act(&mut app, Action::Close);
+    assert!(
+        app.world()
+            .get::<CardFeedback>(hand)
+            .unwrap()
+            .pending_choice
+    );
+    assert!(!app.world().resource::<FeedbackSettings>().blocked);
+    act(&mut app, Action::Motion);
+    assert!(app.world().resource::<FeedbackSettings>().reduced_motion);
 }
 
 fn scene_app_in(mut app: App) -> (App, Handle<Image>) {
@@ -799,7 +867,7 @@ fn selecting_and_inspecting_two_copies_preserves_the_complete_commitment() {
 fn keyboard_menu_app(path: PathBuf) -> (App, Entity) {
     use bevy::{
         camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
-        input_focus::{InputDispatchPlugin, InputFocusPlugin, tab_navigation::TabNavigationPlugin},
+        input_focus::{InputDispatchPlugin, InputFocusPlugin},
         window::{PrimaryWindow, WindowRef},
     };
 
@@ -814,7 +882,7 @@ fn keyboard_menu_app(path: PathBuf) -> (App, Entity) {
         bevy::input::InputPlugin,
         InputFocusPlugin,
         InputDispatchPlugin,
-        TabNavigationPlugin,
+        feedback::FeedbackPlugin,
         bevy::picking::PickingPlugin,
         bevy::picking::InteractionPlugin,
         bevy::ui::UiPlugin,
@@ -860,6 +928,10 @@ fn keyboard_menu_app(path: PathBuf) -> (App, Entity) {
 }
 
 fn keyboard_press(app: &mut App, window: Entity, key_code: KeyCode) {
+    keyboard_chord(app, window, key_code, false);
+}
+
+fn keyboard_chord(app: &mut App, window: Entity, key_code: KeyCode, shift: bool) {
     use bevy::input::{
         ButtonState,
         keyboard::{Key, KeyboardInput},
@@ -867,15 +939,27 @@ fn keyboard_press(app: &mut App, window: Entity, key_code: KeyCode) {
     let logical_key = match key_code {
         KeyCode::Tab => Key::Tab,
         KeyCode::Enter => Key::Enter,
+        KeyCode::Space => Key::Space,
         KeyCode::Escape => Key::Escape,
         KeyCode::KeyW => Key::Character("w".into()),
         KeyCode::ArrowLeft => Key::ArrowLeft,
         _ => unreachable!(),
     };
-    for state in [ButtonState::Pressed, ButtonState::Released] {
+    let mut events = Vec::new();
+    if shift {
+        events.push((KeyCode::ShiftLeft, Key::Shift, ButtonState::Pressed));
+    }
+    events.extend([
+        (key_code, logical_key.clone(), ButtonState::Pressed),
+        (key_code, logical_key, ButtonState::Released),
+    ]);
+    if shift {
+        events.push((KeyCode::ShiftLeft, Key::Shift, ButtonState::Released));
+    }
+    for (key_code, logical_key, state) in events {
         app.world_mut().write_message(KeyboardInput {
             key_code,
-            logical_key: logical_key.clone(),
+            logical_key,
             state,
             text: None,
             repeat: false,
@@ -891,6 +975,38 @@ fn focused_button_label(app: &App) -> Option<&str> {
         .get::<Children>(entity)?
         .iter()
         .find_map(|child| app.world().get::<Text>(child).map(|text| text.0.as_str()))
+}
+
+#[test]
+fn keyboard_context_navigation_wraps_and_cancels_without_a_game_action() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut app, window) = keyboard_menu_app(dir.path().join("navigation.json"));
+    let before = app.world().resource::<Table>().view();
+    act(
+        &mut app,
+        Action::Select(before.revision, Source::Card(2), Vec3::ZERO),
+    );
+    assert_eq!(focused_button_label(&app), Some("Fight  /  bonus action"));
+    keyboard_press(&mut app, window, KeyCode::Tab);
+    assert_eq!(focused_button_label(&app), Some("Evade  /  1 action"));
+    keyboard_chord(&mut app, window, KeyCode::Tab, true);
+    assert_eq!(focused_button_label(&app), Some("Fight  /  bonus action"));
+    keyboard_chord(&mut app, window, KeyCode::Tab, true);
+    assert_eq!(focused_button_label(&app), Some("Inspect"));
+    keyboard_press(&mut app, window, KeyCode::Tab);
+    assert_eq!(focused_button_label(&app), Some("Fight  /  bonus action"));
+    keyboard_chord(&mut app, window, KeyCode::Tab, true);
+    keyboard_press(&mut app, window, KeyCode::Space);
+    assert_eq!(app.world().resource::<Table>().inspect, Some(2));
+    keyboard_press(&mut app, window, KeyCode::Escape);
+    assert!(app.world().resource::<Table>().inspect.is_none());
+    act(
+        &mut app,
+        Action::Select(before.revision, Source::Card(2), Vec3::ZERO),
+    );
+    keyboard_press(&mut app, window, KeyCode::Escape);
+    assert!(!app.world().resource::<Table>().context.open);
+    assert_eq!(app.world().resource::<Table>().view(), before);
 }
 
 #[test]

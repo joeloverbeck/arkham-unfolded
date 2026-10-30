@@ -3,6 +3,7 @@
 use crate::tabletop_camera::{
     CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
 };
+use crate::tabletop_feedback::{self as feedback, CardFeedback, ContextButton, FeedbackSettings};
 use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin};
 use crate::{
     TokenFace,
@@ -380,6 +381,7 @@ pub fn run() -> Result<(), String> {
         )
         .add_plugins(MeshPickingPlugin)
         .add_plugins(TabletopPacingPlugin)
+        .add_plugins(feedback::FeedbackPlugin)
         .add_systems(Last, request_redraw.in_set(RequestRedraw))
         .add_systems(Startup, setup)
         .add_systems(
@@ -391,6 +393,7 @@ pub fn run() -> Result<(), String> {
                 camera_controls,
                 controls::invalidate,
                 synchronize_scene,
+                synchronize_feedback,
                 rebuild_panel,
                 controls::draw_menu,
                 world_labels,
@@ -627,6 +630,10 @@ fn handle_actions(
                 if revision == table.view().revision && controls::exists(&table.view(), source) =>
             {
                 table.context.select(source, at);
+                if let Some(index) = controls::inspection_only(&table, &table.view(), source) {
+                    table.context.dismiss();
+                    table.inspect = Some(index);
+                }
                 if let Some(focus) = focus.as_mut() {
                     focus.clear();
                 }
@@ -761,6 +768,26 @@ fn area_heading(commands: &mut Commands, art: &Art, value: String, point: Vec3) 
     let entity = world_label(commands, art, value, point, GOLD);
     commands.entity(entity).insert(OverviewHeading);
 }
+
+#[derive(Component)]
+struct CardSource(Source);
+
+fn synchronize_feedback(
+    table: Res<Table>,
+    settings: Res<AssetSettings>,
+    mut feedback_settings: ResMut<FeedbackSettings>,
+    mut cards: Query<(&CardSource, &mut CardFeedback)>,
+) {
+    feedback_settings.blocked = table.modal() || settings.is_busy();
+    feedback_settings.reduced_motion = table.reduced_motion;
+    for (source, mut marks) in &mut cards {
+        marks.menu_source =
+            table.context.open && table.context.selected.is_some_and(|s| s.source == source.0);
+        marks.pending_choice =
+            matches!(source.0, Source::Hand(id) if table.context.commitments.contains(&id));
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn card_mesh(
     commands: &mut Commands,
@@ -786,13 +813,14 @@ fn card_mesh(
     });
     let transform = scene::card_transform(index, at, exhausted);
     let anchor = transform.translation;
-    commands
+    let entity = commands
         .spawn((
             Name::new(format!("Card {}", card.code)),
             Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
             MeshMaterial3d(material),
             transform,
             Scene,
+            CardSource(selection.1),
         ))
         .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
             if event.button == bevy::picking::pointer::PointerButton::Primary {
@@ -800,7 +828,17 @@ fn card_mesh(
                     .0
                     .push(Action::Select(selection.0, selection.1, anchor));
             }
-        });
+        })
+        .id();
+    feedback::attach_card_feedback(
+        commands,
+        meshes,
+        materials,
+        entity,
+        CARD_WIDTH,
+        CARD_LENGTH,
+        0.0,
+    );
 }
 fn deck_mesh(
     commands: &mut Commands,
@@ -1309,7 +1347,7 @@ fn button_colors(
             &ButtonColor,
             &mut BackgroundColor,
         ),
-        With<Button>,
+        (With<Button>, Without<ContextButton>),
     >,
     focus: Res<InputFocus>,
 ) {

@@ -11,6 +11,7 @@ use bevy::prelude::*;
 pub(super) fn install(app: &mut App) {
     app.init_resource::<super::Context>()
         .init_resource::<Redraw>()
+        .add_plugins(crate::tabletop_feedback::FeedbackPlugin)
         .add_systems(Last, request_redraw.in_set(RequestRedraw))
         .add_systems(Startup, setup_reminder)
         .add_systems(
@@ -24,6 +25,11 @@ pub(super) fn install(app: &mut App) {
                     .before(super::rebuild_panel),
                 super::context::highlight
                     .after(synchronize)
+                    .after(super::context::feedback)
+                    .before(super::rebuild_panel),
+                super::context::feedback
+                    .after(synchronize)
+                    .after(super::context::synchronize)
                     .before(super::rebuild_panel),
                 (
                     label_positions,
@@ -385,7 +391,7 @@ fn synchronize(
             Pickable::IGNORE,
             TransientScene,
         ));
-        commands
+        let card_entity = commands
             .spawn((
                 Mesh3d(meshes.add(Plane3d::default().mesh().size(1.80, 2.52))),
                 MeshMaterial3d(material),
@@ -397,7 +403,17 @@ fn synchronize(
                 move |event: On<PointerClick>, mut queue: ResMut<super::Actions>| {
                     super::context::select(event, super::Source::Card(i), &mut queue);
                 },
-            );
+            )
+            .id();
+        crate::tabletop_feedback::attach_card_feedback(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            card_entity,
+            1.80,
+            2.52,
+            0.0,
+        );
         let status = if i == 1 && view.promise_committed {
             "Committed / +4"
         } else if i == 1 {
@@ -502,6 +518,15 @@ fn synchronize(
                 },
             );
         commands.entity(label).insert(TransientScene);
+        crate::tabletop_feedback::attach_card_feedback(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            disk,
+            1.0,
+            1.0,
+            0.065,
+        );
         if is_new {
             commands.entity(disk).insert(Appearing);
         }
