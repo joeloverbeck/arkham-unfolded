@@ -18,7 +18,11 @@ fn run_session(
         commands,
         emit,
         pause,
-        Duration::from_secs(15),
+        SessionTiming {
+            deadline: Instant::now() + Duration::from_secs(600),
+            command_timeout: Duration::from_secs(15),
+            now: &Instant::now,
+        },
     )
 }
 
@@ -39,6 +43,9 @@ struct State {
     held: Option<i32>,
     change_on_move: Option<(usize, &'static str)>,
     change_on_press: Option<&'static str>,
+    elapsed: Duration,
+    start_delay: Duration,
+    focus_delay: Duration,
 }
 
 fn state() -> Rc<RefCell<State>> {
@@ -64,12 +71,18 @@ fn state() -> Rc<RefCell<State>> {
         held: None,
         change_on_move: None,
         change_on_press: None,
+        elapsed: Duration::ZERO,
+        start_delay: Duration::ZERO,
+        focus_delay: Duration::ZERO,
     }))
 }
 struct Screen(Rc<RefCell<State>>);
 impl Desktop for Screen {
     fn focus(&mut self) -> Result<()> {
-        self.0.borrow_mut().focused = true;
+        let mut state = self.0.borrow_mut();
+        state.focused = true;
+        let delay = state.focus_delay;
+        state.elapsed += delay;
         Ok(())
     }
     fn verify(&mut self) -> Result<()> {
@@ -100,7 +113,11 @@ impl Desktop for Screen {
 struct Grant(Rc<RefCell<State>>);
 impl Portal for Grant {
     fn start(&mut self, _emit: &mut dyn FnMut(Value) -> Result<()>) -> Result<()> {
-        self.0.borrow_mut().starts += 1;
+        let mut state = self.0.borrow_mut();
+        state.starts += 1;
+        let delay = state.start_delay;
+        state.elapsed += delay;
+        drop(state);
         ensure!(!self.0.borrow().start_error, "partial startup error");
         Ok(())
     }
@@ -191,6 +208,198 @@ fn each_command_is_acknowledged_and_has_a_numbered_terminal_response() {
 }
 
 #[test]
+fn delayed_consent_cannot_start_calibration_in_the_cleanup_reserve() {
+    let shared = state();
+    shared.borrow_mut().start_delay = Duration::from_secs(90);
+    let origin = Instant::now();
+    let now = || origin + shared.borrow().elapsed;
+    let directory = tempfile::tempdir().unwrap();
+    let mut events = Vec::new();
+    let result = super::run_session(
+        &mut Screen(shared.clone()),
+        &mut Grant(shared.clone()),
+        directory.path(),
+        &mut [Ok(
+            r#"{"action":"click","focus":true,"x":400,"y":300}"#.into()
+        )]
+        .into_iter(),
+        &mut |event| {
+            events.push(event);
+            Ok(())
+        },
+        &mut |duration| {
+            shared.borrow_mut().elapsed += duration;
+            Ok(())
+        },
+        SessionTiming {
+            deadline: origin + Duration::from_secs(100),
+            command_timeout: Duration::from_secs(15),
+            now: &now,
+        },
+    );
+    assert!(
+        result.is_err(),
+        "late consent must not restart the interaction budget"
+    );
+    let state = shared.borrow();
+    assert!(
+        state.moves.is_empty(),
+        "calibration must not consume cleanup time"
+    );
+    assert!(state.presses.is_empty());
+    assert_eq!(state.closes, 1);
+    assert_eq!(events.last().unwrap()["status"], "session-closed");
+}
+
+#[test]
+fn late_command_refuses_before_focus_or_input_and_closes_the_grant() {
+    let shared = state();
+    let origin = Instant::now();
+    let now = || origin + shared.borrow().elapsed;
+    let directory = tempfile::tempdir().unwrap();
+    let mut events = Vec::new();
+    let result = super::run_session(
+        &mut Screen(shared.clone()),
+        &mut Grant(shared.clone()),
+        directory.path(),
+        &mut [Ok(
+            r#"{"action":"click","focus":true,"x":400,"y":300}"#.into()
+        )]
+        .into_iter(),
+        &mut |event| {
+            if event["status"] == "ready" {
+                let mut state = shared.borrow_mut();
+                state.elapsed = Duration::from_secs(71);
+                state.focused = false;
+            }
+            events.push(event);
+            Ok(())
+        },
+        &mut |duration| {
+            shared.borrow_mut().elapsed += duration;
+            Ok(())
+        },
+        SessionTiming {
+            deadline: origin + Duration::from_secs(100),
+            command_timeout: Duration::from_secs(15),
+            now: &now,
+        },
+    );
+    assert!(result.is_err());
+    let state = shared.borrow();
+    assert!(
+        !state.focused,
+        "refusal must precede optional focus acquisition"
+    );
+    assert!(state.presses.is_empty());
+    assert_eq!(
+        state.moves.len(),
+        4,
+        "only the initial calibration may move the pointer"
+    );
+    assert_eq!(state.closes, 1);
+    assert!(events.iter().any(
+        |event| event["status"] == "command-started" && event["session_remaining_ms"] == 29000
+    ));
+    assert!(
+        events
+            .iter()
+            .any(|event| event["status"] == "refused" && event["request"] == 1)
+    );
+    assert_eq!(events.last().unwrap()["status"], "session-closed");
+}
+
+#[test]
+fn slow_initial_focus_cannot_start_a_capture_or_consent_after_its_budget() {
+    let shared = state();
+    shared.borrow_mut().focus_delay = Duration::from_secs(86);
+    let origin = Instant::now();
+    let now = || origin + shared.borrow().elapsed;
+    let directory = tempfile::tempdir().unwrap();
+    let result = super::run_session(
+        &mut Screen(shared.clone()),
+        &mut Grant(shared.clone()),
+        directory.path(),
+        &mut std::iter::empty(),
+        &mut |_| Ok(()),
+        &mut |_| Ok(()),
+        SessionTiming {
+            deadline: origin + Duration::from_secs(100),
+            command_timeout: Duration::from_secs(15),
+            now: &now,
+        },
+    );
+    assert!(result.is_err());
+    assert!(
+        !directory.path().join("initial.png").exists(),
+        "expired startup must not capture"
+    );
+    let state = shared.borrow();
+    assert_eq!(state.starts, 0);
+    assert!(state.moves.is_empty());
+    assert_eq!(state.closes, 1);
+}
+
+#[test]
+fn slow_command_acknowledgement_cannot_renew_the_input_budget() {
+    let shared = state();
+    let origin = Instant::now();
+    let now = || origin + shared.borrow().elapsed;
+    let directory = tempfile::tempdir().unwrap();
+    let mut events = Vec::new();
+    let result = super::run_session(
+        &mut Screen(shared.clone()),
+        &mut Grant(shared.clone()),
+        directory.path(),
+        &mut [Ok(
+            r#"{"action":"click","focus":true,"x":400,"y":300}"#.into()
+        )]
+        .into_iter(),
+        &mut |event| {
+            if event["status"] == "ready" {
+                shared.borrow_mut().focused = false;
+            }
+            if event["status"] == "command-started" {
+                shared.borrow_mut().elapsed += Duration::from_secs(16);
+            }
+            events.push(event);
+            Ok(())
+        },
+        &mut |duration| {
+            shared.borrow_mut().elapsed += duration;
+            Ok(())
+        },
+        SessionTiming {
+            deadline: origin + Duration::from_secs(100),
+            command_timeout: Duration::from_secs(15),
+            now: &now,
+        },
+    );
+    assert!(
+        result.is_err(),
+        "an acknowledgement delay must consume the command budget"
+    );
+    let state = shared.borrow();
+    assert!(
+        !state.focused,
+        "the expired command must not reacquire focus"
+    );
+    assert!(state.presses.is_empty());
+    assert_eq!(
+        state.moves.len(),
+        4,
+        "only calibration may have moved the pointer"
+    );
+    assert_eq!(state.closes, 1);
+    assert!(
+        events
+            .iter()
+            .any(|event| event["status"] == "refused" && event["request"] == 1)
+    );
+    assert_eq!(events.last().unwrap()["status"], "session-closed");
+}
+
+#[test]
 fn command_timeout_releases_a_pressed_button_and_ends_before_the_next_command() {
     let shared = state();
     let directory = tempfile::tempdir().unwrap();
@@ -214,7 +423,11 @@ fn command_timeout_releases_a_pressed_button_and_ends_before_the_next_command() 
             }
             Ok(())
         },
-        Duration::from_secs(1),
+        SessionTiming {
+            deadline: Instant::now() + Duration::from_secs(600),
+            command_timeout: Duration::from_secs(1),
+            now: &Instant::now,
+        },
     );
     assert!(result.unwrap_err().is::<CommandTimedOut>());
     assert!(events.iter().any(|event| event["request"] == 1

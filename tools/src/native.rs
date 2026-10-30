@@ -78,6 +78,9 @@ pub struct Session {
     /// Total session limit including desktop consent and idle input.
     #[arg(long, default_value_t = 600, value_parser = clap::value_parser!(u32).range(1..=600))]
     timeout_seconds: u32,
+    /// Previously agreed UTC end time, in Unix seconds; startup never extends it.
+    #[arg(long)]
+    deadline_unix_seconds: Option<u64>,
 }
 
 #[derive(Args)]
@@ -126,7 +129,8 @@ pub struct Launch {
     screenshot: Option<String>,
     #[arg(long, requires = "screenshot")]
     quit_after_screenshot: bool,
-    #[arg(long, default_value_t = 300.0)]
+    /// App lifetime for owner review, independent of any desktop-control grant.
+    #[arg(long, default_value_t = 1800.0)]
     timeout_seconds: f64,
 }
 
@@ -155,18 +159,36 @@ pub fn run(command: Command) -> Result<u8> {
 }
 
 fn session(args: Session) -> Result<u8> {
-    let deadline = Instant::now() + Duration::from_secs(args.timeout_seconds.into());
+    let now = Instant::now();
+    let wall_now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+    let mut remaining = Duration::from_secs(args.timeout_seconds.into());
+    if let Some(end) = args.deadline_unix_seconds {
+        remaining = remaining.min(
+            Duration::from_secs(end)
+                .checked_sub(wall_now)
+                .filter(|duration| !duration.is_zero())
+                .context("Desktop-control deadline has expired")?,
+        );
+    }
+    let deadline = now + remaining;
+    let timing = interaction::SessionTiming {
+        deadline,
+        command_timeout: Duration::from_secs(15),
+        now: &Instant::now,
+    };
+    timing.admit()?;
+    let input_deadline = timing.input_deadline();
     let mut desktop = X11::new(args.client.pid, args.client.window)?;
     let directory = resolve(&args.output_dir)?;
     fresh_directory(&directory)?;
     let mut log = new_file(&directory.join("events.jsonl"))?;
     let (receive, input_ended) = input_lines(std::io::BufReader::new(std::io::stdin()));
-    let mut portal = DesktopPortal::connect(deadline, input_ended)?;
+    let mut portal = DesktopPortal::connect(input_deadline, input_ended)?;
     let check = || -> Result<()> {
         crate::process::check_interrupt()?;
         ensure!(
-            Instant::now() < deadline,
-            "Native verification session timed out"
+            Instant::now() < input_deadline,
+            "Native verification input deadline reached; closing the session"
         );
         Ok(())
     };
@@ -191,6 +213,11 @@ fn session(args: Session) -> Result<u8> {
         log.flush()?;
         emit(&value)
     };
+    event(
+        json!({"status":"session-budget", "deadline_unix_seconds":(wall_now + remaining).as_secs_f64(),
+        "cleanup_reserve_seconds":interaction::CLEANUP_RESERVE.as_secs(),
+        "remaining_ms":deadline.saturating_duration_since(Instant::now()).as_millis()}),
+    )?;
     interaction::run_session(
         &mut desktop,
         &mut portal,
@@ -201,7 +228,7 @@ fn session(args: Session) -> Result<u8> {
             check()?;
             crate::process::pause(duration)
         },
-        Duration::from_secs(15),
+        timing,
     )?;
     Ok(0)
 }
@@ -360,12 +387,47 @@ pub fn new_file(path: &Path) -> Result<File> {
 }
 
 fn copy_verified(source: &Path, destination: &Path) -> Result<String> {
+    let bytes = fs::metadata(source)?.len();
     let before = digest(source)?;
-    std::io::copy(&mut File::open(source)?, &mut new_file(destination)?)?;
-    ensure!(
-        digest(destination)? == before && digest(source)? == before,
-        "Selected source changed while copying; retry in a fresh directory"
-    );
+    // Only publish a complete verified copy. Dropping this owned temporary file
+    // removes partial bytes after quota, space, read or verification failures.
+    let mut staged = tempfile::NamedTempFile::new_in(
+        destination
+            .parent()
+            .context("Copy destination needs a parent")?,
+    )
+    .with_context(|| {
+        format!(
+            "Cannot prepare staging of {bytes} bytes to {}",
+            destination.display()
+        )
+    })?;
+    let copied = (|| -> Result<()> {
+        std::io::copy(&mut File::open(source)?, &mut staged)?;
+        ensure!(
+            digest(staged.path())? == before && digest(source)? == before,
+            "Selected source changed while copying; retry in a fresh directory"
+        );
+        Ok(())
+    })();
+    if let Err(error) = copied {
+        let partial = staged.path().to_owned();
+        let cleanup = match staged.close() {
+            Ok(()) => "incomplete copy removed".to_owned(),
+            Err(error) => format!(
+                "could not remove incomplete copy {}: {error}",
+                partial.display()
+            ),
+        };
+        return Err(error.context(format!(
+            "Cannot stage {bytes} bytes from {} to {}; {cleanup}; choose a destination with sufficient space and quota",
+            source.display(), destination.display()
+        )));
+    }
+    staged
+        .persist_noclobber(destination)
+        .map_err(|error| error.error)
+        .with_context(|| format!("Cannot install verified copy at {}", destination.display()))?;
     Ok(before)
 }
 

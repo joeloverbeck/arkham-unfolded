@@ -39,6 +39,32 @@ pub trait Portal {
     fn close(&mut self) -> Result<()>;
 }
 
+pub const CLEANUP_RESERVE: Duration = Duration::from_secs(15);
+
+/// One agreed end time; the injected monotonic clock also drives fault tests.
+pub struct SessionTiming<'a> {
+    pub deadline: Instant,
+    pub command_timeout: Duration,
+    pub now: &'a dyn Fn() -> Instant,
+}
+
+impl SessionTiming<'_> {
+    pub fn input_deadline(&self) -> Instant {
+        self.deadline
+            .checked_sub(CLEANUP_RESERVE)
+            .unwrap_or_else(|| (self.now)())
+    }
+
+    pub fn admit(&self) -> Result<Instant> {
+        let now = (self.now)();
+        ensure!(
+            self.input_deadline().saturating_duration_since(now) >= self.command_timeout,
+            SessionTimeExhausted
+        );
+        Ok(now + self.command_timeout)
+    }
+}
+
 pub fn run_session(
     desktop: &mut dyn Desktop,
     portal: &mut dyn Portal,
@@ -46,35 +72,52 @@ pub fn run_session(
     commands: &mut dyn Iterator<Item = Result<String>>,
     emit: &mut dyn FnMut(Value) -> Result<()>,
     pause: &mut dyn FnMut(Duration) -> Result<()>,
-    command_timeout: Duration,
+    timing: SessionTiming<'_>,
 ) -> Result<()> {
     let result = (|| {
+        let initial_deadline = timing.admit()?;
         desktop.focus()?;
+        ensure!((timing.now)() < initial_deadline, CommandTimedOut);
         emit(capture(desktop, directory, "initial.png")?)?;
+        ensure!((timing.now)() < initial_deadline, CommandTimedOut);
+        timing.admit()?;
         portal.start(emit)?;
+        let calibration_deadline = timing.admit()?;
         let mut controller = Controller {
             desktop,
             portal,
             pause,
             mapping: None,
-            deadline: None,
+            deadline: calibration_deadline,
+            now: timing.now,
         };
         let ready = controller
             .desktop
             .focus()
             .and_then(|()| controller.calibrate());
-        emit(ready.unwrap_or_else(refused))?;
+        match ready {
+            Ok(event) => emit(event)?,
+            Err(error) => {
+                emit(json!({"status":"refused", "reason":format!("{error:#}")}))?;
+                if error.is::<CommandTimedOut>() {
+                    return Err(error);
+                }
+            }
+        }
         for (index, line) in commands.enumerate() {
             let line = line?;
-            let started = Instant::now();
-            controller.deadline = Some(started + command_timeout);
+            let started = (timing.now)();
+            controller.deadline = started + timing.command_timeout;
             emit(json!({"status":"command-started", "request":index + 1,
-                "timeout_seconds":command_timeout.as_secs_f64()}))?;
+                "timeout_seconds":timing.command_timeout.as_secs_f64(),
+                "session_remaining_ms":timing.deadline.saturating_duration_since(started).as_millis()}))?;
             let event = (|| -> Result<Option<Value>> {
                 let request: Request = serde_json::from_str(&line)?;
                 if matches!(request.action, Action::Stop) {
                     return Ok(None);
                 }
+                timing.admit()?;
+                controller.check_deadline()?;
                 if request.focus && !matches!(request.action, Action::Focus) {
                     controller.desktop.focus()?;
                 }
@@ -107,7 +150,11 @@ pub fn run_session(
             })();
             let mut respond = |mut event: Value| {
                 event["request"] = json!(index + 1);
-                event["elapsed_ms"] = json!(started.elapsed().as_millis());
+                event["elapsed_ms"] = json!(
+                    (timing.now)()
+                        .saturating_duration_since(started)
+                        .as_millis()
+                );
                 emit(event)
             };
             match event {
@@ -118,7 +165,10 @@ pub fn run_session(
                 Ok(Some(event)) => respond(event)?,
                 Err(error) => {
                     respond(json!({"status":"refused", "reason":format!("{error:#}")}))?;
-                    if error.is::<ReleaseFailed>() || error.is::<CommandTimedOut>() {
+                    if error.is::<ReleaseFailed>()
+                        || error.is::<CommandTimedOut>()
+                        || error.is::<SessionTimeExhausted>()
+                    {
                         return Err(error);
                     }
                 }
@@ -150,6 +200,15 @@ impl std::fmt::Display for CommandTimedOut {
     }
 }
 impl std::error::Error for CommandTimedOut {}
+
+#[derive(Debug)]
+struct SessionTimeExhausted;
+impl std::fmt::Display for SessionTimeExhausted {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Insufficient desktop-control time for another operation and cleanup")
+    }
+}
+impl std::error::Error for SessionTimeExhausted {}
 
 #[derive(Deserialize)]
 struct Request {
@@ -187,10 +246,6 @@ fn drag_duration() -> f64 {
     0.6
 }
 
-fn refused(error: anyhow::Error) -> Value {
-    json!({"status":"refused", "reason": format!("{error:#}")})
-}
-
 fn capture(desktop: &mut dyn Desktop, directory: &Path, name: &str) -> Result<Value> {
     let mut event = desktop.capture(&capture_path(directory, name)?)?;
     event["status"] = json!("capture");
@@ -202,16 +257,13 @@ struct Controller<'a> {
     portal: &'a mut dyn Portal,
     pause: &'a mut dyn FnMut(Duration) -> Result<()>,
     mapping: Option<[f64; 4]>,
-    deadline: Option<Instant>,
+    deadline: Instant,
+    now: &'a dyn Fn() -> Instant,
 }
 
 impl Controller<'_> {
     fn check_deadline(&self) -> Result<()> {
-        ensure!(
-            self.deadline
-                .is_none_or(|deadline| Instant::now() < deadline),
-            CommandTimedOut
-        );
+        ensure!((self.now)() < self.deadline, CommandTimedOut);
         Ok(())
     }
 
