@@ -4,8 +4,6 @@ use super::*;
 use crate::tabletop_harm_text::{DAMAGE_COLOR, HORROR_COLOR};
 use crate::tony::{HarmRecipient, HarmSource};
 
-const STAGE_SECONDS: f32 = 1.2;
-
 #[derive(Component)]
 pub(super) struct HarmVisual {
     rest: Vec3,
@@ -17,13 +15,14 @@ pub(super) fn advance_presentation(
     mut table: ResMut<Table>,
     settings: Res<AssetSettings>,
 ) {
-    if table.modal() || settings.is_busy() || table.harm().is_none() {
-        return;
-    }
-    table.stage_elapsed += time.delta_secs();
-    if table.presenting() && table.stage_elapsed >= STAGE_SECONDS {
-        table.presentation.pop_front();
-        table.stage_elapsed = 0.0;
+    let paused = table.modal() || settings.is_busy();
+    let playback = table
+        .replay
+        .as_ref()
+        .map_or(Playback::Live, |replay| Playback::Replay {
+            harm_visible: replay.harm().is_some(),
+        });
+    if table.presentation.tick(time.delta_secs(), paused, playback) {
         table.dirty = true;
     }
 }
@@ -299,7 +298,7 @@ pub(super) fn harm_scene(
 }
 
 pub(super) fn animate_harm(table: Res<Table>, mut visuals: Query<(&HarmVisual, &mut Transform)>) {
-    let progress = (table.stage_elapsed / 0.5).clamp(0.0, 1.0);
+    let progress = table.presentation.animation_progress();
     for (visual, mut transform) in &mut visuals {
         transform.translation = visual.rest;
         transform.scale = Vec3::ONE;
