@@ -124,3 +124,148 @@ fn empty_crlf_and_missing_final_newline_are_explicit_and_preserved() {
     assert!(output.contains("     1 | first\r\n"));
     assert!(output.ends_with("     2 | last without newline\nEND (source has no final newline)\n"));
 }
+
+fn batch(path: &std::path::Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .arg("read-context-batch")
+        .arg(path)
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn batch_continuations_share_one_budget_and_deliver_each_selected_line_once() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first file.txt");
+    let second = directory.path().join("second.txt");
+    fs::write(&first, "first café\n".repeat(45)).unwrap();
+    fs::write(&second, "second 漢字\n".repeat(30)).unwrap();
+    let requests = directory.path().join("requests.json");
+    fs::write(
+        &requests,
+        serde_json::to_vec(&serde_json::json!([
+            {"path":first,"start":3,"end":40},
+            {"path":second,"start":2,"end":25}
+        ]))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut args = "--max-bytes 600".to_owned();
+    let mut observed = Vec::new();
+    for page in 0..100 {
+        let output = batch(&requests, &args.split_whitespace().collect::<Vec<_>>());
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            output.stdout.len() <= 600,
+            "combined output exceeded its budget"
+        );
+        let text = String::from_utf8(output.stdout).unwrap();
+        for row in text.lines() {
+            if let Some((number, content)) = row.split_once(" | ") {
+                observed.push((number.trim().parse::<usize>().unwrap(), content.to_owned()));
+            }
+        }
+        if let Some(next) = text.lines().find_map(|line| line.strip_prefix("NEXT ")) {
+            args = next.to_owned();
+        } else {
+            assert!(text.ends_with("\nEND\n"));
+            assert!(page > 1, "the fixture must exercise continuation");
+            let expected: Vec<_> = (3..=40)
+                .map(|n| (n, "first café".to_owned()))
+                .chain((2..=25).map(|n| (n, "second 漢字".to_owned())))
+                .collect();
+            assert_eq!(observed, expected);
+            return;
+        }
+    }
+    panic!("batch continuation did not finish");
+}
+
+#[test]
+fn batch_continuation_binds_even_unread_sources_and_the_request_list() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first.txt");
+    let second = directory.path().join("second.txt");
+    let requests = directory.path().join("requests.json");
+    fs::write(&first, "first\n".repeat(100)).unwrap();
+    fs::write(&second, "second\n").unwrap();
+    let manifest =
+        serde_json::to_vec(&serde_json::json!([{ "path": first }, { "path": second }])).unwrap();
+    fs::write(&requests, &manifest).unwrap();
+    let first_page = batch(&requests, &["--max-bytes", "512"]);
+    assert!(first_page.status.success());
+    let text = String::from_utf8(first_page.stdout).unwrap();
+    let next = text
+        .lines()
+        .find_map(|line| line.strip_prefix("NEXT "))
+        .unwrap();
+    for change_manifest in [false, true] {
+        fs::write(
+            &second,
+            if change_manifest {
+                "second\n"
+            } else {
+                "changed\n"
+            },
+        )
+        .unwrap();
+        if change_manifest {
+            let mut modified = manifest.clone();
+            modified.push(b' ');
+            fs::write(&requests, modified).unwrap();
+        }
+        let result = batch(&requests, &next.split_whitespace().collect::<Vec<_>>());
+        assert_eq!(result.status.code(), Some(2));
+        assert!(result.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("changed"));
+    }
+}
+
+#[test]
+fn batch_validates_all_excerpts_before_output_and_preserves_empty_and_crlf_sources() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("empty.txt");
+    let second = directory.path().join("second.txt");
+    let requests = directory.path().join("requests.json");
+    fs::write(&first, "").unwrap();
+    let manifest =
+        serde_json::to_vec(&serde_json::json!([{ "path": first }, { "path": second }])).unwrap();
+    fs::write(&requests, &manifest).unwrap();
+    let missing = batch(&requests, &[]);
+    assert_eq!(missing.status.code(), Some(2));
+    assert!(missing.stdout.is_empty());
+    fs::write(&second, "first\r\nlast without newline").unwrap();
+    let result = batch(&requests, &[]);
+    assert!(result.status.success());
+    let text = String::from_utf8(result.stdout).unwrap();
+    assert!(text.contains("EMPTY FILE"));
+    assert!(text.contains("     1 | first\r\n"));
+    assert!(
+        text.contains("     2 | last without newline\nEND REQUEST (source has no final newline)")
+    );
+    for bad_manifest in [
+        serde_json::json!([]),
+        serde_json::json!([{ "path":second, "start":0 }]),
+        serde_json::json!([{ "path":second, "end":3 }]),
+        serde_json::json!([{ "path":second, "strat":2 }]),
+    ] {
+        fs::write(&requests, serde_json::to_vec(&bad_manifest).unwrap()).unwrap();
+        let result = batch(&requests, &[]);
+        assert_eq!(result.status.code(), Some(2));
+        assert!(result.stdout.is_empty());
+    }
+    fs::write(
+        &requests,
+        serde_json::to_vec(&serde_json::json!([{ "path":second }])).unwrap(),
+    )
+    .unwrap();
+    fs::write(&second, "x".repeat(13000)).unwrap();
+    let result = batch(&requests, &[]);
+    assert_eq!(result.status.code(), Some(2));
+    assert!(result.stdout.is_empty());
+}

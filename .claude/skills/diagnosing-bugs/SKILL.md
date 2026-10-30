@@ -5,7 +5,7 @@ description: Diagnosis loop for hard bugs and performance regressions. Use when 
 
 # Diagnosing Bugs
 
-A discipline for hard bugs. Skip phases only when explicitly justified.
+A discipline for hard bugs. Classify the report first; unexplained failures follow the diagnosis phases below.
 
 When exploring the codebase, read `GLOSSARY.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
@@ -16,6 +16,12 @@ Apply the repository's implementation-language contract to every project-owned h
 This skill has you show commands, outputs and captured artifacts. **Redact every secret first**: write `<REDACTED>` in its place. Build loops against env vars, so the credential stays in the environment rather than in what you show. Captured artifacts carry auth headers: quote only the lines that carry the signal.
 
 If the redacted output is not enough to diagnose the bug, say so and ask the user.
+
+## Classify the report
+
+For an intended-behavior question, compare the reported behavior with the accepted issue, play contract and relevant documentation before treating it as a defect. Use a narrow reproduction when needed to establish what actually happens. When the behavior matches the accepted contract, explain it with the supporting reference and stop; a failing-test loop is unnecessary. For example, undo may restore live state while the recording retains the attempted choices and the undo itself.
+
+If the report contradicts the contract, remains unexplained, or describes a crash or regression, continue to Phase 1. If the user wants different behavior, treat that as a change request under the existing work-selection procedure. Do not infer intent from the implementation alone.
 
 ## Phase 1: Build a feedback loop
 

@@ -3,6 +3,25 @@ use anyhow::ensure;
 use serde_json::json;
 use std::{cell::RefCell, fs, rc::Rc};
 
+fn run_session(
+    desktop: &mut dyn Desktop,
+    portal: &mut dyn Portal,
+    directory: &Path,
+    commands: &mut dyn Iterator<Item = Result<String>>,
+    emit: &mut dyn FnMut(Value) -> Result<()>,
+    pause: &mut dyn FnMut(Duration) -> Result<()>,
+) -> Result<()> {
+    super::run_session(
+        desktop,
+        portal,
+        directory,
+        commands,
+        emit,
+        pause,
+        Duration::from_secs(15),
+    )
+}
+
 struct State {
     geometry: Geometry,
     root: [f64; 2],
@@ -142,6 +161,79 @@ fn change_state(state: &mut State, change: &str) {
 }
 
 #[test]
+fn each_command_is_acknowledged_and_has_a_numbered_terminal_response() {
+    let shared = state();
+    let directory = tempfile::tempdir().unwrap();
+    let mut events = Vec::new();
+    run_session(
+        &mut Screen(shared.clone()),
+        &mut Grant(shared),
+        directory.path(),
+        &mut [Ok("not json".into()), Ok(r#"{"action":"stop"}"#.into())].into_iter(),
+        &mut |event| {
+            events.push(event);
+            Ok(())
+        },
+        &mut |_| Ok(()),
+    )
+    .unwrap();
+    for (request, terminal) in [(1, "refused"), (2, "stopped")] {
+        let responses: Vec<_> = events
+            .iter()
+            .filter(|event| event["request"] == request)
+            .collect();
+        assert_eq!(responses.len(), 2, "{events:?}");
+        assert_eq!(responses[0]["status"], "command-started");
+        assert_eq!(responses[1]["status"], terminal);
+        assert!(responses[1]["elapsed_ms"].is_number());
+    }
+    assert_eq!(events.last().unwrap()["status"], "session-closed");
+}
+
+#[test]
+fn command_timeout_releases_a_pressed_button_and_ends_before_the_next_command() {
+    let shared = state();
+    let directory = tempfile::tempdir().unwrap();
+    let mut events = Vec::new();
+    let result = super::run_session(
+        &mut Screen(shared.clone()),
+        &mut Grant(shared.clone()),
+        directory.path(),
+        &mut [
+            Ok(r#"{"action":"right-drag","x":400,"y":300,"dx":120,"dy":30}"#.into()),
+            Ok(r#"{"action":"click","x":400,"y":300}"#.into()),
+        ]
+        .into_iter(),
+        &mut |event| {
+            events.push(event);
+            Ok(())
+        },
+        &mut |_| {
+            if shared.borrow().held.is_some() {
+                std::thread::sleep(Duration::from_millis(1100));
+            }
+            Ok(())
+        },
+        Duration::from_secs(1),
+    );
+    assert!(result.unwrap_err().is::<CommandTimedOut>());
+    assert!(events.iter().any(|event| event["request"] == 1
+        && event["status"] == "refused"
+        && event["reason"].as_str().unwrap().contains("timed out")));
+    assert!(!events.iter().any(|event| event["request"] == 2));
+    assert_eq!(events.last().unwrap()["status"], "session-closed");
+    let state = shared.borrow();
+    assert_eq!(state.presses, [(true, 273), (false, 273)]);
+    assert_eq!(
+        state.moves.len(),
+        5,
+        "timeout must prevent the first held movement"
+    );
+    assert_eq!(state.mask, 0);
+    assert_eq!(state.closes, 1);
+}
+
+#[test]
 fn release_failure_ends_session_and_retries_release_during_cleanup() {
     let shared = state();
     shared.borrow_mut().release_error_once = true;
@@ -195,8 +287,11 @@ fn session_measures_mapping_refuses_unsafe_click_and_recovers_with_one_grant_unt
         [
             "capture",
             "ready",
+            "command-started",
             "refused",
+            "command-started",
             "clicked",
+            "command-started",
             "capture",
             "session-closed"
         ]
@@ -283,6 +378,52 @@ fn malformed_nonfinite_and_unsafe_requests_do_not_move_or_press() {
         fs::read_to_string(directory.path().join("initial.png")).unwrap(),
         "test boundary image"
     );
+}
+
+#[test]
+fn explicitly_focused_drag_recovers_between_commands_but_refuses_lost_focus_mid_drag() {
+    for interrupted in [false, true] {
+        let shared = state();
+        let directory = tempfile::tempdir().unwrap();
+        let mut events = Vec::new();
+        let command = r#"{"action":"right-drag","focus":true,"x":400,"y":300,"dx":120,"dy":30,"duration_seconds":0.6}"#;
+        let mut commands = std::iter::once_with(|| {
+            let mut state = shared.borrow_mut();
+            state.focused = false;
+            if interrupted {
+                state.change_on_move = Some((6, "focus"));
+            }
+            Ok(command.to_owned())
+        });
+        run_session(
+            &mut Screen(shared.clone()),
+            &mut Grant(shared.clone()),
+            directory.path(),
+            &mut commands,
+            &mut |event| {
+                events.push(event);
+                Ok(())
+            },
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+        let statuses: Vec<_> = events
+            .iter()
+            .filter_map(|event| event["status"].as_str())
+            .collect();
+        assert!(
+            statuses.contains(&if interrupted {
+                "refused"
+            } else {
+                "right-dragged"
+            }),
+            "{events:?}"
+        );
+        let state = shared.borrow();
+        assert_eq!(state.presses, [(true, 273), (false, 273)]);
+        assert_eq!(state.mask, 0);
+        assert_eq!(state.closes, 1);
+    }
 }
 
 #[test]
@@ -427,7 +568,17 @@ fn failed_calibration_requires_recalibration_but_keeps_the_same_grant() {
                 .iter()
                 .map(|e| e["status"].as_str().unwrap())
                 .collect::<Vec<_>>(),
-            ["capture", "refused", "ready", "clicked", "session-closed"]
+            [
+                "capture",
+                "refused",
+                "command-started",
+                "ready",
+                "command-started",
+                "clicked",
+                "command-started",
+                "stopped",
+                "session-closed"
+            ]
         );
         assert_eq!((shared.borrow().starts, shared.borrow().closes), (1, 1));
         assert_eq!(shared.borrow().presses, [(true, 272), (false, 272)]);
