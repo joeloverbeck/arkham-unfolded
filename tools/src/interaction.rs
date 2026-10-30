@@ -2,7 +2,10 @@ use crate::native::capture_path;
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{path::Path, time::Duration};
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Geometry {
@@ -43,6 +46,7 @@ pub fn run_session(
     commands: &mut dyn Iterator<Item = Result<String>>,
     emit: &mut dyn FnMut(Value) -> Result<()>,
     pause: &mut dyn FnMut(Duration) -> Result<()>,
+    command_timeout: Duration,
 ) -> Result<()> {
     let result = (|| {
         desktop.focus()?;
@@ -53,28 +57,41 @@ pub fn run_session(
             portal,
             pause,
             mapping: None,
+            deadline: None,
         };
         let ready = controller
             .desktop
             .focus()
             .and_then(|()| controller.calibrate());
         emit(ready.unwrap_or_else(refused))?;
-        for line in commands {
+        for (index, line) in commands.enumerate() {
             let line = line?;
+            let started = Instant::now();
+            controller.deadline = Some(started + command_timeout);
+            emit(json!({"status":"command-started", "request":index + 1,
+                "timeout_seconds":command_timeout.as_secs_f64()}))?;
             let event = (|| -> Result<Option<Value>> {
-                Ok(Some(match serde_json::from_str::<Request>(&line)? {
-                    Request::Stop => return Ok(None),
-                    Request::Capture { name } => capture(controller.desktop, directory, &name)?,
-                    Request::Focus => {
+                let request: Request = serde_json::from_str(&line)?;
+                if matches!(request.action, Action::Stop) {
+                    return Ok(None);
+                }
+                if request.focus && !matches!(request.action, Action::Focus) {
+                    controller.desktop.focus()?;
+                }
+                controller.check_deadline()?;
+                let event = match request.action {
+                    Action::Stop => unreachable!(),
+                    Action::Capture { name } => capture(controller.desktop, directory, &name)?,
+                    Action::Focus => {
                         controller.desktop.focus()?;
                         json!({"status":"focused"})
                     }
-                    Request::Calibrate => controller.calibrate()?,
-                    Request::Click { x, y } => {
+                    Action::Calibrate => controller.calibrate()?,
+                    Action::Click { x, y } => {
                         controller.click([x, y])?;
                         json!({"status":"clicked", "client":[x, y]})
                     }
-                    Request::RightDrag {
+                    Action::RightDrag {
                         x,
                         y,
                         dx,
@@ -84,13 +101,27 @@ pub fn run_session(
                         controller.right_drag([x, y], [dx, dy], duration_seconds)?;
                         json!({"status":"right-dragged", "client":[x, y], "delta":[dx, dy], "duration_seconds":duration_seconds})
                     }
-                }))
+                };
+                controller.check_deadline()?;
+                Ok(Some(event))
             })();
+            let mut respond = |mut event: Value| {
+                event["request"] = json!(index + 1);
+                event["elapsed_ms"] = json!(started.elapsed().as_millis());
+                emit(event)
+            };
             match event {
-                Ok(None) => break,
-                Ok(Some(event)) => emit(event)?,
-                Err(error) if error.is::<ReleaseFailed>() => return Err(error),
-                Err(error) => emit(refused(error))?,
+                Ok(None) => {
+                    respond(json!({"status":"stopped"}))?;
+                    break;
+                }
+                Ok(Some(event)) => respond(event)?,
+                Err(error) => {
+                    respond(json!({"status":"refused", "reason":format!("{error:#}")}))?;
+                    if error.is::<ReleaseFailed>() || error.is::<CommandTimedOut>() {
+                        return Err(error);
+                    }
+                }
             }
         }
         Ok(())
@@ -111,9 +142,27 @@ impl std::fmt::Display for ReleaseFailed {
     }
 }
 
+#[derive(Debug)]
+struct CommandTimedOut;
+impl std::fmt::Display for CommandTimedOut {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Native command timed out; ending the session for cleanup")
+    }
+}
+impl std::error::Error for CommandTimedOut {}
+
+#[derive(Deserialize)]
+struct Request {
+    /// Explicitly reacquire this client immediately before the guarded operation.
+    #[serde(default)]
+    focus: bool,
+    #[serde(flatten)]
+    action: Action,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case")]
-enum Request {
+enum Action {
     Stop,
     Capture {
         name: String,
@@ -153,20 +202,38 @@ struct Controller<'a> {
     portal: &'a mut dyn Portal,
     pause: &'a mut dyn FnMut(Duration) -> Result<()>,
     mapping: Option<[f64; 4]>,
+    deadline: Option<Instant>,
 }
 
 impl Controller<'_> {
+    fn check_deadline(&self) -> Result<()> {
+        ensure!(
+            self.deadline
+                .is_none_or(|deadline| Instant::now() < deadline),
+            CommandTimedOut
+        );
+        Ok(())
+    }
+
+    fn pause(&mut self, duration: Duration) -> Result<()> {
+        self.check_deadline()?;
+        (self.pause)(duration)?;
+        self.check_deadline()
+    }
+
     fn sample(&mut self, point: [f64; 2]) -> Result<[f64; 2]> {
+        self.check_deadline()?;
         self.desktop.verify()?;
         ensure!(
             self.desktop.pointer()?.mask == 0,
             "Release held buttons and modifiers before moving"
         );
+        self.check_deadline()?;
         self.portal.move_to(point)?;
-        (self.pause)(Duration::from_millis(80))?;
+        self.pause(Duration::from_millis(80))?;
         let mut previous = self.desktop.pointer()?.root;
         for _ in 0..20 {
-            (self.pause)(Duration::from_millis(20))?;
+            self.pause(Duration::from_millis(20))?;
             let current = self.desktop.pointer()?.root;
             if current == previous {
                 return Ok(current);
@@ -243,6 +310,7 @@ impl Controller<'_> {
     }
 
     fn verify_pointer(&mut self, geometry: Geometry, expected: [f64; 2], mask: u16) -> Result<()> {
+        self.check_deadline()?;
         self.desktop.verify()?;
         let pointer = self.desktop.pointer()?;
         ensure!(
@@ -255,7 +323,7 @@ impl Controller<'_> {
                     .all(|(a, b)| (a - b).abs() <= 2.0),
             "Window, pointer, or button state changed before or during input"
         );
-        Ok(())
+        self.check_deadline()
     }
 
     fn click(&mut self, point: [f64; 2]) -> Result<()> {
@@ -267,7 +335,7 @@ impl Controller<'_> {
         let result = self
             .portal
             .button(true, 272)
-            .and_then(|()| (self.pause)(Duration::from_millis(100)));
+            .and_then(|()| self.pause(Duration::from_millis(100)));
         let release = self.portal.button(false, 272);
         release.context(ReleaseFailed)?;
         result
@@ -306,11 +374,11 @@ impl Controller<'_> {
         self.verify_pointer(geometry, points[0], 0)?;
         let result = (|| {
             self.portal.button(true, 273)?;
-            (self.pause)(Duration::from_millis(100))?;
+            self.pause(Duration::from_millis(100))?;
             for step in 1..=20 {
                 self.verify_pointer(geometry, points[step - 1], 1 << 10)?;
                 self.portal.move_to(mapped[step])?;
-                (self.pause)(Duration::from_secs_f64(seconds / 20.0))?;
+                self.pause(Duration::from_secs_f64(seconds / 20.0))?;
                 self.verify_pointer(geometry, points[step], 1 << 10)?;
             }
             Ok(())

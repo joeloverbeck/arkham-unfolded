@@ -129,31 +129,33 @@ scripts/tools native session \
   --pid "$native_pid" --window "$native_window" --output-dir "$review_dir/interaction"
 ```
 
+Use an interactive terminal or a tool invocation with a persistent PTY (`tty: true` for `exec_command`), then send commands through that process's returned session ID. A pipe is suitable only while its writer remains open. Starting the helper with closed stdin cancels consent and input; reopening stdin requires a new helper and grant.
+
 The output directory must be new. The helper saves `initial.png` before requesting consent. In GNOME's dialog, select the monitor containing Arkham, enable **Allow Remote Interaction**, and click **Share**. One nonpersistent, pointer-only grant covers the run. The total session limit is 600 seconds, including consent and idle input; `--timeout-seconds` can shorten it. Keep Arkham covering the monitor's central 10%. Coordinate one short idle-desktop interval for the check, keeping the keyboard and pointer idle throughout calibration and gestures. The helper measures the portal-to-X11 mapping and checks it at an independent point; it does not reuse a previous monitor's scale. Wait for `ready`, then inspect `initial.png` before choosing a target. Coordinates are pixels relative to the captured client, not a resized image in the conversation. A calibration `refused` result retains the session for the bounded recovery below.
 
-Send one JSON command per line on the same process's stdin, waiting for responses rather than streaming a backlog. The input queue holds at most eight pending commands; overflow stops the input reader and cancels portal activity. EOF or a read error during pending consent cancels the request without waiting for approval. For example, after replacing `X` and `Y` with a target identified in the inspected image:
+Send one JSON command per line on the same process's stdin. Each dequeued command emits `command-started` with a sequential `request` number, then a terminal result with that number and `elapsed_ms`. Wait for the terminal result before sending another command. Each command has a 15-second budget checked before input and between guarded operations; focus and D-Bus calls retain their five-second call limits. A timeout attempts button release, reports `refused`, and ends the session for cleanup. This is cooperative cancellation, so an in-progress native call or cleanup can extend the response beyond the budget. A refusal can follow partial input: inspect before retrying. The input queue holds at most eight pending commands; overflow stops the input reader and cancels portal activity. EOF or a read error during pending consent cancels the request without waiting for approval. For example, after replacing `X` and `Y` with a target identified in the inspected image:
 
 ```text
-{"action":"click","x":X,"y":Y}
-{"action":"capture","name":"after-result.png"}
+{"action":"click","focus":true,"x":X,"y":Y}
+{"action":"capture","focus":true,"name":"after-result.png"}
 ```
 
 For an orbit check, choose a start and end on exposed table space in the inspected capture, then send a bounded right-drag. For example, after checking that these client coordinates are appropriate:
 
 ```text
-{"action":"right-drag","x":800,"y":450,"dx":120,"dy":30,"duration_seconds":0.6}
-{"action":"capture","name":"after-orbit.png"}
+{"action":"right-drag","focus":true,"x":800,"y":450,"dx":120,"dy":30,"duration_seconds":0.6}
+{"action":"capture","focus":true,"name":"after-orbit.png"}
 ```
 
 `dx` and `dy` are displacement in client pixels. The nonzero gesture is limited to `abs(dx) + abs(dy) <= 600`; `duration_seconds` defaults to 0.6 and accepts 0.2–2.0 seconds, with 20 movement steps. Desktop verification adds time to the requested movement duration. The helper validates the whole path before pressing, rechecks the window and measured pointer during movement, and releases the right button on failure or interruption. A path that fails preflight sends no press.
 
 Wait for `clicked` or `right-dragged` and allow the visible transition to settle before capturing; inspect the result before choosing another action. A completed gesture is input evidence only: compare the captures to establish camera movement. The helper checks process identity, focus, unchanged geometry and the measured client pointer position immediately before each press. It refuses off-window, off-monitor and mismapped targets. It releases an attempted press even when interrupted.
 
-Switching to a terminal or agent interface can take focus from Arkham between commands. Use an explicit `{"action":"focus"}` immediately before the next operation when needed. Send the gesture first, let the application render, then request the capture; a capture queued immediately after release can still show the preceding frame. Inspect pixels rather than interpreting an intended-state filename as proof.
+Switching to a terminal or agent interface can take focus from Arkham between commands. Set `"focus":true` on the operation to reacquire the verified client immediately before its guards and input, within the same request. The default leaves focus untouched; `{"action":"focus"}` remains available for focus alone. Reacquiring focus preserves all input guards, including refusal if focus changes during a drag. Send the gesture first, let the application render, then request the capture; a capture queued immediately after release can still show the preceding frame. Inspect pixels rather than interpreting an intended-state filename as proof.
 
-A `refused` command keeps the grant open. Diagnose once within that session; `{"action":"focus"}` restores focus explicitly and `{"action":"calibrate"}` remeasures a changed monitor mapping. Inspect a new capture before retrying a target. Stop after one failed capture/focus/click/drag attempt plus at most one bounded diagnosis attempt. If interaction remains unavailable, report the limitation and use the already-agreed owner check within its remaining allowance. Do not interpret a stale image as evidence against what the owner sees on the desktop.
+An ordinary `refused` command keeps the grant open; command timeout or failed button release ends it. Diagnose once within the surviving session; `{"action":"calibrate","focus":true}` reacquires focus and remeasures a changed monitor mapping. Inspect a new capture before retrying a target. Stop after one failed capture/focus/click/drag attempt plus at most one bounded diagnosis attempt. If interaction remains unavailable, report the limitation and use the already-agreed owner check within its remaining allowance. Do not interpret a stale image as evidence against what the owner sees on the desktop.
 
-Send `{"action":"stop"}` or close stdin when finished. EOF, fatal errors and handled interruption close the portal grant; a killed or crashed process loses its session when its D-Bus connection closes. `events.jsonl` records capture paths, pixel hashes, mapping, refusals and closure. It contains no artwork itself; keep it with the local captures.
+Send `{"action":"stop"}` (acknowledged by `stopped`) or close stdin when finished, and wait for `session-closed`. EOF, fatal errors and handled interruption close the portal grant; a killed or crashed process loses its session when its D-Bus connection closes. `events.jsonl` records capture paths, pixel hashes, mapping, command acknowledgments, elapsed times, refusals and closure. It contains no artwork itself; keep it with the local captures.
 
 For folder persistence, exercise **Choose asset folder → check → Save folder → close**. After the supervisor exits, relaunch the staged executable using the same working directory, XDG directories and save recorded in `run.json`, omitting both `--art-root` and `--no-art`. Verify that the saved path and asset status are restored; do not create a fresh isolated run for this restart check. Capture helpers must use the new PID. A screenshot establishes the inspected rendering; the actual interaction and restart establish their separate behavior. Any review of the owner's real preference uses its explicitly agreed scope instead of these diagnostic settings.
 

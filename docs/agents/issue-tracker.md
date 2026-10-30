@@ -43,6 +43,21 @@ The reader prints verbatim source lines with number prefixes and caps the whole 
 
 Use the same reader on saved issue bodies (`gh api ... --jq .body > /tmp/issue-body.md`). `--max-bytes` accepts 512–12,000; a line that cannot fit is explicitly refused, never shortened or skipped. Budget the combined output of a batch against the outer tool limit as well. If the outer tool truncates a page, lower the byte limit and reread that page before continuing. The helper reads UTF-8 files only and never modifies them.
 
+For several excerpts, put 1–32 requests in a JSON file and use one shared page budget. For example, `/tmp/context-requests.json`:
+
+```json
+[
+  {"path":"docs/principles/principles-for-repos.md","start":130,"end":173},
+  {"path":"docs/agents/issue-tracker.md","start":24,"end":44}
+]
+```
+
+```sh
+scripts/tools read-context-batch /tmp/context-requests.json --max-bytes 6000
+```
+
+Paths are relative to the current working directory; omitted ranges select the entire file. The byte limit covers all excerpts and metadata together. Follow `NEXT` with the same request file and working directory until the final `END`; `END REQUEST` ends only that excerpt. The continuation hash binds the request file and every source, including files not yet printed. Invalid requests fail before any source output. Prefer this command to combining separately bounded pages in one tool response, and leave room for any other output in the outer tool call.
+
 ## Sub-issues and dependencies
 
 Use native GitHub relationships with `gh` 2.94 or later:

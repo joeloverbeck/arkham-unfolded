@@ -201,6 +201,7 @@ fn session(args: Session) -> Result<u8> {
             check()?;
             crate::process::pause(duration)
         },
+        Duration::from_secs(15),
     )?;
     Ok(0)
 }
