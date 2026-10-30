@@ -68,6 +68,17 @@ fn modals_and_asset_settings_pause_harm_but_context_and_utilities_do_not() {
         Action::Select(revision, Source::Card(0), Vec3::ZERO),
     );
     assert!(app.world().resource::<Table>().context.selected.is_some());
+    assert_eq!(app.world().resource::<Table>().inspect, Some(0));
+    advance(&mut app, 0.125);
+    assert_eq!(
+        progress(&app),
+        0.75,
+        "direct inspection pauses harm like the explicit Inspect action"
+    );
+    act(&mut app, Action::Close);
+    // Non-card contextual controls still remain open without pausing presentation.
+    act(&mut app, Action::Select(revision, Source::Bag, Vec3::ZERO));
+    assert!(app.world().resource::<Table>().context.open);
     advance(&mut app, 0.125);
     assert_eq!(progress(&app), 1.0);
     advance(&mut app, 0.71);

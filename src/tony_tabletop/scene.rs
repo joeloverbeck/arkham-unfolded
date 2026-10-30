@@ -33,30 +33,7 @@ pub(super) fn ghoul_at(view: &Observation) -> Vec3 {
         Vec3::new(0.7, 0.05, -3.8)
     }
 }
-fn highlight(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    transform: Transform,
-) {
-    let normal = transform.rotation * Vec3::Y;
-    commands.spawn((
-        Name::new("Selected card outline"),
-        Mesh3d(meshes.add(Cuboid::new(CARD_WIDTH + 0.12, 0.025, CARD_LENGTH + 0.12))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: GOLD,
-            unlit: true,
-            ..default()
-        })),
-        Transform {
-            translation: transform.translation - normal * 0.025,
-            ..transform
-        },
-        Scene,
-        Pickable::IGNORE,
-    ));
-}
-type SceneSnapshot = (Observation, Option<Source>, std::collections::BTreeSet<u8>);
+type SceneSnapshot = (Observation, std::collections::BTreeSet<u8>);
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn synchronize_scene(
@@ -70,8 +47,7 @@ pub(super) fn synchronize_scene(
     mut rendered: Local<Option<SceneSnapshot>>,
 ) {
     let view = table.view();
-    let selected = table.context.selected.map(|s| s.source);
-    let key = (view.clone(), selected, table.context.commitments.clone());
+    let key = (view.clone(), table.context.commitments.clone());
     if rendered.as_ref() == Some(&key) {
         return;
     }
@@ -79,7 +55,7 @@ pub(super) fn synchronize_scene(
         Vec3::ONE
     } else if rendered
         .as_ref()
-        .is_some_and(|(last, _, _)| last.held_token == view.held_token)
+        .is_some_and(|(last, _)| last.held_token == view.held_token)
     {
         token.single().map_or(Vec3::ONE, |t| t.scale)
     } else {
@@ -166,14 +142,6 @@ pub(super) fn synchronize_scene(
     }
     for (index, at, caption, exhausted) in fixed {
         let source = Source::Card(index);
-        if selected == Some(source) {
-            highlight(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                card_transform(index, at, exhausted),
-            );
-        }
         card_mesh(
             &mut commands,
             &mut meshes,
@@ -330,14 +298,6 @@ pub(super) fn synchronize_scene(
         );
         if let Some(face) = CARDS.iter().position(|c| c.code == card.code) {
             let source = Source::Hand(card.id);
-            if selected == Some(source) || table.context.commitments.contains(&card.id) {
-                highlight(
-                    &mut commands,
-                    &mut meshes,
-                    &mut materials,
-                    card_transform(face, at, false),
-                );
-            }
             card_mesh(
                 &mut commands,
                 &mut meshes,

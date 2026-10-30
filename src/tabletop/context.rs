@@ -24,38 +24,68 @@ pub(super) struct Selectable(pub Source);
 #[derive(Component)]
 pub(super) struct SelectionOutline;
 
-/// A separate presentation overlay: changing selection cannot replace the
-/// observation scene or restart an in-flight token/reminder animation.
+/// Keep feedback separate from the observation scene: pointer movement and
+/// menu dismissal must not replace cards or restart token/reminder animations.
+pub(super) fn feedback(
+    table: Res<Tabletop>,
+    context: Res<Context>,
+    settings: Option<Res<AssetSettings>>,
+    mut feedback: ResMut<crate::tabletop_feedback::FeedbackSettings>,
+    mut objects: Query<(&Selectable, &mut crate::tabletop_feedback::CardFeedback)>,
+) {
+    feedback.blocked = table.inspect.is_some()
+        || table.result_open
+        || table.history
+        || settings.is_some_and(|settings| settings.is_busy());
+    feedback.reduced_motion = table.reduced_motion;
+    for (source, mut mark) in &mut objects {
+        mark.menu_source =
+            context.open && !feedback.blocked && context.selected_source() == Some(source.0);
+        mark.pending_choice = match source.0 {
+            Source::Token(id) => context.pending_cancellation().is_some_and(|choice| {
+                choice
+                    .strip_prefix("cancel-")
+                    .into_iter()
+                    .flat_map(|ids| ids.split('-'))
+                    .any(|selected| selected.parse::<u8>() == Ok(id))
+            }),
+            _ => false,
+        };
+    }
+}
+
+/// The bag consists of two independent clickable meshes; retain its small
+/// source cue only while its menu is open. Cards and tokens use shared feedback.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn highlight(
     mut commands: Commands,
     context: Res<Context>,
+    feedback: Res<crate::tabletop_feedback::FeedbackSettings>,
     objects: Query<(&Selectable, &Transform)>,
     outlines: Query<Entity, With<SelectionOutline>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut previous: Local<Option<(Source, Vec3)>>,
 ) {
-    let selected = context.selected_source().and_then(|source| {
-        objects
-            .iter()
-            .find(|(object, _)| object.0 == source)
-            .map(|(_, transform)| (source, transform.translation))
-    });
+    let selected = context
+        .selected_source()
+        .filter(|source| !feedback.blocked && context.menu_open() && *source == Source::Bag)
+        .and_then(|source| {
+            objects
+                .iter()
+                .find(|(object, _)| object.0 == source)
+                .map(|(_, transform)| (source, transform.translation))
+        });
     if selected == *previous {
         return;
     }
     for entity in &outlines {
         commands.entity(entity).despawn();
     }
-    if let Some((source, position)) = selected {
-        let (width, depth) = match source {
-            Source::Card(index) if CARDS[index].landscape => (2.8, 2.05),
-            Source::Card(_) => (2.05, 2.8),
-            Source::Token(_) => (1.12, 1.12),
-            Source::Bag => (1.5, 1.5),
-        };
+    if let Some((_, position)) = selected {
+        let (width, depth) = (1.5, 1.5);
         let material = materials.add(StandardMaterial {
-            base_color: GOLD,
+            base_color: MUTED,
             unlit: true,
             ..default()
         });
@@ -430,8 +460,12 @@ pub(super) fn show(
                                    art: &Art,
                                    label: &str,
                                    action: Action,
-                                   primary: bool| {
-                let entity = button(parent, art, label, action, primary);
+                                   _primary: bool| {
+                let entity = button(parent, art, label, action, false);
+                parent
+                    .commands()
+                    .entity(entity)
+                    .insert(crate::tabletop_feedback::context_button());
                 if first_button {
                     parent
                         .commands()
@@ -441,6 +475,7 @@ pub(super) fn show(
                 }
             };
             parent.spawn(art.text(title, 17.0, GOLD));
+            parent.spawn(art.text(crate::tabletop_feedback::KEYBOARD_HINT, 14.0, MUTED));
             if table.replay.is_some() {
                 parent.spawn(art.text("Recorded view / inspection only", 14.0, MUTED));
             }
@@ -520,7 +555,11 @@ pub(super) fn show(
                         menu_button(
                             parent,
                             art,
-                            &cancellation_label(choice),
+                            &format!(
+                                "{}{}",
+                                if marked { "Selected: " } else { "" },
+                                cancellation_label(choice)
+                            ),
                             Action::PrepareCancellation(generation, choice.id.clone()),
                             marked,
                         );

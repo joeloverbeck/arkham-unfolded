@@ -236,6 +236,117 @@ fn contextual_controls_preserve_every_offered_choice_and_token_identity() {
 }
 
 #[test]
+fn inspect_only_cards_open_directly_while_available_choices_keep_the_menu() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = app_for_session(
+        Session::new(Fixture::curse()),
+        dir.path().join("inspect.json"),
+    );
+    app.update();
+    let before = app.world().resource::<Tabletop>().view();
+    act(&mut app, Action::Select(Source::Card(0), Vec2::ZERO));
+    assert_eq!(app.world().resource::<Tabletop>().inspect, Some(0));
+    assert!(!app.world().resource::<Context>().menu_open());
+    act(&mut app, Action::CloseInspect);
+    assert_eq!(app.world().resource::<Tabletop>().view(), before);
+
+    act(&mut app, Action::Select(Source::Card(1), Vec2::ZERO));
+    assert_eq!(app.world().resource::<Tabletop>().inspect, None);
+    assert!(app.world().resource::<Context>().menu_open());
+    let generation = app.world().resource::<Context>().generation();
+    act(
+        &mut app,
+        Action::ContextChoose(generation, before.revision, "commit-promise".into()),
+    );
+    let committed = app.world().resource::<Tabletop>().view();
+    assert!(committed.promise_committed);
+    act(&mut app, Action::Select(Source::Card(1), Vec2::ZERO));
+    assert_eq!(app.world().resource::<Tabletop>().inspect, Some(1));
+    assert!(!app.world().resource::<Context>().menu_open());
+    act(&mut app, Action::CloseInspect);
+    assert_eq!(app.world().resource::<Tabletop>().view(), committed);
+
+    act(&mut app, Action::Save);
+    act(&mut app, Action::Replay);
+    act(&mut app, Action::Select(Source::Card(1), Vec2::ZERO));
+    assert_eq!(app.world().resource::<Tabletop>().inspect, Some(1));
+    assert!(!app.world().resource::<Context>().menu_open());
+    assert_eq!(
+        app.world().resource::<Tabletop>().session.observe(),
+        committed
+    );
+}
+
+#[test]
+fn feedback_separates_menu_source_from_pending_cancellation_and_keeps_scene_entities() {
+    use crate::tabletop_feedback::{CardFeedback, FeedbackSettings};
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = pending_app(dir.path().join("feedback.json"));
+    app.update();
+    let marks = |app: &mut App| {
+        app.world_mut()
+            .query::<(Entity, &context::Selectable, &CardFeedback)>()
+            .iter(app.world())
+            .map(|(entity, source, mark)| (entity, source.0, mark.menu_source, mark.pending_choice))
+            .collect::<Vec<_>>()
+    };
+    let before = marks(&mut app);
+    assert!(
+        before
+            .iter()
+            .all(|(_, _, source, pending)| !source && !pending)
+    );
+    act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
+    let generation = app.world().resource::<Context>().generation();
+    act(
+        &mut app,
+        Action::PrepareCancellation(generation, "cancel-1-2".into()),
+    );
+    let selected = marks(&mut app);
+    for (_, source, menu_source, pending) in &selected {
+        assert_eq!(*menu_source, *source == Source::Token(0));
+        assert_eq!(*pending, matches!(source, Source::Token(1 | 2)));
+    }
+    act(&mut app, Action::DismissContext);
+    let dismissed = marks(&mut app);
+    assert!(dismissed.iter().all(|(_, _, source, _)| !source));
+    assert_eq!(
+        before
+            .iter()
+            .map(|(entity, _, _, _)| entity)
+            .collect::<Vec<_>>(),
+        dismissed
+            .iter()
+            .map(|(entity, _, _, _)| entity)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        dismissed
+            .iter()
+            .filter(|(_, _, _, pending)| *pending)
+            .count(),
+        2
+    );
+    act(&mut app, Action::Select(Source::Card(0), Vec2::ZERO));
+    assert!(app.world().resource::<FeedbackSettings>().blocked);
+    assert_eq!(
+        app.world().resource::<Context>().pending_cancellation(),
+        Some("cancel-1-2")
+    );
+    act(&mut app, Action::CloseInspect);
+    assert!(!app.world().resource::<FeedbackSettings>().blocked);
+    act(&mut app, Action::Motion);
+    assert!(app.world().resource::<FeedbackSettings>().reduced_motion);
+    act(&mut app, Action::Save);
+    act(&mut app, Action::Replay);
+    assert!(
+        marks(&mut app)
+            .iter()
+            .all(|(_, _, source, pending)| !source && !pending)
+    );
+}
+
+#[test]
 fn contextual_selection_inspection_and_cancellation_preserve_decision_until_confirmation() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = pending_app(dir.path().join("context.json"));
@@ -610,6 +721,7 @@ fn app_for_session_in(mut app: App, session: Session, path: PathBuf) -> App {
         inspect: None,
         history: false,
         result_open: false,
+        reduced_motion: false,
         dirty: true,
     })
     .insert_resource(Orbit::new(CameraMode::Jacqueline))
@@ -1184,7 +1296,12 @@ fn three_displayed_tokens_continue_to_four_with_only_the_new_token_revealing() {
             (
                 *transform,
                 material.0.clone(),
-                children.map_or(0, Children::len),
+                children.map_or(0, |children| {
+                    children
+                        .iter()
+                        .filter(|child| world.get::<Mesh3d>(*child).is_some())
+                        .count()
+                }),
             )
         })
         .collect();
@@ -1571,7 +1688,7 @@ fn orbit_mouse_app() -> (App, Entity) {
 fn contextual_input_app(session: Session, path: PathBuf) -> (App, Entity, Entity) {
     use bevy::{
         camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
-        input_focus::{InputDispatchPlugin, InputFocusPlugin, tab_navigation::TabNavigationPlugin},
+        input_focus::{InputDispatchPlugin, InputFocusPlugin},
         picking::pointer::{Location, PointerId, PointerLocation},
         window::{PrimaryWindow, WindowRef},
     };
@@ -1589,7 +1706,6 @@ fn contextual_input_app(session: Session, path: PathBuf) -> (App, Entity, Entity
         bevy::input::InputPlugin,
         InputFocusPlugin,
         InputDispatchPlugin,
-        TabNavigationPlugin,
         bevy::picking::PickingPlugin,
         bevy::picking::InteractionPlugin,
         bevy::ui::UiPlugin,
@@ -1602,7 +1718,10 @@ fn contextual_input_app(session: Session, path: PathBuf) -> (App, Entity, Entity
     let mut app = app_for_session_in(app, session, path);
     app.add_systems(
         Update,
-        camera_controls.after(handle_actions).before(rebuild_panel),
+        (
+            context::keyboard.before(handle_actions),
+            camera_controls.after(handle_actions).before(rebuild_panel),
+        ),
     );
     let window = app
         .world_mut()
@@ -1703,6 +1822,10 @@ fn contextual_menu_backdrop_allows_orbit_and_still_dismisses_on_left_click() {
 }
 
 fn contextual_key(app: &mut App, window: Entity, key_code: KeyCode) {
+    contextual_key_chord(app, window, key_code, false);
+}
+
+fn contextual_key_chord(app: &mut App, window: Entity, key_code: KeyCode, shift: bool) {
     use bevy::input::{
         ButtonState,
         keyboard::{Key, KeyboardInput},
@@ -1710,13 +1833,26 @@ fn contextual_key(app: &mut App, window: Entity, key_code: KeyCode) {
     let logical_key = match key_code {
         KeyCode::Tab => Key::Tab,
         KeyCode::Enter => Key::Enter,
+        KeyCode::Space => Key::Space,
+        KeyCode::Escape => Key::Escape,
         KeyCode::KeyW => Key::Character("w".into()),
         _ => unreachable!(),
     };
-    for state in [ButtonState::Pressed, ButtonState::Released] {
+    let mut events = Vec::new();
+    if shift {
+        events.push((KeyCode::ShiftRight, Key::Shift, ButtonState::Pressed));
+    }
+    events.extend([
+        (key_code, logical_key.clone(), ButtonState::Pressed),
+        (key_code, logical_key, ButtonState::Released),
+    ]);
+    if shift {
+        events.push((KeyCode::ShiftRight, Key::Shift, ButtonState::Released));
+    }
+    for (key_code, logical_key, state) in events {
         app.world_mut().write_message(KeyboardInput {
             key_code,
-            logical_key: logical_key.clone(),
+            logical_key,
             state,
             text: None,
             repeat: false,
@@ -1741,7 +1877,25 @@ fn contextual_menu_tab_navigation_inspects_then_commits_without_moving_camera() 
     app.world_mut()
         .resource_mut::<Time>()
         .advance_by(Duration::from_millis(100));
+    let initial_focus = app
+        .world()
+        .resource::<bevy::input_focus::InputFocus>()
+        .get();
     contextual_key(&mut app, window, KeyCode::Tab); // Inspect.
+    assert_ne!(
+        app.world()
+            .resource::<bevy::input_focus::InputFocus>()
+            .get(),
+        initial_focus
+    );
+    contextual_key_chord(&mut app, window, KeyCode::Tab, true);
+    assert_eq!(
+        app.world()
+            .resource::<bevy::input_focus::InputFocus>()
+            .get(),
+        initial_focus
+    );
+    contextual_key(&mut app, window, KeyCode::Tab); // Inspect again.
     contextual_key(&mut app, window, KeyCode::KeyW);
     assert_eq!(app.world().resource::<Orbit>().pose().target, target);
     assert_eq!(app.world().resource::<Orbit>().pose().yaw, yaw);
@@ -1753,14 +1907,15 @@ fn contextual_menu_tab_navigation_inspects_then_commits_without_moving_camera() 
         Some(Source::Card(1))
     );
 
-    act(&mut app, Action::CloseInspect);
+    contextual_key(&mut app, window, KeyCode::Escape);
+    assert!(app.world().resource::<Tabletop>().inspect.is_none());
     assert_eq!(app.world().resource::<Tabletop>().view(), before);
     act(
         &mut app,
         Action::Select(Source::Card(1), Vec2::new(200.0, 200.0)),
     );
     // The first action acquires focus when its contextual menu opens.
-    contextual_key(&mut app, window, KeyCode::Enter);
+    contextual_key(&mut app, window, KeyCode::Space);
     let after = app.world().resource::<Tabletop>().view();
     assert_eq!(after.stage, Stage::BeforeReveal);
     assert_eq!(after.revision, before.revision + 1);
