@@ -91,6 +91,21 @@ Passing automated checks establishes the exercised decisions and continuity boun
 
 ## Developer native verification
 
+### Build an instrumented source copy
+
+Before compiling a temporary instrumented source copy, use the isolated build helper. From the normal repository root, build the normal executable if it is absent, then choose a new output directory outside both checkouts:
+
+```sh
+scripts/tools native build \
+  --source /absolute/path/to/diagnostic-source \
+  --output-dir /absolute/path/to/fresh-diagnostic-build \
+  --reference "$PWD/target/debug/arkham-tabletop"
+```
+
+This runs offline, locked Cargo with a separate target and intermediate build directory, records the build log and hashes the normal executable before and after, including on build failure. Run only the returned diagnostic binary for that experiment. Sharing target output can replace the normal executable, and a subsequent Cargo build can report it fresh without restoring it. A different executable name is insufficient: an instrumented copy can still share the package's library artifacts and contaminate a later normal build. The helper preserves output for inspection rather than cleaning either checkout.
+
+### Launch, capture and interact
+
 For a reported physical-input failure, establish the failing boundary before repeating gestures or changing camera code:
 
 1. Check whether the **same physical button or key** works in another application. Reuse an observation already supplied by the owner; otherwise ask for one brief comparison. A working left button does not establish that right-button presses reach Arkham. A failure elsewhere identifies a wider input problem, without deciding whether its cause is hardware or desktop software.
@@ -176,17 +191,6 @@ The cleanup reserve reduces normal overruns but cannot guarantee interruption of
 For folder persistence, exercise **Choose asset folder → check → Save folder → close**. After the supervisor exits, relaunch the staged executable using the same working directory, XDG directories and save recorded in `run.json`, omitting both `--art-root` and `--no-art`. Verify that the saved path and asset status are restored; do not create a fresh isolated run for this restart check. Capture helpers must use the new PID. A screenshot establishes the inspected rendering; the actual interaction and restart establish their separate behavior. Any review of the owner's real preference uses its explicitly agreed scope instead of these diagnostic settings.
 
 Close the verification window normally and let the launch supervisor report its exit. If cleanup is needed, interrupt that supervisor; for a manually restarted app, confirm its recorded identity before terminating it. Stop only the identified launch and helpers. Keep logs/captures local; record the revision, command, outcome and evidence location in the active issue. Remove temporary files only after the needed evidence has been retained.
-
-For a temporary instrumented source copy, use a fresh build directory outside both checkouts:
-
-```sh
-scripts/tools native build \
-  --source /absolute/path/to/diagnostic-source \
-  --output-dir "$review_dir/diagnostic-build" \
-  --reference "$PWD/target/debug/arkham-tabletop"
-```
-
-This runs offline, locked Cargo with an explicit separate `--target-dir`, records the build log and hashes the normal executable before and after, including on build failure. Build the normal executable first if it is absent. Run only the returned diagnostic binary for that experiment. Sharing target output can replace the normal executable, and a subsequent Cargo build can report it fresh without restoring it. A different executable name is insufficient: an instrumented copy can still share the package's library artifacts and contaminate a later normal build. Use the isolated build helper for every instrumented source copy. The helper preserves output for inspection rather than cleaning either checkout.
 
 Protocol references: [RemoteDesktop](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html) and [ScreenCast](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html). Support and evidence remain limited to the desktop and journey actually exercised.
 
