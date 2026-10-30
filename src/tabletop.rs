@@ -507,71 +507,60 @@ fn handle_actions(
             context.invalidate();
         }
         if let Action::SourceLess(generation, revision, ref id) = action {
-            if table.replay.is_some()
-                || !context::source_less(id)
-                || !context
-                    .as_ref()
-                    .is_some_and(|context| context.generation == generation)
-                || !table.view().choices.iter().any(|choice| choice.id == *id)
-            {
+            let view = table.view();
+            let Some(choice) = context.as_ref().and_then(|context| {
+                context.offered_source_less(
+                    &view,
+                    table.replay.as_ref().map(Replay::index),
+                    generation,
+                    id,
+                )
+            }) else {
                 continue;
-            }
-            action = Action::Choose(revision, id.clone());
+            };
+            action = Action::Choose(revision, choice.id.clone());
         }
         if let Action::ContextChoose(generation, revision, ref id) = action {
-            let valid = context.as_ref().is_some_and(|context| {
-                context.open
-                    && context.generation == generation
-                    && context.current(&table)
-                    && (!id.starts_with("cancel-") || context.pending.as_ref() == Some(id))
-                    && context.selected.is_some_and(|source| {
-                        context::choices(&table.view(), source)
-                            .iter()
-                            .any(|choice| choice.id == *id)
-                    })
-            });
-            if !valid || table.replay.is_some() {
+            let view = table.view();
+            let Some(choice) = context.as_ref().and_then(|context| {
+                context.offered_choice(
+                    &view,
+                    table.replay.as_ref().map(Replay::index),
+                    generation,
+                    id,
+                )
+            }) else {
                 continue;
-            }
-            action = Action::Choose(revision, id.clone());
+            };
+            action = Action::Choose(revision, choice.id.clone());
         }
         match action {
             Action::Select(source, anchor) => {
                 if let Some(context) = context.as_mut() {
-                    if !context.current(&table) {
-                        context.pending = None;
-                    }
-                    context.generation += 1;
-                    context.selected = Some(source);
-                    context.anchor = anchor;
-                    context.open = true;
-                    context.snapshot =
-                        Some((table.view(), table.replay.as_ref().map(Replay::index)));
+                    context.select(
+                        &table.view(),
+                        table.replay.as_ref().map(Replay::index),
+                        source,
+                        anchor,
+                    );
                 }
                 if let Some(focus) = input_focus.as_mut() {
                     focus.clear();
                 }
             }
             Action::PrepareCancellation(generation, id) => {
-                if let Some(context) = context.as_mut()
-                    && context.generation == generation
-                    && context.current(&table)
-                    && table.replay.is_none()
-                    && context.selected.is_some_and(|source| {
-                        matches!(source, Source::Token(_))
-                            && context::choices(&table.view(), source)
-                                .iter()
-                                .any(|choice| choice.id == id)
-                    })
-                {
-                    context.pending = Some(id);
+                if let Some(context) = context.as_mut() {
+                    context.prepare_cancellation(
+                        &table.view(),
+                        table.replay.as_ref().map(Replay::index),
+                        generation,
+                        &id,
+                    );
                 }
             }
             Action::Utilities => {
                 if let Some(context) = context.as_mut() {
-                    context.utilities = !context.utilities;
-                    context.open = false;
-                    context.generation += 1;
+                    context.toggle_utilities();
                 }
                 if let Some(focus) = input_focus.as_mut() {
                     focus.clear();
@@ -579,9 +568,7 @@ fn handle_actions(
             }
             Action::DismissContext => {
                 if let Some(context) = context.as_mut() {
-                    context.open = false;
-                    context.utilities = false;
-                    context.generation += 1;
+                    context.dismiss();
                 }
                 if let Some(focus) = input_focus.as_mut() {
                     focus.clear();
@@ -590,8 +577,7 @@ fn handle_actions(
             Action::Focus(area) => {
                 orbit.focus(tabletop_layout::focus(area));
                 if let Some(context) = context.as_mut() {
-                    context.open = false;
-                    context.generation += 1;
+                    context.close_menu();
                 }
                 if let Some(focus) = input_focus.as_mut() {
                     focus.clear();
@@ -698,8 +684,7 @@ fn handle_actions(
             }
             Action::Inspect(i) => {
                 if let Some(context) = context.as_mut() {
-                    context.open = false;
-                    context.generation += 1;
+                    context.close_menu();
                 }
                 table.inspect = Some(i);
                 table.history = false;
@@ -731,11 +716,8 @@ fn handle_actions(
             Action::Choose(_, _) | Action::ContextChoose(_, _, _) | Action::SourceLess(_, _, _) => {
             }
         }
-        if let Some(context) = context.as_mut()
-            && context.snapshot.is_some()
-            && !context.current(&table)
-        {
-            context.invalidate();
+        if let Some(context) = context.as_mut() {
+            context.synchronize(&table.view(), table.replay.as_ref().map(Replay::index));
         }
         let framing = (orbit.is_following() && table.replay.is_some())
             .then(|| tabletop_layout::focus(Area::Test));
@@ -787,7 +769,7 @@ fn camera_controls(
         || table.history
         || context
             .as_ref()
-            .is_some_and(|context| context.open || context.utilities)
+            .is_some_and(|context| context.menu_open() || context.utilities_open())
         || input_focus
             .as_ref()
             .and_then(|focus| focus.get())
@@ -805,16 +787,14 @@ fn camera_controls(
             keyboard: keyboard_captured,
             wheel: context
                 .as_ref()
-                .is_some_and(|context| context.open || context.utilities),
+                .is_some_and(|context| context.menu_open() || context.utilities_open()),
         },
         reduced_motion: false,
     });
     if step.manual_navigation {
         if let Some(context) = context.as_mut()
-            && context.open
+            && context.camera_moved()
         {
-            context.open = false;
-            context.generation += 1;
             table.dirty = true;
         }
         if step.stopped_following {
@@ -994,7 +974,7 @@ fn rebuild_panel(
         .map_or(Vec2::new(1600.0, 1000.0), |window| {
             Vec2::new(window.width(), window.height())
         });
-    let generation = context.as_ref().map_or(0, |context| context.generation);
+    let generation = context.as_ref().map_or(0, |context| context.generation());
     commands.spawn((Node { position_type: PositionType::Absolute, left: px(16), top: px(12),
         max_width: px((viewport.x - PANEL - 48.0).max(180.0)), padding: UiRect::all(px(10)),
         flex_direction: FlexDirection::Column, row_gap: px(5), ..default()
@@ -1073,7 +1053,10 @@ fn rebuild_panel(
             12.0,
             MUTED,
         ));
-    if context.as_ref().is_some_and(|context| context.utilities) {
+    if context
+        .as_ref()
+        .is_some_and(|context| context.utilities_open())
+    {
         commands
             .spawn((
                 Node {
