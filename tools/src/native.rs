@@ -30,7 +30,11 @@ use std::{
 pub enum Command {
     /// Stage an immutable executable and supervise an isolated run.
     Launch(Launch),
-    /// Build offline in a fresh external target, preserving the normal executable.
+    /// Build an instrumented source copy with isolated Cargo package artifacts.
+    ///
+    /// Uses offline, locked Cargo with fresh external target and intermediate
+    /// build directories so diagnostic libraries cannot enter later normal builds.
+    /// Preserves the normal executable.
     Build(Build),
     /// Capture the actual X11 client buffer independently of the app.
     Capture(Capture),
