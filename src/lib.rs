@@ -223,15 +223,36 @@ impl std::error::Error for RuleError {}
 impl Session {
     pub fn new(fixture: Fixture) -> Self {
         use TokenFace::*;
+        let commitment_context = if fixture.patrice_here {
+            "Only Patrice has a committable card: Promise of Power."
+        } else {
+            "Only Patrice holds Promise of Power; she can commit it only at Jacqueline's location."
+        };
         let mut session = Self {
-            revision: 0, stage: Stage::Commit, jacqueline_used: fixture.jacqueline_used,
-            fixture, bag: vec![PlusOne, Zero, Zero, MinusOne, MinusOne, MinusOne,
-                MinusTwo, MinusTwo, MinusThree, MinusFour, Skull, Skull, Cultist,
-                Tablet, AutoFail, ElderSign],
-            tokens: vec![], group: vec![], order_cursor: 0, promise_committed: false,
-            modifier: 0, auto_failed: false, extra_draws: 0, horror_dealt: 0,
+            revision: 0,
+            stage: if fixture.patrice_here {
+                Stage::Commit
+            } else {
+                Stage::BeforeReveal
+            },
+            jacqueline_used: fixture.jacqueline_used,
+            fixture,
+            bag: vec![
+                PlusOne, Zero, Zero, MinusOne, MinusOne, MinusOne, MinusTwo, MinusTwo, MinusThree,
+                MinusFour, Skull, Skull, Cultist, Tablet, AutoFail, ElderSign,
+            ],
+            tokens: vec![],
+            group: vec![],
+            order_cursor: 0,
+            promise_committed: false,
+            modifier: 0,
+            auto_failed: false,
+            extra_draws: 0,
+            horror_dealt: 0,
             curses_in_pool: 10,
-            history: vec!["Scripted experiment: Jacqueline faces Rotting Remains (willpower 3). Two Arcane Research copies account for her 2 starting horror. Only Patrice has a committable card: Promise of Power.".into()],
+            history: vec![format!(
+                "Scripted experiment: Jacqueline faces Rotting Remains (willpower 3). Two Arcane Research copies account for her 2 starting horror. {commitment_context}"
+            )],
             moments: vec![],
         };
         session.moments.push(session.observe());
@@ -239,7 +260,21 @@ impl Session {
     }
 
     pub fn observe(&self) -> Observation {
-        let prompt = match self.stage {
+        self.observe_at_stage(self.decision_stage())
+    }
+
+    // Older saves can still contain an empty commitment boundary. Its recorded
+    // observation remains historical; only the pending live decision advances.
+    fn decision_stage(&self) -> Stage {
+        if self.stage == Stage::Commit && !self.fixture.patrice_here {
+            Stage::BeforeReveal
+        } else {
+            self.stage
+        }
+    }
+
+    fn observe_at_stage(&self, stage: Stage) -> Observation {
+        let prompt = match stage {
             Stage::Commit => "Will Patrice commit Promise of Power?",
             Stage::BeforeReveal if self.jacqueline_used => {
                 "Reveal the next token. Jacqueline has used her ability this round."
@@ -254,9 +289,9 @@ impl Session {
         };
         Observation {
             revision: self.revision,
-            stage: self.stage,
+            stage,
             prompt: prompt.into(),
-            choices: self.choices(),
+            choices: self.choices_at_stage(stage),
             investigators: vec![
                 InvestigatorView {
                     name: "Tony Morgan".into(),
@@ -316,6 +351,7 @@ impl Session {
             .find(|c| c.id == id)
             .ok_or_else(|| RuleError("That choice is not legal at this decision.".into()))?;
         let mut candidate = self.clone();
+        candidate.stage = candidate.decision_stage();
         candidate.apply(&choice)?;
         candidate.revision += 1;
         candidate.moments.push(candidate.observe());
@@ -324,12 +360,16 @@ impl Session {
     }
 
     fn choices(&self) -> Vec<Choice> {
+        self.choices_at_stage(self.decision_stage())
+    }
+
+    fn choices_at_stage(&self, stage: Stage) -> Vec<Choice> {
         let simple = |id: &str, label: &str| Choice {
             id: id.into(),
             label: label.into(),
             cancel_faces: vec![],
         };
-        let mut choices = match self.stage {
+        let mut choices = match stage {
             Stage::Commit => {
                 let mut choices = vec![];
                 if self.fixture.patrice_here {
@@ -362,7 +402,7 @@ impl Session {
             Stage::Cancellation => self.cancellation_choices(),
             Stage::Finished | Stage::Ended => vec![],
         };
-        if !matches!(self.stage, Stage::Finished | Stage::Ended) {
+        if !matches!(stage, Stage::Finished | Stage::Ended) {
             choices.push(simple("end", "End this experiment"));
         }
         choices

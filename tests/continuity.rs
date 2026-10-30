@@ -12,6 +12,63 @@ fn awaiting_cancellation() -> Session {
 }
 
 #[test]
+fn legacy_empty_commitment_reopens_without_rewriting_history_or_skipping_the_reaction() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("legacy.json");
+    let original = include_bytes!("fixtures/commitment/jacqueline-empty-v1.session.json");
+    std::fs::write(&path, original).unwrap();
+    let mut game = load_session(&path).unwrap();
+    assert_eq!(game.observe().stage, Stage::BeforeReveal);
+    assert_eq!(game.observe().revision, 0);
+    assert_eq!(game.observe().bag_count, 16);
+    assert!(game.observe().tokens.is_empty());
+    assert!(
+        game.observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == "use-jacqueline")
+    );
+    assert!(
+        !game
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == "decline-promise")
+    );
+
+    let historical = game.recording().moments;
+    assert_eq!(historical.len(), 1);
+    assert_eq!(historical[0].stage, Stage::Commit);
+    assert_eq!(
+        Replay::new(game.recording()).unwrap().current(),
+        &historical[0]
+    );
+    save_session(&path, &game).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+
+    let before = game.clone();
+    let blocked = directory.path().join("blocked");
+    std::fs::create_dir(&blocked).unwrap();
+    assert!(commit_choice(&blocked, &mut game, 0, "use-jacqueline").is_err());
+    assert_eq!(game, before);
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    let mut uninterrupted = before;
+    uninterrupted.choose(0, "use-jacqueline").unwrap();
+
+    commit_choice(&path, &mut game, 0, "use-jacqueline").unwrap();
+    assert_eq!(game, uninterrupted);
+    assert_eq!(game.observe().revision, 1);
+    assert_eq!(game.observe().stage, Stage::Cancellation);
+    assert_eq!(game.observe().curses_in_bag, 0);
+    assert!(game.recording().moments.starts_with(&historical));
+    assert_eq!(
+        std::fs::read(arkham_unfolded_experiment::continuity::previous_path(&path)).unwrap(),
+        original
+    );
+    assert_eq!(load_session(&path).unwrap(), game);
+}
+
+#[test]
 fn committing_a_choice_installs_the_complete_saved_session() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("session.json");

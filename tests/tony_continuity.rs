@@ -4,6 +4,139 @@ use arkham_unfolded_experiment::tony::{
 };
 
 #[test]
+fn legacy_empty_commitment_resumes_at_reveal_without_rewriting_its_record() {
+    use arkham_unfolded_experiment::tony::{
+        Stage,
+        continuity::{load_recording, previous_path},
+    };
+    use sha2::{Digest, Sha256};
+    // Captured through the unmodified Tony driver at cfd57848aba9cd8a74f527b8cd15ab334cd26ac0.
+    let original = include_bytes!("fixtures/tony-empty-commit/pending.session.json");
+    let recorded = include_bytes!("fixtures/tony-empty-commit/pending.recording.json");
+    assert_eq!(
+        format!("{:x}", Sha256::digest(original)),
+        "e5b23ca1947bbece8c797e9269cb2d919d72da13a1a1d1d8f70149152e05ebf7"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(recorded)),
+        "e5bbb0594e7f84ce2a895f029b6131de8d5881c172a34e66181d5fb3bbbee480"
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("legacy.session.json");
+    let record_path = directory.path().join("legacy.recording.json");
+    std::fs::write(&path, original).unwrap();
+    std::fs::write(&record_path, recorded).unwrap();
+    let mut game = load_session(&path).unwrap();
+    let old_record = load_recording(&record_path).unwrap();
+    assert_eq!(old_record.moments.last().unwrap().stage, Stage::Commit);
+    assert_eq!(game.recording(), old_record);
+    assert_eq!(game.observe().stage, Stage::Reveal);
+    assert_eq!(
+        game.observe()
+            .choices
+            .iter()
+            .map(|choice| choice.id.as_str())
+            .collect::<Vec<_>>(),
+        ["reveal", "undo"]
+    );
+    save_session(&path, &game).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    let revision = game.observe().revision;
+    commit_choice(&path, &mut game, revision, "reveal").unwrap();
+    assert_eq!(game.observe().stage, Stage::Resolve);
+    assert!(!game.observe().can_undo);
+    assert!(game.recording().moments.starts_with(&old_record.moments));
+    assert_eq!(load_session(&path).unwrap(), game);
+    assert_eq!(std::fs::read(previous_path(&path)).unwrap(), original);
+    assert_eq!(std::fs::read(&record_path).unwrap(), recorded);
+}
+
+#[test]
+fn legacy_empty_commitment_undo_returns_to_the_action_before_and_after_declining() {
+    use arkham_unfolded_experiment::tony::Stage;
+    use sha2::{Digest, Sha256};
+    let pending = include_bytes!("fixtures/tony-empty-commit/pending.session.json");
+    let declined = include_bytes!("fixtures/tony-empty-commit/declined.session.json");
+    assert_eq!(
+        format!("{:x}", Sha256::digest(declined)),
+        "a971b268341ce060adb2f0f18fcaf35559a4699ce199b3f6750b3731ec9e7e89"
+    );
+    for original in [pending.as_slice(), declined.as_slice()] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy.session.json");
+        std::fs::write(&path, original).unwrap();
+        let mut game = load_session(&path).unwrap();
+        let history = game.recording().moments;
+        let revision = game.observe().revision;
+        commit_choice(&path, &mut game, revision, "undo").unwrap();
+        let restored = game.observe();
+        assert_eq!(restored.stage, Stage::Action);
+        assert_eq!(
+            (restored.ordinary_actions, restored.bonus_action),
+            (3, true)
+        );
+        assert_eq!((restored.damage, restored.horror), (0, 0));
+        assert_eq!(restored.test, None);
+        assert!(!restored.can_undo);
+        assert!(game.recording().moments.starts_with(&history));
+        assert_eq!(load_session(&path).unwrap(), game);
+    }
+}
+
+#[test]
+fn empty_commitment_save_failure_and_reopening_keep_the_same_action_and_randomness() {
+    use arkham_unfolded_experiment::tony::Stage;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("session.json");
+    let blocked = directory.path().join("blocked");
+    std::fs::write(&blocked, b"owner bytes").unwrap();
+    let mut game = Session::new().unwrap();
+    let before = game.clone();
+    assert!(commit_choice(blocked.join("session.json"), &mut game, 0, "evade").is_err());
+    assert_eq!(game, before);
+    commit_choice(&path, &mut game, 0, "evade").unwrap();
+    assert_eq!(game.observe().stage, Stage::Reveal);
+    let mut resumed = load_session(&path).unwrap();
+    assert_eq!(resumed, game);
+    let mut control = before;
+    control.choose(0, "evade").unwrap();
+    control.choose(1, "reveal").unwrap();
+    assert!(commit_choice(blocked.join("session.json"), &mut resumed, 1, "reveal").is_err());
+    assert_eq!(resumed, game);
+    commit_choice(&path, &mut resumed, 1, "reveal").unwrap();
+    assert_eq!(resumed, control);
+    assert_eq!(load_session(&path).unwrap(), resumed);
+    assert_eq!(std::fs::read(&blocked).unwrap(), b"owner bytes");
+}
+
+#[test]
+fn legacy_projection_cannot_replace_the_last_saved_observation() {
+    use sha2::{Digest, Sha256};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("session.json");
+    let original = include_bytes!("fixtures/tony-empty-commit/pending.session.json");
+    std::fs::write(&path, original).unwrap();
+    let game = load_session(&path).unwrap();
+    let mut invalid: serde_json::Value = serde_json::from_slice(original).unwrap();
+    invalid["payload"]["moments"][1] = serde_json::to_value(game.observe()).unwrap();
+    let checksum = Sha256::digest(
+        serde_json::to_vec(&(
+            &invalid["format_version"],
+            &invalid["kind"],
+            &invalid["source_revision"],
+            &invalid["app_version"],
+            &invalid["payload"],
+        ))
+        .unwrap(),
+    );
+    invalid["checksum"] = serde_json::json!(format!("{checksum:x}"));
+    let bytes = serde_json::to_vec(&invalid).unwrap();
+    std::fs::write(&path, &bytes).unwrap();
+    assert!(load_session(&path).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+}
+
+#[test]
 fn replay_shows_one_combined_attack_before_the_injury_action_finishes() {
     use arkham_unfolded_experiment::tony::continuity::Replay;
     let mut game = Session::new().unwrap();
@@ -248,7 +381,7 @@ fn cultist_horror_shows_the_failed_test_before_returning_its_token() {
         tony::{HarmSource, presentation::stages},
     };
     let mut game = Session::with_draws(vec![TokenFace::Cultist]);
-    for choice in ["evade", "commit:none", "reveal"] {
+    for choice in ["evade", "reveal"] {
         game.choose(game.observe().revision, choice).unwrap();
     }
     let before = game.observe();

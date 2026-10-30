@@ -30,7 +30,7 @@ mod inspection;
 use crate::tabletop_layout::{self, Area};
 use context::{Context, Source};
 mod scene;
-mod symbols;
+pub(crate) mod symbols;
 use asset_settings::AssetSettings;
 use symbols::Symbol;
 

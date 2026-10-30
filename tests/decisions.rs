@@ -164,6 +164,46 @@ fn declining_promise_does_not_create_or_draw_a_curse() {
 }
 
 #[test]
+fn no_eligible_contributor_skips_commitment_but_preserves_jacquelines_reaction() {
+    let mut game = Session::new(Fixture::curse().with_patrice_elsewhere());
+    let view = game.observe();
+    assert_eq!(view.stage, Stage::BeforeReveal);
+    assert_eq!(view.revision, 0);
+    assert_eq!(view.bag_count, 16);
+    assert!(view.tokens.is_empty());
+    assert!(!view.promise_committed);
+    assert_eq!(
+        view.choices
+            .iter()
+            .map(|choice| choice.id.as_str())
+            .collect::<Vec<_>>(),
+        ["use-jacqueline", "reveal", "end"]
+    );
+    let before = game.clone();
+    assert!(game.choose(0, "decline-promise").is_err());
+    assert_eq!(game, before);
+    choose(&mut game, "use-jacqueline");
+    assert_eq!(game.observe().stage, Stage::Cancellation);
+    assert_eq!(game.observe().tokens.len(), 3);
+    assert_eq!(game.observe().curses_in_bag, 0);
+    assert!(game.observe().jacqueline_used);
+
+    let used = Session::new(
+        Fixture::curse()
+            .with_patrice_elsewhere()
+            .with_jacqueline_used(),
+    );
+    assert_eq!(
+        used.observe()
+            .choices
+            .iter()
+            .map(|choice| choice.id.as_str())
+            .collect::<Vec<_>>(),
+        ["reveal", "end"]
+    );
+}
+
+#[test]
 fn remote_commits_stale_choices_excess_commits_and_reuse_are_refused_without_mutation() {
     let mut remote = Session::new(Fixture::curse().with_patrice_elsewhere());
     let before = remote.clone();

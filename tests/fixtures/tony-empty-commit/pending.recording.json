@@ -1,0 +1,195 @@
+{
+  "format_version": 2,
+  "kind": "tony-recording",
+  "source_revision": "fc37a4f:issue-22-tony-turn-v1",
+  "app_version": "0.1.0",
+  "payload": {
+    "app_version": "0.1.0",
+    "moments": [
+      {
+        "bag_count": 16,
+        "bonus_action": true,
+        "can_undo": false,
+        "choices": [
+          {
+            "cancel_faces": [],
+            "id": "fight",
+            "label": "Fight Ghoul Minion"
+          },
+          {
+            "cancel_faces": [],
+            "id": "evade",
+            "label": "Evade Ghoul Minion"
+          },
+          {
+            "cancel_faces": [],
+            "id": "injury",
+            "label": "Remove Internal Injury — two ordinary actions"
+          },
+          {
+            "cancel_faces": [],
+            "id": "resource",
+            "label": "Gain 1 resource"
+          },
+          {
+            "cancel_faces": [],
+            "id": "draw",
+            "label": "Draw 1 card"
+          },
+          {
+            "cancel_faces": [],
+            "id": "investigate",
+            "label": "Investigate the Study — shroud 2"
+          },
+          {
+            "cancel_faces": [],
+            "id": "end_turn",
+            "label": "End Tony's turn"
+          }
+        ],
+        "clues": 0,
+        "committed": [],
+        "contracts_bounties": 5,
+        "damage": 0,
+        "deck_count": 32,
+        "discard": [],
+        "ghoul": {
+          "alive": true,
+          "bounties": 1,
+          "damage": 0,
+          "engaged": true,
+          "ready": true
+        },
+        "hand": [
+          {
+            "code": "03263",
+            "id": 0,
+            "title": "On the Hunt"
+          }
+        ],
+        "harm": [],
+        "health": 9,
+        "held_token": null,
+        "history": [
+          "Prepared position: Tony's turn in the Study, The Gathering on Standard. Three ordinary actions and one additional Fight/Engage action against an enemy with a bounty. Stop after Tony's end-of-turn effects; companions do not take turns."
+        ],
+        "horror": 0,
+        "injury": true,
+        "investigators": [
+          {
+            "horror": 0,
+            "location": "Study",
+            "name": "Tony Morgan",
+            "sanity": 5
+          },
+          {
+            "horror": 0,
+            "location": "Study",
+            "name": "Patrice Hathaway",
+            "sanity": 7
+          },
+          {
+            "horror": 2,
+            "location": "Study",
+            "name": "Jacqueline Fine",
+            "sanity": 9
+          }
+        ],
+        "jacqueline_arcane_research": 2,
+        "jacqueline_used": true,
+        "ordinary_actions": 3,
+        "prompt": "Choose Tony's next action, or end his turn.",
+        "resources": 5,
+        "revision": 0,
+        "sanity": 5,
+        "stage": "action",
+        "study_clues": 6,
+        "test": null
+      },
+      {
+        "bag_count": 16,
+        "bonus_action": true,
+        "can_undo": true,
+        "choices": [
+          {
+            "cancel_faces": [],
+            "id": "commit:none",
+            "label": "Commit no cards"
+          },
+          {
+            "cancel_faces": [],
+            "id": "undo",
+            "label": "Undo last choice — no hidden information crossed"
+          }
+        ],
+        "clues": 0,
+        "committed": [],
+        "contracts_bounties": 5,
+        "damage": 0,
+        "deck_count": 32,
+        "discard": [],
+        "ghoul": {
+          "alive": true,
+          "bounties": 1,
+          "damage": 0,
+          "engaged": true,
+          "ready": true
+        },
+        "hand": [
+          {
+            "code": "03263",
+            "id": 0,
+            "title": "On the Hunt"
+          }
+        ],
+        "harm": [],
+        "health": 9,
+        "held_token": null,
+        "history": [
+          "Prepared position: Tony's turn in the Study, The Gathering on Standard. Three ordinary actions and one additional Fight/Engage action against an enemy with a bounty. Stop after Tony's end-of-turn effects; companions do not take turns.",
+          "Evade costs one ordinary action and does not provoke an opportunity attack."
+        ],
+        "horror": 0,
+        "injury": true,
+        "investigators": [
+          {
+            "horror": 0,
+            "location": "Study",
+            "name": "Tony Morgan",
+            "sanity": 5
+          },
+          {
+            "horror": 0,
+            "location": "Study",
+            "name": "Patrice Hathaway",
+            "sanity": 7
+          },
+          {
+            "horror": 2,
+            "location": "Study",
+            "name": "Jacqueline Fine",
+            "sanity": 9
+          }
+        ],
+        "jacqueline_arcane_research": 2,
+        "jacqueline_used": true,
+        "ordinary_actions": 2,
+        "prompt": "Choose cards to commit, or commit none.",
+        "resources": 5,
+        "revision": 1,
+        "sanity": 5,
+        "stage": "commit",
+        "study_clues": 6,
+        "test": {
+          "difficulty": 2,
+          "kind": "evade",
+          "modifier": null,
+          "skill_value": 2,
+          "success": null
+        }
+      }
+    ],
+    "source_revision": "fc37a4f:issue-22-tony-turn-v1"
+  },
+  "checksum": "b9622b1042c9a1abbbba165ab11b7490ffa89b8043f36564f9298ada94490d81"
+}

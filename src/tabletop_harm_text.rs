@@ -1,8 +1,9 @@
-//! Damage and horror have one visual spelling across the tabletop views.
+//! Damage, horror and explicit skill bonuses share a visual spelling across views.
 //!
-//! This is a display-only substitution of two English words. Rules, saved
+//! This is a display-only substitution of harm words and `+N skill` labels. Rules, saved
 //! history, accessible labels and the absent-font fallback keep their names.
 
+use crate::tabletop::symbols::Skill;
 use bevy::{ecs::spawn::SpawnIter, prelude::*};
 
 pub(crate) const DAMAGE_COLOR: Color = Color::srgb(1.0, 0.48, 0.38);
@@ -33,6 +34,7 @@ impl HarmIcon {
 enum Run {
     Words(String),
     Icon(HarmIcon),
+    Skill(Skill),
 }
 
 fn runs(value: &str) -> Vec<Run> {
@@ -45,15 +47,26 @@ fn runs(value: &str) -> Vec<Run> {
             .find(|(_, c)| !c.is_alphanumeric() && *c != '_')
             .map_or(word.len(), |(i, _)| i);
         let icon = match &word[..end] {
-            word if word.eq_ignore_ascii_case("damage") => Some(HarmIcon::Damage),
-            word if word.eq_ignore_ascii_case("horror") => Some(HarmIcon::Horror),
-            _ => None,
+            word if word.eq_ignore_ascii_case("damage") => Some(Run::Icon(HarmIcon::Damage)),
+            word if word.eq_ignore_ascii_case("horror") => Some(Run::Icon(HarmIcon::Horror)),
+            word => {
+                // Skill names become glyphs only in explicit numeric bonus labels.
+                // Ordinary rules prose and card descriptions retain their words.
+                let bonus = value[..cursor]
+                    .split_whitespace()
+                    .next_back()
+                    .and_then(|previous| previous.trim_start_matches('(').strip_prefix('+'))
+                    .is_some_and(|amount| {
+                        !amount.is_empty() && amount.bytes().all(|c| c.is_ascii_digit())
+                    });
+                bonus.then(|| Skill::named(word)).flatten().map(Run::Skill)
+            }
         };
         if let Some(icon) = icon {
             if words_start < cursor {
                 result.push(Run::Words(value[words_start..cursor].to_owned()));
             }
-            result.push(Run::Icon(icon));
+            result.push(icon);
             words_start = cursor + end;
         }
         cursor += word.len();
@@ -74,7 +87,7 @@ pub(crate) fn ui(
 ) -> impl Bundle {
     let label = value.into();
     let value = crate::tabletop::readable_text(label.clone());
-    let has_icon = runs(&value).iter().any(|run| matches!(run, Run::Icon(_)));
+    let has_icon = runs(&value).iter().any(|run| !matches!(run, Run::Words(_)));
     let (root, spans) = if let Some(font) = font.as_ref().filter(|_| has_icon) {
         (String::new(), spans(&value, size, color, font))
     } else {
@@ -121,6 +134,15 @@ pub(crate) fn spans(
                 },
                 TextColor(icon.color()),
             ),
+            Run::Skill(skill) => (
+                TextSpan::new(format!("\u{2060}{}\u{2060}", skill.glyph())),
+                TextFont {
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(size * 1.25),
+                    ..default()
+                },
+                TextColor(color),
+            ),
         })
         .collect()
 }
@@ -128,6 +150,28 @@ pub(crate) fn spans(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_bonuses_use_all_four_glyphs_without_rewriting_skill_prose_or_wild_icons() {
+        let mut world = World::new();
+        let label = "Commit +1 willpower / +2 intellect / +3 combat / +4 agility. Printed: 4 wild icons; combat 5.";
+        let entity = world
+            .spawn(ui(label, 16.0, Color::WHITE, &Some(Handle::default())))
+            .id();
+        let visible: String = world
+            .get::<Children>(entity)
+            .unwrap()
+            .iter()
+            .map(|child| world.get::<TextSpan>(child).unwrap().0.as_str())
+            .collect();
+        assert_eq!(
+            visible,
+            "Commit +1 \u{2060}f\u{2060} / +2 \u{2060}g\u{2060} / +3 \u{2060}h\u{2060} / +4 \u{2060}i\u{2060}. Printed: 4 wild icons; combat 5."
+        );
+        assert_eq!(world.get::<AccessibleLabel>(entity).unwrap().0, label);
+        let fallback = world.spawn(ui(label, 16.0, Color::WHITE, &None)).id();
+        assert_eq!(world.get::<Text>(fallback).unwrap().0, label);
+    }
 
     #[test]
     fn visible_prose_uses_both_colored_glyphs_without_changing_amounts() {

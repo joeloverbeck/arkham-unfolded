@@ -352,6 +352,15 @@ fn cancellation_label(choice: &crate::Choice) -> String {
     format!("{} ({ordinals})", choice.label)
 }
 
+fn choice_label(choice: &crate::Choice) -> &str {
+    if choice.id == "commit-promise" {
+        // The printed icons stay wild; the offered bonus applies to this willpower test.
+        "Commit Promise of Power (+4 willpower; add a curse)"
+    } else {
+        &choice.label
+    }
+}
+
 pub(super) fn show(
     commands: &mut Commands,
     context: &Context,
@@ -499,7 +508,7 @@ pub(super) fn show(
                         .with_children(|slot| {
                             if let Some(choice) = choices.first() {
                                 let label = match source {
-                                    Source::Card(1) => "Commit +4",
+                                    Source::Card(1) => "Commit +4 willpower",
                                     Source::Card(2) => "Use reaction",
                                     Source::Bag => "Reveal token",
                                     _ => "Choose",
@@ -543,7 +552,7 @@ pub(super) fn show(
                         });
                     });
                 for choice in &choices {
-                    parent.spawn(art.text(&choice.label, 14.0, PAPER));
+                    parent.spawn(art.text(choice_label(choice), 14.0, PAPER));
                 }
             } else {
                 if choices.is_empty() {
@@ -567,7 +576,7 @@ pub(super) fn show(
                         menu_button(
                             parent,
                             art,
-                            &choice.label,
+                            choice_label(choice),
                             Action::ContextChoose(generation, view.revision, choice.id.clone()),
                             true,
                         );

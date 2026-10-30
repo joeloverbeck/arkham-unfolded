@@ -34,6 +34,43 @@ fn run(directory: &Path, args: &[&str], input: &str) -> Vec<Value> {
 }
 
 #[test]
+fn empty_commitment_driver_resumes_new_and_legacy_saves_at_the_reveal_choice() {
+    for legacy in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("pending.json");
+        if legacy {
+            std::fs::write(
+                &path,
+                include_bytes!("fixtures/tony-empty-commit/pending.session.json"),
+            )
+            .unwrap();
+        } else {
+            let started = run(
+                directory.path(),
+                &["--save", "pending.json"],
+                "{\"op\":\"choose\",\"revision\":0,\"id\":\"evade\"}\n",
+            );
+            assert_eq!(started[1]["ok"], true);
+            assert_eq!(started[1]["observation"]["stage"], "reveal");
+        }
+        let loaded = run(
+            directory.path(),
+            &["--load", "pending.json"],
+            concat!(
+                "{\"op\":\"choose\",\"revision\":1,\"id\":\"commit:none\"}\n",
+                "{\"op\":\"choose\",\"revision\":1,\"id\":\"reveal\"}\n",
+            ),
+        );
+        assert_eq!(loaded[0]["observation"]["stage"], "reveal");
+        assert_eq!(loaded[1]["ok"], false);
+        assert_eq!(loaded[1]["observation"], loaded[0]["observation"]);
+        assert_eq!(loaded[2]["ok"], true);
+        assert_eq!(loaded[2]["observation"]["stage"], "resolve");
+        assert_eq!(loaded[2]["observation"]["can_undo"], false);
+    }
+}
+
+#[test]
 fn fresh_process_reopens_a_pending_test_and_uses_the_saved_random_sequence() {
     use std::io::{BufRead, BufReader};
     let directory = tempfile::tempdir().unwrap();

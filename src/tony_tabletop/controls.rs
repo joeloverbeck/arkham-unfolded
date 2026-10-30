@@ -119,6 +119,17 @@ pub(super) fn commitment_choice(view: &Observation, selected: &BTreeSet<u8>) -> 
         (ids == *selected).then(|| choice.id.clone())
     })
 }
+
+pub(super) fn commitment_bonus(view: &Observation, count: usize) -> Option<String> {
+    use crate::{tabletop::symbols::Skill, tony::TestKind};
+    let skill = match view.test.as_ref()?.kind {
+        TestKind::Fight => Skill::Combat,
+        TestKind::Evade => Skill::Agility,
+        TestKind::Investigate => Skill::Intellect,
+    };
+    // This bounded turn's only committable cards are On the Hunt: one icon each.
+    Some(format!("+{count} {}", skill.name()))
+}
 fn inspect_index(view: &Observation, source: Source) -> Option<usize> {
     match source {
         Source::Card(index) => Some(index),
@@ -210,14 +221,14 @@ fn entries(table: &Table, view: &Observation, source: Source) -> Vec<Entry> {
         }
         if let Source::Hand(id) = source
             && committable(view, id)
+            && let Some(bonus) = commitment_bonus(view, 1)
         {
             entries.push(Entry {
                 label: if table.context.commitments.contains(&id) {
-                    "Unselect commitment"
+                    "Unselect commitment".into()
                 } else {
-                    "Select to commit +1"
-                }
-                .into(),
+                    format!("Select to commit {bonus}")
+                },
                 action: Action::ToggleCommit(table.context.epoch, view.revision, id),
                 slot: 0,
                 warning: None,

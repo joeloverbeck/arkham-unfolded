@@ -122,7 +122,9 @@ fn validate_session(session: &Session) -> Result<(), ContinuityError> {
         ));
     }
     validate_recording(&session.recording())?;
-    if session.moments.last() != Some(&session.observe()) {
+    // Validate the exact stored continuation, including a legacy empty Commit
+    // moment. Its live projection may omit that prompt, but never rewrites it.
+    if session.moments.last() != Some(&session.observe_at_stage(session.stage)) {
         return Err(ContinuityError(
             "The saved session does not match its last recorded decision.".into(),
         ));
