@@ -1,6 +1,7 @@
 //! Lifetime and motion of the displayed observation, independent of panel refreshes.
 
 use super::{Art, CARDS, GOLD, MUTED, MainCamera, PAPER, Tabletop};
+use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw};
 use crate::{Observation, TokenStatus, tabletop_harm_text, tabletop_tokens};
 use crate::{tabletop_layout, tabletop_standees as standees};
 use bevy::prelude::*;
@@ -9,6 +10,8 @@ use bevy::prelude::*;
 /// The host supplies Tabletop, Art, meshes/materials, time and the main camera.
 pub(super) fn install(app: &mut App) {
     app.init_resource::<super::Context>()
+        .init_resource::<Redraw>()
+        .add_systems(Last, request_redraw.in_set(RequestRedraw))
         .add_systems(Startup, setup_reminder)
         .add_systems(
             Update,
@@ -489,7 +492,7 @@ fn token_label_visibility(
 
 fn animate_tokens(
     mut commands: Commands,
-    time: Res<Time>,
+    time: Res<PresentationTime>,
     mut tokens: Query<(Entity, &mut Transform), With<Appearing>>,
 ) {
     for (entity, mut transform) in &mut tokens {
@@ -503,10 +506,26 @@ fn animate_tokens(
     }
 }
 
-fn animate_reminder(time: Res<Time>, mut reminder: Single<(&mut Transform, &mut ReminderPose)>) {
+fn animate_reminder(
+    time: Res<PresentationTime>,
+    mut reminder: Single<(&mut Transform, &mut ReminderPose)>,
+) {
     let (transform, pose) = &mut *reminder;
     pose.angle += (pose.target - pose.angle) * (time.delta_secs() * 8.0).min(1.0);
+    if (pose.target - pose.angle).abs() < 0.001 {
+        pose.angle = pose.target;
+    }
     transform.rotation = Quat::from_rotation_z(pose.angle);
+}
+
+fn request_redraw(
+    mut redraw: ResMut<Redraw>,
+    appearing: Query<(), With<Appearing>>,
+    reminders: Query<&ReminderPose>,
+) {
+    if !appearing.is_empty() || reminders.iter().any(|pose| pose.angle != pose.target) {
+        redraw.request();
+    }
 }
 
 #[cfg(test)]

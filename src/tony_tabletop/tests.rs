@@ -1,4 +1,6 @@
 use super::*;
+// Drive the same presentation clock as the native adapter, independently of rendering.
+use crate::tabletop_pacing::PresentationTime as Time;
 use bevy::camera::primitives::MeshAabb;
 use std::time::Duration;
 
@@ -735,7 +737,7 @@ fn keyboard_menu_app(path: PathBuf) -> (App, Entity) {
     ))
     .init_resource::<Assets<TextureAtlasLayout>>()
     .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
-    .init_resource::<Time<Real>>();
+    .init_resource::<bevy::prelude::Time<Real>>();
     let mut app = presentation_app_in(app, path);
     app.add_message::<bevy::window::CursorMoved>().add_systems(
         Update,
@@ -1179,7 +1181,7 @@ fn right_drag_through_real_navigation_layout_ignores_empty_space_but_not_buttons
     ))
     .init_resource::<Assets<TextureAtlasLayout>>()
     .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
-    .init_resource::<Time<Real>>();
+    .init_resource::<bevy::prelude::Time<Real>>();
     let (mut app, window) = orbit_mouse_app_in(app);
     app.world_mut().entity_mut(window).insert(PrimaryWindow);
     let camera = app

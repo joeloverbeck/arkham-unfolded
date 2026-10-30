@@ -10,6 +10,8 @@ mod tabletop_camera;
 mod tabletop_harm_text;
 #[cfg(feature = "tabletop")]
 mod tabletop_layout;
+#[cfg(feature = "tabletop")]
+mod tabletop_pacing;
 #[cfg(all(test, feature = "tabletop"))]
 mod tabletop_standee_checks;
 #[cfg(feature = "tabletop")]
