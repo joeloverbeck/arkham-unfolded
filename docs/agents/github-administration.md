@@ -21,6 +21,10 @@ gh api repos/joeloverbeck/arkham-unfolded/actions/jobs/<job-id> \
 
 Use the phase and elapsed wait in progress updates. Fetch detailed logs when a job completes or fails; the CLI may refuse logs while it is running. Before merging, recheck the PR head and base and the required check's provider and conclusion. A monitoring result does not authorize a different commit or bypass protection.
 
+If several polls show no progress, and before reporting publication blocked, reconcile fresh observations of the PR head's check runs with the latest workflow run and attempt. A retry can replace the job being monitored. Read the selected run's `head_sha` and `run_attempt`, then obtain its current jobs; confirm that the required check belongs to that same head and expected provider. The relevant endpoints are `commits/<head-sha>/check-runs`, `actions/runs/<run-id>` and `actions/runs/<run-id>/attempts/<attempt>/jobs` in this repository.
+
+Retain the local UTC observation time and the returned status timestamps. For a stalled or contradictory response, `gh api --include` also exposes the HTTP `Date` and request ID; save that diagnostic output locally and keep routine polling compact. If the observations disagree, report the disagreement and refresh the affected records before deciding whether the PR can merge. A service incident is supporting context, not evidence that this particular PR is blocked. Preserve protection and the exact-head check when the uncertainty cannot be resolved.
+
 ## Inspect before changing settings
 
 Follow the target verification and write/readback conventions in [issue-tracker.md](issue-tracker.md). These commands read state:

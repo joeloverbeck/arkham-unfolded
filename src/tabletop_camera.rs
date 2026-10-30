@@ -4,6 +4,15 @@ use bevy::prelude::*;
 
 use crate::tabletop_layout::{self as layout, Area};
 
+pub(crate) fn parse_initial_view(value: &str) -> Result<Area, String> {
+    match value {
+        "overview" => Ok(Area::Overview),
+        "scenario" => Ok(Area::Scenario),
+        "test" => Ok(Area::Test),
+        _ => Err("--initial-view must be overview, scenario or test".into()),
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum CameraMode {
     Jacqueline,
@@ -95,6 +104,14 @@ impl Orbit {
             following: false,
             drag: None,
         }
+    }
+
+    /// A diagnostic launch changes the starting pose, never the mode's Home pose.
+    pub(crate) fn with_initial_view(mut self, view: Option<Area>) -> Self {
+        if let Some(view) = view {
+            self.focus(layout::focus(view));
+        }
+        self
     }
 
     pub(crate) fn pose(&self) -> Pose {

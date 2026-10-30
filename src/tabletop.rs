@@ -1,7 +1,9 @@
 //! The replaceable tabletop for the single, explicitly scripted rules experiment.
 //! Every displayed decision and replay moment comes from the shared rules interface.
 
-use crate::tabletop_camera::{CameraMode, Capture as CameraCapture, FrameInput, Orbit};
+use crate::tabletop_camera::{
+    CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
+};
 use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin};
 use crate::{
     Fixture, Observation, Session, Stage, TokenFace, TokenStatus,
@@ -177,11 +179,18 @@ struct Options {
     config: AssetConfig,
     screenshot: Option<PathBuf>,
     quit_after_screenshot: bool,
+    initial_view: Option<Area>,
 }
 
 impl Options {
     fn parse() -> Result<Option<Self>, String> {
-        let config = AssetConfig::load()?;
+        Self::parse_from(std::env::args().skip(1), AssetConfig::load()?)
+    }
+
+    fn parse_from(
+        args: impl IntoIterator<Item = String>,
+        config: AssetConfig,
+    ) -> Result<Option<Self>, String> {
         let mut options = Self {
             fixture: Fixture::curse(),
             save: "local/experiment/curse.session.json".into(),
@@ -190,10 +199,11 @@ impl Options {
             config,
             screenshot: None,
             quit_after_screenshot: false,
+            initial_view: None,
         };
         let mut explicit_save = false;
         let mut selected_case = "curse";
-        let mut args = std::env::args().skip(1);
+        let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{arg} needs a value"));
             match arg.as_str() {
@@ -219,9 +229,10 @@ impl Options {
                 "--no-art" => options.art_root = None,
                 "--screenshot" => options.screenshot = Some(value()?.into()),
                 "--quit-after-screenshot" => options.quit_after_screenshot = true,
+                "--initial-view" => options.initial_view = Some(parse_initial_view(&value()?)?),
                 "--help" | "-h" => {
                     println!(
-                        "Arkham Unfolded — scripted rules experiment\n\n--case curse|autofail  Choose the privileged starting fixture\n--save PATH            Session save and autosave path\n--load PATH            Reopen a saved pending decision\n--art-root PATH        Use a prepared asset collection for this launch\n--no-art               Use readable substitutes\n--screenshot PATH      Capture the actual window once ready\n--quit-after-screenshot\n\nCamera: WASD to pan; right drag or arrow keys to orbit; wheel or +/- to zoom; Home to reset. F12 saves a screenshot."
+                        "Arkham Unfolded — scripted rules experiment\n\n--case curse|autofail  Choose the privileged starting fixture\n--save PATH            Session save and autosave path\n--load PATH            Reopen a saved pending decision\n--art-root PATH        Use a prepared asset collection for this launch\n--no-art               Use readable substitutes\n--screenshot PATH      Capture the actual window once ready\n--quit-after-screenshot\n--initial-view overview|scenario|test  Diagnostic startup framing; Home is unchanged\n\nCamera: WASD to pan; right drag or arrow keys to orbit; wheel or +/- to zoom; Home to reset. F12 saves a screenshot."
                     );
                     return Ok(None);
                 }
@@ -302,7 +313,7 @@ pub fn run() -> Result<(), String> {
             history: false,
             dirty: true,
         })
-        .insert_resource(Orbit::new(CameraMode::Jacqueline))
+        .insert_resource(Orbit::new(CameraMode::Jacqueline).with_initial_view(options.initial_view))
         .insert_resource(Actions::default())
         .insert_resource(AssetSettings::new(options.config))
         .insert_resource(Capture {
@@ -1444,6 +1455,42 @@ fn capture_window(
         && capture.path.as_ref().is_some_and(|path| path.is_file())
     {
         exit.write(AppExit::Success);
+    }
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use super::*;
+
+    #[test]
+    fn diagnostic_initial_view_parses_without_changing_default_framing_or_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let parse = |args: &[&str]| {
+            Options::parse_from(
+                args.iter().map(|arg| (*arg).to_owned()),
+                AssetConfig::load_at(
+                    directory.path().join("settings.toml"),
+                    directory.path().join("assets"),
+                ),
+            )
+        };
+        assert_eq!(parse(&[]).unwrap().unwrap().initial_view, None);
+        for (name, area) in [
+            ("overview", Area::Overview),
+            ("scenario", Area::Scenario),
+            ("test", Area::Test),
+        ] {
+            assert_eq!(
+                parse(&["--initial-view", name])
+                    .unwrap()
+                    .unwrap()
+                    .initial_view,
+                Some(area)
+            );
+        }
+        assert!(parse(&["--initial-view"]).is_err());
+        assert!(parse(&["--initial-view", "missing"]).is_err());
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
     }
 }
 

@@ -1,6 +1,8 @@
 //! Native presentation of the bounded Tony turn. Rules and replay come from the player seam.
 
-use crate::tabletop_camera::{CameraMode, Capture as CameraCapture, FrameInput, Orbit};
+use crate::tabletop_camera::{
+    CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
+};
 use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin};
 use crate::{
     TokenFace,
@@ -137,6 +139,7 @@ struct Options {
     config: AssetConfig,
     screenshot: Option<PathBuf>,
     quit_after_screenshot: bool,
+    initial_view: Option<Area>,
 }
 
 impl Options {
@@ -155,6 +158,7 @@ impl Options {
             config,
             screenshot: None,
             quit_after_screenshot: false,
+            initial_view: None,
         };
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
@@ -171,9 +175,10 @@ impl Options {
                 "--no-art" => result.art_root = None,
                 "--screenshot" => result.screenshot = Some(value()?.into()),
                 "--quit-after-screenshot" => result.quit_after_screenshot = true,
+                "--initial-view" => result.initial_view = Some(parse_initial_view(&value()?)?),
                 "--help" | "-h" => {
                     println!(
-                        "Arkham Unfolded — Tony turn\n\n--experiment tony\n--save PATH\n--load PATH\n--art-root PATH\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n\nRight drag / arrows: orbit. Wheel / +/-: zoom. Home: reset. F12: capture."
+                        "Arkham Unfolded — Tony turn\n\n--experiment tony\n--save PATH\n--load PATH\n--art-root PATH\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test  Diagnostic startup framing; Home is unchanged\n\nRight drag / arrows: orbit. Wheel / +/-: zoom. Home: reset. F12: capture."
                     );
                     return Ok(None);
                 }
@@ -347,7 +352,7 @@ pub fn run() -> Result<(), String> {
             context: Context::default(),
         })
         .insert_resource(Actions::default())
-        .insert_resource(Orbit::new(CameraMode::Tony))
+        .insert_resource(Orbit::new(CameraMode::Tony).with_initial_view(options.initial_view))
         .insert_resource(AssetSettings::new_tony(options.config))
         .insert_resource(Capture {
             path: options.screenshot,
