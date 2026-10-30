@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
-cargo run --quiet --locked -p arkham-tools -- check-tracked-files
-cargo test --locked -p arkham-tools
-cargo fmt --all -- --check
-cargo clippy --locked --workspace --features tabletop --all-targets -- -D warnings
-cargo test --locked -p arkham-unfolded-experiment --features tabletop
+scripts/check-index
+scripts/check-tools
+scripts/check-format
+scripts/check-clippy
+scripts/check-app

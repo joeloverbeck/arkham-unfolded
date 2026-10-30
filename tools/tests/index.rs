@@ -28,6 +28,25 @@ fn check(root: &Path) -> Output {
         .unwrap()
 }
 
+fn copy_gate(root: &Path) {
+    fs::create_dir(root.join("scripts")).unwrap();
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    for name in [
+        "check",
+        "check-index",
+        "check-tools",
+        "check-format",
+        "check-clippy",
+        "check-app",
+    ] {
+        fs::copy(
+            repository.join("scripts").join(name),
+            root.join("scripts").join(name),
+        )
+        .unwrap();
+    }
+}
+
 #[test]
 fn index_rejects_force_added_cache_paths_even_when_absent_with_raw_names() {
     let directory = tempfile::tempdir().unwrap();
@@ -126,9 +145,7 @@ fn actual_repository_gate_stops_at_a_forbidden_index_before_later_checks() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
     git(root, &[OsStr::new("init"), OsStr::new("--quiet")]);
-    fs::create_dir(root.join("scripts")).unwrap();
-    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    fs::copy(repository.join("scripts/check"), root.join("scripts/check")).unwrap();
+    copy_gate(root);
     fs::write(root.join("generated.pyc"), "fixture").unwrap();
     git(root, &[OsStr::new("add"), OsStr::new("generated.pyc")]);
     let bin = root.join("bin");
@@ -152,4 +169,78 @@ fn actual_repository_gate_stops_at_a_forbidden_index_before_later_checks() {
     let errors = String::from_utf8(result.stderr).unwrap();
     assert!(errors.contains("Generated files are tracked"), "{errors}");
     assert!(!errors.contains("UNEXPECTED_LATER_CHECK"), "{errors}");
+}
+
+#[test]
+fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &[OsStr::new("init"), OsStr::new("--quiet")]);
+    copy_gate(root);
+    let bin = root.join("bin");
+    fs::create_dir(&bin).unwrap();
+    std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("cargo")).unwrap();
+    let path = std::env::join_paths(
+        std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let trace = root.join("trace");
+    let run = |script: &str, fail_at: usize| {
+        Command::new("bash")
+            .arg(root.join("scripts").join(script))
+            .env("PATH", &path)
+            .env("ARKHAM_FIXTURE_CHECK", "1")
+            .env("ARKHAM_FIXTURE_FAIL_CHECK", fail_at.to_string())
+            .env("ARKHAM_FIXTURE_TOOLS", env!("CARGO_BIN_EXE_arkham-tools"))
+            .env("ARKHAM_FIXTURE_TRACE", &trace)
+            .current_dir(root)
+            .output()
+            .unwrap()
+    };
+    let expected = [
+        "run --quiet --locked -p arkham-tools -- check-tracked-files",
+        "test --locked -p arkham-tools",
+        "fmt --all -- --check",
+        "clippy --locked --workspace --features tabletop --all-targets -- -D warnings",
+        "test --locked -p arkham-unfolded-experiment --features tabletop",
+    ];
+    assert!(run("check", 0).status.success());
+    assert_eq!(
+        fs::read_to_string(&trace)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        expected
+    );
+
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let workflow = fs::read_to_string(repository.join(".github/workflows/check.yml")).unwrap();
+    let phases: Vec<_> = workflow
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("run: scripts/check-"))
+        .collect();
+    assert_eq!(phases, ["index", "tools", "format", "clippy", "app"]);
+    fs::write(&trace, "").unwrap();
+    for phase in phases {
+        assert!(run(&format!("check-{phase}"), 0).status.success());
+    }
+    assert_eq!(
+        fs::read_to_string(&trace)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        expected
+    );
+
+    for fail_at in 1..=expected.len() {
+        fs::write(&trace, "").unwrap();
+        assert_eq!(run("check", fail_at).status.code(), Some(42));
+        assert_eq!(
+            fs::read_to_string(&trace)
+                .unwrap()
+                .lines()
+                .collect::<Vec<_>>(),
+            expected[..fail_at]
+        );
+    }
 }

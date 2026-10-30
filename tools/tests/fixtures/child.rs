@@ -5,6 +5,7 @@ fn main() -> ExitCode {
     let program = env::args_os().next().unwrap();
     let name = std::path::Path::new(&program).file_name().unwrap();
     if let Ok(mode) = env::var("ARKHAM_FIXTURE_RUSTUP") {
+        if name == "cargo" { eprintln!("CARGO_MUST_NOT_RUN_DURING_BOOTSTRAP"); return ExitCode::from(97); }
         let mut trace = fs::OpenOptions::new().create(true).append(true).open(env::var_os("ARKHAM_FIXTURE_TRACE").unwrap()).unwrap();
         writeln!(trace, "{}", args.iter().map(|arg| arg.to_string_lossy()).collect::<Vec<_>>().join(" ")).unwrap();
         if args == ["show", "active-toolchain"] {
@@ -15,7 +16,18 @@ fn main() -> ExitCode {
                 _ => println!("1.97.1-x86_64-unknown-linux-gnu (overridden by rust-toolchain.toml)"),
             }
         }
-        return ExitCode::from(if mode == "default-fail" && args.first().is_some_and(|arg| arg == "default") { 1 } else { 0 });
+        return ExitCode::from(if (mode == "default-fail" && args.first().is_some_and(|arg| arg == "default")) || (mode == "uninstall-fail" && args.first().is_some_and(|arg| arg == "toolchain")) { 1 } else { 0 });
+    }
+    if env::var_os("ARKHAM_FIXTURE_CHECK").is_some() {
+        let trace = env::var_os("ARKHAM_FIXTURE_TRACE").unwrap();
+        let mut file = fs::OpenOptions::new().create(true).append(true).open(&trace).unwrap();
+        writeln!(file, "{}", args.iter().map(|arg| arg.to_string_lossy()).collect::<Vec<_>>().join(" ")).unwrap();
+        let count = fs::read_to_string(trace).unwrap().lines().count();
+        if env::var("ARKHAM_FIXTURE_FAIL_CHECK").ok().and_then(|value| value.parse::<usize>().ok()) == Some(count) { return ExitCode::from(42); }
+        if args.iter().any(|arg| arg == "check-tracked-files") {
+            return ExitCode::from(Command::new(env::var_os("ARKHAM_FIXTURE_TOOLS").unwrap()).arg("check-tracked-files").status().unwrap().code().unwrap_or(1) as u8);
+        }
+        return ExitCode::SUCCESS;
     }
     if let Ok(mode) = env::var("ARKHAM_FIXTURE_PROFILE") {
         if name == "sudo" {

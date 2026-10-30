@@ -31,12 +31,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y g++ pkg-config libx11-dev libxkbcommon-x11-0 dbus
       - name: Install pinned Rust toolchain
-        run: scripts/tools prepare-ci-toolchain
+        run: scripts/prepare-ci-toolchain
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # Rust inputs are keyed automatically; include our check/build settings too.
-          key: ${{ hashFiles('.github/workflows/check.yml', 'scripts/check', 'scripts/tools') }}
+          key: ${{ hashFiles('.github/workflows/check.yml', 'scripts/check*', 'scripts/tools', 'scripts/prepare-ci-toolchain') }}
           cache-bin: false
-      - name: Check
-        run: scripts/check
+      - name: Tracked-file hygiene
+        run: scripts/check-index
+      - name: Rust tool tests
+        run: scripts/check-tools
+      - name: Formatting
+        run: scripts/check-format
+      - name: Clippy
+        run: scripts/check-clippy
+      - name: Application tests
+        run: scripts/check-app
