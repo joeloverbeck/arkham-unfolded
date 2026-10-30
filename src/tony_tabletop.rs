@@ -1077,8 +1077,9 @@ fn rebuild_panel(
                                 control(&choice.label, Action::Choose(view.revision, choice.id.clone()), choice.id == "commit:none");
                             }
                         }
-                        if controls::commitment_choice(&view, &table.context.commitments).is_some() {
-                            control(&format!("Commit selected · +{}", table.context.commitments.len()), Action::ConfirmCommit(view.revision), true);
+                        if controls::commitment_choice(&view, &table.context.commitments).is_some()
+                            && let Some(bonus) = controls::commitment_bonus(&view, table.context.commitments.len()) {
+                            control(&format!("Commit selected · {bonus}"), Action::ConfirmCommit(view.revision), true);
                         }
                         if view.stage == Stage::Ended { control("Start another Tony turn", Action::New, true); }
                     }

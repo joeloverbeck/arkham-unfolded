@@ -16,6 +16,14 @@ _Avoid_: Player table when referring to an investigator's area
 The shared presentation space for cards committed to the current skill test and its revealed or canceled chaos tokens. It is a tabletop arrangement, not an additional rules-defined game zone.
 _Avoid_: Threat area, investigator area
 
+**Skill icon**:
+A card symbol associated with willpower, intellect, combat or agility, or a wild symbol that can match any of those tested skills. Applicable icons on committed cards contribute to the investigator's skill value for that test.
+_Avoid_: Strength or power when referring to combat
+
+**Wild icon**:
+A skill icon that matches any of the four tested skills; under the ordinary commitment rules, each contributes +1 to the skill being tested. Its printed identity remains wild even when its contribution is expressed as a bonus to a particular skill.
+_Avoid_: A fifth tested skill, permanent icon conversion
+
 **Investigator standee**:
 The upright representation of an investigator beside the location they occupy, distinct from their full investigator card in their investigator area.
 _Avoid_: Investigator card when referring to the figure on the map

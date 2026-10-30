@@ -1,0 +1,103 @@
+{
+  "format_version": 1,
+  "kind": "session",
+  "source_revision": "ef905f5:chapter-one-jacqueline-curse-v1",
+  "app_version": "0.1.0",
+  "payload": {
+    "auto_failed": false,
+    "bag": [
+      "plus_one",
+      "zero",
+      "zero",
+      "minus_one",
+      "minus_one",
+      "minus_one",
+      "minus_two",
+      "minus_two",
+      "minus_three",
+      "minus_four",
+      "skull",
+      "skull",
+      "cultist",
+      "tablet",
+      "auto_fail",
+      "elder_sign"
+    ],
+    "curses_in_pool": 10,
+    "extra_draws": 0,
+    "fixture": {
+      "jacqueline_used": false,
+      "order": [
+        "curse",
+        "minus_one",
+        "zero",
+        "minus_two"
+      ],
+      "patrice_here": false
+    },
+    "group": [],
+    "history": [
+      "Scripted experiment: Jacqueline faces Rotting Remains (willpower 3). Two Arcane Research copies account for her 2 starting horror. Only Patrice has a committable card: Promise of Power."
+    ],
+    "horror_dealt": 0,
+    "jacqueline_used": false,
+    "modifier": 0,
+    "moments": [
+      {
+        "bag_count": 16,
+        "choices": [
+          {
+            "cancel_faces": [],
+            "id": "decline-promise",
+            "label": "Do not commit (willpower 5)"
+          },
+          {
+            "cancel_faces": [],
+            "id": "end",
+            "label": "End this experiment"
+          }
+        ],
+        "curses_in_bag": 0,
+        "curses_in_pool": 10,
+        "difficulty": 3,
+        "history": [
+          "Scripted experiment: Jacqueline faces Rotting Remains (willpower 3). Two Arcane Research copies account for her 2 starting horror. Only Patrice has a committable card: Promise of Power."
+        ],
+        "horror_dealt": 0,
+        "investigators": [
+          {
+            "horror": 0,
+            "location": "Study",
+            "name": "Tony Morgan",
+            "sanity": 5
+          },
+          {
+            "horror": 0,
+            "location": "Hallway",
+            "name": "Patrice Hathaway",
+            "sanity": 7
+          },
+          {
+            "horror": 2,
+            "location": "Study",
+            "name": "Jacqueline Fine",
+            "sanity": 9
+          }
+        ],
+        "jacqueline_used": false,
+        "promise_committed": false,
+        "prompt": "Will Patrice commit Promise of Power?",
+        "revision": 0,
+        "skill_value": 5,
+        "stage": "commit",
+        "tokens": []
+      }
+    ],
+    "order_cursor": 0,
+    "promise_committed": false,
+    "revision": 0,
+    "stage": "commit",
+    "tokens": []
+  },
+  "checksum": "391badbda59f7ce4511c955d7894001de9a316c985f9f109823ec60df537ead5"
+}

@@ -1,5 +1,5 @@
 {
-  "purpose": "Four authored inline symbols for the bounded Jacqueline experiment. Artwork remains external; identity does not establish publisher authority.",
+  "purpose": "Authored inline symbols for the bounded Jacqueline and Tony experiments. Artwork remains external; identity does not establish publisher authority.",
   "path": "resources/other/unclassified/en/sce-base-save/font_arkhamicons--URL--49b407be28313ac7ad1b.unity3d",
   "asset_id": "49b407be28313ac7ad1bbff334633e10e7378f1b344830018aa1dc462ba62751",
   "sha256": "ed518b255b4a177f246525d5fd6ed626c468cb46d843cca62cf72978faa1fb80",
@@ -15,6 +15,9 @@
   "glyphs": {
     "horror": { "character": "R", "codepoint": "U+0052", "evidence": "Outlined brain visually compared with the archive resource explicitly named Horror; no explicit source-script mapping was found. Distinct from Q (heart) and S (solid brain silhouette).", "reference_path": "images/other/unclassified/en/sce-base-save/Horror--ImageURL--d429aca0b365fe75ed12.png", "reference_sha256": "cb7f3c7e20d1ecfcd133c605e7d6b01095b82d79acc2a18c9baee31d3b14d789" },
     "willpower": { "character": "f", "codepoint": "U+0066", "evidence": "SCE source object Making Preparations (GUID 18247d), LuaScript SKILL_LIST maps willpower to f with font_arkhamicons; inspected head silhouette." },
+    "intellect": { "character": "g", "codepoint": "U+0067", "evidence": "SCE source object Making Preparations (GUID 18247d), LuaScript SKILL_LIST maps intellect to g with font_arkhamicons." },
+    "combat": { "character": "h", "codepoint": "U+0068", "evidence": "SCE source object Making Preparations (GUID 18247d), LuaScript SKILL_LIST maps combat to h with font_arkhamicons." },
+    "agility": { "character": "i", "codepoint": "U+0069", "evidence": "SCE source object Making Preparations (GUID 18247d), LuaScript SKILL_LIST maps agility to i with font_arkhamicons." },
     "wild": { "character": "j", "codepoint": "U+006A", "evidence": "Rendered outline matches the stylized question mark on Promise of Power. This inline mark omits the card skill pip's diamond background." },
     "curse": { "character": "y", "codepoint": "U+0079", "evidence": "Rendered three-hook outline matches the inline curse mark in Promise of Power's rules text. SCE luckyPenny UI uses zy for bless/curse; z is the star mark." }
   },

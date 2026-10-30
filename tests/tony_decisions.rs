@@ -9,9 +9,88 @@ fn choose(game: &mut Session, id: &str) {
 
 fn test(game: &mut Session, action: &str) {
     choose(game, action);
-    choose(game, "commit:none");
+    if game.observe().stage == Stage::Commit {
+        choose(game, "commit:none");
+    }
     choose(game, "reveal");
     choose(game, "resolve");
+}
+
+#[test]
+fn empty_evade_commitment_goes_to_reveal_and_undo_restores_the_action() {
+    let mut game = Session::with_draws(vec![TokenFace::Zero]);
+    let initial = game.observe();
+    choose(&mut game, "evade");
+    let pending = game.observe();
+    assert_eq!(pending.stage, Stage::Reveal);
+    assert_eq!(pending.ordinary_actions, 2);
+    assert_eq!(pending.held_token, None);
+    assert_eq!(pending.bag_count, 16);
+    assert_eq!(
+        pending
+            .choices
+            .iter()
+            .map(|choice| choice.id.as_str())
+            .collect::<Vec<_>>(),
+        ["reveal", "undo"]
+    );
+    choose(&mut game, "undo");
+    let restored = game.observe();
+    assert_eq!(restored.stage, Stage::Action);
+    assert_eq!(restored.ordinary_actions, initial.ordinary_actions);
+    assert_eq!(restored.bonus_action, initial.bonus_action);
+    assert_eq!(restored.ghoul, initial.ghoul);
+    assert_eq!(restored.hand, initial.hand);
+    assert!(!restored.can_undo);
+    choose(&mut game, "evade");
+    choose(&mut game, "reveal");
+    assert_eq!(game.observe().held_token, Some(TokenFace::Zero));
+    assert!(!game.observe().can_undo);
+    game.validate().unwrap();
+}
+
+#[test]
+fn exhausted_commitments_skip_fight_and_investigate_and_undo_restores_their_costs() {
+    for (action, draw_guts) in [("fight", false), ("investigate", true)] {
+        let mut game = Session::with_draws(vec![TokenFace::Zero]);
+        for choice in ["fight", "commit:0", "reveal", "resolve"] {
+            choose(&mut game, choice);
+        }
+        assert!(game.observe().hand.is_empty());
+        if draw_guts {
+            choose(&mut game, "draw");
+            assert_eq!(game.observe().hand[0].title, "Guts");
+        }
+        let before = game.observe();
+        choose(&mut game, action);
+        let pending = game.observe();
+        assert_eq!(pending.stage, Stage::Reveal);
+        assert_eq!(pending.ordinary_actions, before.ordinary_actions - 1);
+        assert_eq!(pending.held_token, None);
+        assert_eq!(pending.bag_count, 16);
+        assert_eq!(
+            pending
+                .choices
+                .iter()
+                .map(|choice| choice.id.as_str())
+                .collect::<Vec<_>>(),
+            ["reveal", "undo"]
+        );
+        if action == "investigate" {
+            assert_eq!((pending.damage, pending.horror), (2, 2));
+        }
+        choose(&mut game, "undo");
+        let restored = game.observe();
+        assert_eq!(restored.stage, Stage::Action);
+        assert_eq!(restored.ordinary_actions, before.ordinary_actions);
+        assert_eq!(
+            (restored.damage, restored.horror),
+            (before.damage, before.horror)
+        );
+        assert_eq!(restored.ghoul, before.ghoul);
+        assert_eq!(restored.discard, before.discard);
+        game.validate().unwrap();
+    }
 }
 
 #[test]
@@ -102,7 +181,6 @@ fn opportunity_preview_follows_current_offered_actions_and_enemy_readiness() {
     }
     choose(&mut game, "evade");
     assert_eq!(game.observe().opportunity_attack("investigate"), None);
-    choose(&mut game, "commit:none");
     choose(&mut game, "reveal");
     choose(&mut game, "resolve");
     for id in ["investigate", "resource", "draw", "injury"] {

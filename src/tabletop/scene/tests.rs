@@ -13,6 +13,77 @@ fn pending_app(path: PathBuf) -> App {
 }
 
 #[test]
+fn promise_commitment_shows_willpower_bonus_and_keeps_its_curse_consequence() {
+    let directory = tempfile::tempdir().unwrap();
+    for wide in [false, true] {
+        for symbols in [false, true] {
+            let mut app = app_for_session(
+                Session::new(Fixture::curse()),
+                directory
+                    .path()
+                    .join(format!("promise-{wide}-{symbols}.json")),
+            );
+            app.world_mut().resource_mut::<Art>().symbol_font = symbols.then(Handle::default);
+            let world = app.world_mut();
+            world
+                .query::<&mut Window>()
+                .single_mut(world)
+                .unwrap()
+                .resolution
+                .set(if wide { 1280.0 } else { 700.0 }, 720.0);
+            let before = app.world().resource::<Tabletop>().view();
+            act(
+                &mut app,
+                Action::Select(Source::Card(1), Vec2::new(200.0, 200.0)),
+            );
+            let expected_label = if wide {
+                "Commit +4 willpower"
+            } else {
+                "Commit Promise of Power (+4 willpower; add a curse)"
+            };
+            let world = app.world_mut();
+            let (text, children) = world
+                .query::<(&AccessibleLabel, &Text, Option<&Children>)>()
+                .iter(world)
+                .find(|(label, _, _)| label.0 == expected_label)
+                .map(|(_, text, children)| (text, children))
+                .unwrap_or_else(|| panic!("missing Promise skill label: {expected_label}"));
+            let mut visible = text.0.clone();
+            if let Some(children) = children {
+                for child in children {
+                    if let Some(span) = world.get::<TextSpan>(*child) {
+                        visible.push_str(&span.0);
+                    }
+                }
+            }
+            assert_eq!(
+                visible,
+                if symbols {
+                    expected_label.replace("willpower", "\u{2060}f\u{2060}")
+                } else {
+                    expected_label.into()
+                }
+            );
+            assert!(
+                world
+                    .query::<&AccessibleLabel>()
+                    .iter(world)
+                    .any(|label| label.0 == "Commit Promise of Power (+4 willpower; add a curse)")
+            );
+            assert_eq!(app.world().resource::<Tabletop>().view(), before);
+            let generation = app.world().resource::<Context>().generation();
+            act(
+                &mut app,
+                Action::ContextChoose(generation, before.revision, "commit-promise".into()),
+            );
+            let after = app.world().resource::<Tabletop>().view();
+            assert_eq!(after.skill_value, 9);
+            assert_eq!(after.bag_count, before.bag_count + 1);
+        }
+    }
+}
+
+#[test]
 fn production_scene_keeps_physical_standees_and_readable_missing_portraits() {
     use crate::tabletop_layout::InvestigatorClass::{Mystic, Rogue, Survivor};
 

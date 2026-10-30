@@ -279,11 +279,15 @@ impl Session {
     }
 
     pub fn observe(&self) -> Observation {
+        self.observation_at(self.live_stage())
+    }
+
+    fn observation_at(&self, stage: Stage) -> Observation {
         let s = &self.state;
         Observation {
             revision: self.revision,
-            stage: s.stage,
-            prompt: match s.stage {
+            stage,
+            prompt: match stage {
                 Stage::Action => "Choose Tony's next action, or end his turn.",
                 Stage::Commit => "Choose cards to commit, or commit none.",
                 Stage::Reveal => "Reveal one chaos token.",
@@ -291,7 +295,7 @@ impl Session {
                 Stage::Ended => "Tony's turn is over. No next investigator or phase has begun.",
             }
             .into(),
-            choices: self.choices(),
+            choices: self.choices_at(stage),
             ordinary_actions: s.ordinary_actions,
             bonus_action: s.bonus_action,
             damage: s.damage,
@@ -339,7 +343,42 @@ impl Session {
         }
     }
 
+    fn committable_cards(&self) -> impl Iterator<Item = &CardView> {
+        let matching_test = self
+            .state
+            .test
+            .as_ref()
+            .is_some_and(|test| test.kind != TestKind::Evade);
+        // Both companions have empty hands and no relevant available abilities
+        // in this prepared position. Only On the Hunt matches a reachable test.
+        self.state
+            .hand
+            .iter()
+            .filter(move |card| matching_test && card.code == "03263")
+    }
+
+    fn live_stage(&self) -> Stage {
+        if self.state.stage == Stage::Commit && self.committable_cards().next().is_none() {
+            Stage::Reveal
+        } else {
+            self.state.stage
+        }
+    }
+
+    fn advance_empty_commitment(&mut self) {
+        if self.state.stage != self.live_stage() {
+            self.state.stage = Stage::Reveal;
+            self.history.push(
+                "No investigator has a legal card commitment; continue before revealing.".into(),
+            );
+        }
+    }
+
     fn choices(&self) -> Vec<Choice> {
+        self.choices_at(self.live_stage())
+    }
+
+    fn choices_at(&self, stage: Stage) -> Vec<Choice> {
         let s = &self.state;
         let mut choices = Vec::new();
         let mut add = |id: &str, label: &str| {
@@ -349,7 +388,7 @@ impl Session {
                 cancel_faces: vec![],
             })
         };
-        match s.stage {
+        match stage {
             Stage::Action => {
                 if s.ghoul.alive && (s.ordinary_actions > 0 || s.bonus_action) {
                     add("fight", "Fight Ghoul Minion");
@@ -376,23 +415,18 @@ impl Session {
             }
             Stage::Commit => {
                 add("commit:none", "Commit no cards");
-                if s.test
-                    .as_ref()
-                    .is_some_and(|test| test.kind != TestKind::Evade)
-                {
-                    let eligible: Vec<_> = s.hand.iter().filter(|c| c.code == "03263").collect();
-                    for subset in 1..(1usize << eligible.len()) {
-                        let cards: Vec<_> = eligible
-                            .iter()
-                            .enumerate()
-                            .filter(|(i, _)| subset & (1 << i) != 0)
-                            .map(|(_, c)| c.id.to_string())
-                            .collect();
-                        add(
-                            &format!("commit:{}", cards.join(",")),
-                            &format!("Commit {} On the Hunt (+{})", cards.len(), cards.len()),
-                        );
-                    }
+                let eligible: Vec<_> = self.committable_cards().collect();
+                for subset in 1..(1usize << eligible.len()) {
+                    let cards: Vec<_> = eligible
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| subset & (1 << i) != 0)
+                        .map(|(_, c)| c.id.to_string())
+                        .collect();
+                    add(
+                        &format!("commit:{}", cards.join(",")),
+                        &format!("Commit {} On the Hunt (+{})", cards.len(), cards.len()),
+                    );
                 }
             }
             Stage::Reveal => add("reveal", "Reveal chaos token"),
@@ -419,11 +453,19 @@ impl Session {
         let mut next = self.clone();
         next.harm = Some(vec![]);
         if id == "undo" {
-            let undo = next
+            let mut undo = next
                 .undo
                 .pop()
                 .expect("Offered undo has a preceding choice");
-            next.state = undo.state;
+            next.state = undo.state.clone();
+            // Old saves may include an explicit "commit:none" decision where
+            // no commitment was possible. Undo past that redundant snapshot to
+            // restore the originating action, without rewriting the old record.
+            while next.state.stage != next.live_stage() && !next.undo.is_empty() {
+                undo = next.undo.pop().expect("Checked preceding choice");
+                next.state = undo.state.clone();
+            }
+            next.advance_empty_commitment();
             next.history.push(format!("Undid '{}': restored its actions, cards and consequences. Earlier entries remain as recorded history.", undo.label));
         } else {
             let previous = next.state.clone();
@@ -433,7 +475,9 @@ impl Session {
                 .find(|c| c.id == id)
                 .expect("Offered choice")
                 .label;
+            next.advance_empty_commitment();
             next.apply(id)?;
+            next.advance_empty_commitment();
             if matches!(id, "reveal" | "draw") {
                 next.undo.clear();
             } else {
@@ -783,7 +827,11 @@ impl Session {
         }
         validate_recording(&self.recording())?;
         if self.revision.checked_add(1) != Some(self.moments.len() as u64)
-            || self.moments.last() != Some(&self.observe())
+            // Legacy empty commitment saves retain their exact recorded state.
+            // Only the live decision projects to Reveal; loading never edits the
+            // saved bytes or historical observations. The next choice appends a
+            // normal continuation through the same save-before-install path.
+            || self.moments.last() != Some(&self.observation_at(self.state.stage))
         {
             return Err(RuleError(
                 "The saved turn differs from its recorded continuation.".into(),

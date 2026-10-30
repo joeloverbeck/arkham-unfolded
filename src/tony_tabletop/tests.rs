@@ -299,6 +299,64 @@ fn risky_actions_show_the_attack_before_the_player_commits() {
 }
 
 #[test]
+fn commitment_controls_show_the_tested_skill_and_keep_the_last_selection_pending() {
+    let directory = tempfile::tempdir().unwrap();
+    for (action, skill, glyph) in [("fight", "combat", "h"), ("investigate", "intellect", "g")] {
+        for symbols in [false, true] {
+            let mut app =
+                presentation_app(directory.path().join(format!("{action}-{symbols}.json")));
+            app.world_mut().resource_mut::<Art>().symbol_font = symbols.then(Handle::default);
+            choose(&mut app, action);
+            act(&mut app, Action::FinishAnimation);
+            let before = app.world().resource::<Table>().view();
+            act(
+                &mut app,
+                Action::Select(before.revision, Source::Hand(0), Vec3::ZERO),
+            );
+            let assert_label = |app: &mut App, label: &str, visible: &str| {
+                let world = app.world_mut();
+                let (text, children) = world
+                    .query::<(&AccessibleLabel, &Text, Option<&Children>)>()
+                    .iter(world)
+                    .find(|(found, _, _)| found.0 == label)
+                    .map(|(_, text, children)| (text, children))
+                    .unwrap_or_else(|| panic!("missing skill-labelled control: {label}"));
+                let mut rendered = text.0.clone();
+                if let Some(children) = children {
+                    for child in children {
+                        if let Some(span) = world.get::<TextSpan>(*child) {
+                            rendered.push_str(&span.0);
+                        }
+                    }
+                }
+                assert_eq!(rendered, visible);
+            };
+            let contribution = if symbols {
+                format!("\u{2060}{glyph}\u{2060}")
+            } else {
+                skill.into()
+            };
+            assert_label(
+                &mut app,
+                &format!("Select to commit +1 {skill}"),
+                &format!("Select to commit +1 {contribution}"),
+            );
+            let epoch = app.world().resource::<Table>().context.epoch;
+            act(&mut app, Action::ToggleCommit(epoch, before.revision, 0));
+            assert_eq!(app.world().resource::<Table>().view(), before);
+            assert_label(
+                &mut app,
+                &format!("Commit selected · +1 {skill}"),
+                &format!("Commit selected  /  +1 {contribution}"),
+            );
+            act(&mut app, Action::ConfirmCommit(before.revision));
+            assert_eq!(app.world().resource::<Table>().view().stage, Stage::Reveal);
+            assert_eq!(app.world().resource::<Table>().view().committed.len(), 1);
+        }
+    }
+}
+
+#[test]
 fn harm_symbols_reach_warnings_counts_stages_card_text_and_history() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = presentation_app(directory.path().join("turn.json"));
@@ -1035,7 +1093,10 @@ fn keyboard_menu_inspection_preserves_staged_copies_until_explicit_confirmation(
             &mut app,
             Action::Select(revision, Source::Hand(id), Vec3::ZERO),
         );
-        assert_eq!(focused_button_label(&app), Some("Select to commit +1"));
+        assert_eq!(
+            focused_button_label(&app),
+            Some("Select to commit +1 combat")
+        );
         keyboard_press(&mut app, window, KeyCode::KeyW);
         keyboard_press(&mut app, window, KeyCode::ArrowLeft);
         assert_eq!(app.world().resource::<Orbit>().pose().target, target);
@@ -1073,9 +1134,9 @@ fn keyboard_menu_inspection_preserves_staged_copies_until_explicit_confirmation(
             children
                 .iter()
                 .any(|child| {
-                    app.world().get::<Text>(child).is_some_and(|text| {
-                        text.0.starts_with("Commit selected") && text.0.ends_with("+2")
-                    })
+                    app.world()
+                        .get::<Text>(child)
+                        .is_some_and(|text| text.0 == "Commit selected  /  +2 combat")
                 })
                 .then_some(entity)
         })

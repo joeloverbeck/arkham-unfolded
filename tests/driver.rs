@@ -35,6 +35,52 @@ fn responses(output: &Output) -> Vec<Value> {
 }
 
 #[test]
+fn empty_commitment_reopens_at_the_reaction_through_fresh_driver_processes() {
+    for legacy in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let original = include_bytes!("fixtures/commitment/jacqueline-empty-v1.session.json");
+        if legacy {
+            std::fs::write(directory.path().join("session.json"), original).unwrap();
+        }
+        let args: &[&str] = if legacy {
+            &["--load", "session.json"]
+        } else {
+            &["--patrice-away", "--save", "session.json"]
+        };
+        let saved = responses(&run_driver(directory.path(), args, "{\"op\":\"save\"}\n"));
+        let pending = &saved[1]["observation"];
+        assert_eq!(pending["stage"], "before_reveal");
+        assert_eq!(pending["revision"], 0);
+        assert_eq!(pending["tokens"], serde_json::json!([]));
+        assert_eq!(pending["choices"][0]["id"], "use-jacqueline");
+        if legacy {
+            assert_eq!(
+                std::fs::read(directory.path().join("session.json")).unwrap(),
+                original
+            );
+        }
+
+        let reopened = responses(&run_driver(
+            directory.path(),
+            &["--load", "session.json"],
+            "{\"op\":\"choose\",\"revision\":0,\"id\":\"use-jacqueline\"}\n",
+        ));
+        assert_eq!(&reopened[0]["observation"], pending);
+        assert_eq!(reopened[1]["ok"], true);
+        assert_eq!(reopened[1]["observation"]["revision"], 1);
+        assert_eq!(reopened[1]["observation"]["stage"], "cancellation");
+        assert_eq!(
+            reopened[1]["observation"]["tokens"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(reopened[1]["observation"]["curses_in_bag"], 0);
+    }
+}
+
+#[test]
 fn a_committed_choice_resumes_through_a_second_driver_process() {
     let directory = tempfile::tempdir().unwrap();
     let first = run_driver(
