@@ -10,9 +10,11 @@ Before fetching a ticket or reading startup documents, follow the repository's [
 
 Before editing, record the starting commit (`git rev-parse HEAD`) and working-tree status (`git status --short --untracked-files=all`). Preserve any pre-existing edits to paths the task will touch so they remain distinguishable from this task's changes.
 
-Call the Skill tool with "tdd" where possible, at pre-agreed seams.
+Use the [TDD guide](../tdd/SKILL.md) at pre-agreed seams, selecting the workflow for a behavior change or a refactor that preserves behavior.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end.
+
+Retain full check output, including stdout and stderr, in a fresh task-local log and preserve the check command's exit status. Report that status and log path with a bounded result summary or relevant failure excerpts; inspect more of the log as needed. Run summaries separately so filtering cannot mask a failed check.
 
 At the first handoff with human verification still outstanding, give the user a runnable acceptance checklist and record it on the owning issue. Include the exact candidate and launch command, only the remaining checks, each expected visible result, and the time limit and stopping condition. Distinguish completed agent checks from observations the human still needs to make. Keep the checklist current as results arrive; accepted checks need repeating only when a later change affects them.
 
