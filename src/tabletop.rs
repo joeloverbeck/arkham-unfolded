@@ -2,6 +2,7 @@
 //! Every displayed decision and replay moment comes from the shared rules interface.
 
 use crate::tabletop_camera::{CameraMode, Capture as CameraCapture, FrameInput, Orbit};
+use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin};
 use crate::{
     Fixture, Observation, Session, Stage, TokenFace, TokenStatus,
     asset_config::AssetConfig,
@@ -326,6 +327,8 @@ pub fn run() -> Result<(), String> {
                 }),
         )
         .add_plugins(MeshPickingPlugin)
+        .add_plugins(TabletopPacingPlugin)
+        .add_systems(Last, request_redraw.in_set(RequestRedraw))
         .add_systems(Startup, setup_table)
         .add_systems(
             Update,
@@ -748,7 +751,7 @@ fn camera_controls(
     scroll: Res<AccumulatedMouseScroll>,
     window: Single<&Window>,
     mut table: ResMut<Tabletop>,
-    time: Res<Time>,
+    time: Res<PresentationTime>,
     mut orbit: ResMut<Orbit>,
     mut camera: Single<&mut Transform, With<MainCamera>>,
     settings: Option<Res<AssetSettings>>,
@@ -1388,6 +1391,20 @@ fn scroll_panel(event: On<PointerScroll>, mut panels: Query<(&mut ScrollPosition
         };
         let range = (node.content_size.y - node.size.y).max(0.0) * node.inverse_scale_factor;
         position.y = (position.y - delta).clamp(0.0, range);
+    }
+}
+
+fn request_redraw(
+    mut redraw: ResMut<Redraw>,
+    orbit: Res<Orbit>,
+    capture: Res<Capture>,
+    screenshots: Query<(), With<Screenshot>>,
+) {
+    if orbit.is_moving()
+        || (capture.path.is_some() && (!capture.requested || capture.quit))
+        || !screenshots.is_empty()
+    {
+        redraw.request();
     }
 }
 

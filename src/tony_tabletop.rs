@@ -1,6 +1,7 @@
 //! Native presentation of the bounded Tony turn. Rules and replay come from the player seam.
 
 use crate::tabletop_camera::{CameraMode, Capture as CameraCapture, FrameInput, Orbit};
+use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin};
 use crate::{
     TokenFace,
     asset_config::AssetConfig,
@@ -367,6 +368,8 @@ pub fn run() -> Result<(), String> {
                 }),
         )
         .add_plugins(MeshPickingPlugin)
+        .add_plugins(TabletopPacingPlugin)
+        .add_systems(Last, request_redraw.in_set(RequestRedraw))
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -1161,7 +1164,7 @@ fn camera_controls(
     scroll: Res<AccumulatedMouseScroll>,
     window: Single<&Window>,
     mut table: ResMut<Table>,
-    time: Res<Time>,
+    time: Res<PresentationTime>,
     mut orbit: ResMut<Orbit>,
     mut camera: Single<&mut Transform, With<MainCamera>>,
     settings: Res<AssetSettings>,
@@ -1239,7 +1242,7 @@ fn hide_overview_token_labels(
     }
 }
 fn animate(
-    time: Res<Time>,
+    time: Res<PresentationTime>,
     table: Res<Table>,
     mut transforms: Query<&mut Transform, With<Appearing>>,
 ) {
@@ -1247,8 +1250,38 @@ fn animate(
         t.scale = if table.reduced_motion {
             Vec3::ONE
         } else {
-            t.scale.lerp(Vec3::ONE, (time.delta_secs() * 8.0).min(1.0))
+            let scale = t.scale.lerp(Vec3::ONE, (time.delta_secs() * 8.0).min(1.0));
+            if scale.abs_diff_eq(Vec3::ONE, 0.001) {
+                Vec3::ONE
+            } else {
+                scale
+            }
         };
+    }
+}
+fn request_redraw(
+    mut redraw: ResMut<Redraw>,
+    orbit: Res<Orbit>,
+    table: Res<Table>,
+    settings: Res<AssetSettings>,
+    appearing: Query<&Transform, With<Appearing>>,
+    capture: Res<Capture>,
+    screenshots: Query<(), With<Screenshot>>,
+) {
+    let harm_running = !table.modal()
+        && !settings.is_busy()
+        && if table.replay.is_some() {
+            table.harm().is_some() && table.presentation.animation_progress() < 1.0
+        } else {
+            table.presentation.has_pending()
+        };
+    if orbit.is_moving()
+        || harm_running
+        || appearing.iter().any(|t| t.scale != Vec3::ONE)
+        || (capture.path.is_some() && (!capture.requested || capture.quit))
+        || !screenshots.is_empty()
+    {
+        redraw.request();
     }
 }
 #[allow(clippy::type_complexity)]

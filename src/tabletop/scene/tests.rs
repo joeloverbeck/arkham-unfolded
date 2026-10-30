@@ -1,5 +1,6 @@
 use super::super::*;
 use super::*;
+use crate::tabletop_pacing::PresentationTime as Time;
 use std::time::Duration;
 
 use crate::tabletop_standee_checks as standee_checks;
@@ -1480,7 +1481,7 @@ fn contextual_input_app(session: Session, path: PathBuf) -> (App, Entity, Entity
     ))
     .init_resource::<Assets<TextureAtlasLayout>>()
     .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
-    .init_resource::<Time<Real>>()
+    .init_resource::<bevy::prelude::Time<Real>>()
     .add_message::<bevy::window::CursorMoved>();
     let mut app = app_for_session_in(app, session, path);
     app.add_systems(

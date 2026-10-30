@@ -105,6 +105,12 @@ impl Orbit {
         self.following
     }
 
+    pub(crate) fn is_moving(&self) -> bool {
+        !self.pose.target.abs_diff_eq(self.desired_target, 0.001)
+            || (matches!(self.mode, CameraMode::Jacqueline)
+                && (self.pose.distance - self.desired_distance).abs() >= 0.001)
+    }
+
     pub(crate) fn set_following(&mut self, following: bool) {
         self.following = following;
     }
@@ -218,6 +224,14 @@ impl Orbit {
         } else {
             self.pose.target.lerp(self.desired_target, blend)
         };
+        if self.pose.target.abs_diff_eq(self.desired_target, 0.001) {
+            self.pose.target = self.desired_target;
+        }
+        if matches!(self.mode, CameraMode::Jacqueline)
+            && (self.pose.distance - self.desired_distance).abs() < 0.001
+        {
+            self.pose.distance = self.desired_distance;
+        }
         CameraStep {
             transform: self.pose.transform(),
             manual_navigation: changed,

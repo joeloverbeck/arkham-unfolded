@@ -11,7 +11,7 @@ pub(super) struct HarmVisual {
 }
 
 pub(super) fn advance_presentation(
-    time: Res<Time>,
+    time: Res<PresentationTime>,
     mut table: ResMut<Table>,
     settings: Res<AssetSettings>,
 ) {
