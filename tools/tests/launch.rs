@@ -145,6 +145,52 @@ fn launch_preserves_existing_paths_and_refuses_escape_or_unbounded_timeout() {
     assert!(!launch(&binary, &symlink).output().unwrap().status.success());
 }
 
+#[test]
+fn failed_executable_copy_removes_partial_bytes_and_preserves_sources_and_prior_runs() {
+    use std::os::unix::process::CommandExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let binary = support::fixture().join("child");
+    let original = fs::read(&binary).unwrap();
+    assert!(original.len() > 64 * 1024);
+    let previous = root.path().join("previous.log");
+    fs::write(&previous, "prior evidence").unwrap();
+    let directory = root.path().join("failed");
+    let mut command = launch(&binary, &directory);
+    // SAFETY: these async-signal-safe calls affect only the new test subprocess.
+    unsafe {
+        command.pre_exec(|| {
+            libc::signal(libc::SIGXFSZ, libc::SIG_IGN);
+            let limit = libc::rlimit {
+                rlim_cur: 64 * 1024,
+                rlim_max: 64 * 1024,
+            };
+            if libc::setrlimit(libc::RLIMIT_FSIZE, &limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let output = command.output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        fs::read_dir(&directory).unwrap().next().is_none(),
+        "a failed staging copy must leave no partial executable or temporary file"
+    );
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        error.contains(directory.join("arkham-tabletop").to_str().unwrap()),
+        "{error}"
+    );
+    assert!(
+        error.contains(&format!("{} bytes", original.len())),
+        "{error}"
+    );
+    assert!(error.contains("File too large"), "{error}");
+    assert_eq!(fs::read(binary).unwrap(), original);
+    assert_eq!(fs::read_to_string(previous).unwrap(), "prior evidence");
+}
+
 fn process_is_alive(pid: u64) -> bool {
     fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
         !stat
