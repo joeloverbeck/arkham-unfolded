@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 Implement the work described by the user in the spec or tickets.
 
-If the user passes a ticket reference, fetch it from the issue tracker and state its title before starting. If the reference is ambiguous, ask.
+Before fetching a ticket or reading startup documents, follow the repository's [tracker and bounded-reading procedure](../../../docs/agents/issue-tracker.md#bounded-context-reads). If the user passes a ticket reference, fetch it and state its title before starting. If the reference is ambiguous, ask.
 
 Before editing, record the starting commit (`git rev-parse HEAD`) and working-tree status (`git status --short --untracked-files=all`). Preserve any pre-existing edits to paths the task will touch so they remain distinguishable from this task's changes.
 

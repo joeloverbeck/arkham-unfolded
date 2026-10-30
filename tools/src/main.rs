@@ -56,7 +56,7 @@ fn main() -> ExitCode {
             .map(|()| 0)
             .map_err(anyhow::Error::msg),
         Command::CheckTrackedFiles => tracked::check().map_err(anyhow::Error::msg),
-        Command::PrepareCiToolchain => ci::prepare_toolchain(),
+        Command::PrepareCiToolchain => ci::prepare_toolchain().map_err(anyhow::Error::msg),
         Command::Native { command } => native::run(command),
         Command::ProfileNative(args) => profile::capture(args),
     };

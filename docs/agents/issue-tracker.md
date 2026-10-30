@@ -4,6 +4,8 @@ Issues and specs live in [joeloverbeck/arkham-unfolded](https://github.com/joelo
 
 Use the `gh` CLI from this clone. Before the first write, verify the target with `gh repo view --json nameWithOwner`; use `--repo joeloverbeck/arkham-unfolded` when the target could be ambiguous. File work only in this repository.
 
+This selects the GitHub client for repository work. If a different operation needs tool discovery, filter for that operation and inspect a small set of names before requesting descriptions.
+
 ## Conventions
 
 - **Create:** `gh issue create --title "..." --body-file /tmp/issue.md`.

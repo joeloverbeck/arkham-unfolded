@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+rustc --edition=2024 --deny warnings tools/src/bin/prepare-ci-toolchain.rs --out-dir "${RUNNER_TEMP:?CI must provide RUNNER_TEMP}"
+exec "$RUNNER_TEMP/prepare-ci-toolchain"

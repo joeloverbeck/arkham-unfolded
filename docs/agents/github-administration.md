@@ -10,6 +10,17 @@ Publish accepted changes through a PR to `main`. Main requires an up-to-date `Ru
 
 Issue closure is separate from merging: close an issue only after its acceptance criteria and owner acceptance are satisfied. Joel confirmed disabling **Auto-close issues with merged linked pull requests** under **Settings → General → Issues** on 2026-10-28. That confirmation came from the owner; the APIs inspected during this work did not expose the toggle. [GitHub documents this setting](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/managing-auto-closing-issues).
 
+## Monitor required checks
+
+Keep the run and job IDs for the exact PR head. During a wait, use one compact job-status query to observe the current verification phase:
+
+```sh
+gh api repos/joeloverbeck/arkham-unfolded/actions/jobs/<job-id> \
+  --jq '{status,conclusion,current:[.steps[] | select(.status == "in_progress") | .name]}'
+```
+
+Use the phase and elapsed wait in progress updates. Fetch detailed logs when a job completes or fails; the CLI may refuse logs while it is running. Before merging, recheck the PR head and base and the required check's provider and conclusion. A monitoring result does not authorize a different commit or bypass protection.
+
 ## Inspect before changing settings
 
 Follow the target verification and write/readback conventions in [issue-tracker.md](issue-tracker.md). These commands read state:
