@@ -19,7 +19,9 @@ gh api repos/joeloverbeck/arkham-unfolded/actions/jobs/<job-id> \
   --jq '{status,conclusion,current:[.steps[] | select(.status == "in_progress") | .name]}'
 ```
 
-Use the phase and elapsed wait in progress updates. Fetch detailed logs when a job completes or fails; the CLI may refuse logs while it is running. Before merging, recheck the PR head and base and the required check's provider and conclusion. A monitoring result does not authorize a different commit or bypass protection.
+Use the phase and elapsed wait in progress updates. Before merging, recheck the PR head and base and the required check's provider and conclusion. A monitoring result does not authorize a different commit or bypass protection.
+
+Fetch detailed logs only to diagnose a failed check or unresolved status, or to satisfy an explicit audit request; the CLI may refuse logs while a job is running. Bound each retrieval to 30 seconds, for example `timeout 30s gh run view <run-id> --repo joeloverbeck/arkham-unfolded --log`. Report unavailable logs and any question they leave unresolved. When the required checks are verified successful for the exact PR head and logs are optional, unavailable logs do not block publication.
 
 If several polls show no progress, and before reporting publication blocked, reconcile fresh observations of the PR head's check runs with the latest workflow run and attempt. A retry can replace the job being monitored. Read the selected run's `head_sha` and `run_attempt`, then obtain its current jobs; confirm that the required check belongs to that same head and expected provider. The relevant endpoints are `commits/<head-sha>/check-runs`, `actions/runs/<run-id>` and `actions/runs/<run-id>/attempts/<attempt>/jobs` in this repository.
 
