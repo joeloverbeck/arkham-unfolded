@@ -529,6 +529,57 @@ fn scene_app() -> (App, Handle<Image>) {
     scene_app_in(App::new())
 }
 
+#[test]
+fn book_cards_keep_their_pose_highlight_inspection_and_reopened_state() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = presentation_app(directory.path().join("turn.json"));
+    advance(&mut app, 0.0);
+    let before = app.world().resource::<Table>().session.clone();
+    let pose = |app: &mut App, name: &str| {
+        let world = app.world_mut();
+        *world
+            .query::<(&Name, &Transform)>()
+            .iter(world)
+            .find(|(n, _)| n.as_str() == name)
+            .unwrap()
+            .1
+    };
+    let agenda = pose(&mut app, "Card 01105");
+    let act_card = pose(&mut app, "Card 01108");
+    assert!(agenda.translation.x < 0.0 && act_card.translation.x > 0.0);
+    assert!((agenda.translation.x + act_card.translation.x).abs() < 0.001);
+    for (index, card) in [(9, agenda), (8, act_card)] {
+        let normal = card.rotation * Vec3::Y;
+        assert!(normal.z > 0.9 && normal.y > 0.1 && normal.y < 0.4);
+        act(
+            &mut app,
+            Action::Select(0, Source::Card(index), card.translation),
+        );
+        let outline = pose(&mut app, "Selected card outline");
+        assert!(outline.rotation.abs_diff_eq(card.rotation, 0.001));
+        assert!(
+            (outline.translation - card.translation)
+                .cross(normal)
+                .length()
+                < 0.001
+        );
+        act(&mut app, Action::Inspect(index));
+        assert_eq!(app.world().resource::<Table>().inspect, Some(index));
+        act(&mut app, Action::Close);
+        assert_eq!(app.world().resource::<Table>().session, before);
+    }
+    act(&mut app, Action::Save);
+    act(&mut app, Action::Reopen);
+    assert_eq!(pose(&mut app, "Card 01105"), agenda);
+    assert_eq!(pose(&mut app, "Card 01108"), act_card);
+    assert_eq!(app.world().resource::<Table>().session, before);
+    act(&mut app, Action::Replay);
+    assert_eq!(pose(&mut app, "Card 01105"), agenda);
+    assert_eq!(pose(&mut app, "Card 01108"), act_card);
+    act(&mut app, Action::Live);
+    assert_eq!(app.world().resource::<Table>().session, before);
+}
+
 fn scene_app_in(mut app: App) -> (App, Handle<Image>) {
     let mut images = Assets::<Image>::default();
     let back = images.add(Image::default());

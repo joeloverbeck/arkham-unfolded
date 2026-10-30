@@ -16,6 +16,14 @@ _Avoid_: Player table when referring to an investigator's area
 The shared presentation space for cards committed to the current skill test and its revealed or canceled chaos tokens. It is a tabletop arrangement, not an additional rules-defined game zone.
 _Avoid_: Threat area, investigator area
 
+**Investigator standee**:
+The upright representation of an investigator beside the location they occupy, distinct from their full investigator card in their investigator area.
+_Avoid_: Investigator card when referring to the figure on the map
+
+**Location standee slot**:
+A designated position beside a location card or named location marker for an investigator standee. It represents presence at that location, not a separate game location or a limit on legal occupancy.
+_Avoid_: Space on the location card, investigator area
+
 **Prepared position**:
 An explicitly arranged game state from which a bounded play task begins. It does not imply that campaign setup or the preceding turns have been played through.
 _Avoid_: Fresh campaign, scripted outcome

@@ -7,6 +7,25 @@ pub(super) const DECK_AT: Vec3 = Vec3::new(-8.0, 0.05, 9.5);
 pub(super) const TOKEN_AT: Vec3 = Vec3::new(2.1, 0.2, 0.8);
 const DISCARD_AT: Vec3 = Vec3::new(-8.0, 0.05, 12.0);
 const BAG_AT: Vec3 = Vec3::new(5.5, 0.35, 0.0);
+const STUDY_AT: Vec3 = Vec3::new(-2.5, 0.05, -3.8);
+
+pub(super) fn card_transform(index: usize, at: Vec3, exhausted: bool) -> Transform {
+    use layout::ScenarioBookSide;
+    let side = match CARDS[index].code {
+        "01105" => Some(ScenarioBookSide::Agenda),
+        "01108" => Some(ScenarioBookSide::Act),
+        _ => None,
+    };
+    if let Some(side) = side {
+        return layout::scenario_book_card_transform(side, Vec2::new(CARD_WIDTH, CARD_LENGTH));
+    }
+    let rotation = if CARDS[index].landscape || exhausted {
+        std::f32::consts::FRAC_PI_2
+    } else {
+        0.0
+    };
+    Transform::from_translation(at).with_rotation(Quat::from_rotation_y(rotation))
+}
 pub(super) fn ghoul_at(view: &Observation) -> Vec3 {
     if view.ghoul.engaged {
         Vec3::new(-10.4, 0.05, 7.2)
@@ -18,22 +37,21 @@ fn highlight(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    at: Vec3,
-    landscape: bool,
+    transform: Transform,
 ) {
-    let size = if landscape {
-        Vec2::new(CARD_LENGTH + 0.12, CARD_WIDTH + 0.12)
-    } else {
-        Vec2::new(CARD_WIDTH + 0.12, CARD_LENGTH + 0.12)
-    };
+    let normal = transform.rotation * Vec3::Y;
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(size.x, 0.025, size.y))),
+        Name::new("Selected card outline"),
+        Mesh3d(meshes.add(Cuboid::new(CARD_WIDTH + 0.12, 0.025, CARD_LENGTH + 0.12))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: GOLD,
             unlit: true,
             ..default()
         })),
-        Transform::from_translation(at - Vec3::Y * 0.025),
+        Transform {
+            translation: transform.translation - normal * 0.025,
+            ..transform
+        },
         Scene,
         Pickable::IGNORE,
     ));
@@ -79,7 +97,7 @@ pub(super) fn synchronize_scene(
         ),
         (
             1,
-            Vec3::new(-2.5, 0.05, -3.8),
+            STUDY_AT,
             format!("Study\n{} clues · Shroud 2", view.study_clues),
             false,
         ),
@@ -97,13 +115,13 @@ pub(super) fn synchronize_scene(
         ),
         (
             8,
-            Vec3::new(-6.3, 0.05, -6.7),
+            card_transform(8, Vec3::ZERO, false).translation,
             format!("Act · Trapped\n{} / 6 clues held", view.clues),
             false,
         ),
         (
             9,
-            Vec3::new(-6.3, 0.05, -4.1),
+            card_transform(9, Vec3::ZERO, false).translation,
             "Agenda · What's Going On?!".into(),
             false,
         ),
@@ -153,8 +171,7 @@ pub(super) fn synchronize_scene(
                 &mut commands,
                 &mut meshes,
                 &mut materials,
-                at,
-                CARDS[index].landscape || exhausted,
+                card_transform(index, at, exhausted),
             );
         }
         card_mesh(
@@ -167,17 +184,37 @@ pub(super) fn synchronize_scene(
             exhausted,
             (view.revision, source),
         );
-        world_label(
-            &mut commands,
-            &art,
-            caption,
-            at + Vec3::new(0.0, 0.1, 1.1),
-            PAPER,
-        );
+        let caption_at = if matches!(index, 8 | 9) {
+            // Keep the screen-space caption outside the entire page. Raising its
+            // world anchor alone still projects a downward-growing label over art.
+            at + Vec3::new(
+                if index == 9 { -1.0 } else { 1.0 } * (CARD_LENGTH * 0.5 + 0.20),
+                0.25,
+                0.0,
+            )
+        } else {
+            at + Vec3::new(0.0, 0.1, 1.1)
+        };
+        let label = world_label(&mut commands, &art, caption, caption_at, PAPER);
+        if matches!(index, 8 | 9) {
+            // Anchor the two captions outward so they cannot cover each other.
+            commands
+                .entity(label)
+                .insert(OuterLabel { left: index == 9 });
+        }
     }
     for (index, investigator) in view.investigators.iter().enumerate() {
         let code = ["06003", "06005", "60401"][index];
-        let at = Vec3::new(-3.8 + index as f32 * 2.2, 0.0, -5.6);
+        let slot = view.investigators[..index]
+            .iter()
+            .filter(|other| other.location == investigator.location)
+            .count();
+        let at = layout::location_standee_position(
+            STUDY_AT.with_y(0.0),
+            Vec2::new(CARD_WIDTH, CARD_LENGTH),
+            slot,
+        )
+        .expect("the prepared Study has at most four investigators");
         let image = art.image(&format!("standee/{code}"));
         let standee = crate::tabletop_standees::spawn(
             &mut commands,
@@ -188,22 +225,31 @@ pub(super) fn synchronize_scene(
             layout::investigator_class(index),
         );
         commands.entity(standee).insert(Scene);
-        let label_at = at + Vec3::new(0.0, 3.2, 0.0);
+        let left = slot < 2;
+        let label_at = at
+            + Vec3::new(
+                if left { -0.25 } else { 0.25 },
+                crate::tabletop_standees::HEIGHT + 0.15,
+                0.0,
+            );
         let label = world_label(
             &mut commands,
             &art,
             format!(
-                "{}\nStudy",
+                "{}\n{}",
                 investigator
                     .name
                     .split_whitespace()
                     .next()
-                    .unwrap_or(&investigator.name)
+                    .unwrap_or(&investigator.name),
+                investigator.location,
             ),
             label_at,
             MUTED,
         );
-        commands.entity(label).insert(WorldLabel(label_at, 108.0));
+        commands
+            .entity(label)
+            .insert((WorldLabel(label_at, 108.0), OuterLabel { left }));
         commands
             .entity(label)
             .entry::<Node>()
@@ -285,7 +331,12 @@ pub(super) fn synchronize_scene(
         if let Some(face) = CARDS.iter().position(|c| c.code == card.code) {
             let source = Source::Hand(card.id);
             if selected == Some(source) || table.context.commitments.contains(&card.id) {
-                highlight(&mut commands, &mut meshes, &mut materials, at, false);
+                highlight(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    card_transform(face, at, false),
+                );
             }
             card_mesh(
                 &mut commands,
