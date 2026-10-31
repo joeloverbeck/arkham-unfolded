@@ -6,7 +6,23 @@ An English-language Arkham Horror: The Card Game application for Ubuntu, planned
 
 See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, saves, undo, replay and player driver, including the [two-session verification walkthrough](docs/experiments/tony-turn.md#owner-verification).
 
-The candidate [prepared Study escape attempt](docs/experiments/study-escape.md) under [#55](https://github.com/joeloverbeck/arkham-unfolded/issues/55) adds coordinated turns for all three investigators and an Act 1 closing decision. Select it with `--experiment party`; its owner acceptance is pending.
+The candidate [prepared Study escape attempt](docs/experiments/study-escape.md) under [#55](https://github.com/joeloverbeck/arkham-unfolded/issues/55) adds coordinated turns for all three investigators and an Act 1 closing decision. Use the [party launch command](#launch-and-resume-the-party-experiment) below; its owner acceptance is pending.
+
+## Launch and resume the party experiment
+
+On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
+
+```sh
+cd /home/joeloverbeck/src/arkham-unfolded
+cargo run --locked --features tabletop --bin arkham-tabletop -- \
+  --experiment party \
+  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-55-assets/party-assets-v1 \
+  --save /home/joeloverbeck/.cache/agent-tmp/arkham-55-owner-8a08cc9.session.json
+```
+
+This reopens the existing party session with its prepared artwork. Decisions autosave to the specified file; run the same command to resume after closing the window. These artwork and save paths belong to this machine's prepared experiment; use your own paths on another machine and retain this save to keep your progress.
+
+Keep the terminal open and the app window visible and focused during **Checking graphics...**. Once play is enabled, the heading inside must say **Prepared Study escape · The Gathering · Standard**. The graphics workaround described below applies automatically. See the [Study escape guide](docs/experiments/study-escape.md) for the prepared position, controls and remaining owner verification; #55 remains open pending acceptance.
 
 ## Launch and play the Tony turn
 
