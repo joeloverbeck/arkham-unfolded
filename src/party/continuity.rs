@@ -1,12 +1,14 @@
 //! Offline continuity for the prepared Study attempt. Earlier experiments retain their readers.
 
 use super::{Observation, Recording, SOURCE_REVISION, Session};
-use crate::APP_VERSION;
+use crate::{
+    APP_VERSION,
+    record_replacement::{self, Replacement},
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    fmt, fs,
-    io::{Read, Write},
+    fmt,
     path::{Path, PathBuf},
 };
 
@@ -212,16 +214,13 @@ pub fn load_recording(path: impl AsRef<Path>) -> Result<Recording, ContinuityErr
 }
 
 fn read_envelope(path: &Path, kind: &str) -> Result<(Vec<u8>, Envelope), ContinuityError> {
-    let mut bytes = Vec::new();
-    fs::File::open(path)?
-        .take(MAX_RECORD_BYTES + 1)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_RECORD_BYTES {
-        return Err(ContinuityError(
-            "This file exceeds the bounded experiment's record limit.".into(),
-        ));
-    }
-    let envelope: Envelope = serde_json::from_slice(&bytes)?;
+    let bytes = record_replacement::read(path, MAX_RECORD_BYTES, ContinuityError)?;
+    let envelope = decode_envelope(&bytes, kind)?;
+    Ok((bytes, envelope))
+}
+
+fn decode_envelope(bytes: &[u8], kind: &str) -> Result<Envelope, ContinuityError> {
+    let envelope: Envelope = serde_json::from_slice(bytes)?;
     if envelope.checksum != envelope.checksum()? {
         return Err(ContinuityError(
             "Record checksum mismatch. The original file was left unchanged.".into(),
@@ -236,14 +235,12 @@ fn read_envelope(path: &Path, kind: &str) -> Result<(Vec<u8>, Envelope), Continu
             "This record requires a different compatible application/source version.".into(),
         ));
     }
-    Ok((bytes, envelope))
+    Ok(envelope)
 }
 
 /// The last valid save is retained next to the destination with `.previous` added.
 pub fn previous_path(path: impl AsRef<Path>) -> PathBuf {
-    let mut name = path.as_ref().as_os_str().to_os_string();
-    name.push(".previous");
-    PathBuf::from(name)
+    record_replacement::previous_path(path.as_ref())
 }
 
 fn replace_record(
@@ -253,44 +250,31 @@ fn replace_record(
     session: Option<&Session>,
     expected: Option<&Session>,
 ) -> Result<(), ContinuityError> {
-    if bytes.len() as u64 > MAX_RECORD_BYTES {
-        return Err(ContinuityError(
-            "This file exceeds the bounded experiment's record limit.".into(),
-        ));
-    }
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    fs::create_dir_all(parent)?;
-    // Both player clients use this lock, including the read-before-replace check.
-    // The sidecar stays in place so competing processes lock the same inode.
-    let mut lock_path = path.as_os_str().to_os_string();
-    lock_path.push(".lock");
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(PathBuf::from(lock_path))?;
-    lock.try_lock()
-        .map_err(|error| ContinuityError(format!("The save is busy: {error}")))?;
-    let previous = previous_path(path);
-    let existing = match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_file() => {
-            let (existing_bytes, envelope) = read_envelope(path, kind)?;
+    record_replacement::replace(
+        path,
+        bytes,
+        MAX_RECORD_BYTES,
+        ContinuityError,
+        |existing| {
+            let Some(existing) = existing else {
+                if expected.is_some() {
+                    return Err(ContinuityError("The previous turn is no longer at this path. Reopen before starting another turn.".into()));
+                }
+                return Ok(Replacement::Replace);
+            };
+            let envelope = decode_envelope(existing, kind)?;
             if kind == "party-recording" {
                 let candidate: Envelope = serde_json::from_slice(bytes)?;
                 if envelope.payload != candidate.payload {
                     return Err(ContinuityError("A different recording already occupies this path. Recordings are immutable; choose a new path.".into()));
                 }
-                return Ok(());
+                return Ok(Replacement::Unchanged);
             }
             if let Some(candidate) = session {
                 let committed: Session = serde_json::from_value(envelope.payload)?;
                 validate_session(&committed)?;
                 if candidate == &committed {
-                    return Ok(());
+                    return Ok(Replacement::Unchanged);
                 }
                 if let Some(expected) = expected {
                     if expected != &committed {
@@ -300,53 +284,12 @@ fn replace_record(
                     return Err(ContinuityError("A different or later decision is already saved. Reopen it before continuing.".into()));
                 }
             }
-            Some(existing_bytes)
-        }
-        Ok(_) => {
-            return Err(ContinuityError(
-                "The record destination is not a regular file.".into(),
-            ));
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            if expected.is_some() {
-                return Err(ContinuityError("The previous turn is no longer at this path. Reopen before starting another turn.".into()));
-            }
-            None
-        }
-        Err(error) => return Err(error.into()),
-    };
-    if existing.is_some() && previous.try_exists()? {
-        load_session(&previous)?;
-    }
-    // Write and sync before replacing either named record. The original remains
-    // intact if creating or writing the temporary file fails.
-    let mut next = tempfile::NamedTempFile::new_in(parent)?;
-    next.write_all(bytes)?;
-    next.as_file().sync_all()?;
-    if let Some(existing) = existing {
-        let mut backup = tempfile::NamedTempFile::new_in(parent)?;
-        backup.write_all(&existing)?;
-        backup.as_file().sync_all()?;
-        if expected.is_some() {
-            let prefix = format!(
-                "{}.archived-",
-                path.file_name().unwrap_or_default().to_string_lossy()
-            );
-            let mut archive = tempfile::Builder::new()
-                .prefix(&prefix)
-                .suffix(".json")
-                .tempfile_in(parent)?;
-            archive.write_all(&existing)?;
-            archive.as_file().sync_all()?;
-            archive
-                .keep()
-                .map_err(|error| ContinuityError(error.error.to_string()))?;
-        }
-        backup
-            .persist(&previous)
-            .map_err(|error| ContinuityError(error.error.to_string()))?;
-    }
-    next.persist(path)
-        .map_err(|error| ContinuityError(error.error.to_string()))?;
-    Ok(())
+            Ok(if expected.is_some() {
+                Replacement::Archive
+            } else {
+                Replacement::Replace
+            })
+        },
+        |previous| load_session(previous).map(|_| ()),
+    )
 }
