@@ -416,20 +416,17 @@ fn handle_actions(
         }
         let mut reveal_focus = false;
         let action = match action {
-            Action::ContextChoice(epoch, revision, id) if table.context.accepts(epoch) => {
-                Action::Choose(revision, id)
-            }
-            Action::ContextChoice(..) => continue,
-            Action::Confirm(revision, cancel) => {
-                let set = if cancel {
-                    &table.context.cancellations
-                } else {
-                    &table.context.commitments
-                };
-                let Some(id) = controls::compound_choice(&table.view(), set, cancel) else {
+            Action::ContextChoice(epoch, revision, id) => {
+                let Some(choice) = table.context.contextual_choice(epoch, revision, id) else {
                     continue;
                 };
-                Action::Choose(revision, id)
+                choice
+            }
+            Action::Confirm(revision, cancel) => {
+                let Some(choice) = table.context.confirm(&table.view(), revision, cancel) else {
+                    continue;
+                };
+                choice
             }
             Action::Reveal(request) => {
                 refresh_reveal(&table, &settings, &mut shortcut);
@@ -473,34 +470,26 @@ fn handle_actions(
                 orbit.focus(layout::focus(area));
                 table.context.dismiss();
             }
-            Action::Select(revision, source, at)
-                if revision == table.view().revision && controls::exists(&table.view(), source) =>
-            {
-                table.context.select(source, at);
-                if let Some(index) = controls::inspection_only(&table, source) {
+            Action::Select(revision, source, at) => {
+                let view = table.view();
+                let live = table.replay.is_none();
+                if let Some(controls::SelectionEffect::Inspect(index)) =
+                    table.context.select(&view, live, revision, source, at)
+                {
                     table.inspect = Some(index);
-                    table.context.dismiss();
                 }
             }
-            Action::Toggle(epoch, revision, id, cancel)
-                if table.replay.is_none()
-                    && table.context.accepts(epoch)
-                    && revision == table.view().revision
-                    && controls::selectable(&table.view(), id, cancel) =>
-            {
-                let set = if cancel {
-                    &mut table.context.cancellations
-                } else {
-                    &mut table.context.commitments
-                };
-                if !set.remove(&id) {
-                    set.insert(id);
-                }
-                table.context.dismiss();
+            Action::Toggle(epoch, revision, id, cancel) => {
+                let view = table.view();
+                let live = table.replay.is_none();
+                table
+                    .context
+                    .toggle(&view, live, epoch, revision, id, cancel);
             }
-            Action::Inspect(index) if index < CARDS.len() => {
-                table.inspect = Some(index);
-                table.context.dismiss();
+            Action::Inspect(index) => {
+                if let Some(index) = table.context.inspect(index) {
+                    table.inspect = Some(index);
+                }
             }
             Action::History => {
                 table.history = true;
@@ -511,12 +500,10 @@ fn handle_actions(
                 table.history = false;
             }
             Action::Dismiss => {
-                table.context.dismiss();
-                table.context.utilities = false;
+                table.context.close_menus();
             }
             Action::Utilities => {
-                table.context.utilities = !table.context.utilities;
-                table.context.dismiss();
+                table.context.toggle_utilities();
             }
             Action::Motion => table.reduced_motion = !table.reduced_motion,
             Action::Save if table.replay.is_none() => {
@@ -707,16 +694,8 @@ fn synchronize_feedback(
     feedback.blocked = table.modal() || settings.is_busy();
     feedback.reduced_motion = table.reduced_motion;
     for (source, mut mark) in &mut cards {
-        mark.menu_source = table.context.open
-            && table
-                .context
-                .selected
-                .is_some_and(|(selected, _)| selected == source.0);
-        mark.pending_choice = match source.0 {
-            Source::Hand(id) => table.context.commitments.contains(&id),
-            Source::Token(id) => table.context.cancellations.contains(&u16::from(id)),
-            _ => false,
-        };
+        mark.menu_source = table.context.is_menu_source(source.0);
+        mark.pending_choice = table.context.is_pending(source.0);
     }
 }
 #[allow(clippy::too_many_arguments)]
@@ -742,8 +721,7 @@ fn camera_controls(
         .and_then(|h| h.get(&bevy::picking::pointer::PointerId::Mouse))
         .is_some_and(|hits| hits.keys().any(|e| ui_nodes.contains(*e)));
     let keyboard = modal
-        || table.context.open
-        || table.context.utilities
+        || table.context.captures_keyboard()
         || shortcut.is_open()
         || focus
             .as_ref()
@@ -759,7 +737,7 @@ fn camera_controls(
             pointer_blocked: modal,
             over_ui,
             keyboard,
-            wheel: table.context.open || shortcut.is_open(),
+            wheel: table.context.is_open() || shortcut.is_open(),
         },
         reduced_motion: table.reduced_motion,
     });

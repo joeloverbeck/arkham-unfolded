@@ -1,3 +1,4 @@
+//! Owns Party's transient selection lifecycle; continuity owns committed choices.
 use super::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Source {
@@ -11,19 +12,65 @@ pub(super) enum Source {
 }
 #[derive(Default)]
 pub(super) struct Context {
-    pub selected: Option<(Source, Vec3)>,
-    pub open: bool,
-    pub epoch: u64,
-    pub utilities: bool,
-    pub commitments: BTreeSet<u16>,
-    pub cancellations: BTreeSet<u16>,
+    selected: Option<(Source, Vec3)>,
+    open: bool,
+    epoch: u64,
+    utilities: bool,
+    commitments: BTreeSet<u16>,
+    cancellations: BTreeSet<u16>,
     stamp: Option<(u64, Option<usize>)>,
 }
+pub(super) enum SelectionEffect {
+    Menu,
+    Inspect(usize),
+}
 impl Context {
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+    pub fn menu_epoch(&self) -> u64 {
+        self.epoch
+    }
+    pub fn utilities_open(&self) -> bool {
+        self.utilities
+    }
+    pub fn captures_keyboard(&self) -> bool {
+        self.open || self.utilities
+    }
+    pub fn is_menu_source(&self, source: Source) -> bool {
+        self.open
+            && self
+                .selected
+                .is_some_and(|(selected, _)| selected == source)
+    }
+    pub fn is_pending(&self, source: Source) -> bool {
+        match source {
+            Source::Hand(id) => self.commitments.contains(&id),
+            Source::Token(id) => self.cancellations.contains(&u16::from(id)),
+            _ => false,
+        }
+    }
+    /// Ordinary menu closure keeps both staged sets and the utilities panel.
     pub fn dismiss(&mut self) {
         self.open = false;
         self.epoch = self.epoch.wrapping_add(1);
     }
+    pub fn close_menus(&mut self) {
+        self.dismiss();
+        self.utilities = false;
+    }
+    pub fn toggle_utilities(&mut self) {
+        self.utilities = !self.utilities;
+        self.dismiss();
+    }
+    pub fn inspect(&mut self, index: usize) -> Option<usize> {
+        if index >= CARDS.len() {
+            return None;
+        }
+        self.dismiss();
+        Some(index)
+    }
+    /// Party also resets after successful reopen, return to live, and a new attempt.
     pub fn reset(&mut self) {
         self.dismiss();
         self.selected = None;
@@ -38,14 +85,117 @@ impl Context {
             self.stamp = stamp;
         }
     }
-    pub fn select(&mut self, source: Source, at: Vec3) {
+    pub fn select(
+        &mut self,
+        view: &Observation,
+        live: bool,
+        revision: u64,
+        source: Source,
+        at: Vec3,
+    ) -> Option<SelectionEffect> {
+        if revision != view.revision || !exists(view, source) {
+            return None;
+        }
         self.dismiss();
         self.selected = Some((source, at));
         self.open = true;
         self.utilities = false;
+        Some(
+            if let Some(index) = self.inspection_only(view, live, source) {
+                self.dismiss();
+                SelectionEffect::Inspect(index)
+            } else {
+                SelectionEffect::Menu
+            },
+        )
     }
-    pub fn accepts(&self, epoch: u64) -> bool {
+    fn accepts(&self, epoch: u64) -> bool {
         self.open && self.epoch == epoch
+    }
+    /// Do not pre-check revision/id: continuity must report those refusals visibly.
+    pub fn contextual_choice(&self, epoch: u64, revision: u64, id: String) -> Option<Action> {
+        self.accepts(epoch).then_some(Action::Choose(revision, id))
+    }
+    pub fn toggle(
+        &mut self,
+        view: &Observation,
+        live: bool,
+        epoch: u64,
+        revision: u64,
+        id: u16,
+        cancel: bool,
+    ) {
+        if live && self.accepts(epoch) && revision == view.revision && selectable(view, id, cancel)
+        {
+            let set = if cancel {
+                &mut self.cancellations
+            } else {
+                &mut self.commitments
+            };
+            if !set.remove(&id) {
+                set.insert(id);
+            }
+            self.dismiss();
+        }
+    }
+    fn pending_set(&self, cancel: bool) -> &BTreeSet<u16> {
+        if cancel {
+            &self.cancellations
+        } else {
+            &self.commitments
+        }
+    }
+    /// Resolve the current set, including when its menu has since closed.
+    pub fn confirm(&self, view: &Observation, revision: u64, cancel: bool) -> Option<Action> {
+        compound_choice(view, self.pending_set(cancel), cancel)
+            .map(|id| Action::Choose(revision, id))
+    }
+    pub fn confirmation_control(
+        &self,
+        view: &Observation,
+        cancel: bool,
+    ) -> Option<(String, Action)> {
+        compound_choice(view, self.pending_set(cancel), cancel)?;
+        let label = if cancel {
+            "Confirm selected cancellation".into()
+        } else {
+            let bonus: u16 = view
+                .investigators
+                .iter()
+                .flat_map(|i| &i.hand)
+                .filter(|c| self.is_pending(Source::Hand(c.id)))
+                .map(|c| u16::from(c.intellect_icons))
+                .sum();
+            format!("Commit selected · +{bonus} intellect")
+        };
+        Some((label, Action::Confirm(view.revision, cancel)))
+    }
+    pub fn pending_summary(&self, view: &Observation) -> Option<String> {
+        if self.commitments.is_empty() && self.cancellations.is_empty() {
+            return None;
+        }
+        let selected = view
+            .investigators
+            .iter()
+            .flat_map(|i| &i.hand)
+            .filter(|c| self.is_pending(Source::Hand(c.id)))
+            .map(|c| format!("{}'s {}", c.owner.name(), c.title))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Some(if !selected.is_empty() {
+            format!(
+                "Selected: {selected}. Supporters may each commit one appropriate card. Select again to remove."
+            )
+        } else {
+            format!(
+                "Selected token cancellations: {}. Choose one auto-fail or two non-auto-fail tokens, then confirm.",
+                self.cancellations
+                    .iter()
+                    .map(|id| (id + 1).to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
     }
 }
 pub(super) fn exists(view: &Observation, source: Source) -> bool {
@@ -73,11 +223,7 @@ fn ids(choice: &str, cancel: bool) -> Option<BTreeSet<u16>> {
         .collect::<Result<_, _>>()
         .ok()
 }
-pub(super) fn compound_choice(
-    view: &Observation,
-    set: &BTreeSet<u16>,
-    cancel: bool,
-) -> Option<String> {
+fn compound_choice(view: &Observation, set: &BTreeSet<u16>, cancel: bool) -> Option<String> {
     if set.is_empty() {
         return None;
     }
@@ -86,7 +232,7 @@ pub(super) fn compound_choice(
         .find(|c| ids(&c.id, cancel).as_ref() == Some(set))
         .map(|c| c.id.clone())
 }
-pub(super) fn selectable(view: &Observation, id: u16, cancel: bool) -> bool {
+fn selectable(view: &Observation, id: u16, cancel: bool) -> bool {
     view.choices
         .iter()
         .any(|c| ids(&c.id, cancel).is_some_and(|ids| ids.contains(&id)))
@@ -180,15 +326,14 @@ fn inspect_targets(view: &Observation, source: Source) -> Vec<(String, usize)> {
         Source::Deck(_) => vec![],
     }
 }
-fn entries(table: &Table, source: Source) -> Vec<Entry> {
-    let view = table.view();
+fn entries(context: &Context, view: &Observation, live: bool, source: Source) -> Vec<Entry> {
     let mut entries = Vec::new();
-    if table.replay.is_none() {
-        for choice in source_choices(&view, source) {
+    if live {
+        for choice in source_choices(view, source) {
             entries.push(Entry {
                 label: choice.label.clone(),
                 action: Action::ContextChoice(
-                    table.context.epoch,
+                    context.menu_epoch(),
                     view.revision,
                     choice.id.clone(),
                 ),
@@ -200,13 +345,9 @@ fn entries(table: &Table, source: Source) -> Vec<Entry> {
             _ => None,
         };
         if let Some((id, cancel)) = selection
-            && selectable(&view, id, cancel)
+            && selectable(view, id, cancel)
         {
-            let selected = if cancel {
-                table.context.cancellations.contains(&id)
-            } else {
-                table.context.commitments.contains(&id)
-            };
+            let selected = context.is_pending(source);
             let label = if cancel {
                 if selected {
                     "Unselect cancellation".into()
@@ -236,11 +377,11 @@ fn entries(table: &Table, source: Source) -> Vec<Entry> {
             };
             entries.push(Entry {
                 label,
-                action: Action::Toggle(table.context.epoch, view.revision, id, cancel),
+                action: Action::Toggle(context.menu_epoch(), view.revision, id, cancel),
             });
         }
     }
-    for (label, index) in inspect_targets(&view, source) {
+    for (label, index) in inspect_targets(view, source) {
         entries.push(Entry {
             label,
             action: Action::Inspect(index),
@@ -254,14 +395,16 @@ fn entries(table: &Table, source: Source) -> Vec<Entry> {
     }
     entries
 }
-pub(super) fn inspection_only(table: &Table, source: Source) -> Option<usize> {
-    feedback::sole_inspection(entries(table, source).into_iter().map(|e| {
-        if let Action::Inspect(i) = e.action {
-            Some(i)
-        } else {
-            None
-        }
-    }))
+impl Context {
+    fn inspection_only(&self, view: &Observation, live: bool, source: Source) -> Option<usize> {
+        feedback::sole_inspection(entries(self, view, live, source).into_iter().map(|e| {
+            if let Action::Inspect(i) = e.action {
+                Some(i)
+            } else {
+                None
+            }
+        }))
+    }
 }
 #[derive(Component)]
 pub(super) struct Menu;
@@ -297,7 +440,12 @@ pub(super) fn render(
     let Some((source, at)) = table.context.selected else {
         return;
     };
-    let entries = entries(&table, source);
+    let entries = entries(
+        &table.context,
+        &table.view(),
+        table.replay.is_none(),
+        source,
+    );
     let anchor = camera
         .0
         .world_to_viewport(camera.1, at)

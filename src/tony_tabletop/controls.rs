@@ -14,23 +14,64 @@ pub(super) enum Source {
     Token,
 }
 #[derive(Clone, Copy)]
-pub(super) struct Selection {
-    pub source: Source,
-    pub at: Vec3,
+struct Selection {
+    source: Source,
+    at: Vec3,
+}
+pub(super) enum SelectionEffect {
+    Menu,
+    Inspect(usize),
 }
 #[derive(Default)]
 pub(super) struct Context {
-    pub selected: Option<Selection>,
-    pub open: bool,
-    pub epoch: u64,
-    pub commitments: BTreeSet<u8>,
-    pub utilities: bool,
+    selected: Option<Selection>,
+    open: bool,
+    epoch: u64,
+    commitments: BTreeSet<u8>,
+    utilities: bool,
     stamp: Option<(u64, Option<usize>)>,
 }
 impl Context {
+    pub fn commitments(&self) -> &BTreeSet<u8> {
+        &self.commitments
+    }
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+    pub fn menu_epoch(&self) -> u64 {
+        self.epoch
+    }
+    pub fn utilities_open(&self) -> bool {
+        self.utilities
+    }
+    pub fn captures_keyboard(&self) -> bool {
+        self.open || self.utilities
+    }
+    pub fn is_menu_source(&self, source: Source) -> bool {
+        self.open
+            && self
+                .selected
+                .is_some_and(|selection| selection.source == source)
+    }
+    pub fn is_pending(&self, source: Source) -> bool {
+        matches!(source, Source::Hand(id) if self.commitments.contains(&id))
+    }
+    /// Ordinary menu closure keeps the compound choice; Escape also closes utilities.
     pub fn dismiss(&mut self) {
         self.open = false;
         self.epoch = self.epoch.wrapping_add(1);
+    }
+    pub fn close_menus(&mut self) {
+        self.dismiss();
+        self.utilities = false;
+    }
+    pub fn toggle_utilities(&mut self) {
+        self.utilities = !self.utilities;
+        self.dismiss();
+    }
+    pub fn inspect(&mut self, index: usize) -> usize {
+        self.dismiss();
+        index
     }
     pub fn sync(&mut self, revision: u64, replay: Option<usize>) -> bool {
         let stamp = Some((revision, replay));
@@ -43,30 +84,93 @@ impl Context {
         self.commitments.clear();
         true
     }
-    pub fn select(&mut self, source: Source, at: Vec3) {
+    pub fn select(
+        &mut self,
+        view: &Observation,
+        gameplay: bool,
+        revision: u64,
+        source: Source,
+        at: Vec3,
+    ) -> Option<SelectionEffect> {
+        if revision != view.revision || !exists(view, source) {
+            return None;
+        }
         self.dismiss();
         self.selected = Some(Selection { source, at });
         self.open = true;
         self.utilities = false;
+        Some(
+            if let Some(index) = self.inspection_only(view, gameplay, source) {
+                SelectionEffect::Inspect(self.inspect(index))
+            } else {
+                SelectionEffect::Menu
+            },
+        )
     }
-    pub fn accepts(&self, epoch: u64) -> bool {
+    fn accepts(&self, epoch: u64) -> bool {
         self.open && epoch == self.epoch
+    }
+    /// Admission checks the menu epoch only. Continuity owns visible revision/id refusals.
+    pub fn contextual_choice(&self, epoch: u64, revision: u64, id: String) -> Option<Action> {
+        self.accepts(epoch).then_some(Action::Choose(revision, id))
+    }
+    pub fn toggle_commitment(
+        &mut self,
+        view: &Observation,
+        gameplay: bool,
+        epoch: u64,
+        revision: u64,
+        id: u8,
+    ) {
+        if self.accepts(epoch) && gameplay && revision == view.revision && committable(view, id) {
+            if !self.commitments.remove(&id) {
+                self.commitments.insert(id);
+            }
+            self.dismiss();
+        }
+    }
+    /// Confirmation carries no epoch or captured set, and also works after dismissal.
+    pub fn confirm(&self, view: &Observation, revision: u64) -> Option<Action> {
+        commitment_choice(view, &self.commitments).map(|id| Action::Choose(revision, id))
+    }
+    pub fn confirmation_control(&self, view: &Observation) -> Option<(String, Action)> {
+        commitment_choice(view, &self.commitments)?;
+        let bonus = commitment_bonus(view, self.commitments.len())?;
+        Some((
+            format!("Commit selected · {bonus}"),
+            Action::ConfirmCommit(view.revision),
+        ))
+    }
+    pub fn pending_summary(&self) -> Option<String> {
+        (!self.commitments.is_empty()).then(|| {
+            format!(
+                "Selected On the Hunt copies: {} · select another card to change this set",
+                self.commitments
+                    .iter()
+                    .map(|id| (id + 1).to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+    }
+    fn invalidate(&mut self, view: &Observation, replay: Option<usize>) -> bool {
+        let mut changed = self.sync(view.revision, replay);
+        if self
+            .selected
+            .is_some_and(|selection| !exists(view, selection.source))
+        {
+            self.dismiss();
+            self.selected = None;
+            changed = true;
+        }
+        changed
     }
 }
 
 pub(super) fn invalidate(mut table: ResMut<Table>) {
     let view = table.view();
     let replay = table.replay.as_ref().map(Replay::index);
-    if table.context.sync(view.revision, replay) {
-        table.dirty = true;
-    }
-    if table
-        .context
-        .selected
-        .is_some_and(|selection| !exists(&view, selection.source))
-    {
-        table.context.dismiss();
-        table.context.selected = None;
+    if table.context.invalidate(&view, replay) {
         table.dirty = true;
     }
 }
@@ -99,14 +203,14 @@ pub(super) fn source_choices(view: &Observation, source: Source) -> Vec<&crate::
         })
         .collect()
 }
-pub(super) fn committable(view: &Observation, id: u8) -> bool {
+fn committable(view: &Observation, id: u8) -> bool {
     view.hand.iter().any(|card| card.id == id)
         && view
             .choices
             .iter()
             .any(|choice| choice.id == format!("commit:{id}"))
 }
-pub(super) fn commitment_choice(view: &Observation, selected: &BTreeSet<u8>) -> Option<String> {
+fn commitment_choice(view: &Observation, selected: &BTreeSet<u8>) -> Option<String> {
     if selected.is_empty() {
         return None;
     }
@@ -175,9 +279,9 @@ struct Entry {
     slot: usize,
     warning: Option<String>,
 }
-fn entries(table: &Table, view: &Observation, source: Source) -> Vec<Entry> {
+fn entries(context: &Context, view: &Observation, gameplay: bool, source: Source) -> Vec<Entry> {
     let mut entries = Vec::new();
-    if table.replay.is_none() && !table.presenting() {
+    if gameplay {
         for choice in source_choices(view, source) {
             let (short, slot) = match choice.id.as_str() {
                 "fight" => ("Fight · bonus/1 action", 0),
@@ -217,7 +321,7 @@ fn entries(table: &Table, view: &Observation, source: Source) -> Vec<Entry> {
             entries.push(Entry {
                 label,
                 action: Action::ContextChoice(
-                    table.context.epoch,
+                    context.menu_epoch(),
                     view.revision,
                     choice.id.clone(),
                 ),
@@ -230,12 +334,12 @@ fn entries(table: &Table, view: &Observation, source: Source) -> Vec<Entry> {
             && let Some(bonus) = commitment_bonus(view, 1)
         {
             entries.push(Entry {
-                label: if table.context.commitments.contains(&id) {
+                label: if context.is_pending(source) {
                     "Unselect commitment".into()
                 } else {
                     format!("Select to commit {bonus}")
                 },
-                action: Action::ToggleCommit(table.context.epoch, view.revision, id),
+                action: Action::ToggleCommit(context.menu_epoch(), view.revision, id),
                 slot: 0,
                 warning: None,
             });
@@ -277,13 +381,17 @@ fn entries(table: &Table, view: &Observation, source: Source) -> Vec<Entry> {
     entries
 }
 
-pub(super) fn inspection_only(table: &Table, view: &Observation, source: Source) -> Option<usize> {
-    crate::tabletop_feedback::sole_inspection(entries(table, view, source).into_iter().map(
-        |entry| match entry.action {
-            Action::Inspect(index) => Some(index),
-            _ => None,
-        },
-    ))
+impl Context {
+    fn inspection_only(&self, view: &Observation, gameplay: bool, source: Source) -> Option<usize> {
+        crate::tabletop_feedback::sole_inspection(
+            entries(self, view, gameplay, source)
+                .into_iter()
+                .map(|entry| match entry.action {
+                    Action::Inspect(index) => Some(index),
+                    _ => None,
+                }),
+        )
+    }
 }
 
 type MenuSnapshot = (u64, u64, bool, Vec2, bool, bool, BTreeSet<u8>);
@@ -321,7 +429,12 @@ pub(super) fn draw_menu(
         return;
     };
     let view = table.view();
-    let entries = entries(&table, &view, selection.source);
+    let entries = entries(
+        &table.context,
+        &view,
+        table.replay.is_none() && !table.presenting(),
+        selection.source,
+    );
     let anchor = camera
         .single()
         .ok()

@@ -155,17 +155,16 @@ pub(super) fn render(
                 control("Return to live attempt",Action::Live);
             }else{
                 for choice in &view.choices{if choice.id=="commit:none"||!controls::has_source(&choice.id){control(&choice.label,Action::Choose(view.revision,choice.id.clone()));}}
-                if controls::compound_choice(&view,&table.context.commitments,false).is_some(){
-                    let bonus:u16=view.investigators.iter().flat_map(|i|&i.hand).filter(|c|table.context.commitments.contains(&c.id)).map(|c|u16::from(c.intellect_icons)).sum();
-                    control(&format!("Commit selected · +{bonus} intellect"),Action::Confirm(view.revision,false));
+                for cancel in [false, true] {
+                    if let Some((label, action)) = table.context.confirmation_control(&view, cancel) {
+                        control(&label, action);
+                    }
                 }
-                if controls::compound_choice(&view,&table.context.cancellations,true).is_some(){control("Confirm selected cancellation",Action::Confirm(view.revision,true));}
                 if view.endpoint.is_some(){control("Start another attempt",Action::New);}
             }
         });
-        if !table.context.commitments.is_empty()||!table.context.cancellations.is_empty(){
-            let selected=view.investigators.iter().flat_map(|i|&i.hand).filter(|c|table.context.commitments.contains(&c.id)).map(|c|format!("{}'s {}",c.owner.name(),c.title)).collect::<Vec<_>>().join(", ");
-            p.spawn(art.text(if !selected.is_empty(){format!("Selected: {selected}. Supporters may each commit one appropriate card. Select again to remove.")}else{format!("Selected token cancellations: {}. Choose one auto-fail or two non-auto-fail tokens, then confirm.",table.context.cancellations.iter().map(|id|(id+1).to_string()).collect::<Vec<_>>().join(", "))},13.,GOLD));
+        if let Some(summary) = table.context.pending_summary(&view) {
+            p.spawn(art.text(summary,13.,GOLD));
         }
         if table.replay.is_none()&&view.endpoint.is_none(){
             let hint=if view.actor.is_none(){"Select an investigator card, then choose their turn. Portrait buttons only move the camera."}else if view.choices.iter().any(|c|c.id.starts_with("commit:")){"Select hand cards across the investigator areas; confirm selected cards, or commit none."}else if view.choices.iter().any(|c|c.id.starts_with("cancel:")){"Select revealed tokens in the Test area, then confirm your legal cancellation."}else if view.choices.iter().any(|c|c.id.starts_with("resolve:")){"Select a revealed token in the Test area to choose the next token to resolve."}else if view.choices.iter().any(|c|c.id.starts_with("lucky:")){"Select Lucky! in Patrice's hand to pay one resource, or decline below."}else if view.choices.iter().any(|c|c.id.starts_with("shuffle:retain:")){"Select Patrice's discard to choose the card retained, or decline the shuffle."}else if view.choices.iter().any(|c|c.id=="advance"){"Select Act 1 to spend six clues and escape, or finish without advancing below."}else{"Select Study to Investigate, your investigator to gain a resource, or your deck to Draw. Use the reveal shortcut when offered."};
@@ -173,7 +172,7 @@ pub(super) fn render(
         }
         if !table.notice.is_empty(){p.spawn(art.text(&table.notice,12.,MUTED));}
     });
-    if table.context.utilities {
+    if table.context.utilities_open() {
         commands
             .spawn((
                 Node {

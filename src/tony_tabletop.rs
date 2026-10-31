@@ -564,18 +564,16 @@ fn handle_actions(
                 }
             }
             Action::ContextChoice(epoch, revision, id) => {
-                if !table.context.accepts(epoch) {
-                    continue;
-                }
-                Action::Choose(revision, id)
-            }
-            Action::ConfirmCommit(revision) => {
-                let Some(id) =
-                    controls::commitment_choice(&table.view(), &table.context.commitments)
-                else {
+                let Some(choice) = table.context.contextual_choice(epoch, revision, id) else {
                     continue;
                 };
-                Action::Choose(revision, id)
+                choice
+            }
+            Action::ConfirmCommit(revision) => {
+                let Some(choice) = table.context.confirm(&table.view(), revision) else {
+                    continue;
+                };
+                choice
             }
             action => action,
         };
@@ -693,33 +691,27 @@ fn handle_actions(
                     Err(e) => table.notice = format!("Could not start another turn: {e}"),
                 }
             }
-            Action::Select(revision, source, at)
-                if revision == table.view().revision && controls::exists(&table.view(), source) =>
-            {
-                table.context.select(source, at);
-                if let Some(index) = controls::inspection_only(&table, &table.view(), source) {
-                    table.context.dismiss();
-                    table.inspect = Some(index);
-                }
-                if let Some(focus) = focus.as_mut() {
-                    focus.clear();
+            Action::Select(revision, source, at) => {
+                let view = table.view();
+                let gameplay = table.replay.is_none() && !table.presenting();
+                if let Some(effect) = table.context.select(&view, gameplay, revision, source, at) {
+                    if let controls::SelectionEffect::Inspect(index) = effect {
+                        table.inspect = Some(index);
+                    }
+                    if let Some(focus) = focus.as_mut() {
+                        focus.clear();
+                    }
                 }
             }
-            Action::ToggleCommit(epoch, revision, id)
-                if table.context.accepts(epoch)
-                    && table.replay.is_none()
-                    && !table.presenting()
-                    && revision == table.view().revision
-                    && controls::committable(&table.view(), id) =>
-            {
-                if !table.context.commitments.remove(&id) {
-                    table.context.commitments.insert(id);
-                }
-                table.context.dismiss();
+            Action::ToggleCommit(epoch, revision, id) => {
+                let view = table.view();
+                let gameplay = table.replay.is_none() && !table.presenting();
+                table
+                    .context
+                    .toggle_commitment(&view, gameplay, epoch, revision, id);
             }
             Action::DismissMenu => {
-                table.context.dismiss();
-                table.context.utilities = false;
+                table.context.close_menus();
                 if let Some(focus) = focus.as_mut() {
                     focus.clear();
                 }
@@ -732,12 +724,10 @@ fn handle_actions(
                 }
             }
             Action::Utilities => {
-                table.context.utilities = !table.context.utilities;
-                table.context.dismiss();
+                table.context.toggle_utilities();
             }
             Action::Inspect(index) => {
-                table.context.dismiss();
-                table.inspect = Some(index);
+                table.inspect = Some(table.context.inspect(index));
             }
             Action::Close => {
                 table.inspect = None;
@@ -879,10 +869,8 @@ fn synchronize_feedback(
     feedback_settings.blocked = table.modal() || settings.is_busy();
     feedback_settings.reduced_motion = table.reduced_motion;
     for (source, mut marks) in &mut cards {
-        marks.menu_source =
-            table.context.open && table.context.selected.is_some_and(|s| s.source == source.0);
-        marks.pending_choice =
-            matches!(source.0, Source::Hand(id) if table.context.commitments.contains(&id));
+        marks.menu_source = table.context.is_menu_source(source.0);
+        marks.pending_choice = table.context.is_pending(source.0);
     }
 }
 
@@ -1175,16 +1163,14 @@ fn rebuild_panel(
                                 control(&choice.label, Action::Choose(view.revision, choice.id.clone()), choice.id == "commit:none");
                             }
                         }
-                        if controls::commitment_choice(&view, &table.context.commitments).is_some()
-                            && let Some(bonus) = controls::commitment_bonus(&view, table.context.commitments.len()) {
-                            control(&format!("Commit selected · {bonus}"), Action::ConfirmCommit(view.revision), true);
+                        if let Some((label, action)) = table.context.confirmation_control(&view) {
+                            control(&label, action, true);
                         }
                         if view.stage == Stage::Ended { control("Start another Tony turn", Action::New, true); }
                     }
                 });
-            if !table.context.commitments.is_empty() {
-                p.spawn(art.text(format!("Selected On the Hunt copies: {} · select another card to change this set",
-                    table.context.commitments.iter().map(|id| (id + 1).to_string()).collect::<Vec<_>>().join(", ")), 13.0, GOLD));
+            if let Some(summary) = table.context.pending_summary() {
+                p.spawn(art.text(summary, 13.0, GOLD));
             }
             if table.replay.is_none() && !table.presenting() {
                 let hint = match view.stage {
@@ -1198,7 +1184,7 @@ fn rebuild_panel(
             }
             if !table.notice.is_empty() { p.spawn(art.text(&table.notice, 12.0, MUTED)); }
         });
-    if table.context.utilities {
+    if table.context.utilities_open() {
         commands
             .spawn((
                 Node {
@@ -1324,8 +1310,7 @@ fn camera_controls(
 ) {
     let modal = table.modal() || settings.is_busy();
     let captures_keys = modal
-        || table.context.open
-        || table.context.utilities
+        || table.context.captures_keyboard()
         || shortcut.as_ref().is_some_and(|s| s.is_open())
         || focus
             .as_ref()
@@ -1345,7 +1330,7 @@ fn camera_controls(
             pointer_blocked: modal,
             over_ui,
             keyboard: captures_keys,
-            wheel: table.context.open || shortcut.as_ref().is_some_and(|s| s.is_open()),
+            wheel: table.context.is_open() || shortcut.as_ref().is_some_and(|s| s.is_open()),
         },
         reduced_motion: table.reduced_motion,
     });
