@@ -8,6 +8,7 @@ mod explanation;
 pub mod party;
 #[cfg(feature = "tabletop")]
 pub mod party_tabletop;
+mod record_replacement;
 #[cfg(feature = "tabletop")]
 mod tabletop_camera;
 #[cfg(feature = "tabletop")]
