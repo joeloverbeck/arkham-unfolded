@@ -17,6 +17,8 @@ This selects the GitHub client for repository work. If a different operation nee
 
 Write multiline bodies to a temporary file and pass `--body-file`. Read back the affected issue, comment, or label after every write. If a write times out or its result is unclear, inspect remote state before retrying.
 
+When preparing a publication artifact, run dependent steps sequentially and require a completed exit code of `0` from each producer before consuming its output. Inspect returned command status explicitly: awaiting a tool response does not establish success, and hashing an empty or partial file left by a failed producer can still succeed. Verify the completed artifact against the intended content or recorded candidate digest before the dependent GitHub write. On failure, stop that sequence, retain the error, and validate the regenerated artifact before resuming.
+
 For an exact comment-body readback, save the response JSON using the returned comment ID, then compare its decoded `body` directly with the submitted file:
 
 ```sh
@@ -41,6 +43,8 @@ gh api repos/joeloverbeck/arkham-unfolded/issues/comments/<comment-id> --jq .bod
 ```
 
 Follow linked decisions and continue pages as needed for the requested coverage. An index locates evidence; it does not replace reading relevant comment bodies. Read back each write using its returned issue or comment identity.
+
+For memory or historical records, first locate entries for this repository or working directory, then search task keywords within those sections. Follow relevant evidence links; widen the search only when the scoped lookup has no relevant result or the task requires another repository's history.
 
 For long files, locate headings or rule identifiers with `rg -n`, then read the required inclusive range through the bounded reader:
 
