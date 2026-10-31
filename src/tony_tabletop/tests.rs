@@ -405,7 +405,7 @@ fn commitment_controls_show_the_tested_skill_and_keep_the_last_selection_pending
                 &format!("Select to commit +1 {skill}"),
                 &format!("Select to commit +1 {contribution}"),
             );
-            let epoch = app.world().resource::<Table>().context.epoch;
+            let epoch = app.world().resource::<Table>().context.menu_epoch();
             act(&mut app, Action::ToggleCommit(epoch, before.revision, 0));
             assert_eq!(app.world().resource::<Table>().view(), before);
             assert_label(
@@ -731,7 +731,7 @@ fn book_cards_keep_their_pose_direct_inspection_and_reopened_state() {
             Action::Select(0, Source::Card(index), card.translation),
         );
         assert_eq!(app.world().resource::<Table>().inspect, Some(index));
-        assert!(!app.world().resource::<Table>().context.open);
+        assert!(!app.world().resource::<Table>().context.is_open());
         act(&mut app, Action::Close);
         assert_eq!(app.world().resource::<Table>().session, before);
     }
@@ -756,7 +756,7 @@ fn sole_inspection_opens_discarded_injury_and_idle_bag_but_preserves_choices() {
     let before = app.world().resource::<Table>().session.clone();
     act(&mut app, Action::Select(0, Source::Bag, Vec3::ZERO));
     assert_eq!(app.world().resource::<Table>().inspect, Some(7));
-    assert!(!app.world().resource::<Table>().context.open);
+    assert!(!app.world().resource::<Table>().context.is_open());
     act(&mut app, Action::Close);
     assert_eq!(app.world().resource::<Table>().session, before);
 
@@ -769,7 +769,7 @@ fn sole_inspection_opens_discarded_injury_and_idle_bag_but_preserves_choices() {
         Action::Select(revision, Source::Discard, Vec3::ZERO),
     );
     assert_eq!(app.world().resource::<Table>().inspect, Some(4));
-    assert!(!app.world().resource::<Table>().context.open);
+    assert!(!app.world().resource::<Table>().context.is_open());
     act(&mut app, Action::Close);
     assert_eq!(app.world().resource::<Table>().session, before);
 
@@ -779,7 +779,7 @@ fn sole_inspection_opens_discarded_injury_and_idle_bag_but_preserves_choices() {
     let revision = app.world().resource::<Table>().session.observe().revision;
     act(&mut app, Action::Select(revision, Source::Bag, Vec3::ZERO));
     assert!(app.world().resource::<Table>().inspect.is_none());
-    assert!(app.world().resource::<Table>().context.open);
+    assert!(app.world().resource::<Table>().context.is_open());
     choose(&mut app, "reveal");
     choose(&mut app, "resolve");
     advance(&mut app, 20.0);
@@ -789,7 +789,7 @@ fn sole_inspection_opens_discarded_injury_and_idle_bag_but_preserves_choices() {
         Action::Select(revision, Source::Discard, Vec3::ZERO),
     );
     assert!(app.world().resource::<Table>().inspect.is_none());
-    assert!(app.world().resource::<Table>().context.open);
+    assert!(app.world().resource::<Table>().context.is_open());
 }
 
 #[test]
@@ -800,16 +800,16 @@ fn inspect_only_cards_open_directly_without_changing_live_or_replayed_choices() 
     let before = app.world().resource::<Table>().session.clone();
     act(&mut app, Action::Select(0, Source::Card(3), Vec3::ZERO));
     assert_eq!(app.world().resource::<Table>().inspect, Some(3));
-    assert!(!app.world().resource::<Table>().context.open);
+    assert!(!app.world().resource::<Table>().context.is_open());
     act(&mut app, Action::Close);
     assert_eq!(app.world().resource::<Table>().session, before);
     act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
-    assert!(app.world().resource::<Table>().context.open);
+    assert!(app.world().resource::<Table>().context.is_open());
     assert_eq!(app.world().resource::<Table>().inspect, None);
     act(&mut app, Action::Replay);
     act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
     assert_eq!(app.world().resource::<Table>().inspect, Some(2));
-    assert!(!app.world().resource::<Table>().context.open);
+    assert!(!app.world().resource::<Table>().context.is_open());
     assert_eq!(app.world().resource::<Table>().session, before);
 }
 
@@ -839,7 +839,7 @@ fn source_marks_follow_open_menus_without_rebuilding_cards_or_erasing_commitment
         &mut app,
         Action::Select(revision, Source::Hand(0), Vec3::ZERO),
     );
-    let epoch = app.world().resource::<Table>().context.epoch;
+    let epoch = app.world().resource::<Table>().context.menu_epoch();
     act(&mut app, Action::ToggleCommit(epoch, revision, 0));
     let hand = card(&mut app, Source::Hand(0));
     assert!(
@@ -1075,13 +1075,13 @@ fn selecting_and_inspecting_two_copies_preserves_the_complete_commitment() {
             &mut app,
             Action::Select(revision, Source::Hand(id), Vec3::ZERO),
         );
-        let epoch = app.world().resource::<Table>().context.epoch;
+        let epoch = app.world().resource::<Table>().context.menu_epoch();
         act(&mut app, Action::ToggleCommit(epoch, revision, id));
     }
     act(&mut app, Action::Inspect(5));
     act(&mut app, Action::Close);
     assert_eq!(
-        app.world().resource::<Table>().context.commitments,
+        *app.world().resource::<Table>().context.commitments(),
         [0, 3].into()
     );
     assert_eq!(app.world().resource::<Table>().session, before);
@@ -1105,7 +1105,7 @@ fn selecting_and_inspecting_two_copies_preserves_the_complete_commitment() {
         app.world()
             .resource::<Table>()
             .context
-            .commitments
+            .commitments()
             .is_empty()
     );
 }
@@ -1251,7 +1251,7 @@ fn keyboard_context_navigation_wraps_and_cancels_without_a_game_action() {
         Action::Select(before.revision, Source::Card(2), Vec3::ZERO),
     );
     keyboard_press(&mut app, window, KeyCode::Escape);
-    assert!(!app.world().resource::<Table>().context.open);
+    assert!(!app.world().resource::<Table>().context.is_open());
     assert_eq!(app.world().resource::<Table>().view(), before);
 }
 
@@ -1306,7 +1306,7 @@ fn keyboard_menu_inspection_preserves_staged_copies_until_explicit_confirmation(
     keyboard_press(&mut app, window, KeyCode::Escape);
     assert!(app.world().resource::<Table>().inspect.is_none());
     assert_eq!(
-        app.world().resource::<Table>().context.commitments,
+        *app.world().resource::<Table>().context.commitments(),
         [0, 3].into()
     );
     assert_eq!(app.world().resource::<Table>().session, before);
@@ -1385,7 +1385,7 @@ fn dismissed_stale_and_replayed_component_choices_never_dispatch() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = presentation_app(dir.path().join("turn.json"));
     act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
-    let epoch = app.world().resource::<Table>().context.epoch;
+    let epoch = app.world().resource::<Table>().context.menu_epoch();
     let original = app.world().resource::<Table>().session.clone();
     act(&mut app, Action::Inspect(2));
     act(&mut app, Action::Close);
@@ -1396,7 +1396,7 @@ fn dismissed_stale_and_replayed_component_choices_never_dispatch() {
         "opening inspection invalidates old menu callbacks"
     );
     act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
-    let epoch = app.world().resource::<Table>().context.epoch;
+    let epoch = app.world().resource::<Table>().context.menu_epoch();
     choose(&mut app, "resource");
     act(&mut app, Action::FinishAnimation);
     let current = app.world().resource::<Table>().session.clone();
@@ -1408,7 +1408,7 @@ fn dismissed_stale_and_replayed_component_choices_never_dispatch() {
         &mut app,
         Action::Select(revision, Source::Card(2), Vec3::ZERO),
     );
-    let epoch = app.world().resource::<Table>().context.epoch;
+    let epoch = app.world().resource::<Table>().context.menu_epoch();
     act(
         &mut app,
         Action::ContextChoice(epoch, revision, "fight".into()),
@@ -1472,13 +1472,19 @@ fn camera_adapter_retains_tony_utilities_wheel_and_escape_frame_pan() {
         .resource_mut::<AccumulatedMouseScroll>()
         .delta
         .y = 1.0;
-    app.world_mut().resource_mut::<Table>().context.utilities = true;
+    app.world_mut()
+        .resource_mut::<Table>()
+        .context
+        .toggle_utilities();
     app.world_mut().run_system_once(camera_controls).unwrap();
     assert!(
         (app.world().resource::<Orbit>().pose().distance - (before.distance - 0.6)).abs() < 0.00001
     );
-    assert!(app.world().resource::<Table>().context.utilities);
-    app.world_mut().resource_mut::<Table>().context.utilities = false;
+    assert!(app.world().resource::<Table>().context.utilities_open());
+    app.world_mut()
+        .resource_mut::<Table>()
+        .context
+        .toggle_utilities();
     app.world_mut()
         .resource_mut::<AccumulatedMouseScroll>()
         .delta
@@ -1744,3 +1750,4 @@ fn right_drag_through_real_navigation_layout_ignores_empty_space_but_not_buttons
     assert_eq!(app.world().resource::<Orbit>().pose().yaw, before);
 }
 mod encounter_discard;
+mod selection_lifecycle;

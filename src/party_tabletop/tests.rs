@@ -1,6 +1,9 @@
 use super::*;
+mod selection_lifecycle;
 fn app(path: PathBuf) -> App {
-    let mut app = App::new();
+    app_in(App::new(), path)
+}
+fn app_in(mut app: App, path: PathBuf) -> App {
     app.insert_resource(Table::new(
         Session::with_draws(vec![crate::TokenFace::Zero]),
         path.clone(),
@@ -253,7 +256,7 @@ fn inspection_preserves_selected_commitments_and_revision_change_invalidates_the
         &mut app,
         Action::Select(revision, Source::Hand(100), Vec3::ZERO),
     );
-    let epoch = app.world().resource::<Table>().context.epoch;
+    let epoch = app.world().resource::<Table>().context.menu_epoch();
     act(&mut app, Action::Toggle(epoch, revision, 100, false));
     act(
         &mut app,
@@ -266,16 +269,14 @@ fn inspection_preserves_selected_commitments_and_revision_change_invalidates_the
         app.world()
             .resource::<Table>()
             .context
-            .commitments
-            .contains(&100)
+            .is_pending(Source::Hand(100))
     );
     act(&mut app, Action::Confirm(revision, false));
     assert!(
-        app.world()
+        !app.world()
             .resource::<Table>()
             .context
-            .commitments
-            .is_empty()
+            .is_pending(Source::Hand(100))
     );
     assert_eq!(
         app.world()
@@ -378,7 +379,10 @@ fn rendered_button(app: &mut App, label: &str) -> Entity {
 }
 
 fn render_app(path: PathBuf) -> App {
-    let mut app = app(path);
+    render_app_in(App::new(), path)
+}
+fn render_app_in(app: App, path: PathBuf) -> App {
+    let mut app = app_in(app, path);
     app.init_resource::<Art>()
         .init_resource::<Assets<Image>>()
         .init_resource::<Assets<Mesh>>()

@@ -60,7 +60,7 @@ pub(super) fn synchronize_scene(
     let view = table.view();
     let discard_at = layout::investigator_discard(0);
     let bag_at = layout::test_bag();
-    let key = (view.clone(), table.context.commitments.clone());
+    let key = (view.clone(), table.context.commitments().clone());
     if rendered.as_ref() == Some(&key) {
         return;
     }
@@ -369,7 +369,7 @@ pub(super) fn synchronize_scene(
                     "{} · {}{}",
                     card.title,
                     card.id + 1,
-                    if table.context.commitments.contains(&card.id) {
+                    if table.context.is_pending(Source::Hand(card.id)) {
                         " · selected"
                     } else {
                         ""
