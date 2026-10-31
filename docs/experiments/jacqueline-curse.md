@@ -103,6 +103,8 @@ Passing automated checks establishes the exercised decisions and continuity boun
 
 ## Developer native verification
 
+For slow startup, rendering or camera movement, begin with the [native-performance procedure](../../.claude/skills/diagnosing-bugs/native-performance.md) before changing the launch conditions.
+
 ### Build an instrumented source copy
 
 Before compiling a temporary instrumented source copy, use the isolated build helper. From the normal repository root, build the normal executable if it is absent, then choose a new output directory outside both checkouts:
@@ -143,7 +145,9 @@ For static layout checks, add `--initial-view scenario --screenshot scenario.png
 
 Each executable/save copy reaches its final path only after verification. A failed copy removes its own temporary bytes and reports the destination, attempted size and underlying error; source files and earlier runs remain intact. Use a disk-backed destination with sufficient space and user quota: debug executables can be gigabytes, and filesystem free space alone does not establish quota availability. The example uses the user's cache directory; verify its backing filesystem if that location is customized.
 
-The command stays open until the window closes and stops its own process group after 1800 seconds (30 minutes; override with `--timeout-seconds`, maximum 3600), or on interruption. This longer default leaves time to read an owner checklist and inspect results; it grants no desktop-control permission. Set a shorter explicit timeout for automated startup runs. Its first JSON output and `run/run.json` identify the app PID, process start, staged executable hash, exact arguments and isolated environment. In another terminal set `review_dir` to the printed run directory (the directory ending in `/run`) and `native_pid` to the recorded **app** PID. A background launch command's `$!` is the supervisor PID, not the app PID.
+The command stays open until the window closes and stops its own process group after 1800 seconds (30 minutes; override with `--timeout-seconds`, maximum 3600), or on interruption. This longer default leaves time to read an owner checklist and inspect results; it grants no desktop-control permission. Set a shorter explicit timeout for automated startup runs. Its first JSON output and `run/run.json` identify the app PID, process start, staged executable hash and exact arguments. In another terminal set `review_dir` to the printed run directory (the directory ending in `/run`) and `native_pid` to the recorded **app** PID. A background launch command's `$!` is the supervisor PID, not the app PID.
+
+The manifest's `environment` field retains the XDG overrides. `launch_conditions` records the helper's setup actions and allowlisted inherited/effective environment settings; `null` means unset, a string preserves the exact UTF-8 value, and `unix_bytes` preserves non-UTF-8 bytes. These settings are captured before spawn and describe the helper's launch, not a previous owner process. Capture the ordinary baseline separately while it is available, and keep unknown conditions explicit.
 
 Run window discovery, focus, capture, process inspection and cleanup with the same desktop access and process visibility as the launch. Obtain any required tool permission for that context; a missing PID in an isolated shell does not establish that the launched process exited.
 
@@ -205,6 +209,12 @@ For folder persistence, exercise **Choose asset folder → check → Save folder
 Close the verification window normally and let the launch supervisor report its exit. If cleanup is needed, interrupt that supervisor; for a manually restarted app, confirm its recorded identity before terminating it. Stop only the identified launch and helpers. Keep logs/captures local; record the revision, command, outcome and evidence location in the active issue. Remove temporary files only after the needed evidence has been retained.
 
 Protocol references: [RemoteDesktop](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html) and [ScreenCast](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html). Support and evidence remain limited to the desktop and journey actually exercised.
+
+### Foreground performance measurements
+
+Before a timed check, establish who will keep the app visible and focused. Within an authorized desktop interval, use the verified PID/window and existing focus support: `native capture` focuses its client, and a running native session accepts `{"action":"focus"}` or `"focus":true` on an operation. Wait for that operation's result before selecting the measurement interval. When the check needs the owner's attention, establish readiness before launch instead of sending a focus request during a short countdown. Record any capture or focus operation as part of the comparison's conditions.
+
+Record usable foreground duration or sample count alongside total elapsed time and measured rates. Background time does not satisfy the graphics check. A supervisor timeout without enough foreground evidence is **inconclusive**, not evidence of GPU failure; retain any independently reported renderer error separately. Keep the original absolute deadline, cleanup reserve and existing focus guards. Focus loss consumes the remaining allowance; it does not authorize a longer run or another attempt.
 
 ### Capture a laggy camera
 

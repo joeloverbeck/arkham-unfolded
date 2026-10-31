@@ -65,6 +65,15 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
         .unwrap();
     let metadata = running(&directory);
     assert_eq!(metadata["initial_view"], "scenario");
+    assert_eq!(
+        metadata["launch_conditions"]["save_staging"],
+        "verified-copy"
+    );
+    assert_eq!(
+        metadata["launch_conditions"]["screenshot"],
+        directory.join("render.png").to_str().unwrap()
+    );
+    assert_eq!(metadata["launch_conditions"]["quit_after_screenshot"], true);
     let process_exe =
         fs::read_link(format!("/proc/{}/exe", metadata["pid"].as_u64().unwrap())).unwrap();
     assert_eq!(process_exe, directory.join("arkham-tabletop"));
@@ -120,6 +129,99 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
             "scenario"
         ])
     );
+}
+
+#[test]
+fn launch_records_allowlisted_inherited_and_effective_conditions_before_exit() {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().join("run");
+    let owner_cache = root.path().join("owner-cache");
+    let non_utf8 = OsString::from_vec(b"/driver/\xff.json".to_vec());
+    let child = launch(&support::fixture().join("child"), &directory)
+        .current_dir(root.path())
+        .env_clear()
+        .env("WGPU_BACKEND", "vulkan")
+        .env("WGPU_ADAPTER_NAME", "")
+        .env("VK_DRIVER_FILES", &non_utf8)
+        .env("XDG_CACHE_HOME", &owner_cache)
+        .env("ARKHAM_TEST_SECRET", "private-test-marker")
+        .args(["--timeout-seconds", "5", "--no-art"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let metadata = running(&directory);
+    let pid = metadata["pid"].as_u64().unwrap();
+    let child_environment = fs::read(format!("/proc/{pid}/environ")).unwrap();
+    fs::write(directory.join("finish"), "").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+
+    let conditions = &metadata["launch_conditions"];
+    let environment = &conditions["environment"];
+    assert_eq!(conditions["environment_scope"], "allowlist");
+    assert_eq!(
+        environment["WGPU_BACKEND"],
+        serde_json::json!({"inherited":"vulkan", "effective":"vulkan"})
+    );
+    assert_eq!(
+        environment["WGPU_ADAPTER_NAME"],
+        serde_json::json!({"inherited":"", "effective":""})
+    );
+    assert_eq!(
+        environment["WGPU_POWER_PREF"],
+        serde_json::json!({"inherited":null, "effective":null})
+    );
+    assert_eq!(
+        environment["XDG_CACHE_HOME"],
+        serde_json::json!({"inherited":owner_cache, "effective":directory.join("cache")})
+    );
+    assert_eq!(
+        environment["XDG_CONFIG_HOME"],
+        serde_json::json!({"inherited":null, "effective":directory.join("config")})
+    );
+    assert_eq!(
+        environment["VK_DRIVER_FILES"],
+        serde_json::json!({
+            "inherited":{"unix_bytes":b"/driver/\xff.json"},
+            "effective":{"unix_bytes":b"/driver/\xff.json"}
+        })
+    );
+    assert!(environment.get("ARKHAM_TEST_SECRET").is_none());
+    assert!(!metadata.to_string().contains("private-test-marker"));
+    assert!(
+        child_environment
+            .split(|byte| *byte == 0)
+            .any(|entry| { entry == b"VK_DRIVER_FILES=/driver/\xff.json" })
+    );
+    assert!(child_environment.split(|byte| *byte == 0).any(|entry| {
+        entry == format!("XDG_CACHE_HOME={}", directory.join("cache").display()).as_bytes()
+    }));
+    assert_eq!(
+        metadata["environment"],
+        serde_json::json!({
+            "XDG_CONFIG_HOME":directory.join("config"),
+            "XDG_DATA_HOME":directory.join("data"),
+            "XDG_CACHE_HOME":directory.join("cache")
+        })
+    );
+    assert_eq!(conditions["supervisor_cwd"], root.path().to_str().unwrap());
+    assert_eq!(conditions["executable_staging"], "verified-read-only-copy");
+    assert_eq!(conditions["save_staging"], "fresh");
+    assert_eq!(conditions["stdin"], "null");
+    assert_eq!(
+        conditions["stdout"],
+        directory.join("app.log").to_str().unwrap()
+    );
+    assert_eq!(conditions["stderr"], conditions["stdout"]);
+    assert!(conditions["screenshot"].is_null());
+    assert_eq!(conditions["quit_after_screenshot"], false);
+    assert_eq!(conditions["verify_executable_hash_after_spawn"], true);
+    let completed: Value =
+        serde_json::from_slice(&fs::read(directory.join("run.json")).unwrap()).unwrap();
+    assert_eq!(completed["launch_conditions"], *conditions);
 }
 
 #[test]

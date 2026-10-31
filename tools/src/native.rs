@@ -9,9 +9,11 @@ use clap::{Args, Subcommand, ValueEnum};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
+    ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{BufRead, Read, Write},
     os::unix::{
+        ffi::OsStrExt,
         fs::{DirBuilderExt, PermissionsExt},
         process::ExitStatusExt,
     },
@@ -455,6 +457,60 @@ pub fn emit(value: &Value) -> Result<()> {
     Ok(())
 }
 
+fn environment_value(value: Option<&OsStr>) -> Value {
+    match value {
+        None => Value::Null,
+        Some(value) => match value.to_str() {
+            Some(text) => json!(text),
+            None => json!({"unix_bytes": value.as_bytes()}),
+        },
+    }
+}
+
+fn launch_environment(overrides: &std::collections::BTreeMap<&str, PathBuf>) -> Value {
+    let mut environment = serde_json::Map::new();
+    // Capture only settings relevant to the native graphics comparison, never a
+    // complete process environment. Null and empty values remain distinct.
+    for name in [
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "WGPU_BACKEND",
+        "WGPU_POWER_PREF",
+        "WGPU_ADAPTER_NAME",
+        "WGPU_FORCE_FALLBACK_ADAPTER",
+        "VK_DRIVER_FILES",
+        "VK_ADD_DRIVER_FILES",
+        "VK_ICD_FILENAMES",
+        "VK_INSTANCE_LAYERS",
+        "VK_LAYER_PATH",
+        "VK_ADD_LAYER_PATH",
+        "__GL_SHADER_DISK_CACHE",
+        "__GL_SHADER_DISK_CACHE_PATH",
+        "__GL_SHADER_DISK_CACHE_SIZE",
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "RUST_LOG",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "XDG_SESSION_TYPE",
+    ] {
+        let inherited = std::env::var_os(name);
+        let effective = overrides
+            .get(name)
+            .map(|path| path.as_os_str())
+            .or(inherited.as_deref());
+        environment.insert(
+            name.to_owned(),
+            json!({
+                "inherited": environment_value(inherited.as_deref()),
+                "effective": environment_value(effective),
+            }),
+        );
+    }
+    Value::Object(environment)
+}
+
 fn launch(args: Launch) -> Result<u8> {
     let directory = resolve(&args.output_dir)?;
     let binary = args.binary.canonicalize()?;
@@ -523,7 +579,7 @@ fn launch(args: Launch) -> Result<u8> {
     } else if args.no_art {
         command.arg("--no-art");
     }
-    if let Some(path) = screenshot {
+    if let Some(path) = &screenshot {
         command.arg("--screenshot").arg(path);
     }
     if args.quit_after_screenshot {
@@ -537,9 +593,22 @@ fn launch(args: Launch) -> Result<u8> {
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     let mut metadata = json!({"status":"staged", "source_binary":binary, "binary":staged, "sha256":hash,
-        "argv":argv, "cwd":directory, "environment":isolated, "save":save, "source_save":source_save,
-        "source_save_sha256":save_hash, "log":directory.join("app.log"), "timeout_seconds":args.timeout_seconds,
-        "initial_view":args.initial_view});
+    "argv":argv, "cwd":directory, "environment":isolated, "save":save, "source_save":source_save,
+    "source_save_sha256":save_hash, "log":directory.join("app.log"), "timeout_seconds":args.timeout_seconds,
+    "initial_view":args.initial_view,
+    "launch_conditions": {
+        "environment_scope": "allowlist",
+        "environment": launch_environment(&isolated),
+        "supervisor_cwd": environment_value(Some(std::env::current_dir()?.as_os_str())),
+        "executable_staging": "verified-read-only-copy",
+        "save_staging": if source_save.is_some() { "verified-copy" } else { "fresh" },
+        "stdin": "null",
+        "stdout": directory.join("app.log"),
+        "stderr": directory.join("app.log"),
+        "screenshot": screenshot,
+        "quit_after_screenshot": args.quit_after_screenshot,
+        "verify_executable_hash_after_spawn": true
+    }});
     record(&directory, &metadata)?;
     let log = new_file(&directory.join("app.log"))?;
     command
