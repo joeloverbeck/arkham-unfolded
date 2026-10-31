@@ -38,6 +38,7 @@ fn copy_gate(root: &Path) {
         "check-format",
         "check-clippy",
         "check-app",
+        "check-renderer",
     ] {
         fs::copy(
             repository.join("scripts").join(name),
@@ -203,6 +204,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
         "fmt --all -- --check",
         "clippy --locked --workspace --features tabletop --all-targets -- -D warnings",
         "test --locked -p arkham-unfolded-experiment --features tabletop",
+        "test --locked --manifest-path vendor/wgpu-hal/Cargo.toml --lib --no-default-features --features vulkan vulkan::upload_memory::tests",
     ];
     assert!(run("check", 0).status.success());
     assert_eq!(
@@ -219,7 +221,10 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
         .lines()
         .filter_map(|line| line.trim().strip_prefix("run: scripts/check-"))
         .collect();
-    assert_eq!(phases, ["index", "tools", "format", "clippy", "app"]);
+    assert_eq!(
+        phases,
+        ["index", "tools", "format", "clippy", "app", "renderer"]
+    );
     fs::write(&trace, "").unwrap();
     for phase in phases {
         assert!(run(&format!("check-{phase}"), 0).status.success());

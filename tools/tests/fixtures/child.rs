@@ -19,6 +19,9 @@ fn main() -> ExitCode {
         return ExitCode::from(if (mode == "default-fail" && args.first().is_some_and(|arg| arg == "default")) || (mode == "uninstall-fail" && args.first().is_some_and(|arg| arg == "toolchain")) { 1 } else { 0 });
     }
     if env::var_os("ARKHAM_FIXTURE_CHECK").is_some() {
+        if args.iter().any(|arg| arg == "vendor/wgpu-hal/Cargo.toml") {
+            assert_eq!(env::var_os("CARGO_TARGET_DIR").unwrap(), env::current_dir().unwrap().join("target").into_os_string());
+        }
         let trace = env::var_os("ARKHAM_FIXTURE_TRACE").unwrap();
         let mut file = fs::OpenOptions::new().create(true).append(true).open(&trace).unwrap();
         writeln!(file, "{}", args.iter().map(|arg| arg.to_string_lossy()).collect::<Vec<_>>().join(" ")).unwrap();
