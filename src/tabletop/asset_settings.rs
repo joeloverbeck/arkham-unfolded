@@ -211,24 +211,7 @@ mod tests {
     }
 
     fn incomplete_collection(root: &Path) {
-        fs::create_dir_all(root).unwrap();
-        let mut manifest: serde_json::Value =
-            serde_json::from_str(include_str!("../../resources/asset-selection.json")).unwrap();
-        manifest
-            .as_object_mut()
-            .unwrap()
-            .retain(|key, _| ["format_version", "collection", "assets"].contains(&key.as_str()));
-        for asset in manifest["assets"].as_array_mut().unwrap() {
-            let entry = asset.as_object_mut().unwrap();
-            entry.retain(|key, _| {
-                ["role", "path", "sha256", "bytes", "attribution"].contains(&key.as_str())
-            });
-        }
-        fs::write(
-            root.join("manifest.json"),
-            serde_json::to_vec(&manifest).unwrap(),
-        )
-        .unwrap();
+        assets::write_current_manifest_without_payloads(root);
         assert!(assets::inspect(root).recognized);
         assert!(!assets::inspect(root).complete);
     }

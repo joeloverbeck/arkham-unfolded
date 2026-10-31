@@ -17,6 +17,15 @@ This selects the GitHub client for repository work. If a different operation nee
 
 Write multiline bodies to a temporary file and pass `--body-file`. Read back the affected issue, comment, or label after every write. If a write times out or its result is unclear, inspect remote state before retrying.
 
+For an exact comment-body readback, save the response JSON using the returned comment ID, then compare its decoded `body` directly with the submitted file:
+
+```sh
+gh api repos/joeloverbeck/arkham-unfolded/issues/comments/<comment-id> > /tmp/comment-readback.json
+jq -e --rawfile expected /tmp/comment.md '.body == $expected' /tmp/comment-readback.json
+```
+
+Equality exits successfully; a mismatch exits nonzero. This preserves body whitespace while avoiding the extra output newline from `gh api --jq .body`.
+
 Publishing an issue or applying a readiness label follows the authority and feasibility rules in `CLAUDE.md` and the constitution. A draft spec or a closed dependency alone does not activate work.
 
 Before changing GitHub settings or diagnosing a publication refusal, read [GitHub administration](github-administration.md) for the accepted contribution/publication policy, the verified personal-repository request and recovery procedure. Read live settings as the authority; merge and issue acceptance remain separate decisions.

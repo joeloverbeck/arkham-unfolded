@@ -39,3 +39,5 @@ For new or corrected behavior:
 - **One slice at a time.** One seam, one test, one minimal implementation per cycle.
 
 For a behavior-preserving refactor, establish passing characterization tests at the agreed seams before changing the structure. Use the spec and accepted behavior to identify preservation obligations; reuse existing coverage and add checks only for missing obligations. Refactor in small steps and rerun those checks afterward. A green baseline is expected. A missing-interface compiler error establishes only the interface gap. Any separately authorized behavior change uses the red → green loop above.
+
+When workers share a checkout, each finishes edits, formats its owned files, and reports the changed paths, focused check commands and results, and **files stable**. Keep those files stable until the coordinator finishes integration checks. The coordinator starts the full repository check after every contributing worker has handed off; earlier checks are provisional. If edits resume, report that immediately and repeat affected checks after a new stable handoff.

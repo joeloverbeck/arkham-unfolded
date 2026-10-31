@@ -37,7 +37,7 @@ pub fn page(args: Args) -> Result<String, String> {
     let end = args.end.unwrap_or(lines.len());
     if args.start == 0 || args.start > end || end > lines.len() {
         return Err(format!(
-            "select an inclusive range within 1..{}",
+            "select an inclusive range within 1..{}; omit --end to read through EOF",
             lines.len()
         ));
     }
