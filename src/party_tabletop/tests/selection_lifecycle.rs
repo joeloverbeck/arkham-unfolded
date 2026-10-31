@@ -257,15 +257,15 @@ fn rendered_cancellation_preserves_alternatives_and_pending_tokens_through_inspe
     }
 }
 
-fn keyboard_app(path: PathBuf) -> (App, Entity) {
+fn production_app(path: PathBuf, health: RenderHealth) -> (App, Entity) {
     use bevy::{
         camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
         input_focus::{InputDispatchPlugin, InputFocusPlugin},
         window::{PrimaryWindow, WindowRef},
     };
     let mut app = App::new();
-    // The same input, UI and feedback plugins as native startup. FeedbackPlugin
-    // owns tab navigation; the harness must not install a substitute for it.
+    // Only the headless environment belongs here. Party owns all application
+    // registration, including feedback/navigation, reveal, setup and redraw.
     app.add_plugins((
         bevy::app::TaskPoolPlugin::default(),
         bevy::asset::AssetPlugin::default(),
@@ -276,7 +276,6 @@ fn keyboard_app(path: PathBuf) -> (App, Entity) {
         bevy::input::InputPlugin,
         InputFocusPlugin,
         InputDispatchPlugin,
-        feedback::FeedbackPlugin,
         bevy::picking::PickingPlugin,
         bevy::picking::InteractionPlugin,
         bevy::ui::UiPlugin,
@@ -286,47 +285,50 @@ fn keyboard_app(path: PathBuf) -> (App, Entity) {
     .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
     .init_resource::<Time<Real>>()
     .init_resource::<Time>()
-    .init_resource::<PresentationTime>();
-    let mut app = render_app_in(app, path);
-    app.add_systems(
-        Update,
-        camera_controls
-            .after(handle_actions)
-            .before(scene::synchronize),
-    )
-    .add_systems(
-        Update,
-        synchronize_feedback
-            .after(scene::synchronize)
-            .before(ui::render),
-    )
-    .add_systems(Update, controls::render.after(ui::render));
+    .init_resource::<PresentationTime>()
+    .init_resource::<Art>()
+    .init_resource::<Assets<Mesh>>()
+    .init_resource::<Assets<StandardMaterial>>();
+    let mut app = with_table(app, path);
+    app.insert_resource(health).insert_resource(Capture {
+        path: None,
+        quit: false,
+        frame: 0,
+        requested: false,
+    });
     let window = app
         .world_mut()
-        .query_filtered::<Entity, With<Window>>()
-        .single(app.world())
-        .unwrap();
-    {
-        let mut window = app.world_mut().get_mut::<Window>(window).unwrap();
-        window.resolution = (1600, 1000).into();
-        window.focused = true;
-    }
-    app.world_mut().entity_mut(window).insert(PrimaryWindow);
-    app.world_mut().spawn((
-        MainCamera,
-        Transform::default(),
-        Camera {
-            computed: ComputedCameraValues {
-                target_info: Some(RenderTargetInfo {
-                    physical_size: UVec2::new(1600, 1000),
-                    scale_factor: 1.0,
-                }),
+        .spawn((
+            Window {
+                resolution: (1600, 1000).into(),
+                focused: true,
                 ..default()
             },
-            ..default()
-        },
-        RenderTarget::Window(WindowRef::Entity(window)),
-    ));
+            PrimaryWindow,
+        ))
+        .id();
+    install(&mut app);
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(std::time::Duration::from_millis(100));
+    app.update();
+    // Production setup creates the sole camera. Supply the metadata normally
+    // computed by the renderer; do not replace the camera or its control system.
+    let world = app.world_mut();
+    let (mut camera, mut projection, mut target) = world
+        .query_filtered::<(&mut Camera, &mut Projection, &mut RenderTarget), With<MainCamera>>()
+        .single_mut(world)
+        .unwrap();
+    projection.update(1600., 1000.);
+    camera.computed = ComputedCameraValues {
+        clip_from_view: projection.get_clip_from_view(),
+        target_info: Some(RenderTargetInfo {
+            physical_size: UVec2::new(1600, 1000),
+            scale_factor: 1.0,
+        }),
+        ..default()
+    };
+    *target = RenderTarget::Window(WindowRef::Entity(window));
     app.update();
     (app, window)
 }
@@ -349,12 +351,77 @@ fn key(app: &mut App, window: Entity, key_code: KeyCode, logical_key: bevy::inpu
     }
 }
 
+fn right_drag(app: &mut App, window: Entity) {
+    use bevy::input::{ButtonState, mouse::MouseButtonInput};
+    app.world_mut()
+        .get_mut::<Window>(window)
+        .unwrap()
+        .set_cursor_position(Some(Vec2::new(1450., 850.)));
+    app.world_mut().write_message(MouseButtonInput {
+        button: MouseButton::Right,
+        state: ButtonState::Pressed,
+        window,
+    });
+    app.update();
+    app.world_mut()
+        .get_mut::<Window>(window)
+        .unwrap()
+        .set_cursor_position(Some(Vec2::new(1510., 880.)));
+    app.update();
+    app.world_mut().write_message(MouseButtonInput {
+        button: MouseButton::Right,
+        state: ButtonState::Released,
+        window,
+    });
+    app.update();
+}
+
+fn assert_hand_marks(app: &mut App, id: u16, source: bool, pending: bool) {
+    let world = app.world_mut();
+    let children = world
+        .query::<(&CardSource, &Children)>()
+        .iter(world)
+        .find(|(source, _)| source.0 == Source::Hand(id))
+        .unwrap_or_else(|| panic!("missing hand card {id}"))
+        .1;
+    for (name, visible) in [
+        ("Card menu source", source),
+        ("Card pending choice", pending),
+    ] {
+        let mark = children
+            .iter()
+            .find(|child| {
+                world
+                    .get::<Name>(*child)
+                    .is_some_and(|n| n.as_str() == name)
+            })
+            .unwrap_or_else(|| panic!("missing {name} on hand card {id}"));
+        assert_eq!(
+            world.get::<InheritedVisibility>(mark).unwrap().get(),
+            visible,
+            "{name} on hand card {id}"
+        );
+        if visible {
+            let material = world.get::<MeshMaterial3d<StandardMaterial>>(mark).unwrap();
+            assert!(
+                world
+                    .resource::<Assets<StandardMaterial>>()
+                    .get(material)
+                    .unwrap()
+                    .base_color
+                    .alpha()
+                    > 0.0
+            );
+        }
+    }
+}
+
 #[test]
-fn party_keyboard_selection_captures_camera_and_preserves_pending_cards_through_inspection() {
+fn party_controls_preserve_staging_then_save_commitment_reveal_and_replay() {
     use bevy::input::keyboard::Key;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("keyboard.json");
-    let (mut app, window) = keyboard_app(path.clone());
+    let (mut app, window) = production_app(path.clone(), RenderHealth::ready_for_test());
     choose(&mut app, "select:jacqueline");
     choose(&mut app, "investigate");
     let before = app.world().resource::<Table>().session.clone();
@@ -368,6 +435,7 @@ fn party_keyboard_selection_captures_camera_and_preserves_pending_cards_through_
     );
     for id in [100, 200] {
         select(&mut app, Source::Hand(id));
+        assert_hand_marks(&mut app, id, true, false);
         let focused = app.world().resource::<InputFocus>().get().unwrap();
         assert_eq!(
             focused,
@@ -384,6 +452,7 @@ fn party_keyboard_selection_captures_camera_and_preserves_pending_cards_through_
         key(&mut app, window, KeyCode::ArrowLeft, Key::ArrowLeft);
         assert_eq!(app.world().resource::<Orbit>().pose(), panned);
         key(&mut app, window, KeyCode::Enter, Key::Enter);
+        assert_hand_marks(&mut app, id, false, true);
     }
     select(&mut app, Source::Hand(100));
     key(&mut app, window, KeyCode::Tab, Key::Tab);
@@ -397,12 +466,120 @@ fn party_keyboard_selection_captures_camera_and_preserves_pending_cards_through_
         cards::index("card/07032")
     );
     key(&mut app, window, KeyCode::KeyW, Key::Character("w".into()));
+    right_drag(&mut app, window);
     assert_eq!(app.world().resource::<Orbit>().pose(), panned);
     key(&mut app, window, KeyCode::Escape, Key::Escape);
     assert!(app.world().resource::<Table>().inspect.is_none());
+    assert_hand_marks(&mut app, 100, false, true);
+    select(&mut app, Source::Hand(100));
+    assert_hand_marks(&mut app, 100, true, true);
+    right_drag(&mut app, window);
+    let orbited = app.world().resource::<Orbit>().pose();
+    assert_ne!(
+        orbited.yaw, panned.yaw,
+        "the production camera adapter orbits"
+    );
+    assert_hand_marks(&mut app, 100, false, true);
+    assert_hand_marks(&mut app, 200, false, true);
+    assert!(
+        app.world_mut()
+            .query_filtered::<Entity, With<controls::Menu>>()
+            .iter(app.world())
+            .next()
+            .is_none(),
+        "camera navigation dismisses the contextual controls"
+    );
     assert_eq!(app.world().resource::<Table>().session, before);
     assert_eq!(std::fs::read(&path).unwrap(), saved);
     activate(&mut app, "Commit selected · +5 intellect");
     assert_eq!(committed(&app), [100, 200]);
-    assert_eq!(app.world().resource::<Orbit>().pose(), panned);
+    let committed_view = app.world().resource::<Table>().view();
+    assert_eq!(committed_view.revision, before.observe().revision + 1);
+    assert_eq!(
+        continuity::load_session(&path).unwrap().observe(),
+        committed_view
+    );
+    assert_eq!(app.world().resource::<Orbit>().pose(), orbited);
+
+    let saved_commitment = std::fs::read(&path).unwrap();
+    activate(&mut app, "Reveal chaos token");
+    let reveal_choice = rendered_button(&mut app, "Reveal 1 · decline Jacqueline for this reveal");
+    key(&mut app, window, KeyCode::ArrowLeft, Key::ArrowLeft);
+    assert_eq!(app.world().resource::<Orbit>().pose(), orbited);
+    assert_eq!(app.world().resource::<Table>().view(), committed_view);
+    assert_eq!(std::fs::read(&path).unwrap(), saved_commitment);
+    app.world_mut().trigger(Activate {
+        entity: reveal_choice,
+    });
+    app.world_mut().trigger(Activate {
+        entity: reveal_choice,
+    });
+    app.update();
+    let revealed = app.world().resource::<Table>().view();
+    assert_eq!(revealed.revision, committed_view.revision + 1);
+    assert_eq!(revealed.tokens.len(), 1);
+    assert!(!revealed.jacqueline_used);
+    assert_eq!(continuity::load_session(&path).unwrap().observe(), revealed);
+
+    let live = app.world().resource::<Table>().session.clone();
+    let saved_reveal = std::fs::read(&path).unwrap();
+    activate(&mut app, "Menu");
+    activate(&mut app, "Open recorded replay");
+    let first = app.world().resource::<Table>().view();
+    activate(&mut app, "Next moment");
+    assert_ne!(app.world().resource::<Table>().view(), first);
+    activate(&mut app, "Previous moment");
+    assert_eq!(app.world().resource::<Table>().view(), first);
+    assert_eq!(app.world().resource::<Table>().session, live);
+    assert_eq!(std::fs::read(&path).unwrap(), saved_reveal);
+    activate(&mut app, "Return to live attempt");
+    assert_eq!(app.world().resource::<Table>().view(), revealed);
+    assert_eq!(app.world().resource::<Table>().session, live);
+    assert_eq!(std::fs::read(&path).unwrap(), saved_reveal);
+}
+
+#[test]
+fn party_installed_controls_discard_gameplay_input_until_rendering_is_ready() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("blocked.json");
+    let (mut app, _) = production_app(path.clone(), RenderHealth::ready_for_test());
+    choose(&mut app, "select:jacqueline");
+    choose(&mut app, "investigate");
+    let before = app.world().resource::<Table>().session.clone();
+    let saved = std::fs::read(&path).unwrap();
+    let label = before
+        .observe()
+        .choices
+        .iter()
+        .find(|c| c.id == "commit:none")
+        .unwrap()
+        .label
+        .clone();
+    for health in [
+        RenderHealth::default(),
+        RenderHealth::just_ready_for_test(),
+        RenderHealth::failed_for_test(),
+    ] {
+        app.insert_resource(health);
+        activate(&mut app, &label);
+        assert_eq!(app.world().resource::<Table>().session, before);
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+        app.insert_resource(RenderHealth::ready_for_test());
+        app.update();
+        assert_eq!(
+            app.world().resource::<Table>().session,
+            before,
+            "blocked input must be drained"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+    }
+    activate(&mut app, &label);
+    assert_eq!(
+        app.world().resource::<Table>().view().revision,
+        before.observe().revision + 1
+    );
+    assert_eq!(
+        continuity::load_session(&path).unwrap().observe(),
+        app.world().resource::<Table>().view()
+    );
 }

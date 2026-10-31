@@ -3,21 +3,25 @@ mod selection_lifecycle;
 fn app(path: PathBuf) -> App {
     app_in(App::new(), path)
 }
-fn app_in(mut app: App, path: PathBuf) -> App {
+fn app_in(app: App, path: PathBuf) -> App {
+    let mut app = with_table(app, path);
+    app.init_resource::<Actions>()
+        .add_plugins(reveal::RevealPlugin)
+        .add_systems(Update, handle_actions);
+    app
+}
+fn with_table(mut app: App, path: PathBuf) -> App {
     app.insert_resource(Table::new(
         Session::with_draws(vec![crate::TokenFace::Zero]),
         path.clone(),
     ))
-    .init_resource::<Actions>()
     .insert_resource(RenderHealth::ready_for_test())
     .insert_resource(Orbit::new(CameraMode::Jacqueline))
     .insert_resource(AssetSettings::new_party(AssetConfig::load_at(
         path.with_extension("toml"),
         path.with_extension("assets"),
     )))
-    .init_resource::<ButtonInput<KeyCode>>()
-    .add_plugins(reveal::RevealPlugin)
-    .add_systems(Update, handle_actions);
+    .init_resource::<ButtonInput<KeyCode>>();
     app
 }
 fn act(app: &mut App, action: Action) {
