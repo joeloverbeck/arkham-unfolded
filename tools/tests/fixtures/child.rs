@@ -2,6 +2,23 @@ use std::{env, fs, io::Write, process::{Command, ExitCode}, thread, time::Durati
 
 fn main() -> ExitCode {
     let args: Vec<_> = env::args_os().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "--fixture-record-check") {
+        println!("RECORD_CHECK_STDOUT");
+        eprintln!("RECORD_CHECK_STDERR");
+        println!("cwd={}", env::current_dir().unwrap().display());
+        println!("env={}", env::var("ARKHAM_FIXTURE_RECORD_ENV").unwrap_or_default());
+        if env::var_os("ARKHAM_FIXTURE_DESCENDANT").is_some() {
+            let child = Command::new(env::current_exe().unwrap()).arg("--fixture-descendant").spawn().unwrap();
+            fs::write("descendant.pid", child.id().to_string()).unwrap();
+        }
+        println!("RECORD_CHECK_READY");
+        std::io::stdout().flush().unwrap();
+        std::io::stderr().flush().unwrap();
+        if args.get(1).is_some_and(|arg| arg == "wait") {
+            loop { thread::sleep(Duration::from_secs(1)); }
+        }
+        return ExitCode::from(args[1].to_str().unwrap().parse::<u8>().unwrap());
+    }
     let program = env::args_os().next().unwrap();
     let name = std::path::Path::new(&program).file_name().unwrap();
     if let Ok(mode) = env::var("ARKHAM_FIXTURE_RUSTUP") {

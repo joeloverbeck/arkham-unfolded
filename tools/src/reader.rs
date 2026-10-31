@@ -12,7 +12,7 @@ pub struct Args {
     /// Inclusive last line (default: EOF).
     #[arg(long)]
     end: Option<usize>,
-    /// Complete output limit, including metadata.
+    /// Complete output limit in bytes (512..=12000), including metadata.
     #[arg(long, default_value_t = 6000, value_parser = clap::value_parser!(u32).range(512..=12000))]
     max_bytes: u32,
     /// Expected source hash from the preceding page.
@@ -80,9 +80,10 @@ pub fn page(args: Args) -> Result<String, String> {
 
 #[derive(ClapArgs)]
 pub struct BatchArgs {
-    /// JSON array of {path, start?, end?}; paths are relative to the working directory.
+    /// Path to a JSON file containing an array of {path, start?, end?}; paths are relative to the working directory.
+    #[arg(value_name = "REQUESTS_FILE")]
     requests: PathBuf,
-    /// Complete output limit shared by all excerpts, including metadata.
+    /// Complete output limit in bytes (512..=12000), shared by all excerpts including metadata.
     #[arg(long, default_value_t = 6000, value_parser = clap::value_parser!(u32).range(512..=12000))]
     max_bytes: u32,
     /// One-based request number from NEXT.
@@ -117,7 +118,8 @@ struct Source {
 }
 
 pub fn batch(args: BatchArgs) -> Result<String, String> {
-    let manifest = fs::read(&args.requests).map_err(|e| e.to_string())?;
+    let manifest = fs::read(&args.requests)
+        .map_err(|e| format!("cannot read requests file {}: {e}", args.requests.display()))?;
     let requests: Vec<Excerpt> = serde_json::from_slice(&manifest).map_err(|e| e.to_string())?;
     if !(1..=32).contains(&requests.len()) || !(1..=requests.len()).contains(&args.request) {
         return Err("select 1–32 excerpts and a request number within that list".into());

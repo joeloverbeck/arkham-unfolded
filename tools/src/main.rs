@@ -1,3 +1,4 @@
+mod check;
 mod ci;
 mod desktop;
 mod interaction;
@@ -20,6 +21,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Keep complete check output and an atomic completion record across session loss.
+    RecordCheck(check::CheckArgs),
     /// Read a bounded page of whole UTF-8 lines, bound to the source hash.
     ReadContext(reader::Args),
     /// Read multiple excerpts under one shared output budget and source identity.
@@ -39,7 +42,10 @@ enum Command {
 
 fn main() -> ExitCode {
     let command = Cli::parse().command;
-    let failure_code = if matches!(command, Command::Native { .. } | Command::ProfileNative(_)) {
+    let failure_code = if matches!(
+        command,
+        Command::Native { .. } | Command::ProfileNative(_) | Command::RecordCheck(_)
+    ) {
         1
     } else {
         2
@@ -49,6 +55,7 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
     let result = match command {
+        Command::RecordCheck(args) => check::run(args),
         Command::ReadContext(args) => reader::page(args)
             .and_then(|page| {
                 std::io::stdout()
