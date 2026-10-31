@@ -75,3 +75,38 @@ test("calculateTotal sums line items", () => {
   expect(calculateTotal([{ price: 10 }, { price: 5 }])).toBe(15);
 });
 ```
+
+**A later action conceals an earlier failure:** A final-state assertion can pass even when the wrong callback changed the state. Check the observable effect of a rejected action before processing subsequent valid actions. These Rust examples use the existing fixture and interfaces in [Tony's lifecycle tests](../../../src/tony_tabletop/tests/selection_lifecycle.rs).
+
+With card 3 initially unstaged, close and reselect it. Check that the old callback leaves it unstaged and the current menu usable before exercising the current callback:
+
+```rust
+let (old, revision) = select(&mut app, 3);
+act(&mut app, Action::DismissMenu);
+let (current, _) = select(&mut app, 3);
+
+act(&mut app, Action::ToggleCommit(old, revision, 3));
+let context = &app.world().resource::<Table>().context;
+assert!(!context.is_pending(Source::Hand(3)));
+assert!(context.is_menu_source(Source::Hand(3)));
+
+act(&mut app, Action::ToggleCommit(current, revision, 3));
+let context = &app.world().resource::<Table>().context;
+assert!(context.is_pending(Source::Hand(3)));
+```
+
+**An earlier result conceals a missing response:** Repeatedly checking an error prefix can pass when a later refusal silently leaves the previous notice. Each attempt needs evidence of its own result. For two refusals with distinct expected notices:
+
+```rust
+let before = app.world().resource::<Table>().session.clone();
+for (revision, id) in [(1, "fight"), (0, "not-offered")] {
+    let previous_notice = app.world().resource::<Table>().notice.clone();
+    act(&mut app, Action::ContextChoice(epoch, revision, id.into()));
+    let table = app.world().resource::<Table>();
+    assert_ne!(table.notice, previous_notice);
+    assert!(table.notice.starts_with("Decision not committed"));
+    assert_eq!(table.session, before);
+}
+```
+
+When legitimate repeated failures share the same text, use a fresh fixture or a per-attempt result to establish freshness; changing the user-facing wording is not required.
