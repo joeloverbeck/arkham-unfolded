@@ -610,6 +610,16 @@ fn exact_contents(root: &Path, selection: &Selection) -> Result<bool, AssetError
     Ok(observed == expected)
 }
 
+#[cfg(all(test, feature = "tabletop"))]
+pub(crate) fn write_current_manifest_without_payloads(root: &Path) {
+    fs::create_dir_all(root).unwrap();
+    fs::write(
+        root.join(MANIFEST),
+        serde_json::to_vec(&selection().manifest()).unwrap(),
+    )
+    .unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
