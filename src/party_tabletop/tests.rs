@@ -6,6 +6,7 @@ fn app(path: PathBuf) -> App {
         path.clone(),
     ))
     .init_resource::<Actions>()
+    .insert_resource(RenderHealth::ready_for_test())
     .insert_resource(Orbit::new(CameraMode::Jacqueline))
     .insert_resource(AssetSettings::new_party(AssetConfig::load_at(
         path.with_extension("toml"),
@@ -24,6 +25,179 @@ fn choose(app: &mut App, id: &str) {
     let revision = app.world().resource::<Table>().view().revision;
     act(app, Action::Choose(revision, id.into()));
 }
+#[test]
+fn rendering_check_blocks_party_decisions_without_creating_a_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("party.json");
+    let mut app = app(path.clone());
+    app.insert_resource(RenderHealth::default());
+    let before = app.world().resource::<Table>().session.clone();
+    choose(&mut app, "select:jacqueline");
+    act(&mut app, Action::Save);
+    act(&mut app, Action::Replay);
+    assert_eq!(app.world().resource::<Table>().session, before);
+    assert!(app.world().resource::<Table>().replay.is_none());
+    assert!(!path.exists());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+
+    app.insert_resource(RenderHealth::ready_for_test());
+    choose(&mut app, "select:jacqueline");
+    assert_eq!(
+        continuity::load_session(&path).unwrap().observe().actor,
+        Some(Investigator::Jacqueline)
+    );
+}
+
+#[test]
+fn rendering_health_preserves_party_records_and_drains_blocked_input() {
+    for health in [
+        RenderHealth::default(),
+        RenderHealth::failed_for_test(),
+        RenderHealth::just_ready_for_test(),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("party.json");
+        let mut app = app(path.clone());
+        act(&mut app, Action::Save);
+        let saved = std::fs::read(&path).unwrap();
+        choose(&mut app, "select:jacqueline");
+        let before = app.world().resource::<Table>().session.clone();
+        // A different valid save makes a blocked Reopen observable too.
+        std::fs::write(&path, &saved).unwrap();
+        let file_count = std::fs::read_dir(dir.path()).unwrap().count();
+        app.insert_resource(health);
+        choose(&mut app, "investigate");
+        for action in [Action::Save, Action::Reopen, Action::Replay, Action::New] {
+            act(&mut app, action);
+        }
+        let camera_before = app.world().resource::<Orbit>().pose();
+        act(&mut app, Action::Focus(Area::Test));
+        assert_ne!(app.world().resource::<Orbit>().pose(), camera_before);
+        assert_eq!(app.world().resource::<Table>().session, before);
+        assert!(app.world().resource::<Table>().replay.is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), file_count);
+        assert!(app.world().resource::<Actions>().0.is_empty());
+
+        app.insert_resource(RenderHealth::ready_for_test());
+        app.update();
+        assert_eq!(app.world().resource::<Table>().session, before);
+        choose(&mut app, "investigate");
+        assert_ne!(app.world().resource::<Table>().session, before);
+        assert_eq!(
+            continuity::load_session(&path).unwrap(),
+            app.world().resource::<Table>().session
+        );
+    }
+}
+
+#[test]
+fn rendering_failure_blocks_party_replay_navigation_and_return_to_live() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("party.json");
+    let mut app = app(path.clone());
+    choose(&mut app, "select:jacqueline");
+    act(&mut app, Action::Replay);
+    act(&mut app, Action::Next);
+    let index = app
+        .world()
+        .resource::<Table>()
+        .replay
+        .as_ref()
+        .unwrap()
+        .index();
+    let saved = std::fs::read(&path).unwrap();
+    app.insert_resource(RenderHealth::failed_for_test());
+    for action in [Action::Back, Action::Next, Action::Live] {
+        act(&mut app, action);
+        assert_eq!(
+            app.world()
+                .resource::<Table>()
+                .replay
+                .as_ref()
+                .unwrap()
+                .index(),
+            index
+        );
+    }
+    assert_eq!(std::fs::read(path).unwrap(), saved);
+}
+
+#[test]
+fn rendering_check_cannot_archive_and_restart_a_completed_party_attempt() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("party.json");
+    let mut app = app(path.clone());
+    app.world_mut().resource_mut::<Table>().session = completed_attempt(None);
+    act(&mut app, Action::Save);
+    let before = app.world().resource::<Table>().session.clone();
+    let saved = std::fs::read(&path).unwrap();
+    let file_count = std::fs::read_dir(dir.path()).unwrap().count();
+    for health in [RenderHealth::default(), RenderHealth::failed_for_test()] {
+        app.insert_resource(health);
+        act(&mut app, Action::New);
+        assert_eq!(app.world().resource::<Table>().session, before);
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), file_count);
+    }
+    app.insert_resource(RenderHealth::ready_for_test());
+    act(&mut app, Action::New);
+    assert!(app.world().resource::<Table>().view().endpoint.is_none());
+    assert_eq!(
+        continuity::load_session(&path).unwrap(),
+        app.world().resource::<Table>().session
+    );
+}
+
+#[test]
+fn screenshot_capture_and_successful_exit_wait_for_rendering_admission() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("capture.png");
+    let mut app = App::new();
+    app.insert_resource(RenderHealth::default())
+        .init_resource::<ButtonInput<KeyCode>>()
+        .insert_resource(Capture {
+            path: Some(path.clone()),
+            quit: true,
+            frame: 90,
+            requested: false,
+        })
+        .add_message::<AppExit>()
+        .add_systems(Update, capture_window);
+    app.update();
+    assert_eq!(app.world().resource::<Capture>().frame, 90);
+    assert!(!app.world().resource::<Capture>().requested);
+    assert_eq!(
+        app.world_mut()
+            .query::<&Screenshot>()
+            .iter(app.world())
+            .count(),
+        0
+    );
+    assert!(app.world().resource::<Messages<AppExit>>().is_empty());
+
+    app.insert_resource(RenderHealth::just_ready_for_test());
+    app.update();
+    assert!(!app.world().resource::<Capture>().requested);
+
+    app.insert_resource(RenderHealth::ready_for_test());
+    app.update();
+    assert!(app.world().resource::<Capture>().requested);
+    assert_eq!(
+        app.world_mut()
+            .query::<&Screenshot>()
+            .iter(app.world())
+            .count(),
+        1
+    );
+
+    std::fs::write(&path, "completed capture").unwrap();
+    app.world_mut().resource_mut::<Capture>().frame = 96;
+    app.insert_resource(RenderHealth::failed_for_test());
+    app.update();
+    assert!(app.world().resource::<Messages<AppExit>>().is_empty());
+}
+
 #[test]
 fn native_choice_saves_before_install_and_camera_focus_never_selects_actor() {
     let dir = tempfile::tempdir().unwrap();

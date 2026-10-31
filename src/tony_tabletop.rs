@@ -4,6 +4,7 @@ use crate::tabletop_camera::{
     CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
 };
 use crate::tabletop_feedback::{self as feedback, CardFeedback, ContextButton, FeedbackSettings};
+use crate::tabletop_health::{HealthAssets, RenderHealth, TabletopHealthPlugin, exit_result};
 use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin};
 use crate::{
     TokenFace,
@@ -383,6 +384,7 @@ pub fn run() -> Result<(), String> {
         )
         .add_plugins(MeshPickingPlugin)
         .add_plugins(TabletopPacingPlugin)
+        .add_plugins(TabletopHealthPlugin)
         .add_plugins(feedback::FeedbackPlugin)
         .add_plugins(reveal::RevealPlugin)
         .add_systems(Last, request_redraw.in_set(RequestRedraw))
@@ -448,14 +450,22 @@ pub fn run() -> Result<(), String> {
         .as_ref()
         .and_then(|r| r.verified_path(reveal::ART_ROLE))
         .map(|path| server.load(path.to_owned()));
-    app.insert_resource(reveal::Artwork(reveal_image));
-    app.insert_resource(Art {
+    let art = Art {
         handles,
         symbol_font,
         status,
-    });
-    app.run();
-    Ok(())
+    };
+    let health_assets = HealthAssets::new(
+        art.handles
+            .values()
+            .map(|handle| handle.id().untyped())
+            .chain(art.symbol_font.iter().map(|handle| handle.id().untyped()))
+            .chain(reveal_image.iter().map(|handle| handle.id().untyped())),
+    );
+    app.insert_resource(health_assets)
+        .insert_resource(reveal::Artwork(reveal_image))
+        .insert_resource(art);
+    exit_result(app.run())
 }
 
 fn button(
@@ -494,7 +504,9 @@ fn poll_settings(mut settings: ResMut<AssetSettings>, mut table: ResMut<Table>) 
         table.dirty = true;
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn handle_actions(
+    health: Res<RenderHealth>,
     mut queue: ResMut<Actions>,
     mut table: ResMut<Table>,
     mut orbit: ResMut<Orbit>,
@@ -517,6 +529,14 @@ fn handle_actions(
             .extend(shortcut.drain().into_iter().map(Action::Reveal));
     }
     for action in queue.0.drain(..) {
+        if (!health.allows_play() || health.just_became_ready())
+            && !matches!(
+                action,
+                Action::Focus(_) | Action::Close | Action::DismissMenu
+            )
+        {
+            continue;
+        }
         if settings.is_busy() || (table.modal() && !matches!(action, Action::Close)) {
             continue;
         }
@@ -1445,12 +1465,16 @@ fn scroll_panel(event: On<PointerScroll>, mut panels: Query<(&mut ScrollPosition
     }
 }
 fn capture_window(
+    health: Res<RenderHealth>,
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     mut capture: ResMut<Capture>,
     capturing: Query<(), With<Capturing>>,
     mut exit: MessageWriter<AppExit>,
 ) {
+    if !health.allows_play() || health.just_became_ready() {
+        return;
+    }
     capture.frame += 1;
     if keys.just_pressed(KeyCode::F12) {
         let path = "local/experiment/tony-tabletop.png";

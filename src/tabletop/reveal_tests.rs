@@ -25,6 +25,7 @@ fn app_in(mut app: App, path: PathBuf, used: bool) -> App {
         dirty: true,
     })
     .insert_resource(Orbit::new(CameraMode::Jacqueline))
+    .insert_resource(RenderHealth::ready_for_test())
     .init_resource::<Actions>()
     .init_resource::<Context>()
     .add_plugins(reveal::RevealPlugin)

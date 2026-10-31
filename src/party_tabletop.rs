@@ -11,6 +11,7 @@ use crate::{
         CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
     },
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
+    tabletop_health::{HealthAssets, RenderHealth, TabletopHealthPlugin, exit_result},
     tabletop_layout::{self as layout, Area},
     tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin},
     tabletop_reveal as reveal,
@@ -293,6 +294,7 @@ pub fn run() -> Result<(), String> {
         )
         .add_plugins(MeshPickingPlugin)
         .add_plugins(TabletopPacingPlugin)
+        .add_plugins(TabletopHealthPlugin)
         .add_plugins(feedback::FeedbackPlugin)
         .add_plugins(reveal::RevealPlugin)
         .add_systems(Startup, setup)
@@ -360,10 +362,16 @@ pub fn run() -> Result<(), String> {
         .as_ref()
         .and_then(|r| r.verified_path("font/symbols"))
         .map(|p| server.load(p.to_owned()));
-    app.insert_resource(reveal::Artwork(art.image(reveal::ART_ROLE)))
+    let health_assets = HealthAssets::new(
+        art.handles
+            .values()
+            .map(|handle| handle.id().untyped())
+            .chain(art.symbol_font.iter().map(|handle| handle.id().untyped())),
+    );
+    app.insert_resource(health_assets)
+        .insert_resource(reveal::Artwork(art.image(reveal::ART_ROLE)))
         .insert_resource(art);
-    app.run();
-    Ok(())
+    exit_result(app.run())
 }
 fn poll_settings(mut settings: ResMut<AssetSettings>, mut table: ResMut<Table>) {
     if let Some(message) = settings.poll() {
@@ -371,7 +379,9 @@ fn poll_settings(mut settings: ResMut<AssetSettings>, mut table: ResMut<Table>) 
         table.dirty = true;
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn handle_actions(
+    health: Res<RenderHealth>,
     mut actions: ResMut<Actions>,
     mut table: ResMut<Table>,
     mut orbit: ResMut<Orbit>,
@@ -394,6 +404,13 @@ fn handle_actions(
         .0
         .extend(shortcut.drain().into_iter().map(Action::Reveal));
     for action in actions.0.drain(..) {
+        // Discard input queued before admission, including a click from the last
+        // checking frame. Camera navigation and dismissal never change the record.
+        if (!health.allows_play() || health.just_became_ready())
+            && !matches!(action, Action::Focus(_) | Action::Close | Action::Dismiss)
+        {
+            continue;
+        }
         if settings.is_busy() || (table.modal() && !matches!(action, Action::Close)) {
             continue;
         }
@@ -820,12 +837,16 @@ fn scroll_panel(event: On<PointerScroll>, mut panels: Query<(&mut ScrollPosition
     }
 }
 fn capture_window(
+    health: Res<RenderHealth>,
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     mut capture: ResMut<Capture>,
     capturing: Query<(), With<Capturing>>,
     mut exit: MessageWriter<AppExit>,
 ) {
+    if !health.allows_play() || health.just_became_ready() {
+        return;
+    }
     capture.frame += 1;
     if keys.just_pressed(KeyCode::F12) {
         let path = "local/experiment/party-tabletop.png";

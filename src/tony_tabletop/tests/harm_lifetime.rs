@@ -17,6 +17,7 @@ fn lifetime_app(path: PathBuf) -> App {
         context: Context::default(),
     })
     .insert_resource(Orbit::new(CameraMode::Tony))
+    .insert_resource(RenderHealth::ready_for_test())
     .insert_resource(Actions::default())
     .insert_resource(AssetSettings::new_tony(AssetConfig::load_at(
         path.with_extension("toml"),
@@ -33,6 +34,21 @@ fn progress(app: &App) -> f32 {
         .resource::<Table>()
         .presentation
         .animation_progress()
+}
+
+#[test]
+fn rendering_check_leaves_committed_harm_session_and_save_unchanged() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("turn.json");
+    let mut app = lifetime_app(path.clone());
+    choose(&mut app, "investigate");
+    assert!(app.world().resource::<Table>().presenting());
+    let before = app.world().resource::<Table>().session.clone();
+    let saved = std::fs::read(&path).unwrap();
+    app.insert_resource(RenderHealth::default());
+    advance(&mut app, 5.0);
+    assert_eq!(app.world().resource::<Table>().session, before);
+    assert_eq!(std::fs::read(path).unwrap(), saved);
 }
 
 #[test]

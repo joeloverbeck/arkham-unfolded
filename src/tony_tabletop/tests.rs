@@ -95,6 +95,7 @@ fn presentation_app_in(app: App, path: PathBuf) -> App {
     let (mut app, _) = scene_app_in(app);
     app.world_mut().resource_mut::<Table>().save_path = path.clone();
     app.insert_resource(Orbit::new(CameraMode::Tony))
+        .insert_resource(RenderHealth::ready_for_test())
         .add_plugins(reveal::RevealPlugin)
         .insert_resource(Actions::default())
         .insert_resource(AssetSettings::new_tony(AssetConfig::load_at(
@@ -139,6 +140,48 @@ fn act(app: &mut App, action: Action) {
 fn choose(app: &mut App, id: &str) {
     let revision = app.world().resource::<Table>().session.observe().revision;
     act(app, Action::Choose(revision, id.into()));
+}
+
+#[test]
+fn rendering_health_preserves_tony_records_and_drains_blocked_input() {
+    for health in [
+        RenderHealth::default(),
+        RenderHealth::failed_for_test(),
+        RenderHealth::just_ready_for_test(),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tony.json");
+        let mut app = presentation_app(path.clone());
+        act(&mut app, Action::Save);
+        let saved = std::fs::read(&path).unwrap();
+        choose(&mut app, "evade");
+        let before = app.world().resource::<Table>().session.clone();
+        std::fs::write(&path, &saved).unwrap();
+        let file_count = std::fs::read_dir(dir.path()).unwrap().count();
+        app.insert_resource(health);
+        choose(&mut app, "reveal");
+        for action in [Action::Save, Action::Reopen, Action::Replay, Action::New] {
+            act(&mut app, action);
+        }
+        let camera_before = app.world().resource::<Orbit>().pose();
+        act(&mut app, Action::Focus(Area::Test));
+        assert_ne!(app.world().resource::<Orbit>().pose(), camera_before);
+        assert_eq!(app.world().resource::<Table>().session, before);
+        assert!(app.world().resource::<Table>().replay.is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), file_count);
+        assert!(app.world().resource::<Actions>().0.is_empty());
+
+        app.insert_resource(RenderHealth::ready_for_test());
+        app.update();
+        assert_eq!(app.world().resource::<Table>().session, before);
+        choose(&mut app, "reveal");
+        assert_ne!(app.world().resource::<Table>().session, before);
+        assert_eq!(
+            continuity::load_session(&path).unwrap(),
+            app.world().resource::<Table>().session
+        );
+    }
 }
 
 #[test]
