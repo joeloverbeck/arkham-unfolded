@@ -1,4 +1,4 @@
-//! Spatial conventions shared by the two prepared tabletop experiments.
+//! Spatial conventions shared by the prepared tabletop experiments.
 //! These are presentation coordinates, never game zones or saved state.
 
 use bevy::prelude::*;
@@ -11,7 +11,15 @@ pub(crate) enum Area {
     Investigator(usize),
 }
 
-pub(crate) const TEST_CENTER: Vec3 = Vec3::new(0.0, 0.0, 0.8);
+pub(crate) const TEST_CENTER: Vec3 = Vec3::new(0.0, 0.0, 8.0);
+const INVESTIGATOR_SIZE: Vec2 = Vec2::new(18.0, 15.0);
+const INVESTIGATOR_SPACING: f32 = 18.6;
+const THREAT_REGION_SIZE: Vec2 = Vec2::new(9.9, 3.4);
+const ASSET_REGION_SIZE: Vec2 = Vec2::new(17.3, 6.4);
+const HAND_REGION_SIZE: Vec2 = Vec2::new(17.6, 3.4);
+const THREAT_REGION_Z: f32 = -5.5;
+const ASSET_REGION_Z: f32 = 0.0;
+const HAND_REGION_Z: f32 = 5.45;
 
 /// Positions beside a location, ordered far-left, near-left, far-right, near-right.
 /// The complete rounded bases clear the card; the caller supplies real occupants.
@@ -27,8 +35,11 @@ pub(crate) fn location_standee_position(
         3 => (1.0, 1.0),
         _ => return None,
     };
-    let offset = card_size.x / 2.0 + crate::tabletop_standees::BASE_RADIUS + 0.10;
-    Some(center + Vec3::new(side * offset, 0.0, row * card_size.y / 4.0))
+    let radius = crate::tabletop_standees::radius_for(card_size);
+    let offset = card_size.x / 2.0 + radius + 0.10;
+    // A narrow gap follows the card scale while retaining the lateral clearance.
+    let pair_offset = radius + card_size.y * 0.025;
+    Some(center + Vec3::new(side * offset, 0.0, row * pair_offset))
 }
 
 #[derive(Clone, Copy)]
@@ -57,10 +68,105 @@ pub(crate) fn scenario_book_card_transform(
 
 pub(crate) fn investigator_center(index: usize, count: usize) -> Vec3 {
     Vec3::new(
-        (index as f32 - count.saturating_sub(1) as f32 / 2.0) * 12.0,
+        (index as f32 - count.saturating_sub(1) as f32 / 2.0) * INVESTIGATOR_SPACING,
         0.0,
-        10.0,
+        22.5,
     )
+}
+
+fn personal(index: usize, x: f32, z: f32) -> Vec3 {
+    investigator_center(index, 3) + Vec3::new(x, 0.05, z)
+}
+
+pub(crate) fn investigator_heading(index: usize) -> Vec3 {
+    personal(index, 0.0, -8.15)
+}
+
+pub(crate) fn investigator_card(index: usize) -> Vec3 {
+    personal(index, -7.15, -5.0)
+}
+
+pub(crate) fn investigator_status(index: usize) -> Vec3 {
+    personal(index, -7.15, -3.75)
+}
+
+/// Center of a permanent counter; its caption sits between this row and the card.
+pub(crate) fn investigator_harm(index: usize, horror: bool) -> Vec3 {
+    investigator_center(index, 3) + Vec3::new(-7.15 + if horror { 0.75 } else { -0.75 }, 0.14, -7.0)
+}
+
+pub(crate) fn investigator_deck(index: usize) -> Vec3 {
+    personal(index, 6.0, -5.5)
+}
+
+pub(crate) fn investigator_discard(index: usize) -> Vec3 {
+    personal(index, 8.0, -5.5)
+}
+
+pub(crate) fn investigator_threat(index: usize, slot: usize) -> Vec3 {
+    personal(index, -3.9 + slot as f32 * 1.95, -5.4)
+}
+
+pub(crate) fn investigator_asset(index: usize, slot: usize) -> Vec3 {
+    personal(
+        index,
+        -6.5 + (slot % 6) as f32 * 2.6,
+        -1.5 + (slot / 6) as f32 * 3.0,
+    )
+}
+
+/// A centered horizontal hand retains full-sized faces; navigation handles overflow.
+pub(crate) fn hand_position(index: usize, count: usize, slot: usize) -> Vec3 {
+    personal(
+        index,
+        slot as f32 * 1.95 - count.saturating_sub(1) as f32 * 0.975,
+        5.5,
+    )
+}
+
+pub(crate) fn test_bag() -> Vec3 {
+    TEST_CENTER + Vec3::new(5.3, 0.35, -3.1)
+}
+
+pub(crate) fn test_source() -> Vec3 {
+    TEST_CENTER + Vec3::new(-4.9, 0.05, -3.2)
+}
+
+pub(crate) fn test_commitment(count: usize, slot: usize) -> Vec3 {
+    let row_count = count.saturating_sub(slot / 6 * 6).min(6);
+    TEST_CENTER
+        + Vec3::new(
+            (slot % 6) as f32 * 2.15 - row_count.saturating_sub(1) as f32 * 1.075,
+            0.05,
+            (slot / 6) as f32 * 3.3,
+        )
+}
+
+pub(crate) fn test_token(canceled: bool, slot: usize) -> Vec3 {
+    TEST_CENTER
+        + Vec3::new(
+            if canceled { 1.2 } else { -5.4 } + (slot % 4) as f32 * 1.3,
+            0.15,
+            3.0 + (slot / 4) as f32 * 1.3,
+        )
+}
+
+pub(crate) fn zone_labels(index: usize) -> [(&'static str, Vec3); 5] {
+    [
+        ("Threats", personal(index, 0.0, -7.15)),
+        ("Assets", personal(index, 0.0, -3.35)),
+        ("Hand", personal(index, 0.0, 7.15)),
+        ("Deck", investigator_deck(index) - Vec3::Z * 1.7),
+        ("Discard", investigator_discard(index) - Vec3::Z * 1.7),
+    ]
+}
+
+pub(crate) fn test_zone_labels() -> [(&'static str, Vec3); 3] {
+    [
+        ("Committed cards", TEST_CENTER + Vec3::new(0.0, 0.05, -1.8)),
+        ("Revealed", TEST_CENTER + Vec3::new(-3.4, 0.05, 1.8)),
+        ("Canceled", TEST_CENTER + Vec3::new(3.3, 0.05, 1.8)),
+    ]
 }
 
 /// Presentation identity, independent of secondary deckbuilding access.
@@ -112,11 +218,11 @@ pub(crate) fn investigator_color(index: usize) -> Color {
 /// Target and orbit distance at the normal playing angle. Focus never chooses an actor.
 pub(crate) fn focus(area: Area) -> (Vec3, f32) {
     match area {
-        Area::Overview => (Vec3::new(0.0, 0.0, 4.0), 44.0),
+        Area::Overview => (Vec3::new(0.0, 0.0, 13.0), 66.0),
         Area::Scenario => (Vec3::new(0.0, 0.0, -3.0), 23.0),
-        Area::Test => (TEST_CENTER, 12.0),
+        Area::Test => (TEST_CENTER + Vec3::Z * 0.5, 20.0),
         // Aim toward the near edge so the physical hand clears the decision strip.
-        Area::Investigator(index) => (investigator_center(index, 3) + Vec3::Z * 1.4, 16.0),
+        Area::Investigator(index) => (investigator_center(index, 3) + Vec3::Z * 0.7, 26.0),
     }
 }
 
@@ -133,15 +239,101 @@ pub(crate) fn spawn_surfaces(
         Vec2::new(18.0, 11.0),
         Color::srgb(0.11, 0.22, 0.24),
     );
+    surface(
+        commands,
+        meshes,
+        materials,
+        TEST_CENTER,
+        Vec2::new(14.0, 10.0),
+        Color::srgb(0.28, 0.23, 0.17),
+    );
+    for (center, size) in [
+        (TEST_CENTER, Vec2::new(13.4, 3.2)),
+        (
+            TEST_CENTER + Vec3::new(-3.3, 0.0, 3.15),
+            Vec2::new(6.2, 3.1),
+        ),
+        (TEST_CENTER + Vec3::new(3.3, 0.0, 3.15), Vec2::new(6.2, 3.1)),
+    ] {
+        region(
+            commands,
+            meshes,
+            materials,
+            center,
+            size,
+            Color::srgb(0.34, 0.29, 0.23),
+        );
+    }
     for index in 0..3 {
         surface(
             commands,
             meshes,
             materials,
             investigator_center(index, 3),
-            Vec2::new(11.4, 9.0),
+            INVESTIGATOR_SIZE,
             investigator_color(index),
         );
+        let color = investigator_color(index).mix(&Color::WHITE, 0.12);
+        for (center, size) in [
+            (personal(index, 0.0, THREAT_REGION_Z), THREAT_REGION_SIZE),
+            (personal(index, 0.0, ASSET_REGION_Z), ASSET_REGION_SIZE),
+            (personal(index, 0.0, HAND_REGION_Z), HAND_REGION_SIZE),
+            (investigator_deck(index), Vec2::new(1.95, 3.4)),
+            (investigator_discard(index), Vec2::new(1.95, 3.4)),
+        ] {
+            region(commands, meshes, materials, center, size, color);
+        }
+    }
+}
+
+fn region(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    center: Vec3,
+    size: Vec2,
+    color: Color,
+) {
+    let fill = materials.add(StandardMaterial {
+        base_color: color.mix(&Color::BLACK, 0.67),
+        perceptual_roughness: 0.95,
+        ..default()
+    });
+    let border = materials.add(StandardMaterial {
+        base_color: color.mix(&Color::BLACK, 0.35),
+        perceptual_roughness: 0.95,
+        ..default()
+    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(size.x, 0.012, size.y))),
+        MeshMaterial3d(fill),
+        Transform::from_xyz(center.x, -0.048, center.z),
+        Pickable::IGNORE,
+    ));
+    for (offset, dimensions) in [
+        (
+            Vec3::new(0.0, 0.0, -size.y / 2.0),
+            Vec3::new(size.x, 0.015, 0.025),
+        ),
+        (
+            Vec3::new(0.0, 0.0, size.y / 2.0),
+            Vec3::new(size.x, 0.015, 0.025),
+        ),
+        (
+            Vec3::new(-size.x / 2.0, 0.0, 0.0),
+            Vec3::new(0.025, 0.015, size.y),
+        ),
+        (
+            Vec3::new(size.x / 2.0, 0.0, 0.0),
+            Vec3::new(0.025, 0.015, size.y),
+        ),
+    ] {
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::from_size(dimensions))),
+            MeshMaterial3d(border.clone()),
+            Transform::from_translation(Vec3::new(center.x, -0.037, center.z) + offset),
+            Pickable::IGNORE,
+        ));
     }
 }
 
@@ -182,24 +374,31 @@ mod tests {
 
     #[test]
     fn four_location_standees_clear_cards_and_each_other() {
-        use crate::tabletop_standees::BASE_RADIUS;
         for size in [Vec2::new(1.35, 1.89), Vec2::new(1.80, 2.52)] {
+            let radius = crate::tabletop_standees::radius_for(size);
             let center = Vec3::new(-2.5, 0.0, -3.8);
             for count in 1..=4 {
                 let points: Vec<_> = (0..count)
                     .map(|slot| location_standee_position(center, size, slot).unwrap())
                     .collect();
                 for (index, point) in points.iter().enumerate() {
-                    assert!((point.x - center.x).abs() - BASE_RADIUS > size.x / 2.0);
-                    assert!((point.z - center.z).abs() + BASE_RADIUS < size.y / 2.0);
+                    assert!(
+                        ((point.x - center.x).abs() - radius - size.x / 2.0 - 0.10).abs() < 0.00001
+                    );
+                    assert!((point.z - center.z).abs() + radius < size.y / 2.0);
                     assert_eq!(point.y, center.y);
                     assert_eq!(point.x < center.x, index < 2);
                     for other in &points[..index] {
-                        assert!(point.distance(*other) > BASE_RADIUS * 2.0);
+                        assert!(point.distance(*other) > radius * 2.0);
                     }
                 }
                 if count >= 2 {
                     assert!(points[0].z < points[1].z);
+                    let gap = points[1].z - points[0].z - radius * 2.0;
+                    assert!(
+                        gap > 0.08 && gap < 0.14,
+                        "visible, narrow same-side gap: {gap}"
+                    );
                 }
             }
             assert!(location_standee_position(center, size, 4).is_none());
@@ -234,10 +433,76 @@ mod tests {
             let centers: Vec<_> = (0..count)
                 .map(|index| investigator_center(index, count))
                 .collect();
-            assert!(centers.iter().map(|center| center.x).sum::<f32>().abs() < f32::EPSILON);
+            assert!(centers.iter().map(|center| center.x).sum::<f32>().abs() < 0.00001);
             for pair in centers.windows(2) {
-                assert_eq!(pair[1].x - pair[0].x, 12.0);
+                assert!((pair[1].x - pair[0].x - 18.6).abs() < 0.00001);
             }
         }
+    }
+
+    #[test]
+    fn centered_hands_keep_one_row_of_full_faces_separate_from_assets() {
+        let center = investigator_center(1, 3);
+        for count in 1..=9 {
+            let points: Vec<_> = (0..count)
+                .map(|slot| hand_position(1, count, slot))
+                .collect();
+            assert!(
+                (points.iter().map(|point| point.x).sum::<f32>() / points.len() as f32 - center.x)
+                    .abs()
+                    < 0.00001
+            );
+            for pair in points.windows(2) {
+                assert!(
+                    pair[1].x - pair[0].x > 1.85,
+                    "largest current portrait stays unobscured"
+                );
+                assert_eq!(pair[0].z, pair[1].z, "hands never acquire a second row");
+            }
+            for point in &points {
+                assert!((point.x - center.x).abs() + 1.85 / 2.0 < HAND_REGION_SIZE.x / 2.0);
+                assert!((point.z - center.z).abs() + 2.6 / 2.0 < INVESTIGATOR_SIZE.y / 2.0);
+            }
+            // The accepted twelve-face presentation challenge has two asset rows.
+            let last_asset = investigator_asset(1, 11);
+            assert!(points[0].z - 1.3 > last_asset.z + 1.3);
+        }
+    }
+
+    #[test]
+    fn five_full_size_threats_clear_each_other_and_the_personal_piles() {
+        let center = investigator_center(0, 3);
+        let threats: Vec<_> = (0..5).map(|slot| investigator_threat(0, slot)).collect();
+        for threat in &threats {
+            assert!((threat.x - center.x).abs() + 1.85 / 2.0 < THREAT_REGION_SIZE.x / 2.0);
+            assert!(
+                (threat.z - center.z - THREAT_REGION_Z).abs() + 1.3 < THREAT_REGION_SIZE.y / 2.0
+            );
+        }
+        for pair in threats.windows(2) {
+            assert!(pair[1].x - pair[0].x - 1.85 > 0.09);
+        }
+        assert!(threats[0].x - 1.85 / 2.0 > investigator_card(0).x + 2.6 / 2.0);
+        assert!(threats[4].x + 1.85 / 2.0 < investigator_deck(0).x - 1.85 / 2.0);
+        assert!(investigator_deck(0).x + 1.85 / 2.0 < investigator_discard(0).x - 1.85 / 2.0);
+        const {
+            assert!(
+                ASSET_REGION_Z - ASSET_REGION_SIZE.y / 2.0
+                    > THREAT_REGION_Z + THREAT_REGION_SIZE.y / 2.0 + 0.3
+            );
+        }
+    }
+
+    #[test]
+    fn permanent_harm_counters_and_captions_clear_the_investigator_card() {
+        let card = investigator_card(0);
+        for horror in [false, true] {
+            let token = investigator_harm(0, horror);
+            assert!(token.z + 0.35 < card.z - 1.85 / 2.0);
+            // Caption offset plus a small world-space clearance below its anchor.
+            assert!(token.z + 0.5 + 0.3 < card.z - 1.85 / 2.0);
+            assert!(token.y - 0.14 / 2.0 > 0.0);
+        }
+        assert!(investigator_harm(0, true).x - investigator_harm(0, false).x > 0.7);
     }
 }

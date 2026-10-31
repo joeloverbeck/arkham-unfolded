@@ -17,6 +17,8 @@ mod tabletop_feedback;
 #[cfg(feature = "tabletop")]
 mod tabletop_harm_text;
 #[cfg(feature = "tabletop")]
+mod tabletop_harm_tokens;
+#[cfg(feature = "tabletop")]
 mod tabletop_health;
 #[cfg(feature = "tabletop")]
 mod tabletop_layout;

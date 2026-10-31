@@ -126,6 +126,8 @@ fn interruptions_cancel_capture_without_a_resume_jump() {
 #[test]
 fn pan_is_camera_relative_normalized_and_stops_on_release() {
     let mut orbit = Orbit::new(CameraMode::Tony);
+    // Exercise navigation at a chosen zoom independently of the Home preset.
+    orbit.focus((Vec3::ZERO, 16.0));
     let mut input = Inputs::default();
     let start = orbit.pose();
     input.keys.press(KeyCode::KeyW);
@@ -225,8 +227,8 @@ fn manual_navigation_overrides_following_and_freezes_pending_framing() {
 #[test]
 fn each_mode_preserves_startup_home_focus_and_camera_transform() {
     for (mode, target, distance) in [
-        (CameraMode::Jacqueline, Vec3::new(0.0, 0.0, 4.0), 44.0),
-        (CameraMode::Tony, Vec3::new(-12.0, 0.0, 11.4), 16.0),
+        (CameraMode::Jacqueline, Vec3::new(0.0, 0.0, 13.0), 66.0),
+        (CameraMode::Tony, Vec3::new(-18.6, 0.0, 23.2), 26.0),
     ] {
         let mut orbit = Orbit::new(mode);
         let home = orbit.pose();
@@ -241,8 +243,8 @@ fn each_mode_preserves_startup_home_focus_and_camera_transform() {
         );
         assert!(!orbit.is_following());
         orbit.focus(layout::focus(Area::Test));
-        assert_eq!(orbit.pose().target, Vec3::new(0.0, 0.0, 0.8));
-        assert_eq!(orbit.pose().distance, 12.0);
+        assert_eq!(orbit.pose().target, Vec3::new(0.0, 0.0, 8.5));
+        assert_eq!(orbit.pose().distance, 20.0);
         let mut input = Inputs::default();
         input.keys.press(KeyCode::Home);
         let step = input.step(&mut orbit);
@@ -262,7 +264,14 @@ fn diagnostic_initial_views_apply_once_without_replacing_home_or_replay_followin
     for mode in [CameraMode::Jacqueline, CameraMode::Tony] {
         let normal = Orbit::new(mode).pose();
         assert_eq!(Orbit::new(mode).with_initial_view(None).pose(), normal);
-        for view in [Area::Overview, Area::Scenario, Area::Test] {
+        for view in [
+            Area::Overview,
+            Area::Scenario,
+            Area::Test,
+            Area::Investigator(0),
+            Area::Investigator(1),
+            Area::Investigator(2),
+        ] {
             let (target, distance) = layout::focus(view);
             let mut orbit = Orbit::new(mode).with_initial_view(Some(view));
             let mut input = Inputs::default();
@@ -315,29 +324,29 @@ fn replay_motion_and_follow_off_keep_the_modes_distinct() {
         orbit.set_following(true);
         orbit.update_follow_target(Some(layout::focus(Area::Test)));
         let smooth_zoom = matches!(mode, CameraMode::Jacqueline);
-        assert_eq!(orbit.pose().distance, if smooth_zoom { 44.0 } else { 12.0 });
+        assert_eq!(orbit.pose().distance, if smooth_zoom { 66.0 } else { 20.0 });
         assert!(!input.step(&mut orbit).manual_navigation);
-        assert!((orbit.pose().target.z - 2.72).abs() < 0.00001);
-        assert!((orbit.pose().distance - if smooth_zoom { 31.2 } else { 12.0 }).abs() < 0.00001);
+        assert!((orbit.pose().target.z - 11.2).abs() < 0.00001);
+        assert!((orbit.pose().distance - if smooth_zoom { 47.6 } else { 20.0 }).abs() < 0.00001);
         orbit.set_following(false);
         orbit.update_follow_target(None);
         input.step(&mut orbit);
-        assert!((orbit.pose().target.z - if smooth_zoom { 2.72 } else { 1.952 }).abs() < 0.00001);
+        assert!((orbit.pose().target.z - if smooth_zoom { 11.2 } else { 10.12 }).abs() < 0.00001);
         orbit.set_following(true);
         orbit.update_follow_target(Some(layout::focus(Area::Test)));
         input.reduced_motion = true;
         input.step(&mut orbit);
         if smooth_zoom {
-            assert!((orbit.pose().target.z - 1.952).abs() < 0.00001);
+            assert!((orbit.pose().target.z - 10.12).abs() < 0.00001);
         } else {
-            assert_eq!(orbit.pose().target, layout::TEST_CENTER);
+            assert_eq!(orbit.pose().target, layout::focus(Area::Test).0);
         }
     }
 }
 
 #[test]
 fn wheel_capture_and_existing_clamp_order_are_preserved() {
-    for (mode, maximum) in [(CameraMode::Jacqueline, 55.0), (CameraMode::Tony, 60.0)] {
+    for (mode, maximum) in [(CameraMode::Jacqueline, 90.0), (CameraMode::Tony, 90.0)] {
         let mut orbit = Orbit::new(mode);
         let mut input = Inputs {
             dt: 0.0,
@@ -364,10 +373,10 @@ fn wheel_capture_and_existing_clamp_order_are_preserved() {
             assert_eq!(orbit.pose(), initial);
         }
         input.capture = default();
-        input.scroll_y = -100.0;
+        input.scroll_y = -200.0;
         input.step(&mut orbit);
         assert_eq!(orbit.pose().distance, maximum);
-        input.scroll_y = 200.0;
+        input.scroll_y = 300.0;
         input.step(&mut orbit);
         assert_eq!(orbit.pose().distance, 6.0);
         input.keys.press(KeyCode::ArrowUp);

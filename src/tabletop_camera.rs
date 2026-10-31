@@ -9,7 +9,12 @@ pub(crate) fn parse_initial_view(value: &str) -> Result<Area, String> {
         "overview" => Ok(Area::Overview),
         "scenario" => Ok(Area::Scenario),
         "test" => Ok(Area::Test),
-        _ => Err("--initial-view must be overview, scenario or test".into()),
+        "tony" => Ok(Area::Investigator(0)),
+        "patrice" => Ok(Area::Investigator(1)),
+        "jacqueline" => Ok(Area::Investigator(2)),
+        _ => Err(
+            "--initial-view must be overview, scenario, test, tony, patrice or jacqueline".into(),
+        ),
     }
 }
 
@@ -226,11 +231,7 @@ impl Orbit {
             self.freeze_framing();
         }
         self.pose.pitch = self.pose.pitch.clamp(0.35, 1.35);
-        let max_distance = match self.mode {
-            CameraMode::Jacqueline => 55.0,
-            CameraMode::Tony => 60.0,
-        };
-        self.pose.distance = self.pose.distance.clamp(6.0, max_distance);
+        self.pose.distance = self.pose.distance.clamp(6.0, 90.0);
         let blend = (input.dt * 4.0).min(1.0);
         // Retain Jacqueline's existing clamp-then-interpolate ordering.
         if matches!(self.mode, CameraMode::Jacqueline) {

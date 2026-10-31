@@ -29,7 +29,7 @@ pub(super) fn advance_presentation(
 
 pub(super) fn recipient_position(recipient: HarmRecipient, view: &Observation) -> Vec3 {
     match recipient {
-        HarmRecipient::Tony => scene::INVESTIGATOR_AT,
+        HarmRecipient::Tony => scene::investigator_at(),
         HarmRecipient::Ghoul => scene::ghoul_at(view),
     }
 }
@@ -75,30 +75,16 @@ fn counter(
     } else {
         "token/damage"
     };
-    let Some(image) = art.image(role) else {
-        // The projected label supplies the readable substitute; a plain colored
-        // rectangle is not a recognizable heart or brain.
-        return;
-    };
-    let size = if horror {
-        Vec2::new(0.43, 0.35)
-    } else {
-        Vec2::new(0.35, 0.43)
-    };
-    let mut entity = commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(size.x, size.y))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            base_color_texture: Some(image),
-            unlit: true,
-            alpha_mode: AlphaMode::Blend,
-            depth_bias: 2.0,
-            ..default()
-        })),
-        Transform::from_translation(at),
-        Scene,
-        Pickable::IGNORE,
-    ));
+    let entity = crate::tabletop_harm_tokens::spawn(
+        commands,
+        meshes,
+        materials,
+        art.image(role),
+        at,
+        horror,
+    );
+    let mut entity = commands.entity(entity);
+    entity.insert(Scene);
     if arriving {
         entity.insert(HarmVisual {
             rest: at,
@@ -161,99 +147,61 @@ pub(super) fn harm_scene(
     view: &Observation,
     hit: Option<Harm>,
 ) {
-    for (recipient, damage, horror, visible) in [
-        (HarmRecipient::Tony, view.damage, view.horror, true),
-        (HarmRecipient::Ghoul, view.ghoul.damage, 0, view.ghoul.alive),
-    ] {
-        if !visible {
-            continue;
-        }
-        let at = recipient_position(recipient, view);
-        // Center the *visible bounds* as one row. Damage is narrower than
-        // horror, so symmetric center offsets would still leave the pair askew.
-        let counters: Vec<_> = [(damage, false, 0.35), (horror, true, 0.43)]
-            .into_iter()
-            .filter(|(amount, _, _)| *amount > 0)
-            .collect();
-        let gap = 0.18;
-        let width = counters.iter().map(|(_, _, width)| width).sum::<f32>()
-            + gap * counters.len().saturating_sub(1) as f32;
-        let mut left = -width / 2.0;
-        let top_edge = if recipient == HarmRecipient::Tony {
-            -CARD_WIDTH / 2.0
-        } else {
-            -CARD_LENGTH / 2.0
-        };
-        // Leave room for the whole token and its screen-sized total between
-        // Tony's counter row and the landscape card, not just the token center.
-        let row_z = top_edge
-            - if recipient == HarmRecipient::Tony {
-                0.9
+    for (index, investigator) in view.investigators.iter().enumerate() {
+        for horror in [false, true] {
+            let at = layout::investigator_harm(index, horror);
+            let role = if horror {
+                "token/horror"
             } else {
-                0.0
+                "token/damage"
             };
-        let needs_substitute = (damage > 0 && art.image("token/damage").is_none())
-            || (horror > 0 && art.image("token/horror").is_none());
-        for (amount, is_horror, width) in counters {
-            let position = at + Vec3::new(left + width / 2.0, 0.06, row_z);
-            left += width + gap;
-            let arriving = hit.is_some_and(|h| {
-                h.recipient == recipient
-                    && if is_horror {
-                        h.horror > 0
-                    } else {
-                        h.damage > 0
-                    }
-            });
-            counter(
-                commands, meshes, materials, art, position, is_horror, arriving,
-            );
-            if needs_substitute {
-                continue;
-            }
-            commands.spawn((
-                art.text(amount.to_string(), 16.0, PAPER),
-                TextLayout::justify(Justify::Center),
-                Node {
-                    position_type: PositionType::Absolute,
-                    width: px(30),
-                    ..default()
-                },
-                BackgroundColor(INK),
-                WorldLabel(position + Vec3::new(0.0, 0.08, 0.23), 30.0),
-                Scene,
-                Pickable::IGNORE,
-            ));
-        }
-        if needs_substitute {
-            let mut amounts = Vec::new();
-            if damage > 0 {
-                amounts.push(format!("{damage} Damage"));
-            }
-            if horror > 0 {
-                amounts.push(format!("{horror} Horror"));
-            }
-            let color = match (damage > 0, horror > 0) {
-                (true, false) => DAMAGE_COLOR,
-                (false, true) => HORROR_COLOR,
-                _ => PAPER,
+            let kind = if horror { "Horror" } else { "Damage" };
+            let total = if horror {
+                Some((investigator.horror, investigator.sanity))
+            } else if index == 0 {
+                Some((view.damage, view.health))
+            } else {
+                // Earlier companion observations never represented damage or health.
+                None
             };
-            // One centered label remains readable even when the camera makes
-            // adjacent world positions too close for separate English names.
-            commands.spawn((
-                art.text(amounts.join(" · "), 13.0, color),
-                TextLayout::justify(Justify::Center),
-                Node {
-                    position_type: PositionType::Absolute,
-                    width: px(160),
-                    ..default()
-                },
-                BackgroundColor(INK),
-                WorldLabel(at + Vec3::new(0.0, 0.14, row_z + 0.23), 160.0),
-                Scene,
-                Pickable::IGNORE,
-            ));
+            let text = match total {
+                Some((amount, capacity)) if art.image(role).is_some() => {
+                    format!("{amount}/{capacity}")
+                }
+                Some((amount, capacity)) => format!("{kind}\n{amount}/{capacity}"),
+                None => "Damage\nn/a".to_owned(),
+            };
+            let arriving = index == 0
+                && hit.is_some_and(|hit| {
+                    hit.recipient == HarmRecipient::Tony
+                        && if horror {
+                            hit.horror > 0
+                        } else {
+                            hit.damage > 0
+                        }
+                });
+            counter(commands, meshes, materials, art, at, horror, arriving);
+            counter_total(commands, text, at);
         }
+    }
+    if view.ghoul.alive && view.ghoul.damage > 0 {
+        let at = recipient_position(HarmRecipient::Ghoul, view)
+            + Vec3::new(0.0, 0.09, -CARD_LENGTH / 2.0);
+        counter(
+            commands,
+            meshes,
+            materials,
+            art,
+            at,
+            false,
+            hit.is_some_and(|hit| hit.recipient == HarmRecipient::Ghoul && hit.damage > 0),
+        );
+        let text = if art.image("token/damage").is_some() {
+            format!("{}/2", view.ghoul.damage)
+        } else {
+            format!("Damage\n{}/2", view.ghoul.damage)
+        };
+        counter_total(commands, text, at);
     }
     let Some(hit) = hit else {
         return;
@@ -275,10 +223,10 @@ pub(super) fn harm_scene(
             Vec2::new(CARD_LENGTH + 0.1, CARD_WIDTH + 0.1),
         ),
         HarmSource::InternalInjury => (
-            scene::INJURY_AT,
+            scene::injury_at(),
             Vec2::new(CARD_WIDTH + 0.1, CARD_LENGTH + 0.1),
         ),
-        HarmSource::Tablet | HarmSource::Cultist => (scene::TOKEN_AT, Vec2::splat(1.4)),
+        HarmSource::Tablet | HarmSource::Cultist => (scene::token_at(), Vec2::splat(1.4)),
     };
     outline(commands, meshes, materials, source, size, GOLD);
     let mut amounts = Vec::new();
@@ -300,18 +248,33 @@ pub(super) fn harm_scene(
         commands,
         art,
         amounts.join("\n"),
-        target
-            + Vec3::new(
-                0.0,
-                0.45,
-                if hit.recipient == HarmRecipient::Tony {
-                    -2.4
-                } else {
-                    -0.9
-                },
-            ),
+        if hit.recipient == HarmRecipient::Tony {
+            scene::investigator_at() + Vec3::new(0.0, 0.45, 0.0)
+        } else {
+            target + Vec3::new(0.0, 0.45, -0.9)
+        },
         GOLD,
     );
+}
+
+fn counter_total(commands: &mut Commands, text: String, at: Vec3) {
+    commands.spawn((
+        Text::new(text),
+        TextFont {
+            font_size: FontSize::Px(11.0),
+            ..default()
+        },
+        TextColor(PAPER),
+        TextLayout::justify(Justify::Center),
+        Node {
+            position_type: PositionType::Absolute,
+            width: px(64.0),
+            ..default()
+        },
+        WorldLabel(at + Vec3::Z * 0.5, 64.0),
+        Scene,
+        Pickable::IGNORE,
+    ));
 }
 
 pub(super) fn animate_harm(table: Res<Table>, mut visuals: Query<(&HarmVisual, &mut Transform)>) {
@@ -359,6 +322,7 @@ mod tests {
         let mut view = Session::new().unwrap().observe();
         view.damage = damage;
         view.horror = horror;
+        view.investigators[0].horror = horror;
         app.world_mut()
             .run_system_once(
                 move |mut commands: Commands,
@@ -380,29 +344,31 @@ mod tests {
     }
 
     #[test]
-    fn harm_counters_center_above_the_landscape_investigator_without_covering_it() {
+    fn permanent_harm_tokens_include_zero_totals_and_clear_each_investigator_card() {
         use bevy::camera::primitives::MeshAabb;
-        for (damage, horror) in [(1, 1), (2, 0), (0, 1)] {
+        for (damage, horror) in [(0, 0), (1, 1), (2, 0), (0, 1)] {
             let mut app = counters(damage, horror, true);
             let world = app.world_mut();
-            let mut query = world.query::<(&Mesh3d, &Transform)>();
+            let mut query = world.query_filtered::<
+                (&Mesh3d, &Transform),
+                With<crate::tabletop_harm_tokens::HarmToken>,
+            >();
             let meshes = world.resource::<Assets<Mesh>>();
-            let mut left = f32::INFINITY;
-            let mut right = f32::NEG_INFINITY;
-            let center = scene::INVESTIGATOR_AT;
+            assert_eq!(query.iter(world).count(), 6);
             for (mesh, transform) in query.iter(world) {
                 let aabb = meshes.get(mesh).unwrap().get_aabb().unwrap();
-                left = left.min(transform.translation.x - aabb.half_extents.x);
-                right = right.max(transform.translation.x + aabb.half_extents.x);
+                let index = (0..3)
+                    .find(|&index| {
+                        (transform.translation.x - layout::investigator_card(index).x).abs() < 1.0
+                    })
+                    .unwrap();
+                let card = layout::investigator_card(index);
+                assert!(aabb.half_extents.y > 0.05, "counter has visible thickness");
                 assert!(
-                    transform.translation.z + aabb.half_extents.z < center.z - CARD_WIDTH / 2.0,
-                    "the entire counter must clear the top long edge of the landscape card"
+                    transform.translation.z + aabb.half_extents.z < card.z - CARD_WIDTH / 2.0,
+                    "the entire counter must clear the upper edge of the landscape card"
                 );
             }
-            assert!(
-                ((left + right) / 2.0 - center.x).abs() < 0.001,
-                "the full visible group must be centered, including different token widths"
-            );
         }
     }
 
@@ -414,16 +380,16 @@ mod tests {
         let materials = world.resource::<Assets<StandardMaterial>>();
         let mut shown: Vec<_> = query
             .iter(world)
-            .map(|handle| {
+            .filter_map(|handle| {
                 let material = materials.get(handle).unwrap();
+                let image = material.base_color_texture.clone()?;
                 assert_eq!(material.base_color, Color::WHITE);
-                material
-                    .base_color_texture
-                    .clone()
-                    .expect("available artwork must be textured")
+                Some(image)
             })
             .collect();
+        assert_eq!(shown.len(), 6);
         shown.sort_by_key(|image| image.id());
+        shown.dedup();
         let mut expected: Vec<_> = world.resource::<Art>().handles.values().cloned().collect();
         expected.sort_by_key(|image| image.id());
         assert_eq!(shown, expected);
@@ -433,6 +399,14 @@ mod tests {
     fn absent_harm_artwork_has_named_substitutes_instead_of_unlabelled_rectangles() {
         let mut app = counters(1, 1, false);
         let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<Entity, With<crate::tabletop_harm_tokens::HarmToken>>()
+                .iter(world)
+                .count(),
+            6,
+            "missing artwork must retain the actual physical counters"
+        );
         let labels: Vec<_> = world
             .query::<&Text>()
             .iter(world)
@@ -446,5 +420,7 @@ mod tests {
             labels.iter().any(|label| label.contains("Horror")),
             "horror needs a readable substitute"
         );
+        assert!(labels.contains(&"Horror\n2/9"));
+        assert!(labels.contains(&"Damage\nn/a"));
     }
 }

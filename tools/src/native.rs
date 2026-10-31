@@ -137,7 +137,7 @@ pub struct Launch {
     #[arg(long, requires = "screenshot")]
     quit_after_screenshot: bool,
     /// Diagnostic startup framing; leaves the app's Home behavior unchanged.
-    #[arg(long, value_parser = ["overview", "scenario", "test"])]
+    #[arg(long, value_parser = ["overview", "scenario", "test", "tony", "patrice", "jacqueline"])]
     initial_view: Option<String>,
     /// App lifetime for owner review, independent of any desktop-control grant.
     #[arg(long, default_value_t = 1800.0)]

@@ -89,7 +89,7 @@ impl Options {
                 "--initial-view" => result.initial_view = Some(parse_initial_view(&value()?)?),
                 "--help" | "-h" => {
                     println!(
-                        "Arkham Unfolded — Prepared Study escape attempt\n--experiment party\n--save PATH\n--load PATH\n--art-root PATH\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test"
+                        "Arkham Unfolded — Prepared Study escape attempt\n--experiment party\n--save PATH\n--load PATH\n--art-root PATH\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline"
                     );
                     return Ok(None);
                 }
@@ -781,7 +781,11 @@ fn world_labels(
             continue;
         }
         if let Ok(point) = camera.0.world_to_viewport(camera.1, label.0) {
-            node.left = px(point.x - 95.);
+            let width = match node.width {
+                Val::Px(width) => width,
+                _ => 190.0,
+            };
+            node.left = px(point.x - width / 2.0);
             node.top = px(point.y);
             *visibility = Visibility::Inherited;
         } else {

@@ -181,7 +181,7 @@ impl Options {
                 "--initial-view" => result.initial_view = Some(parse_initial_view(&value()?)?),
                 "--help" | "-h" => {
                     println!(
-                        "Arkham Unfolded — Tony turn\n\n--experiment tony\n--save PATH\n--load PATH\n--art-root PATH\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test  Diagnostic startup framing; Home is unchanged\n\nRight drag / arrows: orbit. Wheel / +/-: zoom. Home: reset. F12: capture."
+                        "Arkham Unfolded — Tony turn\n\n--experiment tony\n--save PATH\n--load PATH\n--art-root PATH\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline  Diagnostic startup framing; Home is unchanged\n\nRight drag / arrows: orbit. Wheel / +/-: zoom. Home: reset. F12: capture."
                     );
                     return Ok(None);
                 }
@@ -764,13 +764,13 @@ fn handle_actions(
         }
         if orbit.is_following() && table.replay.is_some() {
             let target = if let Some(hit) = table.harm() {
-                harm::recipient_position(hit.recipient, &table.view())
+                (harm::recipient_position(hit.recipient, &table.view()), 16.0)
             } else if table.view().held_token.is_some() {
-                layout::TEST_CENTER
+                layout::focus(Area::Test)
             } else {
-                layout::investigator_center(0, 3)
+                layout::focus(Area::Investigator(0))
             };
-            orbit.update_follow_target(Some((target, 16.0)));
+            orbit.update_follow_target(Some(target));
         }
         let view = table.view();
         let replay = table.replay.as_ref().map(Replay::index);
@@ -832,19 +832,32 @@ fn world_label(
     point: Vec3,
     color: Color,
 ) -> Entity {
+    world_label_sized(commands, art, value, point, color, 160.0, 13.0)
+}
+
+fn world_label_sized(
+    commands: &mut Commands,
+    art: &Art,
+    value: String,
+    point: Vec3,
+    color: Color,
+    width: f32,
+    font_size: f32,
+) -> Entity {
     commands
         .spawn((
-            art.text(value, 13.0, color),
+            art.text(value, font_size, color),
+            TextLayout::justify(Justify::Center),
             Node {
                 position_type: PositionType::Absolute,
-                width: px(160),
+                width: px(width),
                 padding: UiRect::axes(px(5), px(3)),
                 border_radius: BorderRadius::all(px(3)),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.92)),
             Pickable::IGNORE,
-            WorldLabel(point, 160.0),
+            WorldLabel(point, width),
             Scene,
         ))
         .id()
@@ -937,7 +950,7 @@ fn deck_mesh(
         return;
     }
     // Sit on the tabletop. Shared geometry/materials keep the individual edges cheap.
-    let base = scene::DECK_AT;
+    let base = scene::deck_at();
     let card = meshes.add(Cuboid::new(CARD_WIDTH, CARD_THICKNESS, CARD_LENGTH));
     let edges = [Color::srgb(0.76, 0.73, 0.65), Color::srgb(0.57, 0.55, 0.49)].map(|color| {
         materials.add(StandardMaterial {

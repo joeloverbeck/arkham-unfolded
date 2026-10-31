@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    TokenFace,
+    TokenFace, TokenStatus,
     tabletop_tokens::{self, TokenVisual},
 };
 
@@ -13,7 +13,7 @@ pub(super) fn location_at(name: &str) -> Vec3 {
     }
 }
 pub(super) fn discard_at(who: Investigator) -> Vec3 {
-    layout::investigator_center(who.index(), 3) + Vec3::new(3.9, 0.05, 1.1)
+    layout::investigator_discard(who.index())
 }
 pub(super) fn label(
     commands: &mut Commands,
@@ -24,6 +24,7 @@ pub(super) fn label(
 ) {
     commands.spawn((
         art.text(text, if heading { 18. } else { 13. }, PAPER),
+        TextLayout::justify(Justify::Center),
         Node {
             position_type: PositionType::Absolute,
             width: px(190.),
@@ -221,6 +222,7 @@ pub(super) fn synchronize(
                 image.as_ref(),
                 point,
                 layout::investigator_class(index),
+                Vec2::new(CARD_WIDTH, CARD_LENGTH),
             );
             commands.entity(entity).insert(Scene);
         }
@@ -285,16 +287,18 @@ pub(super) fn synchronize(
     for investigator in &view.investigators {
         let who = investigator.investigator;
         let index = who.index();
-        let center = layout::investigator_center(index, 3);
         let code = ["06003", "06005", "60401"][index];
         label(
             &mut commands,
             &art,
             who.name(),
-            center + Vec3::new(0., 0.2, -4.3),
+            layout::investigator_heading(index),
             true,
         );
-        let at = center + Vec3::new(-3.5, 0.05, -0.8);
+        for (name, at) in layout::zone_labels(index) {
+            label(&mut commands, &art, name, at, false);
+        }
+        let at = layout::investigator_card(index);
         face(
             &mut commands,
             &mut meshes,
@@ -309,13 +313,9 @@ pub(super) fn synchronize(
             &mut commands,
             &art,
             format!(
-                "{} resources · {} clues\nDamage {}/{} · Horror {}/{}\n{} actions · {}",
+                "{} resources · {} clues\n{} actions · {}",
                 investigator.resources,
                 investigator.clues,
-                investigator.damage,
-                investigator.health,
-                investigator.horror,
-                investigator.sanity,
                 investigator.ordinary_actions,
                 if investigator.turn_finished {
                     "Turn ended"
@@ -325,9 +325,59 @@ pub(super) fn synchronize(
                     "Waiting"
                 }
             ),
-            at + Vec3::Z * 1.1,
+            layout::investigator_status(index),
             false,
         );
+        for (amount, capacity, horror, role, title) in [
+            (
+                investigator.damage,
+                investigator.health,
+                false,
+                "token/damage",
+                "Damage",
+            ),
+            (
+                investigator.horror,
+                investigator.sanity,
+                true,
+                "token/horror",
+                "Horror",
+            ),
+        ] {
+            let at = layout::investigator_harm(index, horror);
+            let image = art.image(role);
+            let text = if image.is_some() {
+                format!("{amount}/{capacity}")
+            } else {
+                format!("{title}\n{amount}/{capacity}")
+            };
+            let entity = crate::tabletop_harm_tokens::spawn(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                image,
+                at,
+                horror,
+            );
+            commands.entity(entity).insert(Scene);
+            commands.spawn((
+                Text::new(text),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(PAPER),
+                TextLayout::justify(Justify::Center),
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: px(64.0),
+                    ..default()
+                },
+                WorldLabel(at + Vec3::Z * 0.5, false),
+                Pickable::IGNORE,
+                Scene,
+            ));
+        }
         if who == Investigator::Tony {
             face(
                 &mut commands,
@@ -335,7 +385,7 @@ pub(super) fn synchronize(
                 &mut materials,
                 &art,
                 "card/06010",
-                center + Vec3::new(-0.7, 0.05, -0.8),
+                layout::investigator_asset(index, 0),
                 None,
                 revision,
             );
@@ -346,7 +396,7 @@ pub(super) fn synchronize(
                     "Bounty Contracts\n{} bounties\nBonus action: no eligible enemy",
                     view.contracts_bounties
                 ),
-                center + Vec3::new(-0.7, 0.1, 0.3),
+                layout::investigator_asset(index, 0) + Vec3::Z * 1.1,
                 false,
             );
         }
@@ -363,7 +413,7 @@ pub(super) fn synchronize(
                         "Available this round"
                     }
                 ),
-                center + Vec3::new(0.1, 0.1, 0.3),
+                layout::investigator_asset(index, 0) + Vec3::Z * 1.1,
                 false,
             );
             for copy in 0..view.jacqueline_arcane_research {
@@ -373,13 +423,13 @@ pub(super) fn synchronize(
                     &mut materials,
                     &art,
                     "card/04109",
-                    center + Vec3::new(-0.7 + f32::from(copy) * 1.55, 0.05, -0.8),
+                    layout::investigator_asset(index, usize::from(copy)),
                     None,
                     revision,
                 );
             }
         }
-        let deck_at = center + Vec3::new(3.9, 0.05, -1.8);
+        let deck_at = layout::investigator_deck(index);
         deck(
             &mut commands,
             &mut meshes,
@@ -393,7 +443,7 @@ pub(super) fn synchronize(
         label(
             &mut commands,
             &art,
-            format!("Deck · {} cards", investigator.deck_count),
+            format!("{} cards", investigator.deck_count),
             deck_at + Vec3::Z * 1.1,
             false,
         );
@@ -414,7 +464,7 @@ pub(super) fn synchronize(
             &mut commands,
             &art,
             format!(
-                "Discard · {} cards{}",
+                "{} cards{}",
                 investigator.discard.len(),
                 investigator
                     .discard
@@ -425,12 +475,7 @@ pub(super) fn synchronize(
             false,
         );
         for (slot, held) in investigator.hand.iter().enumerate() {
-            let at = center
-                + Vec3::new(
-                    -3.8 + (slot % 5) as f32 * 1.65,
-                    0.05,
-                    2.4 + (slot / 5) as f32 * 2.6,
-                );
+            let at = layout::hand_position(index, investigator.hand.len(), slot);
             face(
                 &mut commands,
                 &mut meshes,
@@ -454,12 +499,15 @@ pub(super) fn synchronize(
         &mut commands,
         &art,
         "Test area",
-        layout::TEST_CENTER + Vec3::new(0., 0., -1.8),
+        layout::TEST_CENTER + Vec3::new(0., 0.2, -5.5),
         true,
     );
+    for (name, at) in layout::test_zone_labels() {
+        label(&mut commands, &art, name, at, false);
+    }
     if let Some(test) = &view.test {
         for (slot, committed) in test.committed.iter().enumerate() {
-            let at = layout::TEST_CENTER + Vec3::new(-3.7 + slot as f32 * 1.55, 0.05, 0.);
+            let at = layout::test_commitment(test.committed.len(), slot);
             face(
                 &mut commands,
                 &mut meshes,
@@ -483,8 +531,12 @@ pub(super) fn synchronize(
             );
         }
     }
+    let mut token_slots = [0, 0];
     for (index, token) in view.tokens.iter().enumerate() {
-        let at = layout::TEST_CENTER + Vec3::new(-2. + index as f32 * 1.2, 0.15, 2.1);
+        let canceled = token.status == TokenStatus::Canceled;
+        let section = usize::from(canceled);
+        let at = layout::test_token(canceled, token_slots[section]);
+        token_slots[section] += 1;
         let transform = Transform::from_translation(at).with_scale(
             if index >= new_tokens && !table.reduced_motion {
                 Vec3::splat(0.1)
@@ -525,7 +577,7 @@ pub(super) fn synchronize(
         );
         commands.entity(label).insert(Scene);
     }
-    let bag_at = Vec3::new(6.2, 0.3, 0.5);
+    let bag_at = layout::test_bag();
     commands
         .spawn((
             Mesh3d(meshes.add(Cylinder::new(0.75, 0.55))),

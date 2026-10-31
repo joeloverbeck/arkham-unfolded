@@ -189,7 +189,10 @@ fn named_location_markers_keep_elsewhere_patrice_separate_from_study() {
             .collect();
         assert_eq!(roots.len(), 3);
         for root in roots {
-            assert!(root.scale.x > 0.25 && root.scale.x < 0.5);
+            assert!(
+                root.scale.x > 0.38,
+                "standees enlarge beyond the previous scale"
+            );
             assert_eq!(root.scale, Vec3::splat(root.scale.x));
         }
     }
@@ -693,13 +696,105 @@ fn promise_moves_from_patrice_hand_to_shared_test_without_changing_rules() {
     let mut session = Session::new(Fixture::curse());
     let before = session.observe();
     let hand = context::card_position(1, &before);
-    assert!(hand.z > 10.0 && hand.x.abs() < 5.7);
+    let patrice = tabletop_layout::investigator_center(1, 3);
+    assert_eq!(hand.x, patrice.x, "a single hand card is centered");
+    assert!(hand.z > patrice.z);
     session.choose(before.revision, "commit-promise").unwrap();
     let committed = context::card_position(1, &session.observe());
-    assert!(committed.z < 3.0);
+    assert!((committed.z - tabletop_layout::TEST_CENTER.z).abs() < 4.5);
+    assert!(committed.z < patrice.z - 9.0);
     assert_eq!(
         context::card_position(2, &before),
         context::card_position(2, &session.observe())
+    );
+}
+
+#[test]
+fn production_scene_places_test_objects_and_personal_status_on_their_surfaces() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = app_for_session(
+        Session::new(Fixture::curse()),
+        directory.path().join("surface-layout.json"),
+    );
+    app.add_systems(Startup, setup_table);
+    app.update();
+    let world = app.world_mut();
+    let position = |world: &mut World, source| {
+        world
+            .query::<(&context::Selectable, &Transform)>()
+            .iter(world)
+            .find(|(selectable, _)| selectable.0 == source)
+            .map(|(_, transform)| transform.translation)
+            .expect("the real scene must contain this selectable object")
+    };
+    let bag = position(world, Source::Bag);
+    let test = tabletop_layout::TEST_CENTER;
+    assert!(bag.x > test.x && bag.z < test.z, "bag is upper right");
+    assert!((bag.x - test.x).abs() < 7.0 && (bag.z - test.z).abs() < 4.5);
+    let source = position(world, Source::Card(0));
+    assert!(
+        source.x < test.x && source.z < test.z,
+        "source is upper left"
+    );
+    let jacqueline = tabletop_layout::investigator_center(2, 3);
+    let investigator = position(world, Source::Card(2));
+    assert!(investigator.x < jacqueline.x && investigator.z < jacqueline.z);
+    let labels: Vec<_> = world
+        .query::<(&Text, &WorldLabel)>()
+        .iter(world)
+        .map(|(text, anchor)| (text.0.clone(), anchor.0))
+        .collect();
+    for (index, name) in ["Tony Morgan", "Patrice Hathaway", "Jacqueline Fine"]
+        .into_iter()
+        .enumerate()
+    {
+        let center = tabletop_layout::investigator_center(index, 3);
+        assert!(
+            labels
+                .iter()
+                .any(|(text, anchor)| text == name && anchor.z < center.z - 7.5)
+        );
+        assert!(labels.iter().any(|(text, anchor)| text.contains("Horror")
+            && *anchor == tabletop_layout::investigator_harm(index, true) + Vec3::Z * 0.4));
+    }
+    assert!(labels.iter().any(|(text, _)| text == "Horror\n2/9"));
+    assert!(labels.iter().any(|(text, _)| text == "Damage\nn/a"));
+    assert_eq!(
+        world
+            .query_filtered::<Entity, With<crate::tabletop_harm_tokens::HarmToken>>()
+            .iter(world)
+            .count(),
+        6
+    );
+    assert!(labels.iter().any(|(text, _)| text == "Revealed"));
+    assert!(labels.iter().any(|(text, _)| text == "Canceled"));
+
+    act(&mut app, Action::Choose(0, "commit-promise".into()));
+    act(&mut app, Action::Choose(1, "use-jacqueline".into()));
+    let world = app.world_mut();
+    for id in 0..3 {
+        assert_eq!(
+            position(world, Source::Token(id)),
+            tabletop_layout::test_token(false, usize::from(id))
+        );
+    }
+    act(&mut app, Action::Choose(2, "cancel-1-2".into()));
+    let world = app.world_mut();
+    assert_eq!(
+        position(world, Source::Token(0)),
+        tabletop_layout::test_token(false, 0)
+    );
+    assert_eq!(
+        position(world, Source::Token(1)),
+        tabletop_layout::test_token(true, 0)
+    );
+    assert_eq!(
+        position(world, Source::Token(2)),
+        tabletop_layout::test_token(true, 1)
+    );
+    assert_eq!(
+        position(world, Source::Token(3)),
+        tabletop_layout::test_token(false, 1)
     );
 }
 
@@ -1234,7 +1329,7 @@ fn replay_controls_and_reminder_follow_recorded_state_without_resetting_the_flip
     act(&mut app, Action::Next);
     assert!(has_text(&mut app, "Committed"));
     act(&mut app, Action::Next);
-    assert!(has_text(&mut app, "USED THIS ROUND"));
+    assert!(has_text(&mut app, "Used this round"));
     assert_eq!(
         app.world().get::<ReminderPose>(reminder).unwrap().target,
         std::f32::consts::PI
@@ -1400,17 +1495,24 @@ fn three_displayed_tokens_continue_to_four_with_only_the_new_token_revealing() {
         appearing[0].scale.x > 0.5 && appearing[0].scale.x < 1.0,
         "new entities animate in the synchronization frame"
     );
-    assert!((appearing[0].translation.x - 0.7).abs() < 0.001);
+    assert_eq!(
+        appearing[0].translation,
+        tabletop_layout::test_token(false, 1)
+    );
     let mut pieces: Vec<_> = world
         .query_filtered::<(
+            &context::Selectable,
             &Transform,
             &MeshMaterial3d<StandardMaterial>,
             Option<&Children>,
         ), With<TransientScene>>()
         .iter(world)
-        .filter(|(transform, _, _)| transform.translation.z == 1.2)
-        .map(|(transform, material, children)| {
-            (
+        .filter_map(|(source, transform, material, children)| {
+            let Source::Token(id) = source.0 else {
+                return None;
+            };
+            Some((
+                id,
                 *transform,
                 material.0.clone(),
                 children.map_or(0, |children| {
@@ -1419,17 +1521,26 @@ fn three_displayed_tokens_continue_to_four_with_only_the_new_token_revealing() {
                         .filter(|child| world.get::<Mesh3d>(*child).is_some())
                         .count()
                 }),
-            )
+            ))
         })
         .collect();
-    pieces.sort_by(|a, b| a.0.translation.x.total_cmp(&b.0.translation.x));
+    pieces.sort_by_key(|piece| piece.0);
     assert_eq!(pieces.len(), 4);
-    for (index, (transform, material, children)) in pieces.iter().enumerate() {
-        assert!((transform.translation.x - [-4.5, -3.2, -0.6, 0.7][index]).abs() < 0.001);
-        if index < 3 {
+    for (id, transform, material, children) in &pieces {
+        let canceled = [1, 2].contains(id);
+        let slot = match id {
+            0 | 1 => 0,
+            2 | 3 => 1,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            transform.translation,
+            tabletop_layout::test_token(canceled, slot)
+        );
+        if *id != 3 {
             assert_eq!(transform.scale, Vec3::ONE);
         }
-        let expected_color = if index < 2 {
+        let expected_color = if canceled {
             Color::srgb(0.37, 0.25, 0.28)
         } else {
             Color::srgb(0.28, 0.62, 0.51)
@@ -1444,7 +1555,7 @@ fn three_displayed_tokens_continue_to_four_with_only_the_new_token_revealing() {
         );
         assert_eq!(
             *children,
-            if index < 2 { 2 } else { 0 },
+            if canceled { 2 } else { 0 },
             "canceled tokens retain their crosses"
         );
     }
@@ -1462,7 +1573,7 @@ fn three_displayed_tokens_continue_to_four_with_only_the_new_token_revealing() {
     assert_eq!(
         labels
             .iter()
-            .filter(|text| text.ends_with("Canceled"))
+            .filter(|text| text.starts_with('#') && text.ends_with("Canceled"))
             .count(),
         2
     );
@@ -2130,14 +2241,19 @@ fn camera_adapter_keeps_jacqueline_replay_framing_and_freezes_on_follow_off() {
     let (mut app, _) = orbit_mouse_app();
     app.world_mut().resource_mut::<Tabletop>().save_path = dir.path().join("replay.json");
     act(&mut app, Action::Focus(Area::Overview));
+    let initial = app.world().resource::<Orbit>().pose();
     act(&mut app, Action::Replay);
     app.world_mut()
         .resource_mut::<Time>()
         .advance_by(Duration::from_millis(100));
     app.update();
     let moving = app.world().resource::<Orbit>().pose();
-    assert!((moving.distance - 31.2).abs() < 0.00001);
-    assert!((moving.target.z - 2.72).abs() < 0.00001);
+    let (target, distance) = tabletop_layout::focus(Area::Test);
+    assert!(
+        (moving.distance - (initial.distance + (distance - initial.distance) * 0.4)).abs()
+            < 0.00001
+    );
+    assert!(moving.target.distance(initial.target.lerp(target, 0.4)) < 0.00001);
     act(&mut app, Action::Follow);
     assert!(!app.world().resource::<Orbit>().is_following());
     app.update();

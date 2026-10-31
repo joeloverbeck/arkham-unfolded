@@ -1,4 +1,4 @@
-//! The physical chaos-token disk and caption shared by the two tabletops.
+//! The physical chaos-token disk and caption shared by the tabletops.
 //!
 //! Callers own placement, reveal motion and lifetime. The face is parented to
 //! the disk so it follows the caller's transform throughout an animation.
@@ -91,9 +91,10 @@ pub(crate) fn spawn(
                 visual.face.label()
             ))),
             TextFont {
-                font_size: FontSize::Px(16.0),
+                font_size: FontSize::Px(12.0),
                 ..default()
             },
+            TextLayout::justify(Justify::Center),
             TextColor(if canceled {
                 Color::srgb(0.62, 0.71, 0.70)
             } else {
@@ -101,7 +102,8 @@ pub(crate) fn spawn(
             }),
             Node {
                 position_type: PositionType::Absolute,
-                padding: UiRect::axes(px(8), px(4)),
+                width: px(84),
+                padding: UiRect::axes(px(6), px(4)),
                 border_radius: BorderRadius::all(px(4)),
                 ..default()
             },
@@ -119,7 +121,7 @@ pub(crate) fn position_labels(
 ) {
     for (anchor, mut node, mut visibility) in &mut labels {
         if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor.0) {
-            node.left = px(point.x - 65.0);
+            node.left = px(point.x - 42.0);
             node.top = px(point.y - 16.0);
             *visibility = Visibility::Visible;
         } else {

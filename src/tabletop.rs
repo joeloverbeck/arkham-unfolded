@@ -237,7 +237,7 @@ impl Options {
                 "--initial-view" => options.initial_view = Some(parse_initial_view(&value()?)?),
                 "--help" | "-h" => {
                     println!(
-                        "Arkham Unfolded — scripted rules experiment\n\n--case curse|autofail  Choose the privileged starting fixture\n--save PATH            Session save and autosave path\n--load PATH            Reopen a saved pending decision\n--art-root PATH        Use a prepared asset collection for this launch\n--no-art               Use readable substitutes\n--screenshot PATH      Capture the actual window once ready\n--quit-after-screenshot\n--initial-view overview|scenario|test  Diagnostic startup framing; Home is unchanged\n\nCamera: WASD to pan; right drag or arrow keys to orbit; wheel or +/- to zoom; Home to reset. F12 saves a screenshot."
+                        "Arkham Unfolded — scripted rules experiment\n\n--case curse|autofail  Choose the privileged starting fixture\n--save PATH            Session save and autosave path\n--load PATH            Reopen a saved pending decision\n--art-root PATH        Use a prepared asset collection for this launch\n--no-art               Use readable substitutes\n--screenshot PATH      Capture the actual window once ready\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline  Diagnostic startup framing; Home is unchanged\n\nCamera: WASD to pan; right drag or arrow keys to orbit; wheel or +/- to zoom; Home to reset. F12 saves a screenshot."
                     );
                     return Ok(None);
                 }
@@ -470,14 +470,14 @@ fn setup_table(
     tabletop_layout::spawn_surfaces(&mut commands, &mut meshes, &mut materials);
     commands
         .spawn((
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(60.0, 60.0))),
+            Mesh3d(meshes.add(Plane3d::default().mesh().size(80.0, 80.0))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: Color::srgba(0.0, 0.0, 0.0, 0.0),
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
                 ..default()
             })),
-            Transform::from_xyz(0.0, -0.055, 4.0),
+            Transform::from_xyz(0.0, -0.055, 10.0),
         ))
         .observe(|event: On<PointerClick>, mut queue: ResMut<Actions>| {
             if event.button == PointerButton::Primary {
@@ -489,7 +489,7 @@ fn setup_table(
         .spawn((
             Mesh3d(meshes.add(Cylinder::new(0.65, 0.9))),
             MeshMaterial3d(bag),
-            Transform::from_xyz(-6.4, 0.48, 0.5),
+            Transform::from_translation(tabletop_layout::test_bag().with_y(0.48)),
             context::Selectable(Source::Bag),
         ))
         .observe(|event: On<PointerClick>, mut queue: ResMut<Actions>| {
@@ -499,7 +499,7 @@ fn setup_table(
         .spawn((
             Mesh3d(meshes.add(Cylinder::new(0.46, 0.025))),
             MeshMaterial3d(materials.add(Color::BLACK)),
-            Transform::from_xyz(-6.4, 0.95, 0.5),
+            Transform::from_translation(tabletop_layout::test_bag().with_y(0.95)),
         ))
         .observe(|event: On<PointerClick>, mut queue: ResMut<Actions>| {
             context::select(event, Source::Bag, &mut queue)
@@ -1632,6 +1632,9 @@ mod launch_tests {
             ("overview", Area::Overview),
             ("scenario", Area::Scenario),
             ("test", Area::Test),
+            ("tony", Area::Investigator(0)),
+            ("patrice", Area::Investigator(1)),
+            ("jacqueline", Area::Investigator(2)),
         ] {
             assert_eq!(
                 parse(&["--initial-view", name])

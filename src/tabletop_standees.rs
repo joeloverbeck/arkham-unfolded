@@ -5,10 +5,15 @@ use crate::tabletop_layout::InvestigatorClass;
 use bevy::prelude::*;
 use std::f32::consts::PI;
 
-pub(crate) const SCALE: f32 = 0.38;
 const BASE_RADIUS_UNSCALED: f32 = 0.52;
-pub(crate) const BASE_RADIUS: f32 = BASE_RADIUS_UNSCALED * SCALE;
-pub(crate) const HEIGHT: f32 = (0.20 + 744.0 / 484.0 + 0.0125) * SCALE;
+
+pub(crate) fn radius_for(card_size: Vec2) -> f32 {
+    card_size.y * 0.21
+}
+
+pub(crate) fn height_for(card_size: Vec2) -> f32 {
+    (0.20 + 744.0 / 484.0 + 0.0125) * radius_for(card_size) / BASE_RADIUS_UNSCALED
+}
 
 pub(crate) fn spawn(
     commands: &mut Commands,
@@ -17,6 +22,7 @@ pub(crate) fn spawn(
     image: Option<&Handle<Image>>,
     position: Vec3,
     class: InvestigatorClass,
+    card_size: Vec2,
 ) -> Entity {
     let color = class.color();
     let base = materials.add(StandardMaterial {
@@ -33,7 +39,8 @@ pub(crate) fn spawn(
     commands
         .spawn((
             Name::new("Investigator standee"),
-            Transform::from_translation(position).with_scale(Vec3::splat(SCALE)),
+            Transform::from_translation(position)
+                .with_scale(Vec3::splat(radius_for(card_size) / BASE_RADIUS_UNSCALED)),
             Visibility::default(),
             Pickable::IGNORE,
         ))

@@ -354,7 +354,7 @@ fn rendered_reveal_shortcut_reaches_the_saved_reaction_choice() {
     );
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
-        layout::TEST_CENTER
+        layout::focus(Area::Test).0
     );
 }
 
@@ -400,6 +400,153 @@ fn visible_text(app: &mut App) -> Vec<String> {
         .iter(world)
         .map(|text| text.0.clone())
         .collect()
+}
+
+#[test]
+fn physical_harm_totals_include_zeroes_and_survive_scene_replacement_and_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = render_app(dir.path().join("harm-totals.json"));
+    app.update();
+    for step in 0..3 {
+        let world = app.world_mut();
+        let positions: Vec<_> = world
+            .query_filtered::<&Transform, With<crate::tabletop_harm_tokens::HarmToken>>()
+            .iter(world)
+            .map(|transform| transform.translation)
+            .collect();
+        assert_eq!(
+            positions.len(),
+            6,
+            "each investigator keeps both physical tokens"
+        );
+        for index in 0..3 {
+            for horror in [false, true] {
+                assert!(positions.contains(&layout::investigator_harm(index, horror)));
+            }
+        }
+        let captions: Vec<_> = world
+            .query::<(&Text, &WorldLabel)>()
+            .iter(world)
+            .map(|(text, at)| (text.0.clone(), at.0))
+            .collect();
+        for (index, damage, horror) in [(0, "0/9", "0/5"), (1, "0/7", "0/7"), (2, "0/6", "2/9")] {
+            for (is_horror, kind, total) in [(false, "Damage", damage), (true, "Horror", horror)] {
+                assert!(captions.contains(&(
+                    format!("{kind}\n{total}"),
+                    layout::investigator_harm(index, is_horror) + Vec3::Z * 0.5,
+                )));
+            }
+        }
+        match step {
+            0 => {
+                choose(&mut app, "select:tony");
+                choose(&mut app, "draw");
+            }
+            1 => act(&mut app, Action::Reopen),
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn production_hand_recenters_after_draw_and_restores_after_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = render_app(dir.path().join("layout.json"));
+    choose(&mut app, "select:tony");
+    for count in 1..=4 {
+        let view = app.world().resource::<Table>().view();
+        let hand = &view.investigator(Investigator::Tony).hand;
+        assert_eq!(hand.len(), count);
+        let world = app.world_mut();
+        let mut query = world.query::<(&CardSource, &Transform)>();
+        let positions: Vec<_> = hand
+            .iter()
+            .map(|card| {
+                query
+                    .iter(world)
+                    .find(|(source, _)| source.0 == Source::Hand(card.id))
+                    .expect("every held card remains an interactive physical card")
+                    .1
+                    .translation
+            })
+            .collect();
+        let center = layout::investigator_center(0, 3);
+        assert!(
+            (positions.iter().map(|p| p.x).sum::<f32>() / count as f32 - center.x).abs() < 0.001
+        );
+        assert!(positions.iter().all(|p| p.z > center.z));
+        for pair in positions.windows(2) {
+            assert!(pair[1].x - pair[0].x > CARD_WIDTH);
+        }
+        if count < 4 {
+            choose(&mut app, "draw");
+        }
+    }
+    let before = app.world().resource::<Table>().view();
+    act(&mut app, Action::Reopen);
+    assert_eq!(app.world().resource::<Table>().view(), before);
+}
+
+#[test]
+fn production_tokens_move_sections_only_after_cancellation_and_replay_preserves_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = render_app(dir.path().join("token-layout.json"));
+    app.world_mut().resource_mut::<Table>().session = Session::with_draws(vec![
+        crate::TokenFace::Zero,
+        crate::TokenFace::MinusOne,
+        crate::TokenFace::MinusTwo,
+    ]);
+    for id in [
+        "select:jacqueline",
+        "investigate",
+        "commit:none",
+        "use-jacqueline",
+    ] {
+        choose(&mut app, id);
+    }
+    let positions = |app: &mut App| {
+        let world = app.world_mut();
+        world
+            .query::<(&CardSource, &Transform)>()
+            .iter(world)
+            .filter_map(|(source, transform)| {
+                if let Source::Token(id) = source.0 {
+                    Some((id, transform.translation))
+                } else {
+                    None
+                }
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let before = positions(&mut app);
+    assert_eq!(before.len(), 3);
+    assert!(before.values().all(|p| p.x < layout::TEST_CENTER.x));
+    choose(&mut app, "cancel:0,1");
+    let after = positions(&mut app);
+    assert!(after[&0].x > layout::TEST_CENTER.x && after[&1].x > layout::TEST_CENTER.x);
+    assert!(after[&2].x < layout::TEST_CENTER.x);
+    let live = app.world().resource::<Table>().session.clone();
+    act(&mut app, Action::Replay);
+    while app
+        .world()
+        .resource::<Table>()
+        .replay
+        .as_ref()
+        .unwrap()
+        .index()
+        + 1
+        < app
+            .world()
+            .resource::<Table>()
+            .replay
+            .as_ref()
+            .unwrap()
+            .len()
+    {
+        act(&mut app, Action::Next);
+    }
+    assert_eq!(positions(&mut app), after);
+    assert_eq!(app.world().resource::<Table>().session, live);
 }
 
 fn completed_attempt(advance: Option<bool>) -> Session {
@@ -528,7 +675,7 @@ fn replay_follows_current_actions_after_tests_and_preserves_manual_override() {
     }
     assert_eq!(
         settle_camera(&mut app),
-        layout::TEST_CENTER,
+        layout::focus(Area::Test).0,
         "actual revealed test focuses Test"
     );
     for _ in 0..3 {
@@ -609,7 +756,8 @@ fn replay_focuses_patrice_discard_for_the_after_test_shuffle() {
         assert!(replay.index() + 1 < replay.len());
         act(&mut app, Action::Next);
     }
-    let discard = Vec3::new(3.9, 0., 11.1);
+    let mut discard = layout::investigator_discard(Investigator::Patrice.index());
+    discard.y = 0.;
     assert_eq!(settle_camera(&mut app), discard);
     act(&mut app, Action::Next);
     assert_eq!(
@@ -640,11 +788,9 @@ fn discard_substitute_names_the_top_card() {
             .iter(world)
             .any(|source| source.0 == Source::Discard(Investigator::Patrice))
     );
-    assert!(
-        visible_text(&mut app)
-            .iter()
-            .any(|text| text.contains("Discard") && text.contains("Promise of Power"))
-    );
+    let labels = visible_text(&mut app);
+    assert!(labels.iter().any(|text| text == "Discard"));
+    assert!(labels.iter().any(|text| text.contains("Promise of Power")));
 }
 
 #[test]
