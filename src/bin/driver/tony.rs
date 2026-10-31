@@ -75,6 +75,7 @@ fn response(game: &Session, replay: Option<&Replay>, status: &str, error: Option
     let mut response = json!({
         "ok": error.is_none(), "mode": if replay.is_some() { "replay" } else { "live" }, "status": status,
         "observation": observation, "warnings": warnings,
+        "encounter_discard": observation.encounter_discard(),
     });
     if let Some(replay) = replay {
         response["replay"] =

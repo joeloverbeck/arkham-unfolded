@@ -16,9 +16,21 @@ const GOLD: Color = Color::srgb(0.86, 0.69, 0.37);
 const HOVER_FADE_SECONDS: f32 = 0.12;
 pub(crate) const KEYBOARD_HINT: &str = "Tab / Shift+Tab: move\nEnter / Space: choose · Esc: close";
 
-/// Only contextual choices use this style; ordinary utility controls retain theirs.
+/// Every meaningful menu operation participates: Some is an inspection target,
+/// None is a game operation. Never choose between targets or execute a game action.
+pub(crate) fn sole_inspection<T>(operations: impl IntoIterator<Item = Option<T>>) -> Option<T> {
+    let mut operations = operations.into_iter();
+    let target = operations.next()??;
+    operations.next().is_none().then_some(target)
+}
+
+/// Contextual choices and reveal controls share this style; utility controls retain theirs.
 #[derive(Component)]
 pub(crate) struct ContextButton;
+
+/// Presentation-only opacity; hover and keyboard focus retain their shared style.
+#[derive(Component)]
+pub(crate) struct FeedbackOpacity(pub f32);
 
 pub(crate) fn context_button() -> impl Bundle {
     (ContextButton, Outline::new(px(2), px(2), Color::NONE))
@@ -177,12 +189,13 @@ fn button_feedback(
             Has<Pressed>,
             &mut BackgroundColor,
             &mut Outline,
+            Option<&FeedbackOpacity>,
         ),
         With<ContextButton>,
     >,
     focus: Option<Res<InputFocus>>,
 ) {
-    for (entity, hover, pressed, mut background, mut outline) in &mut buttons {
+    for (entity, hover, pressed, mut background, mut outline, opacity) in &mut buttons {
         background.0 = if pressed {
             GOLD
         } else if hover.0 {
@@ -199,6 +212,10 @@ fn button_feedback(
         } else {
             Color::NONE
         };
+        if let Some(opacity) = opacity {
+            background.0 = background.0.with_alpha(background.0.alpha() * opacity.0);
+            outline.color = outline.color.with_alpha(outline.color.alpha() * opacity.0);
+        }
     }
 }
 

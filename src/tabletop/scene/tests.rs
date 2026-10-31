@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use crate::tabletop_standee_checks as standee_checks;
 
+mod encounter_discard;
+
 fn pending_app(path: PathBuf) -> App {
     let mut session = Session::new(Fixture::curse());
     session.choose(0, "commit-promise").unwrap();
@@ -1569,7 +1571,6 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
         labels.len() >= 11,
         "the expanded table retains the test labels"
     );
-    let initial_label_count = labels.len();
     let reminder = reminder_state(&mut app).0;
     // Pan one world unit right: this orthographic camera maps that to 100 pixels left.
     app.world_mut()
@@ -1590,11 +1591,18 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     }
     assert_eq!(reminder_state(&mut app).0, reminder);
     let world = app.world_mut();
+    assert_eq!(
+        world
+            .query_filtered::<Entity, With<tabletop_tokens::TokenLabel>>()
+            .iter(world)
+            .count(),
+        4,
+        "the curse continuation adds a newly projected token label"
+    );
     let labels: Vec<_> = world
         .query_filtered::<(&Node, &Visibility, Option<&LabelDisplay>), Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
         .iter(world)
         .collect();
-    assert_eq!(labels.len(), initial_label_count + 1);
     assert!(labels.iter().all(
         |(node, visibility, display)| matches!(node.left, Val::Px(_))
             && **visibility

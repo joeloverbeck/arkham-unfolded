@@ -93,9 +93,11 @@ fn emit(output: &mut impl Write, value: &Value) -> Result<(), String> {
 }
 
 fn response(game: &Session, replay: Option<&Replay>, status: &str, error: Option<String>) -> Value {
+    let observation = replay.map_or_else(|| game.observe(), |replay| replay.current().clone());
     let mut response = json!({
         "ok": error.is_none(), "mode": if replay.is_some() { "replay" } else { "live" }, "status": status,
-        "observation": replay.map_or_else(|| game.observe(), |replay| replay.current().clone()),
+        "observation": observation,
+        "encounter_discard": observation.encounter_discard(),
     });
     if let Some(replay) = replay {
         response["replay"] = json!({"index": replay.index(), "length": replay.len()});

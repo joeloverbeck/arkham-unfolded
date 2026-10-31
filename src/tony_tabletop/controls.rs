@@ -9,6 +9,7 @@ pub(super) enum Source {
     Committed(u8),
     Deck,
     Discard,
+    EncounterDiscard,
     Bag,
     Token,
 }
@@ -78,6 +79,7 @@ pub(super) fn exists(view: &Observation, source: Source) -> bool {
         Source::Committed(id) => view.committed.iter().any(|card| card.id == id),
         Source::Token => view.held_token.is_some(),
         Source::Discard => !view.discard.is_empty(),
+        Source::EncounterDiscard => !view.encounter_discard().is_empty(),
         Source::Deck => view.deck_count > 0,
         Source::Bag => true,
     }
@@ -157,6 +159,10 @@ fn source_name(view: &Observation, source: Source) -> String {
             ),
         Source::Deck => format!("Tony's deck · {} cards", view.deck_count),
         Source::Discard => format!("Tony's discard · {} cards", view.discard.len()),
+        Source::EncounterDiscard => format!(
+            "Encounter discard · {} cards",
+            view.encounter_discard().len()
+        ),
         Source::Bag => format!("Chaos bag · {} tokens", view.bag_count),
         Source::Token => "Revealed chaos token".into(),
     }
@@ -256,25 +262,28 @@ fn entries(table: &Table, view: &Observation, source: Source) -> Vec<Entry> {
             }
         }
     }
+    if source == Source::EncounterDiscard {
+        for card in view.encounter_discard().iter().rev() {
+            if let Some(index) = CARDS.iter().position(|face| face.code == card.code) {
+                entries.push(Entry {
+                    label: format!("Inspect {}", card.title),
+                    action: Action::Inspect(index),
+                    slot: 3,
+                    warning: None,
+                });
+            }
+        }
+    }
     entries
 }
 
 pub(super) fn inspection_only(table: &Table, view: &Observation, source: Source) -> Option<usize> {
-    if !matches!(
-        source,
-        Source::Card(_) | Source::Hand(_) | Source::Committed(_)
-    ) {
-        return None;
-    }
-    match entries(table, view, source).as_slice() {
-        [
-            Entry {
-                action: Action::Inspect(index),
-                ..
-            },
-        ] => Some(*index),
-        _ => None,
-    }
+    crate::tabletop_feedback::sole_inspection(entries(table, view, source).into_iter().map(
+        |entry| match entry.action {
+            Action::Inspect(index) => Some(index),
+            _ => None,
+        },
+    ))
 }
 
 type MenuSnapshot = (u64, u64, bool, Vec2, bool, bool, BTreeSet<u8>);
@@ -319,7 +328,7 @@ pub(super) fn draw_menu(
         .and_then(|(camera, transform)| camera.world_to_viewport(transform, selection.at).ok())
         .unwrap_or(size * 0.5);
     let radial = entries.len() <= 3
-        && selection.source != Source::Discard
+        && !matches!(selection.source, Source::Discard | Source::EncounterDiscard)
         && entries.iter().all(|e| e.warning.is_none())
         && size.x >= 950.0
         && size.y >= 650.0;

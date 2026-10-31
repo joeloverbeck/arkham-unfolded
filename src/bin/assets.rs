@@ -3,7 +3,7 @@ use arkham_unfolded_experiment::assets::{
 };
 use std::path::PathBuf;
 
-const USAGE: &str = "arkham-assets prepare --source PATH --output PATH\narkham-assets check PATH\narkham-assets prepare-tony --source PATH --output PATH\narkham-assets check-tony PATH\n\nPreparation copies only the selected assets into a fresh external directory.\nIt never changes the source archive or overwrites an existing collection.";
+const USAGE: &str = "arkham-assets prepare --source PATH --reveal-icon PATH --output PATH\narkham-assets check PATH\narkham-assets prepare-tony --source PATH --reveal-icon PATH --output PATH\narkham-assets check-tony PATH\n\nPreparation copies only the selected assets into a fresh external directory.\nThe reveal icon is the pinned Lorc Swap bag PNG; preparation never downloads it.\nIt never changes the source archive or overwrites an existing collection.";
 
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
@@ -11,6 +11,7 @@ fn run() -> Result<(), String> {
         Some(command @ ("prepare" | "prepare-tony")) => {
             let mut source = None;
             let mut output = None;
+            let mut reveal_icon = None;
             while let Some(argument) = args.next() {
                 let value = args
                     .next()
@@ -18,11 +19,15 @@ fn run() -> Result<(), String> {
                 match argument.as_str() {
                     "--source" if source.is_none() => source = Some(PathBuf::from(value)),
                     "--output" if output.is_none() => output = Some(PathBuf::from(value)),
+                    "--reveal-icon" if reveal_icon.is_none() => {
+                        reveal_icon = Some(PathBuf::from(value))
+                    }
                     _ => return Err(format!("Unknown or repeated option: {argument}")),
                 }
             }
             let source = source.ok_or("prepare requires --source PATH")?;
             let output = output.ok_or("prepare requires --output PATH")?;
+            let reveal_icon = reveal_icon.ok_or("prepare requires --reveal-icon PATH")?;
             let prepare = if command == "prepare-tony" {
                 prepare_tony
             } else {
@@ -33,7 +38,7 @@ fn run() -> Result<(), String> {
             } else {
                 inspect
             };
-            match prepare(&source, &output).map_err(|error| error.to_string())? {
+            match prepare(&source, &output, &reveal_icon).map_err(|error| error.to_string())? {
                 PrepareResult::Created => println!("Prepared assets at {}", output.display()),
                 PrepareResult::AlreadyPresent => println!(
                     "Identical collection already present at {}; nothing changed.",

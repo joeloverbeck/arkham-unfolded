@@ -35,6 +35,7 @@ mod controls;
 mod harm;
 mod harm_lifetime;
 mod scene;
+use crate::tabletop_reveal as reveal;
 use controls::{Context, Source};
 use harm::{advance_presentation, animate_harm, harm_amounts, harm_scene};
 use harm_lifetime::{HarmPresentation, Playback};
@@ -247,6 +248,7 @@ impl Art {
 #[derive(Clone)]
 enum Action {
     Choose(u64, String),
+    Reveal(reveal::Request),
     Save,
     Reopen,
     Replay,
@@ -382,6 +384,7 @@ pub fn run() -> Result<(), String> {
         .add_plugins(MeshPickingPlugin)
         .add_plugins(TabletopPacingPlugin)
         .add_plugins(feedback::FeedbackPlugin)
+        .add_plugins(reveal::RevealPlugin)
         .add_systems(Last, request_redraw.in_set(RequestRedraw))
         .add_systems(Startup, setup)
         .add_systems(
@@ -396,6 +399,8 @@ pub fn run() -> Result<(), String> {
                 synchronize_feedback,
                 rebuild_panel,
                 controls::draw_menu,
+                sync_reveal,
+                reveal::render,
                 world_labels,
                 crate::tabletop_tokens::position_labels,
                 hide_overview_token_labels,
@@ -439,6 +444,11 @@ pub fn run() -> Result<(), String> {
         .as_ref()
         .and_then(|r| r.verified_path("font/symbols"))
         .map(|path| server.load(path.to_owned()));
+    let reveal_image = collection
+        .as_ref()
+        .and_then(|r| r.verified_path(reveal::ART_ROLE))
+        .map(|path| server.load(path.to_owned()));
+    app.insert_resource(reveal::Artwork(reveal_image));
     app.insert_resource(Art {
         handles,
         symbol_font,
@@ -491,6 +501,7 @@ fn handle_actions(
     mut settings: ResMut<AssetSettings>,
     keys: Res<ButtonInput<KeyCode>>,
     mut focus: Option<ResMut<InputFocus>>,
+    mut shortcut: Option<ResMut<reveal::Shortcut>>,
 ) {
     let view = table.view();
     let replay = table.replay.as_ref().map(Replay::index);
@@ -500,11 +511,38 @@ fn handle_actions(
     } else if keys.just_pressed(KeyCode::Escape) {
         queue.0.push(Action::DismissMenu);
     }
+    if let Some(shortcut) = shortcut.as_mut() {
+        queue
+            .0
+            .extend(shortcut.drain().into_iter().map(Action::Reveal));
+    }
     for action in queue.0.drain(..) {
         if settings.is_busy() || (table.modal() && !matches!(action, Action::Close)) {
             continue;
         }
+        let mut reveal_focus = false;
         let action = match action {
+            Action::Reveal(request) => {
+                let Some(shortcut) = shortcut.as_mut() else {
+                    continue;
+                };
+                refresh_reveal(&table, &settings, shortcut);
+                match shortcut.admit(request) {
+                    Some(reveal::Accepted::Choice(revision, id)) => {
+                        reveal_focus = true;
+                        table.context.dismiss();
+                        Action::Choose(revision, id.into())
+                    }
+                    Some(reveal::Accepted::Opened | reveal::Accepted::Dismissed) => {
+                        table.context.dismiss();
+                        if let Some(focus) = focus.as_mut() {
+                            focus.clear();
+                        }
+                        continue;
+                    }
+                    None => continue,
+                }
+            }
             Action::ContextChoice(epoch, revision, id) => {
                 if !table.context.accepts(epoch) {
                     continue;
@@ -521,6 +559,9 @@ fn handle_actions(
             }
             action => action,
         };
+        if !reveal_focus && let Some(shortcut) = shortcut.as_mut() {
+            shortcut.dismiss();
+        }
         match action {
             Action::Choose(revision, id) if table.replay.is_none() && !table.presenting() => {
                 let table = &mut *table;
@@ -535,6 +576,12 @@ fn handle_actions(
                         table
                             .presentation
                             .committed_choice(&before, &table.session.observe());
+                        if reveal_focus {
+                            orbit.focus(layout::focus(Area::Test));
+                            if let Some(focus) = focus.as_mut() {
+                                focus.clear();
+                            }
+                        }
                         "Decision saved. Close and reopen safely at any choice.".into()
                     }
                     Err(e) => format!("Decision not committed: {e}"),
@@ -710,6 +757,24 @@ fn handle_actions(
         table.context.sync(view.revision, replay);
         table.dirty = true;
     }
+}
+
+fn refresh_reveal(table: &Table, settings: &AssetSettings, shortcut: &mut reveal::Shortcut) {
+    let view = table.view();
+    shortcut.sync(
+        view.revision,
+        &view.choices,
+        table.replay.is_none() && !table.presenting() && !table.modal() && !settings.is_busy(),
+        table.reduced_motion,
+    );
+}
+
+fn sync_reveal(
+    table: Res<Table>,
+    settings: Res<AssetSettings>,
+    mut shortcut: ResMut<reveal::Shortcut>,
+) {
+    refresh_reveal(&table, &settings, &mut shortcut);
 }
 
 fn setup(
@@ -1092,7 +1157,7 @@ fn rebuild_panel(
                 let hint = match view.stage {
                     Stage::Action => "Select a component: Ghoul for Fight/Evade, Study for Investigate, Tony for Resource, deck for Draw.",
                     Stage::Commit => "Select cards in Tony's hand, then Commit selected; or commit no cards.",
-                    Stage::Reveal => "Focus Test or Scenario, then select the chaos bag to reveal.",
+                    Stage::Reveal => "Use Reveal chaos token at the lower left, or select the chaos bag.",
                     Stage::Resolve => "Focus Test, then select the revealed token to resolve.",
                     Stage::Ended => "Only Tony's prepared turn has ended. Companions do not take turns here.",
                 };
@@ -1222,11 +1287,13 @@ fn camera_controls(
     focusable: Query<(), With<Button>>,
     hover: Option<Res<bevy::picking::hover::HoverMap>>,
     ui_nodes: Query<(), With<Node>>,
+    mut shortcut: Option<ResMut<reveal::Shortcut>>,
 ) {
     let modal = table.modal() || settings.is_busy();
     let captures_keys = modal
         || table.context.open
         || table.context.utilities
+        || shortcut.as_ref().is_some_and(|s| s.is_open())
         || focus
             .as_ref()
             .and_then(|focus| focus.get())
@@ -1245,12 +1312,15 @@ fn camera_controls(
             pointer_blocked: modal,
             over_ui,
             keyboard: captures_keys,
-            wheel: table.context.open,
+            wheel: table.context.open || shortcut.as_ref().is_some_and(|s| s.is_open()),
         },
         reduced_motion: table.reduced_motion,
     });
     if step.manual_navigation {
         table.context.dismiss();
+        if let Some(shortcut) = shortcut.as_mut() {
+            shortcut.dismiss();
+        }
         table.dirty = true;
     }
     **camera = step.transform;

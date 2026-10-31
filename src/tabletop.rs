@@ -30,6 +30,7 @@ mod inspection;
 use crate::tabletop_layout::{self, Area};
 use context::{Context, Source};
 mod scene;
+use crate::tabletop_reveal as reveal;
 pub(crate) mod symbols;
 use asset_settings::AssetSettings;
 use symbols::Symbol;
@@ -114,6 +115,7 @@ fn result_opens_automatically(view: &Observation) -> bool {
 #[derive(Clone)]
 enum Action {
     Choose(u64, String),
+    Reveal(reveal::Request),
     Select(Source, Vec2),
     ContextChoose(u64, u64, String),
     PrepareCancellation(u64, String),
@@ -342,6 +344,7 @@ pub fn run() -> Result<(), String> {
         )
         .add_plugins(MeshPickingPlugin)
         .add_plugins(TabletopPacingPlugin)
+        .add_plugins(reveal::RevealPlugin)
         .add_systems(Last, request_redraw.in_set(RequestRedraw))
         .add_systems(Startup, setup_table)
         .add_systems(
@@ -354,6 +357,8 @@ pub fn run() -> Result<(), String> {
                 context::synchronize,
                 camera_controls,
                 rebuild_panel,
+                sync_reveal,
+                reveal::render,
                 button_colors,
                 capture_window,
             )
@@ -393,11 +398,13 @@ pub fn run() -> Result<(), String> {
             .map(|handle| (name.to_owned(), handle))
     })
     .collect();
+    let reveal_image = prepared_image(server, collection.as_ref(), reveal::ART_ROLE);
     let symbol_font = symbols::load(
         art_root.as_deref(),
         collection.as_ref(),
         &mut app.world_mut().resource_mut::<Assets<Font>>(),
     );
+    app.insert_resource(reveal::Artwork(reveal_image));
     app.insert_resource(Art {
         handles,
         available,
@@ -500,10 +507,45 @@ fn handle_actions(
     mut settings: Option<ResMut<AssetSettings>>,
     mut context: Option<ResMut<Context>>,
     mut input_focus: Option<ResMut<bevy::input_focus::InputFocus>>,
+    mut shortcut: Option<ResMut<reveal::Shortcut>>,
 ) {
+    if let Some(shortcut) = shortcut.as_mut() {
+        queue
+            .0
+            .extend(shortcut.drain().into_iter().map(Action::Reveal));
+    }
     for mut action in queue.0.drain(..) {
         if settings.as_ref().is_some_and(|settings| settings.is_busy()) {
             continue;
+        }
+        let mut reveal_focus = false;
+        if let Action::Reveal(request) = action {
+            let Some(shortcut) = shortcut.as_mut() else {
+                continue;
+            };
+            refresh_reveal(&table, settings.as_deref(), shortcut);
+            match shortcut.admit(request) {
+                Some(reveal::Accepted::Choice(revision, id)) => {
+                    reveal_focus = true;
+                    if let Some(context) = context.as_mut() {
+                        context.close_menu();
+                    }
+                    action = Action::Choose(revision, id.into());
+                }
+                Some(reveal::Accepted::Opened | reveal::Accepted::Dismissed) => {
+                    if let Some(context) = context.as_mut() {
+                        context.dismiss();
+                    }
+                    if let Some(focus) = input_focus.as_mut() {
+                        focus.clear();
+                    }
+                    table.dirty = true;
+                    continue;
+                }
+                None => continue,
+            }
+        } else if let Some(shortcut) = shortcut.as_mut() {
+            shortcut.dismiss();
         }
         // A modal consumes interaction with the underlying table, including queued clicks.
         if (table.result_open && !matches!(action, Action::DismissResult))
@@ -554,16 +596,7 @@ fn handle_actions(
         match action {
             Action::Select(source, anchor) => {
                 let view = table.view();
-                let inspect_only = match source {
-                    Source::Card(index)
-                        if index < CARDS.len()
-                            && (table.replay.is_some()
-                                || context::choices(&view, source).is_empty()) =>
-                    {
-                        Some(index)
-                    }
-                    _ => None,
-                };
+                let inspect_only = context::inspection_only(&view, table.replay.is_some(), source);
                 if let Some(context) = context.as_mut() {
                     context.select(
                         &view,
@@ -628,6 +661,9 @@ fn handle_actions(
                 {
                     Ok(()) => {
                         table.result_open = result_opens_automatically(&table.session.observe());
+                        if reveal_focus {
+                            orbit.focus(tabletop_layout::focus(Area::Test));
+                        }
                         table.notice = "Decision saved. You can close and reopen safely.".into();
                     }
                     Err(error) => table.notice = format!("Decision was not committed: {error}"),
@@ -749,8 +785,10 @@ fn handle_actions(
                     table.notice = "Choose a prepared asset folder in the file dialog. The current game stays unchanged.".into();
                 }
             }
-            Action::Choose(_, _) | Action::ContextChoose(_, _, _) | Action::SourceLess(_, _, _) => {
-            }
+            Action::Choose(_, _)
+            | Action::ContextChoose(_, _, _)
+            | Action::SourceLess(_, _, _)
+            | Action::Reveal(_) => {}
         }
         if let Some(context) = context.as_mut() {
             context.synchronize(&table.view(), table.replay.as_ref().map(Replay::index));
@@ -760,6 +798,32 @@ fn handle_actions(
         orbit.update_follow_target(framing);
         table.dirty = true;
     }
+}
+
+fn refresh_reveal(
+    table: &Tabletop,
+    settings: Option<&AssetSettings>,
+    shortcut: &mut reveal::Shortcut,
+) {
+    let view = table.view();
+    shortcut.sync(
+        view.revision,
+        &view.choices,
+        table.replay.is_none()
+            && table.inspect.is_none()
+            && !table.history
+            && !table.result_open
+            && !settings.is_some_and(AssetSettings::is_busy),
+        table.reduced_motion,
+    );
+}
+
+fn sync_reveal(
+    table: Res<Tabletop>,
+    settings: Option<Res<AssetSettings>>,
+    mut shortcut: ResMut<reveal::Shortcut>,
+) {
+    refresh_reveal(&table, settings.as_deref(), &mut shortcut);
 }
 
 fn mark_window_resized(
@@ -793,6 +857,7 @@ fn camera_controls(
     focusable: Query<(), With<Button>>,
     hover: Option<Res<bevy::picking::hover::HoverMap>>,
     ui_nodes: Query<(), (With<Node>, Without<context::DismissalBackdrop>)>,
+    mut shortcut: Option<ResMut<reveal::Shortcut>>,
 ) {
     let modal_open = table.result_open
         || table.inspect.is_some()
@@ -803,6 +868,7 @@ fn camera_controls(
         .is_some_and(|hits| hits.keys().any(|entity| ui_nodes.contains(*entity)));
     let keyboard_captured = modal_open
         || table.history
+        || shortcut.as_ref().is_some_and(|s| s.is_open())
         || context
             .as_ref()
             .is_some_and(|context| context.menu_open() || context.utilities_open())
@@ -823,11 +889,15 @@ fn camera_controls(
             keyboard: keyboard_captured,
             wheel: context
                 .as_ref()
-                .is_some_and(|context| context.menu_open() || context.utilities_open()),
+                .is_some_and(|context| context.menu_open() || context.utilities_open())
+                || shortcut.as_ref().is_some_and(|s| s.is_open()),
         },
         reduced_motion: false,
     });
     if step.manual_navigation {
+        if let Some(shortcut) = shortcut.as_mut() {
+            shortcut.dismiss();
+        }
         if let Some(context) = context.as_mut()
             && context.camera_moved()
         {
@@ -1022,7 +1092,7 @@ fn rebuild_panel(
         parent.spawn(art.text(&view.prompt, 16.0, PAPER));
         let hint = match view.stage {
             Stage::Commit => "Focus Patrice, then select Promise of Power to commit it.",
-            Stage::BeforeReveal => "Select Jacqueline's card for her reaction, or the chaos bag to reveal.",
+            Stage::BeforeReveal => "Use Reveal chaos token at the lower left, or select Jacqueline or the chaos bag.",
             Stage::Cancellation => "Focus Test and select any revealed token to choose a complete cancellation set.",
             Stage::Finished => "Inspect the tokens and Show test result when ready.",
             Stage::Ended => "This bounded experiment has ended; its record is preserved.",
@@ -1497,6 +1567,9 @@ fn capture_window(
         exit.write(AppExit::Success);
     }
 }
+
+#[cfg(test)]
+mod reveal_tests;
 
 #[cfg(test)]
 mod launch_tests {
