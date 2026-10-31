@@ -77,7 +77,8 @@ impl X11 {
             .get_property(false, self.window, self.name_atom, self.utf8_atom, 0, 1024)?
             .reply()?;
         ensure!(
-            name.value == TITLE,
+            name.value == TITLE
+                || name.value == "Arkham Unfolded — Prepared Study Escape".as_bytes(),
             "Window is not the Arkham experiment client"
         );
         Ok(())

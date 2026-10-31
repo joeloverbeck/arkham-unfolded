@@ -103,6 +103,7 @@ pub struct Build {
 enum Experiment {
     Jacqueline,
     Tony,
+    Party,
 }
 
 fn repository() -> PathBuf {
@@ -501,8 +502,14 @@ fn launch(args: Launch) -> Result<u8> {
         isolated.insert(name, path);
     }
     let mut command = Process::new(&staged);
-    if matches!(args.experiment, Experiment::Tony) {
-        command.args(["--experiment", "tony"]);
+    match args.experiment {
+        Experiment::Tony => {
+            command.args(["--experiment", "tony"]);
+        }
+        Experiment::Party => {
+            command.args(["--experiment", "party"]);
+        }
+        Experiment::Jacqueline => {}
     }
     command
         .arg(if source_save.is_some() {

@@ -6,6 +6,8 @@ An English-language Arkham Horror: The Card Game application for Ubuntu, planned
 
 See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, saves, undo, replay and player driver, including the [two-session verification walkthrough](docs/experiments/tony-turn.md#owner-verification).
 
+The candidate [prepared Study escape attempt](docs/experiments/study-escape.md) under [#55](https://github.com/joeloverbeck/arkham-unfolded/issues/55) adds coordinated turns for all three investigators and an Act 1 closing decision. Select it with `--experiment party`; its owner acceptance is pending.
+
 ## Launch and play the Tony turn
 
 On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:

@@ -24,7 +24,7 @@ rustix = { version = "1", features = ["fs"] }
 bevy = { version = "=0.20.0", optional = true, default-features = false, features = [
   "std", "async_executor", "multi_threaded", "bevy_asset", "bevy_log",
   "bevy_winit", "3d_bevy_render", "ui_bevy_render", "bevy_ui_widgets",
-  "bevy_picking", "mesh_picking", "ui_picking", "default_font", "x11", "png",
+  "bevy_picking", "mesh_picking", "ui_picking", "default_font", "x11", "png", "jpeg",
 ] }
 
 [[bin]]

@@ -11,8 +11,15 @@ use std::{
 #[derive(Resource)]
 pub(crate) struct AssetSettings {
     config: AssetConfig,
-    tony: bool,
+    collection: Collection,
     pending: Option<Mutex<mpsc::Receiver<SelectionResult>>>,
+}
+
+#[derive(Clone, Copy)]
+enum Collection {
+    Jacqueline,
+    Tony,
+    Party,
 }
 
 struct SelectionResult {
@@ -24,14 +31,21 @@ impl AssetSettings {
     pub(crate) fn new(config: AssetConfig) -> Self {
         Self {
             config,
-            tony: false,
+            collection: Collection::Jacqueline,
             pending: None,
         }
     }
 
     pub(crate) fn new_tony(config: AssetConfig) -> Self {
         Self {
-            tony: true,
+            collection: Collection::Tony,
+            ..Self::new(config)
+        }
+    }
+
+    pub(crate) fn new_party(config: AssetConfig) -> Self {
+        Self {
+            collection: Collection::Party,
             ..Self::new(config)
         }
     }
@@ -57,12 +71,12 @@ impl AssetSettings {
             return;
         }
         let config = self.config.clone();
-        let tony = self.tony;
+        let collection = self.collection;
         let (sender, receiver) = mpsc::channel();
         self.pending = Some(Mutex::new(receiver));
         std::thread::spawn(move || {
             let mut config = config;
-            let message = match select_folder_with_mode(&mut config, &mut zenity, tony) {
+            let message = match select_folder_with_mode(&mut config, &mut zenity, collection) {
                 Ok(Some(path)) => format!(
                     "Asset folder saved: {}. Restart the app to use it. A command-line override still applies to its launch.",
                     path.display()
@@ -96,13 +110,13 @@ fn select_folder_with(
     config: &mut AssetConfig,
     dialog: &mut impl FnMut(&[&str]) -> Result<Output, String>,
 ) -> Result<Option<PathBuf>, String> {
-    select_folder_with_mode(config, dialog, false)
+    select_folder_with_mode(config, dialog, Collection::Jacqueline)
 }
 
 fn select_folder_with_mode(
     config: &mut AssetConfig,
     dialog: &mut impl FnMut(&[&str]) -> Result<Output, String>,
-    tony: bool,
+    collection: Collection,
 ) -> Result<Option<PathBuf>, String> {
     if let Some(warning) = config.warning() {
         return Err(format!(
@@ -134,10 +148,10 @@ fn select_folder_with_mode(
     if !path.is_absolute() || !path.is_dir() {
         return Err("Choose an existing folder using an absolute path.".into());
     }
-    let report = if tony {
-        assets::inspect_tony(&path)
-    } else {
-        assets::inspect(&path)
+    let report = match collection {
+        Collection::Jacqueline => assets::inspect(&path),
+        Collection::Tony => assets::inspect_tony(&path),
+        Collection::Party => assets::inspect_party(&path),
     };
     if !report.recognized {
         let message = "This folder is not a recognized prepared asset collection. Choose the folder containing the prepared collection's manifest. Your setting is unchanged.";
