@@ -1,6 +1,7 @@
 //! Lifetime and motion of the displayed observation, independent of panel refreshes.
 
 use super::{Art, CARDS, GOLD, MUTED, MainCamera, PAPER, Tabletop};
+use crate::tabletop_discard as discard;
 use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw};
 use crate::{Observation, TokenStatus, tabletop_harm_text, tabletop_tokens};
 use crate::{tabletop_layout, tabletop_standees as standees};
@@ -347,7 +348,7 @@ fn synchronize(
     commands.entity(scenario_name).insert(LabelDisplay::Always);
     label(
         &mut commands,
-        "Encounter deck / discard\nReserved / not represented",
+        "Encounter deck\nReserved / not represented",
         Vec3::new(7.2, 0.1, -7.4),
         MUTED,
         &art.symbol_font,
@@ -367,6 +368,13 @@ fn synchronize(
         &art.symbol_font,
     );
     for (i, card) in CARDS.iter().enumerate() {
+        if view
+            .encounter_discard()
+            .iter()
+            .any(|discarded| discarded.code == card.code)
+        {
+            continue;
+        }
         let position = super::context::card_position(i, &view);
         let rotation = Quat::from_rotation_y(if card.landscape {
             std::f32::consts::FRAC_PI_2
@@ -459,6 +467,55 @@ fn synchronize(
             commands.entity(title).insert(LabelDisplay::Overview);
         }
     }
+    let encounter_discard = view.encounter_discard();
+    let discard_caption_at = discard::ENCOUNTER_DISCARD_AT + Vec3::new(2.7, 0.1, 0.45);
+    for (index, card) in encounter_discard.iter().enumerate() {
+        let card_index = CARDS
+            .iter()
+            .position(|face| face.code == card.code)
+            .expect("the prepared encounter card has an inspection face");
+        let entity = discard::spawn_card(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            card,
+            index,
+            discard::Appearance {
+                size: Vec2::new(1.80, 2.52),
+                thickness: 0.07,
+                image: art.handles[card_index].clone(),
+                fallback: CARDS[card_index].color,
+            },
+        );
+        commands
+            .entity(entity)
+            .insert((
+                TransientScene,
+                super::context::Selectable(super::Source::Card(card_index)),
+            ))
+            .observe(
+                move |event: On<PointerClick>, mut queue: ResMut<super::Actions>| {
+                    super::context::select(event, super::Source::Card(card_index), &mut queue);
+                },
+            );
+        if art.handles[card_index].is_none() {
+            let title = label(
+                &mut commands,
+                card.title,
+                discard_caption_at,
+                PAPER,
+                &art.symbol_font,
+            );
+            commands.entity(title).insert(LabelDisplay::Overview);
+        }
+    }
+    label(
+        &mut commands,
+        discard::caption(encounter_discard),
+        discard_caption_at,
+        MUTED,
+        &art.symbol_font,
+    );
     let mut canceled_index = 0;
     let mut active_index = 0;
     let has_canceled = view

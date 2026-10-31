@@ -1,5 +1,6 @@
 //! Physical locations for the existing prepared position, not additional game state.
 use super::*;
+use crate::tabletop_discard as discard;
 
 pub(super) const INVESTIGATOR_AT: Vec3 = Vec3::new(-15.8, 0.05, 10.1);
 pub(super) const INJURY_AT: Vec3 = Vec3::new(-13.1, 0.05, 7.2);
@@ -123,14 +124,6 @@ pub(super) fn synchronize_scene(
             ),
             !view.ghoul.ready,
         ));
-    } else {
-        world_label(
-            &mut commands,
-            &art,
-            "Ghoul defeated".into(),
-            ghoul_at(&view),
-            MUTED,
-        );
     }
     if view.injury {
         fixed.push((
@@ -171,6 +164,42 @@ pub(super) fn synchronize_scene(
                 .insert(OuterLabel { left: index == 9 });
         }
     }
+    let encounter_discard = view.encounter_discard();
+    for (index, card) in encounter_discard.iter().enumerate() {
+        let entity = discard::spawn_card(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            card,
+            index,
+            discard::Appearance {
+                size: Vec2::new(CARD_WIDTH, CARD_LENGTH),
+                thickness: CARD_THICKNESS,
+                image: art.image(&format!("card/{}", card.code)),
+                fallback: Color::srgb(0.34, 0.31, 0.23),
+            },
+        );
+        let revision = view.revision;
+        commands
+            .entity(entity)
+            .insert((Scene, CardSource(Source::EncounterDiscard)))
+            .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
+                if event.button == bevy::picking::pointer::PointerButton::Primary {
+                    queue.0.push(Action::Select(
+                        revision,
+                        Source::EncounterDiscard,
+                        discard::ENCOUNTER_DISCARD_AT,
+                    ));
+                }
+            });
+    }
+    world_label(
+        &mut commands,
+        &art,
+        discard::caption(encounter_discard),
+        discard::ENCOUNTER_DISCARD_AT + Vec3::new(3.4, 0.1, 0.45),
+        MUTED,
+    );
     for (index, investigator) in view.investigators.iter().enumerate() {
         let code = ["06003", "06005", "60401"][index];
         let slot = view.investigators[..index]
@@ -266,10 +295,6 @@ pub(super) fn synchronize_scene(
         (
             "Encounter deck\nReserved · not modeled",
             Vec3::new(4.0, 0.1, -3.7),
-        ),
-        (
-            "Encounter discard\nReserved · not modeled",
-            Vec3::new(7.0, 0.1, -3.7),
         ),
         (
             "Victory display\nReserved · not modeled",

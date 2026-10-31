@@ -2,7 +2,7 @@
 
 An English-language Arkham Horror: The Card Game application for Ubuntu, planned with a Rust rules core and an animated 3D tabletop.
 
-**Status: bounded Rust/3D experiments. The campaign is not playable yet.** The original Jacqueline/Patrice skill-test mode remains available. The new Tony mode offers a complete turn from a prepared Gathering position, pending separate owner acceptance under [#22](https://github.com/joeloverbeck/arkham-unfolded/issues/22).
+**Status: bounded Rust/3D experiments. The campaign is not playable yet.** The original Jacqueline/Patrice skill-test mode remains available. Tony mode offers an owner-accepted complete turn from a prepared Gathering position under [#22](https://github.com/joeloverbeck/arkham-unfolded/issues/22).
 
 See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, saves, undo, replay and player driver, including the [two-session verification walkthrough](docs/experiments/tony-turn.md#owner-verification).
 
@@ -27,7 +27,7 @@ In **Scenario** view, the agenda and act stand together at the far center as an 
 In a fresh turn:
 
 1. Tony has three ordinary actions and an available bonus Fight/Engage action. A ready Ghoul Minion is engaged with him; Internal Injury is in his threat area. Left-click a component to open its nearby labeled actions, then click the action to perform it. Selecting the component alone changes no game state. Actions that provoke show an amber **Attack of opportunity** warning with the source and amounts before you choose them.
-2. When a skill test has legal card commitments, select the exact hand cards, then choose **Commit selected**, or choose **Commit no cards**. Commitment controls show **+N** followed by the tested skill's symbol (or its readable name when the font is unavailable). With no legal commitments, the empty prompt is skipped; Tony's Evade proceeds to **Reveal token**, with **Undo** still available before revealing. Focus **Test**, select the chaos bag and choose **Reveal token**; then select the revealed token and choose **Resolve test**. Results are random. Use **Action history and rules reasons** to inspect costs and consequences.
+2. When a skill test has legal card commitments, select the exact hand cards, then choose **Commit selected**, or choose **Commit no cards**. Commitment controls show **+N** followed by the tested skill's symbol (or its readable name when the font is unavailable). With no legal commitments, the empty prompt is skipped; Tony's Evade proceeds to **Reveal token**, with **Undo** still available before revealing. Click **Reveal chaos token** at the lower left from any camera view. It reveals through the same rules as the physical bag and focuses **Test** after the decision saves successfully. Then select the revealed token and choose **Resolve test**. Results are random. Use **Action history and rules reasons** to inspect costs and consequences.
 3. Each harm event has one visible stage: an attack dealing damage and horror shows both together. **Finish animation** completes the current stage; later harm events still appear; **Motion: reduced** retains readable stages without motion. Click **Open recorded replay**, then **Next moment** or **Previous moment** to narrate stored events. **Return to live turn** restores the current live view.
 
 Choose **Inspect** from a card's contextual controls for the existing enlarged artwork and readable rules; **Close** or `Esc` returns to the table. `Esc` or clicking empty space dismisses contextual actions without choosing one. Scroll the utility panel or card inspection when needed. Hold unmodified `W`/`A`/`S`/`D` to pan forward/left/back/right across the table relative to the camera; release to stop. Right-drag or use the arrow keys to orbit; the wheel or `+`/`-` zooms, and `Home` resets the camera. Manual camera movement overrides automatic following. Camera keys are suspended while a menu or modal captures keyboard input. Recorded replay permits inspection; return to live play before choosing game actions.
@@ -36,31 +36,37 @@ Choose **Inspect** from a card's contextual controls for the existing enlarged a
 
 In a contextual menu, the yellow outline marks keyboard focus. **Tab** moves to the next option, **Shift+Tab** moves to the previous option, **Enter** or **Space** activates it, and **Esc** closes the menu. Arrow keys do not navigate these menus; camera keys are suspended while the menu has focus.
 
-In both experiments, clicking a card opens inspection immediately when **Inspect** is its only option, including during replay. Otherwise its nearby actions share the same resting color, brighten on hover and show keyboard focus with a separate outline. Inspectable cards gain a brief fading hover frame; it clears when the pointer leaves. A short blue marker remains while that card's menu is open, and gold corner marks identify pending commitments or token cancellations. **Motion: reduced** in Tony and **Card feedback motion: reduced** in Jacqueline make the hover frame static. These are the interaction conventions for future experiments and the full game as those consumers are implemented.
+In both experiments, clicking a card or component opens inspection immediately when **Inspect** is its only option, including during replay. A single discarded card opens directly; several cards retain their chooser. Tony's idle chaos bag opens its scenario-reference inspection. Otherwise nearby actions share the same resting color, brighten on hover and show keyboard focus with a separate outline. Inspectable cards gain a brief fading hover frame; it clears when the pointer leaves. A short blue marker remains while that card's menu is open, and gold corner marks identify pending commitments or token cancellations. **Motion: reduced** in Tony and **Card feedback motion: reduced** in Jacqueline make the hover frame static and suppress reveal-button motion. These are the interaction conventions for future experiments and the full game as those consumers are implemented.
+
+The encounter discard starts empty in both prepared experiments. Defeated Ghoul Minion and fully resolved Rotting Remains appear face up in its scenario-area pile and remain inspectable through reopening and replay. Internal Injury goes to Tony's own discard. The reveal shortcut appears only at a legal reveal decision; in Jacqueline it first offers normal reveal or her reaction when that choice remains available. The physical bag controls remain usable.
 
 **Close and resume:** decisions autosave to `local/experiment/tony.session.json`. Close the window and run the same command to resume. **Save live turn** also saves at a pending choice, including before resolving a revealed token. **Reopen saved turn** reloads the save. At the end, **Start another Tony turn** archives the previous run. **End Tony's turn** is available at an action boundary; it cannot skip a pending test.
 
-For the remaining acceptance check, follow the [owner verification walkthrough](docs/experiments/tony-turn.md#owner-verification): two sessions of at most 20 minutes each, including retries.
+Joel [accepted the experiment and its final refinements on 2026-10-31](https://github.com/joeloverbeck/arkham-unfolded/issues/22#issuecomment-6536278638). The [owner verification walkthrough](docs/experiments/tony-turn.md#owner-verification) remains available as a reference for the exercised playing paths.
 
 ## Prepare the Tony artwork
 
 The developer/agent prepares the selected files once; ordinary play needs only the resulting folder. From this checkout, with the original archive available:
 
 ```sh
+curl --fail --location \
+  https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png \
+  --output /tmp/arkham-reveal-icon.png
 cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
-  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
+  --reveal-icon /tmp/arkham-reveal-icon.png \
+  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v4"
 cargo run --locked --bin arkham-assets -- check-tony \
-  "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
+  "$HOME/.local/share/arkham-unfolded/tony-assets-v4"
 ```
 
-This prepares 27 selected images and one symbol font, including the player-card back and damage/horror counters, in a separate collection. Earlier `tony-assets` and `tony-assets-v2` collections remain usable for their existing artwork but lack the new harm artwork/font; the original collection also lacks the deck back. Prepare the fresh `tony-assets-v3` folder and use the launch command above. The source archive and any existing Jacqueline collection stay unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
+This prepares 28 selected images and one symbol font, including the player-card back, damage/horror counters and reveal icon, in a separate collection. Preparation verifies the exact downloaded icon before creating output; ordinary play needs no download. Earlier Tony collections remain usable for their existing artwork, with readable substitutes for missing assets. In particular, `tony-assets-v3` lacks only the reveal icon. Prepare the fresh `tony-assets-v4` folder and use the launch command above. The source archive and any existing Jacqueline collection stay unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
 
 These folder versions preserve earlier prepared files during development; they do not select different game rules. The ordinary launch command stays the same when the application's default collection changes. An explicitly saved folder or an old command containing `--art-root` continues to select that folder; use **Choose asset folder** to change a saved selection.
 
 **Choose asset folder** in Tony's **Menu**, or Jacqueline's side panel, checks a prepared folder and saves its location for the next launch of that experiment. Scroll the controls if needed. The native folder dialog uses Ubuntu's `zenity` package. Settings are separate: Tony uses `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml`; Jacqueline retains `config.toml` in the same directory. The normal configuration directory is `~/.config/arkham-unfolded`. Existing `config.toml` contents remain unchanged and apply only to Jacqueline.
 
-Without a command-line override or saved preference, Tony uses `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v3` and Jacqueline uses `$XDG_DATA_HOME/arkham-unfolded/assets`. The normal data directory is `~/.local/share`; relative XDG overrides are ignored. Preparation examples above use that normal location; with a custom `XDG_DATA_HOME`, prepare there or save the actual folder through the app.
+Without a command-line override or saved preference, Tony uses `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v4` and Jacqueline uses `$XDG_DATA_HOME/arkham-unfolded/assets-v2`. The normal data directory is `~/.local/share`; relative XDG overrides are ignored. Preparation examples above use that normal location; with a custom `XDG_DATA_HOME`, prepare there or save the actual folder through the app.
 
 A temporary `--art-root PATH` overrides the saved setting for that launch. Replace that option and its path with `--no-art` to use readable substitutes. Copy the whole prepared folder, including `manifest.json`, to relocate it:
 
@@ -126,6 +132,8 @@ Once required game data is imported, gameplay, saves, and replays will work offl
 ## Attribution
 
 Arkham Horror: The Card Game is published by Fantasy Flight Games. This is an unofficial independent project. Third-party game content and artwork remain distinct from the project's original code.
+
+The reveal control uses [Swap bag by Lorc](https://game-icons.net/1x1/lorc/swap-bag.html), under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Its white transparent PNG is copied unchanged into the external prepared collection; any on-screen color is a presentation tint. Source identity and attribution are also recorded in each asset recipe and prepared manifest.
 
 The public [Haskell implementation](https://github.com/halogenandtoast/ArkhamHorror) is a secondary implementation reference. Official game sources and independently established expectations determine intended rules behavior.
 

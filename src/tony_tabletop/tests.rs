@@ -95,6 +95,7 @@ fn presentation_app_in(app: App, path: PathBuf) -> App {
     let (mut app, _) = scene_app_in(app);
     app.world_mut().resource_mut::<Table>().save_path = path.clone();
     app.insert_resource(Orbit::new(CameraMode::Tony))
+        .add_plugins(reveal::RevealPlugin)
         .insert_resource(Actions::default())
         .insert_resource(AssetSettings::new_tony(AssetConfig::load_at(
             path.with_extension("toml"),
@@ -112,6 +113,8 @@ fn presentation_app_in(app: App, path: PathBuf) -> App {
                 synchronize_feedback,
                 rebuild_panel,
                 controls::draw_menu,
+                sync_reveal,
+                reveal::render,
                 animate,
                 animate_harm,
             )
@@ -137,6 +140,24 @@ fn choose(app: &mut App, id: &str) {
     let revision = app.world().resource::<Table>().session.observe().revision;
     act(app, Action::Choose(revision, id.into()));
 }
+
+#[test]
+fn reveal_shortcut_is_available_from_an_investigator_view() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut app = presentation_app(temp.path().join("shortcut.session.json"));
+    choose(&mut app, "evade");
+    assert_eq!(
+        app.world().resource::<Table>().session.observe().stage,
+        Stage::Reveal
+    );
+    assert!(
+        visible_text(&mut app)
+            .iter()
+            .any(|text| text == "Reveal chaos token")
+    );
+}
+
+mod reveal_shortcut;
 
 fn visible_text(app: &mut App) -> Vec<String> {
     let world = app.world_mut();
@@ -614,8 +635,25 @@ fn the_ghouls_final_hit_is_visible_before_its_removal_and_bounty() {
     assert!(texts.iter().any(|t| t == "+1 Damage"));
     assert_eq!(app.world().resource::<Table>().view().resources, 5);
     act(&mut app, Action::FinishAnimation);
-    assert_eq!(ghoul_cards(&mut app), 0);
-    assert!(visible_text(&mut app).iter().any(|t| t == "Ghoul defeated"));
+    assert_eq!(ghoul_cards(&mut app), 1);
+    assert!(
+        visible_text(&mut app)
+            .iter()
+            .any(|t| t.starts_with("Encounter discard") && t.ends_with("1 card\nGhoul Minion"))
+    );
+    let world = app.world_mut();
+    assert!(
+        world
+            .query::<&CardSource>()
+            .iter(world)
+            .any(|source| source.0 == Source::EncounterDiscard)
+    );
+    assert!(
+        !world
+            .query::<&CardSource>()
+            .iter(world)
+            .any(|source| source.0 == Source::Card(2))
+    );
     assert_eq!(app.world().resource::<Table>().view().resources, 6);
 }
 
@@ -664,6 +702,51 @@ fn book_cards_keep_their_pose_direct_inspection_and_reopened_state() {
     assert_eq!(pose(&mut app, "Card 01108"), act_card);
     act(&mut app, Action::Live);
     assert_eq!(app.world().resource::<Table>().session, before);
+}
+
+#[test]
+fn sole_inspection_opens_discarded_injury_and_idle_bag_but_preserves_choices() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = presentation_app(directory.path().join("turn.json"));
+    app.world_mut().resource_mut::<Table>().session = Session::with_draws(vec![TokenFace::Zero]);
+    advance(&mut app, 0.0);
+    let before = app.world().resource::<Table>().session.clone();
+    act(&mut app, Action::Select(0, Source::Bag, Vec3::ZERO));
+    assert_eq!(app.world().resource::<Table>().inspect, Some(7));
+    assert!(!app.world().resource::<Table>().context.open);
+    act(&mut app, Action::Close);
+    assert_eq!(app.world().resource::<Table>().session, before);
+
+    choose(&mut app, "injury");
+    act(&mut app, Action::FinishAnimation);
+    let before = app.world().resource::<Table>().session.clone();
+    let revision = before.observe().revision;
+    act(
+        &mut app,
+        Action::Select(revision, Source::Discard, Vec3::ZERO),
+    );
+    assert_eq!(app.world().resource::<Table>().inspect, Some(4));
+    assert!(!app.world().resource::<Table>().context.open);
+    act(&mut app, Action::Close);
+    assert_eq!(app.world().resource::<Table>().session, before);
+
+    // A second discarded card keeps the actual card chooser.
+    choose(&mut app, "fight");
+    choose(&mut app, "commit:0");
+    let revision = app.world().resource::<Table>().session.observe().revision;
+    act(&mut app, Action::Select(revision, Source::Bag, Vec3::ZERO));
+    assert!(app.world().resource::<Table>().inspect.is_none());
+    assert!(app.world().resource::<Table>().context.open);
+    choose(&mut app, "reveal");
+    choose(&mut app, "resolve");
+    advance(&mut app, 20.0);
+    let revision = app.world().resource::<Table>().session.observe().revision;
+    act(
+        &mut app,
+        Action::Select(revision, Source::Discard, Vec3::ZERO),
+    );
+    assert!(app.world().resource::<Table>().inspect.is_none());
+    assert!(app.world().resource::<Table>().context.open);
 }
 
 #[test]
@@ -1545,3 +1628,4 @@ fn right_drag_through_real_navigation_layout_ignores_empty_space_but_not_buttons
     move_cursor(&mut app, button_position + Vec2::new(5.0, 0.0));
     assert_eq!(app.world().resource::<Orbit>().pose().yaw, before);
 }
+mod encounter_discard;

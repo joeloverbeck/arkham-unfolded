@@ -292,6 +292,19 @@ pub(super) fn source_less(id: &str) -> bool {
     matches!(id, "decline-promise" | "end")
 }
 
+pub(super) fn inspection_only(view: &Observation, replay: bool, source: Source) -> Option<usize> {
+    let game_choices = if replay {
+        vec![]
+    } else {
+        choices(view, source)
+    };
+    let inspect = match source {
+        Source::Card(index) if index < CARDS.len() => Some(Some(index)),
+        _ => None,
+    };
+    crate::tabletop_feedback::sole_inspection(game_choices.iter().map(|_| None).chain(inspect))
+}
+
 pub(super) fn actor(view: &Observation) -> &'static str {
     if view.stage == Stage::Commit {
         "Patrice"
@@ -302,6 +315,7 @@ pub(super) fn actor(view: &Observation) -> &'static str {
 
 pub(super) fn card_position(index: usize, view: &Observation) -> Vec3 {
     match index {
+        0 if !view.encounter_discard().is_empty() => crate::tabletop_discard::ENCOUNTER_DISCARD_AT,
         0 => tabletop_layout::TEST_CENTER + Vec3::new(-2.0, 0.125, -2.6),
         1 if view.promise_committed => tabletop_layout::TEST_CENTER + Vec3::new(0.4, 0.125, -2.6),
         1 => tabletop_layout::investigator_center(1, 3) + Vec3::new(0.0, 0.125, 2.7),

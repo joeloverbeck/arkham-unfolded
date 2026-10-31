@@ -220,7 +220,9 @@ mod tests {
             .retain(|key, _| ["format_version", "collection", "assets"].contains(&key.as_str()));
         for asset in manifest["assets"].as_array_mut().unwrap() {
             let entry = asset.as_object_mut().unwrap();
-            entry.retain(|key, _| ["role", "path", "sha256", "bytes"].contains(&key.as_str()));
+            entry.retain(|key, _| {
+                ["role", "path", "sha256", "bytes", "attribution"].contains(&key.as_str())
+            });
         }
         fs::write(
             root.join("manifest.json"),

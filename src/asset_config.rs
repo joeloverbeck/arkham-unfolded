@@ -156,10 +156,10 @@ fn locations(
             .ok_or_else(|| "Set an absolute HOME or XDG configuration and data directories.".into())
     };
     let (settings_file, collection_folder) = match experiment {
-        Experiment::Jacqueline => ("config.toml", "assets"),
-        // Advance this app-owned default when Tony's prepared requirements change.
+        Experiment::Jacqueline => ("config.toml", "assets-v2"),
+        // Advance app-owned defaults only after the fresh collections verify.
         // An explicit saved choice always takes precedence and is never migrated here.
-        Experiment::Tony => ("tony.toml", "tony-assets-v3"),
+        Experiment::Tony => ("tony.toml", "tony-assets-v4"),
     };
     Ok((
         base(config_home, ".config")?
@@ -214,7 +214,7 @@ mod tests {
             locations(Experiment::Jacqueline, home.clone(), None, None).unwrap(),
             (
                 PathBuf::from("/home/player/.config/arkham-unfolded/config.toml"),
-                PathBuf::from("/home/player/.local/share/arkham-unfolded/assets")
+                PathBuf::from("/home/player/.local/share/arkham-unfolded/assets-v2")
             )
         );
         assert_eq!(
@@ -227,7 +227,7 @@ mod tests {
             .unwrap(),
             (
                 PathBuf::from("/home/player/.config/arkham-unfolded/config.toml"),
-                PathBuf::from("/disk/data/arkham-unfolded/assets")
+                PathBuf::from("/disk/data/arkham-unfolded/assets-v2")
             )
         );
         assert_eq!(
@@ -240,7 +240,7 @@ mod tests {
             .unwrap(),
             (
                 PathBuf::from("/disk/settings/arkham-unfolded/tony.toml"),
-                PathBuf::from("/home/player/.local/share/arkham-unfolded/tony-assets-v3")
+                PathBuf::from("/home/player/.local/share/arkham-unfolded/tony-assets-v4")
             )
         );
     }
@@ -267,7 +267,7 @@ mod tests {
         assert_eq!(
             tony.root(),
             dir.path()
-                .join(".local/share/arkham-unfolded/tony-assets-v3")
+                .join(".local/share/arkham-unfolded/tony-assets-v4")
         );
         assert!(!tony.path().exists(), "Loading must not create settings");
         let tony_root = dir.path().join("chosen-tony");

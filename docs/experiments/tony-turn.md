@@ -15,7 +15,11 @@ Left-click a component to see its nearby legal actions: the Ghoul for Fight/Evad
 
 Tony’s face-down deck has one card-thickness per remaining card, visible layered edges and the standard player-card back on top. Drawing lowers the stack; replay shows the recorded deck count.
 
-The decision display explains remaining actions and the current test; contextual actions show their costs and consequences before activation. Choose **Inspect** to open the existing card modal with readable rules and available artwork. **Close** or `Esc` returns to the same pending decision. `Esc` or clicking empty space dismisses a contextual menu without choosing an action. To commit cards, select each exact copy in hand and choose **Select to commit +1** with the tested skill's symbol, then **Commit selected** to confirm the full set and its displayed total; **Unselect commitment** removes a staged copy. On the Hunt contributes combat during Fight or intellect during Investigate. Missing symbols use readable skill names. Alternatively choose **Commit no cards**. Selecting the last eligible card still requires confirmation, and opening inspection does not commit the selected cards. With no legal commitments, continue directly to the next decision: at **Test**, select the chaos bag for **Reveal token**, then the revealed token for **Resolve test**.
+The decision display explains remaining actions and the current test; contextual actions show their costs and consequences before activation. Choose **Inspect** to open the existing card modal with readable rules and available artwork. A card or component with exactly one Inspect operation opens that modal directly, including a one-card discard and the idle chaos bag's scenario reference. Several inspectable cards retain a chooser; a lone game action is never performed automatically. **Close** or `Esc` returns to the same pending decision. `Esc` or clicking empty space dismisses a contextual menu without choosing an action. To commit cards, select each exact copy in hand and choose **Select to commit +1** with the tested skill's symbol, then **Commit selected** to confirm the full set and its displayed total; **Unselect commitment** removes a staged copy. On the Hunt contributes combat during Fight or intellect during Investigate. Missing symbols use readable skill names. Alternatively choose **Commit no cards**. Selecting the last eligible card still requires confirmation, and opening inspection does not commit the selected cards. With no legal commitments, continue directly to the reveal decision.
+
+**Reveal chaos token** appears at the lower left whenever a reveal is legal. Click it to draw through the same saved decision as the physical bag and focus **Test**; then select the revealed token for **Resolve test**. The shortcut disappears when unavailable, is absent in replay, and respects blocking panels and unfinished consequence presentation. Its brief transition respects reduced motion. A failed save or stale click leaves the game and camera unchanged. The physical bag's contextual action remains available and retains its existing camera behavior.
+
+The encounter discard starts empty in this prepared position. A defeated Ghoul Minion moves there after its final damage presentation, with its face and the pile count visible in the scenario area; click the one-card pile to inspect it directly. Tony still receives the bounty resource. Removed Internal Injury goes to Tony's own discard. These destinations remain visible after save/reopen and in the corresponding recorded moments. Encounter-deck and victory-display contents remain unrepresented.
 
 Hold unmodified `W`/`A`/`S`/`D` to pan forward/left/back/right relative to the camera, preserving tilt and zoom; release to stop. Right-drag or arrow keys orbit, the wheel or `+`/`-` zooms, and `Home` resets the camera. Camera keys do not move the table while a menu or modal captures keyboard input. Manual movement overrides replay following and dismisses an open contextual menu. Replay allows inspection only; return to the live turn before making a game choice.
 
@@ -37,9 +41,9 @@ The original Jacqueline mode remains the default when `--experiment tony` is omi
 
 ## Owner verification
 
-The remaining question is whether the actual native controls, explanations, interruption and replay let you play this turn without doing its bookkeeping, and whether choosing actions feels worthwhile. Automated rules and process-continuity checks have passed; native click automation could not calibrate reliably. Your inspection supplies the interaction and experience evidence those checks cannot establish.
+Joel [accepted this experiment and its final refinements on 2026-10-31](https://github.com/joeloverbeck/arkham-unfolded/issues/22#issuecomment-6536278638), reporting that the new features worked well and that #22 was satisfied. This is the owner's acceptance of the bounded playing experience; automated rules, process-continuity and rendering checks retain their separate evidential limits. The routes below are retained as a reference, not an outstanding acceptance request.
 
-Allow **at most two sessions of 20 minutes each, including retries**, counting playtesting already performed; presentation follow-ups do not reset that allowance. Stop sooner if a control blocks progress or the experience is not worth continuing, and report the point where that happened. Random failures are valid outcomes; do not restart to force a successful test. The routes below are suggestions, not a required winning sequence.
+The original allowance was **at most two sessions of 20 minutes each, including retries**, counting playtesting already performed; presentation follow-ups did not reset it. No additional review session is selected here. Random failures are valid outcomes; the routes are suggestions, not a required winning sequence.
 
 Begin with a fresh turn. If the app resumes an earlier one, finish its pending test, then end the turn at an action boundary and use **Start another Tony turn**. The earlier record is archived.
 
@@ -48,7 +52,7 @@ Begin with a fresh turn. If the app resumes an earlier one, finish its pending t
 1. Launch with the command above. Confirm the in-app heading says **Tony turn**. Focus an investigator with a portrait button, then try **Scenario**, **Test** and **Overview**. Left-click a card, choose **Inspect**, scroll where necessary, and close with **Close** or `Esc`. Try WASD panning, orbit, zoom and `Home`. Check that labels and controls remain readable and navigation has not changed the acting investigator.
 2. Select Tony's card and read the attack-of-opportunity warning for **Gain resource**. Choose it and observe one attack stage with both **+1 Damage** and **+1 Horror**. After it finishes, **Undo last choice** before any reveal. Resources should return to five, damage/horror to zero, and ordinary actions to three; the bonus remains available. The history should retain an intelligible undo entry.
 3. Select Internal Injury, then click **Remove Injury** after reading its cost and warning. Expect one ordinary action and the bonus remaining, one combined damage/horror attack stage, and Injury removed. Try **Finish animation** or reduced motion if useful; neither should repeat the attack or change the totals.
-4. Select the Ghoul and choose **Fight**. Select and confirm any card commitments, or choose **Commit no cards**, then focus **Test**, select the bag and choose **Reveal token**. Before resolving it, note the token, committed cards and counters; click **Save live turn**, close the window and relaunch with the same command. Those details should be identical, without another cost or attack. The reveal itself must not be undoable. Select the revealed token, choose **Resolve test** and finish with the available choices. The first Fight spends the bonus; later Fights spend ordinary actions. Two successful basic Fights defeat the Ghoul and pay one resource, but failures are legitimate.
+4. Select the Ghoul and choose **Fight**. Select and confirm any card commitments, or choose **Commit no cards**, then use **Reveal chaos token** at the lower left. The camera should focus **Test**. Before resolving it, note the token, committed cards and counters; click **Save live turn**, close the window and relaunch with the same command. Those details should be identical, without another cost or attack. The reveal itself must not be undoable. Select the revealed token, choose **Resolve test** and finish with the available choices. The first Fight spends the bonus; later Fights spend ordinary actions. Two successful basic Fights defeat the Ghoul, pay one resource and put it in the encounter discard, but failures are legitimate.
 
 ### Session 2: try different tactics and narrate the record
 
@@ -58,21 +62,35 @@ Begin with a fresh turn. If the app resumes an earlier one, finish its pending t
 
 Report any failed control, confusing consequence or unreadable view; whether save/resume and replay preserved what you saw; and whether playing the turn was clear and worthwhile. A negative or inconclusive verdict is useful. There is no need to repeat the full automated rules matrix or certify technical internals.
 
+### Reveal and discard follow-up
+
+Joel accepted this refinement with #22 on 2026-10-31. It was offered under **one owner review of at most ten minutes total across both experiments, including retries**, judging shortcut visibility and pacing, Test navigation, discard readability and direct inspection without resetting the original 40-minute gameplay allowance. The following checks preserve that review surface for reference; no further review round is selected.
+
+1. In Tony's live turn, reach a reveal while viewing his investigator area. Click the lower-left shortcut: expect one token, Test focus and removal of the shortcut. Check the reduced-motion setting if the transition is uncomfortable. When no reveal is legal, click the bag and expect its scenario-reference inspection directly.
+2. Inspect removed Internal Injury in Tony's discard. If it is the only card, expect immediate inspection; with several cards, expect a chooser. Inspect a defeated Ghoul in the encounter discard after its final damage stage, using an already reached or supplied position. Check that replay shows the same destination and offers no live reveal shortcut.
+3. In [Jacqueline's case](jacqueline-curse.md#build-and-run), open the shortcut's normal/reaction chooser and dismiss it without revealing. Reopen it, choose a route, and check Test focus and any legal cancellations. After the revelation completes, return to the table and inspect Rotting Remains in the encounter discard. Judge whether these controls and destinations are clear; technical rule and persistence checks remain the developer's responsibility.
+
 ## External artwork and source custody
 
-Prepare the current collection of 27 images and one symbol font, including the player-card back and damage/horror counters, in a fresh folder; earlier Tony and Jacqueline collections are retained:
+Prepare the current collection of 28 images and one symbol font, including the player-card back, damage/horror counters and reveal icon, in a fresh folder; earlier Tony and Jacqueline collections are retained:
 
 ```sh
+curl --fail --location \
+  'https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png' \
+  --output /tmp/arkham-reveal-icon.png
 cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
-  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
+  --reveal-icon /tmp/arkham-reveal-icon.png \
+  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v4"
 cargo run --locked --bin arkham-assets -- check-tony \
-  "$HOME/.local/share/arkham-unfolded/tony-assets-v3"
+  "$HOME/.local/share/arkham-unfolded/tony-assets-v4"
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
   --experiment tony
 ```
 
-Use the in-app asset folder selection to save a Tony-only preference in `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml` (normally `~/.config/arkham-unfolded/tony.toml`). Jacqueline keeps its existing `config.toml`. Without a saved choice, Tony selects `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v3` (normally `~/.local/share/arkham-unfolded/tony-assets-v3`); the launch command need not name a version. Startup reports the experiment, resolved folder and completeness. `--art-root` is temporary; `--no-art` uses readable substitutes. The program reads verified prepared files, never the source archive. A new collection must use a fresh destination; partial/conflicting collections are preserved and reported. All third-party image/font bytes remain outside Git.
+Use the in-app asset folder selection to save a Tony-only preference in `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml` (normally `~/.config/arkham-unfolded/tony.toml`). Jacqueline keeps its existing `config.toml`. Without a saved choice, Tony selects `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v4` (normally `~/.local/share/arkham-unfolded/tony-assets-v4`); the launch command need not name a version. Startup reports the experiment, resolved folder and completeness. `--art-root` is temporary; `--no-art` uses readable substitutes. The program reads verified prepared files, never the source archive or download location. A new collection must use a fresh destination; partial/conflicting collections are preserved and reported. All third-party image/font bytes remain outside Git.
+
+The icon is [Swap bag by Lorc](https://game-icons.net/1x1/lorc/swap-bag.html), licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Preparation requires the selected unchanged 5,829-byte PNG with SHA-256 `54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e`; it rejects other bytes and retains attribution in the recipe and portable manifest. The application may tint the white silhouette. Older Tony v1/v2/v3 collections remain recognized and supply their verified artwork, with a readable reveal button when the icon is absent. Saved choices are never silently switched to the new default; select the fresh folder to use it. An older collection's check reports incomplete new requirements without changing its contents.
 
 The implementation consumes the exact source contract and independent worked expectations in #22, with original English faces, Rules Reference, FAQ 2.5 and original campaign guide under the accepted precedence. It does not refresh taboo or prepare a campaign. The unchanged [source manifest](../research/issue-1-evidence.json) identifies retained PDFs and deck inputs. On 2026-10-28 all nine source files, ten selected card faces and Study's revealed reverse matched their declared hashes. Their exact bytes were also copied to owner-controlled external custody at `~/.local/share/arkham-unfolded/source-evidence/tony-turn-v1` and verified by readback. Its `manifest.json` SHA-256 is `fb3423f0efc23c2bff9b0b6755c8b5b567e6edd6b1d00ddc7173d45b1274d244`. This is retained same-machine evidence, not an independent backup; preserve it while source fidelity or recovery relies on it.
 
@@ -102,7 +120,7 @@ CHOICES
 scripts/tools native launch \
   --binary target/debug/arkham-tabletop --output-dir "$tony_review/render" \
   --experiment tony --load "$tony_review/held.json" \
-  --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v3" \
+  --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v4" \
   --screenshot held.png --quit-after-screenshot
 ```
 

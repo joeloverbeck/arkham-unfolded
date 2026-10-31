@@ -1,9 +1,32 @@
 {
   "format_version": 1,
-  "collection": "arkham-unfolded-tony-turn-v3",
+  "collection": "arkham-unfolded-tony-turn-v4",
   "source_archive_release": "v1.22.11",
   "selection": "Exact English card sides from GitHub #22; revealed Study uses its reverse. Original SCE circular chaos-token set, blue Elder Sign (not elder thing). Runtime uses only this prepared collection; original bytes remain outside Git. The standard player back is selected from the same On the Hunt variant for the face-down deck. Damage and Horror use the transparent SCE counter images; the verified arkhamicons font supplies their matching inline symbols.",
   "assets": [
+    {
+      "role": "ui/reveal-chaos-token",
+      "path": "ui/reveal-chaos-token.png",
+      "sha256": "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e",
+      "bytes": 5829,
+      "source": {
+        "input": "reveal_icon",
+        "path": "swap-bag.png",
+        "sha256": "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e",
+        "bytes": 5829
+      },
+      "attribution": {
+        "title": "Swap bag",
+        "creator": "Lorc",
+        "license": "CC BY 3.0",
+        "license_url": "https://creativecommons.org/licenses/by/3.0/",
+        "source_url": "https://game-icons.net/1x1/lorc/swap-bag.html",
+        "download_url": "https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png",
+        "modification": "PNG copied unchanged; presentation may tint the white silhouette."
+      },
+      "evidence": "docs/adr/0002-persistent-table-areas.md#accepted-implementation-handoff",
+      "transform": { "kind": "copy" }
+    },
     {
       "role": "card/06003",
       "path": "cards/06003/face.png",

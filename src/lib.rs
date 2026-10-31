@@ -3,9 +3,12 @@
 pub mod asset_config;
 pub mod assets;
 pub mod continuity;
+pub mod encounter_discard;
 mod explanation;
 #[cfg(feature = "tabletop")]
 mod tabletop_camera;
+#[cfg(feature = "tabletop")]
+mod tabletop_discard;
 #[cfg(feature = "tabletop")]
 mod tabletop_feedback;
 #[cfg(feature = "tabletop")]
@@ -14,6 +17,8 @@ mod tabletop_harm_text;
 mod tabletop_layout;
 #[cfg(feature = "tabletop")]
 mod tabletop_pacing;
+#[cfg(feature = "tabletop")]
+mod tabletop_reveal;
 #[cfg(all(test, feature = "tabletop"))]
 mod tabletop_standee_checks;
 #[cfg(feature = "tabletop")]

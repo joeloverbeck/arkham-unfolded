@@ -16,6 +16,14 @@ _Avoid_: Player table when referring to an investigator's area
 The shared presentation space for cards committed to the current skill test and its revealed or canceled chaos tokens. It is a tabletop arrangement, not an additional rules-defined game zone.
 _Avoid_: Threat area, investigator area
 
+**Encounter discard pile**:
+The shared, ordered, face-up pile of discarded cards owned by the encounter deck. Its contents are public information and out of play; card abilities and rules can specify a different destination.
+_Avoid_: Victory display, investigator discard pile
+
+**Investigator discard pile**:
+An investigator's ordered, face-up pile of discarded cards they own, including discarded weaknesses. Its contents are public information and out of play.
+_Avoid_: Encounter discard pile, removed-from-game cards
+
 **Skill icon**:
 A card symbol associated with willpower, intellect, combat or agility, or a wild symbol that can match any of those tested skills. Applicable icons on committed cards contribute to the investigator's skill value for that test.
 _Avoid_: Strength or power when referring to combat

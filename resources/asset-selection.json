@@ -1,8 +1,31 @@
 {
   "format_version": 1,
-  "collection": "arkham-unfolded-jacqueline-v1",
+  "collection": "arkham-unfolded-jacqueline-v2",
   "source_archive_release": "v1.22.11",
   "assets": [
+    {
+      "role": "ui/reveal-chaos-token",
+      "path": "ui/reveal-chaos-token.png",
+      "sha256": "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e",
+      "bytes": 5829,
+      "source": {
+        "input": "reveal_icon",
+        "path": "swap-bag.png",
+        "sha256": "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e",
+        "bytes": 5829
+      },
+      "attribution": {
+        "title": "Swap bag",
+        "creator": "Lorc",
+        "license": "CC BY 3.0",
+        "license_url": "https://creativecommons.org/licenses/by/3.0/",
+        "source_url": "https://game-icons.net/1x1/lorc/swap-bag.html",
+        "download_url": "https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png",
+        "modification": "PNG copied unchanged; presentation may tint the white silhouette."
+      },
+      "evidence": "docs/adr/0002-persistent-table-areas.md#accepted-implementation-handoff",
+      "transform": { "kind": "copy" }
+    },
     {
       "role": "card/01163",
       "path": "cards/01163/face.png",
