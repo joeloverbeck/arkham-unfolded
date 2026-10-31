@@ -7,6 +7,7 @@ publish = false
 
 [workspace]
 members = ["tools"]
+exclude = ["vendor/wgpu-hal"]
 resolver = "3"
 
 [features]
@@ -45,3 +46,6 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[patch.crates-io]
+wgpu-hal = { path = "vendor/wgpu-hal" }
