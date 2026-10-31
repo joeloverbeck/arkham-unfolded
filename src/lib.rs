@@ -5,6 +5,9 @@ pub mod assets;
 pub mod continuity;
 pub mod encounter_discard;
 mod explanation;
+pub mod party;
+#[cfg(feature = "tabletop")]
+pub mod party_tabletop;
 #[cfg(feature = "tabletop")]
 mod tabletop_camera;
 #[cfg(feature = "tabletop")]
@@ -13,6 +16,8 @@ mod tabletop_discard;
 mod tabletop_feedback;
 #[cfg(feature = "tabletop")]
 mod tabletop_harm_text;
+#[cfg(feature = "tabletop")]
+mod tabletop_health;
 #[cfg(feature = "tabletop")]
 mod tabletop_layout;
 #[cfg(feature = "tabletop")]

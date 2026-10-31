@@ -798,6 +798,7 @@ fn app_for_session_in(mut app: App, session: Session, path: PathBuf) -> App {
         dirty: true,
     })
     .insert_resource(Orbit::new(CameraMode::Jacqueline))
+    .insert_resource(RenderHealth::ready_for_test())
     .insert_resource(Actions::default())
     .insert_resource(AssetSettings::new(config))
     .init_resource::<Assets<Mesh>>()
@@ -831,6 +832,49 @@ fn app_for_session_in(mut app: App, session: Session, path: PathBuf) -> App {
 fn act(app: &mut App, action: Action) {
     app.world_mut().resource_mut::<Actions>().0.push(action);
     app.update();
+}
+
+#[test]
+fn rendering_health_preserves_jacqueline_records_and_drains_blocked_input() {
+    for health in [
+        RenderHealth::default(),
+        RenderHealth::failed_for_test(),
+        RenderHealth::just_ready_for_test(),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("jacqueline.json");
+        let initial = Session::new(Fixture::curse());
+        continuity::save_session(&path, &initial).unwrap();
+        let saved = std::fs::read(&path).unwrap();
+        let mut app = app_for_session(initial, path.clone());
+        act(&mut app, Action::Choose(0, "commit-promise".into()));
+        let before = app.world().resource::<Tabletop>().session.clone();
+        std::fs::write(&path, &saved).unwrap();
+        let file_count = std::fs::read_dir(dir.path()).unwrap().count();
+        app.insert_resource(health);
+        act(&mut app, Action::Choose(1, "use-jacqueline".into()));
+        for action in [Action::Save, Action::Reopen, Action::Replay, Action::New] {
+            act(&mut app, action);
+        }
+        let camera_before = app.world().resource::<Orbit>().pose();
+        act(&mut app, Action::Focus(Area::Test));
+        assert_ne!(app.world().resource::<Orbit>().pose(), camera_before);
+        assert_eq!(app.world().resource::<Tabletop>().session, before);
+        assert!(app.world().resource::<Tabletop>().replay.is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), file_count);
+        assert!(app.world().resource::<Actions>().0.is_empty());
+
+        app.insert_resource(RenderHealth::ready_for_test());
+        app.update();
+        assert_eq!(app.world().resource::<Tabletop>().session, before);
+        act(&mut app, Action::Choose(1, "use-jacqueline".into()));
+        assert_ne!(app.world().resource::<Tabletop>().session, before);
+        assert_eq!(
+            continuity::load_session(&path).unwrap(),
+            app.world().resource::<Tabletop>().session
+        );
+    }
 }
 
 fn result_visible(app: &mut App) -> bool {

@@ -34,6 +34,10 @@ impl Redraw {
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct RequestRedraw;
 
+/// The final activity decision for this frame, before render extraction can block.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct SelectCadence;
+
 #[derive(Resource, Default)]
 struct Cadence {
     last_update: Option<Instant>,
@@ -85,8 +89,9 @@ impl Plugin for TabletopPacingPlugin {
             .init_resource::<Cadence>()
             .init_resource::<WinitSettings>()
             .add_systems(First, update_clock)
+            .configure_sets(Last, SelectCadence.after(RequestRedraw))
             .add_systems(Last, input_activity.in_set(RequestRedraw))
-            .add_systems(Last, select_cadence.after(RequestRedraw));
+            .add_systems(Last, select_cadence.in_set(SelectCadence));
 
         if let Some(extract) = app.get_sub_app_mut(RenderExtractApp) {
             // This sub-app runs after render dispatch, before the next input poll.

@@ -29,6 +29,7 @@ struct Settings {
 enum Experiment {
     Jacqueline,
     Tony,
+    Party,
 }
 
 impl AssetConfig {
@@ -39,6 +40,10 @@ impl AssetConfig {
     /// Tony has a separate preference so choosing its collection preserves Jacqueline's.
     pub fn load_tony() -> Result<Self, String> {
         Self::load_for(Experiment::Tony)
+    }
+
+    pub fn load_party() -> Result<Self, String> {
+        Self::load_for(Experiment::Party)
     }
 
     fn load_for(experiment: Experiment) -> Result<Self, String> {
@@ -160,6 +165,7 @@ fn locations(
         // Advance app-owned defaults only after the fresh collections verify.
         // An explicit saved choice always takes precedence and is never migrated here.
         Experiment::Tony => ("tony.toml", "tony-assets-v4"),
+        Experiment::Party => ("party.toml", "party-assets-v1"),
     };
     Ok((
         base(config_home, ".config")?
@@ -274,6 +280,20 @@ mod tests {
         tony.save_root(&tony_root).unwrap();
         assert_eq!(load(Experiment::Tony).root(), tony_root);
         assert_eq!(load(Experiment::Jacqueline).root(), jacqueline_root);
+        assert_eq!(fs::read(jacqueline.path()).unwrap(), legacy_bytes);
+
+        let tony_bytes = fs::read(tony.path()).unwrap();
+        let mut party = load(Experiment::Party);
+        assert_eq!(
+            party.root(),
+            dir.path()
+                .join(".local/share/arkham-unfolded/party-assets-v1")
+        );
+        assert!(!party.path().exists());
+        let party_root = dir.path().join("chosen-party");
+        party.save_root(&party_root).unwrap();
+        assert_eq!(load(Experiment::Party).root(), party_root);
+        assert_eq!(fs::read(tony.path()).unwrap(), tony_bytes);
         assert_eq!(fs::read(jacqueline.path()).unwrap(), legacy_bytes);
     }
 

@@ -1,0 +1,668 @@
+{
+  "assets": [
+    {
+      "attribution": {
+        "creator": "Lorc",
+        "download_url": "https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png",
+        "license": "CC BY 3.0",
+        "license_url": "https://creativecommons.org/licenses/by/3.0/",
+        "modification": "PNG copied unchanged; presentation may tint the white silhouette.",
+        "source_url": "https://game-icons.net/1x1/lorc/swap-bag.html",
+        "title": "Swap bag"
+      },
+      "bytes": 5829,
+      "evidence": "docs/adr/0002-persistent-table-areas.md#accepted-implementation-handoff",
+      "path": "ui/reveal-chaos-token.png",
+      "role": "ui/reveal-chaos-token",
+      "sha256": "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e",
+      "source": {
+        "bytes": 5829,
+        "input": "reveal_icon",
+        "path": "swap-bag.png",
+        "sha256": "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1015054,
+      "evidence": "GitHub #22 exact English face; variant 8549568e606cbff8",
+      "path": "cards/06003/face.png",
+      "role": "card/06003",
+      "sha256": "26780c99a7084d89c3580af12ec082b2add4f0563cac36a1a6507f41c97752d1",
+      "source": {
+        "bytes": 1015054,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06003--Tony Morgan/8549568e606cbff8/face.png",
+        "sha256": "26780c99a7084d89c3580af12ec082b2add4f0563cac36a1a6507f41c97752d1"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1240813,
+      "evidence": "GitHub #22 exact English face; variant 3914f45d3bcf7d81",
+      "path": "cards/03263/face.png",
+      "role": "card/03263",
+      "sha256": "7b99463996c27142be679288af31f19b7a2cb3e0f16425c0db34cf92d8d800a8",
+      "source": {
+        "bytes": 1240813,
+        "path": "images/cards/official/en/sce-base-save/The Path to Carcosa/03263--On the Hunt/3914f45d3bcf7d81/face.png",
+        "sha256": "7b99463996c27142be679288af31f19b7a2cb3e0f16425c0db34cf92d8d800a8"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1183404,
+      "evidence": "GitHub #22 exact English face; variant c6da23b9ae042d18",
+      "path": "cards/01089/face.png",
+      "role": "card/01089",
+      "sha256": "4a8058f959ec5b911d77ca39f2782e750c61b399a567b657ad6de4766ab9376b",
+      "source": {
+        "bytes": 1183404,
+        "path": "images/cards/official/en/sce-base-save/Core/01089--Guts/c6da23b9ae042d18/face.png",
+        "sha256": "4a8058f959ec5b911d77ca39f2782e750c61b399a567b657ad6de4766ab9376b"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1102314,
+      "evidence": "GitHub #22 exact English face; variant b1d29e8dbb446e23",
+      "path": "cards/06010/face.png",
+      "role": "card/06010",
+      "sha256": "8050db0aca071b518bbfb9541aab74deafc01ed221a383158b673b21e590cf3e",
+      "source": {
+        "bytes": 1102314,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06010--Bounty Contracts/b1d29e8dbb446e23/face.png",
+        "sha256": "8050db0aca071b518bbfb9541aab74deafc01ed221a383158b673b21e590cf3e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1007537,
+      "evidence": "GitHub #22 exact English face; variant ee9f88be0fe1ad2b",
+      "path": "cards/01104/face.png",
+      "role": "card/01104",
+      "sha256": "2c65c1d4b98f26f4268cfa4647b006ffa9a6d7030281a545e676ad41c1d9ceb5",
+      "source": {
+        "bytes": 1007537,
+        "path": "images/cards/official/en/night_of_the_zealot/Unassigned expansion/01104--Scenario/ee9f88be0fe1ad2b/face.png",
+        "sha256": "2c65c1d4b98f26f4268cfa4647b006ffa9a6d7030281a545e676ad41c1d9ceb5"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1240391,
+      "evidence": "GitHub #22 exact English back; variant aec837f768735442",
+      "path": "cards/01111/back.png",
+      "role": "card/01111",
+      "sha256": "f9a4874007445ac47f66275266e034ea65665722580e1672d70cc6ae9121cf10",
+      "source": {
+        "bytes": 1240391,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01111--Study/aec837f768735442/back.png",
+        "sha256": "f9a4874007445ac47f66275266e034ea65665722580e1672d70cc6ae9121cf10"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1390665,
+      "evidence": "GitHub #22 exact English face; variant 460aea194cbf717b",
+      "path": "cards/01105/face.png",
+      "role": "card/01105",
+      "sha256": "eb8a3df46a9e1d52016872d530dee3c28a212cad3245077352fe3c6a0f6c370c",
+      "source": {
+        "bytes": 1390665,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01105--What's Going On-!--02c98a5d/460aea194cbf717b/face.png",
+        "sha256": "eb8a3df46a9e1d52016872d530dee3c28a212cad3245077352fe3c6a0f6c370c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1139450,
+      "evidence": "GitHub #22 exact English face; variant 79184f89d96cf371",
+      "path": "cards/01108/face.png",
+      "role": "card/01108",
+      "sha256": "ea48ef97d968da6bdba80d4bb27e8fa663a881c70f6e9e51a0b216aefe58fd7f",
+      "source": {
+        "bytes": 1139450,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01108--Trapped/79184f89d96cf371/face.png",
+        "sha256": "ea48ef97d968da6bdba80d4bb27e8fa663a881c70f6e9e51a0b216aefe58fd7f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 559410,
+      "evidence": "docs/experiments/investigator-art.json#06003; variant af1ad7d5512a794f",
+      "path": "investigators/06003/standee.png",
+      "role": "standee/06003",
+      "sha256": "ce2f744bd0fd0da10837f2c1ecae4b4c621797d1d2bd2e8a10d19c5d6083f8d6",
+      "source": {
+        "bytes": 559410,
+        "path": "images/cards/unclassified/en/sce-base-save/Unassigned expansion/06003-m--Tony Morgan/af1ad7d5512a794f/face.png",
+        "sha256": "ce2f744bd0fd0da10837f2c1ecae4b4c621797d1d2bd2e8a10d19c5d6083f8d6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 525925,
+      "evidence": "docs/experiments/investigator-art.json#06005; variant 4f98f4d2d1046e13",
+      "path": "investigators/06005/standee.png",
+      "role": "standee/06005",
+      "sha256": "59daabddd3959071d18bf37a4826bf9cee134b63e00641bc756f3858ce281867",
+      "source": {
+        "bytes": 525925,
+        "path": "images/cards/unclassified/en/sce-base-save/Unassigned expansion/06005-m--Patrice Hathaway/4f98f4d2d1046e13/face.png",
+        "sha256": "59daabddd3959071d18bf37a4826bf9cee134b63e00641bc756f3858ce281867"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 395748,
+      "evidence": "docs/experiments/investigator-art.json#60401; variant 5eb524de9bdbc594",
+      "path": "investigators/60401/standee.png",
+      "role": "standee/60401",
+      "sha256": "a95b50cdd7c120f7b73e8ad28b451a32eec3d84c8882c4bff9851b84c221265d",
+      "source": {
+        "bytes": 395748,
+        "path": "images/cards/unclassified/en/sce-base-save/Unassigned expansion/60401-m--Jacqueline Fine/5eb524de9bdbc594/face.png",
+        "sha256": "a95b50cdd7c120f7b73e8ad28b451a32eec3d84c8882c4bff9851b84c221265d"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1389043,
+      "evidence": "Original SCE 1024px circular token set; token-m1; asset 1a9e296081b25ca9baf0723e3c302fe30c86ead970be4f8b358296741538094e",
+      "path": "tokens/minus_one.png",
+      "role": "token/minus_one",
+      "sha256": "2e1a1af8ed0d6762ebd57f637078038392da9c5ecc63146f30901233457087c9",
+      "source": {
+        "bytes": 1389043,
+        "path": "images/other/unclassified/en/sce-base-save/token-m1--URL--1a9e296081b25ca9baf0.png",
+        "sha256": "2e1a1af8ed0d6762ebd57f637078038392da9c5ecc63146f30901233457087c9"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1550581,
+      "evidence": "Original SCE 1024px circular token set; token-cultist; asset 40ea4816987295b83fd332c0e0eb60548840d8ed2f51856db13efaf17099283d",
+      "path": "tokens/cultist.png",
+      "role": "token/cultist",
+      "sha256": "7500f82209fa02b6b5c57c5e56c50e124d971e27bc1ea572607ef3f8d9470a0a",
+      "source": {
+        "bytes": 1550581,
+        "path": "images/other/unclassified/en/sce-base-save/token-cultist--URL--40ea4816987295b83fd3.png",
+        "sha256": "7500f82209fa02b6b5c57c5e56c50e124d971e27bc1ea572607ef3f8d9470a0a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1528014,
+      "evidence": "Original SCE 1024px circular token set; token-blue; asset 63bb698c7cd8905c83f3e658b8d0d31124ffa113bf6ad3caa1b8edd2933795a3",
+      "path": "tokens/elder_sign.png",
+      "role": "token/elder_sign",
+      "sha256": "ffabe7847d0eb77f0a7c3d676ccd3fbee6b46650fe5b1d5b62e109ed714a54ff",
+      "source": {
+        "bytes": 1528014,
+        "path": "images/other/unclassified/en/sce-base-save/token-blue--URL--63bb698c7cd8905c83f3.png",
+        "sha256": "ffabe7847d0eb77f0a7c3d676ccd3fbee6b46650fe5b1d5b62e109ed714a54ff"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1176824,
+      "evidence": "Original SCE 1024px circular token set; token-0; asset 7ff653872e54829263ed5b7caf5e8efe324635cca8f06991db6eb259b4996a10",
+      "path": "tokens/zero.png",
+      "role": "token/zero",
+      "sha256": "dbec20a2a53a91edc7340c5fe60a40fbe42b732765cf1f21bee4433b3a61e0e6",
+      "source": {
+        "bytes": 1176824,
+        "path": "images/other/unclassified/en/sce-base-save/token-0--URL--7ff653872e54829263ed.png",
+        "sha256": "dbec20a2a53a91edc7340c5fe60a40fbe42b732765cf1f21bee4433b3a61e0e6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1068555,
+      "evidence": "Original SCE 1024px circular token set; token-red; asset 85878cdba39d1f1dcd42b407ab7451bf0ac2ba1405b05aa1ca55e69211c8f593",
+      "path": "tokens/auto_fail.png",
+      "role": "token/auto_fail",
+      "sha256": "5771760eef9547c85cb33e8756db4b8d000b7f4e302e9c383c28e47e9a5e6140",
+      "source": {
+        "bytes": 1068555,
+        "path": "images/other/unclassified/en/sce-base-save/token-red--URL--85878cdba39d1f1dcd42.png",
+        "sha256": "5771760eef9547c85cb33e8756db4b8d000b7f4e302e9c383c28e47e9a5e6140"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1632000,
+      "evidence": "Original SCE 1024px circular token set; token-tablet; asset 98ca2f347732ad651e05d07c876003da3db6edf93806a10051f732c58bdd32e3",
+      "path": "tokens/tablet.png",
+      "role": "token/tablet",
+      "sha256": "f663e5d0b23b3f12c656b2f60634fa594d30f965f0258f82b82a7f8941cb50dd",
+      "source": {
+        "bytes": 1632000,
+        "path": "images/other/unclassified/en/sce-base-save/token-tablet--URL--98ca2f347732ad651e05.png",
+        "sha256": "f663e5d0b23b3f12c656b2f60634fa594d30f965f0258f82b82a7f8941cb50dd"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1413972,
+      "evidence": "Original SCE 1024px circular token set; token-m3; asset aeac1c0455433d704d215996ba23a21b5b03924232963d67ba401a3322bcdca6",
+      "path": "tokens/minus_three.png",
+      "role": "token/minus_three",
+      "sha256": "65bb6a867d34f426e2ed4c8a8484233e6f318e0416c877c7151c467629fef652",
+      "source": {
+        "bytes": 1413972,
+        "path": "images/other/unclassified/en/sce-base-save/token-m3--URL--aeac1c0455433d704d21.png",
+        "sha256": "65bb6a867d34f426e2ed4c8a8484233e6f318e0416c877c7151c467629fef652"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1408216,
+      "evidence": "Original SCE 1024px circular token set; token-m4; asset dd8bb4080554799c1fc4c0b3707451cb8357c0772788b7b2bdcc82e0b66c2820",
+      "path": "tokens/minus_four.png",
+      "role": "token/minus_four",
+      "sha256": "56a10684ca7dd270f991bf18687051b1b83f8a1c106f11bf49610c379ac301fb",
+      "source": {
+        "bytes": 1408216,
+        "path": "images/other/unclassified/en/sce-base-save/token-m4--URL--dd8bb4080554799c1fc4.png",
+        "sha256": "56a10684ca7dd270f991bf18687051b1b83f8a1c106f11bf49610c379ac301fb"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1587462,
+      "evidence": "Original SCE 1024px circular token set; token-skull; asset ed40f66ae8eace832444753042a13b3a3584f7a092b1a5a0cf70e5ba20c21049",
+      "path": "tokens/skull.png",
+      "role": "token/skull",
+      "sha256": "fbecb892a168cbf061ff024cab04e9f9174b63f0e89f14a26433e83478a37523",
+      "source": {
+        "bytes": 1587462,
+        "path": "images/other/unclassified/en/sce-base-save/token-skull--URL--ed40f66ae8eace832444.png",
+        "sha256": "fbecb892a168cbf061ff024cab04e9f9174b63f0e89f14a26433e83478a37523"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1415265,
+      "evidence": "Original SCE 1024px circular token set; token-m2; asset f0e0b9de45cd03220cb5af3cd35dc2da97cba5864f98ed03ca0748a9cfbe4ce6",
+      "path": "tokens/minus_two.png",
+      "role": "token/minus_two",
+      "sha256": "2c6ef7a4577cfc9b8c5c7d1bcc0315857c6d8b4b969103600ce1582f3b529227",
+      "source": {
+        "bytes": 1415265,
+        "path": "images/other/unclassified/en/sce-base-save/token-m2--URL--f0e0b9de45cd03220cb5.png",
+        "sha256": "2c6ef7a4577cfc9b8c5c7d1bcc0315857c6d8b4b969103600ce1582f3b529227"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1440502,
+      "evidence": "Original SCE 1024px circular token set; token-p1; asset f831a012dce4da805274aa87e183b967fad5284ad563452cd9390c93e2f361ba",
+      "path": "tokens/plus_one.png",
+      "role": "token/plus_one",
+      "sha256": "8fafc7e57789d04a3f7a348b9a6f59e98083110f6a1ad0dc6d9570eadff5a2c9",
+      "source": {
+        "bytes": 1440502,
+        "path": "images/other/unclassified/en/sce-base-save/token-p1--URL--f831a012dce4da805274.png",
+        "sha256": "8fafc7e57789d04a3f7a348b9a6f59e98083110f6a1ad0dc6d9570eadff5a2c9"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1687056,
+      "evidence": "GitHub #22 owner deck-presentation follow-up: visually inspected standard player back, 750x1050 PNG RGBA. Catalog card 03263, variant 3914f45d3bcf7d81, unique_back=false, back_is_hidden=true, 1x1 grid slot 0; original source bytes copied unchanged.",
+      "path": "cards/player-back.png",
+      "role": "card-back/player",
+      "sha256": "f99036b94381c0699910654568ea69957d5004256b2f5a0d5657f92ae159a1d2",
+      "source": {
+        "bytes": 1687056,
+        "path": "images/cards/official/en/sce-base-save/The Path to Carcosa/03263--On the Hunt/3914f45d3bcf7d81/back.png",
+        "sha256": "f99036b94381c0699910654568ea69957d5004256b2f5a0d5657f92ae159a1d2"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 86002,
+      "evidence": "docs/research/attack-opportunity-and-harm-presentation.md; visually inspected actual SCE contained counter, transparent PNG; original bytes copied unchanged.",
+      "path": "tokens/damage.png",
+      "role": "token/damage",
+      "sha256": "34156f8361c5adef67c8afe40cfd960aea36b1e69956da00046120c01a1b247d",
+      "source": {
+        "bytes": 86002,
+        "path": "images/other/unclassified/en/sce-base-save/Damage--ImageURL--081d03144a6650cd7f9e.png",
+        "sha256": "34156f8361c5adef67c8afe40cfd960aea36b1e69956da00046120c01a1b247d"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 104192,
+      "evidence": "docs/research/attack-opportunity-and-harm-presentation.md; visually inspected actual SCE contained counter, transparent PNG; original bytes copied unchanged.",
+      "path": "tokens/horror.png",
+      "role": "token/horror",
+      "sha256": "cb7f3c7e20d1ecfcd133c605e7d6b01095b82d79acc2a18c9baee31d3b14d789",
+      "source": {
+        "bytes": 104192,
+        "path": "images/other/unclassified/en/sce-base-save/Horror--ImageURL--d429aca0b365fe75ed12.png",
+        "sha256": "cb7f3c7e20d1ecfcd133c605e7d6b01095b82d79acc2a18c9baee31d3b14d789"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 144020,
+      "evidence": "docs/experiments/symbol-art.json; existing exact bundle extraction",
+      "path": "fonts/arkham-symbols.ttf",
+      "role": "font/symbols",
+      "sha256": "186176d7243c72d272a50c24e833fb77d983e7c4c6c99bc64f89c8322dbd8187",
+      "source": {
+        "bytes": 66412,
+        "path": "resources/other/unclassified/en/sce-base-save/font_arkhamicons--URL--49b407be28313ac7ad1b.unity3d",
+        "sha256": "ed518b255b4a177f246525d5fd6ed626c468cb46d843cca62cf72978faa1fb80"
+      },
+      "transform": {
+        "block_length": 66282,
+        "block_offset": 130,
+        "decoded_length": 154116,
+        "font_length": 144020,
+        "font_offset": 9592,
+        "kind": "unity_font"
+      }
+    },
+    {
+      "bytes": 1449729,
+      "evidence": "docs/research/issue-1-evidence.json#07032; variant b30f06cacc702078",
+      "path": "cards/07032/face.png",
+      "role": "card/07032",
+      "sha256": "2ee14826c949db4a6d1e3ebcd4a6dd77638d1e41edb4b87f70419ceff6fce61f",
+      "source": {
+        "bytes": 1449729,
+        "path": "images/cards/official/en/sce-base-save/The Innsmouth Conspiracy/07032--Promise of Power/b30f06cacc702078/face.png",
+        "sha256": "2ee14826c949db4a6d1e3ebcd4a6dd77638d1e41edb4b87f70419ceff6fce61f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1102571,
+      "evidence": "docs/research/issue-1-evidence.json#60401; variant ba5b602644842ee4",
+      "path": "cards/60401/face.png",
+      "role": "card/60401",
+      "sha256": "01c1bcf5bbef4356ee2c0224ff8b7ffad87ab1584a53533da53c0857eaa7b3da",
+      "source": {
+        "bytes": 1102571,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60401--Jacqueline Fine/ba5b602644842ee4/face.png",
+        "sha256": "01c1bcf5bbef4356ee2c0224ff8b7ffad87ab1584a53533da53c0857eaa7b3da"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1642222,
+      "evidence": "docs/experiments/token-art.json#curse",
+      "path": "tokens/chaos/curse.png",
+      "role": "token/curse",
+      "sha256": "1b6f931ee161aee2c2f570a41e3f9addef062a67c904c8ef5ab433a661e12f9e",
+      "source": {
+        "bytes": 1642222,
+        "path": "images/other/unclassified/en/sce-base-save/token-curse--URL--99b4c1dd13e366b27eef.png",
+        "sha256": "1b6f931ee161aee2c2f570a41e3f9addef062a67c904c8ef5ab433a661e12f9e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1147636,
+      "evidence": "GitHub #55 original English face side; variant 2961ee22e3bb9567",
+      "path": "cards/06005/face.png",
+      "role": "card/06005",
+      "sha256": "2d03069fe11626fb5055ccad9db42022b494df20462b5de6972af8aaa642dd2c",
+      "source": {
+        "bytes": 1147636,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06005--Patrice Hathaway/2961ee22e3bb9567/face.png",
+        "sha256": "2d03069fe11626fb5055ccad9db42022b494df20462b5de6972af8aaa642dd2c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1115589,
+      "evidence": "GitHub #55 original English face side; variant ae7c3042a7b21187",
+      "path": "cards/01080/face.png",
+      "role": "card/01080",
+      "sha256": "7e7d7493ad88d4e4a783298b0d1ddb33b9c919da4b1d8f4c16815fedb4e1b824",
+      "source": {
+        "bytes": 1115589,
+        "path": "images/cards/official/en/sce-base-save/Core/01080--Lucky!/ae7c3042a7b21187/face.png",
+        "sha256": "7e7d7493ad88d4e4a783298b0d1ddb33b9c919da4b1d8f4c16815fedb4e1b824"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1213206,
+      "evidence": "GitHub #55 original English face side; variant 8bef7e9dd3e8401b",
+      "path": "cards/01093/face.png",
+      "role": "card/01093",
+      "sha256": "84458fdbeb058ebe7cdf32522f83fb0406fdde2c4ca3fdd668186d4fa6ffecb7",
+      "source": {
+        "bytes": 1213206,
+        "path": "images/cards/official/en/sce-base-save/Core/01093--Unexpected Courage/8bef7e9dd3e8401b/face.png",
+        "sha256": "84458fdbeb058ebe7cdf32522f83fb0406fdde2c4ca3fdd668186d4fa6ffecb7"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1247082,
+      "evidence": "GitHub #55 original English face side; variant 9f216ab02abc5ae4",
+      "path": "cards/60408/face.png",
+      "role": "card/60408",
+      "sha256": "e5d7c691c81602a1fc5737c05f9182f7088061f8def927bbe3c6b3c5adcb5f8a",
+      "source": {
+        "bytes": 1247082,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60408--Clairvoyance/9f216ab02abc5ae4/face.png",
+        "sha256": "e5d7c691c81602a1fc5737c05f9182f7088061f8def927bbe3c6b3c5adcb5f8a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 426962,
+      "evidence": "GitHub #55 original English face side; variant 8a658f76fe0246fc",
+      "path": "cards/11067/face.jpg",
+      "role": "card/11067",
+      "sha256": "54828c35b8acd6aadc149040b433b1e2fea943fbf28421a7f822566c34a0a262",
+      "source": {
+        "bytes": 426962,
+        "path": "images/cards/official/en/sce-base-save/The Drowned City/11067--Eyes of the Dreamer/8a658f76fe0246fc/face.jpg",
+        "sha256": "54828c35b8acd6aadc149040b433b1e2fea943fbf28421a7f822566c34a0a262"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1223853,
+      "evidence": "GitHub #55 original English face side; variant bbda1643868258c5",
+      "path": "cards/04109/face.png",
+      "role": "card/04109",
+      "sha256": "f065b8ed9f4a191c25ad3c18d90a0e171d4ace03b2e6a372f9b965a1979da1d6",
+      "source": {
+        "bytes": 1223853,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04109--Arcane Research/bbda1643868258c5/face.png",
+        "sha256": "f065b8ed9f4a191c25ad3c18d90a0e171d4ace03b2e6a372f9b965a1979da1d6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1227226,
+      "evidence": "GitHub #55 original English back side; variant 79184f89d96cf371",
+      "path": "cards/01108/back.png",
+      "role": "card/01108/reverse",
+      "sha256": "c2a27ffffc807b7f2eea7c6da91a41808c4585ff7a41e74771be88679e606491",
+      "source": {
+        "bytes": 1227226,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01108--Trapped/79184f89d96cf371/back.png",
+        "sha256": "c2a27ffffc807b7f2eea7c6da91a41808c4585ff7a41e74771be88679e606491"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1273371,
+      "evidence": "GitHub #55 original English face side; variant f3119cd519b58647",
+      "path": "cards/01109/face.png",
+      "role": "card/01109",
+      "sha256": "e2237f76b48f7ec58850739a11cb7da78255ec65455dcfeab00b9aa725191b21",
+      "source": {
+        "bytes": 1273371,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01109--The Barrier/f3119cd519b58647/face.png",
+        "sha256": "e2237f76b48f7ec58850739a11cb7da78255ec65455dcfeab00b9aa725191b21"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1366881,
+      "evidence": "GitHub #55 original English back side; variant e59fa22742aa5070",
+      "path": "cards/01112/back.png",
+      "role": "card/01112",
+      "sha256": "5af07e38456e65821dc1ecd78e7a51728c23806167d9cf7bd3347b76b51e8bba",
+      "source": {
+        "bytes": 1366881,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01112--Hallway/e59fa22742aa5070/back.png",
+        "sha256": "5af07e38456e65821dc1ecd78e7a51728c23806167d9cf7bd3347b76b51e8bba"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1390283,
+      "evidence": "GitHub #55 original English face side; variant e59fa22742aa5070",
+      "path": "cards/01112/face.png",
+      "role": "card/01112/unrevealed",
+      "sha256": "f64d2d5bfde4da5a754ed77337fa7ee919f7ab75cb446fb3e70484afe6c952f8",
+      "source": {
+        "bytes": 1390283,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01112--Hallway/e59fa22742aa5070/face.png",
+        "sha256": "f64d2d5bfde4da5a754ed77337fa7ee919f7ab75cb446fb3e70484afe6c952f8"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1178580,
+      "evidence": "GitHub #55 original English face side; variant 800834c2e07131c2",
+      "path": "cards/01113/face.png",
+      "role": "card/01113",
+      "sha256": "23748e8a6e3d88723cc99cc61ec675045075ad40b2536ba3c0d21eeb1ad7da1c",
+      "source": {
+        "bytes": 1178580,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01113--Attic/800834c2e07131c2/face.png",
+        "sha256": "23748e8a6e3d88723cc99cc61ec675045075ad40b2536ba3c0d21eeb1ad7da1c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1187631,
+      "evidence": "GitHub #55 original English face side; variant 96eba9154b6a3047",
+      "path": "cards/01114/face.png",
+      "role": "card/01114",
+      "sha256": "c4ec5587fb3e58ce07060303f32a19c8526b50b480beac3ded82f81420836a84",
+      "source": {
+        "bytes": 1187631,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01114--Cellar/96eba9154b6a3047/face.png",
+        "sha256": "c4ec5587fb3e58ce07060303f32a19c8526b50b480beac3ded82f81420836a84"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1266425,
+      "evidence": "GitHub #55 original English face side; variant 954f54490565c9d9",
+      "path": "cards/01115/face.png",
+      "role": "card/01115",
+      "sha256": "e81df0029e99ff6279427c49769d2c6255b82a59e45aeef60b104bf822e23a89",
+      "source": {
+        "bytes": 1266425,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01115--Parlor/954f54490565c9d9/face.png",
+        "sha256": "e81df0029e99ff6279427c49769d2c6255b82a59e45aeef60b104bf822e23a89"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    }
+  ],
+  "collection": "arkham-unfolded-study-escape-v1",
+  "format_version": 1,
+  "selection": "Exact English card sides from GitHub #22; revealed Study uses its reverse. Original SCE circular chaos-token set, blue Elder Sign (not elder thing). Runtime uses only this prepared collection; original bytes remain outside Git. The standard player back is selected from the same On the Hunt variant for the face-down deck. Damage and Horror use the transparent SCE counter images; the verified arkhamicons font supplies their matching inline symbols.",
+  "source_archive_release": "v1.22.11"
+}

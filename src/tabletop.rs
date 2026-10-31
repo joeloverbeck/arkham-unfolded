@@ -4,6 +4,7 @@
 use crate::tabletop_camera::{
     CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
 };
+use crate::tabletop_health::{HealthAssets, RenderHealth, TabletopHealthPlugin, exit_result};
 use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin};
 use crate::{
     Fixture, Observation, Session, Stage, TokenFace, TokenStatus,
@@ -344,6 +345,7 @@ pub fn run() -> Result<(), String> {
         )
         .add_plugins(MeshPickingPlugin)
         .add_plugins(TabletopPacingPlugin)
+        .add_plugins(TabletopHealthPlugin)
         .add_plugins(reveal::RevealPlugin)
         .add_systems(Last, request_redraw.in_set(RequestRedraw))
         .add_systems(Startup, setup_table)
@@ -404,8 +406,7 @@ pub fn run() -> Result<(), String> {
         collection.as_ref(),
         &mut app.world_mut().resource_mut::<Assets<Font>>(),
     );
-    app.insert_resource(reveal::Artwork(reveal_image));
-    app.insert_resource(Art {
+    let art = Art {
         handles,
         available,
         token_handles,
@@ -413,10 +414,32 @@ pub fn run() -> Result<(), String> {
         investigators,
         symbol_font,
         status,
-    });
+    };
+    let health_assets = HealthAssets::new(
+        art.handles
+            .iter()
+            .flatten()
+            .map(|handle| handle.id().untyped())
+            .chain(
+                art.token_handles
+                    .iter()
+                    .map(|(_, handle)| handle.id().untyped()),
+            )
+            .chain(art.reminder.iter().map(|handle| handle.id().untyped()))
+            .chain(
+                art.investigators
+                    .iter()
+                    .map(|(_, handle)| handle.id().untyped()),
+            )
+            .chain(reveal_image.iter().map(|handle| handle.id().untyped())),
+    );
+    // The Jacqueline symbol font is loaded synchronously into Assets<Font> above.
+    // Only the asynchronous AssetServer handles need to hold the readiness check.
+    app.insert_resource(health_assets)
+        .insert_resource(reveal::Artwork(reveal_image))
+        .insert_resource(art);
     scene::install(&mut app);
-    app.run();
-    Ok(())
+    exit_result(app.run())
 }
 
 fn prepared_image(
@@ -500,7 +523,9 @@ fn setup_table(
     commands.spawn((Camera3d::default(), Transform::default(), MainCamera));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_actions(
+    health: Res<RenderHealth>,
     mut queue: ResMut<Actions>,
     mut table: ResMut<Tabletop>,
     mut orbit: ResMut<Orbit>,
@@ -515,6 +540,17 @@ fn handle_actions(
             .extend(shortcut.drain().into_iter().map(Action::Reveal));
     }
     for mut action in queue.0.drain(..) {
+        if (!health.allows_play() || health.just_became_ready())
+            && !matches!(
+                action,
+                Action::Focus(_)
+                    | Action::DismissContext
+                    | Action::CloseInspect
+                    | Action::DismissResult
+            )
+        {
+            continue;
+        }
         if settings.as_ref().is_some_and(|settings| settings.is_busy()) {
             continue;
         }
@@ -1530,12 +1566,16 @@ fn request_redraw(
 }
 
 fn capture_window(
+    health: Res<RenderHealth>,
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     mut capture: ResMut<Capture>,
     capturing: Query<(), With<Capturing>>,
     mut exit: MessageWriter<AppExit>,
 ) {
+    if !health.allows_play() || health.just_became_ready() {
+        return;
+    }
     capture.frame += 1;
     if keys.just_pressed(KeyCode::F12) {
         let path = "local/experiment/tabletop.png";

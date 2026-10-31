@@ -1,3 +1,5 @@
+#[path = "driver/party.rs"]
+mod party;
 #[path = "driver/tony.rs"]
 mod tony;
 
@@ -221,8 +223,18 @@ fn run() -> Result<(), String> {
 }
 
 fn main() {
-    let tony_mode = std::env::args().any(|arg| arg == "--experiment");
-    if let Err(error) = if tony_mode { tony::run() } else { run() } {
+    let args: Vec<_> = std::env::args().collect();
+    let party_mode = args
+        .windows(2)
+        .any(|pair| pair == ["--experiment", "party"]);
+    let result = if party_mode {
+        party::run()
+    } else if args.iter().any(|arg| arg == "--experiment") {
+        tony::run()
+    } else {
+        run()
+    };
+    if let Err(error) = result {
         let _ = emit(
             &mut io::stdout().lock(),
             &json!({"ok": false, "status": "error", "error": error}),

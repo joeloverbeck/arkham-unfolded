@@ -6,6 +6,24 @@ An English-language Arkham Horror: The Card Game application for Ubuntu, planned
 
 See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, saves, undo, replay and player driver, including the [two-session verification walkthrough](docs/experiments/tony-turn.md#owner-verification).
 
+The candidate [prepared Study escape attempt](docs/experiments/study-escape.md) under [#55](https://github.com/joeloverbeck/arkham-unfolded/issues/55) adds coordinated turns for all three investigators and an Act 1 closing decision. Use the [party launch command](#launch-and-resume-the-party-experiment) below; its owner acceptance is pending.
+
+## Launch and resume the party experiment
+
+On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
+
+```sh
+cd /home/joeloverbeck/src/arkham-unfolded
+cargo run --locked --features tabletop --bin arkham-tabletop -- \
+  --experiment party \
+  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-55-assets/party-assets-v1 \
+  --save /home/joeloverbeck/.cache/agent-tmp/arkham-55-owner-8a08cc9.session.json
+```
+
+This reopens the existing party session with its prepared artwork. Decisions autosave to the specified file; run the same command to resume after closing the window. These artwork and save paths belong to this machine's prepared experiment; use your own paths on another machine and retain this save to keep your progress.
+
+Keep the terminal open and the app window visible and focused during **Checking graphics...**. Once play is enabled, the heading inside must say **Prepared Study escape · The Gathering · Standard**. The graphics workaround described below applies automatically. See the [Study escape guide](docs/experiments/study-escape.md) for the prepared position, controls and remaining owner verification; #55 remains open pending acceptance.
+
 ## Launch and play the Tony turn
 
 On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
@@ -17,6 +35,10 @@ cargo run --locked --features tabletop --bin arkham-tabletop -- \
 ```
 
 The `--experiment tony` option selects the new turn and its own artwork preference. Without a saved preference, it uses the current Tony collection below. The terminal reports the experiment, resolved artwork folder and completeness at startup. If artwork has not been prepared, use the preparation instructions below; missing artwork leaves readable substitutes.
+
+All three native experiments check rendering before enabling play. Keep the window visible and focused while **Checking graphics...** is shown. A healthy scene normally needs several seconds; startup refuses play if it cannot become ready within 30 seconds of visible foreground operation. A later sustained rendering failure also stops play and exits unsuccessfully. The terminal records the reason, and the last saved decision remains intact. This checks observed progress; it does not repair or certify the graphics driver. See the [graphics investigation and evidence limits](docs/research/nvidia-mapping-and-startup-health.md).
+
+On Linux/Vulkan with the observed NVIDIA RTX 2080 Ti, internal upload buffers use system memory to avoid a measured stall when the CPU writes into GPU BAR memory. This [small patch to the pinned renderer dependency](vendor/wgpu-hal/ARKHAM_PATCH.md) applies automatically to all three experiments; use the ordinary launch commands below.
 
 If your checkout is elsewhere, replace the directory in the first line. This requires Rust/Cargo 1.97.1 or later and an Ubuntu graphics session with X11/XWayland and Vulkan. The first launch downloads and compiles dependencies, which can take several minutes. Later launches reuse the build. Keep the terminal open while playing. The native window retains the title **Arkham Unfolded — Scripted Rules Experiment**; the heading inside must say **Tony turn / The Gathering / Standard**.
 

@@ -139,6 +139,14 @@ fn tony_selection() -> &'static Selection {
     })
 }
 
+fn party_selection() -> &'static Selection {
+    static SELECTION: OnceLock<Selection> = OnceLock::new();
+    SELECTION.get_or_init(|| {
+        serde_json::from_str(include_str!("../resources/party-asset-selection.json"))
+            .expect("the committed party asset selection must be valid")
+    })
+}
+
 // Exact earlier selections remain useful without claiming newly selected artwork.
 fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
     let versions: &[u32] = match selection.collection.as_str() {
@@ -227,6 +235,11 @@ pub fn inspect(root: &Path) -> CollectionReport {
 /// Inspect the separately prepared Tony-turn collection, preserving legacy collections.
 pub fn inspect_tony(root: &Path) -> CollectionReport {
     inspect_selection(root, tony_selection())
+}
+
+/// Inspect the prepared Study escape collection without changing earlier experiments.
+pub fn inspect_party(root: &Path) -> CollectionReport {
+    inspect_selection(root, party_selection())
 }
 
 fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
@@ -322,6 +335,15 @@ pub fn prepare_tony(
     reveal_icon: &Path,
 ) -> Result<PrepareResult, AssetError> {
     prepare_selection_with_icon(source, output, tony_selection(), Some(reveal_icon))
+}
+
+/// Prepare the finite party selection in its own fresh collection.
+pub fn prepare_party(
+    source: &Path,
+    output: &Path,
+    reveal_icon: &Path,
+) -> Result<PrepareResult, AssetError> {
+    prepare_selection_with_icon(source, output, party_selection(), Some(reveal_icon))
 }
 
 #[cfg(test)]
@@ -623,6 +645,26 @@ pub(crate) fn write_current_manifest_without_payloads(root: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn party_missing_art_and_wrong_collection_preserve_original_bytes() {
+        let directory = tempfile::tempdir().unwrap();
+        let manifest = directory.path().join(MANIFEST);
+        let bytes = serde_json::to_vec(&party_selection().manifest()).unwrap();
+        fs::write(&manifest, &bytes).unwrap();
+        let report = inspect_party(directory.path());
+        assert!(report.recognized && !report.complete);
+        assert_eq!(report.valid_count(), 0);
+        assert!(report.verified_path("card/01112").is_none());
+        assert!(!inspect_tony(directory.path()).recognized);
+        assert!(!inspect(directory.path()).recognized);
+        assert_eq!(fs::read(&manifest).unwrap(), bytes);
+
+        let legacy = serde_json::to_vec(&tony_selection().manifest()).unwrap();
+        fs::write(&manifest, &legacy).unwrap();
+        assert!(!inspect_party(directory.path()).recognized);
+        assert_eq!(fs::read(&manifest).unwrap(), legacy);
+    }
 
     fn tony_fixture(source: &Path) -> Selection {
         let mut selected: Selection =
