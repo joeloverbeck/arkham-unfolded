@@ -10,6 +10,26 @@ fn read(path: &std::path::Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
+fn help_identifies_the_batch_file_and_both_byte_limits() {
+    for command in ["read-context", "read-context-batch"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .args([command, "--help"])
+            .output()
+            .unwrap();
+        assert!(result.status.success());
+        assert!(result.stderr.is_empty());
+        let help = String::from_utf8(result.stdout).unwrap();
+        assert!(help.contains("--max-bytes <MAX_BYTES>"), "{help}");
+        assert!(help.contains("512..=12000"), "{help}");
+        if command == "read-context-batch" {
+            assert!(help.contains("<REQUESTS_FILE>"), "{help}");
+            assert!(help.contains("Path to a JSON file containing"), "{help}");
+            assert!(help.contains("{path, start?, end?}"), "{help}");
+        }
+    }
+}
+
+#[test]
 fn continuations_cover_selected_unicode_lines_once_within_the_complete_byte_limit() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("source.txt");
@@ -132,6 +152,24 @@ fn batch(path: &std::path::Path, args: &[&str]) -> std::process::Output {
         .args(args)
         .output()
         .unwrap()
+}
+
+#[test]
+fn missing_batch_manifest_reports_the_requested_file_without_source_output() {
+    let directory = tempfile::tempdir().unwrap();
+    let requests = directory.path().join("missing requests.json");
+    let result = batch(&requests, &[]);
+    assert_eq!(result.status.code(), Some(2));
+    assert!(result.stdout.is_empty());
+    let diagnostic = String::from_utf8(result.stderr).unwrap();
+    assert!(
+        diagnostic.contains("cannot read requests file"),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains(requests.to_str().unwrap()),
+        "{diagnostic}"
+    );
 }
 
 #[test]
