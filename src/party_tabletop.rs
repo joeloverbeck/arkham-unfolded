@@ -265,7 +265,6 @@ pub fn run() -> Result<(), String> {
     let mut app = App::new();
     app.insert_resource(ClearColor(INK))
         .insert_resource(table)
-        .init_resource::<Actions>()
         .insert_resource(Orbit::new(CameraMode::Jacqueline).with_initial_view(options.initial_view))
         .insert_resource(AssetSettings::new_party(options.config))
         .insert_resource(Capture {
@@ -294,30 +293,8 @@ pub fn run() -> Result<(), String> {
         )
         .add_plugins(MeshPickingPlugin)
         .add_plugins(TabletopPacingPlugin)
-        .add_plugins(TabletopHealthPlugin)
-        .add_plugins(feedback::FeedbackPlugin)
-        .add_plugins(reveal::RevealPlugin)
-        .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                poll_settings,
-                handle_actions,
-                camera_controls,
-                scene::synchronize,
-                synchronize_feedback,
-                ui::render,
-                controls::render,
-                sync_reveal,
-                reveal::render,
-                world_labels,
-                crate::tabletop_tokens::position_labels,
-                animate,
-                capture_window,
-            )
-                .chain(),
-        )
-        .add_systems(Last, request_redraw.in_set(RequestRedraw));
+        .add_plugins(TabletopHealthPlugin);
+    install(&mut app);
     let server = app.world().resource::<AssetServer>();
     let mut art = Art {
         status,
@@ -373,6 +350,35 @@ pub fn run() -> Result<(), String> {
         .insert_resource(art);
     exit_result(app.run())
 }
+/// Party's application loop, shared by native startup and its behavioral host.
+/// Hosts supply input/UI, assets, window, health, time, capture and session state.
+fn install(app: &mut App) {
+    app.init_resource::<Actions>()
+        .add_plugins(feedback::FeedbackPlugin)
+        .add_plugins(reveal::RevealPlugin)
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (
+                poll_settings,
+                handle_actions,
+                camera_controls,
+                scene::synchronize,
+                synchronize_feedback,
+                ui::render,
+                controls::render,
+                sync_reveal,
+                reveal::render,
+                world_labels,
+                crate::tabletop_tokens::position_labels,
+                animate,
+                capture_window,
+            )
+                .chain(),
+        )
+        .add_systems(Last, request_redraw.in_set(RequestRedraw));
+}
+
 fn poll_settings(mut settings: ResMut<AssetSettings>, mut table: ResMut<Table>) {
     if let Some(message) = settings.poll() {
         table.notice = message;
