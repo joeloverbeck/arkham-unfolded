@@ -8,3 +8,4 @@ scripts/check-tools
 scripts/check-format
 scripts/check-clippy
 scripts/check-app
+scripts/check-renderer

@@ -9,6 +9,8 @@ A discipline for hard bugs. Classify the report first; unexplained failures foll
 
 When exploring the codebase, read `GLOSSARY.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
+For logs, source excerpts and saved issue bodies, follow the existing [bounded-reading procedure](../../../docs/agents/issue-tracker.md#bounded-context-reads), including its shared batch budget.
+
 Apply the repository's implementation-language contract to every project-owned harness, including temporary ones. Write executable diagnostic logic in Rust. Existing external tools may be invoked directly; shell wrappers remain invocation-only.
 
 ## Redact
@@ -24,6 +26,8 @@ For an intended-behavior question, compare the reported behavior with the accept
 If the report contradicts the contract, remains unexplained, or describes a crash or regression, continue to Phase 1. If the user wants different behavior, treat that as a change request under the existing work-selection procedure. Do not infer intent from the implementation alone.
 
 ## Phase 1: Build a feedback loop
+
+For native startup or rendering performance, use the [native-performance procedure](native-performance.md) before isolating the launch or adding instrumentation. It preserves the ordinary failing baseline and coordinates foreground measurement.
 
 **This is the skill.** Everything else is mechanical. If you have a **tight** pass/fail signal for the bug (one that goes red on _this_ bug), you will find the cause; bisection, hypothesis-testing, and instrumentation all just consume it. If you don't have one, no amount of staring at code will save you.
 
