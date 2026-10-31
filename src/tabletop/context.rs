@@ -316,10 +316,10 @@ pub(super) fn actor(view: &Observation) -> &'static str {
 pub(super) fn card_position(index: usize, view: &Observation) -> Vec3 {
     match index {
         0 if !view.encounter_discard().is_empty() => crate::tabletop_discard::ENCOUNTER_DISCARD_AT,
-        0 => tabletop_layout::TEST_CENTER + Vec3::new(-2.0, 0.125, -2.6),
-        1 if view.promise_committed => tabletop_layout::TEST_CENTER + Vec3::new(0.4, 0.125, -2.6),
-        1 => tabletop_layout::investigator_center(1, 3) + Vec3::new(0.0, 0.125, 2.7),
-        _ => tabletop_layout::investigator_center(2, 3) + Vec3::new(-3.3, 0.125, 0.0),
+        0 => tabletop_layout::test_source(),
+        1 if view.promise_committed => tabletop_layout::test_commitment(1, 0),
+        1 => tabletop_layout::hand_position(1, 1, 0),
+        _ => tabletop_layout::investigator_card(2),
     }
 }
 

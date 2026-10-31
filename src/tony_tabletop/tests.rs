@@ -457,7 +457,7 @@ fn harm_symbols_reach_warnings_counts_stages_card_text_and_history() {
     }
     act(&mut app, Action::Select(0, Source::Card(1), Vec3::ZERO));
     check(&mut app, "Attack of opportunity: Ghoul Minion", true, true);
-    check(&mut app, "Resources 5", true, true);
+    check(&mut app, "Resources 5 · Clues 0 · Damage", true, true);
     choose(&mut app, "investigate");
     check(&mut app, "+1 Damage", true, false);
     check(&mut app, "+1 Horror", false, true);
@@ -996,6 +996,68 @@ fn deck_height_and_back_follow_draws_and_recorded_replay() {
 }
 
 #[test]
+fn production_hands_remain_centered_as_cards_are_drawn_and_replayed() {
+    let (mut app, _) = scene_app();
+    app.add_systems(Update, synchronize_scene);
+    let center = layout::investigator_center(0, 3);
+    let check = |app: &mut App, count: usize| {
+        let world = app.world_mut();
+        let mut cards: Vec<_> = world
+            .query::<(&CardSource, &Transform)>()
+            .iter(world)
+            .filter_map(|(source, transform)| {
+                matches!(source.0, Source::Hand(_)).then_some(transform.translation)
+            })
+            .collect();
+        cards.sort_by(|left, right| left.x.total_cmp(&right.x));
+        assert_eq!(cards.len(), count);
+        if count == 0 {
+            return;
+        }
+        assert!((cards.iter().map(|at| at.x).sum::<f32>() / count as f32 - center.x).abs() < 0.001);
+        assert!(cards.iter().all(|at| at.z > center.z));
+        for pair in cards.windows(2) {
+            assert!(pair[1].x - pair[0].x > CARD_WIDTH);
+        }
+    };
+    for count in 1..=4 {
+        if count > 1 {
+            let mut table = app.world_mut().resource_mut::<Table>();
+            let revision = table.session.observe().revision;
+            table.session.choose(revision, "draw").unwrap();
+        }
+        app.update();
+        check(&mut app, count);
+    }
+    let recording = app.world().resource::<Table>().session.recording();
+    app.world_mut().resource_mut::<Table>().replay = Some(Replay::new(recording).unwrap());
+    app.update();
+    check(&mut app, 1);
+    app.world_mut().resource_mut::<Table>().replay = None;
+    app.update();
+    check(&mut app, 4);
+
+    {
+        let mut table = app.world_mut().resource_mut::<Table>();
+        table.session = Session::new().unwrap();
+        for id in ["investigate", "commit:0"] {
+            let revision = table.session.observe().revision;
+            table.session.choose(revision, id).unwrap();
+        }
+    }
+    app.update();
+    check(&mut app, 0);
+    let world = app.world_mut();
+    let commitment = world
+        .query::<(&CardSource, &Transform)>()
+        .iter(world)
+        .find(|(source, _)| matches!(source.0, Source::Committed(0)))
+        .expect("the committed hand card remains represented");
+    assert!(commitment.1.translation.z > 2.5);
+    assert!(commitment.1.translation.z < center.z - 9.0);
+}
+
+#[test]
 fn selecting_and_inspecting_two_copies_preserves_the_complete_commitment() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("turn.json");
@@ -1412,7 +1474,9 @@ fn camera_adapter_retains_tony_utilities_wheel_and_escape_frame_pan() {
         .y = 1.0;
     app.world_mut().resource_mut::<Table>().context.utilities = true;
     app.world_mut().run_system_once(camera_controls).unwrap();
-    assert!((app.world().resource::<Orbit>().pose().distance - 15.4).abs() < 0.00001);
+    assert!(
+        (app.world().resource::<Orbit>().pose().distance - (before.distance - 0.6)).abs() < 0.00001
+    );
     assert!(app.world().resource::<Table>().context.utilities);
     app.world_mut().resource_mut::<Table>().context.utilities = false;
     app.world_mut()
@@ -1444,11 +1508,19 @@ fn camera_adapter_selects_tony_replay_targets_and_reduced_motion() {
     choose(&mut app, "investigate");
     act(&mut app, Action::Focus(Area::Overview));
     act(&mut app, Action::Replay);
-    assert_eq!(app.world().resource::<Orbit>().pose().distance, 16.0);
+    assert_eq!(
+        app.world().resource::<Orbit>().pose().distance,
+        layout::focus(Area::Investigator(0)).1
+    );
+    let start = app.world().resource::<Orbit>().pose().target;
     advance(&mut app, 0.1);
     let moving = app.world().resource::<Orbit>().pose();
-    assert!((moving.target.x + 4.8).abs() < 0.00001);
-    assert!((moving.target.z - 6.4).abs() < 0.00001);
+    let destination = layout::focus(Area::Investigator(0)).0;
+    assert!(moving.target.distance(destination) < start.distance(destination));
+    assert_ne!(
+        moving.target, destination,
+        "normal motion still converges gradually"
+    );
     act(&mut app, Action::Follow);
     advance(&mut app, 0.1);
     assert!(!app.world().resource::<Orbit>().is_following());
@@ -1459,12 +1531,12 @@ fn camera_adapter_selects_tony_replay_targets_and_reduced_motion() {
     assert!(app.world().resource::<Table>().harm().is_some());
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
-        scene::INVESTIGATOR_AT
+        scene::investigator_at()
     );
     act(&mut app, Action::Next);
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
-        layout::investigator_center(0, 3)
+        layout::focus(Area::Investigator(0)).0
     );
     act(&mut app, Action::Live);
     choose(&mut app, "commit:none");
@@ -1486,7 +1558,7 @@ fn camera_adapter_selects_tony_replay_targets_and_reduced_motion() {
     assert!(app.world().resource::<Table>().view().held_token.is_some());
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
-        layout::TEST_CENTER
+        layout::focus(Area::Test).0
     );
 }
 

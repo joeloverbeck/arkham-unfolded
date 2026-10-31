@@ -2,13 +2,23 @@
 use super::*;
 use crate::tabletop_discard as discard;
 
-pub(super) const INVESTIGATOR_AT: Vec3 = Vec3::new(-15.8, 0.05, 10.1);
-pub(super) const INJURY_AT: Vec3 = Vec3::new(-13.1, 0.05, 7.2);
-pub(super) const DECK_AT: Vec3 = Vec3::new(-8.0, 0.05, 9.5);
-pub(super) const TOKEN_AT: Vec3 = Vec3::new(2.1, 0.2, 0.8);
-const DISCARD_AT: Vec3 = Vec3::new(-8.0, 0.05, 12.0);
-const BAG_AT: Vec3 = Vec3::new(5.5, 0.35, 0.0);
 const STUDY_AT: Vec3 = Vec3::new(-2.5, 0.05, -3.8);
+
+pub(super) fn investigator_at() -> Vec3 {
+    layout::investigator_card(0)
+}
+
+pub(super) fn injury_at() -> Vec3 {
+    layout::investigator_threat(0, 0)
+}
+
+pub(super) fn deck_at() -> Vec3 {
+    layout::investigator_deck(0)
+}
+
+pub(super) fn token_at() -> Vec3 {
+    layout::test_token(false, 0)
+}
 
 pub(super) fn card_transform(index: usize, at: Vec3, exhausted: bool) -> Transform {
     use layout::ScenarioBookSide;
@@ -29,7 +39,7 @@ pub(super) fn card_transform(index: usize, at: Vec3, exhausted: bool) -> Transfo
 }
 pub(super) fn ghoul_at(view: &Observation) -> Vec3 {
     if view.ghoul.engaged {
-        Vec3::new(-10.4, 0.05, 7.2)
+        layout::investigator_threat(0, 1)
     } else {
         Vec3::new(0.7, 0.05, -3.8)
     }
@@ -48,6 +58,8 @@ pub(super) fn synchronize_scene(
     mut rendered: Local<Option<SceneSnapshot>>,
 ) {
     let view = table.view();
+    let discard_at = layout::investigator_discard(0);
+    let bag_at = layout::test_bag();
     let key = (view.clone(), table.context.commitments.clone());
     if rendered.as_ref() == Some(&key) {
         return;
@@ -66,12 +78,7 @@ pub(super) fn synchronize_scene(
         commands.entity(entity).despawn();
     }
     let mut fixed = vec![
-        (
-            0,
-            INVESTIGATOR_AT,
-            format!("Tony\nDamage {}/9 · Horror {}/5", view.damage, view.horror),
-            false,
-        ),
+        (0, investigator_at(), String::new(), false),
         (
             1,
             STUDY_AT,
@@ -80,7 +87,7 @@ pub(super) fn synchronize_scene(
         ),
         (
             3,
-            Vec3::new(-12.4, 0.05, 10.1),
+            layout::investigator_asset(0, 0),
             format!("Bounty Contracts\n{} bounties", view.contracts_bounties),
             false,
         ),
@@ -108,8 +115,9 @@ pub(super) fn synchronize_scene(
             2,
             ghoul_at(&view),
             format!(
-                "Ghoul Minion\nDamage {}/2\n{} / {}\nBounty {}",
+                "Ghoul Minion\nDamage {}/2 · Bounty {}\n{}·{}",
                 view.ghoul.damage,
+                view.ghoul.bounties,
                 if view.ghoul.ready {
                     "Ready"
                 } else {
@@ -119,19 +127,13 @@ pub(super) fn synchronize_scene(
                     "Engaged"
                 } else {
                     "At Study"
-                },
-                view.ghoul.bounties
+                }
             ),
             !view.ghoul.ready,
         ));
     }
     if view.injury {
-        fixed.push((
-            4,
-            INJURY_AT,
-            "Internal Injury\nTony's threat area".into(),
-            false,
-        ));
+        fixed.push((4, injury_at(), "Internal Injury".into(), false));
     }
     for (index, at, caption, exhausted) in fixed {
         let source = Source::Card(index);
@@ -145,7 +147,11 @@ pub(super) fn synchronize_scene(
             exhausted,
             (view.revision, source),
         );
-        let caption_at = if matches!(index, 8 | 9) {
+        let caption_at = if index == 2 && view.ghoul.engaged {
+            // This prepared position has two threats. Keep the enemy's state
+            // beside its card within the band, clear of the asset region below.
+            at + Vec3::new(2.8, 0.1, -0.7)
+        } else if matches!(index, 8 | 9) {
             // Keep the screen-space caption outside the entire page. Raising its
             // world anchor alone still projects a downward-growing label over art.
             at + Vec3::new(
@@ -156,7 +162,24 @@ pub(super) fn synchronize_scene(
         } else {
             at + Vec3::new(0.0, 0.1, 1.1)
         };
-        let label = world_label(&mut commands, &art, caption, caption_at, PAPER);
+        if caption.is_empty() {
+            continue;
+        }
+        let (width, font_size) = match index {
+            2 => (130.0, 10.5),
+            4 => (90.0, 10.5),
+            0 | 3 => (120.0, 12.0),
+            _ => (160.0, 13.0),
+        };
+        let label = world_label_sized(
+            &mut commands,
+            &art,
+            caption,
+            caption_at,
+            PAPER,
+            width,
+            font_size,
+        );
         if matches!(index, 8 | 9) {
             // Anchor the two captions outward so they cannot cover each other.
             commands
@@ -220,13 +243,14 @@ pub(super) fn synchronize_scene(
             image.as_ref(),
             at,
             layout::investigator_class(index),
+            Vec2::new(CARD_WIDTH, CARD_LENGTH),
         );
         commands.entity(standee).insert(Scene);
         let left = slot < 2;
         let label_at = at
             + Vec3::new(
                 if left { -0.25 } else { 0.25 },
-                crate::tabletop_standees::HEIGHT + 0.15,
+                crate::tabletop_standees::height_for(Vec2::new(CARD_WIDTH, CARD_LENGTH)) + 0.15,
                 0.0,
             );
         let label = world_label(
@@ -253,13 +277,15 @@ pub(super) fn synchronize_scene(
             .and_modify(|mut node| {
                 node.width = px(108);
             });
-        let center = layout::investigator_center(index, 3);
         area_heading(
             &mut commands,
             &art,
             investigator.name.clone(),
-            center + Vec3::new(0.0, 0.05, -4.3),
+            layout::investigator_heading(index),
         );
+        for (label, at) in layout::zone_labels(index) {
+            world_label_sized(&mut commands, &art, label.into(), at, MUTED, 60.0, 11.0);
+        }
         if index > 0 {
             // The fixture supplies identity/location/horror, but no personal piles or playable turn.
             if let Some(image) = image {
@@ -270,28 +296,23 @@ pub(super) fn synchronize_scene(
                         unlit: true,
                         ..default()
                     })),
-                    Transform::from_translation(center + Vec3::new(-3.5, 0.05, 0.0)),
+                    Transform::from_translation(layout::investigator_card(index)),
                     Scene,
                     Pickable::IGNORE,
                 ));
             }
-            world_label(
+            world_label_sized(
                 &mut commands,
                 &art,
-                format!(
-                    "Study · Horror {}/{}\nCompanion · no turn here\nPersonal cards not modeled",
-                    investigator.horror, investigator.sanity
-                ),
-                center,
+                "Study · companion\nPersonal cards unrepresented".into(),
+                layout::investigator_status(index),
                 MUTED,
+                110.0,
+                11.0,
             );
         }
     }
     for (text, at) in [
-        ("Tony's threats", Vec3::new(-15.8, 0.1, 6.0)),
-        ("Hand", Vec3::new(-10.4, 0.1, 11.65)),
-        // Reserve the space above Tony for harm amounts, counters and totals.
-        ("Assets in play", Vec3::new(-15.8, 0.1, 6.9)),
         (
             "Encounter deck\nReserved · not modeled",
             Vec3::new(4.0, 0.1, -3.7),
@@ -313,14 +334,22 @@ pub(super) fn synchronize_scene(
         &mut commands,
         &art,
         "Shared test area".into(),
-        layout::TEST_CENTER + Vec3::new(-3.5, 0.1, -1.5),
+        layout::TEST_CENTER + Vec3::new(0.0, 0.1, -5.5),
+    );
+    for (label, at) in layout::test_zone_labels() {
+        world_label(&mut commands, &art, label.into(), at, MUTED);
+    }
+    world_label_sized(
+        &mut commands,
+        &art,
+        format!("Resources {}\nClues {}", view.resources, view.clues),
+        layout::investigator_status(0),
+        MUTED,
+        100.0,
+        11.0,
     );
     for (index, card) in view.hand.iter().enumerate() {
-        let at = Vec3::new(
-            -15.5 + (index % 4) as f32 * 1.8,
-            0.05,
-            13.0 + (index / 4) as f32 * 2.4,
-        );
+        let at = layout::hand_position(0, view.hand.len(), index);
         if let Some(face) = CARDS.iter().position(|c| c.code == card.code) {
             let source = Source::Hand(card.id);
             card_mesh(
@@ -352,7 +381,7 @@ pub(super) fn synchronize_scene(
         }
     }
     for (index, card) in view.committed.iter().enumerate() {
-        let at = layout::TEST_CENTER + Vec3::new(-3.3 + index as f32 * 1.8, 0.05, -0.2);
+        let at = layout::test_commitment(view.committed.len(), index);
         if let Some(face) = CARDS.iter().position(|c| c.code == card.code) {
             card_mesh(
                 &mut commands,
@@ -381,12 +410,14 @@ pub(super) fn synchronize_scene(
         view.deck_count,
         view.revision,
     );
-    world_label(
+    world_label_sized(
         &mut commands,
         &art,
-        format!("Tony's deck\n{} cards", view.deck_count),
-        DECK_AT + Vec3::new(0.0, 0.2, 1.05),
+        format!("{} cards", view.deck_count),
+        deck_at() + Vec3::new(0.0, 0.2, 1.05),
         MUTED,
+        64.0,
+        12.0,
     );
     // All discard identities remain in their recorded order; the top opens its collection browser.
     for (index, card) in view.discard.iter().enumerate() {
@@ -397,37 +428,39 @@ pub(super) fn synchronize_scene(
                 &mut materials,
                 &art,
                 face,
-                DISCARD_AT + Vec3::Y * index as f32 * CARD_THICKNESS,
+                discard_at + Vec3::Y * index as f32 * CARD_THICKNESS,
                 false,
                 (view.revision, Source::Discard),
             );
         }
     }
-    world_label(
+    world_label_sized(
         &mut commands,
         &art,
-        format!("Tony's discard\n{} cards", view.discard.len()),
-        DISCARD_AT + Vec3::new(0.0, 0.2, 1.05),
+        format!("{} cards", view.discard.len()),
+        discard_at + Vec3::new(0.0, 0.2, 1.05),
         MUTED,
+        64.0,
+        12.0,
     );
     let revision = view.revision;
     commands
         .spawn((
             Mesh3d(meshes.add(Cylinder::new(0.45, 0.7))),
             MeshMaterial3d(materials.add(Color::srgb(0.18, 0.10, 0.16))),
-            Transform::from_translation(BAG_AT),
+            Transform::from_translation(bag_at),
             Scene,
         ))
         .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
             if event.button == bevy::picking::pointer::PointerButton::Primary {
-                queue.0.push(Action::Select(revision, Source::Bag, BAG_AT));
+                queue.0.push(Action::Select(revision, Source::Bag, bag_at));
             }
         });
     world_label(
         &mut commands,
         &art,
         format!("Chaos bag\n{} tokens", view.bag_count),
-        BAG_AT + Vec3::new(0.0, 0.6, 0.8),
+        bag_at + Vec3::new(0.0, 0.6, 0.8),
         GOLD,
     );
     if let Some(face) = view.held_token {
@@ -449,7 +482,7 @@ pub(super) fn synchronize_scene(
                 status,
                 ordinal: None,
                 image: art.image(&format!("token/{}", token_role(face))),
-                transform: Transform::from_translation(TOKEN_AT).with_scale(token_scale),
+                transform: Transform::from_translation(token_at()).with_scale(token_scale),
                 label_offset: Vec3::new(0.0, 0.0, 1.05),
             },
         );
@@ -461,7 +494,7 @@ pub(super) fn synchronize_scene(
                 if event.button == bevy::picking::pointer::PointerButton::Primary {
                     queue
                         .0
-                        .push(Action::Select(revision, Source::Token, TOKEN_AT));
+                        .push(Action::Select(revision, Source::Token, token_at()));
                 }
             });
         commands.entity(label).insert(Scene);

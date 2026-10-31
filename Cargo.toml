@@ -41,6 +41,11 @@ required-features = ["tabletop"]
 name = "arkham-driver"
 path = "src/bin/driver.rs"
 
+[[example]]
+name = "layout_capacity"
+required-features = ["tabletop"]
+test = false
+
 [profile.dev]
 opt-level = 1
 

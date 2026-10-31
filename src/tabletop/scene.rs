@@ -59,6 +59,8 @@ struct ReminderPose {
 #[derive(Component)]
 struct WorldLabel(Vec3);
 #[derive(Component)]
+struct HarmCaption;
+#[derive(Component)]
 struct StandeeLabel {
     left: bool,
 }
@@ -94,7 +96,7 @@ fn setup_reminder(
         .spawn((
             Mesh3d(meshes.add(Cylinder::new(0.20, 0.06))),
             MeshMaterial3d(materials.add(Color::srgb(0.35, 0.35, 0.35))),
-            Transform::from_xyz(13.5, 0.22, 10.0),
+            Transform::from_translation(reminder_position()),
             Pickable::IGNORE,
             ReminderPose {
                 angle: 0.0,
@@ -128,6 +130,10 @@ fn setup_reminder(
                 ));
             }
         });
+}
+
+fn reminder_position() -> Vec3 {
+    tabletop_layout::investigator_card(2) + Vec3::new(2.0, 0.10, 0.0)
 }
 
 fn label(
@@ -182,20 +188,31 @@ fn synchronize(
     } else {
         0.0
     };
-    label(
+    let reaction_label = label(
         &mut commands,
         format!(
-            "Reaction reminder\n{}",
+            "Reaction\n{}",
             if view.jacqueline_used {
-                "USED THIS ROUND"
+                "Used this round"
             } else {
                 "READY"
             }
         ),
-        Vec3::new(13.5, 0.15, 10.9),
+        reminder_position() + Vec3::new(0.0, 0.0, 0.7),
         if view.jacqueline_used { MUTED } else { GOLD },
         &art.symbol_font,
     );
+    commands
+        .entity(reaction_label)
+        .entry::<Node>()
+        .and_modify(|mut node| {
+            node.width = px(64);
+            node.padding = UiRect::all(px(4));
+        });
+    commands
+        .entity(reaction_label)
+        .entry::<TextFont>()
+        .and_modify(|mut font| font.font_size = FontSize::Px(11.0));
     for (location, center) in [("Study", STUDY_AT), ("Hallway", HALLWAY_AT)] {
         let occupants: Vec<_> = view
             .investigators
@@ -245,13 +262,14 @@ fn synchronize(
                 image,
                 position,
                 tabletop_layout::investigator_class(i),
+                LOCATION_SIZE,
             );
             commands.entity(standee).insert(TransientScene);
             let left = slot < 2;
             let label_at = position
                 + Vec3::new(
-                    if left { -1.0 } else { 1.0 } * (standees::BASE_RADIUS + 0.10),
-                    standees::HEIGHT / 2.0,
+                    if left { -1.0 } else { 1.0 } * (standees::radius_for(LOCATION_SIZE) + 0.10),
+                    standees::height_for(LOCATION_SIZE) / 2.0,
                     0.0,
                 );
             let name = investigator
@@ -285,58 +303,110 @@ fn synchronize(
             "Chaos bag · {}\n{} curse in bag",
             view.bag_count, view.curses_in_bag
         ),
-        Vec3::new(-6.4, 1.2, 0.5),
+        tabletop_layout::test_bag().with_y(0.1) + Vec3::new(-2.6, 0.0, -0.5),
         GOLD,
         &art.symbol_font,
     );
     for (index, investigator) in view.investigators.iter().enumerate() {
-        let center = crate::tabletop_layout::investigator_center(index, 3);
         let name = label(
             &mut commands,
             &investigator.name,
-            center + Vec3::new(0.0, 0.2, -4.05),
+            tabletop_layout::investigator_heading(index),
             GOLD,
             &art.symbol_font,
         );
         commands.entity(name).insert(LabelDisplay::Always);
-        label(
+        if index != 2 {
+            label(
+                &mut commands,
+                "Investigator card\nNot represented",
+                tabletop_layout::investigator_card(index),
+                MUTED,
+                &art.symbol_font,
+            );
+        }
+        let status = label(
             &mut commands,
-            format!(
-                "{}\nHorror {}/{}",
-                investigator.location, investigator.horror, investigator.sanity
-            ),
-            center + Vec3::new(-3.5, 0.2, -2.7),
+            &investigator.location,
+            tabletop_layout::investigator_status(index),
             PAPER,
             &art.symbol_font,
         );
-        label(
-            &mut commands,
-            "Threat area",
-            center + Vec3::new(0.0, 0.1, -2.7),
-            MUTED,
-            &art.symbol_font,
-        );
-        label(
-            &mut commands,
-            "Assets",
-            center + Vec3::new(0.0, 0.1, -0.7),
-            MUTED,
-            &art.symbol_font,
-        );
-        label(
-            &mut commands,
-            "Hand",
-            center + Vec3::new(-3.4, 0.1, 3.8),
-            MUTED,
-            &art.symbol_font,
-        );
-        label(
-            &mut commands,
-            "Deck / discard\nNot represented",
-            center + Vec3::new(3.6, 0.1, 2.5),
-            MUTED,
-            &art.symbol_font,
-        );
+        commands
+            .entity(status)
+            .entry::<Node>()
+            .and_modify(|mut node| {
+                node.width = px(64);
+                node.padding = UiRect::all(px(4));
+            });
+        for horror in [false, true] {
+            let at = tabletop_layout::investigator_harm(index, horror);
+            // This older experiment has no prepared harm artwork or represented damage.
+            let token = crate::tabletop_harm_tokens::spawn(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                None,
+                at,
+                horror,
+            );
+            commands.entity(token).insert(TransientScene);
+            let text = if horror {
+                format!("Horror\n{}/{}", investigator.horror, investigator.sanity)
+            } else {
+                "Damage\nn/a".to_owned()
+            };
+            commands.spawn((
+                Text::new(text),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(PAPER),
+                TextLayout::justify(Justify::Center),
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: px(64.0),
+                    ..default()
+                },
+                WorldLabel(at + Vec3::Z * 0.4),
+                HarmCaption,
+                LabelDisplay::Detail,
+                TransientScene,
+                Pickable::IGNORE,
+            ));
+        }
+        for (title, position) in tabletop_layout::zone_labels(index) {
+            let zone = label(&mut commands, title, position, MUTED, &art.symbol_font);
+            if matches!(title, "Deck" | "Discard" | "Assets") {
+                commands
+                    .entity(zone)
+                    .entry::<Node>()
+                    .and_modify(|mut node| {
+                        node.width = px(80);
+                        node.padding = UiRect::all(px(4));
+                    });
+            }
+        }
+        for position in [
+            tabletop_layout::investigator_deck(index),
+            tabletop_layout::investigator_discard(index),
+        ] {
+            let placeholder = label(
+                &mut commands,
+                "Not\nmodeled",
+                position,
+                MUTED,
+                &art.symbol_font,
+            );
+            commands
+                .entity(placeholder)
+                .entry::<Node>()
+                .and_modify(|mut node| {
+                    node.width = px(80);
+                    node.padding = UiRect::all(px(4));
+                });
+        }
     }
     let scenario_name = label(
         &mut commands,
@@ -363,10 +433,13 @@ fn synchronize(
     label(
         &mut commands,
         "Shared test area",
-        Vec3::new(0.0, 0.1, 2.2),
+        tabletop_layout::TEST_CENTER + Vec3::new(0.0, 0.1, -5.5),
         GOLD,
         &art.symbol_font,
     );
+    for (title, position) in tabletop_layout::test_zone_labels() {
+        label(&mut commands, title, position, MUTED, &art.symbol_font);
+    }
     for (i, card) in CARDS.iter().enumerate() {
         if view
             .encounter_discard()
@@ -422,15 +495,43 @@ fn synchronize(
             2.52,
             0.0,
         );
+        if card.landscape {
+            // Personal identity and location already have dedicated labels.
+            // The card itself retains its existing picking and inspection path.
+            if art.handles[i].is_none() {
+                let title = label(
+                    &mut commands,
+                    card.title,
+                    position + Vec3::Y * 0.1,
+                    PAPER,
+                    &art.symbol_font,
+                );
+                commands
+                    .entity(title)
+                    .insert(LabelDisplay::Always)
+                    .entry::<Node>()
+                    .and_modify(|mut node| {
+                        node.width = px(108);
+                        node.padding = UiRect::all(px(4));
+                    });
+            }
+            continue;
+        }
         let status = if i == 1 && view.promise_committed {
-            "Committed / +4"
+            "Patrice / Committed / +4"
         } else if i == 1 {
             "Patrice's hand"
         } else {
             "Select for actions / Inspect"
         };
-        let caption_position =
-            position + Vec3::new(0.0, 0.07, if card.landscape { 1.25 } else { -1.65 });
+        let caption_position = position
+            + if card.landscape {
+                Vec3::new(0.0, 0.07, 1.25)
+            } else {
+                // The portrait cards are solitary in this experiment's hand/test.
+                // Put their screen-sized captions beside the face, not over it.
+                Vec3::new(2.5, 0.07, -0.6)
+            };
         let caption = label(
             &mut commands,
             format!("{}\n{status}", card.title),
@@ -452,15 +553,10 @@ fn synchronize(
             },
         ));
         if art.handles[i].is_none() {
-            let overview_position = if i == 1 && view.promise_committed {
-                caption_position + Vec3::Z * 2.9
-            } else {
-                caption_position
-            };
             let title = label(
                 &mut commands,
                 card.title,
-                overview_position,
+                caption_position,
                 PAPER,
                 &art.symbol_font,
             );
@@ -518,22 +614,16 @@ fn synchronize(
     );
     let mut canceled_index = 0;
     let mut active_index = 0;
-    let has_canceled = view
-        .tokens
-        .iter()
-        .any(|token| token.status == TokenStatus::Canceled);
-    for (i, token) in view.tokens.iter().enumerate() {
+    for token in &view.tokens {
         let canceled = token.status == TokenStatus::Canceled;
-        let x = if canceled {
-            let x = -4.5 + canceled_index as f32 * 1.3;
+        let position = if canceled {
+            let position = tabletop_layout::test_token(true, canceled_index);
             canceled_index += 1;
-            x
-        } else if has_canceled {
-            let x = -0.6 + active_index as f32 * 1.3;
-            active_index += 1;
-            x
+            position
         } else {
-            -1.8 + i as f32 * 1.30
+            let position = tabletop_layout::test_token(false, active_index);
+            active_index += 1;
+            position
         };
         let is_new = rendered_view.as_ref().is_none_or(|previous| {
             !previous
@@ -546,21 +636,20 @@ fn synchronize(
             .iter()
             .find(|(face, _)| *face == token.face)
             .map(|(_, image)| image.clone());
-        let (disk, label) =
-            tabletop_tokens::spawn(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                tabletop_tokens::TokenVisual {
-                    face: token.face,
-                    status: token.status,
-                    ordinal: Some(usize::from(token.id) + 1),
-                    image,
-                    transform: Transform::from_xyz(x, 0.15, 1.2)
-                        .with_scale(Vec3::splat(if is_new { 0.5 } else { 1.0 })),
-                    label_offset: Vec3::new(0.0, -0.05, -1.0),
-                },
-            );
+        let (disk, label) = tabletop_tokens::spawn(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            tabletop_tokens::TokenVisual {
+                face: token.face,
+                status: token.status,
+                ordinal: Some(usize::from(token.id) + 1),
+                image,
+                transform: Transform::from_translation(position)
+                    .with_scale(Vec3::splat(if is_new { 0.5 } else { 1.0 })),
+                label_offset: Vec3::new(0.0, -0.05, 0.75),
+            },
+        );
         let token_id = token.id;
         commands
             .entity(disk)
@@ -591,6 +680,8 @@ fn synchronize(
     *rendered_view = Some(view.clone());
 }
 
+// Bevy supplies the label components separately; one projection pass keeps their placement aligned.
+#[allow(clippy::type_complexity)]
 fn label_positions(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     orbit: Res<super::Orbit>,
@@ -598,11 +689,12 @@ fn label_positions(
         &WorldLabel,
         &LabelDisplay,
         Option<&StandeeLabel>,
+        Option<&HarmCaption>,
         &mut Node,
         &mut Visibility,
     )>,
 ) {
-    for (anchor, display, standee, mut node, mut visibility) in &mut labels {
+    for (anchor, display, standee, harm, mut node, mut visibility) in &mut labels {
         if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor.0) {
             let Val::Px(width) = node.width else { continue };
             node.left = px(match standee {
@@ -610,7 +702,7 @@ fn label_positions(
                 Some(_) => point.x,
                 None => point.x - width / 2.0,
             });
-            node.top = px(point.y - 16.0);
+            node.top = px(point.y - if harm.is_some() { 0.0 } else { 16.0 });
             *visibility = if display.visible(orbit.pose().distance) {
                 Visibility::Visible
             } else {
