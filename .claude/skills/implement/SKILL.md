@@ -24,4 +24,4 @@ At the first handoff with human verification still outstanding, give the user a 
 
 Once done, call the Skill tool with "code-review", passing the recorded review fixed point, the originating issue/spec and **working-tree review** as the candidate mode. Identify the task's changed and new files and any pre-existing edits outside its scope. Follow that skill's candidate-capture procedure before committing.
 
-Commit the reviewed work to the selected task branch.
+Stage the reviewed task files without disturbing unrelated staged work. After staging, run `scripts/check-index` through the recorded-check procedure above and require success before committing only the reviewed task files to the selected task branch. This covers new files that were untracked during the full gate.
