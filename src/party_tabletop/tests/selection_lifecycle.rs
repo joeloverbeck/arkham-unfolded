@@ -257,7 +257,7 @@ fn rendered_cancellation_preserves_alternatives_and_pending_tokens_through_inspe
     }
 }
 
-fn production_app(path: PathBuf, health: RenderHealth) -> (App, Entity) {
+pub(super) fn production_app(path: PathBuf, health: RenderHealth) -> (App, Entity) {
     use bevy::{
         camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
         input_focus::{InputDispatchPlugin, InputFocusPlugin},

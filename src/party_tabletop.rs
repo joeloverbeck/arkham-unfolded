@@ -34,6 +34,7 @@ use std::{
 };
 mod cards;
 mod controls;
+mod location_map;
 mod scene;
 mod ui;
 use cards::CARDS;
@@ -112,11 +113,13 @@ struct Table {
     history: bool,
     dirty: bool,
     reduced_motion: bool,
+    resume_result: bool,
     context: Context,
 }
 impl Table {
     fn new(session: Session, save_path: PathBuf) -> Self {
         Self {
+            resume_result: session.observe().stage == crate::party::Stage::Result,
             session,
             replay: None,
             save_path,
@@ -131,20 +134,25 @@ impl Table {
     fn view(&self) -> Observation {
         self.replay
             .as_ref()
-            .map_or_else(|| self.session.observe(), |r| r.current().clone())
+            .map_or_else(|| self.session.observe_for_play(), |r| r.current().clone())
     }
     fn show_test_summary(&self, view: &Observation) -> bool {
         if test_window(view) {
             return true;
         }
-        // Finishing the test computes its result and immediately leaves Result.
-        // Keep that settled moment visible, including after reopen or in replay.
-        let previous_stage = if let Some(replay) = &self.replay {
+        // Keep the newly settled result visible, including after reopen or in
+        // replay. The last token now performs cleanup without a Result stop.
+        let previous_test_pending = if let Some(replay) = &self.replay {
             replay
                 .index()
                 .checked_sub(1)
                 .and_then(|index| replay.recording().moments.get(index))
-                .map(|moment| moment.stage)
+                .is_some_and(|moment| {
+                    moment
+                        .test
+                        .as_ref()
+                        .is_some_and(|test| test.result.is_none())
+                })
         } else {
             let recording = self.session.recording();
             recording
@@ -152,13 +160,20 @@ impl Table {
                 .len()
                 .checked_sub(2)
                 .and_then(|index| recording.moments.get(index))
-                .map(|moment| moment.stage)
+                .is_some_and(|moment| {
+                    moment
+                        .test
+                        .as_ref()
+                        .is_some_and(|test| test.result.is_none())
+                })
         };
-        previous_stage == Some(crate::party::Stage::Result)
-            && view.test.as_ref().is_some_and(|test| test.result.is_some())
+        previous_test_pending && view.test.as_ref().is_some_and(|test| test.result.is_some())
     }
     fn modal(&self) -> bool {
-        self.inspect.is_some() || self.history
+        self.act_reveal() || self.inspect.is_some() || self.history
+    }
+    fn act_reveal(&self) -> bool {
+        self.view().stage == crate::party::Stage::ActReveal
     }
     fn invalidate(&mut self) {
         self.context.sync(
@@ -221,6 +236,13 @@ struct WorldLabel(Vec3, bool);
 struct CardSource(Source);
 #[derive(Component)]
 struct Appearing;
+
+#[derive(Component)]
+struct ReturningToken {
+    start: Vec3,
+    destination: Vec3,
+    elapsed: f32,
+}
 #[derive(Resource)]
 struct Capture {
     path: Option<PathBuf>,
@@ -395,6 +417,7 @@ fn handle_actions(
     keys: Res<ButtonInput<KeyCode>>,
     mut focus: Option<ResMut<InputFocus>>,
     mut shortcut: ResMut<reveal::Shortcut>,
+    returning: Query<(), With<ReturningToken>>,
 ) {
     let revision = table.view().revision;
     let replay_index = table.replay.as_ref().map(Replay::index);
@@ -409,7 +432,31 @@ fn handle_actions(
     actions
         .0
         .extend(shortcut.drain().into_iter().map(Action::Reveal));
+    // Reading an old save is side-effect free. Its former administrative Result
+    // stop continues once after rendering admits play, through the same atomic
+    // save-before-install path as a click. Failed saves do not retry each frame.
+    if table.resume_result
+        && table.replay.is_none()
+        && health.allows_play()
+        && !health.just_became_ready()
+        && !settings.is_busy()
+        && !table.modal()
+    {
+        table.resume_result = false;
+        actions.0.insert(
+            0,
+            Action::Choose(table.view().revision, "finish-test".into()),
+        );
+    }
     for action in actions.0.drain(..) {
+        if !returning.is_empty()
+            && !matches!(
+                action,
+                Action::Focus(_) | Action::Close | Action::Dismiss | Action::Motion
+            )
+        {
+            continue;
+        }
         // Discard input queued before admission, including a click from the last
         // checking frame. Camera navigation and dismissal never change the record.
         if (!health.allows_play() || health.just_became_ready())
@@ -417,7 +464,18 @@ fn handle_actions(
         {
             continue;
         }
-        if settings.is_busy() || (table.modal() && !matches!(action, Action::Close)) {
+        let permitted_in_modal = if table.act_reveal() {
+            match &action {
+                Action::Choose(_, id) => table.replay.is_none() && id == "continue-act",
+                Action::Next | Action::Back | Action::Live => table.replay.is_some(),
+                Action::Save | Action::Reopen | Action::Replay => table.replay.is_none(),
+                _ => false,
+            }
+        } else {
+            matches!(action, Action::Close)
+                || (table.history && matches!(action, Action::Inspect(_)))
+        };
+        if settings.is_busy() || (table.modal() && !permitted_in_modal) {
             continue;
         }
         let mut reveal_focus = false;
@@ -493,8 +551,10 @@ fn handle_actions(
                     .toggle(&view, live, epoch, revision, id, cancel);
             }
             Action::Inspect(index) => {
-                if let Some(index) = table.context.inspect(index) {
+                let view = table.view();
+                if let Some(index) = table.context.inspect(&view, index) {
                     table.inspect = Some(index);
+                    table.history = false;
                 }
             }
             Action::History => {
@@ -521,6 +581,8 @@ fn handle_actions(
             Action::Reopen if table.replay.is_none() => {
                 match continuity::load_session(&table.save_path) {
                     Ok(session) => {
+                        table.resume_result =
+                            session.observe().stage == crate::party::Stage::Result;
                         table.session = session;
                         table.context.reset();
                         table.notice = "Reopened the exact saved decision and randomness.".into();
@@ -634,14 +696,18 @@ fn replay_framing(replay: &Replay) -> (Vec3, f32) {
         .index()
         .checked_sub(1)
         .and_then(|index| replay.recording().moments.get(index));
-    if matches!(view.stage, Stage::Closing | Stage::Ended) {
+    if matches!(view.stage, Stage::Closing | Stage::ActReveal | Stage::Ended) {
         return layout::focus(Area::Scenario);
     }
     if view.stage == Stage::AfterTest || previous.is_some_and(|view| view.stage == Stage::AfterTest)
     {
         return (scene::discard_at(Investigator::Patrice).with_y(0.), 12.);
     }
-    if test_window(view) || previous.is_some_and(|view| view.stage == Stage::Result) {
+    if test_window(view)
+        || (view.test.as_ref().is_some_and(|test| test.result.is_some())
+            && previous
+                .is_some_and(|view| view.test.as_ref().is_some_and(|test| test.result.is_none())))
+    {
         return layout::focus(Area::Test);
     }
     layout::focus(
@@ -737,7 +803,7 @@ fn camera_controls(
         keys: &keys,
         buttons: &buttons,
         window: &window,
-        scroll_y: scroll.delta.y,
+        scroll_y: crate::tabletop_camera::wheel_steps(&scroll),
         dt: time.delta_secs(),
         capture: CameraCapture {
             pointer_blocked: modal,
@@ -766,7 +832,7 @@ fn world_labels(
     )>,
 ) {
     for (label, computed, test_heading, mut node, mut visibility) in &mut labels {
-        if orbit.pose().distance > 30. && !label.1 {
+        if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
             *visibility = Visibility::Hidden;
             continue;
         }
@@ -789,9 +855,11 @@ fn world_labels(
     }
 }
 fn animate(
+    mut commands: Commands,
     time: Res<PresentationTime>,
     table: Res<Table>,
-    mut transforms: Query<&mut Transform, With<Appearing>>,
+    mut transforms: Query<&mut Transform, (With<Appearing>, Without<ReturningToken>)>,
+    mut returning: Query<(Entity, &mut Transform, &mut ReturningToken)>,
 ) {
     for mut transform in &mut transforms {
         transform.scale = if table.reduced_motion {
@@ -807,16 +875,33 @@ fn animate(
             }
         };
     }
+    for (entity, mut transform, mut transfer) in &mut returning {
+        transfer.elapsed += time.delta_secs();
+        let fraction = if table.reduced_motion {
+            1.
+        } else {
+            (transfer.elapsed / 0.6).min(1.)
+        };
+        let eased = fraction * fraction * (3. - 2. * fraction);
+        transform.translation = transfer.start.lerp(transfer.destination, eased)
+            + Vec3::Y * (std::f32::consts::PI * fraction).sin() * 0.5;
+        transform.scale = Vec3::splat(1. - fraction * 0.9);
+        if fraction >= 1. {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 fn request_redraw(
     mut redraw: ResMut<Redraw>,
     orbit: Res<Orbit>,
     appearing: Query<&Transform, With<Appearing>>,
+    returning: Query<(), With<ReturningToken>>,
     capture: Res<Capture>,
     screenshots: Query<(), With<Screenshot>>,
 ) {
     if orbit.is_moving()
         || appearing.iter().any(|t| t.scale != Vec3::ONE)
+        || !returning.is_empty()
         || (capture.path.is_some() && (!capture.requested || capture.quit))
         || !screenshots.is_empty()
     {

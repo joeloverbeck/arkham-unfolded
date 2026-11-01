@@ -6,7 +6,12 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 
 pub mod continuity;
-pub const SOURCE_REVISION: &str = "7083162:issue-55-study-escape-v1";
+pub const SOURCE_REVISION: &str = "7083162:issue-55-study-escape-v2-act-reveal";
+const LEGACY_SOURCE_REVISION: &str = "7083162:issue-55-study-escape-v1";
+
+fn supported_source_revision(revision: &str) -> bool {
+    matches!(revision, SOURCE_REVISION | LEGACY_SOURCE_REVISION)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,6 +57,7 @@ pub enum Stage {
     Lucky,
     AfterTest,
     Closing,
+    ActReveal,
     Result,
     Ended,
 }
@@ -137,6 +143,16 @@ impl Observation {
     pub fn investigator(&self, investigator: Investigator) -> &InvestigatorView {
         &self.investigators[investigator.index()]
     }
+
+    /// Tokens physically held outside the bag during the current test. `tokens`
+    /// also retains completed-test evidence in existing saves and recordings.
+    pub fn held_tokens(&self) -> &[VisibleToken] {
+        if self.test.as_ref().is_some_and(|test| test.result.is_none()) {
+            &self.tokens
+        } else {
+            &[]
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,6 +181,17 @@ struct State {
     endpoint: Option<Endpoint>,
     contracts_bounties: u8,
     hidden_epoch: u64,
+}
+
+fn reversible_decision(state: &State) -> bool {
+    !matches!(state.stage, Stage::Result | Stage::ActReveal)
+        && !(state.stage == Stage::Resolve
+            && state
+                .tokens
+                .iter()
+                .filter(|token| token.status == TokenStatus::Pending)
+                .count()
+                == 1)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -326,6 +353,9 @@ impl Session {
             Stage::Closing => {
                 "The party holds six clues. Spend them to advance Act 1, or finish without advancing."
             }
+            Stage::ActReveal => {
+                "Act 1 advances: The Door on the Floor. Read the reverse, then continue."
+            }
             Stage::Result => "Finish the skill test.",
             Stage::Ended => "The prepared attempt has ended.",
         };
@@ -374,6 +404,17 @@ impl Session {
             jacqueline_arcane_research: 2,
         }
     }
+    /// Current player choices may omit obsolete mechanical undo stops from an
+    /// older save. The stored observation and replay remain exactly as recorded.
+    pub fn observe_for_play(&self) -> Observation {
+        let mut view = self.observe();
+        view.can_undo = self.undo.iter().any(reversible_decision);
+        if !view.can_undo {
+            view.choices.retain(|choice| choice.id != "undo");
+        }
+        view
+    }
+
     fn choices(&self) -> Vec<Choice> {
         let mut choices = vec![];
         let mut add = |id: String, label: String| {
@@ -552,6 +593,7 @@ impl Session {
                     "Finish the attempt without advancing".into(),
                 );
             }
+            Stage::ActReveal => add("continue-act".into(), "Continue".into()),
             Stage::Ended => {}
         }
         if !self.undo.is_empty() {
@@ -579,27 +621,43 @@ impl Session {
             ));
         }
         let choice = self
-            .choices()
+            .observe_for_play()
+            .choices
             .into_iter()
             .find(|choice| choice.id == id)
             .ok_or_else(|| RuleError(self.refusal_reason(id)))?;
         let mut candidate = self.clone();
         candidate.history.push(choice.label);
         if id == "undo" {
-            candidate.state = candidate.undo.pop().expect("Offered undo");
+            let index = candidate
+                .undo
+                .iter()
+                .rposition(reversible_decision)
+                .expect("Offered undo");
+            candidate.state = candidate.undo[index].clone();
+            candidate.undo.truncate(index);
             candidate.history.push("Undo restores the prior decision, costs and randomness. Earlier history remains recorded.".into());
         } else {
             let previous = candidate.state.clone();
+            let reversible = reversible_decision(&previous);
             candidate.apply(id)?;
+            // Result is retained for old saves, but new decisions include all
+            // mandatory result/cleanup work before the next genuine choice.
+            if candidate.state.stage == Stage::Result {
+                candidate.apply("finish-test")?;
+            }
             // Token reveals, ordinary draws, and Jacqueline's canceled-elder draw
             // reveal hidden information at commitment, never at animation end.
             let hidden = candidate.state.hidden_epoch != previous.hidden_epoch;
             if hidden {
                 candidate.undo.clear();
-            } else {
+            } else if reversible {
                 candidate.undo.push(previous);
             }
         }
+        // Preserve old observations on load; retire their purely mechanical
+        // undo stops only inside the next successfully saved decision.
+        candidate.undo.retain(reversible_decision);
         candidate.revision += 1;
         candidate.moments.push(candidate.observe());
         *self = candidate;
@@ -768,19 +826,23 @@ impl Session {
             self.post_action();
         } else if id == "decline-shuffle" {
             self.post_action();
-        } else if id == "advance" || id == "decline-advance" {
-            if id == "advance" {
-                self.state.hidden_epoch += 1;
-                for investigator in &mut self.state.investigators {
-                    investigator.clues = 0;
-                    investigator.location = "Hallway".into();
-                }
-                self.state.endpoint = Some(Endpoint::Escaped);
-                self.history.push("Spend all six group clues to advance Trapped. Put Hallway, Cellar, Attic and Parlor into play. No enemies are in Study to discard. Place all investigators in Hallway, reveal Hallway, remove Study, and expose Act 2: The Barrier. Stop before another action; unfinished turns and limits are preserved. [01108 reverse; RR locations]".into());
-            } else {
-                self.state.endpoint = Some(Endpoint::Declined);
-                self.history.push("The party declines Act 1 advancement and finishes this prepared attempt. Keep Study, all six held clues and unfinished turns; no defeat or scenario resolution occurs.".into());
+        } else if id == "advance" {
+            self.state.hidden_epoch += 1;
+            for investigator in &mut self.state.investigators {
+                investigator.clues = 0;
             }
+            self.state.stage = Stage::ActReveal;
+            self.history.push("Spend all six group clues and reveal Act 1b: The Door on the Floor. Read its story and instructions before continuing. [01108 reverse; RR act advancement]".into());
+        } else if id == "continue-act" {
+            for investigator in &mut self.state.investigators {
+                investigator.location = "Hallway".into();
+            }
+            self.state.endpoint = Some(Endpoint::Escaped);
+            self.history.push("Resolve The Door on the Floor: put Hallway, Cellar, Attic and Parlor into play. No enemies are in Study to discard. Place all investigators in Hallway, reveal Hallway, remove Study, and expose Act 2: The Barrier. Stop before another action; unfinished turns and limits are preserved. [01108 reverse; RR locations]".into());
+            self.state.stage = Stage::Ended;
+        } else if id == "decline-advance" {
+            self.state.endpoint = Some(Endpoint::Declined);
+            self.history.push("The party declines Act 1 advancement and finishes this prepared attempt. Keep Study, all six held clues and unfinished turns; no defeat or scenario resolution occurs.".into());
             self.state.stage = Stage::Ended;
         } else if id == "finish-test" {
             let test = self.state.test.as_mut().expect("Result test");
@@ -1157,7 +1219,7 @@ impl Session {
         }
         let total_clues: u16 = state.investigators.iter().map(|i| u16::from(i.clues)).sum();
         if total_clues + u16::from(state.study_clues)
-            != if state.endpoint == Some(Endpoint::Escaped) {
+            != if state.endpoint == Some(Endpoint::Escaped) || state.stage == Stage::ActReveal {
                 0
             } else {
                 6
@@ -1231,11 +1293,13 @@ impl Session {
 }
 
 pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
-    if recording.source_revision != SOURCE_REVISION
+    if !supported_source_revision(&recording.source_revision)
         || recording.app_version != APP_VERSION
         || recording.moments.is_empty()
         || recording.moments.iter().enumerate().any(|(i, moment)| {
             moment.revision != i as u64
+                || (recording.source_revision == LEGACY_SOURCE_REVISION
+                    && moment.stage == Stage::ActReveal)
                 || moment.investigators.len() != 3
                 || moment.tokens.len() > 17
                 || moment.study_clues > 6

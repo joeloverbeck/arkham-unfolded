@@ -114,10 +114,10 @@ pub(super) const CARDS: &[Card] = &[
     },
     Card {
         role: "card/01108/reverse",
-        title: "Trapped — reverse",
+        title: "The Door on the Floor",
         kind: "Act 1b",
         landscape: true,
-        text: "Put into play the set-aside Hallway, Cellar, Attic, and Parlor.\nDiscard each enemy in the Study.\nPlace each investigator in the Hallway.\nRemove the Study from the game.",
+        text: "You notice that the edges of your newly purchased rug are tattered and mud-stained. Finding this odd, you shift the furniture aside and pull back the rug. To your surprise, you see the door leading out of your study. You slowly turn the knob, and the door swings open, revealing your hallway below.\n\nYou jump through the doorway, landing on your feet on soft dirt. The door to the study slams shut above you. The smell of burning wood fills the narrow hall, intermingled with the scent of rot and decay.\n\nPut into play the set-aside Hallway, Cellar, Attic, and Parlor.\nDiscard each enemy in the Study.\nPlace each investigator in the Hallway.\nRemove the Study from the game.",
     },
     Card {
         role: "card/01109",
@@ -171,4 +171,38 @@ pub(super) const CARDS: &[Card] = &[
 ];
 pub(super) fn index(role: &str) -> Option<usize> {
     CARDS.iter().position(|card| card.role == role)
+}
+
+pub(super) fn act_revealed(view: &super::Observation) -> bool {
+    view.stage == crate::party::Stage::ActReveal
+        || view.endpoint == Some(crate::party::Endpoint::Escaped)
+}
+
+/// Artwork availability is not permission to disclose a face. Always use the
+/// displayed observation, including its own point in a recorded replay.
+pub(super) fn inspectable(view: &super::Observation, index: usize) -> bool {
+    let Some(card) = CARDS.get(index) else {
+        return false;
+    };
+    match card.role {
+        "card/06003" | "card/06005" | "card/60401" | "card/06010" | "card/04109" | "card/01104"
+        | "card/01105" | "card/01108" => true,
+        "card/01108/reverse" => act_revealed(view),
+        "card/01109" => view.endpoint == Some(crate::party::Endpoint::Escaped),
+        role => {
+            view.locations.iter().any(|location| {
+                let role_for_face = if location.code == "01112" && !location.revealed {
+                    format!("card/{}/unrevealed", location.code)
+                } else {
+                    format!("card/{}", location.code)
+                };
+                role == role_for_face
+            }) || view
+                .investigators
+                .iter()
+                .flat_map(|investigator| investigator.hand.iter().chain(&investigator.discard))
+                .chain(view.test.iter().flat_map(|test| &test.committed))
+                .any(|visible| role == format!("card/{}", visible.code))
+        }
+    }
 }

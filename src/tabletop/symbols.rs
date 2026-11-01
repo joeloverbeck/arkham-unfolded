@@ -35,6 +35,15 @@ impl Skill {
         }
     }
 
+    pub(crate) fn title(self) -> &'static str {
+        match self {
+            Self::Willpower => "Willpower",
+            Self::Intellect => "Intellect",
+            Self::Combat => "Combat",
+            Self::Agility => "Agility",
+        }
+    }
+
     pub(crate) fn glyph(self) -> &'static str {
         match self {
             Self::Willpower => "f",

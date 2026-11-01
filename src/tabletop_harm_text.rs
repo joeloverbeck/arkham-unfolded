@@ -1,6 +1,6 @@
-//! Damage, horror and explicit skill bonuses share a visual spelling across views.
+//! Damage, horror and skill names share a visual spelling across views.
 //!
-//! This is a display-only substitution of harm words and `+N skill` labels. Rules, saved
+//! This is a display-only substitution of harm and skill words. Rules, saved
 //! history, accessible labels and the absent-font fallback keep their names.
 
 use crate::tabletop::symbols::Skill;
@@ -49,18 +49,7 @@ fn runs(value: &str) -> Vec<Run> {
         let icon = match &word[..end] {
             word if word.eq_ignore_ascii_case("damage") => Some(Run::Icon(HarmIcon::Damage)),
             word if word.eq_ignore_ascii_case("horror") => Some(Run::Icon(HarmIcon::Horror)),
-            word => {
-                // Skill names become glyphs only in explicit numeric bonus labels.
-                // Ordinary rules prose and card descriptions retain their words.
-                let bonus = value[..cursor]
-                    .split_whitespace()
-                    .next_back()
-                    .and_then(|previous| previous.trim_start_matches('(').strip_prefix('+'))
-                    .is_some_and(|amount| {
-                        !amount.is_empty() && amount.bytes().all(|c| c.is_ascii_digit())
-                    });
-                bonus.then(|| Skill::named(word)).flatten().map(Run::Skill)
-            }
+            word => Skill::named(&word.to_ascii_lowercase()).map(Run::Skill),
         };
         if let Some(icon) = icon {
             if words_start < cursor {
@@ -152,9 +141,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn skill_bonuses_use_all_four_glyphs_without_rewriting_skill_prose_or_wild_icons() {
+    fn skill_names_use_all_four_glyphs_in_stats_and_prose_without_changing_wild_icons() {
         let mut world = World::new();
-        let label = "Commit +1 willpower / +2 intellect / +3 combat / +4 agility. Printed: 4 wild icons; combat 5.";
+        let label = "Willpower 2 / Intellect 3 / COMBAT 5 / Agility 2. Commit +1 intellect. A willpower test; 4 wild icons; intellect_bonus unchanged.";
         let entity = world
             .spawn(ui(label, 16.0, Color::WHITE, &Some(Handle::default())))
             .id();
@@ -166,7 +155,7 @@ mod tests {
             .collect();
         assert_eq!(
             visible,
-            "Commit +1 \u{2060}f\u{2060} / +2 \u{2060}g\u{2060} / +3 \u{2060}h\u{2060} / +4 \u{2060}i\u{2060}. Printed: 4 wild icons; combat 5."
+            "\u{2060}f\u{2060} 2 / \u{2060}g\u{2060} 3 / \u{2060}h\u{2060} 5 / \u{2060}i\u{2060} 2. Commit +1 \u{2060}g\u{2060}. A \u{2060}f\u{2060} test; 4 wild icons; intellect_bonus unchanged."
         );
         assert_eq!(world.get::<AccessibleLabel>(entity).unwrap().0, label);
         let fallback = world.spawn(ui(label, 16.0, Color::WHITE, &None)).id();

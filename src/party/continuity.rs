@@ -1,6 +1,9 @@
 //! Offline continuity for the prepared Study attempt. Earlier experiments retain their readers.
 
-use super::{Observation, Recording, SOURCE_REVISION, Session};
+use super::{
+    LEGACY_SOURCE_REVISION, Observation, Recording, SOURCE_REVISION, Session, Stage,
+    supported_source_revision,
+};
 use crate::{
     APP_VERSION,
     record_replacement::{self, Replacement},
@@ -178,7 +181,26 @@ fn write_session(
 
 pub fn load_session(path: impl AsRef<Path>) -> Result<Session, ContinuityError> {
     let (_, envelope) = read_envelope(path.as_ref(), "party-session")?;
-    let session = serde_json::from_value(envelope.payload)?;
+    decode_session(envelope)
+}
+
+fn decode_session(envelope: Envelope) -> Result<Session, ContinuityError> {
+    let session: Session = serde_json::from_value(envelope.payload)?;
+    if envelope.source_revision == LEGACY_SOURCE_REVISION
+        && (session.state.stage == Stage::ActReveal
+            || session
+                .undo
+                .iter()
+                .any(|state| state.stage == Stage::ActReveal)
+            || session
+                .moments
+                .iter()
+                .any(|view| view.stage == Stage::ActReveal))
+    {
+        return Err(ContinuityError(
+            "Act reveal requires the current party record version.".into(),
+        ));
+    }
     validate_session(&session)?;
     Ok(session)
 }
@@ -208,7 +230,18 @@ pub fn save_recording(
 
 pub fn load_recording(path: impl AsRef<Path>) -> Result<Recording, ContinuityError> {
     let (_, envelope) = read_envelope(path.as_ref(), "party-recording")?;
-    let recording = serde_json::from_value(envelope.payload)?;
+    decode_recording(envelope)
+}
+
+fn decode_recording(envelope: Envelope) -> Result<Recording, ContinuityError> {
+    let recording: Recording = serde_json::from_value(envelope.payload)?;
+    if recording.source_revision != envelope.source_revision
+        || recording.app_version != envelope.app_version
+    {
+        return Err(ContinuityError(
+            "The recording and its envelope identify different versions.".into(),
+        ));
+    }
     validate_recording(&recording)?;
     Ok(recording)
 }
@@ -228,7 +261,7 @@ fn decode_envelope(bytes: &[u8], kind: &str) -> Result<Envelope, ContinuityError
     }
     if envelope.format_version != FORMAT_VERSION
         || envelope.kind != kind
-        || envelope.source_revision != SOURCE_REVISION
+        || !supported_source_revision(&envelope.source_revision)
         || envelope.app_version != APP_VERSION
     {
         return Err(ContinuityError(
@@ -265,14 +298,13 @@ fn replace_record(
             let envelope = decode_envelope(existing, kind)?;
             if kind == "party-recording" {
                 let candidate: Envelope = serde_json::from_slice(bytes)?;
-                if envelope.payload != candidate.payload {
+                if decode_recording(envelope)? != decode_recording(candidate)? {
                     return Err(ContinuityError("A different recording already occupies this path. Recordings are immutable; choose a new path.".into()));
                 }
                 return Ok(Replacement::Unchanged);
             }
             if let Some(candidate) = session {
-                let committed: Session = serde_json::from_value(envelope.payload)?;
-                validate_session(&committed)?;
+                let committed = decode_session(envelope)?;
                 if candidate == &committed {
                     return Ok(Replacement::Unchanged);
                 }

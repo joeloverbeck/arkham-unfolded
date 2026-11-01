@@ -1,5 +1,190 @@
 use super::*;
+mod act_reveal;
+mod location_map;
 mod selection_lifecycle;
+mod skill_summary;
+
+#[test]
+fn legacy_result_continues_after_render_admission_without_a_finish_click() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("legacy.json");
+    let original = include_bytes!("../../tests/fixtures/party-result-ef6daf2.session.json");
+    std::fs::write(&path, original).unwrap();
+    let (mut app, _) =
+        selection_lifecycle::production_app(path.clone(), RenderHealth::ready_for_test());
+    app.insert_resource(Table::new(
+        continuity::load_session(&path).unwrap(),
+        path.clone(),
+    ));
+    app.insert_resource(RenderHealth::default());
+    app.update();
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    assert_eq!(
+        app.world().resource::<Table>().view().stage,
+        crate::party::Stage::Result
+    );
+    app.insert_resource(RenderHealth::ready_for_test());
+    app.update();
+    let view = continuity::load_session(&path).unwrap().observe();
+    assert_eq!(view.stage, crate::party::Stage::Action);
+    assert_eq!(view.bag_count, 16);
+    assert!(!view.can_undo);
+    assert_eq!(view, app.world().resource::<Table>().view());
+}
+
+#[test]
+fn legacy_automatic_resume_preserves_failure_and_replay_without_retrying_each_frame() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("legacy.json");
+    let original = include_bytes!("../../tests/fixtures/party-result-ef6daf2.session.json");
+    std::fs::write(&path, original).unwrap();
+    let legacy = continuity::load_session(&path).unwrap();
+    let unusable = directory.path().join("directory");
+    std::fs::create_dir(&unusable).unwrap();
+    let (mut app, _) =
+        selection_lifecycle::production_app(path.clone(), RenderHealth::ready_for_test());
+    app.insert_resource(Table::new(legacy.clone(), unusable));
+    app.update();
+    assert_eq!(app.world().resource::<Table>().session, legacy);
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .notice
+            .contains("not committed")
+    );
+    app.world_mut().resource_mut::<Table>().save_path = path.clone();
+    app.update();
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        original,
+        "save failure must not become an unattended retry loop"
+    );
+    let mut table = Table::new(legacy.clone(), path.clone());
+    let mut replay = Replay::new(legacy.recording()).unwrap();
+    while replay.next() {}
+    table.replay = Some(replay);
+    app.insert_resource(table);
+    app.update();
+    assert_eq!(
+        app.world().resource::<Table>().view().stage,
+        crate::party::Stage::Result
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    assert_eq!(app.world().resource::<Table>().session, legacy);
+}
+
+#[test]
+fn installed_token_return_clears_physical_tokens_and_sends_resolved_curse_to_pool() {
+    let directory = tempfile::tempdir().unwrap();
+    for reduced_motion in [false, true] {
+        let path = directory
+            .path()
+            .join(format!("return-{reduced_motion}.json"));
+        let (mut app, _) =
+            selection_lifecycle::production_app(path.clone(), RenderHealth::ready_for_test());
+        let mut session = Session::with_draws(vec![
+            crate::TokenFace::AutoFail,
+            crate::TokenFace::Curse,
+            crate::TokenFace::Zero,
+            crate::TokenFace::MinusTwo,
+        ]);
+        for id in [
+            "select:tony",
+            "investigate",
+            "commit:100",
+            "use-jacqueline",
+            "cancel:0",
+            "resolve:1",
+            "reveal",
+            "resolve:3",
+        ] {
+            session.choose(session.observe().revision, id).unwrap();
+        }
+        {
+            let mut table = app.world_mut().resource_mut::<Table>();
+            table.session = session;
+            table.reduced_motion = reduced_motion;
+            table.invalidate();
+        }
+        app.update();
+        choose(&mut app, "resolve:2");
+        assert_eq!(
+            continuity::load_session(&path).unwrap().observe().bag_count,
+            16
+        );
+        assert_eq!(app.world().resource::<Table>().view().curses_in_pool, 10);
+        assert!(
+            app.world()
+                .resource::<Table>()
+                .view()
+                .held_tokens()
+                .is_empty()
+        );
+        {
+            let world = app.world_mut();
+            let sources: Vec<_> = world
+                .query::<&CardSource>()
+                .iter(world)
+                .map(|source| source.0)
+                .collect();
+            assert!(
+                !sources
+                    .iter()
+                    .any(|source| matches!(source, Source::Token(_)))
+            );
+        }
+        if !reduced_motion {
+            let world = app.world_mut();
+            let destinations: Vec<_> = world
+                .query::<&ReturningToken>()
+                .iter(world)
+                .map(|token| token.destination)
+                .collect();
+            assert_eq!(
+                destinations
+                    .iter()
+                    .filter(|&&at| at == scene::curse_pool_at())
+                    .count(),
+                1
+            );
+            assert_eq!(
+                destinations
+                    .iter()
+                    .filter(|&&at| at == layout::test_bag())
+                    .count(),
+                3
+            );
+            let before = world.resource::<Table>().session.clone();
+            choose(&mut app, "resource");
+            assert_eq!(
+                app.world().resource::<Table>().session,
+                before,
+                "next action waits for token transfer"
+            );
+            for _ in 0..8 {
+                app.world_mut()
+                    .resource_mut::<PresentationTime>()
+                    .advance_by(std::time::Duration::from_millis(100));
+                app.update();
+            }
+        }
+        let world = app.world_mut();
+        assert_eq!(world.query::<&ReturningToken>().iter(world).count(), 0);
+        choose(&mut app, "resource");
+        assert_eq!(
+            app.world()
+                .resource::<Table>()
+                .view()
+                .investigator(Investigator::Tony)
+                .resources,
+            1
+        );
+        act(&mut app, Action::Reopen);
+        let world = app.world_mut();
+        assert_eq!(world.query::<&ReturningToken>().iter(world).count(), 0);
+        assert_eq!(world.resource::<Table>().view().bag_count, 16);
+    }
+}
 
 #[test]
 fn production_test_heading_clears_surfaces_after_text_layout() {
@@ -405,6 +590,7 @@ fn render_app(path: PathBuf) -> App {
 }
 fn render_app_in(app: App, path: PathBuf) -> App {
     let mut app = app_in(app, path);
+    app.world_mut().resource_mut::<Table>().reduced_motion = true;
     app.init_resource::<Art>()
         .init_resource::<Assets<Image>>()
         .init_resource::<Assets<Mesh>>()
@@ -458,8 +644,8 @@ fn physical_harm_totals_include_zeroes_and_survive_scene_replacement_and_reopen(
         for (index, damage, horror) in [(0, "0/9", "0/5"), (1, "0/7", "0/7"), (2, "0/6", "2/9")] {
             for (is_horror, kind, total) in [(false, "Damage", damage), (true, "Horror", horror)] {
                 assert!(captions.contains(&(
-                    format!("{kind}\n{total}"),
-                    layout::investigator_harm(index, is_horror) + Vec3::Z * 0.5,
+                    format!("{kind} {total}"),
+                    layout::investigator_harm_caption(index, is_horror, true),
                 )));
             }
         }
@@ -583,13 +769,7 @@ fn completed_attempt(advance: Option<bool>) -> Session {
                 .choose(session.observe().revision, &format!("select:{actor}"))
                 .unwrap();
             for _ in 0..3 {
-                for id in [
-                    "investigate",
-                    "commit:none",
-                    "reveal",
-                    "resolve:0",
-                    "finish-test",
-                ] {
+                for id in ["investigate", "commit:none", "reveal", "resolve:0"] {
                     session.choose(session.observe().revision, id).unwrap();
                 }
             }
@@ -609,6 +789,11 @@ fn completed_attempt(advance: Option<bool>) -> Session {
                 },
             )
             .unwrap();
+        if advance {
+            session
+                .choose(session.observe().revision, "continue-act")
+                .unwrap();
+        }
     } else {
         for actor in ["tony", "patrice", "jacqueline"] {
             session
@@ -687,7 +872,6 @@ fn replay_follows_current_actions_after_tests_and_preserves_manual_override() {
         "commit:none",
         "reveal",
         "resolve:0",
-        "finish-test",
         "draw",
         "resource",
         "end-turn",
@@ -704,7 +888,7 @@ fn replay_follows_current_actions_after_tests_and_preserves_manual_override() {
         layout::focus(Area::Test).0,
         "actual revealed test focuses Test"
     );
-    for _ in 0..3 {
+    for _ in 0..2 {
         act(&mut app, Action::Next);
     }
     assert_eq!(
@@ -759,7 +943,6 @@ fn replay_focuses_patrice_discard_for_the_after_test_shuffle() {
         "commit:100",
         "reveal",
         "resolve:0",
-        "finish-test",
         "end-turn",
         "select:patrice",
         "draw",
@@ -771,7 +954,6 @@ fn replay_focuses_patrice_discard_for_the_after_test_shuffle() {
         "resolve:0",
         "resolve:1",
         "lucky:101",
-        "finish-test",
         "shuffle:retain:100",
     ] {
         choose(&mut app, id);
@@ -803,7 +985,6 @@ fn discard_substitute_names_the_top_card() {
         "commit:100",
         "reveal",
         "resolve:0",
-        "finish-test",
     ] {
         choose(&mut app, id);
     }
@@ -834,7 +1015,6 @@ fn settled_result_text_survives_reopen_and_replay_until_the_next_action() {
             "commit:none",
             "reveal",
             "resolve:0",
-            "finish-test",
         ] {
             choose(&mut app, id);
         }
@@ -852,12 +1032,18 @@ fn settled_result_text_survives_reopen_and_replay_until_the_next_action() {
         choose(&mut app, "resource");
         assert!(!visible_text(&mut app).join("\n").contains(&expected));
         act(&mut app, Action::Replay);
-        while app.world().resource::<Table>().view().stage != crate::party::Stage::Result {
+        while app
+            .world()
+            .resource::<Table>()
+            .view()
+            .test
+            .as_ref()
+            .is_none_or(|test| test.result.is_none())
+        {
             let replay = app.world().resource::<Table>().replay.as_ref().unwrap();
             assert!(replay.index() + 1 < replay.len());
             act(&mut app, Action::Next);
         }
-        act(&mut app, Action::Next);
         assert_result(&mut app);
         act(&mut app, Action::Next);
         assert!(!visible_text(&mut app).join("\n").contains(&expected));
@@ -873,13 +1059,7 @@ fn sixth_clue_result_is_visible_beside_the_closing_decision() {
     for actor in ["tony", "jacqueline"] {
         choose(&mut app, &format!("select:{actor}"));
         for _ in 0..3 {
-            for id in [
-                "investigate",
-                "commit:none",
-                "reveal",
-                "resolve:0",
-                "finish-test",
-            ] {
+            for id in ["investigate", "commit:none", "reveal", "resolve:0"] {
                 choose(&mut app, id);
             }
         }
@@ -894,6 +1074,12 @@ fn sixth_clue_result_is_visible_beside_the_closing_decision() {
     let text = visible_text(&mut app).join("\n");
     assert!(text.contains("final value 3") && text.contains("Success"));
     choose(&mut app, "advance");
+    assert!(
+        visible_text(&mut app)
+            .join("\n")
+            .contains("The Door on the Floor")
+    );
+    choose(&mut app, "continue-act");
     assert!(
         visible_text(&mut app)
             .join("\n")

@@ -231,6 +231,55 @@ impl Table {
     fn modal(&self) -> bool {
         self.inspect.is_some() || self.history
     }
+
+    fn test_summary(&self, view: &Observation, test: &crate::tony::TestView) -> String {
+        use crate::tabletop::symbols::Skill;
+        // These are the three skills represented by this fixed Tony position.
+        let (skill, base) = match test.kind {
+            crate::tony::TestKind::Fight => (Skill::Combat, 5),
+            crate::tony::TestKind::Evade => (Skill::Agility, 2),
+            crate::tony::TestKind::Investigate => (Skill::Intellect, 3),
+        };
+        // Old observations retain the numerical modifier but not the resolved
+        // token. Recover only already-observed facts from the same recording.
+        let live_recording;
+        let moments = if let Some(replay) = &self.replay {
+            &replay.recording().moments
+        } else {
+            live_recording = self.session.recording();
+            &live_recording.moments
+        };
+        let resolved_token = test.success.and_then(|_| {
+            moments
+                .iter()
+                .rev()
+                .filter(|moment| moment.revision < view.revision)
+                .find_map(|moment| moment.held_token)
+        });
+        let automatic_failure = resolved_token == Some(TokenFace::AutoFail);
+        let total = if automatic_failure {
+            Some(0)
+        } else if test.success.is_none() {
+            Some(test.skill_value)
+        } else {
+            resolved_token
+                .and(test.modifier)
+                .map(|modifier| (test.skill_value + modifier).max(0))
+        };
+        let summary = crate::tabletop_skill_text::TestSummary {
+            skill,
+            base,
+            card_bonus: test.skill_value - base,
+            chaos: test.modifier,
+            chaos_pending: test.success.is_none(),
+            automatic_failure,
+            total,
+            difficulty: test.difficulty,
+            result: test.success,
+        }
+        .label();
+        format!("Tony Morgan · {} · {summary}", test.kind.label())
+    }
 }
 #[derive(Resource)]
 struct Art {
@@ -399,7 +448,6 @@ pub fn run() -> Result<(), String> {
                 controls::invalidate,
                 synchronize_scene,
                 synchronize_feedback,
-                rebuild_panel,
                 controls::draw_menu,
                 sync_reveal,
                 reveal::render,
@@ -413,6 +461,7 @@ pub fn run() -> Result<(), String> {
             )
                 .chain(),
         );
+    install_panel(&mut app);
     let server = app.world().resource::<AssetServer>();
     let mut handles = BTreeMap::new();
     let roles = CARDS
@@ -466,6 +515,15 @@ pub fn run() -> Result<(), String> {
         .insert_resource(reveal::Artwork(reveal_image))
         .insert_resource(art);
     exit_result(app.run())
+}
+
+fn install_panel(app: &mut App) {
+    app.add_systems(
+        Update,
+        rebuild_panel
+            .after(synchronize_feedback)
+            .before(controls::draw_menu),
+    );
 }
 
 fn button(
@@ -1140,9 +1198,7 @@ fn rebuild_panel(
                 |r| format!("REPLAY · MOMENT {} / {}", r.index() + 1, r.len())), 12.0, GOLD));
             p.spawn(art.text(&view.prompt, 18.0, PAPER));
             if let Some(test) = &view.test {
-                p.spawn(art.text(format!("{}: skill {} vs {} · {}{}", test.kind.label(), test.skill_value, test.difficulty,
-                    test.success.map_or("Pending", |ok| if ok { "Success" } else { "Failure" }),
-                    test.modifier.map_or(String::new(), |m| format!(" · modifier {m:+}"))), 15.0, GOLD));
+                p.spawn(art.text(table.test_summary(&view, test), 15.0, GOLD));
             }
             if let Some(hit) = table.harm() {
                 p.spawn(art.text(hit.source.label(), 19.0, GOLD));
@@ -1325,7 +1381,7 @@ fn camera_controls(
         keys: &keys,
         buttons: &buttons,
         window: &window,
-        scroll_y: scroll.delta.y,
+        scroll_y: crate::tabletop_camera::wheel_steps(&scroll),
         dt: time.delta_secs(),
         capture: CameraCapture {
             pointer_blocked: modal,
@@ -1361,7 +1417,7 @@ fn world_labels(
 ) {
     let (camera, transform) = *camera;
     for (label, computed, test_heading, heading, standee, mut node, mut visibility) in &mut labels {
-        if orbit.pose().distance > 30.0 && !heading {
+        if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !heading {
             *visibility = Visibility::Hidden;
             continue;
         }
@@ -1385,7 +1441,7 @@ fn hide_overview_token_labels(
     orbit: Res<Orbit>,
     mut labels: Query<&mut Visibility, With<crate::tabletop_tokens::TokenLabel>>,
 ) {
-    if orbit.pose().distance > 30.0 {
+    if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE {
         for mut visibility in &mut labels {
             *visibility = Visibility::Hidden;
         }

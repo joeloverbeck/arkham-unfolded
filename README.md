@@ -6,7 +6,7 @@ An English-language Arkham Horror: The Card Game application for Ubuntu, planned
 
 See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, saves, undo, replay and player driver, including the [two-session verification walkthrough](docs/experiments/tony-turn.md#owner-verification).
 
-The candidate [prepared Study escape attempt](docs/experiments/study-escape.md) under [#55](https://github.com/joeloverbeck/arkham-unfolded/issues/55) adds coordinated turns for all three investigators and an Act 1 closing decision. Investigators take complete turns in your chosen order. A persistent turn indicator and portrait badge identify whose turn it is, while supporting choices name the investigator performing them. Camera focus remains independent. Joel accepted the turn-indicator and scenario-layout follow-up's visuals and gameplay on 2026-11-01; #55 remains open for its broader work. Use the [party launch command](#launch-and-resume-the-party-experiment) below.
+The owner-accepted [prepared Study escape attempt](docs/experiments/study-escape.md) under [#55](https://github.com/joeloverbeck/arkham-unfolded/issues/55) adds coordinated turns for all three investigators and an Act 1 closing decision. Investigators take complete turns in your chosen order. A persistent turn indicator and portrait badge identify whose turn it is, while supporting choices name the investigator performing them. Camera focus remains independent. Spending six clues reveals Act 1's story before Continue applies its effects and exposes the connected four-room map. Joel accepted the implementation on 2026-11-01 after using all three investigators to collect clues and advance the Act. This remains the prepared attempt, with play stopping at that endpoint. Use the [party launch command](#launch-and-resume-the-party-experiment) below.
 
 ## Launch and resume the party experiment
 
@@ -22,7 +22,7 @@ cargo run --locked --features tabletop --bin arkham-tabletop -- \
 
 This reopens the existing party session with its prepared artwork. Decisions autosave to the specified file; run the same command to resume after closing the window. These artwork and save paths belong to this machine's prepared experiment; use your own paths on another machine and retain this save to keep your progress.
 
-Keep the terminal open and the app window visible and focused during **Checking graphics...**. Once play is enabled, the heading inside must say **Prepared Study escape · The Gathering · Standard**. The graphics workaround described below applies automatically. See the [Study escape guide](docs/experiments/study-escape.md) for the prepared position, controls and remaining owner verification; #55 remains open pending acceptance.
+Keep the terminal open and the app window visible and focused during **Checking graphics...**. Once play is enabled, the heading inside must say **Prepared Study escape · The Gathering · Standard**. The graphics workaround described below applies automatically. See the [Study escape guide](docs/experiments/study-escape.md) for the prepared position, controls, acceptance record and verification reference.
 
 ## Launch and play the Tony turn
 

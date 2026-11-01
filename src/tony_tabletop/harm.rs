@@ -168,8 +168,8 @@ pub(super) fn harm_scene(
                 Some((amount, capacity)) if art.image(role).is_some() => {
                     format!("{amount}/{capacity}")
                 }
-                Some((amount, capacity)) => format!("{kind}\n{amount}/{capacity}"),
-                None => "Damage\nn/a".to_owned(),
+                Some((amount, capacity)) => format!("{kind} {amount}/{capacity}"),
+                None => "Damage n/a".to_owned(),
             };
             let arriving = index == 0
                 && hit.is_some_and(|hit| {
@@ -181,7 +181,15 @@ pub(super) fn harm_scene(
                         }
                 });
             counter(commands, meshes, materials, art, at, horror, arriving);
-            counter_total(commands, text, at);
+            counter_total(
+                commands,
+                text,
+                layout::investigator_harm_caption(
+                    index,
+                    horror,
+                    total.is_none() || art.image(role).is_none(),
+                ),
+            );
         }
     }
     if view.ghoul.alive && view.ghoul.damage > 0 {
@@ -201,7 +209,7 @@ pub(super) fn harm_scene(
         } else {
             format!("Damage\n{}/2", view.ghoul.damage)
         };
-        counter_total(commands, text, at);
+        counter_total(commands, text, at + Vec3::Z * 0.5);
     }
     let Some(hit) = hit else {
         return;
@@ -268,10 +276,10 @@ fn counter_total(commands: &mut Commands, text: String, at: Vec3) {
         TextLayout::justify(Justify::Center),
         Node {
             position_type: PositionType::Absolute,
-            width: px(64.0),
+            width: px(80.0),
             ..default()
         },
-        WorldLabel(at + Vec3::Z * 0.5, 64.0),
+        WorldLabel(at, 80.0),
         Scene,
         Pickable::IGNORE,
     ));
@@ -363,6 +371,11 @@ mod tests {
                     })
                     .unwrap();
                 let card = layout::investigator_card(index);
+                let center = layout::investigator_center(index, 3);
+                assert!(
+                    (transform.translation.x - center.x).abs() + aabb.half_extents.x < 9.0,
+                    "counter must stay on its investigator surface"
+                );
                 assert!(aabb.half_extents.y > 0.05, "counter has visible thickness");
                 assert!(
                     transform.translation.z + aabb.half_extents.z < card.z - CARD_WIDTH / 2.0,
@@ -420,7 +433,7 @@ mod tests {
             labels.iter().any(|label| label.contains("Horror")),
             "horror needs a readable substitute"
         );
-        assert!(labels.contains(&"Horror\n2/9"));
-        assert!(labels.contains(&"Damage\nn/a"));
+        assert!(labels.contains(&"Horror 2/9"));
+        assert!(labels.contains(&"Damage n/a"));
     }
 }

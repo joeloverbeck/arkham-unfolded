@@ -6,6 +6,7 @@ use std::time::Duration;
 use crate::tabletop_standee_checks as standee_checks;
 
 mod encounter_discard;
+mod skill_summary;
 
 #[test]
 fn production_test_heading_clears_surfaces_after_text_layout() {
@@ -770,10 +771,10 @@ fn production_scene_places_test_objects_and_personal_status_on_their_surfaces() 
                 .any(|(text, anchor)| text == name && anchor.z < center.z - 7.5)
         );
         assert!(labels.iter().any(|(text, anchor)| text.contains("Horror")
-            && *anchor == tabletop_layout::investigator_harm(index, true) + Vec3::Z * 0.4));
+            && *anchor == tabletop_layout::investigator_harm_caption(index, true, true)));
     }
-    assert!(labels.iter().any(|(text, _)| text == "Horror\n2/9"));
-    assert!(labels.iter().any(|(text, _)| text == "Damage\nn/a"));
+    assert!(labels.iter().any(|(text, _)| text == "Horror 2/9"));
+    assert!(labels.iter().any(|(text, _)| text == "Damage n/a"));
     assert_eq!(
         world
             .query_filtered::<Entity, With<crate::tabletop_harm_tokens::HarmToken>>()
@@ -929,11 +930,13 @@ fn app_for_session_in(mut app: App, session: Session, path: PathBuf) -> App {
             mark_window_resized,
             poll_asset_settings,
             handle_actions,
-            rebuild_panel,
             button_colors,
         )
             .chain(),
     );
+    // Substitute the headless environment, while registering the panel through
+    // the same presentation path as native startup.
+    install_panel(&mut app);
     app.world_mut().spawn(Window::default());
     install(&mut app);
     app

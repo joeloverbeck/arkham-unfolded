@@ -4,6 +4,43 @@ pub(super) fn short_name(who: Investigator) -> &'static str {
     who.name().split_whitespace().next().unwrap_or(who.name())
 }
 
+fn test_summary(view: &Observation, test: &crate::party::TestView) -> String {
+    let base = i32::from(view.investigator(test.investigator).intellect);
+    let resolved = view
+        .tokens
+        .iter()
+        .any(|token| token.status == crate::TokenStatus::Resolved);
+    let automatic_failure = view.tokens.iter().any(|token| {
+        token.status == crate::TokenStatus::Resolved && token.face == crate::TokenFace::AutoFail
+    });
+    let chaos_pending = matches!(
+        view.stage,
+        crate::party::Stage::Commit
+            | crate::party::Stage::BeforeReveal
+            | crate::party::Stage::Cancellation
+            | crate::party::Stage::Resolve
+    );
+    let summary = crate::tabletop_skill_text::TestSummary {
+        skill: crate::tabletop::symbols::Skill::Intellect,
+        base,
+        card_bonus: test.skill_value - base,
+        chaos: resolved.then_some(test.modifier),
+        chaos_pending,
+        automatic_failure,
+        total: Some(test.total.unwrap_or_else(|| {
+            if automatic_failure {
+                0
+            } else {
+                (test.skill_value + test.modifier).max(0)
+            }
+        })),
+        difficulty: test.difficulty,
+        result: test.result,
+    }
+    .label();
+    format!("{} · {summary}", test.investigator.name())
+}
+
 pub(super) fn turn_heading(view: &Observation) -> String {
     match (view.endpoint, view.actor) {
         (Some(_), Some(who)) => {
@@ -146,6 +183,7 @@ pub(super) fn render(
     window: Single<&Window>,
     images: Res<Assets<Image>>,
     mut last: Local<(Vec2, [bool; 3])>,
+    mut focus: Option<ResMut<InputFocus>>,
 ) {
     let size = Vec2::new(window.width(), window.height());
     let portraits = ["06003", "06005", "60401"].map(|code| {
@@ -255,12 +293,13 @@ pub(super) fn render(
             p.spawn(art.text("Prepared position: all three investigators begin in Study with zero resources and six clues to discover. Choose their turn order. Each gets one turn with three ordinary actions. At the first settled action leaving six clues held, choose to spend them and escape or finish without advancing. If all turns finish first, stop before the enemy phase. The endpoint preserves unfinished turns; this is not scenario setup or a complete scenario.",14.,MUTED));
         }
         if table.show_test_summary(&view) && let Some(test)=&view.test{
-            let total=test.total.map_or(String::new(),|total|format!(" · final value {total}"));
-            p.spawn(art.text(format!("{} · Intellect {} · modifier {:+}{total} · difficulty {} · {}",test.investigator.name(),test.skill_value,test.modifier,test.difficulty,test.result.map_or("Pending",|success|if success{"Success"}else{"Failure"})),15.,GOLD));
+            p.spawn(art.text(test_summary(&view, test),15.,GOLD));
         }
         p.spawn(Node{flex_direction:FlexDirection::Row,flex_wrap:FlexWrap::Wrap,column_gap:px(8),row_gap:px(5),..default()}).with_children(|row|{
             let mut control=|label:&str,action:Action|{row.spawn(Node{width:px(240),..default()}).with_children(|p|{button(&art,p,label,action);});};
-            if let Some(replay)=&table.replay{
+            if table.act_reveal() {
+                // The reading dialog owns its continuation and replay controls.
+            } else if let Some(replay)=&table.replay{
                 if replay.index()>0{control("Previous moment",Action::Back);}
                 if replay.index()+1<replay.len(){control("Next moment",Action::Next);}
                 control("Return to live attempt",Action::Live);
@@ -277,7 +316,7 @@ pub(super) fn render(
         if let Some(summary) = table.context.pending_summary(&view) {
             p.spawn(art.text(summary,13.,GOLD));
         }
-        if table.replay.is_none()&&view.endpoint.is_none(){
+        if table.replay.is_none()&&view.endpoint.is_none()&&!table.act_reveal(){
             let hint=if view.actor.is_none(){"Select an investigator card, then choose their turn. Portrait buttons only move the camera."}else if view.choices.iter().any(|c|c.id.starts_with("commit:")){"Select hand cards across the investigator areas; confirm selected cards, or commit none."}else if view.choices.iter().any(|c|c.id.starts_with("cancel:")){"Select revealed tokens in the Test area, then confirm your legal cancellation."}else if view.choices.iter().any(|c|c.id.starts_with("resolve:")){"Select a revealed token in the Test area to choose the next token to resolve."}else if view.choices.iter().any(|c|c.id.starts_with("lucky:")){"Select Lucky! in Patrice's hand to pay one resource, or decline below."}else if view.choices.iter().any(|c|c.id.starts_with("shuffle:retain:")){"Select Patrice's discard to choose the card retained, or decline the shuffle."}else if view.choices.iter().any(|c|c.id=="advance"){"Select Act 1 to spend six clues and escape, or finish without advancing below."}else{"Select Study to Investigate, your investigator to gain a resource, or your deck to Draw. Use the reveal shortcut when offered."};
             p.spawn(art.text(hint,12.,MUTED));
         }
@@ -336,10 +375,205 @@ pub(super) fn render(
                 button(&art, p, "Close menu", Action::Dismiss);
             });
     }
-    if table.modal() {
+    if table.act_reveal() {
+        let first = advancement(&mut commands, &table, &view, &art, size);
+        if let Some(focus) = focus.as_mut() {
+            focus.set(first, bevy::input_focus::FocusCause::Navigated);
+        }
+    } else if table.modal() {
         inspection(&mut commands, &table, &view, &art, size);
     }
 }
+fn card_image(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    card: &cards::Card,
+    available_width: f32,
+) {
+    let Some(image) = art.image(card.role) else {
+        return;
+    };
+    let width = available_width.min(if card.landscape { 760. } else { 430. });
+    let height = width * if card.landscape { 5. / 7. } else { 7. / 5. };
+    parent
+        .spawn(Node {
+            width: px(width),
+            height: px(height),
+            flex_shrink: 0.,
+            ..default()
+        })
+        .with_children(|frame| {
+            frame.spawn((
+                ImageNode::new(image),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: percent(50),
+                    top: percent(50),
+                    width: px(if card.landscape { height } else { width }),
+                    height: px(if card.landscape { width } else { height }),
+                    ..default()
+                },
+                UiTransform {
+                    translation: Val2::percent(-50, -50),
+                    rotation: if card.landscape {
+                        Rot2::degrees(-90.)
+                    } else {
+                        Rot2::IDENTITY
+                    },
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+fn advancement(
+    commands: &mut Commands,
+    table: &Table,
+    view: &Observation,
+    art: &Art,
+    size: Vec2,
+) -> Entity {
+    let card = &CARDS[cards::index("card/01108/reverse").unwrap()];
+    let width = (size.x * 0.94).min(1200.);
+    let columns = width >= 900. && art.image(card.role).is_some();
+    let mut first_control = None;
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100),
+                height: percent(100),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.015, 0.025, 0.03, 0.92)),
+            GlobalZIndex(90),
+            ModalDialogBarrier,
+            Panel,
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        width: px(width),
+                        height: px(size.y * 0.9),
+                        padding: UiRect::all(px(22)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(12),
+                        ..default()
+                    },
+                    BackgroundColor(INK),
+                    ModalDialog,
+                    TabGroup::modal(),
+                    AccessibleLabel::new("Act advances · The Door on the Floor"),
+                ))
+                .with_children(|panel| {
+                    panel.spawn(art.text(
+                        if table.replay.is_some() {
+                            "Act advances · Recorded moment"
+                        } else {
+                            "Act advances"
+                        },
+                        16.,
+                        MUTED,
+                    ));
+                    panel.spawn(art.text(card.title, 27., GOLD));
+                    panel
+                        .spawn((
+                            Node {
+                                flex_grow: 1.,
+                                min_height: px(0),
+                                overflow: Overflow::scroll_y(),
+                                flex_direction: if columns {
+                                    FlexDirection::Row
+                                } else {
+                                    FlexDirection::Column
+                                },
+                                align_items: if columns {
+                                    AlignItems::Start
+                                } else {
+                                    AlignItems::Center
+                                },
+                                column_gap: px(24),
+                                row_gap: px(16),
+                                ..default()
+                            },
+                            ScrollPosition::default(),
+                        ))
+                        .observe(scroll_panel)
+                        .with_children(|body| {
+                            card_image(
+                                body,
+                                art,
+                                card,
+                                if columns {
+                                    (width - 68.) * 0.45
+                                } else {
+                                    width - 44.
+                                },
+                            );
+                            body.spawn((Node {
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(12),
+                                width: if columns {
+                                    px((width - 68.) * 0.55)
+                                } else {
+                                    percent(100)
+                                },
+                                flex_shrink: 0.,
+                                ..default()
+                            },))
+                                .with_children(|text| {
+                                    text.spawn(art.text(card.kind, 16., GOLD));
+                                    text.spawn(art.text(card.text, 19., PAPER));
+                                });
+                        });
+                    if !table.notice.is_empty() {
+                        panel.spawn(art.text(&table.notice, 14., MUTED));
+                    }
+                    panel
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            column_gap: px(8),
+                            row_gap: px(6),
+                            flex_shrink: 0.,
+                            ..default()
+                        })
+                        .with_children(|controls| {
+                            let mut control = |label: &str, action: Action| {
+                                controls
+                                    .spawn(Node {
+                                        width: px(240),
+                                        ..default()
+                                    })
+                                    .with_children(|slot| {
+                                        let entity = button(art, slot, label, action);
+                                        first_control.get_or_insert(entity);
+                                    });
+                            };
+                            if let Some(replay) = &table.replay {
+                                if replay.index() > 0 {
+                                    control("Previous moment", Action::Back);
+                                }
+                                if replay.index() + 1 < replay.len() {
+                                    control("Next moment", Action::Next);
+                                }
+                                control("Return to live attempt", Action::Live);
+                            } else {
+                                control(
+                                    "Continue",
+                                    Action::Choose(view.revision, "continue-act".into()),
+                                );
+                            }
+                        });
+                });
+        });
+    first_control.expect("Act reading always has Continue or replay navigation")
+}
+
 fn inspection(commands: &mut Commands, table: &Table, view: &Observation, art: &Art, size: Vec2) {
     let width = (size.x * 0.94).min(1200.);
     let height = size.y * 0.9;
@@ -349,9 +583,7 @@ fn inspection(commands: &mut Commands, table: &Table, view: &Observation, art: &
             p.spawn(art.text(card.map_or("Action history",|c|c.title),27.,GOLD));button(art,p,"Close · Esc",Action::Close);
             p.spawn((Node{max_height:px((height-150.).max(100.)),overflow:Overflow::scroll_y(),flex_direction:FlexDirection::Column,align_items:AlignItems::Center,row_gap:px(16),..default()},ScrollPosition::default())).observe(scroll_panel).with_children(|body|{
                 if let Some(card)=card{
-                    if let Some(image)=art.image(card.role){let w=(width-55.).min(if card.landscape{760.}else{430.});let h=w*if card.landscape{5./7.}else{7./5.};
-                        body.spawn(Node{width:px(w),height:px(h),flex_shrink:0.,..default()}).with_children(|frame|{frame.spawn((ImageNode::new(image),Node{position_type:PositionType::Absolute,left:percent(50),top:percent(50),width:px(if card.landscape{h}else{w}),height:px(if card.landscape{w}else{h}),..default()},UiTransform{translation:Val2::percent(-50,-50),rotation:if card.landscape{Rot2::degrees(-90.)}else{Rot2::IDENTITY},..default()},Pickable::IGNORE));});
-                    }
+                    card_image(body, art, card, width - 55.);
                     body.spawn((art.text(card.kind,18.,GOLD),Node{width:percent(100),..default()}));body.spawn((art.text(card.text,20.,PAPER),Node{width:percent(100),..default()}));
                     if table.replay.is_none(){
                         for held in view.investigators.iter().flat_map(|i|&i.hand).filter(|c|card.role==format!("card/{}",c.code)){
@@ -361,6 +593,9 @@ fn inspection(commands: &mut Commands, table: &Table, view: &Observation, art: &
                         }
                     }
                 }else{
+                    if cards::act_revealed(view) {
+                        button(art, body, "Read Act 1 · The Door on the Floor", Action::Inspect(cards::index("card/01108/reverse").unwrap()));
+                    }
                     for line in &view.history{body.spawn((art.text(line,18.,PAPER),Node{width:percent(100),..default()}));}
                     if !view.unavailable.is_empty(){
                         body.spawn(art.text("Unavailable at this decision",18.,GOLD));
