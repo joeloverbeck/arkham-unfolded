@@ -53,6 +53,50 @@ impl Inputs {
 }
 
 #[test]
+fn wheel_zoom_scales_with_view_distance_and_reverses_without_drift() {
+    for mode in [CameraMode::Tony, CameraMode::Jacqueline] {
+        for (distance, expected) in [(26.0, 24.7), (72.0, 68.4)] {
+            let mut orbit = Orbit::new(mode);
+            orbit.focus((Vec3::ZERO, distance));
+            let mut input = Inputs {
+                scroll_y: 1.0,
+                ..default()
+            };
+            input.step(&mut orbit);
+            assert!((orbit.pose().distance - expected).abs() < 0.0001);
+            input.scroll_y = -1.0;
+            input.step(&mut orbit);
+            assert!((orbit.pose().distance - distance).abs() < 0.0001);
+        }
+    }
+}
+
+#[test]
+fn pixel_scroll_keeps_fractional_motion_and_matches_line_scroll() {
+    use bevy::input::mouse::MouseScrollUnit;
+
+    let mut line_orbit = Orbit::new(CameraMode::Tony);
+    let mut pixel_orbit = Orbit::new(CameraMode::Tony);
+    let mut input = Inputs {
+        scroll_y: wheel_steps(&AccumulatedMouseScroll {
+            unit: MouseScrollUnit::Line,
+            delta: Vec2::new(0.0, 1.0),
+        }),
+        ..default()
+    };
+    input.step(&mut line_orbit);
+    for _ in 0..10 {
+        input.scroll_y = wheel_steps(&AccumulatedMouseScroll {
+            unit: MouseScrollUnit::Pixel,
+            delta: Vec2::new(0.0, 10.0),
+        });
+        input.step(&mut pixel_orbit);
+    }
+    assert!((pixel_orbit.pose().distance - 24.7).abs() < 0.0001);
+    assert!((pixel_orbit.pose().distance - line_orbit.pose().distance).abs() < 0.0001);
+}
+
+#[test]
 fn scene_drag_uses_logical_cursor_displacement_and_crosses_ui_until_release() {
     let mut orbit = Orbit::new(CameraMode::Jacqueline);
     let mut input = Inputs::default();
@@ -345,13 +389,10 @@ fn replay_motion_and_follow_off_keep_the_modes_distinct() {
 }
 
 #[test]
-fn wheel_capture_and_existing_clamp_order_are_preserved() {
+fn wheel_capture_and_distance_limits_are_preserved() {
     for (mode, maximum) in [(CameraMode::Jacqueline, 90.0), (CameraMode::Tony, 90.0)] {
         let mut orbit = Orbit::new(mode);
-        let mut input = Inputs {
-            dt: 0.0,
-            ..default()
-        };
+        let mut input = Inputs::default();
         let initial = orbit.pose();
         for capture in [
             Capture {

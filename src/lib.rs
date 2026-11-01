@@ -29,6 +29,8 @@ mod tabletop_layout;
 mod tabletop_pacing;
 #[cfg(feature = "tabletop")]
 mod tabletop_reveal;
+#[cfg(feature = "tabletop")]
+mod tabletop_skill_text;
 #[cfg(all(test, feature = "tabletop"))]
 mod tabletop_standee_checks;
 #[cfg(feature = "tabletop")]

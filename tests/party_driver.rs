@@ -115,14 +115,7 @@ fn fresh_process_reopens_cancellation_and_keeps_the_unrevealed_continuation() {
     }
     reopened_continuation_matches(
         game,
-        &[
-            "cancel:0",
-            "resolve:1",
-            "reveal",
-            "resolve:3",
-            "resolve:2",
-            "finish-test",
-        ],
+        &["cancel:0", "resolve:1", "reveal", "resolve:3", "resolve:2"],
     );
 }
 
@@ -184,7 +177,6 @@ fn fresh_process_resumes_lucky_and_the_final_after_test_shuffle() {
             "commit:100",
             "reveal",
             "resolve:0",
-            "finish-test",
             "end-turn",
             "select:patrice",
             "draw",
@@ -197,11 +189,8 @@ fn fresh_process_resumes_lucky_and_the_final_after_test_shuffle() {
             "resolve:2",
         ],
     );
-    reopened_continuation_matches(
-        game.clone(),
-        &["lucky:101", "finish-test", "shuffle:retain:100"],
-    );
-    choices(&mut game, &["lucky:101", "finish-test"]);
+    reopened_continuation_matches(game.clone(), &["lucky:101", "shuffle:retain:100"]);
+    choices(&mut game, &["lucky:101"]);
     reopened_continuation_matches(game, &["shuffle:retain:101"]);
 }
 
@@ -213,28 +202,18 @@ fn fresh_process_resumes_the_six_clue_spending_choice() {
     for _ in 0..3 {
         choices(
             &mut game,
-            &[
-                "investigate",
-                "commit:none",
-                "reveal",
-                "resolve:0",
-                "finish-test",
-            ],
+            &["investigate", "commit:none", "reveal", "resolve:0"],
         );
     }
     choices(&mut game, &["end-turn", "select:patrice"]);
     for _ in 0..3 {
         choices(
             &mut game,
-            &[
-                "investigate",
-                "commit:none",
-                "reveal",
-                "resolve:0",
-                "finish-test",
-            ],
+            &["investigate", "commit:none", "reveal", "resolve:0"],
         );
     }
-    reopened_continuation_matches(game.clone(), &["advance"]);
-    reopened_continuation_matches(game, &["decline-advance"]);
+    reopened_continuation_matches(game.clone(), &["advance", "continue-act"]);
+    reopened_continuation_matches(game.clone(), &["decline-advance"]);
+    game.choose(game.observe().revision, "advance").unwrap();
+    reopened_continuation_matches(game, &["continue-act"]);
 }

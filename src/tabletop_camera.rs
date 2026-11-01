@@ -1,8 +1,13 @@
 //! Camera lifecycle shared by the two tabletop adapters. No rules or choices live here.
 
-use bevy::prelude::*;
+use bevy::{input::mouse::AccumulatedMouseScroll, prelude::*};
 
 use crate::tabletop_layout::{self as layout, Area};
+
+/// Use Bevy's standard pixel-to-line conversion so touchpad deltas do not become notches.
+pub(crate) fn wheel_steps(scroll: &AccumulatedMouseScroll) -> f32 {
+    scroll.to_lines(&default()).delta.y
+}
 
 pub(crate) fn parse_initial_view(value: &str) -> Result<Area, String> {
     match value {
@@ -196,7 +201,10 @@ impl Orbit {
             self.pose.pitch += motion.y * 0.004;
         }
         if scene_pointer && !input.capture.wheel && input.scroll_y != 0.0 {
-            self.pose.distance -= input.scroll_y * 0.6;
+            // Equal opposite scrolls undo each other away from the limits. A fixed
+            // proportion traverses the overview quickly while preserving close control.
+            self.pose.distance =
+                (self.pose.distance * 0.95_f32.powf(input.scroll_y)).clamp(6.0, 90.0);
             changed = true;
         }
         if input.window.focused && !input.capture.keyboard {

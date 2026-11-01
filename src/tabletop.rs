@@ -358,7 +358,6 @@ pub fn run() -> Result<(), String> {
                 handle_actions,
                 context::synchronize,
                 camera_controls,
-                rebuild_panel,
                 sync_reveal,
                 reveal::render,
                 button_colors,
@@ -366,6 +365,7 @@ pub fn run() -> Result<(), String> {
             )
                 .chain(),
         );
+    install_panel(&mut app);
     let server = app.world().resource::<AssetServer>();
     let handles = std::array::from_fn(|i| {
         prepared_image(
@@ -917,7 +917,7 @@ fn camera_controls(
         keys: &keys,
         buttons: &buttons,
         window: &window,
-        scroll_y: scroll.delta.y,
+        scroll_y: crate::tabletop_camera::wheel_steps(&scroll),
         dt: time.delta_secs(),
         capture: CameraCapture {
             pointer_blocked: modal_open || table.history,
@@ -1023,6 +1023,17 @@ fn symbol_text(
         });
 }
 
+fn install_panel(app: &mut App) {
+    app.add_systems(
+        Update,
+        rebuild_panel
+            .after(handle_actions)
+            .after(camera_controls)
+            .before(sync_reveal)
+            .before(button_colors),
+    );
+}
+
 fn skill_summary(
     parent: &mut ChildSpawnerCommands,
     art: &Art,
@@ -1030,22 +1041,42 @@ fn skill_summary(
     size: f32,
     color: Color,
 ) {
-    symbol_text(
-        parent,
-        &art.symbol_font,
-        &[
-            Run::Icon(Symbol::Willpower),
-            Run::Words(&format!(" {} / TEST ", view.skill_value)),
-            Run::Icon(Symbol::Willpower),
-            Run::Words(&format!(" ({})", view.difficulty)),
-        ],
-        &format!(
-            "Willpower {} / Test willpower ({})",
-            view.skill_value, view.difficulty
-        ),
-        size,
-        color,
-    );
+    let resolved: Vec<_> = view
+        .tokens
+        .iter()
+        .filter(|token| token.status == TokenStatus::Resolved)
+        .collect();
+    let chaos = if resolved.is_empty() {
+        None
+    } else {
+        resolved
+            .iter()
+            .try_fold(0, |sum, token| Some(sum + token.face.modifier()?))
+    };
+    // End is offered only while this test is unfinished. Ending the example
+    // preserves its partial state; it does not resolve the test or its result.
+    let finished = view.stage == Stage::Finished;
+    // This fixed Rotting Remains observation represents base willpower five and
+    // Promise's four wild icons. Its authoritative result is the observed harm.
+    let summary = crate::tabletop_skill_text::TestSummary {
+        skill: symbols::Skill::Willpower,
+        base: 5,
+        card_bonus: if view.promise_committed { 4 } else { 0 },
+        chaos,
+        chaos_pending: !finished,
+        automatic_failure: resolved
+            .iter()
+            .any(|token| token.face == TokenFace::AutoFail),
+        total: Some(view.skill_value),
+        difficulty: view.difficulty,
+        result: finished.then_some(view.horror_dealt == 0),
+    }
+    .label_with_pending(if view.stage == Stage::Ended {
+        "Ended before completion"
+    } else {
+        "Pending"
+    });
+    parent.spawn(art.text(summary, size, color));
 }
 
 fn button(

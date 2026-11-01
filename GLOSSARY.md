@@ -44,6 +44,18 @@ _Avoid_: Strength or power when referring to combat
 A skill icon that matches any of the four tested skills; under the ordinary commitment rules, each contributes +1 to the skill being tested. Its printed identity remains wild even when its contribution is expressed as a bonus to a particular skill.
 _Avoid_: A fifth tested skill, permanent icon conversion
 
+**Base skill value**:
+The investigator's value for the tested skill before the test's modifiers are applied. Committed icons and applicable card and chaos-token effects contribute to the modified skill value, not to this base.
+_Avoid_: Skill subtotal including commitments
+
+**Chaos-token modifier**:
+The contribution of resolved chaos tokens to a test's skill value. It is one kind of skill modifier; committed icons and applicable card abilities can also modify the skill value.
+_Avoid_: Modifier when referring exclusively to chaos tokens
+
+**Held chaos token**:
+A physical chaos token drawn from the bag and not yet returned to its rules-defined destination. Resolving or canceling its effects does not itself return it; a historical record of its face does not mean the token is still held.
+_Avoid_: Resolved token when referring to its current location
+
 **Investigator standee**:
 The upright representation of an investigator beside the location they occupy, distinct from their full investigator card in their investigator area.
 _Avoid_: Investigator card when referring to the figure on the map

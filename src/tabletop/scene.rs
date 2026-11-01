@@ -79,8 +79,8 @@ enum LabelDisplay {
 impl LabelDisplay {
     fn visible(self, distance: f32) -> bool {
         match self {
-            Self::Detail => distance <= 30.0,
-            Self::Overview => distance > 30.0,
+            Self::Detail => distance <= tabletop_layout::DETAIL_LABEL_DISTANCE,
+            Self::Overview => distance > tabletop_layout::DETAIL_LABEL_DISTANCE,
             Self::Always => true,
         }
     }
@@ -352,9 +352,9 @@ fn synchronize(
             );
             commands.entity(token).insert(TransientScene);
             let text = if horror {
-                format!("Horror\n{}/{}", investigator.horror, investigator.sanity)
+                format!("Horror {}/{}", investigator.horror, investigator.sanity)
             } else {
-                "Damage\nn/a".to_owned()
+                "Damage n/a".to_owned()
             };
             commands.spawn((
                 Text::new(text),
@@ -366,10 +366,12 @@ fn synchronize(
                 TextLayout::justify(Justify::Center),
                 Node {
                     position_type: PositionType::Absolute,
-                    width: px(64.0),
+                    width: px(80.0),
                     ..default()
                 },
-                WorldLabel(at + Vec3::Z * 0.4),
+                WorldLabel(tabletop_layout::investigator_harm_caption(
+                    index, horror, true,
+                )),
                 HarmCaption,
                 LabelDisplay::Detail,
                 TransientScene,
@@ -741,7 +743,7 @@ fn token_label_visibility(
     orbit: Res<super::Orbit>,
     mut labels: Query<&mut Visibility, With<tabletop_tokens::TokenLabel>>,
 ) {
-    if orbit.pose().distance > 30.0 {
+    if orbit.pose().distance > tabletop_layout::DETAIL_LABEL_DISTANCE {
         for mut visibility in &mut labels {
             *visibility = Visibility::Hidden;
         }

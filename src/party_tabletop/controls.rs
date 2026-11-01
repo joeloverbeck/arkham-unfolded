@@ -63,8 +63,8 @@ impl Context {
         self.utilities = !self.utilities;
         self.dismiss();
     }
-    pub fn inspect(&mut self, index: usize) -> Option<usize> {
-        if index >= CARDS.len() {
+    pub fn inspect(&mut self, view: &Observation, index: usize) -> Option<usize> {
+        if !cards::inspectable(view, index) {
             return None;
         }
         self.dismiss();
@@ -200,7 +200,7 @@ impl Context {
 }
 pub(super) fn exists(view: &Observation, source: Source) -> bool {
     match source {
-        Source::Card(index) => index < CARDS.len(),
+        Source::Card(index) => cards::inspectable(view, index),
         Source::Hand(id) => view
             .investigators
             .iter()
@@ -212,7 +212,7 @@ pub(super) fn exists(view: &Observation, source: Source) -> bool {
         Source::Deck(who) => view.investigator(who).deck_count > 0,
         Source::Discard(who) => !view.investigator(who).discard.is_empty(),
         Source::Bag => true,
-        Source::Token(id) => view.tokens.iter().any(|t| t.id == id),
+        Source::Token(id) => view.held_tokens().iter().any(|t| t.id == id),
     }
 }
 fn ids(choice: &str, cancel: bool) -> Option<BTreeSet<u16>> {
@@ -386,12 +386,6 @@ fn entries(context: &Context, view: &Observation, live: bool, source: Source) ->
         entries.push(Entry {
             label,
             action: Action::Inspect(index),
-        });
-    }
-    if source == Source::Card(cards::index("card/01108").unwrap()) {
-        entries.push(Entry {
-            label: "Inspect reverse".into(),
-            action: Action::Inspect(cards::index("card/01108/reverse").unwrap()),
         });
     }
     entries

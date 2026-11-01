@@ -4,14 +4,6 @@ use crate::{
     tabletop_tokens::{self, TokenVisual},
 };
 
-pub(super) fn location_at(name: &str) -> Vec3 {
-    match name {
-        "Attic" => layout::SCENARIO_MAP_CENTER + Vec3::new(-5.2, 0., 0.),
-        "Cellar" => layout::SCENARIO_MAP_CENTER + Vec3::new(5.2, 0., 0.),
-        "Parlor" => layout::SCENARIO_MAP_CENTER + Vec3::new(0., 0., -3.6),
-        _ => layout::SCENARIO_MAP_CENTER,
-    }
-}
 pub(super) fn discard_at(who: Investigator) -> Vec3 {
     layout::investigator_discard(who.index())
 }
@@ -169,7 +161,12 @@ pub(super) fn synchronize(
     if last.as_ref() == Some(&view) {
         return;
     }
-    let new_tokens = last.as_ref().map_or(0, |old| old.tokens.len());
+    let new_tokens = last.as_ref().map_or(0, |old| old.held_tokens().len());
+    let returning = !table.reduced_motion
+        && view.test.as_ref().is_some_and(|test| test.result.is_some())
+        && last
+            .as_ref()
+            .is_some_and(|old| old.revision < view.revision && !old.held_tokens().is_empty());
     for entity in &entities {
         commands.entity(entity).despawn();
     }
@@ -181,8 +178,11 @@ pub(super) fn synchronize(
         layout::scenario_heading(),
         true,
     );
+    let map = location_map::GatheringMap::new(&view.locations, Vec2::new(CARD_WIDTH, CARD_LENGTH))
+        .expect("the prepared Gathering map must fit its scenario surface");
+    map.spawn(&mut commands, &mut meshes, &mut materials);
     for location in &view.locations {
-        let at = location_at(&location.name);
+        let at = map.position(&location.code);
         let role = format!("card/{}", location.code);
         face(
             &mut commands,
@@ -200,7 +200,9 @@ pub(super) fn synchronize(
             format!(
                 "{}\n{}",
                 location.name,
-                if location.revealed {
+                if location_map::GatheringMap::entry_blocked(location) {
+                    "Entry blocked".into()
+                } else if location.revealed {
                     format!("{} clues", location.clues)
                 } else {
                     "Unrevealed".into()
@@ -239,7 +241,9 @@ pub(super) fn synchronize(
     for (role, side) in [
         ("card/01105", layout::ScenarioBookSide::Agenda),
         (
-            if view.endpoint == Some(crate::party::Endpoint::Escaped) {
+            if view.stage == crate::party::Stage::ActReveal {
+                "card/01108/reverse"
+            } else if view.endpoint == Some(crate::party::Endpoint::Escaped) {
                 "card/01109"
             } else {
                 "card/01108"
@@ -262,7 +266,7 @@ pub(super) fn synchronize(
         );
         let (kind, side) = if role == "card/01105" {
             ("Agenda 1", -1.)
-        } else if role == "card/01108" {
+        } else if role == "card/01108" || role == "card/01108/reverse" {
             ("Act 1", 1.)
         } else {
             ("Act 2", 1.)
@@ -355,10 +359,11 @@ pub(super) fn synchronize(
         ] {
             let at = layout::investigator_harm(index, horror);
             let image = art.image(role);
+            let caption = layout::investigator_harm_caption(index, horror, image.is_none());
             let text = if image.is_some() {
                 format!("{amount}/{capacity}")
             } else {
-                format!("{title}\n{amount}/{capacity}")
+                format!("{title} {amount}/{capacity}")
             };
             let entity = crate::tabletop_harm_tokens::spawn(
                 &mut commands,
@@ -379,10 +384,10 @@ pub(super) fn synchronize(
                 TextLayout::justify(Justify::Center),
                 Node {
                     position_type: PositionType::Absolute,
-                    width: px(64.0),
+                    width: px(80.0),
                     ..default()
                 },
-                WorldLabel(at + Vec3::Z * 0.5, false),
+                WorldLabel(caption, false),
                 Pickable::IGNORE,
                 Scene,
             ));
@@ -544,7 +549,12 @@ pub(super) fn synchronize(
         }
     }
     let mut token_slots = [0, 0];
-    for (index, token) in view.tokens.iter().enumerate() {
+    let visible_tokens = if returning {
+        &view.tokens
+    } else {
+        view.held_tokens()
+    };
+    for (index, token) in visible_tokens.iter().enumerate() {
         let canceled = token.status == TokenStatus::Canceled;
         let section = usize::from(canceled);
         let at = layout::test_token(canceled, token_slots[section]);
@@ -569,6 +579,25 @@ pub(super) fn synchronize(
                 label_offset: Vec3::new(0., 0., 0.55),
             },
         );
+        if returning {
+            commands.entity(entity).insert((
+                Scene,
+                Pickable::IGNORE,
+                ReturningToken {
+                    start: at,
+                    destination: if token.face == TokenFace::Curse
+                        && token.status == TokenStatus::Resolved
+                    {
+                        curse_pool_at()
+                    } else {
+                        layout::test_bag()
+                    },
+                    elapsed: 0.,
+                },
+            ));
+            commands.entity(label).despawn();
+            continue;
+        }
         let source = Source::Token(token.id);
         commands
             .entity(entity)
@@ -609,6 +638,21 @@ pub(super) fn synchronize(
         bag_at + Vec3::Z * 0.9,
         false,
     );
+    let pool_at = curse_pool_at();
+    commands.spawn((
+        Mesh3d(meshes.add(Cylinder::new(0.6, 0.12))),
+        MeshMaterial3d(materials.add(Color::srgb(0.25, 0.16, 0.32))),
+        Transform::from_translation(pool_at),
+        Pickable::IGNORE,
+        Scene,
+    ));
+    label(
+        &mut commands,
+        &art,
+        format!("Curse pool\n{} tokens", view.curses_in_pool),
+        pool_at + Vec3::Z * 0.9,
+        false,
+    );
     label(
         &mut commands,
         &art,
@@ -617,6 +661,9 @@ pub(super) fn synchronize(
         false,
     );
     *last = Some(view);
+}
+pub(super) fn curse_pool_at() -> Vec3 {
+    layout::test_bag() - Vec3::X * 2.
 }
 fn token_role(face: TokenFace) -> &'static str {
     match face {

@@ -1,0 +1,2830 @@
+{
+  "format_version": 1,
+  "kind": "party-session",
+  "source_revision": "7083162:issue-55-study-escape-v1",
+  "app_version": "0.1.0",
+  "payload": {
+    "fixed_draws": [
+      "zero"
+    ],
+    "history": [
+      "Prepared Study escape attempt: choose the investigator whose turn begins.",
+      "Begin Tony Morgan's turn",
+      "Investigate Study (one action; intellect against shroud 2)",
+      "Commit Tony Morgan's On the Hunt",
+      "Committed icons bring intellect to 4 against Study shroud 2. Promise of Power adds its curse when committed. [RR ST.2; 07032]",
+      "Reveal one chaos token",
+      "Revealed 0.",
+      "Resolve 0"
+    ],
+    "moments": [
+      {
+        "actor": null,
+        "bag_count": 16,
+        "can_undo": false,
+        "choices": [
+          {
+            "cancel_faces": [],
+            "id": "select:tony",
+            "label": "Begin Tony Morgan's turn"
+          },
+          {
+            "cancel_faces": [],
+            "id": "select:patrice",
+            "label": "Begin Patrice Hathaway's turn"
+          },
+          {
+            "cancel_faces": [],
+            "id": "select:jacqueline",
+            "label": "Begin Jacqueline Fine's turn"
+          }
+        ],
+        "contracts_bounties": 6,
+        "curses_in_pool": 10,
+        "endpoint": null,
+        "history": [
+          "Prepared Study escape attempt: choose the investigator whose turn begins."
+        ],
+        "investigators": [
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 33,
+            "discard": [],
+            "hand": [
+              {
+                "code": "03263",
+                "id": 0,
+                "intellect_icons": 1,
+                "owner": "tony",
+                "title": "On the Hunt"
+              }
+            ],
+            "health": 9,
+            "horror": 0,
+            "intellect": 3,
+            "investigator": "tony",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 5,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 44,
+            "discard": [],
+            "hand": [
+              {
+                "code": "07032",
+                "id": 100,
+                "intellect_icons": 4,
+                "owner": "patrice",
+                "title": "Promise of Power"
+              }
+            ],
+            "health": 7,
+            "horror": 0,
+            "intellect": 2,
+            "investigator": "patrice",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 7,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 32,
+            "discard": [],
+            "hand": [
+              {
+                "code": "60408",
+                "id": 200,
+                "intellect_icons": 1,
+                "owner": "jacqueline",
+                "title": "Clairvoyance"
+              }
+            ],
+            "health": 6,
+            "horror": 2,
+            "intellect": 3,
+            "investigator": "jacqueline",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 9,
+            "turn_finished": false
+          }
+        ],
+        "jacqueline_arcane_research": 2,
+        "jacqueline_used": false,
+        "locations": [
+          {
+            "clues": 6,
+            "code": "01111",
+            "name": "Study",
+            "revealed": true
+          }
+        ],
+        "prompt": "Choose the next investigator.",
+        "revision": 0,
+        "stage": "select_turn",
+        "study_clues": 6,
+        "test": null,
+        "tokens": [],
+        "tony_bonus_action": true,
+        "unavailable": [
+          {
+            "cancel_faces": [],
+            "id": "fight",
+            "label": "Fight requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "evade",
+            "label": "Evade requires an engaged enemy; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "engage",
+            "label": "Engage requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "move",
+            "label": "Study has no available connected destination before Act 1 advances."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:0",
+            "label": "On the Hunt is played when you would draw an encounter card during the mythos phase; that timing does not occur here."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:100",
+            "label": "A skill card is committed to an appropriate test, not played as an action."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:200",
+            "label": "Clairvoyance costs 4 resources and one action to play. Jacqueline Fine has 0 resources and 3 actions remaining."
+          }
+        ]
+      },
+      {
+        "actor": "tony",
+        "bag_count": 16,
+        "can_undo": true,
+        "choices": [
+          {
+            "cancel_faces": [],
+            "id": "investigate",
+            "label": "Investigate Study (one action; intellect against shroud 2)"
+          },
+          {
+            "cancel_faces": [],
+            "id": "draw",
+            "label": "Draw one card (one action)"
+          },
+          {
+            "cancel_faces": [],
+            "id": "resource",
+            "label": "Gain one resource (one action)"
+          },
+          {
+            "cancel_faces": [],
+            "id": "end-turn",
+            "label": "End this investigator's turn"
+          },
+          {
+            "cancel_faces": [],
+            "id": "undo",
+            "label": "Undo the last decision before new hidden information"
+          }
+        ],
+        "contracts_bounties": 6,
+        "curses_in_pool": 10,
+        "endpoint": null,
+        "history": [
+          "Prepared Study escape attempt: choose the investigator whose turn begins.",
+          "Begin Tony Morgan's turn"
+        ],
+        "investigators": [
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 33,
+            "discard": [],
+            "hand": [
+              {
+                "code": "03263",
+                "id": 0,
+                "intellect_icons": 1,
+                "owner": "tony",
+                "title": "On the Hunt"
+              }
+            ],
+            "health": 9,
+            "horror": 0,
+            "intellect": 3,
+            "investigator": "tony",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 5,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 44,
+            "discard": [],
+            "hand": [
+              {
+                "code": "07032",
+                "id": 100,
+                "intellect_icons": 4,
+                "owner": "patrice",
+                "title": "Promise of Power"
+              }
+            ],
+            "health": 7,
+            "horror": 0,
+            "intellect": 2,
+            "investigator": "patrice",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 7,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 32,
+            "discard": [],
+            "hand": [
+              {
+                "code": "60408",
+                "id": 200,
+                "intellect_icons": 1,
+                "owner": "jacqueline",
+                "title": "Clairvoyance"
+              }
+            ],
+            "health": 6,
+            "horror": 2,
+            "intellect": 3,
+            "investigator": "jacqueline",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 9,
+            "turn_finished": false
+          }
+        ],
+        "jacqueline_arcane_research": 2,
+        "jacqueline_used": false,
+        "locations": [
+          {
+            "clues": 6,
+            "code": "01111",
+            "name": "Study",
+            "revealed": true
+          }
+        ],
+        "prompt": "Choose an action.",
+        "revision": 1,
+        "stage": "action",
+        "study_clues": 6,
+        "test": null,
+        "tokens": [],
+        "tony_bonus_action": true,
+        "unavailable": [
+          {
+            "cancel_faces": [],
+            "id": "fight",
+            "label": "Fight requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "evade",
+            "label": "Evade requires an engaged enemy; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "engage",
+            "label": "Engage requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "move",
+            "label": "Study has no available connected destination before Act 1 advances."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:0",
+            "label": "On the Hunt is played when you would draw an encounter card during the mythos phase; that timing does not occur here."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:100",
+            "label": "A skill card is committed to an appropriate test, not played as an action."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:200",
+            "label": "Clairvoyance costs 4 resources and one action to play. Jacqueline Fine has 0 resources and 3 actions remaining."
+          }
+        ]
+      },
+      {
+        "actor": "tony",
+        "bag_count": 16,
+        "can_undo": true,
+        "choices": [
+          {
+            "cancel_faces": [],
+            "id": "commit:none",
+            "label": "Commit no cards"
+          },
+          {
+            "cancel_faces": [],
+            "id": "commit:0",
+            "label": "Commit Tony Morgan's On the Hunt"
+          },
+          {
+            "cancel_faces": [],
+            "id": "commit:100",
+            "label": "Commit Patrice Hathaway's Promise of Power"
+          },
+          {
+            "cancel_faces": [],
+            "id": "commit:0,100",
+            "label": "Commit Tony Morgan's On the Hunt and Patrice Hathaway's Promise of Power"
+          },
+          {
+            "cancel_faces": [],
+            "id": "commit:200",
+            "label": "Commit Jacqueline Fine's Clairvoyance"
+          },
+          {
+            "cancel_faces": [],
+            "id": "commit:0,200",
+            "label": "Commit Tony Morgan's On the Hunt and Jacqueline Fine's Clairvoyance"
+          },
+          {
+            "cancel_faces": [],
+            "id": "commit:100,200",
+            "label": "Commit Patrice Hathaway's Promise of Power and Jacqueline Fine's Clairvoyance"
+          },
+          {
+            "cancel_faces": [],
+            "id": "commit:0,100,200",
+            "label": "Commit Tony Morgan's On the Hunt and Patrice Hathaway's Promise of Power and Jacqueline Fine's Clairvoyance"
+          },
+          {
+            "cancel_faces": [],
+            "id": "undo",
+            "label": "Undo the last decision before new hidden information"
+          }
+        ],
+        "contracts_bounties": 6,
+        "curses_in_pool": 10,
+        "endpoint": null,
+        "history": [
+          "Prepared Study escape attempt: choose the investigator whose turn begins.",
+          "Begin Tony Morgan's turn",
+          "Investigate Study (one action; intellect against shroud 2)"
+        ],
+        "investigators": [
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 33,
+            "discard": [],
+            "hand": [
+              {
+                "code": "03263",
+                "id": 0,
+                "intellect_icons": 1,
+                "owner": "tony",
+                "title": "On the Hunt"
+              }
+            ],
+            "health": 9,
+            "horror": 0,
+            "intellect": 3,
+            "investigator": "tony",
+            "location": "Study",
+            "ordinary_actions": 2,
+            "resources": 0,
+            "sanity": 5,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 44,
+            "discard": [],
+            "hand": [
+              {
+                "code": "07032",
+                "id": 100,
+                "intellect_icons": 4,
+                "owner": "patrice",
+                "title": "Promise of Power"
+              }
+            ],
+            "health": 7,
+            "horror": 0,
+            "intellect": 2,
+            "investigator": "patrice",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 7,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 32,
+            "discard": [],
+            "hand": [
+              {
+                "code": "60408",
+                "id": 200,
+                "intellect_icons": 1,
+                "owner": "jacqueline",
+                "title": "Clairvoyance"
+              }
+            ],
+            "health": 6,
+            "horror": 2,
+            "intellect": 3,
+            "investigator": "jacqueline",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 9,
+            "turn_finished": false
+          }
+        ],
+        "jacqueline_arcane_research": 2,
+        "jacqueline_used": false,
+        "locations": [
+          {
+            "clues": 6,
+            "code": "01111",
+            "name": "Study",
+            "revealed": true
+          }
+        ],
+        "prompt": "Choose matching cards to commit; each supporting investigator may commit one.",
+        "revision": 2,
+        "stage": "commit",
+        "study_clues": 6,
+        "test": {
+          "committed": [],
+          "difficulty": 2,
+          "investigator": "tony",
+          "modifier": 0,
+          "result": null,
+          "skill_value": 3,
+          "total": null
+        },
+        "tokens": [],
+        "tony_bonus_action": true,
+        "unavailable": [
+          {
+            "cancel_faces": [],
+            "id": "fight",
+            "label": "Fight requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "evade",
+            "label": "Evade requires an engaged enemy; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "engage",
+            "label": "Engage requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "move",
+            "label": "Study has no available connected destination before Act 1 advances."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:0",
+            "label": "On the Hunt is played when you would draw an encounter card during the mythos phase; that timing does not occur here."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:100",
+            "label": "A skill card is committed to an appropriate test, not played as an action."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:200",
+            "label": "Clairvoyance costs 4 resources and one action to play. Jacqueline Fine has 0 resources and 3 actions remaining."
+          }
+        ]
+      },
+      {
+        "actor": "tony",
+        "bag_count": 16,
+        "can_undo": true,
+        "choices": [
+          {
+            "cancel_faces": [],
+            "id": "reveal",
+            "label": "Reveal one chaos token"
+          },
+          {
+            "cancel_faces": [],
+            "id": "use-jacqueline",
+            "label": "Use Jacqueline: reveal three, then choose cancellations"
+          },
+          {
+            "cancel_faces": [],
+            "id": "undo",
+            "label": "Undo the last decision before new hidden information"
+          }
+        ],
+        "contracts_bounties": 6,
+        "curses_in_pool": 10,
+        "endpoint": null,
+        "history": [
+          "Prepared Study escape attempt: choose the investigator whose turn begins.",
+          "Begin Tony Morgan's turn",
+          "Investigate Study (one action; intellect against shroud 2)",
+          "Commit Tony Morgan's On the Hunt",
+          "Committed icons bring intellect to 4 against Study shroud 2. Promise of Power adds its curse when committed. [RR ST.2; 07032]"
+        ],
+        "investigators": [
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 33,
+            "discard": [],
+            "hand": [],
+            "health": 9,
+            "horror": 0,
+            "intellect": 3,
+            "investigator": "tony",
+            "location": "Study",
+            "ordinary_actions": 2,
+            "resources": 0,
+            "sanity": 5,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 44,
+            "discard": [],
+            "hand": [
+              {
+                "code": "07032",
+                "id": 100,
+                "intellect_icons": 4,
+                "owner": "patrice",
+                "title": "Promise of Power"
+              }
+            ],
+            "health": 7,
+            "horror": 0,
+            "intellect": 2,
+            "investigator": "patrice",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 7,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 32,
+            "discard": [],
+            "hand": [
+              {
+                "code": "60408",
+                "id": 200,
+                "intellect_icons": 1,
+                "owner": "jacqueline",
+                "title": "Clairvoyance"
+              }
+            ],
+            "health": 6,
+            "horror": 2,
+            "intellect": 3,
+            "investigator": "jacqueline",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 9,
+            "turn_finished": false
+          }
+        ],
+        "jacqueline_arcane_research": 2,
+        "jacqueline_used": false,
+        "locations": [
+          {
+            "clues": 6,
+            "code": "01111",
+            "name": "Study",
+            "revealed": true
+          }
+        ],
+        "prompt": "Reveal a chaos token, or use Jacqueline's reaction.",
+        "revision": 3,
+        "stage": "before_reveal",
+        "study_clues": 6,
+        "test": {
+          "committed": [
+            {
+              "code": "03263",
+              "id": 0,
+              "intellect_icons": 1,
+              "owner": "tony",
+              "title": "On the Hunt"
+            }
+          ],
+          "difficulty": 2,
+          "investigator": "tony",
+          "modifier": 0,
+          "result": null,
+          "skill_value": 4,
+          "total": null
+        },
+        "tokens": [],
+        "tony_bonus_action": true,
+        "unavailable": [
+          {
+            "cancel_faces": [],
+            "id": "fight",
+            "label": "Fight requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "evade",
+            "label": "Evade requires an engaged enemy; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "engage",
+            "label": "Engage requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "move",
+            "label": "Study has no available connected destination before Act 1 advances."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:100",
+            "label": "A skill card is committed to an appropriate test, not played as an action."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:200",
+            "label": "Clairvoyance costs 4 resources and one action to play. Jacqueline Fine has 0 resources and 3 actions remaining."
+          }
+        ]
+      },
+      {
+        "actor": "tony",
+        "bag_count": 15,
+        "can_undo": false,
+        "choices": [
+          {
+            "cancel_faces": [],
+            "id": "resolve:0",
+            "label": "Resolve 0"
+          }
+        ],
+        "contracts_bounties": 6,
+        "curses_in_pool": 10,
+        "endpoint": null,
+        "history": [
+          "Prepared Study escape attempt: choose the investigator whose turn begins.",
+          "Begin Tony Morgan's turn",
+          "Investigate Study (one action; intellect against shroud 2)",
+          "Commit Tony Morgan's On the Hunt",
+          "Committed icons bring intellect to 4 against Study shroud 2. Promise of Power adds its curse when committed. [RR ST.2; 07032]",
+          "Reveal one chaos token",
+          "Revealed 0."
+        ],
+        "investigators": [
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 33,
+            "discard": [],
+            "hand": [],
+            "health": 9,
+            "horror": 0,
+            "intellect": 3,
+            "investigator": "tony",
+            "location": "Study",
+            "ordinary_actions": 2,
+            "resources": 0,
+            "sanity": 5,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 44,
+            "discard": [],
+            "hand": [
+              {
+                "code": "07032",
+                "id": 100,
+                "intellect_icons": 4,
+                "owner": "patrice",
+                "title": "Promise of Power"
+              }
+            ],
+            "health": 7,
+            "horror": 0,
+            "intellect": 2,
+            "investigator": "patrice",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 7,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 32,
+            "discard": [],
+            "hand": [
+              {
+                "code": "60408",
+                "id": 200,
+                "intellect_icons": 1,
+                "owner": "jacqueline",
+                "title": "Clairvoyance"
+              }
+            ],
+            "health": 6,
+            "horror": 2,
+            "intellect": 3,
+            "investigator": "jacqueline",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 9,
+            "turn_finished": false
+          }
+        ],
+        "jacqueline_arcane_research": 2,
+        "jacqueline_used": false,
+        "locations": [
+          {
+            "clues": 6,
+            "code": "01111",
+            "name": "Study",
+            "revealed": true
+          }
+        ],
+        "prompt": "Choose the next token to resolve.",
+        "revision": 4,
+        "stage": "resolve",
+        "study_clues": 6,
+        "test": {
+          "committed": [
+            {
+              "code": "03263",
+              "id": 0,
+              "intellect_icons": 1,
+              "owner": "tony",
+              "title": "On the Hunt"
+            }
+          ],
+          "difficulty": 2,
+          "investigator": "tony",
+          "modifier": 0,
+          "result": null,
+          "skill_value": 4,
+          "total": null
+        },
+        "tokens": [
+          {
+            "face": "zero",
+            "id": 0,
+            "status": "pending"
+          }
+        ],
+        "tony_bonus_action": true,
+        "unavailable": [
+          {
+            "cancel_faces": [],
+            "id": "fight",
+            "label": "Fight requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "evade",
+            "label": "Evade requires an engaged enemy; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "engage",
+            "label": "Engage requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "move",
+            "label": "Study has no available connected destination before Act 1 advances."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:100",
+            "label": "A skill card is committed to an appropriate test, not played as an action."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:200",
+            "label": "Clairvoyance costs 4 resources and one action to play. Jacqueline Fine has 0 resources and 3 actions remaining."
+          }
+        ]
+      },
+      {
+        "actor": "tony",
+        "bag_count": 15,
+        "can_undo": true,
+        "choices": [
+          {
+            "cancel_faces": [],
+            "id": "finish-test",
+            "label": "Finish test and return held tokens"
+          },
+          {
+            "cancel_faces": [],
+            "id": "undo",
+            "label": "Undo the last decision before new hidden information"
+          }
+        ],
+        "contracts_bounties": 6,
+        "curses_in_pool": 10,
+        "endpoint": null,
+        "history": [
+          "Prepared Study escape attempt: choose the investigator whose turn begins.",
+          "Begin Tony Morgan's turn",
+          "Investigate Study (one action; intellect against shroud 2)",
+          "Commit Tony Morgan's On the Hunt",
+          "Committed icons bring intellect to 4 against Study shroud 2. Promise of Power adds its curse when committed. [RR ST.2; 07032]",
+          "Reveal one chaos token",
+          "Revealed 0.",
+          "Resolve 0"
+        ],
+        "investigators": [
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 33,
+            "discard": [],
+            "hand": [],
+            "health": 9,
+            "horror": 0,
+            "intellect": 3,
+            "investigator": "tony",
+            "location": "Study",
+            "ordinary_actions": 2,
+            "resources": 0,
+            "sanity": 5,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 44,
+            "discard": [],
+            "hand": [
+              {
+                "code": "07032",
+                "id": 100,
+                "intellect_icons": 4,
+                "owner": "patrice",
+                "title": "Promise of Power"
+              }
+            ],
+            "health": 7,
+            "horror": 0,
+            "intellect": 2,
+            "investigator": "patrice",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 7,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 32,
+            "discard": [],
+            "hand": [
+              {
+                "code": "60408",
+                "id": 200,
+                "intellect_icons": 1,
+                "owner": "jacqueline",
+                "title": "Clairvoyance"
+              }
+            ],
+            "health": 6,
+            "horror": 2,
+            "intellect": 3,
+            "investigator": "jacqueline",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 9,
+            "turn_finished": false
+          }
+        ],
+        "jacqueline_arcane_research": 2,
+        "jacqueline_used": false,
+        "locations": [
+          {
+            "clues": 6,
+            "code": "01111",
+            "name": "Study",
+            "revealed": true
+          }
+        ],
+        "prompt": "Finish the skill test.",
+        "revision": 5,
+        "stage": "result",
+        "study_clues": 6,
+        "test": {
+          "committed": [
+            {
+              "code": "03263",
+              "id": 0,
+              "intellect_icons": 1,
+              "owner": "tony",
+              "title": "On the Hunt"
+            }
+          ],
+          "difficulty": 2,
+          "investigator": "tony",
+          "modifier": 0,
+          "result": null,
+          "skill_value": 4,
+          "total": null
+        },
+        "tokens": [
+          {
+            "face": "zero",
+            "id": 0,
+            "status": "resolved"
+          }
+        ],
+        "tony_bonus_action": true,
+        "unavailable": [
+          {
+            "cancel_faces": [],
+            "id": "fight",
+            "label": "Fight requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "evade",
+            "label": "Evade requires an engaged enemy; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "engage",
+            "label": "Engage requires an enemy target; there is no enemy in this prepared position."
+          },
+          {
+            "cancel_faces": [],
+            "id": "move",
+            "label": "Study has no available connected destination before Act 1 advances."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:100",
+            "label": "A skill card is committed to an appropriate test, not played as an action."
+          },
+          {
+            "cancel_faces": [],
+            "id": "play:200",
+            "label": "Clairvoyance costs 4 resources and one action to play. Jacqueline Fine has 0 resources and 3 actions remaining."
+          }
+        ]
+      }
+    ],
+    "revision": 5,
+    "seed": 1,
+    "state": {
+      "actor": "tony",
+      "bag": [
+        "plus_one",
+        "zero",
+        "minus_one",
+        "minus_one",
+        "minus_one",
+        "minus_two",
+        "minus_two",
+        "minus_three",
+        "minus_four",
+        "skull",
+        "skull",
+        "cultist",
+        "tablet",
+        "auto_fail",
+        "elder_sign"
+      ],
+      "contracts_bounties": 6,
+      "curses_in_pool": 10,
+      "decks": [
+        [
+          {
+            "code": "01089",
+            "id": 1,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Guts"
+          },
+          {
+            "code": "01089",
+            "id": 2,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Guts"
+          },
+          {
+            "code": "03263",
+            "id": 3,
+            "intellect_icons": 1,
+            "owner": "tony",
+            "title": "On the Hunt"
+          },
+          {
+            "code": "01049",
+            "id": 4,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "01049",
+            "id": 5,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "02038",
+            "id": 6,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "02225",
+            "id": 7,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "02229",
+            "id": 8,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "03233",
+            "id": 9,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "03233",
+            "id": 10,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04037",
+            "id": 11,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04103",
+            "id": 12,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04103",
+            "id": 13,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04107",
+            "id": 14,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04107",
+            "id": 15,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04150",
+            "id": 16,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04150",
+            "id": 17,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "05111",
+            "id": 18,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "05117",
+            "id": 19,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "05117",
+            "id": 20,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "05277",
+            "id": 21,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06011",
+            "id": 22,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06011",
+            "id": 23,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06012",
+            "id": 24,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06162",
+            "id": 25,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06162",
+            "id": 26,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "09029",
+            "id": 27,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "09068",
+            "id": 28,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "09068",
+            "id": 29,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60114",
+            "id": 30,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60114",
+            "id": 31,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60306",
+            "id": 32,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60306",
+            "id": 33,
+            "intellect_icons": 0,
+            "owner": "tony",
+            "title": "Unrevealed card"
+          }
+        ],
+        [
+          {
+            "code": "01080",
+            "id": 101,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Lucky!"
+          },
+          {
+            "code": "01080",
+            "id": 102,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Lucky!"
+          },
+          {
+            "code": "01093",
+            "id": 103,
+            "intellect_icons": 2,
+            "owner": "patrice",
+            "title": "Unexpected Courage"
+          },
+          {
+            "code": "01000",
+            "id": 104,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "01065",
+            "id": 105,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "01065",
+            "id": 106,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "01079",
+            "id": 107,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "01079",
+            "id": 108,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "01093",
+            "id": 109,
+            "intellect_icons": 2,
+            "owner": "patrice",
+            "title": "Unexpected Courage"
+          },
+          {
+            "code": "02033",
+            "id": 110,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "02033",
+            "id": 111,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "02192",
+            "id": 112,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "02192",
+            "id": 113,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "03033",
+            "id": 114,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "03033",
+            "id": 115,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "03039",
+            "id": 116,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "03039",
+            "id": 117,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04029",
+            "id": 118,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04029",
+            "id": 119,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04200",
+            "id": 120,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04200",
+            "id": 121,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04201",
+            "id": 122,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04201",
+            "id": 123,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04272",
+            "id": 124,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04272",
+            "id": 125,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "05032",
+            "id": 126,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "05032",
+            "id": 127,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06016",
+            "id": 128,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06017",
+            "id": 129,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06164",
+            "id": 130,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06165",
+            "id": 131,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06201",
+            "id": 132,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06201",
+            "id": 133,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "07032",
+            "id": 134,
+            "intellect_icons": 4,
+            "owner": "patrice",
+            "title": "Promise of Power"
+          },
+          {
+            "code": "09102",
+            "id": 135,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "09102",
+            "id": 136,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "10111",
+            "id": 137,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "10111",
+            "id": 138,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60407",
+            "id": 139,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60407",
+            "id": 140,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60507",
+            "id": 141,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60507",
+            "id": 142,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60513",
+            "id": 143,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60513",
+            "id": 144,
+            "intellect_icons": 0,
+            "owner": "patrice",
+            "title": "Unrevealed card"
+          }
+        ],
+        [
+          {
+            "code": "60408",
+            "id": 201,
+            "intellect_icons": 1,
+            "owner": "jacqueline",
+            "title": "Clairvoyance"
+          },
+          {
+            "code": "11067",
+            "id": 202,
+            "intellect_icons": 1,
+            "owner": "jacqueline",
+            "title": "Eyes of the Dreamer"
+          },
+          {
+            "code": "11067",
+            "id": 203,
+            "intellect_icons": 1,
+            "owner": "jacqueline",
+            "title": "Eyes of the Dreamer"
+          },
+          {
+            "code": "01000",
+            "id": 204,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "01065",
+            "id": 205,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "01065",
+            "id": 206,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "03033",
+            "id": 207,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04032",
+            "id": 208,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04032",
+            "id": 209,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04197",
+            "id": 210,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04197",
+            "id": 211,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "04199",
+            "id": 212,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "05032",
+            "id": 213,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "05032",
+            "id": 214,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "05112",
+            "id": 215,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06117",
+            "id": 216,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06117",
+            "id": 217,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06201",
+            "id": 218,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "06201",
+            "id": 219,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "07029",
+            "id": 220,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "11069",
+            "id": 221,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "11097",
+            "id": 222,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "11097",
+            "id": 223,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60402",
+            "id": 224,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60403",
+            "id": 225,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60411",
+            "id": 226,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60411",
+            "id": 227,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60412",
+            "id": 228,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60416",
+            "id": 229,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60416",
+            "id": 230,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60419",
+            "id": 231,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          },
+          {
+            "code": "60419",
+            "id": 232,
+            "intellect_icons": 0,
+            "owner": "jacqueline",
+            "title": "Unrevealed card"
+          }
+        ]
+      ],
+      "draw_cursor": 1,
+      "draws": [
+        "zero"
+      ],
+      "endpoint": null,
+      "group": [
+        0
+      ],
+      "hidden_epoch": 1,
+      "investigators": [
+        {
+          "clues": 0,
+          "damage": 0,
+          "deck_count": 33,
+          "discard": [],
+          "hand": [],
+          "health": 9,
+          "horror": 0,
+          "intellect": 3,
+          "investigator": "tony",
+          "location": "Study",
+          "ordinary_actions": 2,
+          "resources": 0,
+          "sanity": 5,
+          "turn_finished": false
+        },
+        {
+          "clues": 0,
+          "damage": 0,
+          "deck_count": 44,
+          "discard": [],
+          "hand": [
+            {
+              "code": "07032",
+              "id": 100,
+              "intellect_icons": 4,
+              "owner": "patrice",
+              "title": "Promise of Power"
+            }
+          ],
+          "health": 7,
+          "horror": 0,
+          "intellect": 2,
+          "investigator": "patrice",
+          "location": "Study",
+          "ordinary_actions": 3,
+          "resources": 0,
+          "sanity": 7,
+          "turn_finished": false
+        },
+        {
+          "clues": 0,
+          "damage": 0,
+          "deck_count": 32,
+          "discard": [],
+          "hand": [
+            {
+              "code": "60408",
+              "id": 200,
+              "intellect_icons": 1,
+              "owner": "jacqueline",
+              "title": "Clairvoyance"
+            }
+          ],
+          "health": 6,
+          "horror": 2,
+          "intellect": 3,
+          "investigator": "jacqueline",
+          "location": "Study",
+          "ordinary_actions": 3,
+          "resources": 0,
+          "sanity": 9,
+          "turn_finished": false
+        }
+      ],
+      "jacqueline_used": false,
+      "random": 1,
+      "stage": "result",
+      "study_clues": 6,
+      "test": {
+        "committed": [
+          {
+            "code": "03263",
+            "id": 0,
+            "intellect_icons": 1,
+            "owner": "tony",
+            "title": "On the Hunt"
+          }
+        ],
+        "difficulty": 2,
+        "investigator": "tony",
+        "modifier": 0,
+        "result": null,
+        "skill_value": 4,
+        "total": null
+      },
+      "tokens": [
+        {
+          "face": "zero",
+          "id": 0,
+          "status": "resolved"
+        }
+      ]
+    },
+    "undo": [
+      {
+        "actor": "tony",
+        "bag": [
+          "plus_one",
+          "zero",
+          "minus_one",
+          "minus_one",
+          "minus_one",
+          "minus_two",
+          "minus_two",
+          "minus_three",
+          "minus_four",
+          "skull",
+          "skull",
+          "cultist",
+          "tablet",
+          "auto_fail",
+          "elder_sign"
+        ],
+        "contracts_bounties": 6,
+        "curses_in_pool": 10,
+        "decks": [
+          [
+            {
+              "code": "01089",
+              "id": 1,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Guts"
+            },
+            {
+              "code": "01089",
+              "id": 2,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Guts"
+            },
+            {
+              "code": "03263",
+              "id": 3,
+              "intellect_icons": 1,
+              "owner": "tony",
+              "title": "On the Hunt"
+            },
+            {
+              "code": "01049",
+              "id": 4,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "01049",
+              "id": 5,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "02038",
+              "id": 6,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "02225",
+              "id": 7,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "02229",
+              "id": 8,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "03233",
+              "id": 9,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "03233",
+              "id": 10,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04037",
+              "id": 11,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04103",
+              "id": 12,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04103",
+              "id": 13,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04107",
+              "id": 14,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04107",
+              "id": 15,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04150",
+              "id": 16,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04150",
+              "id": 17,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "05111",
+              "id": 18,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "05117",
+              "id": 19,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "05117",
+              "id": 20,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "05277",
+              "id": 21,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06011",
+              "id": 22,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06011",
+              "id": 23,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06012",
+              "id": 24,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06162",
+              "id": 25,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06162",
+              "id": 26,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "09029",
+              "id": 27,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "09068",
+              "id": 28,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "09068",
+              "id": 29,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60114",
+              "id": 30,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60114",
+              "id": 31,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60306",
+              "id": 32,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60306",
+              "id": 33,
+              "intellect_icons": 0,
+              "owner": "tony",
+              "title": "Unrevealed card"
+            }
+          ],
+          [
+            {
+              "code": "01080",
+              "id": 101,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Lucky!"
+            },
+            {
+              "code": "01080",
+              "id": 102,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Lucky!"
+            },
+            {
+              "code": "01093",
+              "id": 103,
+              "intellect_icons": 2,
+              "owner": "patrice",
+              "title": "Unexpected Courage"
+            },
+            {
+              "code": "01000",
+              "id": 104,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "01065",
+              "id": 105,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "01065",
+              "id": 106,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "01079",
+              "id": 107,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "01079",
+              "id": 108,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "01093",
+              "id": 109,
+              "intellect_icons": 2,
+              "owner": "patrice",
+              "title": "Unexpected Courage"
+            },
+            {
+              "code": "02033",
+              "id": 110,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "02033",
+              "id": 111,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "02192",
+              "id": 112,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "02192",
+              "id": 113,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "03033",
+              "id": 114,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "03033",
+              "id": 115,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "03039",
+              "id": 116,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "03039",
+              "id": 117,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04029",
+              "id": 118,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04029",
+              "id": 119,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04200",
+              "id": 120,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04200",
+              "id": 121,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04201",
+              "id": 122,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04201",
+              "id": 123,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04272",
+              "id": 124,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04272",
+              "id": 125,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "05032",
+              "id": 126,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "05032",
+              "id": 127,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06016",
+              "id": 128,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06017",
+              "id": 129,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06164",
+              "id": 130,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06165",
+              "id": 131,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06201",
+              "id": 132,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06201",
+              "id": 133,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "07032",
+              "id": 134,
+              "intellect_icons": 4,
+              "owner": "patrice",
+              "title": "Promise of Power"
+            },
+            {
+              "code": "09102",
+              "id": 135,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "09102",
+              "id": 136,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "10111",
+              "id": 137,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "10111",
+              "id": 138,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60407",
+              "id": 139,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60407",
+              "id": 140,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60507",
+              "id": 141,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60507",
+              "id": 142,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60513",
+              "id": 143,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60513",
+              "id": 144,
+              "intellect_icons": 0,
+              "owner": "patrice",
+              "title": "Unrevealed card"
+            }
+          ],
+          [
+            {
+              "code": "60408",
+              "id": 201,
+              "intellect_icons": 1,
+              "owner": "jacqueline",
+              "title": "Clairvoyance"
+            },
+            {
+              "code": "11067",
+              "id": 202,
+              "intellect_icons": 1,
+              "owner": "jacqueline",
+              "title": "Eyes of the Dreamer"
+            },
+            {
+              "code": "11067",
+              "id": 203,
+              "intellect_icons": 1,
+              "owner": "jacqueline",
+              "title": "Eyes of the Dreamer"
+            },
+            {
+              "code": "01000",
+              "id": 204,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "01065",
+              "id": 205,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "01065",
+              "id": 206,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "03033",
+              "id": 207,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04032",
+              "id": 208,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04032",
+              "id": 209,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04197",
+              "id": 210,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04197",
+              "id": 211,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "04199",
+              "id": 212,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "05032",
+              "id": 213,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "05032",
+              "id": 214,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "05112",
+              "id": 215,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06117",
+              "id": 216,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06117",
+              "id": 217,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06201",
+              "id": 218,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "06201",
+              "id": 219,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "07029",
+              "id": 220,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "11069",
+              "id": 221,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "11097",
+              "id": 222,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "11097",
+              "id": 223,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60402",
+              "id": 224,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60403",
+              "id": 225,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60411",
+              "id": 226,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60411",
+              "id": 227,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60412",
+              "id": 228,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60416",
+              "id": 229,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60416",
+              "id": 230,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60419",
+              "id": 231,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            },
+            {
+              "code": "60419",
+              "id": 232,
+              "intellect_icons": 0,
+              "owner": "jacqueline",
+              "title": "Unrevealed card"
+            }
+          ]
+        ],
+        "draw_cursor": 1,
+        "draws": [
+          "zero"
+        ],
+        "endpoint": null,
+        "group": [
+          0
+        ],
+        "hidden_epoch": 1,
+        "investigators": [
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 33,
+            "discard": [],
+            "hand": [],
+            "health": 9,
+            "horror": 0,
+            "intellect": 3,
+            "investigator": "tony",
+            "location": "Study",
+            "ordinary_actions": 2,
+            "resources": 0,
+            "sanity": 5,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 44,
+            "discard": [],
+            "hand": [
+              {
+                "code": "07032",
+                "id": 100,
+                "intellect_icons": 4,
+                "owner": "patrice",
+                "title": "Promise of Power"
+              }
+            ],
+            "health": 7,
+            "horror": 0,
+            "intellect": 2,
+            "investigator": "patrice",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 7,
+            "turn_finished": false
+          },
+          {
+            "clues": 0,
+            "damage": 0,
+            "deck_count": 32,
+            "discard": [],
+            "hand": [
+              {
+                "code": "60408",
+                "id": 200,
+                "intellect_icons": 1,
+                "owner": "jacqueline",
+                "title": "Clairvoyance"
+              }
+            ],
+            "health": 6,
+            "horror": 2,
+            "intellect": 3,
+            "investigator": "jacqueline",
+            "location": "Study",
+            "ordinary_actions": 3,
+            "resources": 0,
+            "sanity": 9,
+            "turn_finished": false
+          }
+        ],
+        "jacqueline_used": false,
+        "random": 1,
+        "stage": "resolve",
+        "study_clues": 6,
+        "test": {
+          "committed": [
+            {
+              "code": "03263",
+              "id": 0,
+              "intellect_icons": 1,
+              "owner": "tony",
+              "title": "On the Hunt"
+            }
+          ],
+          "difficulty": 2,
+          "investigator": "tony",
+          "modifier": 0,
+          "result": null,
+          "skill_value": 4,
+          "total": null
+        },
+        "tokens": [
+          {
+            "face": "zero",
+            "id": 0,
+            "status": "pending"
+          }
+        ]
+      }
+    ]
+  },
+  "checksum": "3ae04a76eaf40cce38e94a452426e3bcb461c9aae92419b1c95336f80f1502b2"
+}

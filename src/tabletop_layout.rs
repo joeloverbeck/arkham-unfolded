@@ -24,6 +24,8 @@ pub(crate) const ENCOUNTER_DECK: Vec3 = Vec3::new(-6.0, 0.05, SCENARIO_FAR_EDGE 
 pub(crate) const ENCOUNTER_DISCARD: Vec3 = Vec3::new(6.0, 0.125, SCENARIO_FAR_EDGE + 2.5);
 pub(crate) const VICTORY_DISPLAY: Vec3 = Vec3::new(6.0, 0.05, SCENARIO_FAR_EDGE + 5.5);
 pub(crate) const TEST_CENTER: Vec3 = Vec3::new(0.0, 0.0, 8.0);
+/// Area focus views retain component captions; Overview suppresses this detail.
+pub(crate) const DETAIL_LABEL_DISTANCE: f32 = 40.0;
 const TEST_SIZE: Vec2 = Vec2::new(14.0, 10.0);
 const INVESTIGATOR_SIZE: Vec2 = Vec2::new(18.0, 15.0);
 const INVESTIGATOR_SPACING: f32 = 18.6;
@@ -133,7 +135,7 @@ pub(crate) fn test_heading_screen_position(
 }
 
 pub(crate) fn investigator_card(index: usize) -> Vec3 {
-    personal(index, -7.15, -5.0)
+    personal(index, -7.15, -5.35)
 }
 
 pub(crate) fn investigator_status(index: usize) -> Vec3 {
@@ -143,6 +145,16 @@ pub(crate) fn investigator_status(index: usize) -> Vec3 {
 /// Center of a permanent counter; its caption sits between this row and the card.
 pub(crate) fn investigator_harm(index: usize, horror: bool) -> Vec3 {
     investigator_center(index, 3) + Vec3::new(-7.15 + if horror { 0.75 } else { -0.75 }, 0.14, -7.0)
+}
+
+/// Named substitutes need wider captions, without moving the physical counters.
+pub(crate) fn investigator_harm_caption(index: usize, horror: bool, named: bool) -> Vec3 {
+    let outward = if named {
+        if horror { 0.45 } else { -0.45 }
+    } else {
+        0.0
+    };
+    investigator_harm(index, horror) + Vec3::new(outward, 0.0, 0.4)
 }
 
 pub(crate) fn investigator_deck(index: usize) -> Vec3 {
@@ -269,7 +281,9 @@ pub(crate) fn investigator_color(index: usize) -> Color {
 pub(crate) fn focus(area: Area) -> (Vec3, f32) {
     match area {
         Area::Overview => (Vec3::new(0.0, 0.0, 7.0), 72.0),
-        Area::Scenario => (SCENARIO_CENTER + Vec3::Z, 30.0),
+        // The deeper surface occupies the scene above the fixed decision strip.
+        // Aim nearer its front edge to leave space for the far-edge heading too.
+        Area::Scenario => (SCENARIO_CENTER + Vec3::Z * 4.5, DETAIL_LABEL_DISTANCE),
         Area::Test => (TEST_CENTER + Vec3::Z * 0.5, 20.0),
         // Aim toward the near edge so the physical hand clears the decision strip.
         Area::Investigator(index) => (investigator_center(index, 3) + Vec3::Z * 0.7, 26.0),
@@ -421,6 +435,55 @@ fn surface(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scenario_focus_clears_navigation_and_decision_controls() {
+        use bevy::camera::{CameraProjection, RenderTargetInfo};
+
+        for size in [
+            Vec2::new(1280.0, 720.0),
+            Vec2::new(1280.0, 800.0),
+            Vec2::new(1600.0, 1000.0),
+            Vec2::new(1920.0, 1080.0),
+        ] {
+            let mut projection = PerspectiveProjection::default();
+            projection.update(size.x, size.y);
+            let mut camera = Camera::default();
+            camera.computed.clip_from_view = projection.get_clip_from_view();
+            camera.computed.target_info = Some(RenderTargetInfo {
+                physical_size: size.as_uvec2(),
+                scale_factor: 1.0,
+            });
+            let (target, distance) = focus(Area::Scenario);
+            let transform = GlobalTransform::from(
+                Transform::from_translation(
+                    target + Vec3::new(0.0, 1.0_f32.sin(), 1.0_f32.cos()) * distance,
+                )
+                .looking_at(target, Vec3::Y),
+            );
+            // The accepted 18-by-22 area, its far-edge heading, and the raised book.
+            let points = [
+                Vec3::new(-9.0, 0.0, -21.0),
+                Vec3::new(9.0, 0.0, -21.0),
+                Vec3::new(-9.0, 0.0, 1.0),
+                Vec3::new(9.0, 0.0, 1.0),
+                Vec3::new(0.0, 0.1, -21.65),
+                Vec3::new(-1.89, 1.4, -18.5),
+                Vec3::new(1.89, 1.4, -18.5),
+            ];
+            let decision_top = size.y - (size.y * 0.29).min(270.0) - 10.0;
+            for point in points {
+                let screen = camera.world_to_viewport(&transform, point).unwrap();
+                assert!(
+                    screen.x >= 150.0
+                        && screen.x <= size.x - 12.0
+                        && screen.y >= 104.0
+                        && screen.y <= decision_top - 8.0,
+                    "Scenario point {point:?} projects to {screen:?} at {size:?}, under fixed controls",
+                );
+            }
+        }
+    }
 
     #[test]
     fn shared_surfaces_leave_matching_gaps_and_room_for_the_test_heading() {
@@ -609,11 +672,50 @@ mod tests {
         let card = investigator_card(0);
         for horror in [false, true] {
             let token = investigator_harm(0, horror);
-            assert!(token.z + 0.35 < card.z - 1.85 / 2.0);
+            assert!(token.z + 0.35 < card.z - 1.35 / 2.0);
             // Caption offset plus a small world-space clearance below its anchor.
-            assert!(token.z + 0.5 + 0.3 < card.z - 1.85 / 2.0);
+            assert!(investigator_harm_caption(0, horror, false).z + 0.3 < card.z - 1.35 / 2.0);
             assert!(token.y - 0.14 / 2.0 > 0.0);
         }
-        assert!(investigator_harm(0, true).x - investigator_harm(0, false).x > 0.7);
+        assert_eq!(
+            investigator_harm(0, true).x - investigator_harm(0, false).x,
+            1.5
+        );
+    }
+
+    #[test]
+    fn investigator_card_leaves_a_small_visible_gap_below_harm_captions() {
+        use bevy::camera::{CameraProjection, RenderTargetInfo};
+
+        for size in [Vec2::new(1280.0, 720.0), Vec2::new(1600.0, 1000.0)] {
+            let mut projection = PerspectiveProjection::default();
+            projection.update(size.x, size.y);
+            let mut camera = Camera::default();
+            camera.computed.clip_from_view = projection.get_clip_from_view();
+            camera.computed.target_info = Some(RenderTargetInfo {
+                physical_size: size.as_uvec2(),
+                scale_factor: 1.0,
+            });
+            let (target, distance) = focus(Area::Investigator(0));
+            let transform = GlobalTransform::from(
+                Transform::from_translation(
+                    target + Vec3::new(0.0, 1.0_f32.sin(), 1.0_f32.cos()) * distance,
+                )
+                .looking_at(target, Vec3::Y),
+            );
+            let caption = camera
+                .world_to_viewport(&transform, investigator_harm_caption(0, false, false))
+                .unwrap();
+            // Landscape investigator depth is the ordinary card width (1.35).
+            let edge = camera
+                .world_to_viewport(&transform, investigator_card(0) - Vec3::Z * 0.675)
+                .unwrap();
+            // A single 11px caption has a 1.2-em line box. Keep a small positive gap.
+            let gap = edge.y - caption.y - 13.2;
+            assert!(
+                (0.5..=7.0).contains(&gap),
+                "Expected a small readable harm-caption gap at {size:?}, got {gap}px",
+            );
+        }
     }
 }

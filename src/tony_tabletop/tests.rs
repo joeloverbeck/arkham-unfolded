@@ -7,6 +7,7 @@ use std::time::Duration;
 use crate::tabletop_standee_checks as standee_checks;
 
 mod harm_lifetime;
+mod skill_summary;
 
 #[test]
 fn production_test_heading_clears_surfaces_after_text_layout() {
@@ -127,7 +128,6 @@ fn presentation_app_in(app: App, path: PathBuf) -> App {
                 advance_presentation,
                 synchronize_scene,
                 synchronize_feedback,
-                rebuild_panel,
                 controls::draw_menu,
                 sync_reveal,
                 reveal::render,
@@ -136,6 +136,9 @@ fn presentation_app_in(app: App, path: PathBuf) -> App {
             )
                 .chain(),
         );
+    // Headless resources and action driving are supplied above. Register the
+    // panel under test through the same function used by native startup.
+    install_panel(&mut app);
     app.world_mut().spawn(Window::default());
     app
 }
@@ -1492,9 +1495,15 @@ fn camera_adapter_retains_tony_utilities_wheel_and_escape_frame_pan() {
         .context
         .toggle_utilities();
     app.world_mut().run_system_once(camera_controls).unwrap();
-    assert!(
-        (app.world().resource::<Orbit>().pose().distance - (before.distance - 0.6)).abs() < 0.00001
-    );
+    assert!((app.world().resource::<Orbit>().pose().distance - 24.7).abs() < 0.00001);
+    // One inverse notch expressed as pixels follows the same adapter path.
+    {
+        let mut scroll = app.world_mut().resource_mut::<AccumulatedMouseScroll>();
+        scroll.unit = MouseScrollUnit::Pixel;
+        scroll.delta.y = -100.0;
+    }
+    app.world_mut().run_system_once(camera_controls).unwrap();
+    assert!((app.world().resource::<Orbit>().pose().distance - before.distance).abs() < 0.00001);
     assert!(app.world().resource::<Table>().context.utilities_open());
     app.world_mut()
         .resource_mut::<Table>()

@@ -9,9 +9,68 @@ fn choose(game: &mut Session, id: &str) {
         .unwrap_or_else(|error| panic!("after {id}: {error}"));
 }
 fn test(game: &mut Session, commit: &str) {
-    for id in ["investigate", commit, "reveal", "resolve:0", "finish-test"] {
+    for id in ["investigate", commit, "reveal", "resolve:0"] {
         choose(game, id);
     }
+}
+
+#[test]
+fn resolving_the_only_token_finishes_and_returns_it_without_an_undo_stop() {
+    let mut game = Session::with_draws(vec![TokenFace::Zero]);
+    for id in ["select:tony", "investigate", "commit:none", "reveal"] {
+        choose(&mut game, id);
+    }
+    assert_eq!(game.observe().bag_count, 15);
+    choose(&mut game, "resolve:0");
+    let view = game.observe();
+    assert_eq!(view.stage, Stage::Action);
+    assert_eq!(view.bag_count, 16);
+    assert!(view.held_tokens().is_empty());
+    assert_eq!(view.test.as_ref().unwrap().result, Some(true));
+    assert!(!view.can_undo);
+    assert!(!view.choices.iter().any(|choice| choice.id == "finish-test"));
+    assert!(game.choose(view.revision, "finish-test").is_err());
+}
+
+#[test]
+fn automatic_cleanup_preserves_real_cancellation_and_order_undo_without_duplicate_tokens() {
+    let mut game = Session::with_draws(vec![
+        TokenFace::AutoFail,
+        TokenFace::MinusOne,
+        TokenFace::Zero,
+    ]);
+    for id in [
+        "select:tony",
+        "investigate",
+        "commit:none",
+        "use-jacqueline",
+        "cancel:0",
+    ] {
+        choose(&mut game, id);
+    }
+    let order_choice = game.observe();
+    choose(&mut game, "resolve:1");
+    choose(&mut game, "resolve:2");
+    assert_eq!(game.observe().bag_count, 16);
+    assert!(game.observe().held_tokens().is_empty());
+    choose(&mut game, "undo");
+    let restored = game.observe();
+    assert_eq!(restored.stage, Stage::Resolve);
+    assert_eq!(restored.tokens, order_choice.tokens);
+    assert_eq!(restored.bag_count, 13);
+    assert_eq!(restored.held_tokens().len(), 3);
+    choose(&mut game, "resolve:2");
+    choose(&mut game, "resolve:1");
+    assert_eq!(game.observe().bag_count, 16);
+    assert_eq!(game.observe().investigator(Investigator::Tony).clues, 1);
+    choose(&mut game, "undo");
+    choose(&mut game, "undo");
+    assert_eq!(game.observe().stage, Stage::Cancellation);
+    assert_eq!(game.observe().bag_count, 13);
+    assert!(
+        !game.observe().can_undo,
+        "the initial hidden reveal remains a barrier"
+    );
 }
 
 #[test]
@@ -66,7 +125,6 @@ fn patrice_can_pay_lucky_on_her_final_test_and_prevent_cultist_horror() {
     }
     assert!(game.observe().choices.iter().any(|c| c.id == "lucky:101"));
     choose(&mut game, "lucky:101");
-    choose(&mut game, "finish-test");
     let view = game.observe();
     let patrice = view.investigator(Investigator::Patrice);
     assert_eq!(
@@ -106,7 +164,6 @@ fn elders_belong_to_the_testing_investigator_and_patrice_retains_a_chosen_discar
         "resolve:0",
         "resolve:1",
         "lucky:101",
-        "finish-test",
     ] {
         choose(&mut game, id);
     }
@@ -198,6 +255,29 @@ fn sixth_clue_on_third_action_preserves_the_turn_and_advances_the_actual_map() {
         6
     );
     choose(&mut game, "advance");
+    let reveal = game.observe();
+    assert!(
+        reveal.endpoint.is_none(),
+        "read Act 1b before applying its effects"
+    );
+    assert_eq!(reveal.locations[0].name, "Study");
+    assert!(
+        reveal
+            .investigators
+            .iter()
+            .all(|i| i.location == "Study" && i.clues == 0)
+    );
+    assert_eq!(
+        reveal
+            .choices
+            .iter()
+            .map(|choice| choice.id.as_str())
+            .collect::<Vec<_>>(),
+        ["continue-act"]
+    );
+    assert!(!reveal.can_undo);
+    assert!(game.choose(reveal.revision, "undo").is_err());
+    choose(&mut game, "continue-act");
     let view = game.observe();
     assert_eq!(view.stage, Stage::Ended);
     assert_eq!(
@@ -215,6 +295,8 @@ fn sixth_clue_on_third_action_preserves_the_turn_and_advances_the_actual_map() {
     );
     assert!(!view.investigator(Investigator::Jacqueline).turn_finished);
     assert_eq!(view.investigator(Investigator::Patrice).ordinary_actions, 3);
+    assert!(!view.can_undo, "Continue is not an undo destination");
+    assert!(game.choose(view.revision, "continue-act").is_err());
 }
 
 #[test]
@@ -281,7 +363,6 @@ fn jacqueline_canceled_elder_draw_is_hers_and_blocks_undo_across_the_new_card() 
             .any(|token| token.face == TokenFace::ElderSign)
     );
     choose(&mut game, "resolve:1");
-    choose(&mut game, "finish-test");
     assert_eq!(game.observe().bag_count, 16);
 }
 
@@ -308,7 +389,7 @@ fn later_curse_reveal_still_offers_jacqueline_and_a_poor_cancellation_still_fail
             .iter()
             .any(|choice| choice.id == "use-jacqueline")
     );
-    for id in ["use-jacqueline", "cancel:2,3", "resolve:1", "finish-test"] {
+    for id in ["use-jacqueline", "cancel:2,3", "resolve:1"] {
         choose(&mut game, id);
     }
     assert_eq!(game.observe().test.as_ref().unwrap().result, Some(false));
@@ -370,7 +451,6 @@ fn canceled_curse_returns_to_the_bag_and_resolution_order_preserves_held_multipl
         "use-jacqueline",
         "cancel:1,2",
         "resolve:0",
-        "finish-test",
     ] {
         choose(&mut game, id);
     }
@@ -395,15 +475,13 @@ fn canceled_curse_returns_to_the_bag_and_resolution_order_preserves_held_multipl
         ] {
             choose(&mut game, id);
         }
-        for id in order {
-            choose(&mut game, id);
-        }
+        choose(&mut game, order[0]);
         assert_eq!(
             game.observe().bag_count,
             13,
             "All three revealed physical tokens stay held through ST.4"
         );
-        choose(&mut game, "finish-test");
+        choose(&mut game, order[1]);
         assert_eq!(game.observe().test.as_ref().unwrap().total, Some(4));
         assert_eq!(game.observe().contracts_bounties, 7);
         assert_eq!(game.observe().bag_count, 16);
@@ -469,7 +547,6 @@ fn unlucky_cultist_and_auto_fail_remain_valid_patrice_choices() {
                 "decline-lucky"
             },
         );
-        choose(&mut game, "finish-test");
         let view = game.observe();
         assert_eq!(view.test.as_ref().unwrap().result, Some(false));
         assert_eq!(
