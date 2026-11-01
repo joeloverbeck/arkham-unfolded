@@ -2,6 +2,8 @@
 
 ## Good Tests
 
+For headless Bevy UI/layout tests, reuse the [existing app fixture](../../../src/tabletop_layout/heading_checks.rs) and follow the [menu layout regression](../../../src/tabletop_feedback/menu.rs) for window and camera setup.
+
 **Integration-style**: Test through real interfaces, not mocks of internal parts.
 
 ```typescript

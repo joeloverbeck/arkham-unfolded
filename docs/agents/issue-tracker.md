@@ -22,7 +22,7 @@ When preparing a publication artifact, run dependent steps sequentially and requ
 For an exact comment-body readback, save the response JSON using the returned comment ID, then compare its decoded `body` directly with the submitted file:
 
 ```sh
-gh api repos/joeloverbeck/arkham-unfolded/issues/comments/<comment-id> > /tmp/comment-readback.json
+gh api repos/joeloverbeck/arkham-unfolded/issues/comments/<comment-id> > /tmp/comment-readback.json &&
 jq -e --rawfile expected /tmp/comment.md '.body == $expected' /tmp/comment-readback.json
 ```
 

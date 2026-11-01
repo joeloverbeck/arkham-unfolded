@@ -32,6 +32,9 @@ enum Command {
     /// Select the repository's pinned Rust override for the CI cache key.
     PrepareCiToolchain,
     /// Build and supervise isolated native verification runs.
+    #[command(
+        after_help = "Procedure for all experiments: docs/experiments/jacqueline-curse.md#developer-native-verification"
+    )]
     Native {
         #[command(subcommand)]
         command: native::Command,
