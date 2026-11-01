@@ -32,6 +32,7 @@ use bevy::{
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::PathBuf};
 
+mod clue_motion;
 mod controls;
 mod harm;
 mod harm_lifetime;
@@ -461,6 +462,7 @@ pub fn run() -> Result<(), String> {
             )
                 .chain(),
         );
+    install_clue_presentation(&mut app);
     install_panel(&mut app);
     let server = app.world().resource::<AssetServer>();
     let mut handles = BTreeMap::new();
@@ -469,6 +471,7 @@ pub fn run() -> Result<(), String> {
         .map(|c| format!("card/{}", c.code))
         .chain(["card-back/player".to_owned()])
         .chain(["token/damage".to_owned(), "token/horror".to_owned()])
+        .chain(crate::tabletop_counters::asset_roles())
         .chain(["06003", "06005", "60401"].map(|c| format!("standee/{c}")))
         .chain(
             [
@@ -515,6 +518,22 @@ pub fn run() -> Result<(), String> {
         .insert_resource(reveal::Artwork(reveal_image))
         .insert_resource(art);
     exit_result(app.run())
+}
+
+/// Native startup and headless consumer tests share the clue rendering schedule.
+fn install_clue_presentation(app: &mut App) {
+    app.add_plugins(crate::tabletop_counters::CounterPlugin)
+        .add_systems(
+            Update,
+            (
+                clue_motion::synchronize
+                    .after(synchronize_scene)
+                    .before(synchronize_feedback),
+                clue_motion::animate
+                    .after(animate_harm)
+                    .before(button_colors),
+            ),
+        );
 }
 
 fn install_panel(app: &mut App) {

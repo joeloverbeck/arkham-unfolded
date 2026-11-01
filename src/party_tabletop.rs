@@ -33,6 +33,7 @@ use std::{
     path::PathBuf,
 };
 mod cards;
+mod clue_motion;
 mod controls;
 mod location_map;
 mod scene;
@@ -115,6 +116,7 @@ struct Table {
     reduced_motion: bool,
     resume_result: bool,
     context: Context,
+    clue_transfer: Option<clue_motion::Transfer>,
 }
 impl Table {
     fn new(session: Session, save_path: PathBuf) -> Self {
@@ -129,12 +131,24 @@ impl Table {
             dirty: true,
             reduced_motion: false,
             context: Context::default(),
+            clue_transfer: None,
         }
     }
     fn view(&self) -> Observation {
         self.replay
             .as_ref()
             .map_or_else(|| self.session.observe_for_play(), |r| r.current().clone())
+    }
+    fn displayed_clues(&self, index: usize) -> u8 {
+        let count = self.view().investigators[index].clues;
+        self.clue_transfer
+            .as_ref()
+            .filter(|transfer| {
+                !self.reduced_motion
+                    && self.replay.is_none()
+                    && transfer.investigator.index() == index
+            })
+            .map_or(count, |transfer| transfer.previous_count)
     }
     fn show_test_summary(&self, view: &Observation) -> bool {
         if test_window(view) {
@@ -336,6 +350,7 @@ pub fn run() -> Result<(), String> {
             .map(str::to_owned),
         )
         .chain(["06003", "06005", "60401"].map(|code| format!("standee/{code}")))
+        .chain(crate::tabletop_counters::asset_roles())
         .chain(
             [
                 "plus_one",
@@ -378,6 +393,7 @@ fn install(app: &mut App) {
     app.init_resource::<Actions>()
         .add_plugins(feedback::FeedbackPlugin)
         .add_plugins(reveal::RevealPlugin)
+        .add_plugins(crate::tabletop_counters::CounterPlugin)
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -385,6 +401,7 @@ fn install(app: &mut App) {
                 poll_settings,
                 handle_actions,
                 camera_controls,
+                clue_motion::animate,
                 scene::synchronize,
                 synchronize_feedback,
                 ui::render,
@@ -449,7 +466,7 @@ fn handle_actions(
         );
     }
     for action in actions.0.drain(..) {
-        if !returning.is_empty()
+        if (!returning.is_empty() || table.clue_transfer.is_some())
             && !matches!(
                 action,
                 Action::Focus(_) | Action::Close | Action::Dismiss | Action::Motion
@@ -515,6 +532,7 @@ fn handle_actions(
         match action {
             Action::Choose(revision, id) if table.replay.is_none() => {
                 let table = &mut *table;
+                let before = table.session.observe_for_play();
                 table.notice = match continuity::commit_choice(
                     &table.save_path,
                     &mut table.session,
@@ -522,6 +540,15 @@ fn handle_actions(
                     &id,
                 ) {
                     Ok(()) => {
+                        table.clue_transfer =
+                            if table.reduced_motion || id == "undo" || id == "finish-test" {
+                                None
+                            } else {
+                                clue_motion::Transfer::from_committed_discovery(
+                                    &before,
+                                    &table.session.observe_for_play(),
+                                )
+                            };
                         if reveal_focus {
                             orbit.focus(layout::focus(Area::Test));
                         }
@@ -584,6 +611,7 @@ fn handle_actions(
                         table.resume_result =
                             session.observe().stage == crate::party::Stage::Result;
                         table.session = session;
+                        table.clue_transfer = None;
                         table.context.reset();
                         table.notice = "Reopened the exact saved decision and randomness.".into();
                     }
@@ -609,6 +637,7 @@ fn handle_actions(
                     .and_then(Replay::new)
                 {
                     Ok(replay) => {
+                        table.clue_transfer = None;
                         table.replay = Some(replay);
                         orbit.set_following(true);
                         table.notice = "Stored replay; each moment pauses for narration.".into();
@@ -617,16 +646,19 @@ fn handle_actions(
                 }
             }
             Action::Next => {
+                table.clue_transfer = None;
                 if let Some(r) = &mut table.replay {
                     r.next();
                 }
             }
             Action::Back => {
+                table.clue_transfer = None;
                 if let Some(r) = &mut table.replay {
                     r.back();
                 }
             }
             Action::Live => {
+                table.clue_transfer = None;
                 table.replay = None;
                 orbit.set_following(false);
                 table.context.reset();
@@ -645,6 +677,7 @@ fn handle_actions(
                     ) {
                         Ok(()) => {
                             table.session = session;
+                            table.clue_transfer = None;
                             table.context.reset();
                             orbit.set_following(false);
                             table.notice =
@@ -894,6 +927,7 @@ fn animate(
 fn request_redraw(
     mut redraw: ResMut<Redraw>,
     orbit: Res<Orbit>,
+    table: Res<Table>,
     appearing: Query<&Transform, With<Appearing>>,
     returning: Query<(), With<ReturningToken>>,
     capture: Res<Capture>,
@@ -902,6 +936,7 @@ fn request_redraw(
     if orbit.is_moving()
         || appearing.iter().any(|t| t.scale != Vec3::ONE)
         || !returning.is_empty()
+        || table.clue_transfer.is_some()
         || (capture.path.is_some() && (!capture.requested || capture.quit))
         || !screenshots.is_empty()
     {

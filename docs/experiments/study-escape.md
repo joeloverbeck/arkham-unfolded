@@ -45,13 +45,15 @@ cargo run --locked --bin arkham-assets -- prepare-party \
 cargo run --locked --bin arkham-assets -- check-party /absolute/path/new-party-assets
 ```
 
-`resources/party-asset-selection.json` binds all 43 selected images/font inputs and their transformations. A fresh output directory is required unless its complete contents already match. Runtime reads only the prepared collection. The source PDFs and deck responses remain in the declared local evidence custody; verification of their exact bytes does not establish an independent backup.
+`resources/party-asset-selection.json` binds all 57 selected images/font inputs and their transformations, including the clue face, shaped resource counter and six class icon/background pairs. The v2 collection preserves recognition of v1's existing artwork; old collections report the new missing images and use readable substitutes. A fresh output directory is required unless its complete contents already match. Runtime reads only the prepared collection. The source PDFs and deck responses remain in the declared local evidence custody; verification of their exact bytes does not establish an independent backup.
 
 ## Table layout and visual review
 
 The scenario surface is now 18×22, extending away from Test with two-unit gaps both above and below Test. Scenario components and camera framing follow the deeper surface; card scale is unchanged. Use pan, zoom and inspection for details on a large map. The twelve-location witness below checks one finite arrangement, not arbitrary map topology or playable scenario support.
 
-Wheel zoom changes camera distance proportionally: faster across the table and finer near cards. Scenario focus frames the full deeper area above the decision controls. Investigator cards sit just below their permanent harm captions, with a small readable gap and room below for later personal counters.
+Wheel zoom changes camera distance proportionally: faster across the table and finer near cards. Scenario focus frames the full deeper area above the decision controls. Investigator cards sit below their permanent harm captions. Resources and clues now occupy fixed positions below the card, with class action markers in a centered row beneath them. Zero clues/resources have no token. Spent actions retain a cross; unused actions after early turn end are dimmed without a cross. Tony's separated `+` marker identifies his restricted Fight/Engage allowance; this prepared position has no eligible bounty enemy. Hand and Assets share their side margins, and Discard's right edge aligns with Assets.
+
+Successful investigation visibly carries a clue from the location to the investigator after the decision has saved. The source count falls on departure and the personal count rises on arrival; reduced motion places it immediately. Closing during movement and reopening shows the already committed totals without applying discovery again. Replay preserves its recorded moments rather than fabricating a new transfer event. Missing individual images retain named solid counters. [#73](https://github.com/joeloverbeck/arkham-unfolded/issues/73) owns this refinement and its owner acceptance recorded below.
 
 After advancement, brass arrows show Hallway's two-way connections to Attic, Cellar and Parlor. Parlor's entry restriction does not change that connection. The layout places Hallway at the hub, Attic above, Cellar below and Parlor beside it, using measured card, caption and standee space. These positions are a presentation choice; the original scenario guide supplies no placement diagram. Arrows follow the displayed cards and leave their reserved space clear. See the [research and source evidence](../research/act-advancement-and-location-connections.md).
 
@@ -85,6 +87,30 @@ Replace `--art-root` and its value with `--no-art` to inspect text substitutes. 
 - At a pending choice, use **Menu → Save live attempt → Reopen saved attempt**. Inspect **Open recorded replay**, Next/Previous and the return to live play. Expected: the pending decision and outcomes remain intact, with the same layout and appropriate camera destinations. This in-app reopening check does not replace the separate fresh-process gameplay check below.
 
 Stop at 15 minutes, a broken choice, a save/reopen mismatch or a material readability problem; retain the review directory and report the view and last action. Random outcomes do not require another attempt. Static native screenshots and tests of production scene entities do not prove physical input, control burden or owner acceptance; Joel's reported playthrough and explicit acceptance supply the human verdict for this bounded task.
+
+### Counter acceptance and verification reference (#73)
+
+Joel accepted the counter refinement on 2026-11-01 after playing the complete prepared Party attempt through Act advancement, checking the recent visual changes and reporting that everything was correct. He explicitly authorized publication, PR creation, merge, pulling `main` and #73 closure. The accepted executable SHA-256 is `b688d213a0bb7315f095e07d66b8857e9970b63578eb4f4b2a2450909dc1a123`. This records the reported Party use; it does not assert separate Tony or Jacqueline playthroughs or repetition of every individual check below.
+
+The review had a separate ceiling of **15 minutes total, including retries**, independent of the completed #55 review above. Acceptance does not renew that allowance. The visual corrections reduced clues by 20% and resources by 10%, backed counts with dark labels, and raised the personal token rows. The investigator card moved only slightly because the harm row leaves very little clearance at smaller window sizes. The following launch and walkthrough remain a verification reference, not a new owner-review request:
+
+```sh
+cd /home/joeloverbeck/src/arkham-unfolded
+scripts/tools native launch --binary "$PWD/target/debug/arkham-tabletop" \
+  --experiment party \
+  --output-dir "$HOME/.cache/agent-tmp/arkham-73-owner-review-02" \
+  --art-root "$HOME/.cache/agent-tmp/arkham-73-assets/party-assets-v2" \
+  --initial-view overview --timeout-seconds 900
+```
+
+The helper requires an unused output suffix and creates a new attempt without opening personal saves. A new launch does not renew a review allowance. Expected observations retained for reference:
+
+- Scenario shows the intact clue emblem and a separate count at the location's center. Under each investigator, only positive resource/clue totals appear. The shaped crate, clue and class action markers remain distinct; Hand/Assets side margins and Discard/Assets right edges align.
+- Take a resource action and investigate. Ordinary actions gain crosses when spent. End a turn early to see unused markers dim without crosses. Tony's separated `+` marker stays subdued here because no bounty enemy is eligible; the Tony experiment supplies the playable restricted-action case.
+- Before resolving a successful investigation, choose Overview to see both source and destination. The location count decreases when the token lifts; the personal total increases when it lands. Check the first gain and, if play reaches them within the allowance, later gains and the last source clue. Random failures need no restart. Camera focus remains manual.
+- Try **Motion: reduced** for immediate placement. Save/reopen and recorded replay must preserve totals without repeating discovery. Inspecting a location still shows its unobscured card.
+
+For the older experiments, the matching reference arguments are `--experiment tony --art-root "$HOME/.cache/agent-tmp/arkham-73-assets/tony-assets-v5"` or `--experiment jacqueline --art-root "$HOME/.cache/agent-tmp/arkham-73-assets/jacqueline-assets-v2"`, with a fresh output directory. Jacqueline retains its represented state rather than gaining invented counters. Replacing `--art-root` and its value with `--no-art` shows named substitutes. For any later authorized review, stop at its time ceiling, a broken choice, a save/reopen mismatch or a material readability problem; retain the directory and report the last action/view. Automated lifecycle checks and static native captures retain their technical limits; Joel's reported Party playthrough and explicit acceptance supply the human verdict for #73.
 
 ### Finite crowded-layout witness
 

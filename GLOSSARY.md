@@ -16,6 +16,14 @@ _Avoid_: Active investigator when referring only to who performs a test
 The tabletop area currently framed for viewing. It does not determine whose turn it is or who performs a game choice.
 _Avoid_: Active investigator, investigator activation
 
+**Action marker**:
+A tabletop reminder representing one action allowance and whether it has been spent. It is a presentation component, not an additional rules-defined token or a guarantee that a particular action is currently legal.
+_Avoid_: Chaos token, action button
+
+**Restricted additional action**:
+An extra action whose use is limited by the effect that grants it, distinct from the investigator's ordinary action allowance.
+_Avoid_: Ordinary action when referring to a restricted allowance
+
 **Scenario area**:
 The shared playing surface for the location map, investigator standees and scenario components, including the act, agenda, encounter deck, encounter discard pile and victory display.
 _Avoid_: Player area, map area when referring to all shared components

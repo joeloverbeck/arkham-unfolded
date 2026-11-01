@@ -1,8 +1,13 @@
 //! Physical locations for the existing prepared position, not additional game state.
 use super::*;
+use crate::tabletop_counters::{self as counters, ActionRow, CounterKind, CounterVisual};
 use crate::tabletop_discard as discard;
 
 const STUDY_AT: Vec3 = Vec3::new(-2.5, 0.05, layout::SCENARIO_MAP_CENTER.z);
+
+pub(super) fn study_clue_at() -> Vec3 {
+    layout::location_clue(STUDY_AT)
+}
 
 pub(super) fn investigator_at() -> Vec3 {
     layout::investigator_card(0)
@@ -79,12 +84,7 @@ pub(super) fn synchronize_scene(
     }
     let mut fixed = vec![
         (0, investigator_at(), String::new(), false),
-        (
-            1,
-            STUDY_AT,
-            format!("Study\n{} clues · Shroud 2", view.study_clues),
-            false,
-        ),
+        (1, STUDY_AT, "Study\nShroud 2".into(), false),
         (
             3,
             layout::investigator_asset(0, 0),
@@ -347,15 +347,62 @@ pub(super) fn synchronize_scene(
     for (label, at) in layout::test_zone_labels() {
         world_label(&mut commands, &art, label.into(), at, MUTED);
     }
-    world_label_sized(
+    for (kind, amount, role, at, scale) in [
+        (
+            CounterKind::Clue,
+            view.study_clues,
+            "token/clue",
+            study_clue_at(),
+            1.0,
+        ),
+        (
+            CounterKind::Resource,
+            view.resources,
+            "token/resource",
+            layout::investigator_resource(0),
+            0.85,
+        ),
+        (
+            CounterKind::Clue,
+            view.clues,
+            "token/clue",
+            layout::investigator_clue(0),
+            0.85,
+        ),
+    ] {
+        if let Some((token, caption)) = counters::spawn_count(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            CounterVisual {
+                kind,
+                amount,
+                image: art.image(role),
+                at,
+                scale,
+            },
+        ) {
+            commands.entity(token).insert(Scene);
+            commands.entity(caption).insert(Scene);
+        }
+    }
+    for entity in counters::spawn_actions(
         &mut commands,
-        &art,
-        format!("Resources {}\nClues {}", view.resources, view.clues),
-        layout::investigator_status(0),
-        MUTED,
-        100.0,
-        11.0,
-    );
+        &mut meshes,
+        &mut materials,
+        ActionRow {
+            investigator: 0,
+            remaining: view.ordinary_actions,
+            turn_ended: view.stage == Stage::Ended,
+            additional: Some(view.bonus_action),
+            additional_eligible: view.ghoul.alive && view.ghoul.bounties > 0,
+            class: layout::InvestigatorClass::Rogue,
+            icon: art.image("class/rogue/icon"),
+            background: art.image("class/rogue/background"),
+        },
+    ) {
+        commands.entity(entity).insert(Scene);
+    }
     for (index, card) in view.hand.iter().enumerate() {
         let at = layout::hand_position(0, view.hand.len(), index);
         if let Some(face) = CARDS.iter().position(|c| c.code == card.code) {

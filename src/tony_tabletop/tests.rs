@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::tabletop_standee_checks as standee_checks;
 
+mod clue_motion;
 mod harm_lifetime;
 mod skill_summary;
 
@@ -137,7 +138,8 @@ fn presentation_app_in(app: App, path: PathBuf) -> App {
                 .chain(),
         );
     // Headless resources and action driving are supplied above. Register the
-    // panel under test through the same function used by native startup.
+    // clue presentation and panel through the same functions as native startup.
+    install_clue_presentation(&mut app);
     install_panel(&mut app);
     app.world_mut().spawn(Window::default());
     app

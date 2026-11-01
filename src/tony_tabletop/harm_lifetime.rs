@@ -1,14 +1,26 @@
-//! Lifetime of already committed live harm and the animation shared with replay.
+//! Lifetime of already committed live consequences and the harm animation shared with replay.
 //! Replay retains its own sequence and navigation; this owner never advances it.
 
 use crate::tony::{
-    Observation,
+    HarmSource, Observation, Stage, TestKind,
     presentation::{PresentationStage, stages},
 };
 use std::collections::VecDeque;
 
 const STAGE_SECONDS: f32 = 1.2;
 const MOTION_SECONDS: f32 = 0.5;
+const CLUE_SECONDS: f32 = 0.8;
+
+/// This adapter has exactly one clue source and recipient: Study to Tony.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ClueTransfer {
+    pub amount: u8,
+}
+
+struct LiveStage {
+    presentation: PresentationStage,
+    clue: Option<ClueTransfer>,
+}
 
 pub(super) enum Playback {
     Live,
@@ -17,22 +29,64 @@ pub(super) enum Playback {
 
 #[derive(Default)]
 pub(super) struct HarmPresentation {
-    live: VecDeque<PresentationStage>,
+    live: VecDeque<LiveStage>,
     elapsed: f32,
 }
 
 impl HarmPresentation {
     /// Call only after saving and installing the committed choice.
     pub fn committed_choice(&mut self, before: &Observation, after: &Observation) {
-        self.live = stages(before, after)
-            .into_iter()
-            .filter(|stage| stage.harm.is_some())
-            .collect();
+        self.live.clear();
+        let mut clue = discovered_clue(before, after);
+        let mut previous = before.clone();
+        for stage in stages(before, after) {
+            // Discovery precedes end-of-turn Injury but follows token harm.
+            // The final settled observation is not itself a timed stage.
+            if (stage.harm.is_none()
+                || stage
+                    .harm
+                    .is_some_and(|hit| hit.source == HarmSource::InternalInjury))
+                && let Some(transfer) = clue.take()
+            {
+                let mut view = after.clone();
+                view.clues = before.clues;
+                view.damage = previous.damage;
+                view.horror = previous.horror;
+                view.ghoul.damage = previous.ghoul.damage;
+                if let Some(tony) = view.investigators.first_mut() {
+                    tony.horror = previous.horror;
+                }
+                view.history = previous.history.clone();
+                view.prompt = format!("Tony discovers {} clue from the Study.", transfer.amount);
+                view.harm = None;
+                view.choices.clear();
+                view.can_undo = false;
+                self.live.push_back(LiveStage {
+                    presentation: PresentationStage { view, harm: None },
+                    clue: Some(transfer),
+                });
+            }
+            if stage.harm.is_some() {
+                previous = stage.view.clone();
+                self.live.push_back(LiveStage {
+                    presentation: stage,
+                    clue: None,
+                });
+            }
+        }
         self.elapsed = 0.0;
     }
 
     pub fn current_stage(&self) -> Option<&PresentationStage> {
-        self.live.front()
+        self.live.front().map(|stage| &stage.presentation)
+    }
+
+    pub fn clue(&self) -> Option<ClueTransfer> {
+        self.live.front().and_then(|stage| stage.clue)
+    }
+
+    pub fn clue_progress(&self) -> f32 {
+        (self.elapsed / CLUE_SECONDS).clamp(0.0, 1.0)
     }
 
     pub fn has_pending(&self) -> bool {
@@ -71,12 +125,38 @@ impl HarmPresentation {
             return false;
         }
         self.elapsed += seconds;
-        if matches!(playback, Playback::Live) && self.elapsed >= STAGE_SECONDS {
+        let duration = if self.clue().is_some() {
+            CLUE_SECONDS
+        } else {
+            STAGE_SECONDS
+        };
+        if matches!(playback, Playback::Live) && self.elapsed >= duration {
             self.finish_live_stage();
             return true;
         }
         false
     }
+}
+
+fn discovered_clue(before: &Observation, after: &Observation) -> Option<ClueTransfer> {
+    // Resolve is the sole supported discovery event in this finite experiment.
+    // Count changes verify the quantity; they do not identify an arbitrary
+    // transfer source or manufacture provenance for loaded/replayed records.
+    if before.stage != Stage::Resolve
+        || !before
+            .test
+            .as_ref()
+            .is_some_and(|test| test.kind == TestKind::Investigate)
+        || !after
+            .test
+            .as_ref()
+            .is_some_and(|test| test.kind == TestKind::Investigate && test.success == Some(true))
+    {
+        return None;
+    }
+    let amount = after.clues.checked_sub(before.clues)?;
+    (amount > 0 && before.study_clues.checked_sub(after.study_clues) == Some(amount))
+        .then_some(ClueTransfer { amount })
 }
 
 #[cfg(test)]

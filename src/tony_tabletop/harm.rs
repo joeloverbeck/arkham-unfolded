@@ -16,6 +16,15 @@ pub(super) fn advance_presentation(
     settings: Res<AssetSettings>,
 ) {
     let paused = table.modal() || settings.is_busy();
+    if !paused
+        && table.replay.is_none()
+        && table.reduced_motion
+        && table.presentation.clue().is_some()
+    {
+        table.presentation.finish_live_stage();
+        table.dirty = true;
+        return;
+    }
     let playback = table
         .replay
         .as_ref()
@@ -24,6 +33,14 @@ pub(super) fn advance_presentation(
         });
     if table.presentation.tick(time.delta_secs(), paused, playback) {
         table.dirty = true;
+        // A preceding harm stage may just have revealed the clue transfer.
+        if !paused
+            && table.replay.is_none()
+            && table.reduced_motion
+            && table.presentation.clue().is_some()
+        {
+            table.presentation.finish_live_stage();
+        }
     }
 }
 
