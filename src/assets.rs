@@ -66,6 +66,14 @@ struct Attribution {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Transform {
     Copy,
+    PngCrop {
+        source_width: u32,
+        source_height: u32,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    },
     UnityFont {
         block_offset: usize,
         block_length: usize,
@@ -152,7 +160,9 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
     let versions: &[u32] = match selection.collection.as_str() {
         "arkham-unfolded-tony-turn-v3" => &[1, 2],
         "arkham-unfolded-tony-turn-v4" => &[1, 2, 3],
+        "arkham-unfolded-tony-turn-v5" => &[1, 2, 3, 4],
         "arkham-unfolded-jacqueline-v2" => &[1],
+        "arkham-unfolded-study-escape-v2" => &[1],
         _ => return Vec::new(),
     };
     let tony = selection
@@ -165,11 +175,21 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
             let mut manifest = selection.manifest();
             manifest.collection = if tony {
                 format!("arkham-unfolded-tony-turn-v{version}")
+            } else if selection
+                .collection
+                .starts_with("arkham-unfolded-study-escape-")
+            {
+                format!("arkham-unfolded-study-escape-v{version}")
             } else {
                 format!("arkham-unfolded-jacqueline-v{version}")
             };
             manifest.assets.retain(|asset| {
-                asset.role != "ui/reveal-chaos-token"
+                !is_counter_art(&asset.role)
+                    && (asset.role != "ui/reveal-chaos-token"
+                        || (tony && version >= 4)
+                        || selection
+                            .collection
+                            .starts_with("arkham-unfolded-study-escape-"))
                     && (!tony
                         || version >= 3
                         || !matches!(
@@ -181,6 +201,10 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
             manifest
         })
         .collect()
+}
+
+fn is_counter_art(role: &str) -> bool {
+    matches!(role, "token/clue" | "token/resource") || role.starts_with("class/")
 }
 
 /// A recognized collection can be incomplete and still supply individually verified art.
@@ -459,6 +483,67 @@ fn prepare_selection_with_icon(
 fn transform(bytes: Vec<u8>, transform: &Transform) -> Result<Vec<u8>, AssetError> {
     match *transform {
         Transform::Copy => Ok(bytes),
+        Transform::PngCrop {
+            source_width,
+            source_height,
+            x,
+            y,
+            width,
+            height,
+        } => {
+            // The selected 768px clue atlas needs one exact face. Limit decoding
+            // before allocation and reject changed dimensions or out-of-bounds crops.
+            const MAX_DIMENSION: u32 = 1024;
+            if source_width == 0
+                || source_height == 0
+                || source_width > MAX_DIMENSION
+                || source_height > MAX_DIMENSION
+                || width == 0
+                || height == 0
+                || x.checked_add(width).is_none_or(|end| end > source_width)
+                || y.checked_add(height).is_none_or(|end| end > source_height)
+            {
+                return Err(AssetError(
+                    "The selected PNG crop lies outside its bounded atlas.".into(),
+                ));
+            }
+            let mut reader =
+                image::ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Png);
+            let mut limits = image::Limits::default();
+            limits.max_image_width = Some(source_width);
+            limits.max_image_height = Some(source_height);
+            limits.max_alloc = Some(16 * 1024 * 1024);
+            reader.limits(limits);
+            let atlas = reader.decode().map_err(|error| {
+                AssetError(format!(
+                    "The verified PNG atlas could not be decoded: {error}"
+                ))
+            })?;
+            if atlas.width() != source_width || atlas.height() != source_height {
+                return Err(AssetError(
+                    "The verified PNG atlas has unexpected dimensions.".into(),
+                ));
+            }
+            let face = atlas.crop_imm(x, y, width, height).into_rgba8();
+            let mut output = Vec::new();
+            use image::{
+                ImageEncoder,
+                codecs::png::{CompressionType, FilterType, PngEncoder},
+            };
+            PngEncoder::new_with_quality(&mut output, CompressionType::Fast, FilterType::NoFilter)
+                .write_image(
+                    face.as_raw(),
+                    width,
+                    height,
+                    image::ExtendedColorType::Rgba8,
+                )
+                .map_err(|error| {
+                    AssetError(format!(
+                        "The selected PNG face could not be encoded: {error}"
+                    ))
+                })?;
+            Ok(output)
+        }
         Transform::UnityFont {
             block_offset,
             block_length,
@@ -646,6 +731,133 @@ pub(crate) fn write_current_manifest_without_payloads(root: &Path) {
 mod tests {
     use super::*;
 
+    fn png_fixture() -> Vec<u8> {
+        use image::ImageEncoder;
+        // An independently specified 4x3 atlas, including transparent colors.
+        let pixels = [
+            [1, 0, 0, 255],
+            [2, 0, 0, 255],
+            [3, 0, 0, 255],
+            [4, 0, 0, 255],
+            [5, 0, 0, 255],
+            [6, 20, 30, 0],
+            [7, 40, 50, 128],
+            [8, 0, 0, 255],
+            [9, 0, 0, 255],
+            [10, 60, 70, 255],
+            [11, 80, 90, 255],
+            [12, 0, 0, 255],
+        ];
+        let mut bytes = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut bytes)
+            .write_image(pixels.as_flattened(), 4, 3, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        bytes
+    }
+
+    #[test]
+    fn atlas_crop_preserves_selected_pixels_and_alpha_without_resizing() {
+        let bytes = transform(
+            png_fixture(),
+            &Transform::PngCrop {
+                source_width: 4,
+                source_height: 3,
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            },
+        )
+        .unwrap();
+        let face = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
+            .unwrap()
+            .into_rgba8();
+        assert_eq!(face.dimensions(), (2, 2));
+        assert_eq!(
+            face.as_raw(),
+            &[
+                6, 20, 30, 0, 7, 40, 50, 128, 10, 60, 70, 255, 11, 80, 90, 255
+            ]
+        );
+    }
+
+    #[test]
+    fn atlas_crop_refuses_invalid_bounds_dimensions_and_invalid_images() {
+        for (source_width, source_height, x, y, width, height) in [
+            (4, 3, 0, 0, 0, 1),
+            (4, 3, 0, 0, 1, 0),
+            (4, 3, 3, 0, 2, 1),
+            (4, 3, 0, 2, 1, 2),
+            (4, 3, u32::MAX, 0, 2, 1),
+            (4, 3, 0, u32::MAX, 1, 2),
+            (3, 3, 0, 0, 2, 2),
+            (5, 3, 0, 0, 2, 2),
+            (2048, 3, 0, 0, 2, 2),
+        ] {
+            assert!(
+                transform(
+                    png_fixture(),
+                    &Transform::PngCrop {
+                        source_width,
+                        source_height,
+                        x,
+                        y,
+                        width,
+                        height,
+                    }
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            transform(
+                b"not a png".to_vec(),
+                &Transform::PngCrop {
+                    source_width: 4,
+                    source_height: 3,
+                    x: 1,
+                    y: 1,
+                    width: 2,
+                    height: 2,
+                }
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn cropped_asset_identity_is_checked_before_any_collection_is_published() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let output = directory.path().join("output");
+        let mut selected = fixture(&source);
+        let asset = &mut selected.assets[0];
+        let atlas = png_fixture();
+        asset.source.sha256 = format!("{:x}", Sha256::digest(&atlas));
+        asset.source.bytes = atlas.len() as u64;
+        fs::write(source.join(&asset.source.path), &atlas).unwrap();
+        asset.transform = Transform::PngCrop {
+            source_width: 4,
+            source_height: 3,
+            x: 1,
+            y: 1,
+            width: 2,
+            height: 2,
+        };
+        let cropped = transform(atlas, &asset.transform).unwrap();
+        asset.bytes = cropped.len() as u64;
+        // Correct input and byte length cannot excuse a different output identity.
+        assert!(prepare_selection(&source, &output, &selected).is_err());
+        assert!(!output.exists());
+        selected.assets[0].sha256 = format!("{:x}", Sha256::digest(&cropped));
+        prepare_selection(&source, &output, &selected).unwrap();
+        assert!(inspect_selection(&output, &selected).complete);
+        assert_eq!(
+            fs::read(output.join(&selected.assets[0].path)).unwrap(),
+            cropped
+        );
+    }
+
     #[test]
     fn party_missing_art_and_wrong_collection_preserve_original_bytes() {
         let directory = tempfile::tempdir().unwrap();
@@ -667,8 +879,14 @@ mod tests {
     }
 
     fn tony_fixture(source: &Path) -> Selection {
-        let mut selected: Selection =
-            serde_json::from_str(include_str!("../resources/tony-asset-selection.json")).unwrap();
+        recipe_fixture(
+            source,
+            include_str!("../resources/tony-asset-selection.json"),
+        )
+    }
+
+    fn recipe_fixture(source: &Path, recipe: &str) -> Selection {
+        let mut selected: Selection = serde_json::from_str(recipe).unwrap();
         fs::create_dir_all(source).unwrap();
         for (index, asset) in selected.assets.iter_mut().enumerate() {
             let bytes = format!("fixture payload for {}", asset.role).into_bytes();
@@ -682,6 +900,57 @@ mod tests {
             fs::write(source.join(&asset.source.path), bytes).unwrap();
         }
         selected
+    }
+
+    #[test]
+    fn counter_art_corruption_preserves_other_verified_art_for_both_consumers() {
+        for recipe in [
+            include_str!("../resources/tony-asset-selection.json"),
+            include_str!("../resources/party-asset-selection.json"),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let source = directory.path().join("source");
+            let output = directory.path().join("assets");
+            let selected = recipe_fixture(&source, recipe);
+            prepare_selection(&source, &output, &selected).unwrap();
+            let manifest = fs::read(output.join(MANIFEST)).unwrap();
+            fs::remove_file(output.join("tokens/clue.png")).unwrap();
+            fs::write(output.join("tokens/resource.png"), b"changed").unwrap();
+            fs::remove_file(output.join("classes/rogue/icon.png")).unwrap();
+            let report = inspect_selection(&output, &selected);
+            assert!(report.recognized && !report.complete);
+            assert_eq!(report.valid_count(), selected.assets.len() - 3);
+            for missing in ["token/clue", "token/resource", "class/rogue/icon"] {
+                assert!(report.verified_path(missing).is_none(), "{missing}");
+            }
+            assert!(report.verified_path("class/rogue/background").is_some());
+            assert!(report.verified_path("class/mystic/icon").is_some());
+            assert!(report.verified_path("card/06003").is_some());
+            assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), manifest);
+        }
+    }
+
+    #[test]
+    fn party_previous_collection_keeps_its_art_and_requires_a_fresh_destination() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let output = directory.path().join("assets");
+        let recipe = include_str!("../resources/party-asset-selection.json");
+        let selected = recipe_fixture(&source, recipe);
+        let mut earlier = recipe_fixture(&source, recipe);
+        earlier.collection = "arkham-unfolded-study-escape-v1".into();
+        earlier.assets.retain(|asset| !is_counter_art(&asset.role));
+        prepare_selection(&source, &output, &earlier).unwrap();
+        let original = fs::read(output.join(MANIFEST)).unwrap();
+        let report = inspect_selection(&output, &selected);
+        assert!(report.recognized && !report.complete);
+        assert_eq!((report.valid_count(), report.expected_count()), (43, 57));
+        assert!(report.verified_path("card/06003").is_some());
+        assert!(report.verified_path("ui/reveal-chaos-token").is_some());
+        assert!(report.verified_path("token/clue").is_none());
+        assert!(report.verified_path("class/rogue/icon").is_none());
+        assert!(prepare_selection(&source, &output, &selected).is_err());
+        assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), original);
     }
 
     fn fixture(source: &Path) -> Selection {
@@ -1021,7 +1290,7 @@ mod tests {
         fs::remove_file(output.join("fonts/arkham-symbols.ttf")).unwrap();
         let report = inspect_selection(&output, &selected);
         assert!(report.recognized && !report.complete);
-        assert_eq!((report.valid_count(), report.expected_count()), (26, 29));
+        assert_eq!((report.valid_count(), report.expected_count()), (40, 43));
         assert!(report.verified_path("token/damage").is_none());
         assert!(report.verified_path("token/horror").is_none());
         assert!(report.verified_path("font/symbols").is_none());
@@ -1030,7 +1299,7 @@ mod tests {
 
     #[test]
     fn tony_prior_versions_remain_readable_without_overwriting() {
-        for (version, count) in [(1, 24), (2, 25), (3, 28)] {
+        for (version, count) in [(1, 24), (2, 25), (3, 28), (4, 29)] {
             let directory = tempfile::tempdir().unwrap();
             let source = directory.path().join("source");
             let output = directory.path().join("assets");
@@ -1038,7 +1307,8 @@ mod tests {
             let mut earlier = tony_fixture(&source);
             earlier.collection = format!("arkham-unfolded-tony-turn-v{version}");
             earlier.assets.retain(|asset| {
-                asset.role != "ui/reveal-chaos-token"
+                !is_counter_art(&asset.role)
+                    && (version >= 4 || asset.role != "ui/reveal-chaos-token")
                     && (version >= 3
                         || !matches!(
                             asset.role.as_str(),
@@ -1050,11 +1320,16 @@ mod tests {
             let original_manifest = fs::read(output.join(MANIFEST)).unwrap();
             let report = inspect_selection(&output, &selected);
             assert!(report.recognized && !report.complete, "Tony V{version}");
-            assert_eq!((report.valid_count(), report.expected_count()), (count, 29));
+            assert_eq!((report.valid_count(), report.expected_count()), (count, 43));
             assert!(report.verified_path("card/06003").is_some());
-            assert_eq!(report.verified_path("token/damage").is_some(), version == 3);
-            assert_eq!(report.verified_path("font/symbols").is_some(), version == 3);
-            assert!(report.verified_path("ui/reveal-chaos-token").is_none());
+            assert_eq!(report.verified_path("token/damage").is_some(), version >= 3);
+            assert_eq!(report.verified_path("font/symbols").is_some(), version >= 3);
+            assert_eq!(
+                report.verified_path("ui/reveal-chaos-token").is_some(),
+                version >= 4
+            );
+            assert!(report.verified_path("token/clue").is_none());
+            assert!(report.verified_path("token/resource").is_none());
             assert!(prepare_selection(&source, &output, &selected).is_err());
             assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), original_manifest);
         }
@@ -1079,7 +1354,18 @@ mod tests {
                 "127d652276550b909d08b16010e1380145d6c20030a915aabb889454f353e865",
                 "106bd1fc4c107f60d9a426064009d52cebf841de0d4e22174cfcc867ef887bcc",
                 "af2750b1cd8ec1b300964c289790886d944095c5a617160e5d9f428b165c9f36",
+                "7efe62e6c5d8597f9d14278f8039a94841b2563a82d5bc25be5304cf7437bff0",
             ]
+        );
+        // Party V1 captured from the installed collection before #73.
+        assert_eq!(
+            format!(
+                "{:x}",
+                Sha256::digest(
+                    serde_json::to_vec(&previous_manifests(party_selection())[0]).unwrap()
+                )
+            ),
+            "f8b453f912992e127c7d09833aec74309c953b1c8a952ff7d7d8c4a44b782b14"
         );
         assert_eq!(
             format!(
@@ -1108,8 +1394,8 @@ mod tests {
             }
             let report = inspect_selection(&output, &selected);
             assert!(report.recognized && !report.complete);
-            assert_eq!(report.valid_count(), 28);
-            assert_eq!(report.expected_count(), 29);
+            assert_eq!(report.valid_count(), 42);
+            assert_eq!(report.expected_count(), 43);
             assert!(report.verified_path("card/06003").is_some());
             assert!(report.verified_path("card-back/player").is_none());
         }
@@ -1118,14 +1404,14 @@ mod tests {
         fs::write(output.join(MANIFEST), &previous).unwrap();
         let report = inspect_selection(&output, &selected);
         assert!(report.recognized && !report.complete);
-        assert_eq!((report.valid_count(), report.expected_count()), (28, 29));
+        assert_eq!((report.valid_count(), report.expected_count()), (42, 43));
         assert!(prepare_selection(&source, &output, &selected).is_err());
         assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), previous);
 
         // Adding bytes cannot upgrade an earlier manifest or permit overwriting it.
         fs::write(&back, original).unwrap();
         let report = inspect_selection(&output, &selected);
-        assert_eq!(report.valid_count(), 29);
+        assert_eq!(report.valid_count(), 43);
         assert!(!report.complete);
         assert!(prepare_selection(&source, &output, &selected).is_err());
     }
@@ -1143,7 +1429,7 @@ mod tests {
             let mut redirected = original.clone();
             redirected["assets"][0]["path"] = serde_json::json!("../../other.png");
             let mut renamed = original;
-            renamed["collection"] = serde_json::json!("arkham-unfolded-tony-turn-v4");
+            renamed["collection"] = serde_json::json!("arkham-unfolded-tony-turn-v5");
             for manifest in [missing, altered, redirected, renamed] {
                 fs::write(
                     directory.path().join(MANIFEST),

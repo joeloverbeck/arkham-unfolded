@@ -1,5 +1,7 @@
 use super::*;
 mod act_reveal;
+mod clue_motion;
+mod counters;
 mod location_map;
 mod selection_lifecycle;
 mod skill_summary;
@@ -297,6 +299,9 @@ fn app(path: PathBuf) -> App {
 }
 fn app_in(app: App, path: PathBuf) -> App {
     let mut app = with_table(app, path);
+    // These choice-only tests do not install presentation clocks or animation.
+    // Native motion is exercised through production_app in the motion tests.
+    app.world_mut().resource_mut::<Table>().reduced_motion = true;
     app.init_resource::<Actions>()
         .add_plugins(reveal::RevealPlugin)
         .add_systems(Update, handle_actions);

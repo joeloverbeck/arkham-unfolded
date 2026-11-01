@@ -1,6 +1,7 @@
 use super::*;
 use crate::{
     TokenFace, TokenStatus,
+    tabletop_counters::{self as counters, ActionRow, CounterKind, CounterVisual},
     tabletop_tokens::{self, TokenVisual},
 };
 
@@ -157,7 +158,10 @@ pub(super) fn synchronize(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut last: Local<Option<Observation>>,
 ) {
-    let view = table.view();
+    let mut view = table.view();
+    for (index, investigator) in view.investigators.iter_mut().enumerate() {
+        investigator.clues = table.displayed_clues(index);
+    }
     if last.as_ref() == Some(&view) {
         return;
     }
@@ -203,7 +207,7 @@ pub(super) fn synchronize(
                 if location_map::GatheringMap::entry_blocked(location) {
                     "Entry blocked".into()
                 } else if location.revealed {
-                    format!("{} clues", location.clues)
+                    String::new()
                 } else {
                     "Unrevealed".into()
                 }
@@ -211,6 +215,23 @@ pub(super) fn synchronize(
             at + Vec3::Z * 1.1,
             false,
         );
+        if location.revealed
+            && let Some((token, caption)) = counters::spawn_count(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                CounterVisual {
+                    kind: CounterKind::Clue,
+                    amount: location.clues,
+                    image: art.image("token/clue"),
+                    at: layout::location_clue(at),
+                    scale: 1.0,
+                },
+            )
+        {
+            commands.entity(token).insert(Scene);
+            commands.entity(caption).insert(Scene);
+        }
         for (slot, investigator) in view
             .investigators
             .iter()
@@ -322,25 +343,55 @@ pub(super) fn synchronize(
             None,
             revision,
         );
-        label(
-            &mut commands,
-            &art,
-            format!(
-                "{} resources · {} clues\n{} actions · {}",
+        for (kind, amount, role, at) in [
+            (
+                CounterKind::Resource,
                 investigator.resources,
-                investigator.clues,
-                investigator.ordinary_actions,
-                if investigator.turn_finished {
-                    "Turn ended"
-                } else if view.actor == Some(who) {
-                    "Acting"
-                } else {
-                    "Waiting"
-                }
+                "token/resource",
+                layout::investigator_resource(index),
             ),
-            layout::investigator_status(index),
-            false,
-        );
+            (
+                CounterKind::Clue,
+                investigator.clues,
+                "token/clue",
+                layout::investigator_clue(index),
+            ),
+        ] {
+            if let Some((token, caption)) = counters::spawn_count(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                CounterVisual {
+                    kind,
+                    amount,
+                    image: art.image(role),
+                    at,
+                    scale: 0.85,
+                },
+            ) {
+                commands.entity(token).insert(Scene);
+                commands.entity(caption).insert(Scene);
+            }
+        }
+        let class = layout::investigator_class(index);
+        let class_name = class.asset_name();
+        for entity in counters::spawn_actions(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            ActionRow {
+                investigator: index,
+                remaining: investigator.ordinary_actions,
+                turn_ended: investigator.turn_finished,
+                additional: (who == Investigator::Tony).then_some(view.tony_bonus_action),
+                additional_eligible: false,
+                class,
+                icon: art.image(&format!("class/{class_name}/icon")),
+                background: art.image(&format!("class/{class_name}/background")),
+            },
+        ) {
+            commands.entity(entity).insert(Scene);
+        }
         for (amount, capacity, horror, role, title) in [
             (
                 investigator.damage,
@@ -406,10 +457,7 @@ pub(super) fn synchronize(
             label(
                 &mut commands,
                 &art,
-                format!(
-                    "Bounty Contracts\n{} bounties\nBonus action: no eligible enemy",
-                    view.contracts_bounties
-                ),
+                format!("Bounty Contracts\n{} bounties", view.contracts_bounties),
                 layout::investigator_asset(index, 0) + Vec3::Z * 1.1,
                 false,
             );

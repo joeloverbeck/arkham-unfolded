@@ -16,7 +16,7 @@ On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 cd /home/joeloverbeck/src/arkham-unfolded
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
   --experiment party \
-  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-55-assets/party-assets-v1 \
+  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/party-assets-v2 \
   --save /home/joeloverbeck/.cache/agent-tmp/arkham-55-owner-8a08cc9.session.json
 ```
 
@@ -31,10 +31,11 @@ On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment tony
+  --experiment tony \
+  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/tony-assets-v5
 ```
 
-The `--experiment tony` option selects the new turn and its own artwork preference. Without a saved preference, it uses the current Tony collection below. The terminal reports the experiment, resolved artwork folder and completeness at startup. If artwork has not been prepared, use the preparation instructions below; missing artwork leaves readable substitutes.
+The `--experiment tony` option selects the prepared turn. The explicit artwork path above uses this machine's new counter collection; use your own prepared folder elsewhere. Omitting `--art-root` uses Tony's saved artwork preference or its preserved v4 default. The terminal reports the experiment, resolved artwork folder and completeness at startup. If artwork has not been prepared, use the preparation instructions below; missing artwork leaves readable substitutes. Joel accepted the shared counter refinement under [#73](https://github.com/joeloverbeck/arkham-unfolded/issues/73) on 2026-11-01 after playing the complete prepared Party attempt through Act advancement and checking the recent visuals. This does not claim a separate Tony or Jacqueline playthrough of that refinement.
 
 All three native experiments check rendering before enabling play. Keep the window visible and focused while **Checking graphics...** is shown. A healthy scene normally needs several seconds; startup refuses play if it cannot become ready within 30 seconds of visible foreground operation. A later sustained rendering failure also stops play and exits unsuccessfully. The terminal records the reason, and the last saved decision remains intact. This checks observed progress; it does not repair or certify the graphics driver. See the [graphics investigation and evidence limits](docs/research/nvidia-mapping-and-startup-health.md).
 
@@ -77,14 +78,14 @@ curl --fail --location \
 cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /tmp/arkham-reveal-icon.png \
-  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v4"
+  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
 cargo run --locked --bin arkham-assets -- check-tony \
-  "$HOME/.local/share/arkham-unfolded/tony-assets-v4"
+  "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
 ```
 
-This prepares 28 selected images and one symbol font, including the player-card back, damage/horror counters and reveal icon, in a separate collection. Preparation verifies the exact downloaded icon before creating output; ordinary play needs no download. Earlier Tony collections remain usable for their existing artwork, with readable substitutes for missing assets. In particular, `tony-assets-v3` lacks only the reveal icon. Prepare the fresh `tony-assets-v4` folder and use the launch command above. The source archive and any existing Jacqueline collection stay unchanged. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
+This prepares 42 selected images and one symbol font, including the player-card back, damage/horror counters, clue/resource faces, six class icon/background pairs and reveal icon. Preparation verifies the exact downloaded icon before creating output; ordinary play needs no download. Earlier collections retain their verified artwork and use readable substitutes for new missing images. Select the fresh folder with `--art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v5"` or **Choose asset folder**. The source archive and existing collections stay intact. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
 
-These folder versions preserve earlier prepared files during development; they do not select different game rules. The ordinary launch command stays the same when the application's default collection changes. An explicitly saved folder or an old command containing `--art-root` continues to select that folder; use **Choose asset folder** to change a saved selection.
+These folder versions preserve earlier prepared files during development; they do not select different game rules. Preparing v5 changes neither saved preferences nor the existing v4 default. Select the fresh folder explicitly with `--art-root` for one launch or **Choose asset folder** to save that selection. An older explicit path continues to select its original folder.
 
 **Choose asset folder** in Tony's **Menu**, or Jacqueline's side panel, checks a prepared folder and saves its location for the next launch of that experiment. Scroll the controls if needed. The native folder dialog uses Ubuntu's `zenity` package. Settings are separate: Tony uses `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml`; Jacqueline retains `config.toml` in the same directory. The normal configuration directory is `~/.config/arkham-unfolded`. Existing `config.toml` contents remain unchanged and apply only to Jacqueline.
 

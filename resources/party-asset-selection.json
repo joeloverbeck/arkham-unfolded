@@ -659,9 +659,225 @@
       "transform": {
         "kind": "copy"
       }
+    },
+    {
+      "bytes": 495209,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "tokens/clue.png",
+      "role": "token/clue",
+      "sha256": "ad27146a4ac6bbd70b22ee923a895fb338185f19c1407387fade11565d4c58dc",
+      "source": {
+        "bytes": 358442,
+        "path": "images/other/unclassified/en/sce-base-save/Clue Counter--DiffuseURL--61cb6ee4c64be6c1fc9f.png",
+        "sha256": "618070e2ebd06c9eeb2023612be7fb0b06e67a53ef84401cb0254ee47f9892d3"
+      },
+      "transform": {
+        "height": 384,
+        "kind": "png_crop",
+        "source_height": 768,
+        "source_width": 768,
+        "width": 384,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "bytes": 56801,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "tokens/resource.png",
+      "role": "token/resource",
+      "sha256": "f3f6df74bb2cab4bb1743e9a26755b104e241795e5a08e18ee6696f02d794e52",
+      "source": {
+        "bytes": 56801,
+        "path": "images/other/unclassified/en/sce-base-save/Resource--ImageURL--224b07902d970cfdcc33.png",
+        "sha256": "f3f6df74bb2cab4bb1743e9a26755b104e241795e5a08e18ee6696f02d794e52"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 6370,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/guardian/icon.png",
+      "role": "class/guardian/icon",
+      "sha256": "8721ee5e2a8b03fde10d8f643fdb09c5173f61d562ee06d1c4c4de04cf62c84a",
+      "source": {
+        "bytes": 6370,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Guardian--cbdd279955a9d345.png",
+        "sha256": "8721ee5e2a8b03fde10d8f643fdb09c5173f61d562ee06d1c4c4de04cf62c84a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7497,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/guardian/background.png",
+      "role": "class/guardian/background",
+      "sha256": "b665b6600551cfdfc083cc2a829601d9e014f99f4fb8e52d3f8a6d4b1c2fe607",
+      "source": {
+        "bytes": 7497,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/GuardianBackground--6cbf13f7d84ce332.png",
+        "sha256": "b665b6600551cfdfc083cc2a829601d9e014f99f4fb8e52d3f8a6d4b1c2fe607"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 5730,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/seeker/icon.png",
+      "role": "class/seeker/icon",
+      "sha256": "d0c948a268e4cf19a230ec55956ea4790374ba960d5e4fe3ace5c436f6935e19",
+      "source": {
+        "bytes": 5730,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Seeker--3dae70d1cce3e38c.png",
+        "sha256": "d0c948a268e4cf19a230ec55956ea4790374ba960d5e4fe3ace5c436f6935e19"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7384,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/seeker/background.png",
+      "role": "class/seeker/background",
+      "sha256": "acbd730bfa2030b08fa9c7fdf5f58d754a2cdd44349e072ca289dd9a1f498bfc",
+      "source": {
+        "bytes": 7384,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/SeekerBackground--9a2f78e6e9056921.png",
+        "sha256": "acbd730bfa2030b08fa9c7fdf5f58d754a2cdd44349e072ca289dd9a1f498bfc"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 6895,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/rogue/icon.png",
+      "role": "class/rogue/icon",
+      "sha256": "00b41cc23efdc787fcca9fae28eba9074948b2cd8b19a0a4d6b98496cce16903",
+      "source": {
+        "bytes": 6895,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Rogue--08f418bd8a491428.png",
+        "sha256": "00b41cc23efdc787fcca9fae28eba9074948b2cd8b19a0a4d6b98496cce16903"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7475,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/rogue/background.png",
+      "role": "class/rogue/background",
+      "sha256": "ceb444e8fdd507a23d321e0ffa125880b3a7392b8f0e71359d7de490b9fa3bb3",
+      "source": {
+        "bytes": 7475,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/RogueBackground--96e3398d9513fa6b.png",
+        "sha256": "ceb444e8fdd507a23d321e0ffa125880b3a7392b8f0e71359d7de490b9fa3bb3"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 6132,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/mystic/icon.png",
+      "role": "class/mystic/icon",
+      "sha256": "f1c76277c89151e8dea44a77c8d16778ba19d1376a2a44ad5a59472dbe4c6f1a",
+      "source": {
+        "bytes": 6132,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Mystic--038a914f8724f8eb.png",
+        "sha256": "f1c76277c89151e8dea44a77c8d16778ba19d1376a2a44ad5a59472dbe4c6f1a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7591,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/mystic/background.png",
+      "role": "class/mystic/background",
+      "sha256": "8f19e2b5d912269e7148606b7e884a28f3ebfd370aa65cc360f98ad60b83d5e6",
+      "source": {
+        "bytes": 7591,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/MysticBackground--96ea061c64073926.png",
+        "sha256": "8f19e2b5d912269e7148606b7e884a28f3ebfd370aa65cc360f98ad60b83d5e6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 5953,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/survivor/icon.png",
+      "role": "class/survivor/icon",
+      "sha256": "e8e797a8e54539580224ee7618c04b5b89782571ce21aef18ebc937c296d048f",
+      "source": {
+        "bytes": 5953,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Survivor--234683c0781fbf62.png",
+        "sha256": "e8e797a8e54539580224ee7618c04b5b89782571ce21aef18ebc937c296d048f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7610,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/survivor/background.png",
+      "role": "class/survivor/background",
+      "sha256": "c6b7fcbb3bd94ad26bdb9cf7fe2a04236705157786cecb84787a4b0258446745",
+      "source": {
+        "bytes": 7610,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/SurvivorBackground--cd84098af74ad7c0.png",
+        "sha256": "c6b7fcbb3bd94ad26bdb9cf7fe2a04236705157786cecb84787a4b0258446745"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 13835,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/neutral/icon.png",
+      "role": "class/neutral/icon",
+      "sha256": "1f54bebb60e7dc9dd25b4014e80d8dc53cf7f619fe173b32c901f9941936eb51",
+      "source": {
+        "bytes": 13835,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Neutral--6d5b6296c3462ab3.png",
+        "sha256": "1f54bebb60e7dc9dd25b4014e80d8dc53cf7f619fe173b32c901f9941936eb51"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7662,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/neutral/background.png",
+      "role": "class/neutral/background",
+      "sha256": "64aa83a7aac48a19ef14508b3bdd3c9a88812ecfe74d1ece0ac1368eee093564",
+      "source": {
+        "bytes": 7662,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/NeutralBackground--b16a9f1e00e8ea1e.png",
+        "sha256": "64aa83a7aac48a19ef14508b3bdd3c9a88812ecfe74d1ece0ac1368eee093564"
+      },
+      "transform": {
+        "kind": "copy"
+      }
     }
   ],
-  "collection": "arkham-unfolded-study-escape-v1",
+  "collection": "arkham-unfolded-study-escape-v2",
   "format_version": 1,
   "selection": "Exact English card sides from GitHub #22; revealed Study uses its reverse. Original SCE circular chaos-token set, blue Elder Sign (not elder thing). Runtime uses only this prepared collection; original bytes remain outside Git. The standard player back is selected from the same On the Hunt variant for the face-down deck. Damage and Horror use the transparent SCE counter images; the verified arkhamicons font supplies their matching inline symbols.",
   "source_archive_release": "v1.22.11"

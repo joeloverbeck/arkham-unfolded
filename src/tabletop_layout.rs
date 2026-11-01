@@ -30,10 +30,11 @@ const TEST_SIZE: Vec2 = Vec2::new(14.0, 10.0);
 const INVESTIGATOR_SIZE: Vec2 = Vec2::new(18.0, 15.0);
 const INVESTIGATOR_SPACING: f32 = 18.6;
 const THREAT_REGION_SIZE: Vec2 = Vec2::new(9.9, 3.4);
-const ASSET_REGION_SIZE: Vec2 = Vec2::new(17.3, 6.4);
-const HAND_REGION_SIZE: Vec2 = Vec2::new(17.6, 3.4);
+const ASSET_REGION_SIZE: Vec2 = Vec2::new(17.3, 6.08);
+const HAND_REGION_SIZE: Vec2 = Vec2::new(ASSET_REGION_SIZE.x, 3.4);
+const UPPER_GROUP_SHIFT: f32 = 0.325;
 const THREAT_REGION_Z: f32 = -5.5;
-const ASSET_REGION_Z: f32 = 0.0;
+const ASSET_REGION_Z: f32 = 0.16;
 const HAND_REGION_Z: f32 = 5.45;
 
 /// Positions beside a location, ordered far-left, near-left, far-right, near-right.
@@ -135,11 +136,40 @@ pub(crate) fn test_heading_screen_position(
 }
 
 pub(crate) fn investigator_card(index: usize) -> Vec3 {
-    personal(index, -7.15, -5.35)
+    personal(index, -7.15, -5.37)
 }
 
 pub(crate) fn investigator_status(index: usize) -> Vec3 {
     personal(index, -7.15, -3.75)
+}
+
+/// Stable homes remain fixed when either personal total becomes zero.
+pub(crate) fn investigator_resource(index: usize) -> Vec3 {
+    personal(index, -7.95, -4.35).with_y(0.14)
+}
+
+pub(crate) fn investigator_clue(index: usize) -> Vec3 {
+    personal(index, -6.35, -4.35).with_y(0.14)
+}
+
+pub(crate) fn location_clue(card_at: Vec3) -> Vec3 {
+    card_at + Vec3::Y * 0.09
+}
+
+/// Center the complete row; a gap distinguishes a fourth restricted allowance.
+pub(crate) fn investigator_action(index: usize, slot: usize, additional: bool) -> Vec3 {
+    let gap = if additional { 0.15 } else { 0.0 };
+    let span = if additional {
+        3.0 * 0.48 + gap
+    } else {
+        2.0 * 0.48
+    };
+    personal(
+        index,
+        -7.15 - span / 2.0 + slot as f32 * 0.48 + if slot == 3 { gap } else { 0.0 },
+        -3.25,
+    )
+    .with_y(0.14)
 }
 
 /// Center of a permanent counter; its caption sits between this row and the card.
@@ -158,15 +188,15 @@ pub(crate) fn investigator_harm_caption(index: usize, horror: bool, named: bool)
 }
 
 pub(crate) fn investigator_deck(index: usize) -> Vec3 {
-    personal(index, 6.0, -5.5)
+    personal(index, 6.0 - UPPER_GROUP_SHIFT, -5.5)
 }
 
 pub(crate) fn investigator_discard(index: usize) -> Vec3 {
-    personal(index, 8.0, -5.5)
+    personal(index, 8.0 - UPPER_GROUP_SHIFT, -5.5)
 }
 
 pub(crate) fn investigator_threat(index: usize, slot: usize) -> Vec3 {
-    personal(index, -3.9 + slot as f32 * 1.95, -5.4)
+    personal(index, -3.9 - UPPER_GROUP_SHIFT + slot as f32 * 1.95, -5.4)
 }
 
 pub(crate) fn investigator_asset(index: usize, slot: usize) -> Vec3 {
@@ -181,7 +211,7 @@ pub(crate) fn investigator_asset(index: usize, slot: usize) -> Vec3 {
 pub(crate) fn hand_position(index: usize, count: usize, slot: usize) -> Vec3 {
     personal(
         index,
-        slot as f32 * 1.95 - count.saturating_sub(1) as f32 * 0.975,
+        slot as f32 * 1.93 - count.saturating_sub(1) as f32 * 0.965,
         5.5,
     )
 }
@@ -215,8 +245,8 @@ pub(crate) fn test_token(canceled: bool, slot: usize) -> Vec3 {
 
 pub(crate) fn zone_labels(index: usize) -> [(&'static str, Vec3); 5] {
     [
-        ("Threats", personal(index, 0.0, -7.15)),
-        ("Assets", personal(index, 0.0, -3.35)),
+        ("Threats", personal(index, -UPPER_GROUP_SHIFT, -7.15)),
+        ("Assets", personal(index, 0.0, -3.03)),
         ("Hand", personal(index, 0.0, 7.15)),
         ("Deck", investigator_deck(index) - Vec3::Z * 1.7),
         ("Discard", investigator_discard(index) - Vec3::Z * 1.7),
@@ -234,15 +264,7 @@ pub(crate) fn test_zone_labels() -> [(&'static str, Vec3); 3] {
 /// Presentation identity, independent of secondary deckbuilding access.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum InvestigatorClass {
-    #[expect(
-        dead_code,
-        reason = "Part of the six-class palette; not in the prepared party."
-    )]
     Guardian,
-    #[expect(
-        dead_code,
-        reason = "Part of the six-class palette; not in the prepared party."
-    )]
     Seeker,
     Rogue,
     Mystic,
@@ -251,6 +273,16 @@ pub(crate) enum InvestigatorClass {
 }
 
 impl InvestigatorClass {
+    pub(crate) fn asset_name(self) -> &'static str {
+        match self {
+            Self::Guardian => "guardian",
+            Self::Seeker => "seeker",
+            Self::Rogue => "rogue",
+            Self::Mystic => "mystic",
+            Self::Survivor => "survivor",
+            Self::Neutral => "neutral",
+        }
+    }
     /// Muted class colors shared by table borders, portrait accents and standee holders.
     pub(crate) fn color(self) -> Color {
         match self {
@@ -339,7 +371,10 @@ pub(crate) fn spawn_surfaces(
         );
         let color = investigator_color(index).mix(&Color::WHITE, 0.12);
         for (center, size) in [
-            (personal(index, 0.0, THREAT_REGION_Z), THREAT_REGION_SIZE),
+            (
+                personal(index, -UPPER_GROUP_SHIFT, THREAT_REGION_Z),
+                THREAT_REGION_SIZE,
+            ),
             (personal(index, 0.0, ASSET_REGION_Z), ASSET_REGION_SIZE),
             (personal(index, 0.0, HAND_REGION_Z), HAND_REGION_SIZE),
             (investigator_deck(index), Vec2::new(1.95, 3.4)),
@@ -648,7 +683,10 @@ mod tests {
         let center = investigator_center(0, 3);
         let threats: Vec<_> = (0..5).map(|slot| investigator_threat(0, slot)).collect();
         for threat in &threats {
-            assert!((threat.x - center.x).abs() + 1.85 / 2.0 < THREAT_REGION_SIZE.x / 2.0);
+            assert!(
+                (threat.x - center.x + UPPER_GROUP_SHIFT).abs() + 1.85 / 2.0
+                    < THREAT_REGION_SIZE.x / 2.0
+            );
             assert!(
                 (threat.z - center.z - THREAT_REGION_Z).abs() + 1.3 < THREAT_REGION_SIZE.y / 2.0
             );
@@ -681,6 +719,53 @@ mod tests {
             investigator_harm(0, true).x - investigator_harm(0, false).x,
             1.5
         );
+    }
+
+    #[test]
+    fn personal_rows_and_upper_group_preserve_the_requested_alignment() {
+        assert_eq!(HAND_REGION_SIZE.x, ASSET_REGION_SIZE.x);
+        assert!((ASSET_REGION_Z + ASSET_REGION_SIZE.y / 2.0 - 3.2).abs() < 0.00001);
+        for index in 0..3 {
+            let center = investigator_center(index, 3);
+            let discard_right = investigator_discard(index).x + 1.95 / 2.0;
+            assert!((discard_right - center.x - ASSET_REGION_SIZE.x / 2.0).abs() < 0.00001);
+            let card = investigator_card(index);
+            let resource = investigator_resource(index);
+            let clue = investigator_clue(index);
+            assert!((resource.x + clue.x - 2.0 * card.x).abs() < 0.00001);
+            assert!(resource.x < clue.x);
+            assert!(resource.z - 0.327 * 0.85 > card.z + 1.35 / 2.0);
+            for additional in [false, true] {
+                let last = if additional { 3 } else { 2 };
+                let left = investigator_action(index, 0, additional);
+                let right = investigator_action(index, last, additional);
+                assert!((left.x + right.x - 2.0 * card.x).abs() < 0.00001);
+                assert!(left.z - 0.21 > resource.z + 0.327 * 0.85);
+                assert!(
+                    left.z + 0.21 + 0.1 < center.z + ASSET_REGION_Z - ASSET_REGION_SIZE.y / 2.0
+                );
+            }
+            // Preserve the accepted twelve-face fixture, including exhausted
+            // orientations, while reserving the counter band above its border.
+            for slot in 0..12 {
+                let at = investigator_asset(index, slot);
+                for size in [Vec2::new(1.85, 2.6), Vec2::new(2.6, 1.85)] {
+                    assert!((at.x - center.x).abs() + size.x / 2.0 < ASSET_REGION_SIZE.x / 2.0);
+                    assert!(
+                        (at.z - center.z - ASSET_REGION_Z).abs() + size.y / 2.0
+                            < ASSET_REGION_SIZE.y / 2.0
+                    );
+                }
+            }
+            assert_eq!(
+                investigator_harm(index, false),
+                center + Vec3::new(-7.90, 0.14, -7.0)
+            );
+            assert_eq!(
+                investigator_harm(index, true),
+                center + Vec3::new(-6.40, 0.14, -7.0)
+            );
+        }
     }
 
     #[test]

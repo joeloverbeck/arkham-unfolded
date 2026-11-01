@@ -72,7 +72,7 @@ Joel accepted this refinement with #22 on 2026-10-31. It was offered under **one
 
 ## External artwork and source custody
 
-Prepare the current collection of 28 images and one symbol font, including the player-card back, damage/horror counters and reveal icon, in a fresh folder; earlier Tony and Jacqueline collections are retained:
+Prepare the current collection of 42 images and one symbol font, including clue/resource counters, six class icon/background pairs, the player-card back, damage/horror counters and reveal icon, in a fresh folder; earlier Tony and Jacqueline collections are retained:
 
 ```sh
 curl --fail --location \
@@ -81,16 +81,18 @@ curl --fail --location \
 cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /tmp/arkham-reveal-icon.png \
-  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v4"
+  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
 cargo run --locked --bin arkham-assets -- check-tony \
-  "$HOME/.local/share/arkham-unfolded/tony-assets-v4"
+  "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment tony
+  --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
 ```
 
-Use the in-app asset folder selection to save a Tony-only preference in `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml` (normally `~/.config/arkham-unfolded/tony.toml`). Jacqueline keeps its existing `config.toml`. Without a saved choice, Tony selects `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v4` (normally `~/.local/share/arkham-unfolded/tony-assets-v4`); the launch command need not name a version. Startup reports the experiment, resolved folder and completeness. `--art-root` is temporary; `--no-art` uses readable substitutes. The program reads verified prepared files, never the source archive or download location. A new collection must use a fresh destination; partial/conflicting collections are preserved and reported. All third-party image/font bytes remain outside Git.
+Use the in-app asset folder selection to save a Tony-only preference in `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml` (normally `~/.config/arkham-unfolded/tony.toml`). Jacqueline keeps its existing `config.toml`. Without an override or saved choice, Tony still selects `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v4` (normally `~/.local/share/arkham-unfolded/tony-assets-v4`). Preparing v5 changes neither that default nor saved preferences; select the fresh folder explicitly to use its new counter artwork. The [README launch command](../../README.md#launch-and-play-the-tony-turn) uses this machine's verified v5 collection at `/home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/tony-assets-v5`. Joel accepted the shared counter refinement under [#73](https://github.com/joeloverbeck/arkham-unfolded/issues/73) on 2026-11-01 after a complete prepared Party attempt through Act advancement and inspection of the recent visuals. The [acceptance record](study-escape.md#counter-acceptance-and-verification-reference-73) distinguishes that reported Party use from the separate technical checks of Tony and Jacqueline.
 
-The icon is [Swap bag by Lorc](https://game-icons.net/1x1/lorc/swap-bag.html), licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Preparation requires the selected unchanged 5,829-byte PNG with SHA-256 `54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e`; it rejects other bytes and retains attribution in the recipe and portable manifest. The application may tint the white silhouette. Older Tony v1/v2/v3 collections remain recognized and supply their verified artwork, with a readable reveal button when the icon is absent. Saved choices are never silently switched to the new default; select the fresh folder to use it. An older collection's check reports incomplete new requirements without changing its contents.
+Startup reports the experiment, resolved folder and completeness. `--art-root` is temporary; `--no-art` uses readable substitutes. The program reads verified prepared files, never the source archive or download location. A new collection must use a fresh destination; partial/conflicting collections are preserved and reported. All third-party image/font bytes remain outside Git.
+
+The icon is [Swap bag by Lorc](https://game-icons.net/1x1/lorc/swap-bag.html), licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Preparation requires the selected unchanged 5,829-byte PNG with SHA-256 `54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e`; it rejects other bytes and retains attribution in the recipe and portable manifest. The application may tint the white silhouette. Older Tony v1/v2/v3/v4 collections remain recognized and supply their verified artwork, with readable substitutes for any missing reveal or counter artwork. Saved choices are never silently switched to the fresh collection. An older collection's check reports incomplete new requirements without changing its contents.
 
 The implementation consumes the exact source contract and independent worked expectations in #22, with original English faces, Rules Reference, FAQ 2.5 and original campaign guide under the accepted precedence. It does not refresh taboo or prepare a campaign. The unchanged [source manifest](../research/issue-1-evidence.json) identifies retained PDFs and deck inputs. On 2026-10-28 all nine source files, ten selected card faces and Study's revealed reverse matched their declared hashes. Their exact bytes were also copied to owner-controlled external custody at `~/.local/share/arkham-unfolded/source-evidence/tony-turn-v1` and verified by readback. Its `manifest.json` SHA-256 is `fb3423f0efc23c2bff9b0b6755c8b5b567e6edd6b1d00ddc7173d45b1274d244`. This is retained same-machine evidence, not an independent backup; preserve it while source fidelity or recovery relies on it.
 
