@@ -17,16 +17,26 @@ This selects the GitHub client for repository work. If a different operation nee
 
 Write multiline bodies to a temporary file and pass `--body-file`. Read back the affected issue, comment, or label after every write. If a write times out or its result is unclear, inspect remote state before retrying.
 
-When preparing a publication artifact, run dependent steps sequentially and require a completed exit code of `0` from each producer before consuming its output. Inspect returned command status explicitly: awaiting a tool response does not establish success, and hashing an empty or partial file left by a failed producer can still succeed. Verify the completed artifact against the intended content or recorded candidate digest before the dependent GitHub write. On failure, stop that sequence, retain the error, and validate the regenerated artifact before resuming.
+When preparing a publication artifact, require a completed exit code of `0` from each producer before consuming its output. For an already-authorized sequence with no intervening decision, put the dependent commands in one shell invocation joined by `&&`, including the final mutation. Across separate tool calls, inspect the returned status before issuing the next call: a running session must reach a successful terminal result first. Awaiting a tool response alone does not establish success. Verify the completed artifact against the intended content or recorded candidate digest before the dependent GitHub write. On failure, stop that sequence, retain the error, and inspect remote state before retrying an ambiguous write.
 
-For an exact comment-body readback, save the response JSON using the returned comment ID, then compare its decoded `body` directly with the submitted file:
+For an exact comment-body readback followed by an authorized issue closure, replace `COMMENT_ID` with the returned comment ID and `ISSUE_NUMBER` with the selected issue number. Save the response, compare its decoded `body` with the submitted file, and close only after it matches:
 
 ```sh
-gh api repos/joeloverbeck/arkham-unfolded/issues/comments/<comment-id> > /tmp/comment-readback.json &&
-jq -e --rawfile expected /tmp/comment.md '.body == $expected' /tmp/comment-readback.json
+gh api repos/joeloverbeck/arkham-unfolded/issues/comments/COMMENT_ID > /tmp/comment-readback.json &&
+jq -e --rawfile expected /tmp/comment.md '.body == $expected' /tmp/comment-readback.json &&
+gh issue close ISSUE_NUMBER --repo joeloverbeck/arkham-unfolded
 ```
 
-Equality exits successfully; a mismatch exits nonzero. This preserves body whitespace while avoiding the extra output newline from `gh api --jq .body`.
+Equality exits successfully; a failed read or mismatch prevents closure. This preserves body whitespace while avoiding the extra output newline from `gh api --jq .body`. Read back the issue state after closure. For a readback without a dependent write, end the sequence after `jq`.
+
+After verifying that the accepted PR merged, use the same failure propagation for the authorized local update:
+
+```sh
+git switch main &&
+git pull --ff-only origin main
+```
+
+Verify the resulting branch, commit and working-tree status before reporting synchronization complete. Keep human decisions between separate command sequences; `&&` supplies failure propagation, not acceptance.
 
 Publishing an issue or applying a readiness label follows the authority and feasibility rules in `CLAUDE.md` and the constitution. A draft spec or a closed dependency alone does not activate work.
 
@@ -44,7 +54,20 @@ gh api repos/joeloverbeck/arkham-unfolded/issues/comments/<comment-id> --jq .bod
 
 Follow linked decisions and continue pages as needed for the requested coverage. An index locates evidence; it does not replace reading relevant comment bodies. Read back each write using its returned issue or comment identity.
 
-For memory or historical records, first locate entries for this repository or working directory, then search task keywords within those sections. Follow relevant evidence links; widen the search only when the scoped lookup has no relevant result or the task requires another repository's history.
+For memory or historical records, scope by repository before searching task keywords. For a memory index with `applies_to` records, locate this repository's entries first:
+
+```sh
+rg -n -B 3 -F 'applies_to: cwd=/home/joeloverbeck/src/arkham-unfolded;' /path/to/MEMORY.md
+```
+
+Use the matching section heading and its next peer heading to discover the current inclusive line range. Replace `START` and `END` below with those bounds, save a bounded page, then search only that page for the task terms and its continuation:
+
+```sh
+scripts/tools read-context /path/to/MEMORY.md --start START --end END --max-bytes 6000 > /tmp/arkham-memory-page.txt &&
+rg -n 'record-check|publication|read-context|^NEXT|^END' /tmp/arkham-memory-page.txt
+```
+
+Choose terms for the current task. Read matching passages in context and follow relevant evidence links. Follow each `NEXT` continuation before treating a section as exhausted; a page without a keyword match does not establish absence from later pages. Widen the search only when the scoped lookup has no relevant result or the task requires another repository's history.
 
 For a whole file, omit the range; to read from a known line through EOF, supply only `--start`:
 

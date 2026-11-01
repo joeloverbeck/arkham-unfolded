@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-exec cargo run --quiet --locked --manifest-path "$(dirname -- "${BASH_SOURCE[0]}")/../Cargo.toml" -p arkham-tools -- "$@"
+exec cargo run --quiet --locked \
+  --manifest-path "$(dirname -- "${BASH_SOURCE[0]}")/../Cargo.toml" \
+  --target-dir "$(dirname -- "${BASH_SOURCE[0]}")/../target/agent-tools" \
+  --config 'build.build-dir="{workspace-root}/target/agent-tools"' \
+  -p arkham-tools -- "$@"
