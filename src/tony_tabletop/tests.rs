@@ -22,13 +22,11 @@ fn native_image_roles_include_all_counter_recipe_assets() {
 fn production_test_heading_clears_surfaces_after_text_layout() {
     use crate::tabletop_layout::heading_checks;
 
-    let directory = tempfile::tempdir().unwrap();
     for scale in [1.0, 2.0] {
-        let mut app = presentation_app_in(
-            heading_checks::app(),
-            directory.path().join(format!("heading-{scale}.json")),
-        );
-        app.add_systems(Update, world_labels.after(synchronize_scene));
+        // This isolates heading geometry with the measurement helper's camera.
+        let (mut app, _) = scene_app_in(heading_checks::app());
+        app.insert_resource(Orbit::new(CameraMode::Tony))
+            .add_systems(Update, (synchronize_scene, world_labels).chain());
         heading_checks::assert_heading(&mut app, MainCamera, scale);
     }
 }
@@ -113,50 +111,54 @@ fn launch_overrides_leave_saved_tony_preference_unchanged() {
 }
 
 fn presentation_app(path: PathBuf) -> App {
-    presentation_app_in(App::new(), path)
-}
+    use crate::tabletop_layout::heading_checks;
+    use bevy::window::PrimaryWindow;
 
-fn presentation_app_in(app: App, path: PathBuf) -> App {
-    let (mut app, _) = scene_app_in(app);
+    // Only environment belongs here. The installer owns every Tony system and
+    // plugin, including production setup, selection invalidation and polling.
+    let (mut app, _) = scene_app_in(heading_checks::app());
     app.world_mut().resource_mut::<Table>().save_path = path.clone();
     app.insert_resource(Orbit::new(CameraMode::Tony))
+        // Supplied health exercises admission behavior; it is not GPU evidence.
         .insert_resource(RenderHealth::ready_for_test())
-        .add_plugins(reveal::RevealPlugin)
         .insert_resource(Actions::default())
         .insert_resource(AssetSettings::new_tony(AssetConfig::load_at(
             path.with_extension("toml"),
             path.with_extension("assets"),
         )))
-        .init_resource::<ButtonInput<KeyCode>>()
+        .insert_resource(Capture {
+            path: None,
+            quit: false,
+            frame: 0,
+            requested: false,
+        })
         .init_resource::<Time>()
-        .init_resource::<FeedbackSettings>()
-        .add_systems(
-            Update,
-            (
-                handle_actions,
-                advance_presentation,
-                synchronize_scene,
-                synchronize_feedback,
-                controls::draw_menu,
-                sync_reveal,
-                reveal::render,
-                animate,
-                animate_harm,
-            )
-                .chain(),
-        );
-    // Headless resources and action driving are supplied above. Register the
-    // clue presentation and panel through the same functions as native startup.
-    install_clue_presentation(&mut app);
-    install_panel(&mut app);
-    app.world_mut().spawn(Window::default());
+        .init_resource::<bevy::prelude::Time>()
+        .add_message::<bevy::window::CursorMoved>();
+    app.world_mut().spawn((
+        Window {
+            resolution: (1600, 1000).into(),
+            focused: true,
+            ..default()
+        },
+        PrimaryWindow,
+    ));
+    registration::install(&mut app);
+    app.update();
+    // Keep the sole camera from production setup; supply renderer metadata.
+    heading_checks::viewport::<MainCamera>(&mut app, Vec2::new(1600.0, 1000.0), 1.0);
+    app.update();
     app
 }
 
 fn advance(app: &mut App, seconds: f32) {
-    app.world_mut()
-        .resource_mut::<Time>()
-        .advance_by(Duration::from_secs_f32(seconds));
+    let duration = Duration::from_secs_f32(seconds);
+    app.world_mut().resource_mut::<Time>().advance_by(duration);
+    // The UI clock is deterministic too; focused lifetime tests need only the
+    // presentation clock and deliberately omit the UI environment.
+    if let Some(mut time) = app.world_mut().get_resource_mut::<bevy::prelude::Time>() {
+        time.advance_by(duration);
+    }
     app.update();
 }
 
@@ -1156,65 +1158,12 @@ fn selecting_and_inspecting_two_copies_preserves_the_complete_commitment() {
 }
 
 fn keyboard_menu_app(path: PathBuf) -> (App, Entity) {
-    use bevy::{
-        camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
-        input_focus::{InputDispatchPlugin, InputFocusPlugin},
-        window::{PrimaryWindow, WindowRef},
-    };
-
-    let mut app = App::new();
-    app.add_plugins((
-        bevy::app::TaskPoolPlugin::default(),
-        bevy::asset::AssetPlugin::default(),
-        bevy::image::ImagePlugin::default(),
-        bevy::text::TextPlugin,
-        bevy::transform::TransformPlugin,
-        bevy::camera::visibility::VisibilityPlugin,
-        bevy::input::InputPlugin,
-        InputFocusPlugin,
-        InputDispatchPlugin,
-        feedback::FeedbackPlugin,
-        bevy::picking::PickingPlugin,
-        bevy::picking::InteractionPlugin,
-        bevy::ui::UiPlugin,
-        bevy::ui_widgets::ButtonPlugin,
-    ))
-    .init_resource::<Assets<TextureAtlasLayout>>()
-    .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
-    .init_resource::<bevy::prelude::Time<Real>>();
-    let mut app = presentation_app_in(app, path);
-    app.add_message::<bevy::window::CursorMoved>().add_systems(
-        Update,
-        camera_controls.after(handle_actions).before(rebuild_panel),
-    );
+    let mut app = presentation_app(path);
     let window = app
         .world_mut()
         .query_filtered::<Entity, With<Window>>()
         .single(app.world())
         .unwrap();
-    {
-        let mut window = app.world_mut().get_mut::<Window>(window).unwrap();
-        window.resolution = (1600, 1000).into();
-        window.focused = true;
-    }
-    // TabNavigationPlugin attaches to the primary window during startup.
-    app.world_mut().entity_mut(window).insert(PrimaryWindow);
-    app.world_mut().spawn((
-        MainCamera,
-        Transform::default(),
-        Camera {
-            computed: ComputedCameraValues {
-                target_info: Some(RenderTargetInfo {
-                    physical_size: UVec2::new(1600, 1000),
-                    scale_factor: 1.0,
-                }),
-                ..default()
-            },
-            ..default()
-        },
-        RenderTarget::Window(WindowRef::Entity(window)),
-    ));
-    app.update();
     (app, window)
 }
 
@@ -1421,6 +1370,7 @@ fn keyboard_menu_inspection_preserves_staged_copies_until_explicit_confirmation(
             .collect::<Vec<_>>(),
         [0, 3]
     );
+    assert_eq!(continuity::load_session(&path).unwrap().observe(), after);
     assert_eq!(app.world().resource::<Orbit>().pose().target, target);
     assert_eq!(app.world().resource::<Orbit>().pose().yaw, yaw);
 }
@@ -1500,15 +1450,21 @@ fn component_action_mapping_covers_exact_offered_choices_without_relabeling_acto
     );
 }
 
-fn orbit_mouse_app() -> (App, Entity) {
-    orbit_mouse_app_in(App::new())
+fn orbit_mouse_app(path: PathBuf) -> (App, Entity) {
+    let (mut app, window) = keyboard_menu_app(path);
+    app.world_mut()
+        .get_mut::<Window>(window)
+        .unwrap()
+        .set_cursor_position(Some(Vec2::new(800.0, 400.0)));
+    (app, window)
 }
 
 #[test]
 fn camera_adapter_retains_tony_utilities_wheel_and_escape_frame_pan() {
     use bevy::ecs::system::RunSystemOnce;
 
-    let (mut app, _) = orbit_mouse_app();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut app, _) = orbit_mouse_app(dir.path().join("orbit.json"));
     let before = app.world().resource::<Orbit>().pose();
     app.world_mut()
         .resource_mut::<Time>()
@@ -1560,8 +1516,7 @@ fn camera_adapter_retains_tony_utilities_wheel_and_escape_frame_pan() {
 #[test]
 fn camera_adapter_selects_tony_replay_targets_and_reduced_motion() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut app, _) = orbit_mouse_app();
-    app.world_mut().resource_mut::<Table>().save_path = dir.path().join("replay.json");
+    let (mut app, _) = orbit_mouse_app(dir.path().join("replay.json"));
     choose(&mut app, "investigate");
     act(&mut app, Action::Focus(Area::Overview));
     act(&mut app, Action::Replay);
@@ -1619,32 +1574,6 @@ fn camera_adapter_selects_tony_replay_targets_and_reduced_motion() {
     );
 }
 
-fn orbit_mouse_app_in(app: App) -> (App, Entity) {
-    let directory = tempfile::tempdir().unwrap();
-    let mut app = presentation_app_in(app, directory.path().join("orbit.json"));
-    app.add_plugins(bevy::input::InputPlugin)
-        .add_message::<bevy::window::CursorMoved>()
-        .init_resource::<bevy::picking::hover::HoverMap>()
-        .add_systems(
-            Update,
-            camera_controls.after(handle_actions).before(rebuild_panel),
-        );
-    let window = app
-        .world_mut()
-        .query_filtered::<Entity, With<Window>>()
-        .single(app.world())
-        .unwrap();
-    {
-        let mut window = app.world_mut().get_mut::<Window>(window).unwrap();
-        window.resolution = (1600, 1000).into();
-        window.focused = true;
-        window.set_cursor_position(Some(Vec2::new(800.0, 400.0)));
-    }
-    app.world_mut().spawn((MainCamera, Transform::default()));
-    app.update();
-    (app, window)
-}
-
 fn orbit_button(app: &mut App, window: Entity, state: bevy::input::ButtonState) {
     app.world_mut()
         .write_message(bevy::input::mouse::MouseButtonInput {
@@ -1674,52 +1603,19 @@ fn orbit_cursor(app: &mut App, window: Entity, position: Vec2) {
 #[test]
 fn right_drag_through_real_navigation_layout_ignores_empty_space_but_not_buttons() {
     use bevy::{
-        camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
+        camera::RenderTarget,
         picking::{
             hover::HoverMap,
             pointer::{Location, PointerId, PointerLocation},
         },
-        window::{PrimaryWindow, WindowRef},
+        window::WindowRef,
     };
 
     // Use the production panel, Bevy layout, and UI picking. In particular, do
     // not inject a HoverMap that silently omits the transparent navigation root.
-    let mut app = App::new();
-    app.add_plugins((
-        bevy::app::TaskPoolPlugin::default(),
-        bevy::asset::AssetPlugin::default(),
-        bevy::image::ImagePlugin::default(),
-        bevy::text::TextPlugin,
-        bevy::transform::TransformPlugin,
-        bevy::camera::visibility::VisibilityPlugin,
-        bevy::picking::PickingPlugin,
-        bevy::picking::InteractionPlugin,
-        bevy::ui::UiPlugin,
-    ))
-    .init_resource::<Assets<TextureAtlasLayout>>()
-    .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
-    .init_resource::<bevy::prelude::Time<Real>>();
-    let (mut app, window) = orbit_mouse_app_in(app);
-    app.world_mut().entity_mut(window).insert(PrimaryWindow);
-    let camera = app
-        .world_mut()
-        .query_filtered::<Entity, With<MainCamera>>()
-        .single(app.world())
-        .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, window) = orbit_mouse_app(directory.path().join("orbit.json"));
     let target = RenderTarget::Window(WindowRef::Entity(window));
-    app.world_mut().entity_mut(camera).insert((
-        Camera {
-            computed: ComputedCameraValues {
-                target_info: Some(RenderTargetInfo {
-                    physical_size: UVec2::new(1600, 1000),
-                    scale_factor: 1.0,
-                }),
-                ..default()
-            },
-            ..default()
-        },
-        target.clone(),
-    ));
     let pointer = app
         .world_mut()
         .spawn((

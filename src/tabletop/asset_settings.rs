@@ -27,6 +27,12 @@ struct SelectionResult {
     message: String,
 }
 
+/// Keeps a simulated external operation connected until the test releases it.
+#[cfg(test)]
+pub(crate) struct PendingSelection {
+    _sender: mpsc::Sender<SelectionResult>,
+}
+
 impl AssetSettings {
     pub(crate) fn new(config: AssetConfig) -> Self {
         Self {
@@ -56,10 +62,10 @@ impl AssetSettings {
 
     /// Hold the external folder-selection seam without opening a desktop dialog.
     #[cfg(test)]
-    pub(crate) fn with_pending_selection(mut self) -> Self {
-        let (_, receiver) = mpsc::channel();
+    pub(crate) fn with_pending_selection(mut self) -> (Self, PendingSelection) {
+        let (sender, receiver) = mpsc::channel();
         self.pending = Some(Mutex::new(receiver));
-        self
+        (self, PendingSelection { _sender: sender })
     }
 
     pub(crate) fn configured_root(&self) -> &Path {

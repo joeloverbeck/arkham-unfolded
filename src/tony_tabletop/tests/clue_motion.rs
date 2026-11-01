@@ -28,29 +28,10 @@ fn counters(app: &App) -> (u8, u8) {
 #[test]
 fn production_registration_positions_the_clue_label_and_follows_its_flight() {
     use super::super::clue_motion::TravelingClueLabel;
-    use bevy::camera::{CameraProjection, ComputedCameraValues, RenderTargetInfo};
-
     let directory = tempfile::tempdir().unwrap();
     let mut app = app_with_draws(directory.path().join("turn.json"), vec![TokenFace::Zero]);
-    // Substitute only renderer-owned viewport metadata. The actual application
-    // registration installs the animation and CounterPlugin label projection.
-    let mut projection = PerspectiveProjection::default();
-    projection.update(1600.0, 1000.0);
-    app.world_mut().spawn((
-        Camera3d::default(),
-        Camera {
-            computed: ComputedCameraValues {
-                clip_from_view: projection.get_clip_from_view(),
-                target_info: Some(RenderTargetInfo {
-                    physical_size: UVec2::new(1600, 1000),
-                    scale_factor: 1.0,
-                }),
-                ..default()
-            },
-            ..default()
-        },
-        GlobalTransform::from(Transform::from_xyz(0.0, 80.0, 45.0).looking_at(Vec3::ZERO, Vec3::Y)),
-    ));
+    // Use the camera created and controlled by the installed application.
+    act(&mut app, Action::Focus(Area::Overview));
     investigate_to_resolve(&mut app, "commit:none");
     choose(&mut app, "resolve");
     let label_position = |app: &mut App| {
@@ -236,6 +217,8 @@ fn reduced_motion_places_clues_immediately_and_reopen_replay_do_not_reanimate() 
     );
 
     act(&mut app, Action::Motion);
+    let live = app.world().resource::<Table>().session.clone();
+    let saved = std::fs::read(&path).unwrap();
     for action in [
         Action::Reopen,
         Action::Replay,
@@ -255,6 +238,8 @@ fn reduced_motion_places_clues_immediately_and_reopen_replay_do_not_reanimate() 
             super::super::clue_motion::traveling_count(app.world_mut()),
             0
         );
+        assert_eq!(app.world().resource::<Table>().session, live);
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
     }
     assert_eq!(counters(&app), (5, 1));
     let mut reopened = presentation_app(path.clone());

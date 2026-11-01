@@ -68,10 +68,12 @@ fn modals_and_asset_settings_pause_harm_but_context_and_utilities_do_not() {
     }
 
     let settings = app.world_mut().remove_resource::<AssetSettings>().unwrap();
-    app.insert_resource(settings.with_pending_selection());
+    let (settings, pending_selection) = settings.with_pending_selection();
+    app.insert_resource(settings);
     advance(&mut app, 5.0);
     assert_eq!(progress(&app), 0.5);
     // The disconnected external selection is released by the normal polling seam.
+    drop(pending_selection);
     app.world_mut().resource_mut::<AssetSettings>().poll();
 
     act(&mut app, Action::Utilities);
