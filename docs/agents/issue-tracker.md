@@ -46,7 +46,14 @@ Follow linked decisions and continue pages as needed for the requested coverage.
 
 For memory or historical records, first locate entries for this repository or working directory, then search task keywords within those sections. Follow relevant evidence links; widen the search only when the scoped lookup has no relevant result or the task requires another repository's history.
 
-For long files, locate headings or rule identifiers with `rg -n`, then read the required inclusive range through the bounded reader:
+For a whole file, omit the range; to read from a known line through EOF, supply only `--start`:
+
+```sh
+scripts/tools read-context docs/foundation/mission.md
+scripts/tools read-context docs/principles/principles-for-repos.md --start 130
+```
+
+For selected sections of long files, locate headings or rule identifiers with `rg -n`, then read the required inclusive range through the bounded reader. Take an explicit `--end` from discovered line numbers or a line count; a range beyond EOF is refused:
 
 ```sh
 scripts/tools read-context docs/principles/principles-for-repos.md --start 130 --end 173

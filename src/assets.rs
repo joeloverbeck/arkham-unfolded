@@ -727,6 +727,50 @@ pub(crate) fn write_current_manifest_without_payloads(root: &Path) {
     .unwrap();
 }
 
+#[cfg(all(test, feature = "tabletop"))]
+pub(crate) fn assert_counter_recipe_roles_loaded(
+    recipe: &str,
+    loaded: impl Iterator<Item = String>,
+) {
+    let is_counter = |role: &String| {
+        matches!(role.as_str(), "token/clue" | "token/resource") || role.starts_with("class/")
+    };
+    let selected: Selection = serde_json::from_str(recipe).unwrap();
+    let expected: BTreeSet<_> = selected
+        .assets
+        .into_iter()
+        .map(|asset| asset.role)
+        .filter(is_counter)
+        .collect();
+    // Keep the recipe oracle independent of the renderer's role/class enumeration.
+    let required = BTreeSet::from([
+        "token/clue",
+        "token/resource",
+        "class/guardian/icon",
+        "class/guardian/background",
+        "class/seeker/icon",
+        "class/seeker/background",
+        "class/rogue/icon",
+        "class/rogue/background",
+        "class/mystic/icon",
+        "class/mystic/background",
+        "class/survivor/icon",
+        "class/survivor/background",
+        "class/neutral/icon",
+        "class/neutral/background",
+    ]);
+    assert_eq!(
+        expected.iter().map(String::as_str).collect::<BTreeSet<_>>(),
+        required,
+        "the shipped recipe must supply both counters and all six class pairs"
+    );
+    let loaded: BTreeSet<_> = loaded.filter(is_counter).collect();
+    assert_eq!(
+        loaded, expected,
+        "native image loading must request every counter asset in the shipped recipe"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

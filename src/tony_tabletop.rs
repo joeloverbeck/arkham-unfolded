@@ -466,30 +466,7 @@ pub fn run() -> Result<(), String> {
     install_panel(&mut app);
     let server = app.world().resource::<AssetServer>();
     let mut handles = BTreeMap::new();
-    let roles = CARDS
-        .iter()
-        .map(|c| format!("card/{}", c.code))
-        .chain(["card-back/player".to_owned()])
-        .chain(["token/damage".to_owned(), "token/horror".to_owned()])
-        .chain(crate::tabletop_counters::asset_roles())
-        .chain(["06003", "06005", "60401"].map(|c| format!("standee/{c}")))
-        .chain(
-            [
-                "plus_one",
-                "zero",
-                "minus_one",
-                "minus_two",
-                "minus_three",
-                "minus_four",
-                "skull",
-                "cultist",
-                "tablet",
-                "auto_fail",
-                "elder_sign",
-            ]
-            .map(|t| format!("token/{t}")),
-        );
-    for role in roles {
+    for role in image_asset_roles() {
         if let Some(path) = collection.as_ref().and_then(|r| r.verified_path(&role)) {
             handles.insert(role, server.load(path.to_owned()));
         }
@@ -518,6 +495,32 @@ pub fn run() -> Result<(), String> {
         .insert_resource(reveal::Artwork(reveal_image))
         .insert_resource(art);
     exit_result(app.run())
+}
+
+fn image_asset_roles() -> impl Iterator<Item = String> {
+    CARDS
+        .iter()
+        .map(|c| format!("card/{}", c.code))
+        .chain(["card-back/player".to_owned()])
+        .chain(["token/damage".to_owned(), "token/horror".to_owned()])
+        .chain(crate::tabletop_counters::asset_roles())
+        .chain(["06003", "06005", "60401"].map(|c| format!("standee/{c}")))
+        .chain(
+            [
+                "plus_one",
+                "zero",
+                "minus_one",
+                "minus_two",
+                "minus_three",
+                "minus_four",
+                "skull",
+                "cultist",
+                "tablet",
+                "auto_fail",
+                "elder_sign",
+            ]
+            .map(|t| format!("token/{t}")),
+        )
 }
 
 /// Native startup and headless consumer tests share the clue rendering schedule.

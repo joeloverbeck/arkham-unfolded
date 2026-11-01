@@ -11,6 +11,14 @@ mod harm_lifetime;
 mod skill_summary;
 
 #[test]
+fn native_image_roles_include_all_counter_recipe_assets() {
+    crate::assets::assert_counter_recipe_roles_loaded(
+        include_str!("../../resources/tony-asset-selection.json"),
+        image_asset_roles(),
+    );
+}
+
+#[test]
 fn production_test_heading_clears_surfaces_after_text_layout() {
     use crate::tabletop_layout::heading_checks;
 

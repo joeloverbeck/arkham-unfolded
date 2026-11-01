@@ -38,7 +38,7 @@ pub enum Command {
     /// build directories so diagnostic libraries cannot enter later normal builds.
     /// Preserves the normal executable.
     Build(Build),
-    /// Capture the actual X11 client buffer independently of the app.
+    /// Focus the verified client, then capture its X11 buffer independently of the app.
     Capture(Capture),
     /// One bounded pointer-only desktop portal session, controlled by JSON lines.
     Session(Session),
