@@ -66,8 +66,8 @@ struct StandeeLabel {
 }
 
 const LOCATION_SIZE: Vec2 = Vec2::new(1.80, 2.52);
-const STUDY_AT: Vec3 = Vec3::new(-1.8, 0.0, -5.8);
-const HALLWAY_AT: Vec3 = Vec3::new(-6.2, 0.0, -4.3);
+const STUDY_AT: Vec3 = Vec3::new(2.6, 0.0, tabletop_layout::SCENARIO_MAP_CENTER.z);
+const HALLWAY_AT: Vec3 = Vec3::new(-2.6, 0.0, tabletop_layout::SCENARIO_MAP_CENTER.z);
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum LabelDisplay {
@@ -411,7 +411,7 @@ fn synchronize(
     let scenario_name = label(
         &mut commands,
         "Scenario / Study",
-        Vec3::new(0.0, 0.1, -10.2),
+        tabletop_layout::scenario_heading(),
         GOLD,
         &art.symbol_font,
     );
@@ -419,24 +419,33 @@ fn synchronize(
     label(
         &mut commands,
         "Encounter deck\nReserved / not represented",
-        Vec3::new(7.2, 0.1, -7.4),
+        tabletop_layout::ENCOUNTER_DECK,
         MUTED,
         &art.symbol_font,
     );
     label(
         &mut commands,
         "Act / agenda / victory display\nReserved / not represented",
-        Vec3::new(-7.2, 0.1, -7.4),
+        tabletop_layout::VICTORY_DISPLAY,
         MUTED,
         &art.symbol_font,
     );
-    label(
+    let test_heading = label(
         &mut commands,
         "Shared test area",
-        tabletop_layout::TEST_CENTER + Vec3::new(0.0, 0.1, -5.5),
+        tabletop_layout::test_heading(),
         GOLD,
         &art.symbol_font,
     );
+    commands
+        .entity(test_heading)
+        .insert((tabletop_layout::TestAreaHeading, LabelDisplay::Always))
+        .entry::<Node>()
+        .and_modify(|mut node| {
+            node.width = px(200.0);
+            node.padding.top = px(1.0);
+            node.padding.bottom = px(1.0);
+        });
     for (title, position) in tabletop_layout::test_zone_labels() {
         label(&mut commands, title, position, MUTED, &art.symbol_font);
     }
@@ -564,7 +573,7 @@ fn synchronize(
         }
     }
     let encounter_discard = view.encounter_discard();
-    let discard_caption_at = discard::ENCOUNTER_DISCARD_AT + Vec3::new(2.7, 0.1, 0.45);
+    let discard_caption_at = discard::ENCOUNTER_DISCARD_AT + Vec3::new(0.0, 0.1, 1.45);
     for (index, card) in encounter_discard.iter().enumerate() {
         let card_index = CARDS
             .iter()
@@ -687,6 +696,8 @@ fn label_positions(
     orbit: Res<super::Orbit>,
     mut labels: Query<(
         &WorldLabel,
+        &ComputedNode,
+        Has<tabletop_layout::TestAreaHeading>,
         &LabelDisplay,
         Option<&StandeeLabel>,
         Option<&HarmCaption>,
@@ -694,15 +705,27 @@ fn label_positions(
         &mut Visibility,
     )>,
 ) {
-    for (anchor, display, standee, harm, mut node, mut visibility) in &mut labels {
-        if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor.0) {
+    for (anchor, computed, test_heading, display, standee, harm, mut node, mut visibility) in
+        &mut labels
+    {
+        let point = if test_heading {
+            tabletop_layout::test_heading_screen_position(camera.0, camera.1, computed)
+        } else {
+            camera.0.world_to_viewport(camera.1, anchor.0).ok()
+        };
+        if let Some(point) = point {
             let Val::Px(width) = node.width else { continue };
             node.left = px(match standee {
                 Some(label) if label.left => point.x - width,
                 Some(_) => point.x,
                 None => point.x - width / 2.0,
             });
-            node.top = px(point.y - if harm.is_some() { 0.0 } else { 16.0 });
+            node.top = px(point.y
+                - if harm.is_some() || test_heading {
+                    0.0
+                } else {
+                    16.0
+                });
             *visibility = if display.visible(orbit.pose().distance) {
                 Visibility::Visible
             } else {

@@ -207,14 +207,14 @@ fn rendered_cancellation_preserves_alternatives_and_pending_tokens_through_inspe
                 .any(|c| c.id == "cancel:1,2")
         );
 
-        select_token(&mut app, 1, "Select to cancel");
+        select_token(&mut app, 1, "Jacqueline: select to cancel");
         act(&mut app, Action::Confirm(revision, true));
         assert_eq!(
             app.world().resource::<Table>().session,
             before,
             "incomplete selection cannot commit"
         );
-        select_token(&mut app, 0, "Select to cancel");
+        select_token(&mut app, 0, "Jacqueline: select to cancel");
         act(&mut app, Action::Confirm(revision, true));
         assert_eq!(
             app.world().resource::<Table>().session,
@@ -224,12 +224,12 @@ fn rendered_cancellation_preserves_alternatives_and_pending_tokens_through_inspe
         assert!(
             !visible_text(&mut app)
                 .iter()
-                .any(|text| text == "Confirm selected cancellation")
+                .any(|text| text == "Jacqueline: confirm selected cancellation")
         );
-        select_token(&mut app, 0, "Unselect cancellation");
-        select_token(&mut app, 1, "Unselect cancellation");
+        select_token(&mut app, 0, "Jacqueline: unselect cancellation");
+        select_token(&mut app, 1, "Jacqueline: unselect cancellation");
         for &id in &cancelled {
-            select_token(&mut app, id, "Select to cancel");
+            select_token(&mut app, id, "Jacqueline: select to cancel");
         }
         select(&mut app, Source::Token(cancelled[0]));
         activate(&mut app, "Inspect scenario reference");
@@ -244,7 +244,7 @@ fn rendered_cancellation_preserves_alternatives_and_pending_tokens_through_inspe
         }
         assert_eq!(app.world().resource::<Table>().session, before);
         assert_eq!(std::fs::read(&path).unwrap(), saved);
-        activate(&mut app, "Confirm selected cancellation");
+        activate(&mut app, "Jacqueline: confirm selected cancellation");
         let after = app.world().resource::<Table>().view();
         let actual: Vec<_> = after
             .tokens
@@ -442,9 +442,9 @@ fn party_controls_preserve_staging_then_save_commitment_reveal_and_replay() {
             rendered_button(
                 &mut app,
                 if id == 100 {
-                    "Select to commit +4 intellect · add one curse"
+                    "Patrice: select to commit +4 intellect · add one curse"
                 } else {
-                    "Select to commit +1 intellect"
+                    "Jacqueline: select to commit +1 intellect"
                 }
             )
         );
@@ -582,4 +582,154 @@ fn party_installed_controls_discard_gameplay_input_until_rendering_is_ready() {
         continuity::load_session(&path).unwrap().observe(),
         app.world().resource::<Table>().view()
     );
+}
+
+#[test]
+fn turn_indicator_stays_with_tony_while_jacqueline_helps_after_her_turn_ends() {
+    for with_portrait in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("party.json");
+        let (mut app, _) = production_app(path.clone(), RenderHealth::ready_for_test());
+        // This path uses Jacqueline's three-token reveal; the ordinary UI
+        // fixture supplies only one deterministic draw.
+        app.world_mut().resource_mut::<Table>().session = Session::with_draws(vec![
+            crate::TokenFace::Zero,
+            crate::TokenFace::MinusOne,
+            crate::TokenFace::MinusTwo,
+        ]);
+        if with_portrait {
+            let image = app
+                .world_mut()
+                .resource_mut::<Assets<Image>>()
+                .add(Image::default());
+            for code in ["06003", "06005", "60401"] {
+                app.world_mut()
+                    .resource_mut::<Art>()
+                    .handles
+                    .insert(format!("standee/{code}"), image.clone());
+            }
+            app.update();
+        }
+        let assert_turn = |app: &mut App, who: Option<Investigator>| {
+            let labels: Vec<_> = app
+                .world_mut()
+                .query::<&AccessibleLabel>()
+                .iter(app.world())
+                .map(|label| label.0.clone())
+                .filter(|label| label.ends_with(" · current turn"))
+                .collect();
+            assert_eq!(
+                labels,
+                who.map(|who| format!("Focus {} · current turn", who.name()))
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                visible_text(app)
+                    .iter()
+                    .filter(|text| text.as_str() == "TURN")
+                    .count(),
+                usize::from(who.is_some())
+            );
+        };
+        assert_turn(&mut app, None);
+        choose(&mut app, "select:jacqueline");
+        assert_turn(&mut app, Some(Investigator::Jacqueline));
+        activate(&mut app, "End Jacqueline's turn");
+        assert_turn(&mut app, None);
+        choose(&mut app, "select:tony");
+        assert_turn(&mut app, Some(Investigator::Tony));
+        assert!(
+            visible_text(&mut app)
+                .iter()
+                .any(|text| text == "Tony's turn")
+        );
+
+        let before = app.world().resource::<Table>().session.clone();
+        let focus = app
+            .world_mut()
+            .query::<(Entity, &AccessibleLabel)>()
+            .iter(app.world())
+            .find(|(_, label)| label.0 == "Focus Jacqueline Fine")
+            .unwrap()
+            .0;
+        app.world_mut().trigger(Activate { entity: focus });
+        app.update();
+        assert_eq!(app.world().resource::<Table>().session, before);
+        assert_turn(&mut app, Some(Investigator::Tony));
+        choose(&mut app, "investigate");
+        select(&mut app, Source::Hand(200));
+        activate(&mut app, "Jacqueline: select to commit +1 intellect");
+        activate(&mut app, "Commit selected · +1 intellect");
+        assert!(
+            app.world()
+                .resource::<Table>()
+                .view()
+                .investigator(Investigator::Jacqueline)
+                .turn_finished
+        );
+        assert_eq!(
+            app.world()
+                .resource::<Table>()
+                .view()
+                .test
+                .unwrap()
+                .committed[0]
+                .owner,
+            Investigator::Jacqueline
+        );
+        assert_turn(&mut app, Some(Investigator::Tony));
+
+        select(&mut app, Source::Card(cards::index("card/60401").unwrap()));
+        activate(
+            &mut app,
+            "Jacqueline: use ability · reveal three, then choose cancellations",
+        );
+        let live = app.world().resource::<Table>().view();
+        assert_eq!(
+            live.stage,
+            crate::party::Stage::Cancellation,
+            "{}",
+            app.world().resource::<Table>().notice
+        );
+        assert_eq!(live.actor, Some(Investigator::Tony));
+        assert!(live.jacqueline_used);
+        assert_eq!(continuity::load_session(&path).unwrap().observe(), live);
+        assert_turn(&mut app, Some(Investigator::Tony));
+        act(&mut app, Action::Reopen);
+        assert_turn(&mut app, Some(Investigator::Tony));
+
+        act(&mut app, Action::Replay);
+        assert_turn(&mut app, None);
+        act(&mut app, Action::Next);
+        assert_turn(&mut app, Some(Investigator::Jacqueline));
+        assert!(
+            visible_text(&mut app).iter().any(|text| text
+                == &crate::tabletop::readable_text("Recorded · Jacqueline's turn".into()))
+        );
+        let moments = app
+            .world()
+            .resource::<Table>()
+            .replay
+            .as_ref()
+            .unwrap()
+            .len();
+        for _ in 0..moments {
+            if app.world().resource::<Table>().view().stage == crate::party::Stage::Cancellation {
+                break;
+            }
+            act(&mut app, Action::Next);
+        }
+        assert_eq!(
+            app.world().resource::<Table>().view().stage,
+            crate::party::Stage::Cancellation
+        );
+        assert_turn(&mut app, Some(Investigator::Tony));
+        assert!(
+            visible_text(&mut app).iter().any(
+                |text| text == &crate::tabletop::readable_text("Recorded · Tony's turn".into())
+            )
+        );
+        assert_eq!(app.world().resource::<Table>().session.observe(), live);
+    }
 }

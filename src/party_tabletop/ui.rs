@@ -1,4 +1,114 @@
 use super::*;
+
+pub(super) fn short_name(who: Investigator) -> &'static str {
+    who.name().split_whitespace().next().unwrap_or(who.name())
+}
+
+pub(super) fn turn_heading(view: &Observation) -> String {
+    match (view.endpoint, view.actor) {
+        (Some(_), Some(who)) => {
+            format!("Attempt ended · {}'s turn unfinished", short_name(who))
+        }
+        (Some(_), None) => "Attempt ended · all turns finished".into(),
+        (None, Some(who)) => format!("{}'s turn", short_name(who)),
+        (None, None) => "Choose who begins the next turn".into(),
+    }
+}
+
+// These are presentation labels only. Saved choices and historical observations
+// retain their original text, identity and rules authority.
+pub(super) fn choice_label(view: &Observation, choice: &crate::Choice) -> String {
+    if choice.id == "use-jacqueline" {
+        return "Jacqueline: use ability · reveal three, then choose cancellations".into();
+    }
+    if choice.id == "end-turn" {
+        return view.actor.map_or_else(
+            || choice.label.clone(),
+            |who| format!("End {}'s turn", short_name(who)),
+        );
+    }
+    let who = if choice.id.starts_with("shuffle:") || choice.id == "decline-shuffle" {
+        Some(Investigator::Patrice)
+    } else if matches!(
+        choice.id.as_str(),
+        "investigate" | "draw" | "resource" | "decline-lucky"
+    ) || choice.id.starts_with("lucky:")
+    {
+        view.actor
+    } else {
+        None
+    };
+    who.map_or_else(
+        || choice.label.clone(),
+        |who| format!("{}: {}", short_name(who), choice.label),
+    )
+}
+
+fn focus_button(
+    art: &Art,
+    parent: &mut ChildSpawnerCommands,
+    who: Investigator,
+    portrait: Option<&(Handle<Image>, Vec2)>,
+    current_turn: bool,
+) {
+    let dimensions = portrait.map(|(_, size)| *size * (108. / size.x).min(82. / size.y));
+    let label = format!(
+        "Focus {}{}",
+        who.name(),
+        if current_turn { " · current turn" } else { "" }
+    );
+    parent
+        .spawn((
+            Button,
+            Hovered::default(),
+            TabIndex(0),
+            AccessibleLabel::new(label),
+            Node {
+                width: dimensions.map_or(percent(100), |size| px(size.x + 10.)),
+                min_height: px(38),
+                padding: UiRect::all(px(5)),
+                align_self: AlignSelf::Center,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: px(3),
+                flex_shrink: 0.,
+                ..default()
+            },
+            feedback::context_button(),
+        ))
+        .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
+            queue.0.push(Action::Focus(Area::Investigator(who.index())))
+        })
+        .with_children(|p| {
+            if let Some(((image, _), size)) = portrait.zip(dimensions) {
+                p.spawn((
+                    ImageNode::new(image.clone()),
+                    Node {
+                        width: px(size.x),
+                        height: px(size.y),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ));
+            } else {
+                p.spawn((art.text(who.name(), 14., PAPER), Pickable::IGNORE));
+            }
+            if current_turn {
+                p.spawn((
+                    Node {
+                        padding: UiRect::axes(px(8), px(2)),
+                        border_radius: BorderRadius::all(px(3)),
+                        ..default()
+                    },
+                    BackgroundColor(GOLD),
+                    Pickable::IGNORE,
+                ))
+                .with_child((art.text("TURN", 12., INK), Pickable::IGNORE));
+            }
+        });
+}
+
 pub(super) fn button(
     art: &Art,
     parent: &mut ChildSpawnerCommands,
@@ -78,6 +188,12 @@ pub(super) fn render(
                 20.,
                 GOLD,
             ));
+            let prefix = if table.replay.is_some() {
+                "Recorded · "
+            } else {
+                ""
+            };
+            p.spawn(art.text(format!("{prefix}{}", turn_heading(&view)), 18., PAPER));
             p.spawn(
                 art.text(
                     view.investigators
@@ -117,20 +233,15 @@ pub(super) fn render(
         .with_children(|p| {
             button(&art, p, "Menu", Action::Utilities);
         });
-    commands.spawn((Node{position_type:PositionType::Absolute,left:px(10),top:px(76),bottom:px(220),width:px(124),flex_direction:FlexDirection::Column,row_gap:px(7),overflow:Overflow::scroll_y(),..default()},Pickable::IGNORE,Panel)).observe(scroll_panel).with_children(|p|{
+    commands.spawn((Node{position_type:PositionType::Absolute,left:px(10),top:px(102),bottom:px(220),width:px(124),flex_direction:FlexDirection::Column,row_gap:px(7),overflow:Overflow::scroll_y(),..default()},Pickable::IGNORE,Panel)).observe(scroll_panel).with_children(|p|{
         for (index,who) in Investigator::ALL.into_iter().enumerate(){
-            if let Some((image,dimensions))=&portraits[index]{
-                let dimensions=*dimensions*(108./dimensions.x).min(82./dimensions.y);
-                p.spawn((Button,Hovered::default(),TabIndex(0),AccessibleLabel::new(format!("Focus {}",who.name())),Node{width:px(dimensions.x+10.),height:px(dimensions.y+10.),padding:UiRect::all(px(5)),align_self:AlignSelf::Center,flex_shrink:0.,..default()},feedback::context_button()))
-                    .observe(move|_:On<Activate>,mut queue:ResMut<Actions>|queue.0.push(Action::Focus(Area::Investigator(index))))
-                    .with_child((ImageNode::new(image.clone()),Node{width:px(dimensions.x),height:px(dimensions.y),..default()},Pickable::IGNORE));
-            }else{button(&art,p,who.name(),Action::Focus(Area::Investigator(index)));}
+            focus_button(&art,p,who,portraits[index].as_ref(),view.endpoint.is_none()&&view.actor==Some(who));
         }
         for (name,area) in [("Scenario",Area::Scenario),("Test",Area::Test),("Overview",Area::Overview)]{button(&art,p,name,Action::Focus(area));}
         p.spawn(art.text("WASD: pan\nRight drag: orbit\nWheel: zoom\nHome: overview\n\nFocus does not select who acts.",11.,MUTED));
     });
     commands.spawn((Node{position_type:PositionType::Absolute,left:px(150),right:px(12),bottom:px(10),max_height:px((size.y*0.29).min(270.)),padding:UiRect::all(px(12)),flex_direction:FlexDirection::Column,row_gap:px(5),overflow:Overflow::scroll_y(),..default()},BackgroundColor(INK),Panel)).observe(scroll_panel).with_children(|p|{
-        p.spawn(art.text(table.replay.as_ref().map_or_else(||view.actor.map_or("CHOOSE THE NEXT INVESTIGATOR".into(),|who|format!("{} · LIVE DECISION",who.name())),|r|format!("RECORDED REPLAY · MOMENT {} / {}",r.index()+1,r.len())),12.,GOLD));
+        p.spawn(art.text(table.replay.as_ref().map_or_else(||"LIVE DECISION".into(),|r|format!("RECORDED REPLAY · MOMENT {} / {}",r.index()+1,r.len())),12.,GOLD));
         p.spawn(art.text(&view.prompt,18.,PAPER));
         if let Some(endpoint)=view.endpoint {
             let explanation=match endpoint {
@@ -154,7 +265,7 @@ pub(super) fn render(
                 if replay.index()+1<replay.len(){control("Next moment",Action::Next);}
                 control("Return to live attempt",Action::Live);
             }else{
-                for choice in &view.choices{if choice.id=="commit:none"||!controls::has_source(&choice.id){control(&choice.label,Action::Choose(view.revision,choice.id.clone()));}}
+                for choice in &view.choices{if choice.id=="commit:none"||!controls::has_source(&choice.id){control(&choice_label(&view,choice),Action::Choose(view.revision,choice.id.clone()));}}
                 for cancel in [false, true] {
                     if let Some((label, action)) = table.context.confirmation_control(&view, cancel) {
                         control(&label, action);

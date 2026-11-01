@@ -757,14 +757,25 @@ fn camera_controls(
 fn world_labels(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     orbit: Res<Orbit>,
-    mut labels: Query<(&WorldLabel, &mut Node, &mut Visibility)>,
+    mut labels: Query<(
+        &WorldLabel,
+        &ComputedNode,
+        Has<layout::TestAreaHeading>,
+        &mut Node,
+        &mut Visibility,
+    )>,
 ) {
-    for (label, mut node, mut visibility) in &mut labels {
+    for (label, computed, test_heading, mut node, mut visibility) in &mut labels {
         if orbit.pose().distance > 30. && !label.1 {
             *visibility = Visibility::Hidden;
             continue;
         }
-        if let Ok(point) = camera.0.world_to_viewport(camera.1, label.0) {
+        let point = if test_heading {
+            layout::test_heading_screen_position(camera.0, camera.1, computed)
+        } else {
+            camera.0.world_to_viewport(camera.1, label.0).ok()
+        };
+        if let Some(point) = point {
             let width = match node.width {
                 Val::Px(width) => width,
                 _ => 190.0,

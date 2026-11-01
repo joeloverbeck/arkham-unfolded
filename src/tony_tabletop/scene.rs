@@ -2,7 +2,7 @@
 use super::*;
 use crate::tabletop_discard as discard;
 
-const STUDY_AT: Vec3 = Vec3::new(-2.5, 0.05, -3.8);
+const STUDY_AT: Vec3 = Vec3::new(-2.5, 0.05, layout::SCENARIO_MAP_CENTER.z);
 
 pub(super) fn investigator_at() -> Vec3 {
     layout::investigator_card(0)
@@ -41,7 +41,7 @@ pub(super) fn ghoul_at(view: &Observation) -> Vec3 {
     if view.ghoul.engaged {
         layout::investigator_threat(0, 1)
     } else {
-        Vec3::new(0.7, 0.05, -3.8)
+        STUDY_AT + Vec3::X * 3.2
     }
 }
 type SceneSnapshot = (Observation, std::collections::BTreeSet<u8>);
@@ -93,7 +93,7 @@ pub(super) fn synchronize_scene(
         ),
         (
             7,
-            Vec3::new(6.0, 0.05, -6.7),
+            layout::SCENARIO_REFERENCE,
             "Scenario reference".into(),
             false,
         ),
@@ -220,7 +220,7 @@ pub(super) fn synchronize_scene(
         &mut commands,
         &art,
         discard::caption(encounter_discard),
-        discard::ENCOUNTER_DISCARD_AT + Vec3::new(3.4, 0.1, 0.45),
+        discard::ENCOUNTER_DISCARD_AT + Vec3::new(0.0, 0.1, 1.1),
         MUTED,
     );
     for (index, investigator) in view.investigators.iter().enumerate() {
@@ -315,11 +315,11 @@ pub(super) fn synchronize_scene(
     for (text, at) in [
         (
             "Encounter deck\nReserved · not modeled",
-            Vec3::new(4.0, 0.1, -3.7),
+            layout::ENCOUNTER_DECK,
         ),
         (
             "Victory display\nReserved · not modeled",
-            Vec3::new(7.0, 0.1, -1.7),
+            layout::VICTORY_DISPLAY,
         ),
     ] {
         world_label(&mut commands, &art, text.into(), at, MUTED);
@@ -328,14 +328,22 @@ pub(super) fn synchronize_scene(
         &mut commands,
         &art,
         "Scenario".into(),
-        Vec3::new(0.0, 0.1, -10.2),
+        layout::scenario_heading(),
     );
-    area_heading(
+    let test_heading = area_heading(
         &mut commands,
         &art,
         "Shared test area".into(),
-        layout::TEST_CENTER + Vec3::new(0.0, 0.1, -5.5),
+        layout::test_heading(),
     );
+    commands
+        .entity(test_heading)
+        .insert(layout::TestAreaHeading)
+        .entry::<Node>()
+        .and_modify(|mut node| {
+            node.padding.top = px(1.0);
+            node.padding.bottom = px(1.0);
+        });
     for (label, at) in layout::test_zone_labels() {
         world_label(&mut commands, &art, label.into(), at, MUTED);
     }

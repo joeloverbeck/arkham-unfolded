@@ -227,7 +227,7 @@ fn manual_navigation_overrides_following_and_freezes_pending_framing() {
 #[test]
 fn each_mode_preserves_startup_home_focus_and_camera_transform() {
     for (mode, target, distance) in [
-        (CameraMode::Jacqueline, Vec3::new(0.0, 0.0, 13.0), 66.0),
+        (CameraMode::Jacqueline, Vec3::new(0.0, 0.0, 7.0), 72.0),
         (CameraMode::Tony, Vec3::new(-18.6, 0.0, 23.2), 26.0),
     ] {
         let mut orbit = Orbit::new(mode);
@@ -324,20 +324,20 @@ fn replay_motion_and_follow_off_keep_the_modes_distinct() {
         orbit.set_following(true);
         orbit.update_follow_target(Some(layout::focus(Area::Test)));
         let smooth_zoom = matches!(mode, CameraMode::Jacqueline);
-        assert_eq!(orbit.pose().distance, if smooth_zoom { 66.0 } else { 20.0 });
+        assert_eq!(orbit.pose().distance, if smooth_zoom { 72.0 } else { 20.0 });
         assert!(!input.step(&mut orbit).manual_navigation);
-        assert!((orbit.pose().target.z - 11.2).abs() < 0.00001);
-        assert!((orbit.pose().distance - if smooth_zoom { 47.6 } else { 20.0 }).abs() < 0.00001);
+        assert!((orbit.pose().target.z - 7.6).abs() < 0.00001);
+        assert!((orbit.pose().distance - if smooth_zoom { 51.2 } else { 20.0 }).abs() < 0.00001);
         orbit.set_following(false);
         orbit.update_follow_target(None);
         input.step(&mut orbit);
-        assert!((orbit.pose().target.z - if smooth_zoom { 11.2 } else { 10.12 }).abs() < 0.00001);
+        assert!((orbit.pose().target.z - if smooth_zoom { 7.6 } else { 7.96 }).abs() < 0.00001);
         orbit.set_following(true);
         orbit.update_follow_target(Some(layout::focus(Area::Test)));
         input.reduced_motion = true;
         input.step(&mut orbit);
         if smooth_zoom {
-            assert!((orbit.pose().target.z - 10.12).abs() < 0.00001);
+            assert!((orbit.pose().target.z - 7.96).abs() < 0.00001);
         } else {
             assert_eq!(orbit.pose().target, layout::focus(Area::Test).0);
         }

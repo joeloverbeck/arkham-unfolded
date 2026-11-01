@@ -1675,6 +1675,20 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     use bevy::camera::{CameraProjection, ComputedCameraValues, RenderTargetInfo};
     let dir = tempfile::tempdir().unwrap();
     let mut app = pending_app(dir.path().join("live.json"));
+    // This projection-only harness supplies its camera below and has no text/UI
+    // layout plugins. Supply the measured rectangle as another projection input;
+    // production obtains this size from Bevy's UI layout.
+    app.add_systems(
+        Update,
+        (|mut headings: Query<&mut ComputedNode, With<tabletop_layout::TestAreaHeading>>| {
+            for mut heading in &mut headings {
+                heading.size = Vec2::new(148.0, 20.0);
+                heading.inverse_scale_factor = 1.0;
+            }
+        })
+        .after(synchronize)
+        .before(label_positions),
+    );
     app.world_mut()
         .resource_mut::<Orbit>()
         .focus(tabletop_layout::focus(Area::Scenario));
@@ -1800,14 +1814,15 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     }
     assert_eq!(
         visible_labels.len(),
-        7,
-        "overview shows four area names and three absent-art card names"
+        8,
+        "overview shows five area names and three absent-art card names"
     );
     for name in [
         "Tony Morgan",
         "Patrice Hathaway",
         "Jacqueline Fine",
         "Scenario / Study",
+        "Shared test area",
         "Promise of Power",
         "Rotting Remains",
     ] {
