@@ -336,7 +336,29 @@ pub fn run() -> Result<(), String> {
         status,
         ..default()
     };
-    let roles = CARDS
+    for role in image_asset_roles() {
+        if let Some(path) = collection.as_ref().and_then(|r| r.verified_path(&role)) {
+            art.handles.insert(role, server.load(path.to_owned()));
+        }
+    }
+    art.symbol_font = collection
+        .as_ref()
+        .and_then(|r| r.verified_path("font/symbols"))
+        .map(|p| server.load(p.to_owned()));
+    let health_assets = HealthAssets::new(
+        art.handles
+            .values()
+            .map(|handle| handle.id().untyped())
+            .chain(art.symbol_font.iter().map(|handle| handle.id().untyped())),
+    );
+    app.insert_resource(health_assets)
+        .insert_resource(reveal::Artwork(art.image(reveal::ART_ROLE)))
+        .insert_resource(art);
+    exit_result(app.run())
+}
+
+fn image_asset_roles() -> impl Iterator<Item = String> {
+    CARDS
         .iter()
         .map(|card| card.role.to_owned())
         .chain(
@@ -366,26 +388,7 @@ pub fn run() -> Result<(), String> {
                 "elder_sign",
             ]
             .map(|face| format!("token/{face}")),
-        );
-    for role in roles {
-        if let Some(path) = collection.as_ref().and_then(|r| r.verified_path(&role)) {
-            art.handles.insert(role, server.load(path.to_owned()));
-        }
-    }
-    art.symbol_font = collection
-        .as_ref()
-        .and_then(|r| r.verified_path("font/symbols"))
-        .map(|p| server.load(p.to_owned()));
-    let health_assets = HealthAssets::new(
-        art.handles
-            .values()
-            .map(|handle| handle.id().untyped())
-            .chain(art.symbol_font.iter().map(|handle| handle.id().untyped())),
-    );
-    app.insert_resource(health_assets)
-        .insert_resource(reveal::Artwork(art.image(reveal::ART_ROLE)))
-        .insert_resource(art);
-    exit_result(app.run())
+        )
 }
 /// Party's application loop, shared by native startup and its behavioral host.
 /// Hosts supply input/UI, assets, window, health, time, capture and session state.

@@ -7,6 +7,14 @@ mod selection_lifecycle;
 mod skill_summary;
 
 #[test]
+fn native_image_roles_include_all_counter_recipe_assets() {
+    crate::assets::assert_counter_recipe_roles_loaded(
+        include_str!("../../resources/party-asset-selection.json"),
+        image_asset_roles(),
+    );
+}
+
+#[test]
 fn legacy_result_continues_after_render_admission_without_a_finish_click() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("legacy.json");
