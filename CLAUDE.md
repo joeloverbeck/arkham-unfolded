@@ -62,7 +62,7 @@ Card and token artwork, the external resource archive, credentials, local config
 
 ### Issue tracker
 
-Use GitHub Issues and pull requests in `joeloverbeck/arkham-unfolded`. Read `docs/agents/issue-tracker.md` before working with issues or specs.
+GitHub via `gh`: use Issues and pull requests in `joeloverbeck/arkham-unfolded`. Read `docs/agents/issue-tracker.md` before working with issues or specs.
 
 ### Triage labels
 

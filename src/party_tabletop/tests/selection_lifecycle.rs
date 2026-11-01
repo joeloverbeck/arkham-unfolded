@@ -258,37 +258,15 @@ fn rendered_cancellation_preserves_alternatives_and_pending_tokens_through_inspe
 }
 
 pub(super) fn production_app(path: PathBuf, health: RenderHealth) -> (App, Entity) {
-    use bevy::{
-        camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
-        input_focus::{InputDispatchPlugin, InputFocusPlugin},
-        window::{PrimaryWindow, WindowRef},
-    };
-    let mut app = App::new();
+    use bevy::window::PrimaryWindow;
     // Only the headless environment belongs here. Party owns all application
     // registration, including feedback/navigation, reveal, setup and redraw.
-    app.add_plugins((
-        bevy::app::TaskPoolPlugin::default(),
-        bevy::asset::AssetPlugin::default(),
-        bevy::image::ImagePlugin::default(),
-        bevy::text::TextPlugin,
-        bevy::transform::TransformPlugin,
-        bevy::camera::visibility::VisibilityPlugin,
-        bevy::input::InputPlugin,
-        InputFocusPlugin,
-        InputDispatchPlugin,
-        bevy::picking::PickingPlugin,
-        bevy::picking::InteractionPlugin,
-        bevy::ui::UiPlugin,
-        bevy::ui_widgets::ButtonPlugin,
-    ))
-    .init_resource::<Assets<TextureAtlasLayout>>()
-    .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
-    .init_resource::<Time<Real>>()
-    .init_resource::<Time>()
-    .init_resource::<PresentationTime>()
-    .init_resource::<Art>()
-    .init_resource::<Assets<Mesh>>()
-    .init_resource::<Assets<StandardMaterial>>();
+    let mut app = crate::tabletop_layout::heading_checks::app();
+    app.init_resource::<Time>()
+        .init_resource::<PresentationTime>()
+        .init_resource::<Art>()
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
     let mut app = with_table(app, path);
     app.insert_resource(health).insert_resource(Capture {
         path: None,
@@ -314,21 +292,11 @@ pub(super) fn production_app(path: PathBuf, health: RenderHealth) -> (App, Entit
     app.update();
     // Production setup creates the sole camera. Supply the metadata normally
     // computed by the renderer; do not replace the camera or its control system.
-    let world = app.world_mut();
-    let (mut camera, mut projection, mut target) = world
-        .query_filtered::<(&mut Camera, &mut Projection, &mut RenderTarget), With<MainCamera>>()
-        .single_mut(world)
-        .unwrap();
-    projection.update(1600., 1000.);
-    camera.computed = ComputedCameraValues {
-        clip_from_view: projection.get_clip_from_view(),
-        target_info: Some(RenderTargetInfo {
-            physical_size: UVec2::new(1600, 1000),
-            scale_factor: 1.0,
-        }),
-        ..default()
-    };
-    *target = RenderTarget::Window(WindowRef::Entity(window));
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+        &mut app,
+        Vec2::new(1600.0, 1000.0),
+        1.0,
+    );
     app.update();
     (app, window)
 }

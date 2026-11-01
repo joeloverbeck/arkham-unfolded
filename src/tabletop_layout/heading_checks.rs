@@ -1,13 +1,126 @@
-//! Headless text layout for the headings spawned and positioned by each tabletop.
+//! Headless measurement of text spawned and positioned by the tabletops.
 
 use super::{Area, TestAreaHeading, focus};
 use crate::tabletop_camera::{Capture, FrameInput, Orbit};
 use bevy::{
-    camera::{CameraProjection, ComputedCameraValues, RenderTarget, RenderTargetInfo},
+    camera::{
+        CameraProjection, ComputedCameraValues, RenderTarget, RenderTargetInfo,
+        primitives::MeshAabb,
+    },
     prelude::*,
     text::TextLayoutInfo,
     window::{PrimaryWindow, WindowRef},
 };
+
+/// Supply the viewport metadata normally provided by the renderer, retaining
+/// the camera and controls installed by the production application.
+pub(crate) fn viewport<C: Component>(app: &mut App, size: Vec2, scale: f32) {
+    let world = app.world_mut();
+    let (window_entity, mut window) = world
+        .query_filtered::<(Entity, &mut Window), With<PrimaryWindow>>()
+        .single_mut(world)
+        .unwrap();
+    let physical = (size * scale).as_uvec2();
+    window.resolution.set_scale_factor_override(Some(scale));
+    window
+        .resolution
+        .set_physical_resolution(physical.x, physical.y);
+    let (mut camera, mut projection, mut target) = world
+        .query_filtered::<(&mut Camera, &mut Projection, &mut RenderTarget), With<C>>()
+        .single_mut(world)
+        .unwrap();
+    projection.update(size.x, size.y);
+    camera.computed = ComputedCameraValues {
+        clip_from_view: projection.get_clip_from_view(),
+        target_info: Some(RenderTargetInfo {
+            physical_size: physical,
+            scale_factor: scale,
+        }),
+        ..default()
+    };
+    *target = RenderTarget::Window(WindowRef::Entity(window_entity));
+}
+
+pub(crate) fn assert_harm_captions<C: Component>(
+    app: &mut App,
+    captions: [Entity; 2],
+    card: Entity,
+    size: Vec2,
+    scale: f32,
+) {
+    let world = app.world_mut();
+    let (camera, camera_transform) = world
+        .query_filtered::<(&Camera, &GlobalTransform), With<C>>()
+        .single(world)
+        .unwrap();
+    let mesh = world.get::<Mesh3d>(card).unwrap();
+    let bounds = world
+        .resource::<Assets<Mesh>>()
+        .get(mesh)
+        .unwrap()
+        .get_aabb()
+        .unwrap();
+    let card_transform = world.get::<GlobalTransform>(card).unwrap();
+    let mut card_top = f32::INFINITY;
+    for x in [-1.0, 1.0] {
+        for z in [-1.0, 1.0] {
+            let local =
+                Vec3::from(bounds.center) + Vec3::from(bounds.half_extents) * Vec3::new(x, 1.0, z);
+            card_top = card_top.min(
+                camera
+                    .world_to_viewport(camera_transform, card_transform.transform_point(local))
+                    .unwrap()
+                    .y,
+            );
+        }
+    }
+    let rectangles = captions.map(|entity| {
+        let text = world.get::<Text>(entity).unwrap();
+        let computed = world.get::<ComputedNode>(entity).unwrap();
+        let layout = world.get::<TextLayoutInfo>(entity).unwrap();
+        let transform = world.get::<UiGlobalTransform>(entity).unwrap();
+        let visible = world.get::<InheritedVisibility>(entity).unwrap();
+        let context = format!("{} at {size:?}, {scale}x", text.0);
+        assert!(visible.get(), "{context}: caption must be visible");
+        assert!(
+            !layout.glyphs.is_empty(),
+            "{context}: real font glyphs must be laid out"
+        );
+        assert!(
+            layout.glyphs.iter().all(|glyph| glyph.line_index == 0),
+            "{context}: caption must fit on one line"
+        );
+        let content_origin = computed.content_box().min;
+        let mut rendered = Rect {
+            min: Vec2::splat(f32::INFINITY),
+            max: Vec2::splat(f32::NEG_INFINITY),
+        };
+        // Match the renderer's glyph rectangles inside the computed content box.
+        // The node width includes empty space; it is not the visible text width.
+        for glyph in &layout.glyphs {
+            let half = glyph.atlas_info.rect.size() / 2.0;
+            let min = transform.transform_point2(content_origin + glyph.position - half) / scale;
+            let max = transform.transform_point2(content_origin + glyph.position + half) / scale;
+            rendered.min = rendered.min.min(min);
+            rendered.max = rendered.max.max(max);
+        }
+        let bottom = transform.transform_point2(computed.size() / 2.0).y / scale;
+        let gap = card_top - rendered.max.y;
+        assert!(
+            (0.5..=computed.size().y / scale).contains(&gap),
+            "{context}: rendered glyphs must leave a positive card gap no larger than one caption line, got {gap}px (line-box gap {}px)", card_top - bottom,
+        );
+        assert!(
+            rendered.min.cmpge(Vec2::ZERO).all() && rendered.max.cmple(size).all(),
+            "{context}: complete caption must fit in the viewport: {rendered:?}"
+        );
+        rendered
+    });
+    assert!(
+        rectangles[0].max.x + 0.5 <= rectangles[1].min.x,
+        "harm captions must not overlap at {size:?}, {scale}x: {rectangles:?}"
+    );
+}
 
 pub(crate) fn app() -> App {
     let mut app = App::new();

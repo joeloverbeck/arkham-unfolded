@@ -122,7 +122,7 @@ fn main() -> ExitCode {
             thread::sleep(Duration::from_millis(10));
         }
         println!("original executable");
-        return ExitCode::SUCCESS;
+        return ExitCode::from(env::var("ARKHAM_FIXTURE_EXIT_CODE").ok().map(|code| code.parse::<u8>().unwrap()).unwrap_or(0));
     }
     ExitCode::from(98)
 }
