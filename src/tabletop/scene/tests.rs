@@ -7,6 +7,21 @@ use crate::tabletop_standee_checks as standee_checks;
 
 mod encounter_discard;
 
+#[test]
+fn production_test_heading_clears_surfaces_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+
+    let directory = tempfile::tempdir().unwrap();
+    for scale in [1.0, 2.0] {
+        let mut app = app_for_session_in(
+            heading_checks::app(),
+            Session::new(Fixture::curse()),
+            directory.path().join(format!("heading-{scale}.json")),
+        );
+        heading_checks::assert_heading(&mut app, MainCamera, scale);
+    }
+}
+
 fn pending_app(path: PathBuf) -> App {
     let mut session = Session::new(Fixture::curse());
     session.choose(0, "commit-promise").unwrap();

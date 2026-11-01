@@ -85,6 +85,10 @@ impl RenderHealth {
         }
     }
 
+    pub(crate) fn diagnostic_elapsed(&self) -> Duration {
+        self.previous.map_or(Duration::ZERO, |sample| sample.now)
+    }
+
     /// Returns whether queued GPU callbacks from the preceding interval must expire.
     fn observe(&mut self, sample: Observation) -> bool {
         self.just_ready = false;
@@ -317,13 +321,34 @@ fn monitor_rendering(
     environment: Res<HealthEnvironment>,
     progress: Res<GpuProgress>,
     mut exit: MessageWriter<AppExit>,
+    mut diagnostic: Local<Option<(HealthConditions, Duration)>>,
 ) {
     let was_checking = health.is_checking();
     let was_warming = health.warmup_elapsed < WARMUP;
     let was_failed = matches!(health.phase, Phase::Failed(_));
-    let loaded = environment.loaded && !progress.0.pipelines_pending.load(Ordering::Acquire);
+    let now = clock.now();
+    let conditions = HealthConditions {
+        foreground: environment.foreground,
+        active: environment.active,
+        assets_ready: environment.loaded,
+        pipelines_ready: !progress.0.pipelines_pending.load(Ordering::Acquire),
+    };
+    if diagnostic.as_ref().is_none_or(|(previous, emitted)| {
+        *previous != conditions && now.saturating_sub(*emitted) >= Duration::from_secs(1)
+    }) {
+        info!(
+            elapsed_seconds = now.as_secs_f64(),
+            foreground = conditions.foreground,
+            active = conditions.active,
+            assets_ready = conditions.assets_ready,
+            pipelines_ready = conditions.pipelines_ready,
+            "Graphics health conditions"
+        );
+        *diagnostic = Some((conditions, now));
+    }
+    let loaded = conditions.assets_ready && conditions.pipelines_ready;
     let reset = health.observe(Observation {
-        now: clock.now(),
+        now,
         foreground: environment.foreground,
         active: environment.active,
         loaded,
@@ -344,19 +369,34 @@ fn monitor_rendering(
         );
     }
     if was_warming && health.warmup_elapsed >= WARMUP {
-        info!("Graphics health: scene warmup complete; sampling foreground rendering progress.");
+        info!(
+            elapsed_seconds = now.as_secs_f64(),
+            "Graphics health: scene warmup complete; sampling foreground rendering progress."
+        );
     }
     if health.just_became_ready() {
-        info!("Graphics health admitted play after three healthy foreground samples.");
+        info!(
+            elapsed_seconds = now.as_secs_f64(),
+            "Graphics health admitted play after three healthy foreground samples."
+        );
     }
     if !was_failed && matches!(health.phase, Phase::Failed(_)) {
         error!(
+            elapsed_seconds = now.as_secs_f64(),
             "Graphics health refused play: {}; assets_and_pipelines_ready={loaded}; startup={was_checking}",
             health.status()
         );
         eprintln!("{}", health.status());
         exit.write(AppExit::error());
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct HealthConditions {
+    foreground: bool,
+    active: bool,
+    assets_ready: bool,
+    pipelines_ready: bool,
 }
 
 fn refresh_watchdog(
@@ -614,6 +654,85 @@ pub(crate) fn exit_result(exit: AppExit) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registered_health_diagnostics_explain_waiting_without_repeating_stable_frames() {
+        use bevy::log::tracing_subscriber;
+
+        const CHILD: &str = "ARKHAM_HEALTH_DIAGNOSTICS_TEST_CHILD";
+        const VERIFIED: &str = "health diagnostic assertions completed";
+        if std::env::var_os(CHILD).is_none() {
+            // A process-global subscriber observes the production scheduler's
+            // worker threads without sharing tracing state with other tests.
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tabletop_health::tests::registered_health_diagnostics_explain_waiting_without_repeating_stable_frames",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).contains(VERIFIED),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let log = tempfile::NamedTempFile::new().unwrap();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .with_writer(Arc::new(log.reopen().unwrap()))
+            .finish();
+        bevy::log::tracing::subscriber::set_global_default(subscriber).unwrap();
+        {
+            let (mut app, window) = app_with_window();
+            update_at(&mut app, Duration::ZERO, false);
+            for frame in 1..60 {
+                update_at(&mut app, sample(frame).now, false);
+            }
+            app.world()
+                .resource::<GpuProgress>()
+                .0
+                .pipelines_pending
+                .store(false, Ordering::Release);
+            update_at(&mut app, Duration::from_secs(1), false);
+            app.world_mut().get_mut::<Window>(window).unwrap().focused = false;
+            update_at(&mut app, Duration::from_millis(1_100), false);
+            // A change inside the rate limit is retained until the next report.
+            update_at(&mut app, Duration::from_secs(2), false);
+            app.world_mut().get_mut::<Window>(window).unwrap().focused = true;
+            update_at(&mut app, Duration::from_secs(3), false);
+            app.world_mut().resource_mut::<WinitSettings>().focused_mode =
+                UpdateMode::reactive_low_power(Duration::from_secs(1));
+            update_at(&mut app, Duration::from_secs(4), false);
+            update_at(&mut app, Duration::from_secs(5), false);
+            update_at(&mut app, Duration::from_secs(6), false);
+            assert!(app.world().resource::<RenderHealth>().is_checking());
+        }
+        let contents = std::fs::read_to_string(log.path()).unwrap();
+        let changes: Vec<_> = contents
+            .lines()
+            .filter(|line| line.contains("Graphics health conditions"))
+            .collect();
+        assert_eq!(changes.len(), 5, "{contents}");
+        for (line, expected) in changes.iter().zip([
+            "elapsed_seconds=0.0 foreground=true active=true assets_ready=true pipelines_ready=false",
+            "elapsed_seconds=1.0 foreground=true active=true assets_ready=true pipelines_ready=true",
+            "elapsed_seconds=2.0 foreground=false active=true assets_ready=true pipelines_ready=true",
+            "elapsed_seconds=3.0 foreground=true active=true assets_ready=true pipelines_ready=true",
+            "elapsed_seconds=4.0 foreground=true active=false assets_ready=true pipelines_ready=true",
+        ]) {
+            assert!(line.contains(expected), "{line}");
+        }
+        println!("{VERIFIED}");
+    }
 
     fn sample(frame: u64) -> Observation {
         Observation {
