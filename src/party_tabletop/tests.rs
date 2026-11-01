@@ -203,6 +203,95 @@ fn production_test_heading_clears_surfaces_after_text_layout() {
         heading_checks::assert_heading(&mut app, MainCamera, scale);
     }
 }
+
+#[test]
+fn production_harm_captions_clear_cards_and_each_other_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+
+    let directory = tempfile::tempdir().unwrap();
+    for size in [Vec2::new(1280.0, 720.0), Vec2::new(1600.0, 1000.0)] {
+        for scale in [1.0, 2.0] {
+            for artwork in [false, true] {
+                let (mut app, _) = selection_lifecycle::production_app(
+                    directory
+                        .path()
+                        .join(format!("captions-{}-{scale}-{artwork}.json", size.x)),
+                    RenderHealth::ready_for_test(),
+                );
+                if artwork {
+                    // Only artwork presence is needed to select numeric captions.
+                    // Caption font/layout and production registration remain real.
+                    for role in ["token/damage", "token/horror"] {
+                        app.world_mut()
+                            .resource_mut::<Art>()
+                            .handles
+                            .insert(role.into(), Handle::default());
+                    }
+                }
+                {
+                    let mut table = app.world_mut().resource_mut::<Table>();
+                    table.reduced_motion = true;
+                }
+                // A normal decision rebuilds the scene with the selected artwork branch.
+                choose(&mut app, "select:tony");
+                heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+                for who in [
+                    Investigator::Tony,
+                    Investigator::Patrice,
+                    Investigator::Jacqueline,
+                ] {
+                    act(&mut app, Action::Focus(Area::Investigator(who.index())));
+                    // Camera/label projection, real text layout, then UI transforms.
+                    for _ in 0..5 {
+                        app.update();
+                    }
+                    let view = app.world().resource::<Table>().view();
+                    let investigator = view.investigator(who);
+                    let world = app.world_mut();
+                    let card = world
+                        .query::<(Entity, &Name)>()
+                        .iter(world)
+                        .find(|(_, name)| name.as_str() == who.name())
+                        .unwrap()
+                        .0;
+                    let card_x = world.get::<GlobalTransform>(card).unwrap().translation().x;
+                    let captions = [
+                        ("Damage", investigator.damage, investigator.health),
+                        ("Horror", investigator.horror, investigator.sanity),
+                    ]
+                    .map(|(title, amount, capacity)| {
+                        let expected = if artwork {
+                            format!("{amount}/{capacity}")
+                        } else {
+                            format!("{title} {amount}/{capacity}")
+                        };
+                        let matches: Vec<_> = world
+                            .query::<(Entity, &WorldLabel, &Text)>()
+                            .iter(world)
+                            .filter(|(_, anchor, text)| {
+                                text.0 == expected
+                                    && (anchor.0.x - card_x).abs() < 2.0
+                                    && (anchor.0.x < card_x) == (title == "Damage")
+                            })
+                            .map(|(entity, _, _)| entity)
+                            .collect();
+                        assert_eq!(
+                            matches.len(),
+                            1,
+                            "exactly one {expected} caption for {}",
+                            who.name()
+                        );
+                        matches[0]
+                    });
+                    heading_checks::assert_harm_captions::<MainCamera>(
+                        &mut app, captions, card, size, scale,
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn app(path: PathBuf) -> App {
     app_in(App::new(), path)
 }

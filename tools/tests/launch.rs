@@ -89,6 +89,11 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
     );
     let completed: Value =
         serde_json::from_slice(&fs::read(directory.join("run.json")).unwrap()).unwrap();
+    assert_eq!(
+        output.stdout,
+        format!("{metadata}\n{completed}\n").as_bytes(),
+        "the default stdout contract is both complete JSON manifests"
+    );
     assert_eq!(completed["status"], "exited");
     assert_eq!(completed["initial_view"], "scenario");
     assert_eq!(
@@ -129,6 +134,75 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
             "scenario"
         ])
     );
+}
+
+fn summary_events(output: &[u8], directory: &Path, completed: &Value) -> Vec<Value> {
+    let events: Vec<Value> = String::from_utf8_lossy(output)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["status"], "running");
+    assert!(events[0]["exit_code"].is_null());
+    for event in &events {
+        assert_eq!(event["pid"], completed["pid"]);
+        assert_eq!(event["start_ticks"], completed["start_ticks"]);
+        assert_eq!(event["executable"], completed["executable"]);
+        assert_eq!(event["executable_sha256"], completed["executable_sha256"]);
+        assert_eq!(event["run"], directory.join("run.json").to_str().unwrap());
+        assert_eq!(event["log"], completed["log"]);
+        assert_eq!(event["save"], completed["save"]);
+        assert_eq!(
+            event["screenshot"],
+            completed["launch_conditions"]["screenshot"]
+        );
+        assert!(event.get("launch_conditions").is_none());
+        assert!(event.get("environment").is_none());
+        assert!(event.get("argv").is_none());
+    }
+    assert_eq!(events[1]["status"], completed["status"]);
+    assert!(completed["launch_conditions"].is_object());
+    assert!(completed["argv"].is_array());
+    assert!(output.len() < completed.to_string().len());
+    events
+}
+
+#[test]
+fn summary_reports_success_and_child_failure_without_shortening_the_manifest() {
+    for exit_code in [0, 42] {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("run");
+        let child = launch(&support::fixture().join("child"), &directory)
+            .args([
+                "--output-format",
+                "summary",
+                "--timeout-seconds",
+                "5",
+                "--screenshot",
+                "capture.png",
+            ])
+            .env("ARKHAM_FIXTURE_EXIT_CODE", exit_code.to_string())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let metadata = running(&directory);
+        fs::write(directory.join("finish"), "").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(exit_code));
+        assert!(output.stderr.is_empty());
+        let completed: Value =
+            serde_json::from_slice(&fs::read(directory.join("run.json")).unwrap()).unwrap();
+        assert_eq!(completed["status"], "exited");
+        assert_eq!(completed["returncode"], exit_code);
+        assert_eq!(
+            completed["launch_conditions"],
+            metadata["launch_conditions"]
+        );
+        let events = summary_events(&output.stdout, &directory, &completed);
+        assert_eq!(events[1]["exit_code"], exit_code);
+        assert!(!process_is_alive(metadata["pid"].as_u64().unwrap()));
+    }
 }
 
 #[test]
@@ -243,6 +317,7 @@ fn launch_preserves_existing_paths_and_refuses_escape_or_unbounded_timeout() {
         ["--timeout-seconds", "0"],
         ["--timeout-seconds", "3601"],
         ["--initial-view", "missing"],
+        ["--output-format", "missing"],
     ] {
         let fresh = root.path().join("fresh");
         let result = launch(&binary, &fresh).args(flags).output().unwrap();
@@ -321,7 +396,13 @@ fn timeout_cleans_resistant_owned_group_and_leaves_unrelated_process_alive() {
         .spawn()
         .unwrap();
     let output = launch(&binary, &directory)
-        .args(["--timeout-seconds", "0.3", "--no-art"])
+        .args([
+            "--timeout-seconds",
+            "0.3",
+            "--no-art",
+            "--output-format",
+            "summary",
+        ])
         .env("ARKHAM_FIXTURE_IGNORE_TERM", "1")
         .env("ARKHAM_FIXTURE_DESCENDANT", "1")
         .output()
@@ -339,6 +420,9 @@ fn timeout_cleans_resistant_owned_group_and_leaves_unrelated_process_alive() {
     let completed: Value =
         serde_json::from_slice(&fs::read(directory.join("run.json")).unwrap()).unwrap();
     assert_eq!(completed["status"], "timed-out");
+    let events = summary_events(&output.stdout, &directory, &completed);
+    assert_eq!(events[1]["exit_code"], 124);
+    assert_eq!(completed["returncode"], -9);
     assert!(!process_is_alive(completed["pid"].as_u64().unwrap()));
     let descendant: u64 = fs::read_to_string(directory.join("descendant.pid"))
         .unwrap()
@@ -356,7 +440,7 @@ fn interruption_cleans_owned_child_and_records_honest_status() {
     let root = tempfile::tempdir().unwrap();
     let directory = root.path().join("run");
     let child = launch(&support::fixture().join("child"), &directory)
-        .args(["--timeout-seconds", "5"])
+        .args(["--timeout-seconds", "5", "--output-format", "summary"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -378,6 +462,9 @@ fn interruption_cleans_owned_child_and_records_honest_status() {
     let completed: Value =
         serde_json::from_slice(&fs::read(directory.join("run.json")).unwrap()).unwrap();
     assert_eq!(completed["status"], "interrupted-or-failed");
+    let events = summary_events(&output.stdout, &directory, &completed);
+    assert_eq!(events[1]["exit_code"], 130);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Launch interrupted"));
 }
 
 #[test]

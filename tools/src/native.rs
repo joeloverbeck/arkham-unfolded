@@ -108,6 +108,12 @@ enum Experiment {
     Party,
 }
 
+#[derive(Clone, Copy, ValueEnum)]
+enum LaunchOutput {
+    Json,
+    Summary,
+}
+
 fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -142,6 +148,9 @@ pub struct Launch {
     /// App lifetime for owner review, independent of any desktop-control grant.
     #[arg(long, default_value_t = 1800.0)]
     timeout_seconds: f64,
+    /// Stdout events only; run.json always retains the complete manifest.
+    #[arg(long, value_enum, default_value_t = LaunchOutput::Json)]
+    output_format: LaunchOutput,
 }
 
 pub fn run(command: Command) -> Result<u8> {
@@ -457,6 +466,21 @@ pub fn emit(value: &Value) -> Result<()> {
     Ok(())
 }
 
+fn emit_launch_summary(directory: &Path, metadata: &Value, exit_code: Option<u8>) -> Result<()> {
+    emit(&json!({
+        "status": metadata["status"],
+        "exit_code": exit_code,
+        "pid": metadata["pid"],
+        "start_ticks": metadata["start_ticks"],
+        "executable": metadata["executable"],
+        "executable_sha256": metadata["executable_sha256"],
+        "run": directory.join("run.json"),
+        "log": metadata["log"],
+        "save": metadata["save"],
+        "screenshot": metadata["launch_conditions"]["screenshot"],
+    }))
+}
+
 fn environment_value(value: Option<&OsStr>) -> Value {
     match value {
         None => Value::Null,
@@ -628,7 +652,10 @@ fn launch(args: Launch) -> Result<u8> {
         metadata["executable_sha256"] =
             json!(digest(&PathBuf::from(format!("/proc/{}/exe", child.id())))?);
         record(&directory, &metadata)?;
-        emit(&metadata)?;
+        match args.output_format {
+            LaunchOutput::Json => emit(&metadata)?,
+            LaunchOutput::Summary => emit_launch_summary(&directory, &metadata, None)?,
+        }
         match child.wait(Duration::from_secs_f64(args.timeout_seconds))? {
             Completion::Exited(status) => {
                 metadata["status"] = json!("exited");
@@ -655,8 +682,23 @@ fn launch(args: Launch) -> Result<u8> {
         );
     }
     record(&directory, &metadata)?;
-    cleanup?;
-    let code = outcome?;
-    emit(&metadata)?;
-    Ok(code)
+    let result = cleanup.and(outcome);
+    match args.output_format {
+        LaunchOutput::Json => {
+            let code = result?;
+            emit(&metadata)?;
+            Ok(code)
+        }
+        LaunchOutput::Summary => {
+            let code = result.as_ref().copied().unwrap_or_else(|_| {
+                if crate::process::interrupted() {
+                    130
+                } else {
+                    1
+                }
+            });
+            emit_launch_summary(&directory, &metadata, Some(code))?;
+            result
+        }
+    }
 }
