@@ -3,6 +3,10 @@
 
 use bevy::prelude::*;
 
+#[cfg(test)]
+#[path = "tabletop_layout/heading_checks.rs"]
+pub(crate) mod heading_checks;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Area {
     Overview,

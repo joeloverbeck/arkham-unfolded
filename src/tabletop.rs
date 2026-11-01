@@ -18,7 +18,7 @@ use bevy::{
     input_focus::tab_navigation::{TabGroup, TabIndex},
     picking::hover::Hovered,
     prelude::*,
-    render::view::screenshot::{Capturing, Screenshot, save_to_disk},
+    render::view::screenshot::{Capturing, Screenshot},
     ui::Pressed,
     ui_widgets::{Activate, Button, ModalDialog, ModalDialogBarrier, RequestClose},
 };
@@ -1582,9 +1582,9 @@ fn capture_window(
         if let Some(parent) = Path::new(path).parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        commands
-            .spawn(Screenshot::primary_window())
-            .observe(save_to_disk(path));
+        commands.spawn(Screenshot::primary_window()).observe(
+            crate::tabletop_capture::save_to_disk(path.into(), health.diagnostic_elapsed()),
+        );
     }
     if !capture.requested
         && capture.frame >= 90
@@ -1593,9 +1593,9 @@ fn capture_window(
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        commands
-            .spawn(Screenshot::primary_window())
-            .observe(save_to_disk(path.clone()));
+        commands.spawn(Screenshot::primary_window()).observe(
+            crate::tabletop_capture::save_to_disk(path.clone(), health.diagnostic_elapsed()),
+        );
         capture.requested = true;
     }
     if capture.quit

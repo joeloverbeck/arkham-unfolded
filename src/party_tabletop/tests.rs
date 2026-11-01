@@ -1,5 +1,23 @@
 use super::*;
 mod selection_lifecycle;
+
+#[test]
+fn production_test_heading_clears_surfaces_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+
+    let directory = tempfile::tempdir().unwrap();
+    for scale in [1.0, 2.0] {
+        let mut app = with_table(
+            heading_checks::app(),
+            directory.path().join(format!("heading-{scale}.json")),
+        );
+        app.init_resource::<Art>()
+            .init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .add_systems(Update, (scene::synchronize, world_labels).chain());
+        heading_checks::assert_heading(&mut app, MainCamera, scale);
+    }
+}
 fn app(path: PathBuf) -> App {
     app_in(App::new(), path)
 }

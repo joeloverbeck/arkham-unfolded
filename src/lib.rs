@@ -12,6 +12,8 @@ mod record_replacement;
 #[cfg(feature = "tabletop")]
 mod tabletop_camera;
 #[cfg(feature = "tabletop")]
+mod tabletop_capture;
+#[cfg(feature = "tabletop")]
 mod tabletop_discard;
 #[cfg(feature = "tabletop")]
 mod tabletop_feedback;

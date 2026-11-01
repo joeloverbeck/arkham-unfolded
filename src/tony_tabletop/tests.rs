@@ -9,6 +9,21 @@ use crate::tabletop_standee_checks as standee_checks;
 mod harm_lifetime;
 
 #[test]
+fn production_test_heading_clears_surfaces_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+
+    let directory = tempfile::tempdir().unwrap();
+    for scale in [1.0, 2.0] {
+        let mut app = presentation_app_in(
+            heading_checks::app(),
+            directory.path().join(format!("heading-{scale}.json")),
+        );
+        app.add_systems(Update, world_labels.after(synchronize_scene));
+        heading_checks::assert_heading(&mut app, MainCamera, scale);
+    }
+}
+
+#[test]
 fn diagnostic_initial_view_parses_without_changing_default_framing_or_files() {
     let directory = tempfile::tempdir().unwrap();
     let parse = |args: &[&str]| {
