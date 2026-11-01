@@ -208,14 +208,19 @@ fn reveal_shortcut_cannot_act_while_an_external_asset_dialog_is_pending() {
     let before = app.world().resource::<Table>().session.observe();
     let entity = reveal_button(&mut app);
     app.world_mut().trigger(Activate { entity });
-    app.insert_resource(
-        AssetSettings::new_tony(AssetConfig::load_at(
-            dir.path().join("settings.toml"),
-            dir.path().join("art"),
-        ))
-        .with_pending_selection(),
-    );
+    let (settings, pending_selection) = AssetSettings::new_tony(AssetConfig::load_at(
+        dir.path().join("settings.toml"),
+        dir.path().join("art"),
+    ))
+    .with_pending_selection();
+    app.insert_resource(settings);
     advance(&mut app, 0.0);
+    assert!(app.world().resource::<AssetSettings>().is_busy());
     assert_eq!(app.world().resource::<Table>().session.observe(), before);
     assert!(app.world().get::<Button>(entity).is_none());
+    drop(pending_selection);
+    advance(&mut app, 0.0);
+    assert!(!app.world().resource::<AssetSettings>().is_busy());
+    // Releasing the dialog must not dispatch the activation that was drained.
+    assert_eq!(app.world().resource::<Table>().session.observe(), before);
 }

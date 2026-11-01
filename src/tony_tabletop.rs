@@ -36,6 +36,7 @@ mod clue_motion;
 mod controls;
 mod harm;
 mod harm_lifetime;
+mod registration;
 mod scene;
 use crate::tabletop_reveal as reveal;
 use controls::{Context, Source};
@@ -434,36 +435,8 @@ pub fn run() -> Result<(), String> {
         )
         .add_plugins(MeshPickingPlugin)
         .add_plugins(TabletopPacingPlugin)
-        .add_plugins(TabletopHealthPlugin)
-        .add_plugins(feedback::FeedbackPlugin)
-        .add_plugins(reveal::RevealPlugin)
-        .add_systems(Last, request_redraw.in_set(RequestRedraw))
-        .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                poll_settings,
-                handle_actions,
-                advance_presentation,
-                camera_controls,
-                controls::invalidate,
-                synchronize_scene,
-                synchronize_feedback,
-                controls::draw_menu,
-                sync_reveal,
-                reveal::render,
-                world_labels,
-                crate::tabletop_tokens::position_labels,
-                hide_overview_token_labels,
-                animate,
-                animate_harm,
-                button_colors,
-                capture_window,
-            )
-                .chain(),
-        );
-    install_clue_presentation(&mut app);
-    install_panel(&mut app);
+        .add_plugins(TabletopHealthPlugin);
+    registration::install(&mut app);
     let server = app.world().resource::<AssetServer>();
     let mut handles = BTreeMap::new();
     for role in image_asset_roles() {
@@ -521,31 +494,6 @@ fn image_asset_roles() -> impl Iterator<Item = String> {
             ]
             .map(|t| format!("token/{t}")),
         )
-}
-
-/// Native startup and headless consumer tests share the clue rendering schedule.
-fn install_clue_presentation(app: &mut App) {
-    app.add_plugins(crate::tabletop_counters::CounterPlugin)
-        .add_systems(
-            Update,
-            (
-                clue_motion::synchronize
-                    .after(synchronize_scene)
-                    .before(synchronize_feedback),
-                clue_motion::animate
-                    .after(animate_harm)
-                    .before(button_colors),
-            ),
-        );
-}
-
-fn install_panel(app: &mut App) {
-    app.add_systems(
-        Update,
-        rebuild_panel
-            .after(synchronize_feedback)
-            .before(controls::draw_menu),
-    );
 }
 
 fn button(
