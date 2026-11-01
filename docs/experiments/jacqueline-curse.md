@@ -32,7 +32,7 @@ cargo run --locked --features tabletop --bin arkham-tabletop -- --case autofail
 cargo run --locked --features tabletop --bin arkham-tabletop -- --no-art
 ```
 
-The normal asset root is `$XDG_DATA_HOME/arkham-unfolded/assets-v2`, normally `~/.local/share/arkham-unfolded/assets-v2`, or the saved per-user preference in `$XDG_CONFIG_HOME/arkham-unfolded/config.toml`. Prepare this 14-file collection with the commands below; Tony uses a separate `tony.toml` preference. Startup reports the experiment, resolved folder and completeness. **Choose asset folder** in the side panel opens Ubuntu's `zenity` folder dialog, checks the selected collection, and offers to save it for the next launch. Scroll the panel if necessary. Restart to apply the choice. Canceling or a write failure preserves the previous setting; a failed write is reported. An incomplete recognized collection requires explicit confirmation to use readable substitutes; an unrecognized collection cannot be saved as a valid selection. The status in the panel distinguishes complete assets from substitutes.
+The normal asset root remains `$XDG_DATA_HOME/arkham-unfolded/assets-v2`, normally `~/.local/share/arkham-unfolded/assets-v2`, or the saved per-user preference in `$XDG_CONFIG_HOME/arkham-unfolded/config.toml`. The commands below prepare a fresh 15-file v3 collection including The Gathering's Easy / Standard reference; select it explicitly with `--art-root` or **Choose asset folder**. Earlier v1/v2 collections retain their verified artwork and show a readable reference substitute. Tony uses a separate `tony.toml` preference. Startup reports the experiment, resolved folder and completeness. **Choose asset folder** opens Ubuntu's `zenity` folder dialog, checks the collection, and offers to save it for the next launch. Restart to apply the choice. Canceling or a write failure preserves the previous setting. An incomplete recognized collection requires explicit confirmation to use substitutes; an unrecognized collection cannot be saved as a valid selection.
 
 ```sh
 curl --fail --location \
@@ -41,8 +41,8 @@ curl --fail --location \
 cargo run --locked --bin arkham-assets -- prepare \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /tmp/arkham-reveal-icon.png \
-  --output "$HOME/.local/share/arkham-unfolded/assets-v2"
-cargo run --locked --bin arkham-assets -- check "$HOME/.local/share/arkham-unfolded/assets-v2"
+  --output "$HOME/.local/share/arkham-unfolded/assets-v3"
+cargo run --locked --bin arkham-assets -- check "$HOME/.local/share/arkham-unfolded/assets-v3"
 ```
 
 `--art-root PATH` selects another prepared collection for that launch without rewriting the preference; `--no-art` deliberately uses substitutes. The source archive is never a runtime fallback. Copying the whole prepared folder, including `manifest.json`, is sufficient to relocate the selected presentation assets. Personal saves and settings stay separate. Missing or changed files use readable substitutes, and original image/font bytes stay outside Git. A card's presence or absence never changes legal choices, rules outcomes or record compatibility. The [evidence manifest](../research/issue-1-evidence.json) preserves the source identities for the three original faces.
@@ -68,6 +68,8 @@ A completed test is saved immediately. When a curse resolves, the table stays vi
 The tabletop resumes its existing case-specific save on the next launch. Start another example retains the prior run and replaces the active save only after the explicit button press. Reopen reports an incompatible/corrupt file rather than starting over. To inspect a particular session directly, use `--load PATH`.
 
 Joel [accepted the reveal and discard follow-up with #22 on 2026-10-31](https://github.com/joeloverbeck/arkham-unfolded/issues/22#issuecomment-6536278638). Its [review steps](tony-turn.md#reveal-and-discard-follow-up) cover the reaction chooser without accidental reveals, Test focus, resolved Rotting Remains' discard and direct inspection, and replay suppression. The offered review ceiling was ten minutes across both experiments, including retries; it did not reset #22's original 40-minute gameplay allowance or #2's earlier allowance. No further review round is selected.
+
+The reference is permanently at Test's upper-left, beside Rotting Remains when that source card is present. Click it for full inspection. This reference does not expand the fixture's supported token effects. During the commitment window, Promise of Power's teal edge and `+4` willpower badge identify its legal contribution; the action still displays its curse consequence. Contextual actions use vertical rows with wrapped details.
 
 ## Player-equivalent agent interface
 

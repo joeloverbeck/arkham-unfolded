@@ -19,7 +19,8 @@ pub(crate) const SCENARIO_CENTER: Vec3 = Vec3::new(0.0, 0.0, -10.0);
 pub(crate) const SCENARIO_SIZE: Vec2 = Vec2::new(18.0, 22.0);
 pub(crate) const SCENARIO_FAR_EDGE: f32 = SCENARIO_CENTER.z - SCENARIO_SIZE.y / 2.0;
 pub(crate) const SCENARIO_MAP_CENTER: Vec3 = Vec3::new(0.0, 0.05, -8.5);
-pub(crate) const SCENARIO_REFERENCE: Vec3 = Vec3::new(-6.0, 0.05, SCENARIO_FAR_EDGE + 5.5);
+/// The scenario's token reference stays beside the test, including between tests.
+pub(crate) const SCENARIO_REFERENCE: Vec3 = Vec3::new(-4.9, 0.05, TEST_CENTER.z - 3.2);
 pub(crate) const ENCOUNTER_DECK: Vec3 = Vec3::new(-6.0, 0.05, SCENARIO_FAR_EDGE + 2.5);
 pub(crate) const ENCOUNTER_DISCARD: Vec3 = Vec3::new(6.0, 0.125, SCENARIO_FAR_EDGE + 2.5);
 pub(crate) const VICTORY_DISPLAY: Vec3 = Vec3::new(6.0, 0.05, SCENARIO_FAR_EDGE + 5.5);
@@ -221,7 +222,7 @@ pub(crate) fn test_bag() -> Vec3 {
 }
 
 pub(crate) fn test_source() -> Vec3 {
-    TEST_CENTER + Vec3::new(-4.9, 0.05, -3.2)
+    TEST_CENTER + Vec3::new(-2.3, 0.05, -3.2)
 }
 
 pub(crate) fn test_commitment(count: usize, slot: usize) -> Vec3 {
@@ -533,6 +534,20 @@ mod tests {
         assert_eq!(SCENARIO_SIZE, Vec2::new(18.0, 22.0));
         assert_eq!(TEST_CENTER, Vec3::new(0.0, 0.0, 8.0));
         assert_eq!(investigator_center(1, 3), Vec3::new(0.0, 0.0, 22.5));
+    }
+
+    #[test]
+    fn test_reference_and_source_fit_without_covering_each_other_or_commitments() {
+        // The physical card backing is 1.85 by 2.60 world units.
+        let half = Vec2::new(1.85 / 2.0, 2.60 / 2.0);
+        for card in [SCENARIO_REFERENCE, test_source()] {
+            let relative = card - TEST_CENTER;
+            assert!(relative.x.abs() + half.x < TEST_SIZE.x / 2.0);
+            assert!(relative.z.abs() + half.y < TEST_SIZE.y / 2.0);
+            assert!(card.z + half.y < test_commitment(6, 0).z - half.y);
+        }
+        assert!(SCENARIO_REFERENCE.x + half.x < test_source().x - half.x);
+        assert!(test_source().x + half.x < test_bag().x - 1.0);
     }
 
     #[test]

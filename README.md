@@ -24,6 +24,8 @@ This reopens the existing party session with its prepared artwork. Decisions aut
 
 Keep the terminal open and the app window visible and focused during **Checking graphics...**. Once play is enabled, the heading inside must say **Prepared Study escape · The Gathering · Standard**. The graphics workaround described below applies automatically. See the [Study escape guide](docs/experiments/study-escape.md) for the prepared position, controls, acceptance record and verification reference.
 
+In all three experiments, contextual actions now appear as a compact vertical list with wrapped details. The scenario reference stays at the upper-left of **Test**, including between tests. During a commitment opportunity, a steady teal edge and `+N` tested-skill badge identify cards that can legally be added; gold corners and **Selected** distinguish staged cards. If a supporting investigator already has a selected card, unselect it before choosing another. Ineligible cards remain inspectable. These [#77](https://github.com/joeloverbeck/arkham-unfolded/issues/77) refinements retain explicit confirmation and printed wild icons. Joel accepted them on 2026-11-01 after running the Party experiment.
+
 ## Launch and play the Tony turn
 
 On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:

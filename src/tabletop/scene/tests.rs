@@ -54,11 +54,7 @@ fn promise_commitment_shows_willpower_bonus_and_keeps_its_curse_consequence() {
                 &mut app,
                 Action::Select(Source::Card(1), Vec2::new(200.0, 200.0)),
             );
-            let expected_label = if wide {
-                "Commit +4 willpower"
-            } else {
-                "Commit Promise of Power (+4 willpower; add a curse)"
-            };
+            let expected_label = "Commit Promise of Power\n(+4 willpower; add a curse)";
             let world = app.world_mut();
             let (text, children) = world
                 .query::<(&AccessibleLabel, &Text, Option<&Children>)>()
@@ -86,7 +82,7 @@ fn promise_commitment_shows_willpower_bonus_and_keeps_its_curse_consequence() {
                 world
                     .query::<&AccessibleLabel>()
                     .iter(world)
-                    .any(|label| label.0 == "Commit Promise of Power (+4 willpower; add a curse)")
+                    .any(|label| label.0 == expected_label)
             );
             assert_eq!(app.world().resource::<Tabletop>().view(), before);
             let generation = app.world().resource::<Context>().generation();
@@ -367,6 +363,43 @@ fn inspect_only_cards_open_directly_while_available_choices_keep_the_menu() {
         app.world().resource::<Tabletop>().session.observe(),
         committed
     );
+}
+
+#[test]
+fn scenario_reference_stays_in_test_and_opens_inspection_without_a_game_choice() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = app_for_session(
+        Session::new(Fixture::curse()),
+        dir.path().join("reference.json"),
+    );
+    app.update();
+    let before = app.world().resource::<Tabletop>().view();
+    let position = |world: &mut World, source| {
+        world
+            .query::<(&context::Selectable, &Transform)>()
+            .iter(world)
+            .find(|(selectable, _)| selectable.0 == source)
+            .map(|(_, transform)| transform.translation)
+            .expect("the production scene contains the card")
+    };
+    assert_eq!(
+        position(app.world_mut(), Source::Card(3)),
+        tabletop_layout::SCENARIO_REFERENCE
+    );
+    assert_ne!(
+        position(app.world_mut(), Source::Card(0)),
+        tabletop_layout::SCENARIO_REFERENCE
+    );
+    act(&mut app, Action::Select(Source::Card(3), Vec2::ZERO));
+    assert_eq!(app.world().resource::<Tabletop>().inspect, Some(3));
+    assert!(!app.world().resource::<Context>().menu_open());
+    act(&mut app, Action::CloseInspect);
+    assert_eq!(app.world().resource::<Tabletop>().view(), before);
+    act(&mut app, Action::Save);
+    act(&mut app, Action::Replay);
+    act(&mut app, Action::Select(Source::Card(3), Vec2::ZERO));
+    assert_eq!(app.world().resource::<Tabletop>().inspect, Some(3));
+    assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
 }
 
 #[test]
@@ -916,7 +949,7 @@ fn app_for_session_in(mut app: App, session: Session, path: PathBuf) -> App {
     .init_resource::<Assets<StandardMaterial>>()
     .init_resource::<Time>()
     .insert_resource(Art {
-        handles: [None, None, None],
+        handles: std::array::from_fn(|_| None),
         available: 0,
         token_handles: vec![],
         reminder: None,
@@ -1832,8 +1865,8 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     }
     assert_eq!(
         visible_labels.len(),
-        8,
-        "overview shows five area names and three absent-art card names"
+        9,
+        "overview shows five area names and four absent-art card names"
     );
     for name in [
         "Tony Morgan",
@@ -1841,6 +1874,7 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
         "Jacqueline Fine",
         "Scenario / Study",
         "Shared test area",
+        "The Gathering",
         "Promise of Power",
         "Rotting Remains",
     ] {
@@ -2148,7 +2182,7 @@ fn contextual_menu_tab_navigation_inspects_then_commits_without_moving_camera() 
         .world()
         .resource::<bevy::input_focus::InputFocus>()
         .get();
-    contextual_key(&mut app, window, KeyCode::Tab); // Inspect.
+    contextual_key(&mut app, window, KeyCode::Tab); // Dismiss.
     assert_ne!(
         app.world()
             .resource::<bevy::input_focus::InputFocus>()
@@ -2162,7 +2196,8 @@ fn contextual_menu_tab_navigation_inspects_then_commits_without_moving_camera() 
             .get(),
         initial_focus
     );
-    contextual_key(&mut app, window, KeyCode::Tab); // Inspect again.
+    contextual_key(&mut app, window, KeyCode::Tab); // Dismiss again.
+    contextual_key(&mut app, window, KeyCode::Tab); // Inspect remains last.
     contextual_key(&mut app, window, KeyCode::KeyW);
     assert_eq!(app.world().resource::<Orbit>().pose().target, target);
     assert_eq!(app.world().resource::<Orbit>().pose().yaw, yaw);

@@ -50,6 +50,36 @@ impl Context {
             _ => false,
         }
     }
+    fn can_toggle_commitment(&self, view: &Observation, id: u16) -> bool {
+        if self.commitments.contains(&id) {
+            return selectable(view, id, false);
+        }
+        let mut proposed = self.commitments.clone();
+        proposed.insert(id);
+        compound_choice(view, &proposed, false).is_some()
+    }
+    pub fn contribution(
+        &self,
+        view: &Observation,
+        live: bool,
+        source: Source,
+    ) -> Option<feedback::Contribution> {
+        let Source::Hand(id) = source else {
+            return None;
+        };
+        if !live || !self.can_toggle_commitment(view, id) {
+            return None;
+        }
+        let card = view
+            .investigators
+            .iter()
+            .flat_map(|i| &i.hand)
+            .find(|card| card.id == id)?;
+        Some(feedback::Contribution {
+            bonus: card.intellect_icons,
+            skill: crate::tabletop::symbols::Skill::Intellect,
+        })
+    }
     /// Ordinary menu closure keeps both staged sets and the utilities panel.
     pub fn dismiss(&mut self) {
         self.open = false;
@@ -125,7 +155,14 @@ impl Context {
         id: u16,
         cancel: bool,
     ) {
-        if live && self.accepts(epoch) && revision == view.revision && selectable(view, id, cancel)
+        if live
+            && self.accepts(epoch)
+            && revision == view.revision
+            && if cancel {
+                selectable(view, id, true)
+            } else {
+                self.can_toggle_commitment(view, id)
+            }
         {
             let set = if cancel {
                 &mut self.cancellations
@@ -345,7 +382,11 @@ fn entries(context: &Context, view: &Observation, live: bool, source: Source) ->
             _ => None,
         };
         if let Some((id, cancel)) = selection
-            && selectable(view, id, cancel)
+            && if cancel {
+                selectable(view, id, true)
+            } else {
+                context.can_toggle_commitment(view, id)
+            }
         {
             let selected = context.is_pending(source);
             let label = if cancel {
@@ -445,38 +486,9 @@ pub(super) fn render(
         .0
         .world_to_viewport(camera.1, at)
         .unwrap_or(size * 0.5);
-    let radial = entries.len() <= 3
-        && !matches!(source, Source::Discard(_))
-        && size.x >= 950.
-        && size.y >= 650.;
-    let width = if radial {
-        450.
-    } else {
-        340_f32.min(size.x - 36.)
-    };
-    let height = if radial {
-        255.
-    } else {
-        (110. + entries.len() as f32 * 75.).min((size.y - 340.).max(140.))
-    };
-    let at = Vec2::new(
-        (anchor.x - width / 2.).clamp(145., (size.x - width - 12.).max(145.)),
-        (anchor.y - height / 2.).clamp(110., (size.y - height - 260.).max(110.)),
-    );
     commands
         .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(at.x),
-                top: px(at.y),
-                width: px(width),
-                height: px(height),
-                padding: UiRect::all(px(8)),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(6),
-                overflow: Overflow::scroll_y(),
-                ..default()
-            },
+            feedback::menu::panel(anchor, size, 110., (size.y * 0.29).min(250.) + 20.),
             BackgroundColor(INK),
             GlobalZIndex(50),
             Menu,
@@ -497,30 +509,13 @@ pub(super) fn render(
                 p.spawn(art.text("No legal action here at this decision.", 14., MUTED));
             }
             for (index, entry) in entries.into_iter().enumerate() {
-                if radial {
-                    let (x, y) = [(145., 90.), (290., 155.), (0., 155.)][index];
-                    p.spawn(Node {
-                        position_type: PositionType::Absolute,
-                        left: px(x),
-                        top: px(y),
-                        width: px(145),
-                        ..default()
-                    })
-                    .with_children(|p| {
-                        let entity = ui::button(&art, p, &entry.label, entry.action);
-                        if index == 0 {
-                            p.commands()
-                                .entity(entity)
-                                .insert(bevy::input_focus::AutoFocus);
-                        }
-                    });
-                } else {
-                    let entity = ui::button(&art, p, &entry.label, entry.action);
-                    if index == 0 {
-                        p.commands()
-                            .entity(entity)
-                            .insert(bevy::input_focus::AutoFocus);
-                    }
+                let label = feedback::menu::label(&entry.label);
+                let entity = ui::button(&art, p, &label, entry.action);
+                p.commands().entity(entity).insert(feedback::menu::row());
+                if index == 0 {
+                    p.commands()
+                        .entity(entity)
+                        .insert(bevy::input_focus::AutoFocus);
                 }
             }
         });

@@ -88,6 +88,22 @@ Replace `--art-root` and its value with `--no-art` to inspect text substitutes. 
 
 Stop at 15 minutes, a broken choice, a save/reopen mismatch or a material readability problem; retain the review directory and report the view and last action. Random outcomes do not require another attempt. Static native screenshots and tests of production scene entities do not prove physical input, control burden or owner acceptance; Joel's reported playthrough and explicit acceptance supply the human verdict for this bounded task.
 
+### Contextual actions and commitment cues (#77)
+
+The owner-accepted [#77](https://github.com/joeloverbeck/arkham-unfolded/issues/77) refinement replaces radial controls with vertical action rows, keeps the scenario reference at Test's upper-left, and distinguishes available commitments from selected cards. Joel ran the Party experiment on 2026-11-01, reported that it all looked good, and authorized publication and closeout. The focused review launch uses this separate save, which is fresh on its first launch:
+
+```sh
+cd /home/joeloverbeck/src/arkham-unfolded
+cargo run --locked --features tabletop --bin arkham-tabletop -- \
+  --experiment party \
+  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/party-assets-v2 \
+  --save /home/joeloverbeck/.cache/agent-tmp/arkham-77-owner.session.json
+```
+
+This separate save is created when decisions are made; repeating the command resumes it. Keep the window visible and focused during the graphics check. Begin Patrice's turn and select Study: the complete investigation details and Inspect should occupy separate rows. Investigate, then focus Patrice: Promise of Power should show teal edges and `+4` intellect. Select it to see the distinct gold selected state; inspect/dismiss and confirm that selection remains. Confirming or declining ends the availability cues. Test's reference should remain accessible between tests. If reviewing a position with two eligible cards from a supporting investigator, selecting one should make the other unavailable until the first is unselected.
+
+If revisiting these checks, stop at a broken choice, save mismatch or unreadable control and retain this save. Automated checks and three static native captures passed; Joel's subsequent play report supplies the owner acceptance. This focused review does not establish complete Tony/Jacqueline playthroughs or full-campaign fitness. See [ADR 0002](../adr/0002-persistent-table-areas.md#local-candidate-verification) for evidence and limits.
+
 ### Counter acceptance and verification reference (#73)
 
 Joel accepted the counter refinement on 2026-11-01 after playing the complete prepared Party attempt through Act advancement, checking the recent visual changes and reporting that everything was correct. He explicitly authorized publication, PR creation, merge, pulling `main` and #73 closure. The accepted executable SHA-256 is `b688d213a0bb7315f095e07d66b8857e9970b63578eb4f4b2a2450909dc1a123`. This records the reported Party use; it does not assert separate Tony or Jacqueline playthroughs or repetition of every individual check below.

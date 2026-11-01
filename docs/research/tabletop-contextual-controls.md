@@ -4,6 +4,8 @@ Research completed on 2026-10-29 for the owner's `grill-with-docs` interview rel
 
 After this research, Joel selected the recommended labeled radial controls with a local-list fallback; ADR 0002 records that design decision. The evidence and native-use limitations below remain unchanged by selecting the direction.
 
+On 2026-11-01, Joel replaced that hybrid menu shape with universal vertical action rows after reporting overlapping detailed labels in Party. See the [follow-up research](party-interaction-refinements.md) and [accepted refinement](../adr/0002-persistent-table-areas.md#vertical-action-rows-and-commitment-eligibility). This earlier research remains historical evidence.
+
 Joel subsequently selected retaining the existing card inspection modal, opened by Inspect in the contextual menu, because it already works well for him. The visual-context recommendations here govern routine action selection; they do not require replacing deliberate full inspection with a nonmodal panel. Neither inspection nor its dismissal commits a game choice.
 
 ## Recommendation

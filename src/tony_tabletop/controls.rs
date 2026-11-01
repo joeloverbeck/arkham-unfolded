@@ -56,6 +56,36 @@ impl Context {
     pub fn is_pending(&self, source: Source) -> bool {
         matches!(source, Source::Hand(id) if self.commitments.contains(&id))
     }
+    fn can_toggle_commitment(&self, view: &Observation, id: u8) -> bool {
+        if self.commitments.contains(&id) {
+            return committable(view, id);
+        }
+        let mut proposed = self.commitments.clone();
+        proposed.insert(id);
+        commitment_choice(view, &proposed).is_some()
+    }
+    pub fn contribution(
+        &self,
+        view: &Observation,
+        gameplay: bool,
+        source: Source,
+    ) -> Option<feedback::Contribution> {
+        let Source::Hand(id) = source else {
+            return None;
+        };
+        if !gameplay || !self.can_toggle_commitment(view, id) {
+            return None;
+        }
+        use crate::{tabletop::symbols::Skill, tony::TestKind};
+        Some(feedback::Contribution {
+            bonus: 1,
+            skill: match view.test.as_ref()?.kind {
+                TestKind::Fight => Skill::Combat,
+                TestKind::Evade => Skill::Agility,
+                TestKind::Investigate => Skill::Intellect,
+            },
+        })
+    }
     /// Ordinary menu closure keeps the compound choice; Escape also closes utilities.
     pub fn dismiss(&mut self) {
         self.open = false;
@@ -122,7 +152,11 @@ impl Context {
         revision: u64,
         id: u8,
     ) {
-        if self.accepts(epoch) && gameplay && revision == view.revision && committable(view, id) {
+        if self.accepts(epoch)
+            && gameplay
+            && revision == view.revision
+            && self.can_toggle_commitment(view, id)
+        {
             if !self.commitments.remove(&id) {
                 self.commitments.insert(id);
             }
@@ -276,23 +310,22 @@ pub(super) struct Menu;
 struct Entry {
     label: String,
     action: Action,
-    slot: usize,
     warning: Option<String>,
 }
 fn entries(context: &Context, view: &Observation, gameplay: bool, source: Source) -> Vec<Entry> {
     let mut entries = Vec::new();
     if gameplay {
         for choice in source_choices(view, source) {
-            let (short, slot) = match choice.id.as_str() {
-                "fight" => ("Fight · bonus/1 action", 0),
-                "evade" => ("Evade · 1 action", 1),
-                "engage" => ("Engage · bonus/1 action", 2),
-                "resource" => ("Gain resource · 1 action", 0),
-                "draw" => ("Draw · 1 action", 0),
-                "investigate" => ("Investigate · 1 action", 0),
-                "injury" => ("Remove Injury · 2 actions", 0),
-                "reveal" => ("Reveal token", 0),
-                "resolve" => ("Resolve test", 0),
+            let short = match choice.id.as_str() {
+                "fight" => "Fight · bonus/1 action",
+                "evade" => "Evade · 1 action",
+                "engage" => "Engage · bonus/1 action",
+                "resource" => "Gain resource · 1 action",
+                "draw" => "Draw · 1 action",
+                "investigate" => "Investigate · 1 action",
+                "injury" => "Remove Injury · 2 actions",
+                "reveal" => "Reveal token",
+                "resolve" => "Resolve test",
                 _ => continue,
             };
             let warning = view.opportunity_attack(&choice.id).map(|hit| {
@@ -325,12 +358,11 @@ fn entries(context: &Context, view: &Observation, gameplay: bool, source: Source
                     view.revision,
                     choice.id.clone(),
                 ),
-                slot,
                 warning,
             });
         }
         if let Source::Hand(id) = source
-            && committable(view, id)
+            && context.can_toggle_commitment(view, id)
             && let Some(bonus) = commitment_bonus(view, 1)
         {
             entries.push(Entry {
@@ -340,7 +372,6 @@ fn entries(context: &Context, view: &Observation, gameplay: bool, source: Source
                     format!("Select to commit {bonus}")
                 },
                 action: Action::ToggleCommit(context.menu_epoch(), view.revision, id),
-                slot: 0,
                 warning: None,
             });
         }
@@ -349,7 +380,6 @@ fn entries(context: &Context, view: &Observation, gameplay: bool, source: Source
         entries.push(Entry {
             label: "Inspect".into(),
             action: Action::Inspect(index),
-            slot: 3,
             warning: None,
         });
     }
@@ -360,7 +390,6 @@ fn entries(context: &Context, view: &Observation, gameplay: bool, source: Source
                 entries.push(Entry {
                     label: format!("Inspect {} · copy {}", card.title, card.id + 1),
                     action: Action::Inspect(index),
-                    slot: 3,
                     warning: None,
                 });
             }
@@ -372,7 +401,6 @@ fn entries(context: &Context, view: &Observation, gameplay: bool, source: Source
                 entries.push(Entry {
                     label: format!("Inspect {}", card.title),
                     action: Action::Inspect(index),
-                    slot: 3,
                     warning: None,
                 });
             }
@@ -440,41 +468,10 @@ pub(super) fn draw_menu(
         .ok()
         .and_then(|(camera, transform)| camera.world_to_viewport(transform, selection.at).ok())
         .unwrap_or(size * 0.5);
-    let radial = entries.len() <= 3
-        && !matches!(selection.source, Source::Discard | Source::EncounterDiscard)
-        && entries.iter().all(|e| e.warning.is_none())
-        && size.x >= 950.0
-        && size.y >= 650.0;
-    let width = if radial {
-        450.0
-    } else {
-        320.0_f32.min(size.x - 36.0)
-    };
     let bottom_reserved = (size.y * 0.29).min(250.0) + 20.0;
-    let height = if radial {
-        260.0
-    } else {
-        (136.0 + entries.len() as f32 * 90.0).min((size.y - bottom_reserved - 80.0).max(120.0))
-    };
-    let left_edge = if size.x >= 650.0 { 145.0 } else { 12.0 };
-    let at = Vec2::new(
-        (anchor.x - width * 0.5).clamp(left_edge, (size.x - width - 12.0).max(left_edge)),
-        (anchor.y - height * 0.5).clamp(68.0, (size.y - height - bottom_reserved).max(68.0)),
-    );
     commands
         .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(at.x),
-                top: px(at.y),
-                width: px(width),
-                height: px(height),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(6),
-                padding: UiRect::all(px(8)),
-                overflow: Overflow::scroll_y(),
-                ..default()
-            },
+            feedback::menu::panel(anchor, size, 68., bottom_reserved),
             BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.97)),
             GlobalZIndex(50),
             Menu,
@@ -491,46 +488,23 @@ pub(super) fn draw_menu(
                 14.0,
                 GOLD,
             ));
-            if radial {
-                for (index, entry) in entries.into_iter().enumerate() {
-                    let (x, y) =
-                        [(145.0, 96.0), (290.0, 148.0), (145.0, 200.0), (0.0, 148.0)][entry.slot];
-                    p.spawn(Node {
-                        position_type: PositionType::Absolute,
-                        left: px(x + 6.0),
-                        top: px(y),
-                        width: px(140),
-                        ..default()
-                    })
-                    .with_children(|p| {
-                        let entity = button(&art, p, &entry.label, entry.action, false);
-                        p.commands()
-                            .entity(entity)
-                            .insert(feedback::context_button());
-                        if index == 0 {
-                            p.commands()
-                                .entity(entity)
-                                .insert(bevy::input_focus::AutoFocus);
-                        }
-                    });
-                }
-            } else {
-                if entries.is_empty() {
-                    p.spawn(art.text("No cards or legal actions here.", 15.0, MUTED));
-                }
-                for (index, entry) in entries.into_iter().enumerate() {
-                    let entity = button(&art, p, &entry.label, entry.action, false);
+            if entries.is_empty() {
+                p.spawn(art.text("No cards or legal actions here.", 15.0, MUTED));
+            }
+            for (index, entry) in entries.into_iter().enumerate() {
+                let label = feedback::menu::label(&entry.label);
+                let label = match entry.warning {
+                    Some(warning) => format!("{label}\n{warning}"),
+                    None => label,
+                };
+                let entity = button(&art, p, &label, entry.action, false);
+                p.commands()
+                    .entity(entity)
+                    .insert((feedback::context_button(), feedback::menu::row()));
+                if index == 0 {
                     p.commands()
                         .entity(entity)
-                        .insert(feedback::context_button());
-                    if index == 0 {
-                        p.commands()
-                            .entity(entity)
-                            .insert(bevy::input_focus::AutoFocus);
-                    }
-                    if let Some(warning) = entry.warning {
-                        p.spawn(art.text(warning, 14.0, GOLD));
-                    }
+                        .insert(bevy::input_focus::AutoFocus);
                 }
             }
         });

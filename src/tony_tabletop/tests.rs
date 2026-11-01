@@ -383,8 +383,16 @@ fn risky_actions_show_the_attack_before_the_player_commits() {
     ] {
         act(&mut app, Action::Select(0, source, Vec3::ZERO));
         let texts = visible_text(&mut app);
-        assert_eq!(texts.iter().filter(|t| t.as_str() == "Attack of opportunity: Ghoul Minion\n1 damage + 1 horror").count(), 1,
-            "the selected component exposes its own warning before activation");
+        assert_eq!(
+            texts
+                .iter()
+                .filter(
+                    |t| t.ends_with("\nAttack of opportunity: Ghoul Minion\n1 damage + 1 horror")
+                )
+                .count(),
+            1,
+            "the selected component exposes its own warning before activation"
+        );
     }
     assert_eq!(app.world().resource::<Table>().session.observe().damage, 0);
     assert!(!directory.path().join("turn.json").exists());
@@ -862,6 +870,15 @@ fn source_marks_follow_open_menus_without_rebuilding_cards_or_erasing_commitment
     assert!(!app.world().get::<CardFeedback>(ghoul).unwrap().menu_source);
     assert_eq!(ghoul, card(&mut app, Source::Card(2)));
     choose(&mut app, "fight");
+    let available_hand = card(&mut app, Source::Hand(0));
+    let contribution = app
+        .world()
+        .get::<CardFeedback>(available_hand)
+        .unwrap()
+        .commitment
+        .unwrap();
+    assert_eq!(contribution.bonus, 1);
+    assert_eq!(contribution.skill.name(), "combat");
     let revision = app.world().resource::<Table>().view().revision;
     act(
         &mut app,
@@ -1260,15 +1277,15 @@ fn keyboard_context_navigation_wraps_and_cancels_without_a_game_action() {
         &mut app,
         Action::Select(before.revision, Source::Card(2), Vec3::ZERO),
     );
-    assert_eq!(focused_button_label(&app), Some("Fight  /  bonus action"));
+    assert_eq!(focused_button_label(&app), Some("Fight\nbonus action"));
     keyboard_press(&mut app, window, KeyCode::Tab);
-    assert_eq!(focused_button_label(&app), Some("Evade  /  1 action"));
+    assert_eq!(focused_button_label(&app), Some("Evade\n1 action"));
     keyboard_chord(&mut app, window, KeyCode::Tab, true);
-    assert_eq!(focused_button_label(&app), Some("Fight  /  bonus action"));
+    assert_eq!(focused_button_label(&app), Some("Fight\nbonus action"));
     keyboard_chord(&mut app, window, KeyCode::Tab, true);
     assert_eq!(focused_button_label(&app), Some("Inspect"));
     keyboard_press(&mut app, window, KeyCode::Tab);
-    assert_eq!(focused_button_label(&app), Some("Fight  /  bonus action"));
+    assert_eq!(focused_button_label(&app), Some("Fight\nbonus action"));
     keyboard_chord(&mut app, window, KeyCode::Tab, true);
     keyboard_press(&mut app, window, KeyCode::Space);
     assert_eq!(app.world().resource::<Table>().inspect, Some(2));
