@@ -6,10 +6,10 @@ use crate::{
 
 pub(super) fn location_at(name: &str) -> Vec3 {
     match name {
-        "Attic" => Vec3::new(-4., 0.05, -3.4),
-        "Cellar" => Vec3::new(4., 0.05, -3.4),
-        "Parlor" => Vec3::new(0., 0.05, -5.7),
-        _ => Vec3::new(0., 0.05, -3.4),
+        "Attic" => layout::SCENARIO_MAP_CENTER + Vec3::new(-5.2, 0., 0.),
+        "Cellar" => layout::SCENARIO_MAP_CENTER + Vec3::new(5.2, 0., 0.),
+        "Parlor" => layout::SCENARIO_MAP_CENTER + Vec3::new(0., 0., -3.6),
+        _ => layout::SCENARIO_MAP_CENTER,
     }
 }
 pub(super) fn discard_at(who: Investigator) -> Vec3 {
@@ -21,19 +21,21 @@ pub(super) fn label(
     text: impl Into<String>,
     at: Vec3,
     heading: bool,
-) {
-    commands.spawn((
-        art.text(text, if heading { 18. } else { 13. }, PAPER),
-        TextLayout::justify(Justify::Center),
-        Node {
-            position_type: PositionType::Absolute,
-            width: px(190.),
-            ..default()
-        },
-        Pickable::IGNORE,
-        WorldLabel(at, heading),
-        Scene,
-    ));
+) -> Entity {
+    commands
+        .spawn((
+            art.text(text, if heading { 18. } else { 13. }, PAPER),
+            TextLayout::justify(Justify::Center),
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(190.),
+                ..default()
+            },
+            Pickable::IGNORE,
+            WorldLabel(at, heading),
+            Scene,
+        ))
+        .id()
 }
 #[allow(clippy::too_many_arguments)]
 fn card(
@@ -172,6 +174,13 @@ pub(super) fn synchronize(
         commands.entity(entity).despawn();
     }
     let revision = view.revision;
+    label(
+        &mut commands,
+        &art,
+        "Scenario",
+        layout::scenario_heading(),
+        true,
+    );
     for location in &view.locations {
         let at = location_at(&location.name);
         let role = format!("card/{}", location.code);
@@ -266,7 +275,7 @@ pub(super) fn synchronize(
             false,
         );
     }
-    let reference = Vec3::new(6., 0.05, -6.5);
+    let reference = layout::SCENARIO_REFERENCE;
     face(
         &mut commands,
         &mut meshes,
@@ -495,13 +504,16 @@ pub(super) fn synchronize(
             );
         }
     }
-    label(
+    let test_heading = label(
         &mut commands,
         &art,
         "Test area",
-        layout::TEST_CENTER + Vec3::new(0., 0.2, -5.5),
+        layout::test_heading(),
         true,
     );
+    commands
+        .entity(test_heading)
+        .insert(layout::TestAreaHeading);
     for (name, at) in layout::test_zone_labels() {
         label(&mut commands, &art, name, at, false);
     }
@@ -601,7 +613,7 @@ pub(super) fn synchronize(
         &mut commands,
         &art,
         "Encounter discard: empty\nNo enemies or encounter draw in this attempt",
-        Vec3::new(-6., 0.1, -6.),
+        layout::ENCOUNTER_DISCARD + Vec3::Z * 2.0,
         false,
     );
     *last = Some(view);

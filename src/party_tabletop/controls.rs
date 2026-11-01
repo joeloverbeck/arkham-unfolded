@@ -157,7 +157,7 @@ impl Context {
     ) -> Option<(String, Action)> {
         compound_choice(view, self.pending_set(cancel), cancel)?;
         let label = if cancel {
-            "Confirm selected cancellation".into()
+            "Jacqueline: confirm selected cancellation".into()
         } else {
             let bonus: u16 = view
                 .investigators
@@ -331,7 +331,7 @@ fn entries(context: &Context, view: &Observation, live: bool, source: Source) ->
     if live {
         for choice in source_choices(view, source) {
             entries.push(Entry {
-                label: choice.label.clone(),
+                label: ui::choice_label(view, choice),
                 action: Action::ContextChoice(
                     context.menu_epoch(),
                     view.revision,
@@ -350,9 +350,9 @@ fn entries(context: &Context, view: &Observation, live: bool, source: Source) ->
             let selected = context.is_pending(source);
             let label = if cancel {
                 if selected {
-                    "Unselect cancellation".into()
+                    "Jacqueline: unselect cancellation".into()
                 } else {
-                    "Select to cancel".into()
+                    "Jacqueline: select to cancel".into()
                 }
             } else {
                 let card = view
@@ -362,10 +362,11 @@ fn entries(context: &Context, view: &Observation, live: bool, source: Source) ->
                     .find(|c| c.id == id)
                     .unwrap();
                 if selected {
-                    "Unselect commitment".into()
+                    format!("{}: unselect commitment", ui::short_name(card.owner))
                 } else {
                     format!(
-                        "Select to commit +{} intellect{}",
+                        "{}: select to commit +{} intellect{}",
+                        ui::short_name(card.owner),
                         card.intellect_icons,
                         if card.code == "07032" {
                             " · add one curse"
@@ -466,7 +467,7 @@ pub(super) fn render(
     };
     let at = Vec2::new(
         (anchor.x - width / 2.).clamp(145., (size.x - width - 12.).max(145.)),
-        (anchor.y - height / 2.).clamp(85., (size.y - height - 260.).max(85.)),
+        (anchor.y - height / 2.).clamp(110., (size.y - height - 260.).max(110.)),
     );
     commands
         .spawn((
@@ -491,13 +492,10 @@ pub(super) fn render(
         .with_children(|p| {
             p.spawn(art.text(
                 format!(
-                        "{}\n{}",
-                        table
-                            .view()
-                            .actor
-                            .map_or("Choose investigator", Investigator::name),
-                        feedback::KEYBOARD_HINT
-                    ),
+                    "{}\n{}",
+                    ui::turn_heading(&table.view()),
+                    feedback::KEYBOARD_HINT
+                ),
                 14.,
                 GOLD,
             ));

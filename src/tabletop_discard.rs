@@ -3,7 +3,7 @@
 use crate::encounter_discard::EncounterCard;
 use bevy::prelude::*;
 
-pub(crate) const ENCOUNTER_DISCARD_AT: Vec3 = Vec3::new(7.0, 0.125, -3.7);
+pub(crate) const ENCOUNTER_DISCARD_AT: Vec3 = crate::tabletop_layout::ENCOUNTER_DISCARD;
 
 pub(crate) fn caption(cards: &[EncounterCard]) -> String {
     match cards {

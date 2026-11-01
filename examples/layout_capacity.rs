@@ -152,12 +152,16 @@ fn main() -> ExitCode {
             ("02038", "Internal Injury"),
             ("01160", "Ghoul Minion"),
             ("01111", "Study"),
+            ("01104", "Standard reference"),
+            ("01105", "Agenda"),
+            ("01108", "Act"),
         ])
         .map(|(code, _)| format!("card/{code}"))
         .chain(INVESTIGATORS.map(|(code, _)| format!("standee/{code}")))
         .chain(
             [
                 "card-back/player",
+                "card-back/encounter",
                 "token/damage",
                 "token/horror",
                 "token/minus_one",
@@ -192,25 +196,27 @@ fn main() -> ExitCode {
     }
 }
 
-fn label(commands: &mut Commands, text: impl Into<String>, at: Vec3, width: f32) {
-    commands.spawn((
-        Text::new(text.into().replace('·', "/")),
-        TextFont {
-            font_size: FontSize::Px(13.0),
-            ..default()
-        },
-        TextColor(Color::srgb(0.91, 0.89, 0.81)),
-        TextLayout::justify(Justify::Center),
-        Node {
-            position_type: PositionType::Absolute,
-            width: px(width),
-            padding: UiRect::all(px(3)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.88)),
-        Pickable::IGNORE,
-        Label(at, width),
-    ));
+fn label(commands: &mut Commands, text: impl Into<String>, at: Vec3, width: f32) -> Entity {
+    commands
+        .spawn((
+            Text::new(text.into().replace('·', "/")),
+            TextFont {
+                font_size: FontSize::Px(13.0),
+                ..default()
+            },
+            TextColor(Color::srgb(0.91, 0.89, 0.81)),
+            TextLayout::justify(Justify::Center),
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(width),
+                padding: UiRect::all(px(3)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.88)),
+            Pickable::IGNORE,
+            Label(at, width),
+        ))
+        .id()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -224,29 +230,32 @@ fn card(
     at: Vec3,
     size: Vec2,
     sideways: bool,
-) {
+) -> Entity {
     let image = art.0.get(role).cloned();
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(size.x, size.y))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: if image.is_some() {
-                Color::WHITE
+    let entity = commands
+        .spawn((
+            Mesh3d(meshes.add(Plane3d::default().mesh().size(size.x, size.y))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: if image.is_some() {
+                    Color::WHITE
+                } else {
+                    Color::srgb(0.34, 0.31, 0.23)
+                },
+                base_color_texture: image.clone(),
+                unlit: true,
+                ..default()
+            })),
+            Transform::from_translation(at).with_rotation(Quat::from_rotation_y(if sideways {
+                std::f32::consts::FRAC_PI_2
             } else {
-                Color::srgb(0.34, 0.31, 0.23)
-            },
-            base_color_texture: image.clone(),
-            unlit: true,
-            ..default()
-        })),
-        Transform::from_translation(at).with_rotation(Quat::from_rotation_y(if sideways {
-            std::f32::consts::FRAC_PI_2
-        } else {
-            0.0
-        })),
-    ));
+                0.0
+            })),
+        ))
+        .id();
     if image.is_none() {
         label(commands, title, at + Vec3::Y * 0.1, 72.0);
     }
+    entity
 }
 
 fn setup(
@@ -266,7 +275,7 @@ fn setup(
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.9, -0.6, 0.0)),
     ));
     commands.spawn((
-        Text::new("Presentation fixture - not a playable position\nRepeated selected-deck faces test space only. Tab: next view / 1-6: Overview / Scenario / Test / Tony / Patrice / Jacqueline"),
+        Text::new("Presentation fixture - not a playable position\n12 repeated locations test space, not scenario connections. Tab: next view / 1-6: Overview / Scenario / Test / Tony / Patrice / Jacqueline"),
         TextFont { font_size: FontSize::Px(18.0), ..default() },
         TextColor(Color::WHITE),
         Node { position_type: PositionType::Absolute, top: px(10), left: px(12), right: px(12), ..default() },
@@ -421,21 +430,42 @@ fn setup(
             );
         }
     }
-    for (center, size) in [
-        (Vec3::new(-4.0, 0.05, -3.8), Vec2::new(1.35, 1.89)),
-        (Vec3::new(3.0, 0.05, -3.8), Vec2::new(1.8, 2.52)),
-    ] {
+    label(
+        &mut commands,
+        "Scenario / twelve-location fit",
+        layout::scenario_heading(),
+        240.0,
+    );
+    for (slot, center) in location_witness_positions().into_iter().enumerate() {
+        let size = if slot % 2 == 0 {
+            Vec2::new(1.35, 1.89)
+        } else {
+            Vec2::new(1.8, 2.52)
+        };
         card(
             &mut commands,
             &mut meshes,
             &mut materials,
             &art,
             "card/01111",
-            "Study · four-standee fit",
+            "Study",
             center,
             size,
             false,
         );
+        label(
+            &mut commands,
+            format!("Location {} / 2 clues", slot + 1),
+            center + Vec3::Z * 1.45,
+            135.0,
+        );
+        for offset in [-0.23, 0.23] {
+            commands.spawn((
+                Mesh3d(meshes.add(Cylinder::new(0.18, 0.10))),
+                MeshMaterial3d(materials.add(Color::srgb(0.22, 0.67, 0.48))),
+                Transform::from_translation(center + Vec3::new(offset, 0.08, 0.6)),
+            ));
+        }
         for slot in 0..4 {
             let code = INVESTIGATORS[slot % 3].0;
             let at = layout::location_standee_position(center.with_y(0.0), size, slot).unwrap();
@@ -450,6 +480,64 @@ fn setup(
             );
         }
     }
+    for (code, title, side) in [
+        ("01105", "Agenda", layout::ScenarioBookSide::Agenda),
+        ("01108", "Act", layout::ScenarioBookSide::Act),
+    ] {
+        let size = Vec2::new(1.35, 1.89);
+        let transform = layout::scenario_book_card_transform(side, size);
+        let entity = card(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &art,
+            &format!("card/{code}"),
+            title,
+            transform.translation,
+            size,
+            false,
+        );
+        commands.entity(entity).insert(transform);
+    }
+    for (role, title, at) in [
+        (
+            "card-back/encounter",
+            "Encounter deck",
+            layout::ENCOUNTER_DECK,
+        ),
+        ("card/01160", "Encounter discard", layout::ENCOUNTER_DISCARD),
+        (
+            "card/01104",
+            "Standard reference",
+            layout::SCENARIO_REFERENCE,
+        ),
+        ("card/01160", "Victory display", layout::VICTORY_DISPLAY),
+    ] {
+        card(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &art,
+            role,
+            title,
+            at,
+            Vec2::new(1.35, 1.89),
+            false,
+        );
+        // Named substitutes already carry their title on the card footprint.
+        if art.0.contains_key(role) {
+            let caption = if role == "card/01104" {
+                at + Vec3::new(3.0, 0.1, -0.3)
+            } else {
+                at + Vec3::Z * 1.1
+            };
+            label(&mut commands, title, caption, 135.0);
+        }
+    }
+    let test_heading = label(&mut commands, "Test area", layout::test_heading(), 180.0);
+    commands
+        .entity(test_heading)
+        .insert(layout::TestAreaHeading);
     for (name, at) in layout::test_zone_labels() {
         label(&mut commands, name, at, 180.0);
     }
@@ -531,6 +619,17 @@ fn setup(
     }
 }
 
+// A finite geometry challenge, not a map layout policy or a game capacity limit.
+fn location_witness_positions() -> [Vec3; 12] {
+    std::array::from_fn(|slot| {
+        Vec3::new(
+            (slot % 3) as f32 * 5.2 - 5.2,
+            0.05,
+            -12.1 + (slot / 3) as f32 * 3.6,
+        )
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn navigate(
     keys: Res<ButtonInput<KeyCode>>,
@@ -576,10 +675,21 @@ fn navigate(
 
 fn position_labels(
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
-    mut labels: Query<(&Label, &mut Node, &mut Visibility)>,
+    mut labels: Query<(
+        &Label,
+        &ComputedNode,
+        Has<layout::TestAreaHeading>,
+        &mut Node,
+        &mut Visibility,
+    )>,
 ) {
-    for (label, mut node, mut visible) in &mut labels {
-        if let Ok(point) = camera.0.world_to_viewport(camera.1, label.0) {
+    for (label, computed, test_heading, mut node, mut visible) in &mut labels {
+        let point = if test_heading {
+            layout::test_heading_screen_position(camera.0, camera.1, computed)
+        } else {
+            camera.0.world_to_viewport(camera.1, label.0).ok()
+        };
+        if let Some(point) = point {
             node.left = px(point.x - label.1 / 2.0);
             node.top = px(point.y);
             *visible = Visibility::Visible;

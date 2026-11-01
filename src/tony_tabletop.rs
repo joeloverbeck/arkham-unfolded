@@ -852,9 +852,10 @@ fn world_label_sized(
         ))
         .id()
 }
-fn area_heading(commands: &mut Commands, art: &Art, value: String, point: Vec3) {
+fn area_heading(commands: &mut Commands, art: &Art, value: String, point: Vec3) -> Entity {
     let entity = world_label(commands, art, value, point, GOLD);
     commands.entity(entity).insert(OverviewHeading);
+    entity
 }
 
 #[derive(Component)]
@@ -1350,6 +1351,8 @@ fn world_labels(
     orbit: Res<Orbit>,
     mut labels: Query<(
         &WorldLabel,
+        &ComputedNode,
+        Has<layout::TestAreaHeading>,
         Has<OverviewHeading>,
         Option<&OuterLabel>,
         &mut Node,
@@ -1357,12 +1360,17 @@ fn world_labels(
     )>,
 ) {
     let (camera, transform) = *camera;
-    for (label, heading, standee, mut node, mut visibility) in &mut labels {
+    for (label, computed, test_heading, heading, standee, mut node, mut visibility) in &mut labels {
         if orbit.pose().distance > 30.0 && !heading {
             *visibility = Visibility::Hidden;
             continue;
         }
-        if let Ok(point) = camera.world_to_viewport(transform, label.0) {
+        let point = if test_heading {
+            layout::test_heading_screen_position(camera, transform, computed)
+        } else {
+            camera.world_to_viewport(transform, label.0).ok()
+        };
+        if let Some(point) = point {
             let offset =
                 standee.map_or(label.1 / 2.0, |side| if side.left { label.1 } else { 0.0 });
             node.left = px(point.x - offset);

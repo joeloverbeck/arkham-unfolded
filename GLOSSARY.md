@@ -4,6 +4,18 @@ Terms for this application's play, presentation and external source material.
 
 ## Language
 
+**Active investigator**:
+The investigator whose turn is currently in progress. Other investigators may still participate through effects and opportunities permitted by the rules.
+_Avoid_: Selected investigator, focused investigator
+
+**Testing investigator**:
+The investigator performing the current skill test, including a test outside their own turn. Other investigators may contribute without becoming the testing investigator.
+_Avoid_: Active investigator when referring only to who performs a test
+
+**Camera focus**:
+The tabletop area currently framed for viewing. It does not determine whose turn it is or who performs a game choice.
+_Avoid_: Active investigator, investigator activation
+
 **Scenario area**:
 The shared playing surface for the location map, investigator standees and scenario components, including the act, agenda, encounter deck, encounter discard pile and victory display.
 _Avoid_: Player area, map area when referring to all shared components
