@@ -29,6 +29,7 @@ pub(super) struct SelectionOutline;
 pub(super) fn feedback(
     table: Res<Tabletop>,
     context: Res<Context>,
+    art: Option<Res<Art>>,
     settings: Option<Res<AssetSettings>>,
     mut feedback: ResMut<crate::tabletop_feedback::FeedbackSettings>,
     mut objects: Query<(&Selectable, &mut crate::tabletop_feedback::CardFeedback)>,
@@ -38,6 +39,7 @@ pub(super) fn feedback(
         || table.history
         || settings.is_some_and(|settings| settings.is_busy());
     feedback.reduced_motion = table.reduced_motion;
+    let view = table.view();
     for (source, mut mark) in &mut objects {
         mark.menu_source =
             context.open && !feedback.blocked && context.selected_source() == Some(source.0);
@@ -51,6 +53,17 @@ pub(super) fn feedback(
             }),
             _ => false,
         };
+        mark.commitment = (table.replay.is_none()
+            && source.0 == Source::Card(1)
+            && view
+                .choices
+                .iter()
+                .any(|choice| choice.id == "commit-promise"))
+        .then_some(crate::tabletop_feedback::Contribution {
+            bonus: 4,
+            skill: symbols::Skill::Willpower,
+        });
+        mark.symbol_font = art.as_ref().and_then(|art| art.symbol_font.clone());
     }
 }
 
@@ -319,6 +332,7 @@ pub(super) fn card_position(index: usize, view: &Observation) -> Vec3 {
         0 => tabletop_layout::test_source(),
         1 if view.promise_committed => tabletop_layout::test_commitment(1, 0),
         1 => tabletop_layout::hand_position(1, 1, 0),
+        3 => tabletop_layout::SCENARIO_REFERENCE,
         _ => tabletop_layout::investigator_card(2),
     }
 }
@@ -415,27 +429,6 @@ pub(super) fn show(
                 },
             ),
         };
-    let radial = !matches!(source, Source::Token(_)) && viewport.x >= 850.0 && viewport.y >= 600.0;
-    let width = if radial {
-        390.0
-    } else {
-        350.0_f32.min(viewport.x - 24.0)
-    };
-    let height = if radial {
-        260.0
-    } else {
-        (180.0 + choices.len() as f32 * 70.0).min(viewport.y - 32.0)
-    };
-    let anchor = Vec2::new(
-        context
-            .anchor
-            .x
-            .clamp(12.0, (viewport.x - width - 12.0).max(12.0)),
-        context
-            .anchor
-            .y
-            .clamp(12.0, (viewport.y - height - 12.0).max(12.0)),
-    );
     let generation = context.generation;
     commands
         .spawn((
@@ -456,18 +449,7 @@ pub(super) fn show(
         });
     commands
         .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(anchor.x),
-                top: px(anchor.y),
-                width: px(width),
-                height: px(height),
-                padding: UiRect::all(px(12)),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(8),
-                overflow: Overflow::scroll_y(),
-                ..default()
-            },
+            crate::tabletop_feedback::menu::panel(context.anchor, viewport, 12., 12.),
             BackgroundColor(INK),
             BorderColor::all(GOLD),
             GlobalZIndex(66),
@@ -484,11 +466,12 @@ pub(super) fn show(
                                    label: &str,
                                    action: Action,
                                    _primary: bool| {
-                let entity = button(parent, art, label, action, false);
-                parent
-                    .commands()
-                    .entity(entity)
-                    .insert(crate::tabletop_feedback::context_button());
+                let label = crate::tabletop_feedback::menu::label(label);
+                let entity = button(parent, art, &label, action, false);
+                parent.commands().entity(entity).insert((
+                    crate::tabletop_feedback::context_button(),
+                    crate::tabletop_feedback::menu::row(),
+                ));
                 if first_button {
                     parent
                         .commands()
@@ -502,117 +485,49 @@ pub(super) fn show(
             if table.replay.is_some() {
                 parent.spawn(art.text("Recorded view / inspection only", 14.0, MUTED));
             }
-            if radial {
-                parent
-                    .spawn(Node {
-                        height: px(110),
-                        width: percent(100),
-                        flex_shrink: 0.0,
-                        ..default()
-                    })
-                    .with_children(|ring| {
-                        // Stable north action and east inspection positions survive legality changes.
-                        ring.spawn(Node {
-                            position_type: PositionType::Absolute,
-                            left: px(70),
-                            top: px(0),
-                            width: px(220),
-                            ..default()
-                        })
-                        .with_children(|slot| {
-                            if let Some(choice) = choices.first() {
-                                let label = match source {
-                                    Source::Card(1) => "Commit +4 willpower",
-                                    Source::Card(2) => "Use reaction",
-                                    Source::Bag => "Reveal token",
-                                    _ => "Choose",
-                                };
-                                menu_button(
-                                    slot,
-                                    art,
-                                    label,
-                                    Action::ContextChoose(
-                                        generation,
-                                        view.revision,
-                                        choice.id.clone(),
-                                    ),
-                                    true,
-                                );
-                            } else {
-                                slot.spawn(art.text("No available action", 15.0, MUTED));
-                            }
-                        });
-                        if let Source::Card(index) = source {
-                            ring.spawn(Node {
-                                position_type: PositionType::Absolute,
-                                left: px(225),
-                                top: px(60),
-                                width: px(130),
-                                ..default()
-                            })
-                            .with_children(|slot| {
-                                menu_button(slot, art, "Inspect", Action::Inspect(index), false)
-                            });
-                        }
-                        ring.spawn(Node {
-                            position_type: PositionType::Absolute,
-                            left: px(5),
-                            top: px(60),
-                            width: px(125),
-                            ..default()
-                        })
-                        .with_children(|slot| {
-                            menu_button(slot, art, "Dismiss", Action::DismissContext, false)
-                        });
-                    });
-                for choice in &choices {
-                    parent.spawn(art.text(choice_label(choice), 14.0, PAPER));
-                }
-            } else {
-                if choices.is_empty() {
-                    parent.spawn(art.text("No available game action", 14.0, MUTED));
-                }
-                for choice in choices {
-                    if matches!(source, Source::Token(_)) {
-                        let marked = context.pending.as_deref() == Some(choice.id.as_str());
-                        menu_button(
-                            parent,
-                            art,
-                            &format!(
-                                "{}{}",
-                                if marked { "Selected: " } else { "" },
-                                cancellation_label(choice)
-                            ),
-                            Action::PrepareCancellation(generation, choice.id.clone()),
-                            marked,
-                        );
-                    } else {
-                        menu_button(
-                            parent,
-                            art,
-                            choice_label(choice),
-                            Action::ContextChoose(generation, view.revision, choice.id.clone()),
-                            true,
-                        );
-                    }
-                }
-                if let Some(id) = context
-                    .pending
-                    .as_ref()
-                    .filter(|_| table.replay.is_none() && matches!(source, Source::Token(_)))
-                {
+            if choices.is_empty() {
+                parent.spawn(art.text("No available game action", 14.0, MUTED));
+            }
+            for choice in choices {
+                if matches!(source, Source::Token(_)) {
+                    let marked = context.pending.as_deref() == Some(choice.id.as_str());
                     menu_button(
                         parent,
                         art,
-                        "Confirm cancellation",
-                        Action::ContextChoose(generation, view.revision, id.clone()),
+                        &format!(
+                            "{}{}",
+                            if marked { "Selected: " } else { "" },
+                            cancellation_label(choice)
+                        ),
+                        Action::PrepareCancellation(generation, choice.id.clone()),
+                        marked,
+                    );
+                } else {
+                    menu_button(
+                        parent,
+                        art,
+                        choice_label(choice),
+                        Action::ContextChoose(generation, view.revision, choice.id.clone()),
                         true,
                     );
                 }
-                if let Source::Card(index) = source {
-                    menu_button(parent, art, "Inspect", Action::Inspect(index), false);
-                }
-                menu_button(parent, art, "Dismiss", Action::DismissContext, false);
+            }
+            if let Some(id) = context
+                .pending
+                .as_ref()
+                .filter(|_| table.replay.is_none() && matches!(source, Source::Token(_)))
+            {
+                menu_button(
+                    parent,
+                    art,
+                    "Confirm cancellation",
+                    Action::ContextChoose(generation, view.revision, id.clone()),
+                    true,
+                );
+            }
+            menu_button(parent, art, "Dismiss", Action::DismissContext, false);
+            if let Source::Card(index) = source {
+                menu_button(parent, art, "Inspect", Action::Inspect(index), false);
             }
         });
 }

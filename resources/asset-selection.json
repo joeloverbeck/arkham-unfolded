@@ -1,8 +1,21 @@
 {
   "format_version": 1,
-  "collection": "arkham-unfolded-jacqueline-v2",
+  "collection": "arkham-unfolded-jacqueline-v3",
   "source_archive_release": "v1.22.11",
   "assets": [
+    {
+      "role": "card/01104",
+      "path": "cards/01104/face.png",
+      "sha256": "2c65c1d4b98f26f4268cfa4647b006ffa9a6d7030281a545e676ad41c1d9ceb5",
+      "bytes": 1007537,
+      "source": {
+        "path": "images/cards/official/en/night_of_the_zealot/Unassigned expansion/01104--Scenario/ee9f88be0fe1ad2b/face.png",
+        "sha256": "2c65c1d4b98f26f4268cfa4647b006ffa9a6d7030281a545e676ad41c1d9ceb5",
+        "bytes": 1007537
+      },
+      "evidence": "GitHub #77; original Gathering Easy / Standard face independently inspected; variant ee9f88be0fe1ad2b",
+      "transform": { "kind": "copy" }
+    },
     {
       "role": "ui/reveal-chaos-token",
       "path": "ui/reveal-chaos-token.png",

@@ -33,7 +33,7 @@ An individual investigator's personal playing surface, distinct from the shared 
 _Avoid_: Player table when referring to an investigator's area
 
 **Test area**:
-The shared presentation space for cards committed to the current skill test and its revealed or canceled chaos tokens. It is a tabletop arrangement, not an additional rules-defined game zone.
+The shared presentation space for the chaos bag, scenario reference, cards committed to the current skill test and its revealed or canceled chaos tokens. It is a tabletop arrangement, not an additional rules-defined game zone.
 _Avoid_: Threat area, investigator area
 
 **Encounter discard pile**:
@@ -51,6 +51,14 @@ _Avoid_: Strength or power when referring to combat
 **Wild icon**:
 A skill icon that matches any of the four tested skills; under the ordinary commitment rules, each contributes +1 to the skill being tested. Its printed identity remains wild even when its contribution is expressed as a bonus to a particular skill.
 _Avoid_: A fifth tested skill, permanent icon conversion
+
+**Committable card**:
+A card that can legally be added to the current skill test's pending commitment, given the cards already selected and all applicable rules.
+_Avoid_: Matching-icon card when implying complete commitment eligibility
+
+**Pending commitment**:
+The set of cards selected for a skill test but not yet confirmed. Selection remains changeable while the commitment decision is open.
+_Avoid_: Committed cards when referring to an unconfirmed selection
 
 **Base skill value**:
 The investigator's value for the tested skill before the test's modifiers are applied. Committed icons and applicable card and chaos-token effects contribute to the modified skill value, not to this base.

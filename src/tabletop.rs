@@ -53,7 +53,7 @@ struct Card {
     landscape: bool,
 }
 
-const CARDS: [Card; 3] = [
+const CARDS: [Card; 4] = [
     Card {
         code: "01163",
         title: "Rotting Remains",
@@ -77,6 +77,14 @@ const CARDS: [Card; 3] = [
         text: "Reaction — When an investigator at your location would reveal any number of chaos tokens: Reveal 2 additional tokens. Of the revealed tokens, choose and cancel 2 non-auto-fail tokens, or 1 auto-fail token. Limit once per round.\n\nElder sign: +1. If this effect is canceled or ignored, draw 1 card.\n\nThis experiment has no elder sign reveal or other replacement assets.",
         color: Color::srgb(0.30, 0.24, 0.48),
         landscape: true,
+    },
+    Card {
+        code: "01104",
+        title: "The Gathering",
+        kind: "Original scenario · Easy / Standard",
+        text: "Skull: −X, where X is the number of Ghoul enemies at your location.\nCultist: −1. If you fail, take 1 horror.\nTablet: −2. If there is a Ghoul enemy at your location, take 1 damage.",
+        color: Color::srgb(0.40, 0.34, 0.22),
+        landscape: false,
     },
 ];
 
@@ -146,7 +154,7 @@ struct Actions(Vec<Action>);
 
 #[derive(Resource)]
 struct Art {
-    handles: [Option<Handle<Image>>; 3],
+    handles: [Option<Handle<Image>>; CARDS.len()],
     available: usize,
     token_handles: Vec<(TokenFace, Handle<Image>)>,
     reminder: Option<Handle<Image>>,
@@ -1688,7 +1696,7 @@ mod harm_text_tests {
 
     fn art() -> Art {
         Art {
-            handles: [None, None, None],
+            handles: std::array::from_fn(|_| None),
             available: 0,
             token_handles: Vec::new(),
             reminder: None,

@@ -2,6 +2,8 @@
 //! modal capture and pending choices; this module never dispatches a game action.
 
 use crate::tabletop_pacing::{PresentationTime, Redraw};
+mod commitment;
+pub(crate) mod menu;
 use bevy::{
     camera::visibility::VisibilitySystems,
     input_focus::{InputFocus, tab_navigation::TabNavigationPlugin},
@@ -9,10 +11,12 @@ use bevy::{
     prelude::*,
     ui::Pressed,
 };
+pub(crate) use commitment::Contribution;
 
 const NEUTRAL: Color = Color::srgb(0.12, 0.19, 0.21);
 const HOVER: Color = Color::srgb(0.24, 0.40, 0.39);
 const GOLD: Color = Color::srgb(0.86, 0.69, 0.37);
+const TEAL: Color = Color::srgb(0.25, 0.88, 0.76);
 const HOVER_FADE_SECONDS: f32 = 0.12;
 pub(crate) const KEYBOARD_HINT: &str = "Tab / Shift+Tab: move\nEnter / Space: choose · Esc: close";
 
@@ -48,6 +52,8 @@ pub(crate) struct FeedbackSettings {
 pub(crate) struct CardFeedback {
     pub menu_source: bool,
     pub pending_choice: bool,
+    pub commitment: Option<Contribution>,
+    pub symbol_font: Option<Handle<Font>>,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,6 +61,7 @@ enum Mark {
     Hover,
     MenuSource,
     PendingChoice,
+    AvailableCommitment,
 }
 
 #[derive(Component)]
@@ -77,6 +84,10 @@ impl Plugin for FeedbackPlugin {
             PostUpdate,
             (button_feedback, card_feedback).before(VisibilitySystems::VisibilityPropagate),
         );
+        app.add_systems(
+            PostUpdate,
+            commitment::badges.before(bevy::ui::UiSystems::Layout),
+        );
     }
 }
 
@@ -92,6 +103,11 @@ pub(crate) fn attach_card_feedback(
     surface_height: f32,
 ) {
     commands.entity(card).insert(CardFeedback::default());
+    commitment::attach(
+        commands,
+        card,
+        Vec3::new(0.0, surface_height + 0.04, -length * 0.5),
+    );
     let cube = meshes.add(Cuboid::from_size(Vec3::ONE));
     for (kind, color, name) in [
         (
@@ -105,6 +121,7 @@ pub(crate) fn attach_card_feedback(
             "Card menu source",
         ),
         (Mark::PendingChoice, GOLD, "Card pending choice"),
+        (Mark::AvailableCommitment, TEAL, "Card available commitment"),
     ] {
         let material = materials.add(StandardMaterial {
             base_color: color,
@@ -177,6 +194,16 @@ fn segments(kind: Mark, width: f32, length: f32) -> Vec<(Vec3, Vec3)> {
             }
             bars
         }
+        Mark::AvailableCommitment => vec![
+            (
+                Vec3::new(-x - 0.06, y, 0.0),
+                Vec3::new(0.055, 0.035, length * 0.65),
+            ),
+            (
+                Vec3::new(x + 0.06, y, 0.0),
+                Vec3::new(0.055, 0.035, length * 0.65),
+            ),
+        ],
     }
 }
 
@@ -247,6 +274,7 @@ fn card_feedback(
             Mark::Hover => available && hits.is_some_and(|hits| hits.contains_key(&mark.card)),
             Mark::MenuSource => card.menu_source,
             Mark::PendingChoice => card.pending_choice,
+            Mark::AvailableCommitment => card.commitment.is_some() && !card.pending_choice,
         });
         let opacity = if !wanted {
             0.0
@@ -366,12 +394,68 @@ mod tests {
     }
 
     #[test]
+    fn commitment_availability_is_steady_and_selected_has_distinct_marks() {
+        let (mut app, window) = test_app();
+        let card = add_card(&mut app);
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .unwrap()
+            .set_cursor_position(None);
+        app.world_mut()
+            .get_mut::<CardFeedback>(card)
+            .unwrap()
+            .commitment = Some(Contribution {
+            bonus: 4,
+            skill: crate::tabletop::symbols::Skill::Willpower,
+        });
+        app.update();
+        assert_eq!(opacity(&mut app, Mark::AvailableCommitment), 1.0);
+        assert_eq!(opacity(&mut app, Mark::Hover), 0.0);
+        assert_eq!(opacity(&mut app, Mark::PendingChoice), 0.0);
+        assert!(
+            app.world_mut()
+                .query::<&AccessibleLabel>()
+                .iter(app.world())
+                .any(|label| label.0 == "+4 willpower")
+        );
+        app.world_mut()
+            .get_mut::<CardFeedback>(card)
+            .unwrap()
+            .pending_choice = true;
+        app.update();
+        assert_eq!(opacity(&mut app, Mark::AvailableCommitment), 0.0);
+        assert_eq!(opacity(&mut app, Mark::PendingChoice), 1.0);
+        assert!(
+            app.world_mut()
+                .query::<&AccessibleLabel>()
+                .iter(app.world())
+                .any(|label| label.0 == "Selected · +4 willpower")
+        );
+        app.world_mut()
+            .get_mut::<CardFeedback>(card)
+            .unwrap()
+            .commitment = None;
+        app.update();
+        assert_eq!(opacity(&mut app, Mark::AvailableCommitment), 0.0);
+        assert_eq!(opacity(&mut app, Mark::PendingChoice), 1.0);
+        app.world_mut().despawn(card);
+        assert_eq!(
+            app.world_mut()
+                .query::<&commitment::Badge>()
+                .iter(app.world())
+                .count(),
+            0
+        );
+    }
+
+    #[test]
     fn hover_settles_and_clears_without_erasing_pending_choice_or_menu_source() {
         let (mut app, window) = test_app();
         let card = add_card(&mut app);
         *app.world_mut().get_mut::<CardFeedback>(card).unwrap() = CardFeedback {
             menu_source: true,
             pending_choice: true,
+            ..default()
         };
         point_at(&mut app, card);
         app.world_mut()
@@ -431,7 +515,7 @@ mod tests {
         let card = add_card(&mut app);
         app.update();
         let marker_entities = app.world().get::<Children>(card).unwrap().to_vec();
-        assert_eq!(marker_entities.len(), 3);
+        assert_eq!(marker_entities.len(), 4);
         let pose = Transform::from_xyz(3.0, 1.0, -2.0).with_rotation(Quat::from_rotation_x(1.4));
         app.world_mut().entity_mut(card).insert(pose);
         point_at(&mut app, card);

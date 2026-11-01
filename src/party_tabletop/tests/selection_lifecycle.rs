@@ -410,7 +410,7 @@ fn party_controls_preserve_staging_then_save_commitment_reveal_and_replay() {
             rendered_button(
                 &mut app,
                 if id == 100 {
-                    "Patrice: select to commit +4 intellect · add one curse"
+                    "Patrice: select to commit +4 intellect\nadd one curse"
                 } else {
                     "Jacqueline: select to commit +1 intellect"
                 }
@@ -651,7 +651,7 @@ fn turn_indicator_stays_with_tony_while_jacqueline_helps_after_her_turn_ends() {
         select(&mut app, Source::Card(cards::index("card/60401").unwrap()));
         activate(
             &mut app,
-            "Jacqueline: use ability · reveal three, then choose cancellations",
+            "Jacqueline: use ability\nreveal three, then choose cancellations",
         );
         let live = app.world().resource::<Table>().view();
         assert_eq!(

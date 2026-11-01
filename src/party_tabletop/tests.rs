@@ -1,6 +1,7 @@
 use super::*;
 mod act_reveal;
 mod clue_motion;
+mod commitment_feedback;
 mod counters;
 mod location_map;
 mod selection_lifecycle;

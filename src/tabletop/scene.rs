@@ -532,11 +532,17 @@ fn synchronize(
             "Patrice / Committed / +4"
         } else if i == 1 {
             "Patrice's hand"
+        } else if i == 3 {
+            "Easy / Standard"
         } else {
-            "Select for actions / Inspect"
+            "Inspect"
         };
         let caption_position = position
-            + if card.landscape {
+            + if i == 0 || i == 3 {
+                // Keep the adjacent test source and reference captions over their
+                // own columns instead of placing either on its neighboring card.
+                Vec3::new(0.0, 0.07, -1.45)
+            } else if card.landscape {
                 Vec3::new(0.0, 0.07, 1.25)
             } else {
                 // The portrait cards are solitary in this experiment's hand/test.

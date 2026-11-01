@@ -796,14 +796,20 @@ fn setup(
 fn synchronize_feedback(
     table: Res<Table>,
     settings: Res<AssetSettings>,
+    art: Option<Res<Art>>,
     mut feedback: ResMut<FeedbackSettings>,
     mut cards: Query<(&CardSource, &mut CardFeedback)>,
 ) {
     feedback.blocked = table.modal() || settings.is_busy();
     feedback.reduced_motion = table.reduced_motion;
+    let view = table.view();
     for (source, mut mark) in &mut cards {
         mark.menu_source = table.context.is_menu_source(source.0);
         mark.pending_choice = table.context.is_pending(source.0);
+        mark.commitment = table
+            .context
+            .contribution(&view, table.replay.is_none(), source.0);
+        mark.symbol_font = art.as_ref().and_then(|art| art.symbol_font.clone());
     }
 }
 #[allow(clippy::too_many_arguments)]

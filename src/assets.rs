@@ -162,12 +162,16 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
         "arkham-unfolded-tony-turn-v4" => &[1, 2, 3],
         "arkham-unfolded-tony-turn-v5" => &[1, 2, 3, 4],
         "arkham-unfolded-jacqueline-v2" => &[1],
+        "arkham-unfolded-jacqueline-v3" => &[1, 2],
         "arkham-unfolded-study-escape-v2" => &[1],
         _ => return Vec::new(),
     };
     let tony = selection
         .collection
         .starts_with("arkham-unfolded-tony-turn-");
+    let jacqueline = selection
+        .collection
+        .starts_with("arkham-unfolded-jacqueline-");
     versions
         .iter()
         .copied()
@@ -187,6 +191,7 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
                 !is_counter_art(&asset.role)
                     && (asset.role != "ui/reveal-chaos-token"
                         || (tony && version >= 4)
+                        || (jacqueline && version >= 2)
                         || selection
                             .collection
                             .starts_with("arkham-unfolded-study-escape-"))
@@ -197,6 +202,7 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
                             "token/damage" | "token/horror" | "font/symbols"
                         ))
                     && (!tony || version >= 2 || asset.role != "card-back/player")
+                    && (!jacqueline || version >= 3 || asset.role != "card/01104")
             });
             manifest
         })
@@ -1053,6 +1059,46 @@ mod tests {
     }
 
     #[test]
+    fn jacqueline_reference_addition_preserves_both_earlier_collections() {
+        for version in [1, 2] {
+            let directory = tempfile::tempdir().unwrap();
+            let source = directory.path().join("source");
+            let output = directory.path().join("assets");
+            let mut earlier = fixture(&source);
+            earlier.collection = format!("arkham-unfolded-jacqueline-v{version}");
+            let mut reveal = fixture(&source).assets.remove(0);
+            reveal.role = "ui/reveal-chaos-token".into();
+            reveal.path = "ui/reveal-chaos-token.png".into();
+            if version == 2 {
+                earlier.assets.push(reveal);
+            }
+            prepare_selection(&source, &output, &earlier).unwrap();
+            let original = fs::read(output.join(MANIFEST)).unwrap();
+            let mut selected = fixture(&source);
+            selected.collection = "arkham-unfolded-jacqueline-v3".into();
+            let mut reveal = fixture(&source).assets.remove(0);
+            reveal.role = "ui/reveal-chaos-token".into();
+            reveal.path = "ui/reveal-chaos-token.png".into();
+            selected.assets.push(reveal);
+            let mut reference = fixture(&source).assets.remove(0);
+            reference.role = "card/01104".into();
+            reference.path = "cards/01104/face.png".into();
+            selected.assets.push(reference);
+
+            let report = inspect_selection(&output, &selected);
+            assert!(report.recognized && !report.complete);
+            assert_eq!(report.verified_path("first"), Some("pictures/first.png"));
+            assert_eq!(
+                report.verified_path("ui/reveal-chaos-token").is_some(),
+                version == 2
+            );
+            assert!(report.verified_path("card/01104").is_none());
+            assert!(prepare_selection(&source, &output, &selected).is_err());
+            assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), original);
+        }
+    }
+
+    #[test]
     fn preparation_is_portable_and_identical_repeats_need_no_source() {
         let directory = tempfile::tempdir().unwrap();
         let source = directory.path().join("source");
@@ -1278,16 +1324,21 @@ mod tests {
             "swap-bag.png".into(),
             "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e".into(),
         );
+        // Independently inspected original Gathering Easy / Standard face (#77).
+        expected.insert(
+            "images/cards/official/en/night_of_the_zealot/Unassigned expansion/01104--Scenario/ee9f88be0fe1ad2b/face.png".into(),
+            "2c65c1d4b98f26f4268cfa4647b006ffa9a6d7030281a545e676ad41c1d9ceb5".into(),
+        );
         let actual: BTreeMap<_, _> = selected
             .assets
             .iter()
             .map(|asset| (asset.source.path.clone(), asset.source.sha256.clone()))
             .collect();
         assert_eq!(actual, expected);
-        assert_eq!(selected.assets.len(), 14);
+        assert_eq!(selected.assets.len(), 15);
         assert_eq!(
             selected.assets.iter().map(|asset| asset.bytes).sum::<u64>(),
-            12_141_618
+            13_149_155
         );
         let selected_font = selected
             .assets

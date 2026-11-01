@@ -944,14 +944,22 @@ struct CardSource(Source);
 fn synchronize_feedback(
     table: Res<Table>,
     settings: Res<AssetSettings>,
+    art: Option<Res<Art>>,
     mut feedback_settings: ResMut<FeedbackSettings>,
     mut cards: Query<(&CardSource, &mut CardFeedback)>,
 ) {
     feedback_settings.blocked = table.modal() || settings.is_busy();
     feedback_settings.reduced_motion = table.reduced_motion;
+    let view = table.view();
     for (source, mut marks) in &mut cards {
         marks.menu_source = table.context.is_menu_source(source.0);
         marks.pending_choice = table.context.is_pending(source.0);
+        marks.commitment = table.context.contribution(
+            &view,
+            table.replay.is_none() && !table.presenting(),
+            source.0,
+        );
+        marks.symbol_font = art.as_ref().and_then(|art| art.symbol_font.clone());
     }
 }
 
