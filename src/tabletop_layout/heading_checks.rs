@@ -139,6 +139,7 @@ pub(crate) fn app() -> App {
         bevy::ui::UiPlugin,
         bevy::ui_widgets::ButtonPlugin,
     ))
+    .init_resource::<Assets<Mesh>>()
     .init_resource::<Assets<TextureAtlasLayout>>()
     .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
     .init_resource::<Time<Real>>();

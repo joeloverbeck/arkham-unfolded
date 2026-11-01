@@ -91,7 +91,6 @@ mod tests {
     fn long_action_rows_wrap_without_overlapping_inspect_at_viewport_edges() {
         for size in [UVec2::new(1600, 1000), UVec2::new(420, 320)] {
             let mut app = crate::tabletop_layout::heading_checks::app();
-            app.init_resource::<Assets<Mesh>>();
             let window = app
                 .world_mut()
                 .spawn((
