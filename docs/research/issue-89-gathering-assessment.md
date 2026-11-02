@@ -9,6 +9,13 @@ allowance, checks and publication status. The accompanying
 [preparation record](gathering-assessment-preparation.md) preserves the earlier
 interview unchanged.
 
+**Follow-up:** Joel approved the eight-hour rules investigation after this
+reassessment. The [result and implementation brief](issue-89-rules-investigation.md)
+now supply the full selected-card text audit and worked answers to the named
+timing families, with two localized interpretation qualifications. Read that
+return for the current source conclusions; the issue handoff owns activation
+and acceptance status.
+
 ## Decision in brief
 
 **The starting weakness scope and Gathering encounter inventory are now bound.
@@ -353,7 +360,7 @@ has been verified, and a later download must match the hash or undergo new revie
 
 | Family | Existing inspected evidence | Missing or unproved for this scope |
 | --- | --- | --- |
-| Preparation | [`src/party.rs`](../../src/party.rs) reads full slot inventory | Constructs one chosen hand card, zero resources and fixed three-card draw prefixes; no real setup, weakness selection or full deck support check |
+| Preparation | [`src/party.rs`](../../src/party.rs) reads full slot inventory | Constructs one chosen hand card, zero resources and fixed three-card draw prefixes; no real setup, consumption of the explicit weakness bindings or full deck support check |
 | Cooperative decisions | Party decision tests exercise turn order, commits, Promise, Jacqueline, elders, Lucky! and Act closing | Only one prepared turn per investigator; Party card view has intellect icons only and validation fixes test difficulty 2 with bounded harm/locations |
 | Enemy/actions | [`src/tony.rs`](../../src/tony.rs), [Tony tests](../../tests/tony_decisions.rs): one Ghoul, bounty action, opportunity attacks, Internal Injury | No integrated multi-investigator enemies, enemy phase, general allocation or scenario defeat |
 | Map/scenario | Act reverse reading, six-clue spend and connected map persist | Party explicitly refuses move/fight/evade/engage and stops at Act 1 or before enemy phase; map visibility is not playable movement |
@@ -486,14 +493,16 @@ full-scenario tests. Fixture randomness is private test control.
     with an actual automatic-success effect. Sources: `05041`, `04272`, `01113`,
     RR p5 and FAQ §2.9/pp16–17.
 
-**Remaining source/oracle deficits:** all mapped original-card/errata combinations
-have not been adjudicated; the basic weaknesses are now bound; full traces are
-still needed for Dark Future with multi-reveal/seal/replacement chains, nested
-A Test of Will, retry/retaliation/after-test ordering, and simultaneous Act 2 /
-Agenda 3 / end-round resets. These block an unqualified complete-Gathering
-readiness claim. Eyes/Katarina itself has explicit official guidance and is not
-an unresolved contradiction. They are bounded rules questions, not a reason to
-invent a generic interpreter or ask the owner to do technical research.
+**Source/oracle follow-up:** the approved
+[rules investigation](issue-89-rules-investigation.md) audited every selected
+card identity and added traces for the named token, cancellation, retry and
+scenario/round families. It corrects the apparent Act 2/Agenda 3 simultaneity:
+the act's **when** precedes the agenda's **at**. Two narrow qualifications remain
+explicit there: Prescient with an ignored-only matching token and Agenda 2's
+no-Ghoul exhaustion timing. Their recommended interpretations are not presented
+as explicit legacy publisher rulings. The proposed Rust behavior and complete
+Gathering still require execution evidence. These are not requests for the
+owner to conduct technical research or reasons to invent a generic interpreter.
 
 The first conditional product-bearing checkpoint and its acceptance boundary are
 specified in section 6. Preparation-only refusal is a useful prerequisite result;
@@ -594,8 +603,10 @@ also separate: reserve roughly 4–12 engineering hours for a material source or
 record-compatibility update, then re-estimate if behavior changes rather than
 silently consuming that allowance.
 
-**Revised next bounded proposal, not activated:** the former eight-hour random
-pool/preparation implementation proposal is withdrawn. Use at most eight
+**Subsequently activated investigation:** Joel approved the revised eight-hour
+rules proposal; its [return](issue-89-rules-investigation.md) supersedes this
+paragraph's original prospective status. The former random-pool/preparation
+implementation proposal remains withdrawn. The approved scope was at most eight
 aggregate source-adjudication hours to close the remaining named interaction
 families in section 4 and complete original-card/errata reconciliation for this
 fixed input set. Return worked legal/adverse expectations and an implementation
@@ -639,7 +650,13 @@ an unapproved capability, or exhausted effort/attention. Any implementation
 allowance must explicitly cover the reachable content; this report's four-hour
 assessment ceiling is not that allowance.
 
-### Owner review (20 minutes total, including retry)
+### Original owner review (20 minutes total, including retry)
+
+Joel has since approved the bounded rules-investigation investment, confirmed
+appetite for complete Gathering and offered no further scope correction. The
+following is the original review procedure, retained as context rather than a
+renewed request to approve those same decisions. The current handoff owns the
+remaining acceptance boundary.
 
 Open this report at the commit named in the issue's current handoff. No application
 launch is needed or authorized for this assessment. In the local checkout:
