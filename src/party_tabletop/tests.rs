@@ -1,7 +1,9 @@
 use super::*;
+use crate::party_tabletop::consequences::ReturningToken;
 mod act_reveal;
 mod clue_motion;
 mod commitment_feedback;
+mod consequences;
 mod counters;
 mod location_map;
 mod selection_lifecycle;
@@ -327,7 +329,8 @@ fn with_table(mut app: App, path: PathBuf) -> App {
         path.with_extension("toml"),
         path.with_extension("assets"),
     )))
-    .init_resource::<ButtonInput<KeyCode>>();
+    .init_resource::<ButtonInput<KeyCode>>()
+    .init_resource::<crate::party_tabletop::consequences::Lifetimes>();
     app
 }
 fn act(app: &mut App, action: Action) {

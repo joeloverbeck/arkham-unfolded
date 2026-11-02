@@ -1,7 +1,8 @@
+use super::consequences::{clues_at, motion_app};
 use super::*;
-use crate::party_tabletop::clue_motion as motion;
+use crate::party_tabletop::consequences as motion;
 
-fn before_discovery(number: usize) -> Session {
+pub(super) fn before_discovery(number: usize) -> Session {
     let mut session = Session::with_draws(vec![crate::TokenFace::Zero; 6]);
     let mut ordinal = 0;
     for actor in ["tony", "patrice"] {
@@ -56,8 +57,10 @@ fn committed_first_subsequent_and_last_clues_move_once_through_the_installed_sce
             previous + 1
         );
         assert_eq!(table.view().study_clues, 5 - ordinal as u8);
-        assert_eq!(table.displayed_clues(investigator.index()), previous);
-        assert!(table.clue_transfer.is_some());
+        assert_eq!(
+            clues_at(&mut app, layout::investigator_clue(investigator.index())),
+            previous
+        );
         {
             let world = app.world_mut();
             let transforms: Vec<_> = world
@@ -68,8 +71,8 @@ fn committed_first_subsequent_and_last_clues_move_once_through_the_installed_sce
             assert_eq!(transforms.len(), 1);
             assert!(transforms[0].translation.y > layout::SCENARIO_MAP_CENTER.y);
         }
-        // A camera choice can rebuild other scene entities without duplicating
-        // the moving token or changing the already-saved consequence.
+        // Camera focus preserves the moving token and saved consequence. A real
+        // scene replacement is characterized separately in consequences tests.
         act(
             &mut app,
             Action::Focus(Area::Investigator(investigator.index())),
@@ -78,12 +81,9 @@ fn committed_first_subsequent_and_last_clues_move_once_through_the_installed_sce
         assert_eq!(app.world().resource::<Table>().session, committed);
         settle(&mut app);
         assert_eq!(
-            app.world()
-                .resource::<Table>()
-                .displayed_clues(investigator.index()),
+            clues_at(&mut app, layout::investigator_clue(investigator.index())),
             previous + 1
         );
-        assert!(app.world().resource::<Table>().clue_transfer.is_none());
         let world = app.world_mut();
         assert_eq!(
             world
@@ -97,7 +97,10 @@ fn committed_first_subsequent_and_last_clues_move_once_through_the_installed_sce
         act(&mut app, Action::Next);
         act(&mut app, Action::Back);
         act(&mut app, Action::Live);
-        assert!(app.world().resource::<Table>().clue_transfer.is_none());
+        assert_eq!(
+            clues_at(&mut app, layout::investigator_clue(investigator.index())),
+            previous + 1
+        );
         assert_eq!(app.world().resource::<Table>().session, committed);
     }
 }
@@ -113,25 +116,57 @@ fn reduced_motion_failure_and_interrupted_reopen_never_duplicate_discovery() {
     app.update();
     choose(&mut app, "resolve:0");
     assert_eq!(app.world().resource::<Table>().session, session);
-    assert!(app.world().resource::<Table>().clue_transfer.is_none());
+    assert_eq!(clues_at(&mut app, layout::investigator_clue(0)), 0);
+    assert_eq!(
+        app.world_mut()
+            .query::<&motion::MovingClue>()
+            .iter(app.world())
+            .count(),
+        0
+    );
     app.world_mut().resource_mut::<Table>().save_path = path.clone();
     choose(&mut app, "resolve:0");
-    assert!(app.world().resource::<Table>().clue_transfer.is_some());
+    assert_eq!(
+        app.world_mut()
+            .query::<&motion::MovingClue>()
+            .iter(app.world())
+            .count(),
+        1
+    );
     // A fresh process sees the committed state, not an unsaved animation stage.
-    let reopened = Table::new(continuity::load_session(&path).unwrap(), path.clone());
-    assert_eq!(reopened.displayed_clues(0), 1);
-    assert!(reopened.clue_transfer.is_none());
+    let mut reopened = motion_app(continuity::load_session(&path).unwrap(), path.clone());
+    assert_eq!(clues_at(&mut reopened, layout::investigator_clue(0)), 1);
+    assert_eq!(
+        reopened
+            .world_mut()
+            .query::<&motion::MovingClue>()
+            .iter(reopened.world())
+            .count(),
+        0
+    );
     act(&mut app, Action::Motion);
-    assert!(app.world().resource::<Table>().clue_transfer.is_none());
-    assert_eq!(app.world().resource::<Table>().displayed_clues(0), 1);
+    assert_eq!(
+        app.world_mut()
+            .query::<&motion::MovingClue>()
+            .iter(app.world())
+            .count(),
+        0
+    );
+    assert_eq!(clues_at(&mut app, layout::investigator_clue(0)), 1);
 
     let mut table = Table::new(before_discovery(0), path);
     table.reduced_motion = true;
     app.insert_resource(table);
     app.update();
     choose(&mut app, "resolve:0");
-    assert!(app.world().resource::<Table>().clue_transfer.is_none());
-    assert_eq!(app.world().resource::<Table>().displayed_clues(0), 1);
+    assert_eq!(
+        app.world_mut()
+            .query::<&motion::MovingClue>()
+            .iter(app.world())
+            .count(),
+        0
+    );
+    assert_eq!(clues_at(&mut app, layout::investigator_clue(0)), 1);
 }
 
 #[test]

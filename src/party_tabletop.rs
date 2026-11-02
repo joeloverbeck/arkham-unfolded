@@ -33,7 +33,7 @@ use std::{
     path::PathBuf,
 };
 mod cards;
-mod clue_motion;
+mod consequences;
 mod controls;
 mod location_map;
 mod scene;
@@ -116,7 +116,6 @@ struct Table {
     reduced_motion: bool,
     resume_result: bool,
     context: Context,
-    clue_transfer: Option<clue_motion::Transfer>,
 }
 impl Table {
     fn new(session: Session, save_path: PathBuf) -> Self {
@@ -131,24 +130,12 @@ impl Table {
             dirty: true,
             reduced_motion: false,
             context: Context::default(),
-            clue_transfer: None,
         }
     }
     fn view(&self) -> Observation {
         self.replay
             .as_ref()
             .map_or_else(|| self.session.observe_for_play(), |r| r.current().clone())
-    }
-    fn displayed_clues(&self, index: usize) -> u8 {
-        let count = self.view().investigators[index].clues;
-        self.clue_transfer
-            .as_ref()
-            .filter(|transfer| {
-                !self.reduced_motion
-                    && self.replay.is_none()
-                    && transfer.investigator.index() == index
-            })
-            .map_or(count, |transfer| transfer.previous_count)
     }
     fn show_test_summary(&self, view: &Observation) -> bool {
         if test_window(view) {
@@ -251,12 +238,6 @@ struct CardSource(Source);
 #[derive(Component)]
 struct Appearing;
 
-#[derive(Component)]
-struct ReturningToken {
-    start: Vec3,
-    destination: Vec3,
-    elapsed: f32,
-}
 #[derive(Resource)]
 struct Capture {
     path: Option<PathBuf>,
@@ -394,6 +375,7 @@ fn image_asset_roles() -> impl Iterator<Item = String> {
 /// Hosts supply input/UI, assets, window, health, time, capture and session state.
 fn install(app: &mut App) {
     app.init_resource::<Actions>()
+        .init_resource::<consequences::Lifetimes>()
         .add_plugins(feedback::FeedbackPlugin)
         .add_plugins(reveal::RevealPlugin)
         .add_plugins(crate::tabletop_counters::CounterPlugin)
@@ -404,7 +386,7 @@ fn install(app: &mut App) {
                 poll_settings,
                 handle_actions,
                 camera_controls,
-                clue_motion::animate,
+                consequences::advance_clue,
                 scene::synchronize,
                 synchronize_feedback,
                 ui::render,
@@ -414,6 +396,7 @@ fn install(app: &mut App) {
                 world_labels,
                 crate::tabletop_tokens::position_labels,
                 animate,
+                consequences::advance_returning,
                 capture_window,
             )
                 .chain(),
@@ -437,7 +420,7 @@ fn handle_actions(
     keys: Res<ButtonInput<KeyCode>>,
     mut focus: Option<ResMut<InputFocus>>,
     mut shortcut: ResMut<reveal::Shortcut>,
-    returning: Query<(), With<ReturningToken>>,
+    mut consequences: consequences::Presentation,
 ) {
     let revision = table.view().revision;
     let replay_index = table.replay.as_ref().map(Replay::index);
@@ -469,12 +452,7 @@ fn handle_actions(
         );
     }
     for action in actions.0.drain(..) {
-        if (!returning.is_empty() || table.clue_transfer.is_some())
-            && !matches!(
-                action,
-                Action::Focus(_) | Action::Close | Action::Dismiss | Action::Motion
-            )
-        {
+        if consequences.blocks(&action) {
             continue;
         }
         // Discard input queued before admission, including a click from the last
@@ -543,15 +521,12 @@ fn handle_actions(
                     &id,
                 ) {
                     Ok(()) => {
-                        table.clue_transfer =
-                            if table.reduced_motion || id == "undo" || id == "finish-test" {
-                                None
-                            } else {
-                                clue_motion::Transfer::from_committed_discovery(
-                                    &before,
-                                    &table.session.observe_for_play(),
-                                )
-                            };
+                        consequences.committed(
+                            &before,
+                            &table.session.observe_for_play(),
+                            &id,
+                            table.reduced_motion,
+                        );
                         if reveal_focus {
                             orbit.focus(layout::focus(Area::Test));
                         }
@@ -614,7 +589,7 @@ fn handle_actions(
                         table.resume_result =
                             session.observe().stage == crate::party::Stage::Result;
                         table.session = session;
-                        table.clue_transfer = None;
+                        consequences.replaced_view();
                         table.context.reset();
                         table.notice = "Reopened the exact saved decision and randomness.".into();
                     }
@@ -640,7 +615,7 @@ fn handle_actions(
                     .and_then(Replay::new)
                 {
                     Ok(replay) => {
-                        table.clue_transfer = None;
+                        consequences.replaced_view();
                         table.replay = Some(replay);
                         orbit.set_following(true);
                         table.notice = "Stored replay; each moment pauses for narration.".into();
@@ -649,19 +624,19 @@ fn handle_actions(
                 }
             }
             Action::Next => {
-                table.clue_transfer = None;
+                consequences.replaced_view();
                 if let Some(r) = &mut table.replay {
                     r.next();
                 }
             }
             Action::Back => {
-                table.clue_transfer = None;
+                consequences.replaced_view();
                 if let Some(r) = &mut table.replay {
                     r.back();
                 }
             }
             Action::Live => {
-                table.clue_transfer = None;
+                consequences.replaced_view();
                 table.replay = None;
                 orbit.set_following(false);
                 table.context.reset();
@@ -680,7 +655,7 @@ fn handle_actions(
                     ) {
                         Ok(()) => {
                             table.session = session;
-                            table.clue_transfer = None;
+                            consequences.replaced_view();
                             table.context.reset();
                             orbit.set_following(false);
                             table.notice =
@@ -897,11 +872,9 @@ fn world_labels(
     }
 }
 fn animate(
-    mut commands: Commands,
     time: Res<PresentationTime>,
     table: Res<Table>,
-    mut transforms: Query<&mut Transform, (With<Appearing>, Without<ReturningToken>)>,
-    mut returning: Query<(Entity, &mut Transform, &mut ReturningToken)>,
+    mut transforms: Query<&mut Transform, With<Appearing>>,
 ) {
     for mut transform in &mut transforms {
         transform.scale = if table.reduced_motion {
@@ -917,35 +890,18 @@ fn animate(
             }
         };
     }
-    for (entity, mut transform, mut transfer) in &mut returning {
-        transfer.elapsed += time.delta_secs();
-        let fraction = if table.reduced_motion {
-            1.
-        } else {
-            (transfer.elapsed / 0.6).min(1.)
-        };
-        let eased = fraction * fraction * (3. - 2. * fraction);
-        transform.translation = transfer.start.lerp(transfer.destination, eased)
-            + Vec3::Y * (std::f32::consts::PI * fraction).sin() * 0.5;
-        transform.scale = Vec3::splat(1. - fraction * 0.9);
-        if fraction >= 1. {
-            commands.entity(entity).despawn();
-        }
-    }
 }
 fn request_redraw(
     mut redraw: ResMut<Redraw>,
     orbit: Res<Orbit>,
-    table: Res<Table>,
     appearing: Query<&Transform, With<Appearing>>,
-    returning: Query<(), With<ReturningToken>>,
+    consequences: consequences::Presentation,
     capture: Res<Capture>,
     screenshots: Query<(), With<Screenshot>>,
 ) {
     if orbit.is_moving()
         || appearing.iter().any(|t| t.scale != Vec3::ONE)
-        || !returning.is_empty()
-        || table.clue_transfer.is_some()
+        || consequences.is_active()
         || (capture.path.is_some() && (!capture.requested || capture.quit))
         || !screenshots.is_empty()
     {
