@@ -107,6 +107,25 @@ Passing automated checks establishes the exercised decisions and continuity boun
 
 For slow startup, rendering or camera movement, begin with the [native-performance procedure](../../.claude/skills/diagnosing-bugs/native-performance.md) before changing the launch conditions.
 
+### Prepare a compact native handoff
+
+Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. After a long implementation phase, prepare the following compact handoff in the issue's [current handoff](../agents/issue-tracker.md#current-handoff). Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from this handoff and the procedure below without reconstructing the implementation transcript.
+
+```text
+Candidate: commit; executable/hash; completed check records.
+Run: exact launch/resume command; isolated save/settings/art paths; run manifest.
+Authority: accepted journey, total allowance and stop conditions.
+Route, highest-risk unverified behavior first:
+  action -> expected visible result -> camera view/objects that must be visible
+Time: route checkpoints; reserve for applicable replay/reopening; cleanup reserve.
+Recovery: current PID/start identity, window, helper session, last completed
+  request and inspected capture; exact cleanup commands.
+```
+
+Fill runtime identities as they become available and record the absolute deadline when the interval starts. Preparation grants no desktop access: launch, focus, consent and interaction stay inside the allowance actually authorized, including startup when that is part of the accepted interval. Keep the app's owner-review lifetime separate from the short control interval.
+
+Before recording motion, frame both its source and destination with the relevant labels visible. Use a short recording for movement evidence; inspect it after cleanup when possible. Reserve time for the affected replay and fresh-process reopening checks before repeating an already observed path. At a context interruption, recover only the handoff, run manifest and last acknowledged event/capture, retaining the original deadline. If the remaining budget cannot fit the next operation and cleanup, stop and leave that observation pending. The deadline and cleanup rules below remain controlling.
+
 ### Build an instrumented source copy
 
 Before compiling a temporary instrumented source copy, use the isolated build helper. From the normal repository root, build the normal executable if it is absent, then choose a new output directory outside both checkouts:
@@ -128,7 +147,7 @@ For a reported physical-input failure, establish the failing boundary before rep
 2. If the failure is confined to Arkham, distinguish input arrival from input handling. Check window focus and, when needed, use bounded diagnostic logging of cursor movement and mouse-button press/release events at Bevy's input boundary. Missing right-button events and received events rejected by UI/camera capture are different findings. Repeat an owner gesture only when it will distinguish the remaining explanations.
 3. When the expected event arrives, exercise the affected UI/camera path. Independently reproduced application defects can coexist with a desktop-input failure. A portal-generated right-drag verifies the synthetic input path only; it does not establish that the physical button works. A failed portal calibration follows the bounded recovery below and is not evidence of a camera defect.
 
-Before requesting an idle-desktop interval, finish the build and relevant headless checks, stage the executable, and confirm that the intended app process and client window are still present. Prepare a route through the affected behavior with expected visible results, reaching the highest-risk unverified transitions early and sharing setup where possible. Keep the app's owner-review lifetime separate from the short desktop-control interval. Budget consent, calibration, navigation, capture inspection and cleanup within that interval. Keep the accepted deadline and give a runnable remaining checklist at handoff.
+Use the [compact native handoff](#prepare-a-compact-native-handoff) before the timed interval. Within the accepted desktop scope, confirm the intended process and client window before interaction. Budget consent, calibration, navigation, capture inspection and cleanup within the interval, and retain a runnable remaining checklist at handoff.
 
 Use a separate save and temporary settings for diagnostics. The Rust helper below targets the current Ubuntu GNOME/XWayland desktop; capture/input needs access to X11, the desktop session bus and its RemoteDesktop/ScreenCast portal, plus `xdotool` for explicit focus. `scripts/tools` builds only the small `arkham-tools` package. Its headless tests run in `scripts/check`, using a private `dbus-daemon` for protocol tests; no real desktop grant is requested by the tests. From the repository root, build the normal application and launch a disposable run:
 

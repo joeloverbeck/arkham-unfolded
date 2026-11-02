@@ -27,6 +27,8 @@ enum Command {
     ReadContext(reader::Args),
     /// Read multiple excerpts under one shared output budget and source identity.
     ReadContextBatch(reader::BatchArgs),
+    /// Search literal text within a bounded source scope and output budget.
+    SearchContext(reader::SearchArgs),
     /// Reject generated files in Git's index, including force-added paths.
     CheckTrackedFiles,
     /// Select the repository's pinned Rust override for the CI cache key.
@@ -59,22 +61,9 @@ fn main() -> ExitCode {
     }
     let result = match command {
         Command::RecordCheck(args) => check::run(args),
-        Command::ReadContext(args) => reader::page(args)
-            .and_then(|page| {
-                std::io::stdout()
-                    .write_all(page.as_bytes())
-                    .map_err(|e| e.to_string())
-            })
-            .map(|()| 0)
-            .map_err(anyhow::Error::msg),
-        Command::ReadContextBatch(args) => reader::batch(args)
-            .and_then(|page| {
-                std::io::stdout()
-                    .write_all(page.as_bytes())
-                    .map_err(|e| e.to_string())
-            })
-            .map(|()| 0)
-            .map_err(anyhow::Error::msg),
+        Command::ReadContext(args) => write_context_page(reader::page(args)),
+        Command::ReadContextBatch(args) => write_context_page(reader::batch(args)),
+        Command::SearchContext(args) => write_context_page(reader::search(args)),
         Command::CheckTrackedFiles => tracked::check().map_err(anyhow::Error::msg),
         Command::PrepareCiToolchain => ci::prepare_toolchain().map_err(anyhow::Error::msg),
         Command::Native { command } => native::run(command),
@@ -91,4 +80,10 @@ fn main() -> ExitCode {
             })
         }
     }
+}
+
+fn write_context_page(page: Result<String, String>) -> anyhow::Result<u8> {
+    let page = page.map_err(anyhow::Error::msg)?;
+    std::io::stdout().write_all(page.as_bytes())?;
+    Ok(0)
 }
