@@ -295,6 +295,17 @@ impl Portal for DesktopPortal {
         Ok(())
     }
 
+    fn wheel(&mut self, steps: i32) -> Result<()> {
+        self.check_active()?;
+        self.call(
+            DESKTOP,
+            REMOTE,
+            "NotifyPointerAxisDiscrete",
+            &(self.session()?, Values::new(), 0u32, steps),
+        )?;
+        Ok(())
+    }
+
     fn close(&mut self) -> Result<()> {
         if self.connection.is_none() {
             return Ok(());
@@ -313,7 +324,23 @@ impl Portal for DesktopPortal {
                 &(),
             )
         {
-            let already_closed = error.downcast_ref::<zbus::Error>().is_some_and(|e| matches!(e, zbus::Error::MethodError(name, _, _) if name.as_str() == "org.freedesktop.DBus.Error.UnknownObject"));
+            let already_closed = match error.downcast_ref::<zbus::Error>() {
+                Some(zbus::Error::MethodError(name, _, _))
+                    if name.as_str() == "org.freedesktop.DBus.Error.UnknownObject" =>
+                {
+                    true
+                }
+                Some(zbus::Error::MethodError(name, message, _))
+                    if name.as_str() == "org.freedesktop.DBus.Error.UnknownMethod" =>
+                {
+                    // GLib also uses UnknownMethod for absent objects. Only
+                    // accept its observed reply for this exact session;
+                    // missing methods/interfaces and other replies still fail.
+                    message.as_deref()
+                        == Some(format!("Object does not exist at path “{session}”").as_str())
+                }
+                _ => false,
+            };
             if !already_closed {
                 failure = Some(error);
             }

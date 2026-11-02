@@ -32,12 +32,14 @@ struct State {
     mask: u16,
     focused: bool,
     presses: Vec<(bool, i32)>,
+    wheels: Vec<(i32, [f64; 2])>,
     moves: Vec<[f64; 2]>,
     starts: usize,
     closes: usize,
     identity: bool,
     extent: [f64; 2],
     start_error: bool,
+    close_error: bool,
     press_error: bool,
     release_error_once: bool,
     held: Option<i32>,
@@ -60,12 +62,14 @@ fn state() -> Rc<RefCell<State>> {
         mask: 0,
         focused: false,
         presses: vec![],
+        wheels: vec![],
         moves: vec![],
         starts: 0,
         closes: 0,
         identity: true,
         extent: [1920.0, 1080.0],
         start_error: false,
+        close_error: false,
         press_error: false,
         release_error_once: false,
         held: None,
@@ -156,12 +160,19 @@ impl Portal for Grant {
         }
         Ok(())
     }
+    fn wheel(&mut self, steps: i32) -> Result<()> {
+        let mut state = self.0.borrow_mut();
+        let root = state.root;
+        state.wheels.push((steps, root));
+        Ok(())
+    }
     fn close(&mut self) -> Result<()> {
         let held = self.0.borrow().held;
         if let Some(button) = held {
             self.button(false, button)?;
         }
         self.0.borrow_mut().closes += 1;
+        ensure!(!self.0.borrow().close_error, "fixture cleanup failure");
         Ok(())
     }
 }
@@ -470,6 +481,130 @@ fn release_failure_ends_session_and_retries_release_during_cleanup() {
 }
 
 #[test]
+fn cleanup_failure_emits_a_terminal_failure_and_returns_an_error() {
+    let shared = state();
+    shared.borrow_mut().close_error = true;
+    let directory = tempfile::tempdir().unwrap();
+    let mut events = vec![];
+    let result = run_session(
+        &mut Screen(shared.clone()),
+        &mut Grant(shared.clone()),
+        directory.path(),
+        &mut [Ok(r#"{"action":"stop"}"#.into())].into_iter(),
+        &mut |event| {
+            events.push(event);
+            Ok(())
+        },
+        &mut |_| Ok(()),
+    );
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("fixture cleanup failure")
+    );
+    assert_eq!(events.last().unwrap()["status"], "session-close-failed");
+    assert_eq!(events.last().unwrap()["reason"], "fixture cleanup failure");
+    assert!(!events.iter().any(|e| e["status"] == "session-closed"));
+    assert_eq!(shared.borrow().closes, 1);
+}
+
+#[test]
+fn wheel_targets_the_verified_client_in_both_directions_without_holding_a_button() {
+    let state = state();
+    let directory = tempfile::tempdir().unwrap();
+    let mut events = vec![];
+    run_session(
+        &mut Screen(state.clone()),
+        &mut Grant(state.clone()),
+        directory.path(),
+        &mut [
+            Ok(r#"{"action":"wheel","x":300,"y":200,"steps":-3}"#.into()),
+            Ok(r#"{"action":"wheel","x":600,"y":400,"steps":2}"#.into()),
+        ]
+        .into_iter(),
+        &mut |event| {
+            events.push(event);
+            Ok(())
+        },
+        &mut |_| Ok(()),
+    )
+    .unwrap();
+    let wheels: Vec<_> = events.iter().filter(|e| e["status"] == "wheeled").collect();
+    assert_eq!(wheels.len(), 2, "{events:?}");
+    assert_eq!(wheels[0]["client"], json!([300.0, 200.0]));
+    assert_eq!(wheels[0]["steps"], -3);
+    assert_eq!(wheels[1]["steps"], 2);
+    let state = state.borrow();
+    assert_eq!(state.root, [700.0, 480.0]);
+    assert_eq!(state.wheels, [(-3, [400.0, 280.0]), (2, [700.0, 480.0])]);
+    assert!(state.presses.is_empty());
+    assert_eq!(state.starts, 1);
+    assert_eq!(state.closes, 1);
+    assert_eq!(events.last().unwrap()["status"], "session-closed");
+}
+
+#[test]
+fn wheel_deadlines_stop_input_and_end_the_session_without_retrying() {
+    for delay in ["admission", "acknowledgement", "pointer-settling"] {
+        let shared = state();
+        let origin = Instant::now();
+        let now = || origin + shared.borrow().elapsed;
+        let directory = tempfile::tempdir().unwrap();
+        let mut events = vec![];
+        let result = super::run_session(
+            &mut Screen(shared.clone()),
+            &mut Grant(shared.clone()),
+            directory.path(),
+            &mut [
+                Ok(r#"{"action":"wheel","x":400,"y":300,"steps":1}"#.into()),
+                Ok(r#"{"action":"wheel","x":400,"y":300,"steps":1}"#.into()),
+            ]
+            .into_iter(),
+            &mut |event| {
+                if delay == "admission" && event["status"] == "ready" {
+                    shared.borrow_mut().elapsed = Duration::from_secs(71);
+                }
+                if delay == "acknowledgement" && event["status"] == "command-started" {
+                    shared.borrow_mut().elapsed += Duration::from_secs(16);
+                }
+                events.push(event);
+                Ok(())
+            },
+            &mut |duration| {
+                let mut state = shared.borrow_mut();
+                state.elapsed += duration;
+                if delay == "pointer-settling" && state.moves.len() == 5 {
+                    state.elapsed += Duration::from_secs(16);
+                }
+                Ok(())
+            },
+            SessionTiming {
+                deadline: origin + Duration::from_secs(100),
+                command_timeout: Duration::from_secs(15),
+                now: &now,
+            },
+        );
+        assert!(result.is_err(), "{delay}");
+        assert!(
+            events
+                .iter()
+                .any(|e| e["request"] == 1 && e["status"] == "refused")
+        );
+        assert!(!events.iter().any(|e| e["request"] == 2));
+        assert_eq!(events.last().unwrap()["status"], "session-closed");
+        let state = shared.borrow();
+        assert!(state.wheels.is_empty(), "{delay}");
+        assert!(state.presses.is_empty(), "{delay}");
+        assert_eq!(
+            state.moves.len(),
+            if delay == "pointer-settling" { 5 } else { 4 }
+        );
+        assert_eq!(state.closes, 1);
+    }
+}
+
+#[test]
 fn session_measures_mapping_refuses_unsafe_click_and_recovers_with_one_grant_until_eof() {
     let shared = state();
     let directory = tempfile::tempdir().unwrap();
@@ -558,6 +693,15 @@ fn malformed_nonfinite_and_unsafe_requests_do_not_move_or_press() {
         "[]",
         r#"{"action":"click","x":true,"y":20}"#,
         r#"{"action":"click","x":NaN,"y":20}"#,
+        r#"{"action":"wheel","x":400,"y":300,"steps":0}"#,
+        r#"{"action":"wheel","x":400,"y":300,"steps":11}"#,
+        r#"{"action":"wheel","x":400,"y":300,"steps":-11}"#,
+        r#"{"action":"wheel","x":400,"y":300,"steps":-2147483648}"#,
+        r#"{"action":"wheel","x":400,"y":300,"steps":1.5}"#,
+        r#"{"action":"wheel","x":400,"y":300}"#,
+        r#"{"action":"wheel","x":-1,"y":300,"steps":1}"#,
+        r#"{"action":"wheel","x":1600,"y":300,"steps":1}"#,
+        r#"{"action":"wheel","x":400,"y":900,"steps":1}"#,
         r#"{"action":"right-drag","x":400,"y":300,"dx":"120","dy":30}"#,
         r#"{"action":"right-drag","x":400,"y":300,"dx":0,"dy":0}"#,
         r#"{"action":"right-drag","x":400,"y":300,"dx":601,"dy":0}"#,
@@ -587,6 +731,7 @@ fn malformed_nonfinite_and_unsafe_requests_do_not_move_or_press() {
     assert_eq!(refusals, commands.len());
     assert_eq!(shared.borrow().moves.len(), 4);
     assert!(shared.borrow().presses.is_empty());
+    assert!(shared.borrow().wheels.is_empty());
     assert_eq!(
         fs::read_to_string(directory.path().join("initial.png")).unwrap(),
         "test boundary image"
@@ -644,6 +789,7 @@ fn changed_focus_identity_geometry_mapping_or_buttons_prevents_a_press() {
     for action in [
         r#"{"action":"click","x":400,"y":300}"#,
         r#"{"action":"right-drag","x":400,"y":300,"dx":120,"dy":30}"#,
+        r#"{"action":"wheel","x":400,"y":300,"steps":1}"#,
     ] {
         for change in ["focus", "identity", "geometry", "mapping", "button"] {
             let shared = state();
@@ -664,6 +810,7 @@ fn changed_focus_identity_geometry_mapping_or_buttons_prevents_a_press() {
             .unwrap();
             assert!(refused, "{change}");
             assert!(shared.borrow().presses.is_empty(), "{change}");
+            assert!(shared.borrow().wheels.is_empty(), "{change}");
             assert_eq!(shared.borrow().closes, 1);
         }
     }

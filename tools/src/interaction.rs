@@ -36,6 +36,7 @@ pub trait Portal {
     fn size(&self) -> [f64; 2];
     fn move_to(&mut self, point: [f64; 2]) -> Result<()>;
     fn button(&mut self, pressed: bool, button: i32) -> Result<()>;
+    fn wheel(&mut self, steps: i32) -> Result<()>;
     fn close(&mut self) -> Result<()>;
 }
 
@@ -134,6 +135,10 @@ pub fn run_session(
                         controller.click([x, y])?;
                         json!({"status":"clicked", "client":[x, y]})
                     }
+                    Action::Wheel { x, y, steps } => {
+                        controller.wheel([x, y], steps)?;
+                        json!({"status":"wheeled", "client":[x, y], "steps":steps})
+                    }
                     Action::RightDrag {
                         x,
                         y,
@@ -177,8 +182,11 @@ pub fn run_session(
         Ok(())
     })();
     let closed = portal.close();
-    if closed.is_ok() {
-        emit(json!({"status":"session-closed"}))?;
+    match &closed {
+        Ok(()) => emit(json!({"status":"session-closed"}))?,
+        Err(error) => {
+            emit(json!({"status":"session-close-failed", "reason":format!("{error:#}")}))?
+        }
     }
     closed?;
     result
@@ -231,6 +239,11 @@ enum Action {
     Click {
         x: f64,
         y: f64,
+    },
+    Wheel {
+        x: f64,
+        y: f64,
+        steps: i32,
     },
     RightDrag {
         x: f64,
@@ -391,6 +404,19 @@ impl Controller<'_> {
         let release = self.portal.button(false, 272);
         release.context(ReleaseFailed)?;
         result
+    }
+
+    fn wheel(&mut self, point: [f64; 2], steps: i32) -> Result<()> {
+        ensure!(
+            steps != 0 && (-10..=10).contains(&steps),
+            "Wheel input must be 1–10 signed vertical steps"
+        );
+        self.desktop.verify()?;
+        let geometry = self.desktop.geometry()?;
+        let mapped = self.mapped(geometry, point)?;
+        self.sample(mapped)?;
+        self.verify_pointer(geometry, point, 0)?;
+        self.portal.wheel(steps)
     }
 
     fn right_drag(&mut self, start: [f64; 2], delta: [f64; 2], seconds: f64) -> Result<()> {
