@@ -182,12 +182,11 @@ fn eyes_chooses_olive_before_its_two_survivors_and_matches_only_the_retained_mem
         choose(&mut session, "tokens:eyes:1");
         choose(&mut session, &format!("tokens:olive:{position}:{olive}"));
         assert!(
-            !session
+            session
                 .observe_for_play()
                 .choices
                 .iter()
-                .any(|choice| choice.id.starts_with("tokens:jacqueline")
-                    || choice.id.starts_with("tokens:prophecy:"))
+                .any(|choice| choice.id.starts_with("tokens:jacqueline"))
         );
         choose(&mut session, "test:reveal");
         choose(&mut session, &format!("tokens:position:{position}"));
@@ -257,69 +256,6 @@ fn eyes_chooses_olive_before_its_two_survivors_and_matches_only_the_retained_mem
         while replay.next() {}
         assert_eq!(replay.current(), &reopened.observe_for_play());
     }
-}
-
-#[test]
-fn eyes_olive_keeps_the_dark_future_partial_group_boundary_without_spending_olive() {
-    use arkham_unfolded_experiment::gathering::TokenFixture;
-    let mut session =
-        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesOliveProtected));
-    let play = session.observe_for_play().play.unwrap();
-    let eyes = play.players[2]
-        .assets
-        .iter()
-        .find(|asset| asset.card.code == "11067")
-        .unwrap()
-        .card
-        .id;
-    let olive = play.players[2]
-        .assets
-        .iter()
-        .find(|asset| asset.card.code == "04197")
-        .unwrap()
-        .card
-        .id;
-    choose(
-        &mut session,
-        &format!("action:ordinary:investigate:spell:{eyes}"),
-    );
-    choose(&mut session, "window:pass");
-    choose(&mut session, "commit:confirm");
-    choose(&mut session, "window:pass");
-    choose(&mut session, "tokens:eyes:1");
-    let before = session.observe_for_play();
-    assert!(
-        !before
-            .choices
-            .iter()
-            .any(|choice| choice.id.starts_with("tokens:olive:"))
-    );
-    assert!(
-        session
-            .choose(before.revision, &format!("tokens:olive:0:{olive}"))
-            .is_err()
-    );
-    assert_eq!(session.observe_for_play(), before);
-    let play = before.play.unwrap();
-    assert!(
-        play.players[2]
-            .assets
-            .iter()
-            .find(|asset| asset.card.id == olive)
-            .unwrap()
-            .ready
-    );
-    assert_eq!(
-        play.players[2]
-            .assets
-            .iter()
-            .find(|asset| asset.card.id == eyes)
-            .unwrap()
-            .uses,
-        8
-    );
-    assert_eq!(play.actions_remaining[2], 2);
-    assert_eq!(play.bag_count, 16);
 }
 
 #[test]
@@ -453,10 +389,11 @@ fn olive_seals_two_premonition_tokens_and_both_resolve_with_one_spell_drawback()
         .clone();
     choose(&mut session, &olive);
     assert!(
-        !session.observe_for_play().choices.iter().any(|choice| {
-            choice.id.starts_with("tokens:jacqueline") || choice.id.starts_with("tokens:prophecy:")
-        }),
-        "Unimplemented nested group choices must not flatten Olive's two-token result"
+        session
+            .observe_for_play()
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tokens:jacqueline"))
     );
     choose(&mut session, "test:reveal");
     choose(&mut session, "tokens:keep:0");
@@ -491,58 +428,6 @@ fn olive_seals_two_premonition_tokens_and_both_resolve_with_one_spell_drawback()
     );
     assert_eq!(play.bag_count, 16);
     assert!(play.premonition.is_none());
-}
-
-#[test]
-fn eyes_with_two_premonition_tokens_is_withheld_without_spending_an_action_or_charges() {
-    use arkham_unfolded_experiment::gathering::TokenFixture;
-    let mut session =
-        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::PremonitionEyes));
-    let olive = session
-        .observe_for_play()
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("tokens:olive:"))
-        .unwrap()
-        .id
-        .clone();
-    choose(&mut session, &olive);
-    choose(&mut session, "test:reveal");
-    choose(&mut session, "tokens:keep:0");
-    choose(&mut session, "tokens:keep:1");
-    choose(&mut session, "tokens:confirm");
-    let before = session.observe_for_play();
-    let play = before.play.as_ref().unwrap();
-    assert_eq!(
-        play.premonition.as_ref().unwrap().faces,
-        [TokenFace::ElderSign, TokenFace::PlusOne]
-    );
-    assert_eq!(play.bag_count, 14);
-    let eyes = play.players[2]
-        .assets
-        .iter()
-        .find(|asset| asset.card.code == "11067")
-        .unwrap();
-    assert_eq!(eyes.uses, 9);
-    assert_eq!(play.actions_remaining[2], 3);
-    let unavailable = format!("action:ordinary:investigate:spell:{}", eyes.card.id);
-    assert!(
-        !before.choices.iter().any(|choice| choice.id == unavailable),
-        "The unresolved Eyes/Premonition group composition must be gated before payment, not reduced to a zero-charge physical-token selection"
-    );
-    assert!(
-        before
-            .choices
-            .iter()
-            .any(|choice| choice.id == "action:ordinary:investigate")
-    );
-    assert!(session.choose(before.revision, &unavailable).is_err());
-    assert_eq!(
-        session.observe_for_play(),
-        before,
-        "A forged unsupported activation cannot spend an action, resource, charge, or sealed token"
-    );
-    session.validate().unwrap();
 }
 
 #[test]
@@ -834,8 +719,8 @@ fn nested_prophecy_cleanup_reveals_the_declared_batch_before_selection() {
     );
     assert!(session.choose(outer.revision, "tokens:cancel:0").is_err());
     assert_eq!(session.observe_for_play(), outer);
-    choose(&mut session, "tokens:cancel:5");
-    choose(&mut session, "tokens:cancel:6");
+    choose(&mut session, "tokens:cancel-position:1");
+    choose(&mut session, "tokens:cancel-position:2");
     choose(&mut session, "tokens:confirm");
     let finished = session.observe_for_play().play.unwrap();
     assert_eq!(finished.bag_count, 16);

@@ -24,6 +24,10 @@ fn incompatible_source_is_identified_before_decoding_a_session_or_recording_payl
             "c35be2c:issue-89-gathering-runtime-v2",
             "f431de9af84bedf20e0024370b9e6aaa8819a1ef",
         ),
+        (
+            "c35be2c:issue-89-gathering-runtime-v3",
+            "46f4c54a018802d22889a238629bcea27871d259",
+        ),
     ] {
         for kind in ["gathering-session", "gathering-recording"] {
             // This deliberately invalid payload tests header dispatch only. Genuine

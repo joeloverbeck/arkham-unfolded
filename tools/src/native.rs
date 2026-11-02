@@ -122,11 +122,12 @@ pub struct Build {
     timeout_seconds: u32,
 }
 
-#[derive(Clone, Copy, ValueEnum)]
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Experiment {
     Jacqueline,
     Tony,
     Party,
+    Gathering,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -557,6 +558,13 @@ fn launch_environment(overrides: &std::collections::BTreeMap<&str, PathBuf>) -> 
 }
 
 fn launch(args: Launch) -> Result<u8> {
+    ensure!(
+        args.experiment != Experiment::Gathering
+            || (args.art_root.is_none()
+                && args.screenshot.is_none()
+                && args.initial_view.is_none()),
+        "Gathering uses readable substitutes and does not support --art-root, --screenshot, or --initial-view"
+    );
     let directory = resolve(&args.output_dir)?;
     let binary = args.binary.canonicalize()?;
     let source_save = args.load.map(fs::canonicalize).transpose()?;
@@ -610,18 +618,23 @@ fn launch(args: Launch) -> Result<u8> {
         Experiment::Party => {
             command.args(["--experiment", "party"]);
         }
+        Experiment::Gathering => {
+            command.args(["--experiment", "gathering"]);
+        }
         Experiment::Jacqueline => {}
     }
     command
-        .arg(if source_save.is_some() {
-            "--load"
-        } else {
-            "--save"
-        })
+        .arg(
+            if source_save.is_some() && args.experiment != Experiment::Gathering {
+                "--load"
+            } else {
+                "--save"
+            },
+        )
         .arg(&save);
     if let Some(root) = args.art_root {
         command.arg("--art-root").arg(resolve(&root)?);
-    } else if args.no_art {
+    } else if args.no_art || args.experiment == Experiment::Gathering {
         command.arg("--no-art");
     }
     if let Some(path) = &screenshot {

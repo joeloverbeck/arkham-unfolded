@@ -148,7 +148,7 @@ pub fn run() -> Result<(), String> {
             "--no-art" => {}
             "--help" | "-h" => {
                 println!(
-                    "Gathering setup\n--experiment gathering\n--save PATH\n--no-art\nReopens an existing setup; a new path starts a separate setup. Scenario play is not yet available."
+                    "The Gathering\n--experiment gathering\n--save PATH\n--no-art\nReopens an existing session; a new path starts setup and scenario play."
                 );
                 return Ok(());
             }

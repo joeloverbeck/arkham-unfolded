@@ -340,8 +340,9 @@ fn agenda_two_no_ghoul_finishes_one_pass_then_rebuilds_only_available_cards() {
 }
 
 #[test]
-fn actual_preparation_runs_a_full_round_and_patrice_refills_once_before_next_mythos() {
-    let mut session = Session::with_hostile_fixture(HostileFixture::GatheringFromSetup);
+fn ordinary_preparation_runs_a_full_round_and_all_following_mythos_draws() {
+    let mut session = Session::with_seed(89);
+    assert!(!session.is_verification_fixture());
     choose(&mut session, "lead:tony");
     for _ in 0..3 {
         choose(&mut session, "confirm-mulligan");
@@ -423,6 +424,68 @@ fn actual_preparation_runs_a_full_round_and_patrice_refills_once_before_next_myt
             .choices
             .iter()
             .any(|choice| choice.id == "mythos:draw")
+    );
+    let mut draws = 0;
+    for _ in 0..100 {
+        let view = session.observe();
+        if view.play.as_ref().unwrap().phase
+            == arkham_unfolded_experiment::gathering::Phase::Investigation
+        {
+            break;
+        }
+        let id = [
+            "mythos:draw",
+            "mythos:draws-complete",
+            "investigation:begin",
+            "phase-window:pass",
+            "revelation:resolve",
+            "test-card:pass",
+            "window:pass",
+            "commit:confirm",
+            "test:reveal",
+            "lucky:decline",
+            "success:pass",
+            "after-test:pass",
+            "harm:damage:investigator",
+            "harm:horror:investigator",
+            "harm:confirm",
+        ]
+        .into_iter()
+        .find(|id| view.choices.iter().any(|choice| choice.id == *id))
+        .map(str::to_owned)
+        .or_else(|| {
+            view.choices
+                .iter()
+                .find(|choice| {
+                    choice.id.contains("decline")
+                        || choice.id.ends_with(":pass")
+                        || choice.id.starts_with("result:")
+                        || choice.id.starts_with("discard-card:")
+                        || (choice.id.starts_with("bounty:") && choice.id.ends_with(":0"))
+                })
+                .map(|choice| choice.id.clone())
+        })
+        .unwrap_or_else(|| panic!("Unexpected mythos choice: {:?}", view.choices));
+        draws += usize::from(id == "mythos:draw");
+        choose(&mut session, &id);
+    }
+    let after = session.observe();
+    assert_eq!(
+        draws, 3,
+        "Every investigator takes their next-round encounter draw"
+    );
+    assert_eq!(
+        after.play.as_ref().unwrap().phase,
+        arkham_unfolded_experiment::gathering::Phase::Investigation
+    );
+    assert_eq!(after.play.as_ref().unwrap().round, 2);
+    assert_eq!(after.play.as_ref().unwrap().encounter_deck_count, 23);
+    assert!(after.play.as_ref().unwrap().pending_revelation.is_none());
+    assert!(
+        after
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("turn:"))
     );
     session.validate().unwrap();
 }

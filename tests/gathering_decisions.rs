@@ -102,7 +102,7 @@ fn mulligan_keeps_removed_physical_cards_out_of_replacements_and_follows_player_
         Some(Investigator::Patrice)
     );
     choose(&mut session, "confirm-mulligan");
-    assert_eq!(session.observe().stage, Stage::GameplayUnavailable);
+    assert_eq!(session.observe().stage, Stage::Playing);
     session.validate().unwrap();
 }
 
@@ -233,8 +233,9 @@ fn scenario_assembly_matches_the_independent_publisher_inventory_in_each_destina
             .iter()
             .all(|i| i.location.as_deref() == Some("01111"))
     );
-    assert_eq!(view.stage, Stage::GameplayUnavailable);
-    assert!(view.choices.is_empty());
+    assert_eq!(view.stage, Stage::Playing);
+    assert!(view.choices.iter().any(|choice| choice.id == "turn:tony"));
+    assert!(!session.is_verification_fixture());
     let unchanged = session.clone();
     assert!(session.choose(view.revision, "investigate").is_err());
     assert_eq!(session, unchanged);

@@ -35,10 +35,7 @@ fn choice(id: String, label: String) -> Choice {
 pub(super) fn action_choices(game: &Game, who: Investigator) -> Vec<Choice> {
     let player = &game.players[who.index()];
     let mut choices = vec![];
-    // Premonition's replacement scope for Voice's three-token request remains
-    // unresolved (issue-89-token-compositions.md). Withhold it before action
-    // payment and opportunity attacks; pay_action validates this same list.
-    if game.premonition.is_none() && !player.threats.iter().any(|card| card.code == "01165") {
+    if !player.threats.iter().any(|card| card.code == "01165") {
         for card in &player.hand {
             if card.code == "60416" {
                 choices.push(choice(
@@ -50,19 +47,6 @@ pub(super) fn action_choices(game: &Game, who: Investigator) -> Vec<Choice> {
     }
     for asset in &player.assets {
         let code = asset.card.code.as_str();
-        // Eyes still has a choose-one instruction at zero charges. Flattening
-        // two Olive-sealed Premonition tokens into that choice would silently
-        // choose an unresolved group interpretation (FAQ2.5 §2.5/p17). Keep
-        // this composition unavailable before action payment; pay_action uses
-        // this same list, so a forged activation cannot bypass the boundary.
-        if code == "11067"
-            && game
-                .premonition
-                .as_ref()
-                .is_some_and(|sealed| sealed.faces.len() > 1)
-        {
-            continue;
-        }
         if !matches!(code, "11067" | "60408" | "60407" | "04029" | "60507")
             || (code != "11067" && asset.uses == 0)
         {

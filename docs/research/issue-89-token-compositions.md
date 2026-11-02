@@ -1,8 +1,23 @@
 # Selected token composition: source findings
 
-2026-11-02. Source investigation and bounded implementation evidence for [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). Ordinary play remains gated.
+2026-11-02. Source investigation and bounded implementation evidence for [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). The current local candidate permits ordinary play; the gated assessment below is historical.
 
-The sources establish group preservation and advance declaration. They do **not** supply an exact ruling for every selected composition. Eyes/Olive has a useful source-derived interpretation. Dark Prophecy's mixed-group eligibility, Jacqueline's cancellation of a mixed group, and Premonition's replacement scope on an existing multi-token request remain qualified below.
+## Current follow-up
+
+The earlier blocker assessment below is preserved as a historical snapshot. Its
+whole-request preference for Premonition and recommendation to wait for publisher
+clarification are superseded by the [Premonition follow-up](issue-89-premonition-followup.md)
+and [nested-group follow-up](issue-89-nested-tokens-followup.md). Further research,
+including contrary community arguments, supports one-position substitution and
+finite group-preserving selection rules derived from the published general rules.
+Those notes distinguish derivation from an exact official example and specify
+independent expected outcomes. No publisher inquiry was sent or is planned.
+
+The source-qualified implementation can proceed without asking the owner to
+adjudicate rules. Runtime verification and ordinary/native play acceptance remain
+separate obligations; a resolved research question is not a passing gameplay check.
+
+## Historical assessment before the follow-up
 
 ## Source binding
 

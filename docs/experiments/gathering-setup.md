@@ -1,15 +1,21 @@
-# Gathering setup implementation
+# Gathering candidate
 
-This is the first implementation increment toward complete original Gathering
+This is the local implementation candidate for original Gathering
 under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). It uses the
 actual three selected starting lists, rather than the prepared Study experiment's
-scripted hands. **Scenario play is not yet available.** Completing setup does not
-complete the first-round milestone or the scenario.
+scripted hands. **Completing mulligans now begins ordinary scenario play.** The
+first full round and all following mythos draws have driver-level evidence.
+Actual-window readability, physical controls and owner gameplay acceptance remain
+unverified; this is not an accepted complete-scenario delivery.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and
-taboo 10; it does not claim to have checked the latest taboo for a new playable
-campaign. The original deck revisions and explicit weakness selections are
+taboo 10. On 2026-11-02 the accepted ArkhamDB taboo source was refreshed and matched
+the retained bytes exactly (`d63d719bd025040fd74281c123cc692ce521f305e78d5588e7c83eed31801673`):
+latest ID 10, effective 2026-02-19. The publisher resource page still lists Legacy
+FAQ 2.5 and Grimoire 1.1; the existing original-content precedence remains applicable.
+This dated check is not a guarantee about a future campaign's latest version.
+The original deck revisions and explicit weakness selections are
 visible in the observation. Original ArkhamDB snapshots remain unchanged.
 
 ## Run and resume
@@ -25,10 +31,10 @@ Use a new file path to begin a separate setup. Repeating the command reopens tha
 file. The JSON driver works offline without artwork or the source archive. This
 is a developer-accessible player interface.
 
-Records from previous setup-v1 and runtime-v2 checkpoints use the preserved readers described
+Records from previous setup-v1, runtime-v2 and runtime-v3 checkpoints use the preserved readers described
 under [Record compatibility](#record-compatibility), rather than this build.
 
-The native setup uses the same session and save file:
+The native table uses the same session and save file:
 
 ```sh
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
@@ -88,21 +94,20 @@ set-aside cards, and shuffles the exact 26-card encounter multiset. The source
 inventory is 40 physical cards: the other 14 have explicit destinations. Counts
 and public inventory summaries do not reveal hidden draw order.
 
-The ordinary setup boundary explains that scenario play is unavailable.
-The verification runtime records scenario introduction and advancement moments,
-but complete card coverage and native play acceptance remain part of the complete
-Gathering target. The issue's
+Ordinary setup initializes the runtime from the actual prepared hands, decks,
+locations and randomness. Its scenario introduction and advancement moments are
+recorded. The issue's
 [current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060)
 owns the exact implementation status and evidence.
 
-The verification-only runtime now exercises actual post-mulligan hands and ordinary
-actions, selected card effects, scenario advancement and ending records, phase
-flow, and interrupted draws and tests. Named hostile fixtures are explicitly
-marked and rejected by the ordinary driver and native setup launcher. Their
-passing tests do not establish complete selected-card coverage or native gameplay.
-In particular, [nested token groups and some Premonition compositions](../research/issue-89-token-compositions.md)
-still have explicit unsupported boundaries. The runtime is not enabled as ordinary
-scenario play while those and other reachable behaviors remain incomplete.
+Named hostile fixtures remain explicitly marked and rejected by the ordinary
+driver and native launcher. They exercise difficult selected-card cases alongside
+the ordinary preparation and round-flow checks. Their passing tests do not
+establish native gameplay acceptance or prove every possible card composition.
+The [Premonition follow-up](../research/issue-89-premonition-followup.md) and
+[nested-group follow-up](../research/issue-89-nested-tokens-followup.md) replace the
+earlier refusal boundaries with finite source-derived interpretations and witnesses.
+They do not claim newly obtained official rulings for the exact combinations.
 
 The current runtime increment adds Backpack's searched attachments, Ethereal Form,
 Peter Sylvestre's end-of-turn healing and the documented Eyes of the Dreamer / Olive
@@ -132,8 +137,8 @@ readability, artwork and owner acceptance still require the actual window.
 ## Record compatibility
 
 New Gathering sessions and recordings identify
-`c35be2c:issue-89-gathering-runtime-v3`. This identifies the expanded card state
-and player-visible projections; it does not claim a new rules or taboo update.
+`c35be2c:issue-89-gathering-runtime-v4`. This identifies the revised token-composition
+semantics; it does not claim a new rules or taboo update.
 The envelope format and other experiments' readers are unchanged.
 
 Historical records remain readable and resumable with their preserved source:
@@ -142,19 +147,21 @@ Historical records remain readable and resumable with their preserved source:
 | --- | --- |
 | `c35be2c:issue-89-gathering-setup-v1` | `7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3` |
 | `c35be2c:issue-89-gathering-runtime-v2` | `f431de9af84bedf20e0024370b9e6aaa8819a1ef` |
+| `c35be2c:issue-89-gathering-runtime-v3` | `46f4c54a018802d22889a238629bcea27871d259` |
 
-This applies to **ordinary setup records as well as verification fixtures**, even though ordinary setup behavior
-has not expanded. The current reader refuses their source identity before
+This applies to **ordinary setup records as well as verification fixtures**. The
+current ordinary path continues into gameplay; historical readers retain their
+original setup boundary. The current reader refuses their source identity before
 decoding the Session or Recording payload, names the required preserved reader,
 and leaves the original bytes unchanged. No personal-save migration is performed.
 Do not edit a record's version fields to bypass the check: runtime fields and
 the exact replayed decision history differ.
 
 From a repository clone containing the required commit, prepare its separate reader.
-The example selects runtime-v2; use the setup-v1 commit from the table for that source:
+The example selects runtime-v3; use the matching commit from the table for older sources:
 
 ```sh
-gathering_reader_commit=f431de9af84bedf20e0024370b9e6aaa8819a1ef
+gathering_reader_commit=46f4c54a018802d22889a238629bcea27871d259
 gathering_reader_dir=$(mktemp -d /tmp/arkham-gathering-reader.XXXXXX)
 git archive "$gathering_reader_commit" | tar -x -C "$gathering_reader_dir"
 cargo build --locked --manifest-path "$gathering_reader_dir/Cargo.toml" \
@@ -259,3 +266,8 @@ positions. Its reader loaded and replayed all cases and resumed nonterminal
 sessions; the new reader refused both loading and replacement without changing
 any original bytes. These probes use temporary developer records, not personal
 saves.
+
+The runtime-v4 change repeats the same producer, load, replay and resume probe
+against actual runtime-v3 source at `46f4c54`. All eight historical files remain
+unchanged; the current reader refuses both loading and replacement and names that
+preserved reader. Ordinary historical setup still stops at its original gate.

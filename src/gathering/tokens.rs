@@ -7,6 +7,8 @@ use super::{Investigator, runtime::Game};
 use crate::{Choice, RuleError, TokenFace};
 use serde::{Deserialize, Serialize};
 
+mod groups;
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SealedPremonition {
     pub controller: Investigator,
@@ -25,12 +27,21 @@ pub enum TokenFixture {
     EyesIgnoredMatch,
     EyesOlive,
     EyesOliveProtected,
+    EyesOliveJacqueline,
     VoiceRaCurse,
     VoiceRaLethalOpportunity,
     PremonitionVoiceOpportunity,
     Premonition,
     PremonitionOlive,
     PremonitionEyes,
+    PremonitionDarkFuture,
+    PremonitionDarkFutureAbsent,
+    PremonitionVoice,
+    JacquelineOlive,
+    JacquelineOliveProtected,
+    ProphecyOlive,
+    ProphecyOliveProtected,
+    ProphecyOliveOtherSymbol,
 }
 
 pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
@@ -48,6 +59,49 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
     let jacqueline = &mut game.players[Investigator::Jacqueline.index()];
     jacqueline.deck.append(&mut jacqueline.hand);
     match case {
+        TokenFixture::JacquelineOlive
+        | TokenFixture::JacquelineOliveProtected
+        | TokenFixture::ProphecyOlive
+        | TokenFixture::ProphecyOliveProtected
+        | TokenFixture::ProphecyOliveOtherSymbol => {
+            let index = jacqueline
+                .deck
+                .iter()
+                .position(|card| card.code == "04197")
+                .unwrap();
+            let card = jacqueline.deck.remove(index);
+            jacqueline.assets.push(AssetView {
+                card,
+                ready: true,
+                uses: 0,
+                damage: 0,
+                horror: 0,
+            });
+            if matches!(
+                case,
+                TokenFixture::ProphecyOlive
+                    | TokenFixture::ProphecyOliveProtected
+                    | TokenFixture::ProphecyOliveOtherSymbol
+            ) {
+                let index = jacqueline
+                    .deck
+                    .iter()
+                    .position(|card| card.code == "04032")
+                    .unwrap();
+                jacqueline.hand.push(jacqueline.deck.remove(index));
+            }
+            if matches!(
+                case,
+                TokenFixture::JacquelineOliveProtected | TokenFixture::ProphecyOliveProtected
+            ) {
+                let index = jacqueline
+                    .deck
+                    .iter()
+                    .position(|card| card.code == "60403")
+                    .unwrap();
+                jacqueline.threats.push(jacqueline.deck.remove(index));
+            }
+        }
         TokenFixture::ProtectedNumbers => {
             let index = jacqueline
                 .deck
@@ -106,7 +160,9 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
                 jacqueline.threats.push(jacqueline.deck.remove(index));
             }
         }
-        TokenFixture::EyesOlive | TokenFixture::EyesOliveProtected => {
+        TokenFixture::EyesOlive
+        | TokenFixture::EyesOliveProtected
+        | TokenFixture::EyesOliveJacqueline => {
             for code in ["11067", "04197"] {
                 let index = jacqueline
                     .deck
@@ -123,7 +179,10 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
                 });
             }
             jacqueline.resources = 0;
-            if case == TokenFixture::EyesOliveProtected {
+            if matches!(
+                case,
+                TokenFixture::EyesOliveProtected | TokenFixture::EyesOliveJacqueline
+            ) {
                 let index = jacqueline
                     .deck
                     .iter()
@@ -194,9 +253,19 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
         }
         TokenFixture::Premonition
         | TokenFixture::PremonitionOlive
-        | TokenFixture::PremonitionEyes => {
+        | TokenFixture::PremonitionEyes
+        | TokenFixture::PremonitionDarkFuture
+        | TokenFixture::PremonitionDarkFutureAbsent
+        | TokenFixture::PremonitionVoice => {
             for (code, threat) in [("04199", false), ("60403", true)] {
-                if threat && case != TokenFixture::Premonition {
+                if threat
+                    && !matches!(
+                        case,
+                        TokenFixture::Premonition
+                            | TokenFixture::PremonitionDarkFuture
+                            | TokenFixture::PremonitionDarkFutureAbsent
+                    )
+                {
                     continue;
                 }
                 let index = jacqueline
@@ -255,11 +324,24 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
                     horror: 0,
                 });
             }
+            if case == TokenFixture::PremonitionVoice {
+                for code in ["60416", "04032"] {
+                    let index = jacqueline
+                        .deck
+                        .iter()
+                        .position(|card| card.code == code)
+                        .unwrap();
+                    jacqueline.hand.push(jacqueline.deck.remove(index));
+                }
+                jacqueline.resources = 5;
+            }
         }
     }
     if matches!(
         case,
-        TokenFixture::EyesOlive | TokenFixture::EyesOliveProtected
+        TokenFixture::EyesOlive
+            | TokenFixture::EyesOliveProtected
+            | TokenFixture::EyesOliveJacqueline
     ) {
         game.scenario = super::scenario::ScenarioState::new();
         game.act = 1;
@@ -268,12 +350,16 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
             player.clues = 0;
         }
         game.enable_fixture_turn(Investigator::Jacqueline);
-        game.set_fixture_tokens(vec![
+        let mut faces = vec![
             TokenFace::MinusOne,
             TokenFace::MinusTwo,
             TokenFace::Skull,
             TokenFace::MinusOne,
-        ]);
+        ];
+        if case == TokenFixture::EyesOliveJacqueline {
+            faces.extend([TokenFace::Zero, TokenFace::PlusOne]);
+        }
+        game.set_fixture_tokens(faces);
         return;
     }
     if case == TokenFixture::PremonitionVoiceOpportunity {
@@ -290,7 +376,11 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
         game.enable_fixture_turn(Investigator::Jacqueline);
         let priest = super::scenario::advance_act_two(game).expect("Act2 reverse");
         game.check_engagement(priest);
-        game.set_fixture_tokens(vec![TokenFace::ElderSign]);
+        game.set_fixture_tokens(vec![
+            TokenFace::ElderSign,
+            TokenFace::Skull,
+            TokenFace::Zero,
+        ]);
         return;
     }
     if case == TokenFixture::VoiceRaLethalOpportunity {
@@ -302,20 +392,67 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
     }
     if matches!(
         case,
-        TokenFixture::Premonition | TokenFixture::PremonitionOlive | TokenFixture::PremonitionEyes
+        TokenFixture::Premonition
+            | TokenFixture::PremonitionOlive
+            | TokenFixture::PremonitionEyes
+            | TokenFixture::PremonitionDarkFuture
+            | TokenFixture::PremonitionDarkFutureAbsent
+            | TokenFixture::PremonitionVoice
     ) {
         let card = jacqueline.hand[0].id;
+        if case == TokenFixture::PremonitionEyes {
+            game.scenario = super::scenario::ScenarioState::new();
+            game.act = 1;
+            for player in &mut game.players {
+                player.location = super::scenario::STUDY.into();
+                player.clues = 0;
+            }
+        }
         game.enable_fixture_turn(Investigator::Jacqueline);
         play_premonition(game, card).expect("Legal fast play");
-        game.set_fixture_tokens(if case != TokenFixture::Premonition {
-            vec![
-                TokenFace::ElderSign,
-                TokenFace::PlusOne,
-                TokenFace::MinusOne,
-            ]
-        } else {
-            vec![TokenFace::ElderSign]
-        });
+        game.set_fixture_tokens(
+            if matches!(
+                case,
+                TokenFixture::PremonitionDarkFuture | TokenFixture::PremonitionDarkFutureAbsent
+            ) {
+                vec![
+                    TokenFace::MinusOne,
+                    TokenFace::MinusTwo,
+                    TokenFace::MinusOne,
+                    if case == TokenFixture::PremonitionDarkFuture {
+                        TokenFace::ElderSign
+                    } else {
+                        TokenFace::Cultist
+                    },
+                    TokenFace::Zero,
+                    TokenFace::PlusOne,
+                    TokenFace::Skull,
+                ]
+            } else if case == TokenFixture::PremonitionVoice {
+                vec![
+                    TokenFace::Skull,
+                    TokenFace::ElderSign,
+                    TokenFace::MinusOne,
+                    TokenFace::Cultist,
+                    TokenFace::Zero,
+                ]
+            } else if case == TokenFixture::PremonitionEyes {
+                vec![
+                    TokenFace::MinusOne,
+                    TokenFace::MinusTwo,
+                    TokenFace::Skull,
+                    TokenFace::MinusOne,
+                ]
+            } else if case != TokenFixture::Premonition {
+                vec![
+                    TokenFace::ElderSign,
+                    TokenFace::PlusOne,
+                    TokenFace::MinusOne,
+                ]
+            } else {
+                vec![TokenFace::ElderSign]
+            },
+        );
         return;
     }
     if case == TokenFixture::VoiceRaCurse {
@@ -439,6 +576,41 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
             TokenFace::MinusOne,
         ]);
     }
+    if matches!(
+        case,
+        TokenFixture::JacquelineOlive | TokenFixture::JacquelineOliveProtected
+    ) {
+        game.set_fixture_tokens(vec![
+            if case == TokenFixture::JacquelineOlive {
+                TokenFace::AutoFail
+            } else {
+                TokenFace::Skull
+            },
+            TokenFace::MinusOne,
+            TokenFace::MinusTwo,
+            TokenFace::Zero,
+            TokenFace::PlusOne,
+        ]);
+    } else if matches!(
+        case,
+        TokenFixture::ProphecyOlive
+            | TokenFixture::ProphecyOliveProtected
+            | TokenFixture::ProphecyOliveOtherSymbol
+    ) {
+        game.set_fixture_tokens(vec![
+            TokenFace::Skull,
+            TokenFace::MinusOne,
+            TokenFace::MinusTwo,
+            TokenFace::Zero,
+            TokenFace::PlusOne,
+            if case == TokenFixture::ProphecyOliveOtherSymbol {
+                TokenFace::Cultist
+            } else {
+                TokenFace::MinusOne
+            },
+            TokenFace::MinusTwo,
+        ]);
+    }
     game.history.push("Privileged Jacqueline token witness: actual selected cards relocated for a named rules case, with the source inventory preserved. This is not ordinary play.".into());
 }
 
@@ -548,24 +720,12 @@ impl RevealNode {
         self.policy == Policy::Sealed || self.children.iter().any(Self::contains_sealed)
     }
 
-    fn contains_policy(&self, policy: Policy) -> bool {
-        self.policy == policy
-            || self
-                .children
-                .iter()
-                .any(|child| child.contains_policy(policy))
-    }
-
-    fn contains_jacqueline(&self) -> bool {
-        self.jacqueline || self.children.iter().any(Self::contains_jacqueline)
-    }
-
-    fn eyes_with_olive(&self) -> bool {
+    fn eyes_with_groups(&self) -> bool {
         self.policy == Policy::Eyes
             && self
                 .children
                 .iter()
-                .any(|child| child.policy == Policy::Olive)
+                .any(|child| matches!(child.policy, Policy::Olive | Policy::Sealed))
     }
 }
 
@@ -780,13 +940,9 @@ pub(super) fn begin(
         TokenPurpose::VoiceRa { .. } => 3,
         TokenPurpose::Premonition { .. } => 1,
     };
-    if count > 1 && game.premonition.is_some() {
-        return Err(RuleError(
-            "Premonition combined with this multi-token reveal has not yet been implemented."
-                .into(),
-        ));
-    }
     let mut root = RevealNode::group(Policy::All, count);
+    // Premonition replaces one position, preserving its entire sealed group
+    // and the request's other positions (issue-89-premonition-followup.md).
     if let Some(sealed) = game.premonition.take() {
         root.children[0].policy = Policy::Sealed;
         root.children[0].sealed = Some(sealed);
@@ -1000,11 +1156,6 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                 .iter()
                 .find(|asset| Some(asset.card.id) == tokens.eyes_source)
                 .map_or(0, |asset| asset.uses.min(3));
-            let available = if tokens.root.contains_sealed() {
-                0
-            } else {
-                available
-            };
             (0..=available)
                 .map(|count| {
                     choice(
@@ -1033,7 +1184,6 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                     && !used_jacqueline
                     && policy != Policy::Katarina
                     && !tokens.root.at(&path).contains_sealed()
-                    && !tokens.root.contains_policy(Policy::Olive)
                 {
                     let base = if path.is_empty() {
                         "tokens:jacqueline".to_owned()
@@ -1060,10 +1210,7 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                 if policy != Policy::Draw {
                     continue;
                 }
-                if owner.resources >= 1
-                    && !owner.threats.iter().any(|card| card.code == "01165")
-                    && !tokens.root.contains_policy(Policy::Olive)
-                {
+                if owner.resources >= 1 && !owner.threats.iter().any(|card| card.code == "01165") {
                     for card in &owner.hand {
                         if card.code == "04032" {
                             result.push(choice(format!("tokens:prophecy:{position}:{}", card.id), format!("Pay 1 for Dark Prophecy at reveal {position}: reveal 5 instead of 1")));
@@ -1075,34 +1222,10 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                         continue;
                     }
                     match asset.card.code.as_str() {
-                        // Eyes uses the outer-before-inner group interpretation derived
-                        // from FAQ p17. Mixed Prophecy/Jacqueline predicates and Dark
-                        // Future's protected partial groups remain unsupported.
-                        "04197"
-                            if !tokens.root.contains_jacqueline()
-                                && ![Policy::Olive, Policy::Prophecy]
-                                    .into_iter()
-                                    .any(|policy| tokens.root.contains_policy(policy))
-                                && (!tokens.root.contains_policy(Policy::Eyes)
-                                    || (tokens.root.policy == Policy::Eyes
-                                        && path.len() == 1
-                                        && tokens
-                                            .root
-                                            .children
-                                            .iter()
-                                            .all(|child| child.policy == Policy::Draw)
-                                        && !owner
-                                            .threats
-                                            .iter()
-                                            .any(|card| card.code == "60403"))) =>
-                        {
-                            result.push(choice(
-                                format!("tokens:olive:{position}:{}", asset.card.id),
-                                format!(
-                                    "Exhaust Olive at reveal {position}: reveal 3 and resolve 2"
-                                ),
-                            ))
-                        }
+                        "04197" => result.push(choice(
+                            format!("tokens:olive:{position}:{}", asset.card.id),
+                            format!("Exhaust Olive at reveal {position}: reveal 3 and resolve 2"),
+                        )),
                         "11069" if tokens.purpose == TokenPurpose::SkillTest => {
                             result.push(choice(
                                 format!("tokens:katarina:{position}:{}", asset.card.id),
@@ -1118,6 +1241,9 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
             result
         }
         TokenStage::Cancellation => {
+            if let Some(choices) = groups::choices(game, tokens) {
+                return choices;
+            }
             let eligible = cancellable(game, tokens);
             let auto_selected = tokens
                 .selected
@@ -1158,14 +1284,20 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
             result
         }
         TokenStage::Selection => {
+            if let Some(choices) = groups::choices(game, tokens) {
+                return choices;
+            }
             let node = tokens.root.at(&tokens.active);
-            if node.eyes_with_olive() {
+            if node.eyes_with_groups() {
                 let mut result = vec![];
                 for (position, child) in node.children.iter().enumerate() {
-                    let selected = tokens.selected == child.drawn;
+                    let members = retained(child, tokens);
+                    if members.is_empty() {
+                        continue;
+                    }
+                    let selected = tokens.selected == members;
                     if selected || tokens.selected.is_empty() {
-                        let faces = child
-                            .drawn
+                        let faces = members
                             .iter()
                             .map(|&index| tokens.revealed[index].label())
                             .collect::<Vec<_>>()
@@ -1176,8 +1308,10 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                                 "{} Eyes position {}: {} [{}]",
                                 if selected { "Unselect" } else { "Choose" },
                                 position + 1,
-                                if child.policy == Policy::Olive {
+                                if child.policy == Policy::Olive && !child.selection_done {
                                     "Olive group; then choose 2"
+                                } else if child.policy == Policy::Sealed {
+                                    "Premonition group"
                                 } else {
                                     "token"
                                 },
@@ -1187,10 +1321,7 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                     }
                 }
                 if !tokens.selected.is_empty() {
-                    result.push(choice(
-                        "tokens:confirm",
-                        "Confirm Eyes position before resolving Olive",
-                    ));
+                    result.push(choice("tokens:confirm", "Confirm Eyes position"));
                 }
                 return result;
             }
@@ -1322,7 +1453,11 @@ fn advance_node(
     if node.done {
         return Ok(None);
     }
-    if node.eyes_with_olive() && !node.selection_done {
+    if node.eyes_with_groups()
+        && !node.selection_done
+        && (!node.jacqueline || node.cancellation_done)
+        && !pool.retained(node).is_empty()
+    {
         return Ok(Some((path, TokenStage::Selection)));
     }
     while node.cursor < node.children.len() {
@@ -1352,9 +1487,11 @@ fn advance_node(
     if matches!(node.policy, Policy::Prophecy | Policy::Olive | Policy::Eyes)
         && !node.selection_done
     {
-        if !pool.retained(node).is_empty() {
+        let available = pool.retained(node);
+        if !available.is_empty() && !(node.policy == Policy::Olive && available.len() <= 2) {
             return Ok(Some((path, TokenStage::Selection)));
         }
+        node.chosen = available;
         node.selection_done = true;
     }
     if let Some(event) = node.event.take() {
@@ -1708,14 +1845,17 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<TokenStep, RuleError> 
             return Ok(TokenStep::Pending);
         }
     }
+    if groups::toggle(game.tokens.as_mut().expect("Pending token choice"), id) {
+        return Ok(TokenStep::Pending);
+    }
     if let Some(position) = id.strip_prefix("tokens:position:") {
         let position: usize = position.parse().expect("Offered Eyes position");
         let tokens = game.tokens.as_mut().expect("Pending Eyes selection");
-        let drawn = &tokens.root.at(&tokens.active).children[position].drawn;
-        tokens.selected = if tokens.selected == *drawn {
+        let drawn = retained(&tokens.root.at(&tokens.active).children[position], tokens);
+        tokens.selected = if tokens.selected == drawn {
             vec![]
         } else {
-            drawn.clone()
+            drawn
         };
         return Ok(TokenStep::Pending);
     }
@@ -1737,7 +1877,11 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<TokenStep, RuleError> 
         let mut tokens = game.tokens.take().expect("Pending reveal");
         match tokens.stage {
             TokenStage::Cancellation => {
-                tokens.cancelled.extend(tokens.selected.iter().copied());
+                tokens
+                    .cancelled
+                    .extend(tokens.selected.iter().copied().filter(|&index| {
+                        !protected(game, Investigator::Jacqueline, tokens.revealed[index])
+                    }));
                 tokens.root.at_mut(&tokens.active).cancellation_done = true;
             }
             TokenStage::Selection => {

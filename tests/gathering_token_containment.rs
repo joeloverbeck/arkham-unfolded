@@ -1,13 +1,23 @@
-use arkham_unfolded_experiment::gathering::{HostileFixture, Investigator, Session, TokenFixture};
+use arkham_unfolded_experiment::{
+    TokenFace,
+    gathering::{
+        HostileFixture, Investigator, Session, TokenFixture,
+        continuity::{self, Replay},
+    },
+};
 
 fn choose(session: &mut Session, id: &str) {
     let observation = session.observe_for_play();
-    assert!(observation.choices.iter().any(|choice| choice.id == id));
+    assert!(
+        observation.choices.iter().any(|choice| choice.id == id),
+        "Missing {id}: {:?}",
+        observation.choices
+    );
     session.choose(observation.revision, id).unwrap();
 }
 
 #[test]
-fn sealed_premonition_withholds_voice_before_action_payment_and_opportunity() {
+fn sealed_premonition_voice_pays_once_then_resumes_after_opportunity() {
     let mut session = Session::with_hostile_fixture(HostileFixture::Tokens(
         TokenFixture::PremonitionVoiceOpportunity,
     ));
@@ -21,57 +31,101 @@ fn sealed_premonition_withholds_voice_before_action_payment_and_opportunity() {
         .clone();
     choose(&mut session, &premonition);
     choose(&mut session, "test:reveal");
-
-    let before = session.observe_for_play();
-    let play = before.play.as_ref().unwrap();
-    let jacqueline = &play.players[2];
-    let voice = jacqueline
+    let before = session.observe_for_play().play.unwrap();
+    let voice = before.players[2]
         .hand
         .iter()
         .find(|card| card.code == "60416")
-        .unwrap();
-    let unavailable = format!("action:ordinary:play:spell:{}", voice.id);
-    assert_eq!(play.actions_remaining[2], 3);
-    assert_eq!(jacqueline.resources, 5);
-    assert_eq!(play.bag_count, 15);
-    assert_eq!(play.premonition.as_ref().unwrap().faces.len(), 1);
-    assert!(play.scenario.enemies.iter().any(|enemy| {
-        enemy.card.code == "01116"
-            && enemy.engaged == Some(Investigator::Jacqueline)
-            && !enemy.exhausted
-    }));
+        .unwrap()
+        .id;
+    assert_eq!(before.actions_remaining[2], 3);
+    assert_eq!(before.players[2].resources, 5);
+    assert_eq!(before.bag_count, 15);
     assert!(
-        !before.choices.iter().any(|choice| choice.id == unavailable),
-        "The unresolved multi-token composition must be withheld before action payment"
+        before
+            .scenario
+            .enemies
+            .iter()
+            .any(|enemy| enemy.card.code == "01116"
+                && enemy.engaged == Some(Investigator::Jacqueline)
+                && !enemy.exhausted)
     );
-    let unchanged = session.clone();
-    assert!(session.choose(before.revision, &unavailable).is_err());
+    choose(&mut session, &format!("action:ordinary:play:spell:{voice}"));
+    let paid = session.observe_for_play();
+    let play = paid.play.as_ref().unwrap();
+    assert_eq!(play.actions_remaining[2], 2);
     assert_eq!(
-        session, unchanged,
-        "Refusal preserves all state and recorded decisions"
+        play.players[2].resources, 5,
+        "Event resolution waits for opportunity attack"
     );
-    assert!(
-        !session
-            .observe_for_play()
-            .choices
+    assert_eq!(play.premonition, before.premonition);
+    let attack = paid
+        .choices
+        .iter()
+        .find(|choice| choice.id.starts_with("opportunity:"))
+        .unwrap()
+        .id
+        .clone();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("voice-opportunity.json");
+    continuity::save_session(&path, &session).unwrap();
+    let mut reopened = continuity::load_session(&path).unwrap();
+    for current in [&mut session, &mut reopened] {
+        choose(current, &attack);
+        for _ in 0..5 {
+            let pending = current.observe_for_play();
+            if pending
+                .choices
+                .iter()
+                .any(|choice| choice.id == "test:reveal")
+            {
+                break;
+            }
+            let assignment = pending
+                .choices
+                .iter()
+                .find(|choice| {
+                    choice.id == "harm:damage:investigator"
+                        || choice.id == "harm:horror:investigator"
+                })
+                .expect("Investigator harm assignment")
+                .id
+                .clone();
+            choose(current, &assignment);
+        }
+        choose(current, "test:reveal");
+        current.validate().unwrap();
+    }
+    assert_eq!(session.observe_for_play(), reopened.observe_for_play());
+    let after = session.observe_for_play().play.unwrap();
+    assert_eq!(after.actions_remaining[2], 2);
+    assert!(after.players[2].damage > before.players[2].damage);
+    assert_eq!(
+        after.players[2].resources, 10,
+        "Voice adds 1 + 2*2 symbols after the attack"
+    );
+    assert_eq!(
+        after.players[2]
+            .discard
             .iter()
-            .any(|choice| choice.id.starts_with("opportunity:")),
-        "Refusal must not queue the engaged enemy's opportunity attack"
+            .filter(|card| card.id == voice)
+            .count(),
+        1
     );
-    session.validate().unwrap();
-
-    // Positive control: the same prepared enemy really provokes an opportunity
-    // attack when a supported ordinary action is paid.
-    choose(&mut session, "action:ordinary:resource");
-    let pending = session.observe_for_play();
-    assert!(
-        pending
-            .choices
-            .iter()
-            .any(|choice| choice.id.starts_with("opportunity:"))
-    );
-    let pending_play = pending.play.as_ref().unwrap();
-    assert_eq!(pending_play.actions_remaining[2], 2);
-    assert_eq!(pending_play.players[2].resources, 5);
-    assert_eq!(pending_play.premonition, play.premonition);
+    assert!(after.premonition.is_none());
+    assert_eq!(after.bag_count, 16);
+    let recording = session.recording();
+    let batch = recording
+        .presentation_moments
+        .iter()
+        .find(|moment| {
+            moment.play.tokens.as_ref().is_some_and(|tokens| {
+                tokens.revealed == [TokenFace::ElderSign, TokenFace::Skull, TokenFace::Zero]
+            })
+        })
+        .expect("One sealed token plus two fresh tokens");
+    assert_eq!(batch.play.bag_count, 13);
+    let mut replay = Replay::new(session.recording()).unwrap();
+    while replay.next() {}
+    assert_eq!(replay.current(), &session.observe_for_play());
 }

@@ -15,7 +15,7 @@ use std::{
 const FORMAT_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 8 * 1024 * 1024;
 const PRESERVED_APP_VERSION: &str = "0.1.0";
-const PRESERVED_READERS: [(&str, &str); 2] = [
+const PRESERVED_READERS: [(&str, &str); 3] = [
     (
         "c35be2c:issue-89-gathering-setup-v1",
         "7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3",
@@ -23,6 +23,10 @@ const PRESERVED_READERS: [(&str, &str); 2] = [
     (
         "c35be2c:issue-89-gathering-runtime-v2",
         "f431de9af84bedf20e0024370b9e6aaa8819a1ef",
+    ),
+    (
+        "c35be2c:issue-89-gathering-runtime-v3",
+        "46f4c54a018802d22889a238629bcea27871d259",
     ),
 ];
 

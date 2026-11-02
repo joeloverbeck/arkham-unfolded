@@ -177,3 +177,128 @@ fn newly_started_setup_is_persisted_before_any_player_choice() {
     let second = run(directory.path(), &["--save", "setup.json"], &[]);
     assert_eq!(first[0]["observation"], second[0]["observation"]);
 }
+
+#[test]
+fn ordinary_setup_round_and_mythos_resume_and_replay_through_fresh_player_processes() {
+    use arkham_unfolded_experiment::gathering::{Phase, Session, continuity};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("ordinary.json");
+    let mut expected = Session::with_seed(89);
+    assert!(!expected.is_verification_fixture());
+    continuity::save_session(&path, &expected).unwrap();
+    let mut requests = Vec::new();
+    let mut encounter_draws = 0;
+    for _ in 0..180 {
+        let view = expected.observe_for_play();
+        if view
+            .play
+            .as_ref()
+            .is_some_and(|play| play.round == 2 && play.phase == Phase::Investigation)
+        {
+            break;
+        }
+        // A modest, legal player policy exercises the ordinary production
+        // entry. Its choices establish continuity, not a strategy/rules oracle.
+        let preferred = [
+            "lead:tony",
+            "confirm-mulligan",
+            "phase-window:pass",
+            "window:pass",
+            "test-card:pass",
+            "commit:confirm",
+            "test:reveal",
+            "lucky:decline",
+            "success:pass",
+            "after-test:pass",
+            "harm:damage:investigator",
+            "harm:horror:investigator",
+            "harm:confirm",
+            "action:ordinary:resource",
+            "turn:end",
+            "enemy:attacks",
+            "round:end",
+            "round-end:decline-act",
+            "mythos:begin",
+            "mythos:encounters",
+            "revelation:resolve",
+            "investigation:begin",
+        ];
+        let id = preferred
+            .into_iter()
+            .find_map(|id| view.choices.iter().find(|choice| choice.id == id))
+            .or_else(|| {
+                view.choices.iter().find(|choice| {
+                    choice.id.contains("decline")
+                        || choice.id.ends_with(":pass")
+                        || [
+                            "turn:",
+                            "upkeep:",
+                            "enemy:",
+                            "mythos:",
+                            "result:",
+                            "turn-end:",
+                            "round-end:",
+                            "revelation-order:",
+                            "discard-card:",
+                        ]
+                        .iter()
+                        .any(|prefix| choice.id.starts_with(prefix))
+                        || (choice.id.starts_with("bounty:") && choice.id.ends_with(":0"))
+                })
+            })
+            .unwrap_or_else(|| panic!("Unexpected ordinary choice: {:?}", view.choices))
+            .id
+            .clone();
+        encounter_draws += usize::from(id == "mythos:draw");
+        requests.push(json!({"op":"choose", "revision":view.revision, "id":id}));
+        expected.choose(view.revision, &id).unwrap();
+    }
+    let pending = expected.observe_for_play();
+    assert_eq!(encounter_draws, 3);
+    assert_eq!(pending.play.as_ref().unwrap().round, 2);
+    assert_eq!(pending.play.as_ref().unwrap().phase, Phase::Investigation);
+    assert_eq!(pending.play.as_ref().unwrap().encounter_deck_count, 23);
+    assert!(pending.verification_fixture.is_none());
+
+    let first = run(directory.path(), &["--save", "ordinary.json"], &requests);
+    assert!(first.iter().all(|response| response["ok"] == true));
+    assert_eq!(
+        first.last().unwrap()["observation"],
+        serde_json::to_value(&pending).unwrap()
+    );
+    assert_eq!(continuity::load_session(&path).unwrap(), expected);
+    let original = std::fs::read(&path).unwrap();
+    let resumed = run(
+        directory.path(),
+        &["--save", "ordinary.json"],
+        &[
+            json!({"op":"replay"}),
+            json!({"op":"next"}),
+            json!({"op":"back"}),
+            json!({"op":"live"}),
+            json!({"op":"export", "path":"ordinary.recording.json"}),
+        ],
+    );
+    assert!(resumed.iter().all(|response| response["ok"] == true));
+    assert_eq!(
+        resumed[0]["observation"],
+        serde_json::to_value(&pending).unwrap()
+    );
+    assert_eq!(resumed[4]["observation"], resumed[0]["observation"]);
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    assert_eq!(
+        continuity::load_recording(directory.path().join("ordinary.recording.json")).unwrap(),
+        expected.recording()
+    );
+    let visible = serde_json::to_string(&first).unwrap();
+    for secret in [
+        "\"seed\"",
+        "\"random\"",
+        "\"fixture_tokens\"",
+        "\"deck_order\"",
+        "\"encounter_order\"",
+    ] {
+        assert!(!visible.contains(secret), "Player output exposes {secret}");
+    }
+}

@@ -1,7 +1,6 @@
 //! Original Gathering preparation for the fixed #89 party.
 //!
-//! The production decision path implements setup only. A complete scenario's
-//! ordinary scenario play remains unavailable; old experiment records stay separate.
+//! Ordinary preparation continues into scenario play; old experiment records stay separate.
 
 mod asset_entry;
 mod backpack;
@@ -62,7 +61,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, io::Read};
 
-pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-runtime-v3";
+pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-runtime-v4";
 const DECK_PROJECTION: &str = include_str!("../docs/research/issue-1-decks.json");
 const DECK_PROJECTION_SHA256: &str =
     "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb";
@@ -397,12 +396,18 @@ impl Session {
             Stage::Playing => {
                 let game = self.runtime.as_ref().expect("Runtime stage");
                 choices = game.choices();
-                if game.scenario.outcome.is_some() {
-                    "Privileged verification reached the recorded Gathering resolution. Its consequences are shown in the resolution record; ordinary complete Gathering remains unavailable."
+                if self.verification_fixture.is_none() && game.scenario.outcome.is_some() {
+                    "The Gathering has ended. Review the recorded resolution and campaign consequences."
+                } else if self.verification_fixture.is_none() && choices.is_empty() {
+                    "No legal choice is available at this pending Gathering decision. Keep this save for review."
+                } else if self.verification_fixture.is_none() {
+                    "Choose the next Gathering decision. Changes save before their consequences are presented."
+                } else if game.scenario.outcome.is_some() {
+                    "Privileged verification reached the recorded Gathering resolution. Its consequences are shown in the resolution record."
                 } else if choices.is_empty() {
-                    "The privileged P1 verification reached its boundary. This is not a scenario resolution; ordinary complete Gathering remains unavailable."
+                    "This privileged verification reached its boundary. This is not a scenario resolution."
                 } else {
-                    "Privileged rules verification: choose among implemented P1 opportunities. Ordinary complete Gathering remains unavailable."
+                    "Privileged rules verification: choose among the offered opportunities."
                 }
             }
         };
@@ -608,20 +613,17 @@ impl Session {
                     self.investigators[owner].deck_count = self.decks[owner].len();
                 }
                 self.assemble_scenario()?;
-                self.stage = Stage::GameplayUnavailable;
-                self.history.push("Opening hands and mulligans are complete; set-aside weaknesses return to their owners' shuffled decks without revelation. The original Gathering components are assembled: Study with six clues; 26 encounter cards; 14 cards in their other setup destinations. Stop before gameplay, which remains unimplemented. [RR p27; CG p2]".into());
-                if self.verification_fixture == Some(HostileFixture::GatheringFromSetup) {
-                    let mut game = runtime::Game::after_setup(
-                        self.lead.expect("Setup lead"),
-                        self.random,
-                        &self.investigators,
-                        &self.decks,
-                        &self.encounter_deck,
-                    );
-                    self.history.append(&mut game.history);
-                    self.runtime = Some(game);
-                    self.stage = Stage::Playing;
-                }
+                self.history.push("Opening hands and mulligans are complete; set-aside weaknesses return to their owners' shuffled decks without revelation. The original Gathering components are assembled: Study with six clues; 26 encounter cards; 14 cards in their other setup destinations. [RR p27; CG p2]".into());
+                let mut game = runtime::Game::after_setup(
+                    self.lead.expect("Setup lead"),
+                    self.random,
+                    &self.investigators,
+                    &self.decks,
+                    &self.encounter_deck,
+                );
+                self.history.append(&mut game.history);
+                self.runtime = Some(game);
+                self.stage = Stage::Playing;
             }
         }
         Ok(())
@@ -767,7 +769,7 @@ impl Session {
         if let Some(fixture) = fixture {
             session.verification_fixture = Some(fixture);
             if fixture == HostileFixture::GatheringFromSetup {
-                session.history.push("Privileged verification will continue from these actual opening hands into the incomplete runtime; ordinary play remains unavailable.".into());
+                session.history.push("Privileged verification continues from these actual opening hands through the rules runtime. This record remains excluded from ordinary player clients.".into());
                 session.moments = vec![session.observe()];
                 return Ok(session);
             }
