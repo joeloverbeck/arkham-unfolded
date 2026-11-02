@@ -76,6 +76,27 @@ pub struct Capture {
 }
 
 #[derive(Args)]
+#[command(
+    after_long_help = r#"JSON actions (one per line; wait for each terminal result):
+  click: x, y
+  wheel: x, y, steps (signed vertical steps, -10..=-1 or 1..=10)
+  right-drag: x, y, dx, dy, duration_seconds (default 0.6; range 0.2..=2)
+  capture: name (fresh .png filename)
+  focus, calibrate, stop
+
+Coordinates are client pixels from an inspected capture. Input requires the
+verified client, focus, calibrated mapping and no held buttons or modifiers.
+Add "focus":true to reacquire focus before a guarded operation.
+
+Example after verifying the target coordinates:
+  {"action":"wheel","focus":true,"x":400,"y":300,"steps":1}
+  {"action":"capture","focus":true,"name":"after-wheel.png"}
+  {"action":"stop"}
+
+Help opens no desktop session. Actual input requires the accepted control
+interval and pointer-only portal consent. Each command needs 15 seconds before
+the final 15-second cleanup reserve. Acknowledgements never renew that budget."#
+)]
 pub struct Session {
     #[command(flatten)]
     client: Client,

@@ -109,22 +109,26 @@ For slow startup, rendering or camera movement, begin with the [native-performan
 
 ### Prepare a compact native handoff
 
-Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. After a long implementation phase, prepare the following compact handoff in the issue's [current handoff](../agents/issue-tracker.md#current-handoff). Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from this handoff and the procedure below without reconstructing the implementation transcript.
+Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. After a long implementation phase, prepare the following compact handoff in the issue's [current handoff](../agents/issue-tracker.md#current-handoff). Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from this handoff and the procedure below without reconstructing the implementation transcript.
 
 ```text
 Candidate: commit; executable/hash; completed check records.
 Run: exact launch/resume command; isolated save/settings/art paths; run manifest.
 Authority: accepted journey, total allowance and stop conditions.
+Capabilities: helper revision; supported actions needed by this route and limits.
 Route, highest-risk unverified behavior first:
-  action -> expected visible result -> camera view/objects that must be visible
-Time: route checkpoints; reserve for applicable replay/reopening; cleanup reserve.
-Recovery: current PID/start identity, window, helper session, last completed
-  request and inspected capture; exact cleanup commands.
+  exact JSON command -> expected visible result -> required camera view/objects
+  capture command -> what to inspect; mark unknown coordinates for the first capture
+Time: original absolute UTC/Unix deadline; route checkpoints; replay/reopening
+  allowance; final 15-second cleanup reserve (each command needs 15 seconds before it).
+Recovery: app PID/start identity and window; supervisor and helper tool session IDs;
+  pending request or last terminal result and inspected capture; remaining route;
+  exact stop/cleanup commands with the same process visibility as launch.
 ```
 
-Fill runtime identities as they become available and record the absolute deadline when the interval starts. Preparation grants no desktop access: launch, focus, consent and interaction stay inside the allowance actually authorized, including startup when that is part of the accepted interval. Keep the app's owner-review lifetime separate from the short control interval.
+Copy the selected JSON examples from the interaction procedure below into the route, including capture and stop, so resumption needs no source lookup. Resolve target coordinates from an inspected client capture; examples are not preapproved click locations. Fill runtime identities as they become available and record the absolute deadline when the interval starts. Preparation grants no desktop access: launch, focus, consent and interaction stay inside the allowance actually authorized, including startup when that is part of the accepted interval. Keep the app's owner-review lifetime separate from the short control interval.
 
-Before recording motion, frame both its source and destination with the relevant labels visible. Use a short recording for movement evidence; inspect it after cleanup when possible. Reserve time for the affected replay and fresh-process reopening checks before repeating an already observed path. At a context interruption, recover only the handoff, run manifest and last acknowledged event/capture, retaining the original deadline. If the remaining budget cannot fit the next operation and cleanup, stop and leave that observation pending. The deadline and cleanup rules below remain controlling.
+Before recording motion, frame both its source and destination with the relevant labels visible. Use a short recording for movement evidence; inspect it after cleanup when possible. Reserve time for the affected replay and fresh-process reopening checks before repeating an already observed path. At a context interruption, recover only the handoff, run manifest and last acknowledged event/capture, retaining the original deadline. An acknowledgement without a terminal result can hide partial input: inspect the existing helper's events before deciding whether any retry is safe. If the remaining budget cannot fit the next operation and cleanup, stop and leave that observation pending. The deadline and cleanup rules below remain controlling.
 
 ### Build an instrumented source copy
 
@@ -219,13 +223,22 @@ For an orbit check, choose a start and end on exposed table space in the inspect
 
 `dx` and `dy` are displacement in client pixels. The nonzero gesture is limited to `abs(dx) + abs(dy) <= 600`; `duration_seconds` defaults to 0.6 and accepts 0.2–2.0 seconds, with 20 movement steps. Desktop verification adds time to the requested movement duration. The helper validates the whole path before pressing, rechecks the window and measured pointer during movement, and releases the right button on failure or interruption. A path that fails preflight sends no press.
 
-Wait for `clicked` or `right-dragged` and allow the visible transition to settle before capturing; inspect the result before choosing another action. A completed gesture is input evidence only: compare the captures to establish camera movement. The helper checks process identity, focus, unchanged geometry and the measured client pointer position immediately before each press. It refuses off-window, off-monitor and mismapped targets. It releases an attempted press even when interrupted.
+For a menu-overflow check, target the visible menu's scroll area in the inspected capture, then send a small vertical wheel input. After verifying these example coordinates:
+
+```text
+{"action":"wheel","focus":true,"x":400,"y":300,"steps":1}
+{"action":"capture","focus":true,"name":"after-wheel.png"}
+```
+
+`steps` is a nonzero signed integer from -10 to 10, passed as discrete vertical portal steps. Start with one step and inspect the visible direction and result before sending more; reverse the sign to reverse the requested direction. The helper validates the target and rechecks the pointer, focus, identity, geometry, held buttons/modifiers and deadline before sending the wheel event. It does not press or hold a button for wheel input.
+
+Wait for `clicked`, `right-dragged` or `wheeled` and allow the visible transition to settle before capturing; inspect the result before choosing another action. A completed gesture is input evidence only: compare the captures to establish the intended movement or scrolling. The helper checks process identity, focus, unchanged geometry and the measured client pointer position immediately before each press or wheel event. It refuses off-window, off-monitor and mismapped targets. It releases an attempted press even when interrupted.
 
 Switching to a terminal or agent interface can take focus from Arkham between commands. Set `"focus":true` on the operation to reacquire the verified client immediately before its guards and input, within the same request. The default leaves focus untouched; `{"action":"focus"}` remains available for focus alone. Reacquiring focus preserves all input guards, including refusal if focus changes during a drag. Send the gesture first, let the application render, then request the capture; a capture queued immediately after release can still show the preceding frame. Inspect pixels rather than interpreting an intended-state filename as proof.
 
-An ordinary `refused` command keeps the grant open; insufficient remaining time, command timeout or failed button release ends it. Diagnose once within the surviving session; `{"action":"calibrate","focus":true}` reacquires focus and remeasures a changed monitor mapping. Inspect a new capture before retrying a target. Stop after one failed capture/focus/click/drag attempt plus at most one bounded diagnosis attempt. If interaction remains unavailable, report the limitation and use the already-agreed owner check within its remaining allowance. Do not interpret a stale image as evidence against what the owner sees on the desktop.
+An ordinary `refused` command keeps the grant open; insufficient remaining time, command timeout or failed button release ends it. Diagnose once within the surviving session; `{"action":"calibrate","focus":true}` reacquires focus and remeasures a changed monitor mapping. Inspect a new capture before retrying a target. Stop after one failed capture/focus/click/drag/wheel attempt plus at most one bounded diagnosis attempt. If interaction remains unavailable, report the limitation and use the already-agreed owner check within its remaining allowance. Do not interpret a stale image as evidence against what the owner sees on the desktop.
 
-Send `{"action":"stop"}` (acknowledged by `stopped`) or close stdin when finished, and wait for `session-closed`. EOF, fatal errors and handled interruption close the portal grant; a killed or crashed process loses its session when its D-Bus connection closes. `events.jsonl` records capture paths, pixel hashes, mapping, command acknowledgments, elapsed times, refusals and closure. It contains no artwork itself; keep it with the local captures.
+Send `{"action":"stop"}` (acknowledged by `stopped`) or close stdin when finished, and wait for `session-closed`. Cleanup errors emit `session-close-failed` with a reason and return a failing exit status; report that result instead of claiming successful closure. An already absent session is accepted only for `UnknownObject` or the observed GLib `UnknownMethod` reply naming that exact missing session; other errors remain failures. EOF, fatal errors and handled interruption attempt to close the portal grant; a killed or crashed process loses its session when its D-Bus connection closes. `events.jsonl` records capture paths, pixel hashes, mapping, command acknowledgments, elapsed times, refusals and closure. It contains no artwork itself; keep it with the local captures.
 
 The cleanup reserve reduces normal overruns but cannot guarantee interruption of a blocked native call. Inspect the actual closure timestamp and report any overrun of the announced end time. A timeout during calibration ends the session as well.
 

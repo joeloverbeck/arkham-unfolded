@@ -9,14 +9,33 @@ use zbus::{message::Header, zvariant::Value};
 #[derive(Default)]
 struct Seen {
     calls: Vec<String>,
+    client: Option<zbus::names::OwnedUniqueName>,
 }
 type Shared = Arc<Mutex<Seen>>;
 
-struct Session(Shared);
+struct Session(Shared, &'static str);
 #[zbus::interface(name = "org.freedesktop.portal.Session")]
 impl Session {
-    fn close(&self) {
+    fn close(&self, #[zbus(header)] header: Header<'_>) -> zbus::fdo::Result<()> {
         self.0.lock().unwrap().calls.push("session-close".into());
+        let path = header.path().unwrap();
+        match self.1 {
+            "gone-object" => Err(zbus::fdo::Error::UnknownObject(
+                "Session disappeared".into(),
+            )),
+            // GLib's absent-object reply, also observed during #81 cancellation.
+            "gone-method" | "cancel-gone-method" => Err(zbus::fdo::Error::UnknownMethod(format!(
+                "Object does not exist at path “{path}”"
+            ))),
+            "wrong-path" => Err(zbus::fdo::Error::UnknownMethod(
+                "Object does not exist at path “/another/session”".into(),
+            )),
+            "missing-method" => Err(zbus::fdo::Error::UnknownMethod(
+                "Method Close does not exist".into(),
+            )),
+            "close-failed" => Err(zbus::fdo::Error::Failed("Session close failed".into())),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -82,12 +101,16 @@ impl Remote {
         #[zbus(connection)] connection: &zbus::Connection,
         #[zbus(header)] header: Header<'_>,
     ) -> OwnedObjectPath {
-        self.shared.lock().unwrap().calls.push("create".into());
+        {
+            let mut seen = self.shared.lock().unwrap();
+            seen.calls.push("create".into());
+            seen.client = Some(header.sender().unwrap().to_owned().into());
+        }
         let token = <&str>::try_from(options.get("session_handle_token").unwrap()).unwrap();
         let session = format!("{DESKTOP}/session/{}/{token}", sender(&header));
         connection
             .object_server()
-            .at(session.clone(), Session(self.shared.clone()))
+            .at(session.clone(), Session(self.shared.clone(), self.mode))
             .await
             .unwrap();
         let values = HashMap::from([("session_handle".into(), Str::from(session).into())]);
@@ -164,7 +187,11 @@ impl Remote {
             &header,
             options,
             self.shared.clone(),
-            if self.mode == "cancel" { 1 } else { 0 },
+            if self.mode.starts_with("cancel") {
+                1
+            } else {
+                0
+            },
             values,
             self.mode == "timeout",
         )
@@ -197,6 +224,20 @@ impl Remote {
             .unwrap()
             .calls
             .push(format!("button:{button},{state}"));
+    }
+    fn notify_pointer_axis_discrete(
+        &self,
+        _session: OwnedObjectPath,
+        options: Values,
+        axis: u32,
+        steps: i32,
+    ) {
+        assert!(options.is_empty());
+        self.shared
+            .lock()
+            .unwrap()
+            .calls
+            .push(format!("wheel:{axis},{steps}"));
     }
 }
 
@@ -304,12 +345,61 @@ impl Bus {
             Arc::new(AtomicBool::new(false)),
         )
     }
+
+    fn assert_disconnected(&self) {
+        let name = self.shared.lock().unwrap().client.clone().unwrap();
+        let bus = zbus::blocking::fdo::DBusProxy::new(&self.server).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while bus.name_has_owner(name.clone().into()).unwrap() {
+            assert!(
+                Instant::now() < deadline,
+                "portal connection remained on the bus"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
 }
 impl Drop for Bus {
     fn drop(&mut self) {
         let _ = self.server.clone().close();
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn disappeared_session_cleanup_succeeds_and_disconnects_after_grant_or_cancel() {
+    for mode in ["gone-object", "gone-method", "cancel-gone-method"] {
+        let bus = Bus::new(mode);
+        let mut portal = bus.portal(5.0);
+        let started = portal.start(&mut |_| Ok(()));
+        assert_eq!(started.is_err(), mode == "cancel-gone-method", "{mode}");
+        let closed = portal.close();
+        bus.assert_disconnected();
+        assert!(closed.is_ok(), "{mode}: {closed:?}");
+        portal.close().unwrap();
+        assert_eq!(
+            bus.shared
+                .lock()
+                .unwrap()
+                .calls
+                .iter()
+                .filter(|call| *call == "session-close")
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn genuine_cleanup_errors_remain_errors_but_still_disconnect() {
+    for mode in ["wrong-path", "missing-method", "close-failed"] {
+        let bus = Bus::new(mode);
+        let mut portal = bus.portal(5.0);
+        portal.start(&mut |_| Ok(())).unwrap();
+        assert!(format!("{:#}", portal.close().unwrap_err()).contains("Portal cleanup failed"));
+        bus.assert_disconnected();
+        portal.close().unwrap();
     }
 }
 
@@ -326,6 +416,8 @@ fn persistent_dbus_transport_requests_scoped_grant_and_releases_on_close() {
         .unwrap();
     assert_eq!(portal.size(), [1920.0, 1080.0]);
     portal.move_to([123.0, 234.0]).unwrap();
+    portal.wheel(-3).unwrap();
+    portal.wheel(2).unwrap();
     portal.button(true, 273).unwrap();
     portal.close().unwrap();
     portal.close().unwrap();
@@ -337,6 +429,8 @@ fn persistent_dbus_transport_requests_scoped_grant_and_releases_on_close() {
             "one-monitor",
             "start",
             "move:123,234",
+            "wheel:0,-3",
+            "wheel:0,2",
             "button:273,1",
             "button:273,0",
             "session-close"
