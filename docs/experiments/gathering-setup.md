@@ -134,6 +134,31 @@ limit. This is a measured path, not an upper bound for every possible game.
 Headless production-system checks cover these adapter behaviors; physical input,
 readability, artwork and owner acceptance still require the actual window.
 
+On 2026-11-02, a five-minute authorized native check of `fbf82d3` opened the
+ordinary setup window at 3200 × 2000 with readable substitutes and healthy
+foreground rendering. The helper initially refused Gathering's exact window
+title; its title allowlist was corrected while preserving PID, process-start,
+focus and geometry guards. The subsequent calibrated portal click landed inside
+the visible lead-choice border, but the save remained at revision 0 and the
+capture did not change. The pointer grant closed at 21:02:59 UTC and the isolated
+launch was closed by 21:03:04, before the 21:03:42 deadline. The planned first
+action and replay route was therefore **not verified**. The owner independently
+reproduced the inert physical click and reported `No tab groups found` on Tab.
+The original headless pointer tests missed continuous graphics-health updates:
+the native monitor changes its sampling resource every frame, causing Gathering
+to despawn the hovered controls before activation. A regression test reproduced
+revision 0 instead of 1 with those updates; a separate test reproduced the exact
+Tab navigation error after graphics admission.
+
+The renderer now rebuilds for changes to graphics admission or its displayed
+status, while preserving controls across ordinary sampling updates. The toolbar
+and decision panel now register ordered Tab groups. The previously failing
+tests pass, including raw mouse events at scales 1 and 2 with same-frame and
+separate-frame press/release. These checks establish the reproduced regression
+repair; a native retest is still required to verify the repaired executable.
+Captures and event receipts from the failed check remain local under
+`~/.cache/agent-tmp/arkham-89-native-fbf82d3/`.
+
 ## Record compatibility
 
 New Gathering sessions and recordings identify

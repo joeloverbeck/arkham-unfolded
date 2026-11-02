@@ -69,6 +69,7 @@ struct Table {
     presentation_clock: f32,
     presentation_paused: bool,
     last_rendered: Option<Observation>,
+    last_rendered_health: Option<(bool, String)>,
     motion_origins: motion::Origins,
 }
 
@@ -89,6 +90,7 @@ impl Table {
             presentation_clock: 0.,
             presentation_paused: false,
             last_rendered: None,
+            last_rendered_health: None,
             motion_origins: motion::Origins::default(),
         }
     }
@@ -521,9 +523,18 @@ fn render(
     mut materials: ResMut<Assets<StandardMaterial>>,
     orbit: Res<Orbit>,
 ) {
-    if !table.dirty && !health.is_changed() {
+    // Health sampling changes every frame. Rebuilding for those observations
+    // destroys the controls between pointer hover, press, and release.
+    let health_changed = table
+        .last_rendered_health
+        .as_ref()
+        .is_none_or(|(allowed, status)| {
+            *allowed != health.allows_play() || status != health.status()
+        });
+    if !table.dirty && !health_changed {
         return;
     }
+    table.last_rendered_health = Some((health.allows_play(), health.status().to_owned()));
     table.dirty = false;
     let mut origins = motion::Origins::from_view(table.last_rendered.as_ref());
     for (entity, card, transform, motion) in &old {
@@ -689,6 +700,7 @@ fn render(
                 ..default()
             },
             BackgroundColor(INK),
+            TabGroup::new(0),
         ))
         .with_children(|p| {
             p.spawn(text(
@@ -736,6 +748,7 @@ fn render(
                 ..default()
             },
             BackgroundColor(INK),
+            TabGroup::new(1),
         ))
         .insert((
             ScrollPosition::default(),

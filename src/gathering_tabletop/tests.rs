@@ -1,7 +1,16 @@
 use super::*;
 
 fn host(path: PathBuf) -> App {
+    host_with_pointer_input(path, false)
+}
+
+fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) -> App {
     let mut app = crate::tabletop_layout::heading_checks::app();
+    if raw_window_events {
+        // Both are supplied by DefaultPlugins in native startup.
+        app.add_message::<bevy::window::WindowEvent>()
+            .add_plugins(bevy::picking::input::PointerInputPlugin);
+    }
     app.init_resource::<Time>()
         .init_resource::<PresentationTime>()
         .init_resource::<Redraw>()
@@ -51,6 +60,187 @@ fn native_choice_persists_before_showing_real_opening_hands() {
     assert_eq!(saved, app.world().resource::<Table>().view());
     assert_eq!(saved.stage, crate::gathering::Stage::Mulligan);
     assert!(saved.investigators.iter().all(|p| p.hand.len() == 5));
+}
+
+#[test]
+fn pointer_lead_choice_through_production_ui_picking_persists() {
+    assert_pointer_lead_choice(false, false);
+}
+
+#[test]
+fn window_mouse_lead_choice_through_production_ui_picking_persists() {
+    assert_pointer_lead_choice(true, false);
+}
+
+#[test]
+fn graphics_health_observations_preserve_pointer_lead_choice() {
+    assert_pointer_lead_choice(true, true);
+}
+
+#[test]
+fn ordinary_setup_tab_navigation_survives_graphics_admission() {
+    use bevy::{
+        ecs::system::RunSystemOnce,
+        input_focus::{
+            InputFocus,
+            tab_navigation::{NavAction, TabNavigation},
+        },
+    };
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host(directory.path().join("keyboard.json"));
+    app.insert_resource(RenderHealth::default());
+    app.update();
+    app.insert_resource(RenderHealth::just_ready_for_test());
+    app.update();
+    app.insert_resource(RenderHealth::ready_for_test());
+    app.update();
+    let result = app
+        .world_mut()
+        .run_system_once(|navigation: TabNavigation, focus: Res<InputFocus>| {
+            navigation.navigate(&focus, NavAction::Next)
+        })
+        .unwrap();
+    assert!(
+        result.is_ok(),
+        "ordinary setup must admit Tab navigation after graphics readiness: {result:?}"
+    );
+}
+
+fn assert_pointer_lead_choice(raw_window_events: bool, continuing_health_observations: bool) {
+    use bevy::{
+        camera::RenderTarget,
+        picking::{
+            hover::HoverMap,
+            pointer::{
+                Location, PointerAction, PointerButton, PointerId, PointerInput, PointerLocation,
+            },
+        },
+        window::WindowRef,
+    };
+
+    let update = |app: &mut App| {
+        if continuing_health_observations {
+            // Native monitor_rendering mutates health sampling bookkeeping every
+            // frame even when the admission state remains Ready.
+            app.world_mut().resource_mut::<RenderHealth>().set_changed();
+        }
+        app.update();
+    };
+
+    for scale in [1.0, 2.0] {
+        for same_frame in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("pointer.json");
+            let mut app = host_with_pointer_input(path.clone(), raw_window_events);
+            // Supply only renderer metadata. Layout, picking, button observers,
+            // and Gathering actions use the plugins and installer used natively.
+            crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+                &mut app,
+                Vec2::new(1600.0, 1000.0),
+                scale,
+            );
+            for _ in 0..5 {
+                update(&mut app);
+            }
+            let world = app.world_mut();
+            let window = world
+                .query_filtered::<Entity, With<Window>>()
+                .single(world)
+                .unwrap();
+            let button = world
+                .query_filtered::<(Entity, &Children), With<Button>>()
+                .iter(world)
+                .find_map(|(entity, children)| {
+                    children
+                        .iter()
+                        .any(|child| {
+                            world.get::<Text>(child).is_some_and(|text| {
+                                text.0 == "Choose Tony Morgan as lead investigator"
+                            })
+                        })
+                        .then_some(entity)
+                })
+                .expect("production lead choice is rendered");
+            let position = world
+                .get::<bevy::ui::UiGlobalTransform>(button)
+                .unwrap()
+                .translation
+                / scale;
+            let location = Location {
+                target: RenderTarget::Window(WindowRef::Entity(window))
+                    .normalize(Some(window))
+                    .unwrap(),
+                position,
+            };
+            if raw_window_events {
+                world.write_message(bevy::window::WindowEvent::CursorMoved(
+                    bevy::window::CursorMoved {
+                        window,
+                        position,
+                        delta: None,
+                    },
+                ));
+            } else {
+                world.spawn((PointerId::Mouse, PointerLocation::new(location.clone())));
+            }
+            update(&mut app);
+            let hits = &app.world().resource::<HoverMap>()[&PointerId::Mouse];
+            let hit_button = hits.keys().any(|entity| {
+                *entity == button
+                    || app
+                        .world()
+                        .get::<ChildOf>(*entity)
+                        .is_some_and(|parent| parent.parent() == button)
+            });
+            let button_survived_hover = app.world().get_entity(button).is_ok();
+            assert_eq!(app.world().resource::<Table>().view().revision, 0);
+            for state in [
+                bevy::input::ButtonState::Pressed,
+                bevy::input::ButtonState::Released,
+            ] {
+                if raw_window_events {
+                    app.world_mut()
+                        .write_message(bevy::window::WindowEvent::MouseButtonInput(
+                            bevy::input::mouse::MouseButtonInput {
+                                button: MouseButton::Left,
+                                state,
+                                window,
+                            },
+                        ));
+                } else {
+                    let action = match state {
+                        bevy::input::ButtonState::Pressed => {
+                            PointerAction::Press(PointerButton::Primary)
+                        }
+                        bevy::input::ButtonState::Released => {
+                            PointerAction::Release(PointerButton::Primary)
+                        }
+                    };
+                    app.world_mut().write_message(PointerInput::new(
+                        PointerId::Mouse,
+                        location.clone(),
+                        action,
+                    ));
+                }
+                if !same_frame {
+                    update(&mut app);
+                }
+            }
+            update(&mut app);
+            let view = app.world().resource::<Table>().view();
+            assert_eq!(
+                view.revision, 1,
+                "scale={scale}, same_frame={same_frame}, hit_button={hit_button}, button_survived_hover={button_survived_hover}"
+            );
+            assert!(hit_button, "production picking must hit the lead button");
+            assert_eq!(view.stage, crate::gathering::Stage::Mulligan);
+            assert_eq!(
+                continuity::load_session(&path).unwrap().observe_for_play(),
+                view
+            );
+        }
+    }
 }
 
 #[test]
