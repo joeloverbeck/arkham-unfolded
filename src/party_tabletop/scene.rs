@@ -1,9 +1,5 @@
 use super::*;
-use crate::{
-    TokenFace, TokenStatus,
-    tabletop_counters::{self as counters, ActionRow, CounterKind, CounterVisual},
-    tabletop_tokens::{self, TokenVisual},
-};
+use crate::tabletop_counters::{self as counters, ActionRow, CounterKind, CounterVisual};
 
 pub(super) fn discard_at(who: Investigator) -> Vec3 {
     layout::investigator_discard(who.index())
@@ -156,21 +152,14 @@ pub(super) fn synchronize(
     entities: Query<Entity, With<Scene>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut last: Local<Option<Observation>>,
+    mut consequences: consequences::Presentation,
 ) {
-    let mut view = table.view();
-    for (index, investigator) in view.investigators.iter_mut().enumerate() {
-        investigator.clues = table.displayed_clues(index);
-    }
-    if last.as_ref() == Some(&view) {
+    let Some(presentation) =
+        consequences.prepare_view(table.view(), table.replay.is_none(), table.reduced_motion)
+    else {
         return;
-    }
-    let new_tokens = last.as_ref().map_or(0, |old| old.held_tokens().len());
-    let returning = !table.reduced_motion
-        && view.test.as_ref().is_some_and(|test| test.result.is_some())
-        && last
-            .as_ref()
-            .is_some_and(|old| old.revision < view.revision && !old.held_tokens().is_empty());
+    };
+    let view = &presentation.observation;
     for entity in &entities {
         commands.entity(entity).despawn();
     }
@@ -596,76 +585,7 @@ pub(super) fn synchronize(
             );
         }
     }
-    let mut token_slots = [0, 0];
-    let visible_tokens = if returning {
-        &view.tokens
-    } else {
-        view.held_tokens()
-    };
-    for (index, token) in visible_tokens.iter().enumerate() {
-        let canceled = token.status == TokenStatus::Canceled;
-        let section = usize::from(canceled);
-        let at = layout::test_token(canceled, token_slots[section]);
-        token_slots[section] += 1;
-        let transform = Transform::from_translation(at).with_scale(
-            if index >= new_tokens && !table.reduced_motion {
-                Vec3::splat(0.1)
-            } else {
-                Vec3::ONE
-            },
-        );
-        let (entity, label) = tabletop_tokens::spawn(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            TokenVisual {
-                face: token.face,
-                status: token.status,
-                ordinal: Some(usize::from(token.id) + 1),
-                image: art.image(&format!("token/{}", token_role(token.face))),
-                transform,
-                label_offset: Vec3::new(0., 0., 0.55),
-            },
-        );
-        if returning {
-            commands.entity(entity).insert((
-                Scene,
-                Pickable::IGNORE,
-                ReturningToken {
-                    start: at,
-                    destination: if token.face == TokenFace::Curse
-                        && token.status == TokenStatus::Resolved
-                    {
-                        curse_pool_at()
-                    } else {
-                        layout::test_bag()
-                    },
-                    elapsed: 0.,
-                },
-            ));
-            commands.entity(label).despawn();
-            continue;
-        }
-        let source = Source::Token(token.id);
-        commands
-            .entity(entity)
-            .insert((Scene, Appearing, Pickable::default(), CardSource(source)))
-            .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
-                if event.button == bevy::picking::pointer::PointerButton::Primary {
-                    queue.0.push(Action::Select(revision, source, at));
-                }
-            });
-        feedback::attach_card_feedback(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            entity,
-            1.,
-            1.,
-            0.08,
-        );
-        commands.entity(label).insert(Scene);
-    }
+    presentation.spawn_tokens(&mut commands, &mut meshes, &mut materials, &art);
     let bag_at = layout::test_bag();
     commands
         .spawn((
@@ -708,24 +628,7 @@ pub(super) fn synchronize(
         layout::ENCOUNTER_DISCARD + Vec3::Z * 2.0,
         false,
     );
-    *last = Some(view);
 }
 pub(super) fn curse_pool_at() -> Vec3 {
     layout::test_bag() - Vec3::X * 2.
-}
-fn token_role(face: TokenFace) -> &'static str {
-    match face {
-        TokenFace::PlusOne => "plus_one",
-        TokenFace::Zero => "zero",
-        TokenFace::MinusOne => "minus_one",
-        TokenFace::MinusTwo => "minus_two",
-        TokenFace::MinusThree => "minus_three",
-        TokenFace::MinusFour => "minus_four",
-        TokenFace::Skull => "skull",
-        TokenFace::Cultist => "cultist",
-        TokenFace::Tablet => "tablet",
-        TokenFace::AutoFail => "auto_fail",
-        TokenFace::ElderSign => "elder_sign",
-        TokenFace::Curse => "curse",
-    }
 }
