@@ -155,6 +155,23 @@ fn party_selection() -> &'static Selection {
     })
 }
 
+fn gathering_selection() -> &'static Selection {
+    static SELECTION: OnceLock<Selection> = OnceLock::new();
+    SELECTION.get_or_init(|| {
+        serde_json::from_str(include_str!("../resources/gathering-asset-selection.json"))
+            .expect("the committed Gathering asset selection must be valid")
+    })
+}
+
+/// Image roles in the finite Gathering collection; the symbol font loads separately.
+pub fn gathering_image_roles() -> impl Iterator<Item = &'static str> {
+    gathering_selection()
+        .assets
+        .iter()
+        .filter(|asset| asset.role != "font/symbols")
+        .map(|asset| asset.role.as_str())
+}
+
 // Exact earlier selections remain useful without claiming newly selected artwork.
 fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
     let versions: &[u32] = match selection.collection.as_str() {
@@ -272,6 +289,11 @@ pub fn inspect_party(root: &Path) -> CollectionReport {
     inspect_selection(root, party_selection())
 }
 
+/// Inspect Gathering's own collection without adopting an earlier experiment's subset.
+pub fn inspect_gathering(root: &Path) -> CollectionReport {
+    inspect_selection(root, gathering_selection())
+}
+
 fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
     let mut report = CollectionReport {
         recognized: false,
@@ -374,6 +396,15 @@ pub fn prepare_party(
     reveal_icon: &Path,
 ) -> Result<PrepareResult, AssetError> {
     prepare_selection_with_icon(source, output, party_selection(), Some(reveal_icon))
+}
+
+/// Prepare the selected original Gathering artwork in a fresh portable collection.
+pub fn prepare_gathering(
+    source: &Path,
+    output: &Path,
+    reveal_icon: &Path,
+) -> Result<PrepareResult, AssetError> {
+    prepare_selection_with_icon(source, output, gathering_selection(), Some(reveal_icon))
 }
 
 #[cfg(test)]
@@ -734,6 +765,16 @@ pub(crate) fn write_current_manifest_without_payloads(root: &Path) {
 }
 
 #[cfg(all(test, feature = "tabletop"))]
+pub(crate) fn write_gathering_manifest_without_payloads(root: &Path) {
+    fs::create_dir_all(root).unwrap();
+    fs::write(
+        root.join(MANIFEST),
+        serde_json::to_vec(&gathering_selection().manifest()).unwrap(),
+    )
+    .unwrap();
+}
+
+#[cfg(all(test, feature = "tabletop"))]
 pub(crate) fn assert_counter_recipe_roles_loaded(
     recipe: &str,
     loaded: impl Iterator<Item = String>,
@@ -780,6 +821,199 @@ pub(crate) fn assert_counter_recipe_roles_loaded(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gathering_recipe_covers_selected_decks_and_original_scenario_faces() {
+        let recipe: Selection =
+            serde_json::from_str(include_str!("../resources/gathering-asset-selection.json"))
+                .unwrap();
+        let decks: serde_json::Value =
+            serde_json::from_str(include_str!("../docs/research/issue-1-decks.json")).unwrap();
+        let mut codes = BTreeSet::new();
+        for deck in decks["decks"].as_array().unwrap() {
+            codes.insert(deck["investigator_code"].as_str().unwrap().to_owned());
+            codes.extend(deck["slots"].as_object().unwrap().keys().cloned());
+        }
+        // The retained deck placeholders are replaced by the owner's fixed choices.
+        codes.remove("01000");
+        codes.extend(["02038", "02039", "05041"].map(str::to_owned));
+        // Independent original campaign inventory: 26 identities, 40 physical cards.
+        codes.extend(
+            [
+                "01104", "01105", "01106", "01107", "01108", "01109", "01110", "01111", "01112",
+                "01113", "01114", "01115", "01116", "01117", "01118", "01119", "01159", "01160",
+                "01161", "01162", "01163", "01164", "01165", "01166", "01167", "01168",
+            ]
+            .map(str::to_owned),
+        );
+        assert_eq!(codes.len(), 94);
+        let expected: BTreeSet<_> = codes.iter().map(|code| format!("card-{code}")).collect();
+        let actual: BTreeSet<_> = recipe
+            .assets
+            .iter()
+            .map(|asset| asset.role.clone())
+            .filter(|role| {
+                role.starts_with("card-")
+                    && !role.ends_with("-back")
+                    && !role.starts_with("card-back/")
+            })
+            .collect();
+        assert_eq!(
+            actual, expected,
+            "Every selected physical card identity needs its original face"
+        );
+        let roles: BTreeSet<_> = recipe
+            .assets
+            .iter()
+            .map(|asset| asset.role.as_str())
+            .collect();
+        for code in [
+            "01105", "01106", "01107", "01108", "01109", "01110", "01111", "01112", "01113",
+            "01114", "01115",
+        ] {
+            assert!(
+                roles.contains(format!("card-{code}-back").as_str()),
+                "Missing reverse/unrevealed side of {code}"
+            );
+        }
+        for role in [
+            "card-back/player",
+            "card-back/encounter",
+            "font/symbols",
+            "standee/06003",
+            "standee/06005",
+            "standee/60401",
+            "token/curse",
+            "token/clue",
+            "token/resource",
+            "token/damage",
+            "token/horror",
+            "ui/reveal-chaos-token",
+        ] {
+            assert!(
+                roles.contains(role),
+                "Missing shared presentation role {role}"
+            );
+        }
+        assert_eq!(roles.len(), recipe.assets.len(), "Roles must be unique");
+        let paths: BTreeSet<_> = recipe
+            .assets
+            .iter()
+            .map(|asset| asset.path.as_str())
+            .collect();
+        assert_eq!(
+            paths.len(),
+            recipe.assets.len(),
+            "Destinations must be unique"
+        );
+    }
+
+    #[test]
+    fn gathering_location_sides_and_standard_reference_keep_original_art_identity() {
+        let selected = gathering_selection();
+        for code in ["01111", "01112", "01113", "01114", "01115"] {
+            let front = selected
+                .assets
+                .iter()
+                .find(|asset| asset.role == format!("card-{code}"))
+                .unwrap();
+            let hidden = selected
+                .assets
+                .iter()
+                .find(|asset| asset.role == format!("card-{code}-back"))
+                .unwrap();
+            assert!(
+                front.source.path.ends_with("/back.png"),
+                "Original revealed {code} is the archive back"
+            );
+            assert!(
+                hidden.source.path.ends_with("/face.png"),
+                "Original unrevealed {code} is the archive face"
+            );
+        }
+        for (role, expected_hash) in [
+            (
+                "card-01104",
+                "2c65c1d4b98f26f4268cfa4647b006ffa9a6d7030281a545e676ad41c1d9ceb5",
+            ),
+            (
+                "card-01111",
+                "f9a4874007445ac47f66275266e034ea65665722580e1672d70cc6ae9121cf10",
+            ),
+            (
+                "card-01111-back",
+                "ea1390d9486abe7ea275b7501d87ec3a4eb73c5b27d01e3824d04b40d7b25334",
+            ),
+        ] {
+            let asset = selected
+                .assets
+                .iter()
+                .find(|asset| asset.role == role)
+                .unwrap();
+            assert_eq!(
+                asset.sha256, expected_hash,
+                "Pinned original image for {role}"
+            );
+            assert_eq!(
+                asset.source.sha256, expected_hash,
+                "Original bytes are copied unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn gathering_inspection_rejects_other_collections_and_preserves_missing_art_records() {
+        let directory = tempfile::tempdir().unwrap();
+        let manifest = directory.path().join(MANIFEST);
+        let bytes = serde_json::to_vec(&gathering_selection().manifest()).unwrap();
+        assert!(bytes.len() < MAX_MANIFEST_BYTES as usize);
+        fs::write(&manifest, &bytes).unwrap();
+        let report = inspect_gathering(directory.path());
+        assert!(report.recognized && !report.complete);
+        assert_eq!(report.valid_count(), 0);
+        assert!(report.verified_path("card-02039").is_none());
+        assert!(!inspect_party(directory.path()).recognized);
+        assert!(!inspect_tony(directory.path()).recognized);
+        assert_eq!(fs::read(&manifest).unwrap(), bytes);
+        let prior = serde_json::to_vec(&party_selection().manifest()).unwrap();
+        fs::write(&manifest, &prior).unwrap();
+        assert!(!inspect_gathering(directory.path()).recognized);
+        assert_eq!(fs::read(&manifest).unwrap(), prior);
+    }
+
+    #[test]
+    fn gathering_collection_relocates_without_source_and_isolates_corrupt_faces() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let output = directory.path().join("prepared");
+        let moved = directory.path().join("relocated");
+        let selected = recipe_fixture(
+            &source,
+            include_str!("../resources/gathering-asset-selection.json"),
+        );
+        prepare_selection(&source, &output, &selected).unwrap();
+        fs::rename(&output, &moved).unwrap();
+        fs::remove_dir_all(&source).unwrap();
+        assert!(inspect_selection(&moved, &selected).complete);
+        assert_eq!(
+            prepare_selection(&source, &moved, &selected).unwrap(),
+            PrepareResult::AlreadyPresent
+        );
+        let card = selected
+            .assets
+            .iter()
+            .find(|asset| asset.role == "card-02039")
+            .unwrap();
+        let manifest = fs::read(moved.join(MANIFEST)).unwrap();
+        fs::write(moved.join(&card.path), b"changed image").unwrap();
+        let report = inspect_selection(&moved, &selected);
+        assert!(report.recognized && !report.complete);
+        assert!(report.verified_path("card-02039").is_none());
+        assert!(report.verified_path("card-05041").is_some());
+        assert!(prepare_selection(&source, &moved, &selected).is_err());
+        assert_eq!(fs::read(moved.join(MANIFEST)).unwrap(), manifest);
+        assert_eq!(fs::read(moved.join(&card.path)).unwrap(), b"changed image");
+    }
 
     fn png_fixture() -> Vec<u8> {
         use image::ImageEncoder;

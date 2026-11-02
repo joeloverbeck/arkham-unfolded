@@ -1,10 +1,10 @@
 use super::*;
 
-fn host(path: PathBuf) -> App {
+pub(super) fn host(path: PathBuf) -> App {
     host_with_pointer_input(path, false)
 }
 
-fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) -> App {
+pub(super) fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) -> App {
     let mut app = crate::tabletop_layout::heading_checks::app();
     if raw_window_events {
         // Both are supplied by DefaultPlugins in native startup.
@@ -16,6 +16,7 @@ fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) -> App {
         .init_resource::<Redraw>()
         .init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>()
+        .init_resource::<art::Art>()
         .insert_resource(Table::new(Session::with_seed(19), path))
         .insert_resource(RenderHealth::ready_for_test())
         .insert_resource(Orbit::new(CameraMode::Jacqueline));
@@ -33,27 +34,217 @@ fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) -> App {
 }
 
 #[test]
+fn gathering_options_enable_default_and_saved_art_without_changing_preferences() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = directory.path().join("gathering.toml");
+    let default_root = directory.path().join("default-gathering-assets");
+    let parse = || {
+        Options::parse(
+            AssetConfig::load_at(settings.clone(), default_root.clone()),
+            ["--experiment", "gathering"].into_iter().map(str::to_owned),
+        )
+        .unwrap()
+        .unwrap()
+    };
+    assert_eq!(parse().art_root.as_ref(), Some(&default_root));
+    assert!(!settings.exists());
+    let saved_root = directory.path().join("selected-gathering-assets");
+    AssetConfig::load_at(settings.clone(), default_root.clone())
+        .save_root(&saved_root)
+        .unwrap();
+    let before = std::fs::read(&settings).unwrap();
+    let options = parse();
+    assert_eq!(options.art_root.as_ref(), Some(&saved_root));
+    assert_eq!(
+        options.save,
+        PathBuf::from("local/gathering/setup.session.json")
+    );
+    assert_eq!(std::fs::read(settings).unwrap(), before);
+}
+
+#[test]
+fn gathering_art_override_and_no_art_are_launch_only_options() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = directory.path().join("gathering.toml");
+    let saved_root = directory.path().join("saved-assets");
+    AssetConfig::load_at(settings.clone(), saved_root.clone())
+        .save_root(&saved_root)
+        .unwrap();
+    let before = std::fs::read(&settings).unwrap();
+    for args in [
+        vec!["--art-root", "/tmp/gathering-override"],
+        vec!["--no-art", "--art-root", "/tmp/gathering-override"],
+        vec!["--art-root", "/tmp/gathering-override", "--no-art"],
+        vec!["--no-art"],
+    ] {
+        let no_art = args.contains(&"--no-art");
+        let options = Options::parse(
+            AssetConfig::load_at(settings.clone(), directory.path().join("unused-default")),
+            args.into_iter().map(str::to_owned),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            options.art_root,
+            (!no_art).then(|| PathBuf::from("/tmp/gathering-override"))
+        );
+        assert_eq!(options.config.root(), saved_root);
+        assert_eq!(std::fs::read(&settings).unwrap(), before);
+    }
+}
+
+fn button_with_label(app: &mut App, label: &str) -> Option<Entity> {
+    let world = app.world_mut();
+    world
+        .query_filtered::<(Entity, &Children), With<Button>>()
+        .iter(world)
+        .find_map(|(entity, children)| {
+            children
+                .iter()
+                .any(|child| world.get::<Text>(child).is_some_and(|text| text.0 == label))
+                .then_some(entity)
+        })
+}
+
+/// Invoke the production mesh observer with a synthetic intersection. The menu
+/// rows below use real UI layout/picking; this helper does not claim GPU picking.
+pub(super) fn click_source(app: &mut App, source: controls::Source) {
+    let world = app.world_mut();
+    let entity = world
+        .query::<(Entity, &ContextTarget)>()
+        .iter(world)
+        .find_map(|(entity, target)| (target.source == source).then_some(entity))
+        .unwrap_or_else(|| panic!("The production scene must render {source:?}"));
+    click_mesh_observer(app, entity);
+}
+
+fn click_mesh_observer(app: &mut App, entity: Entity) {
+    use bevy::{
+        camera::RenderTarget,
+        picking::{
+            backend::HitData,
+            events::Pointer,
+            pointer::{Location, PointerButton, PointerId},
+        },
+        window::WindowRef,
+    };
+    let world = app.world_mut();
+    let window = world
+        .query_filtered::<Entity, With<Window>>()
+        .single(world)
+        .unwrap();
+    let camera = world
+        .query_filtered::<Entity, With<MainCamera>>()
+        .single(world)
+        .unwrap();
+    world.trigger(PointerClick {
+        entity,
+        pointer: Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target: RenderTarget::Window(WindowRef::Entity(window))
+                    .normalize(Some(window))
+                    .unwrap(),
+                position: Vec2::new(800., 500.),
+            },
+        ),
+        button: PointerButton::Primary,
+        hit: HitData::new(camera, 1., None, None),
+        duration: std::time::Duration::from_millis(20),
+        count: 1,
+    });
+    app.update();
+}
+
+fn keyboard(app: &mut App, code: KeyCode, logical_key: bevy::input::keyboard::Key, pressed: bool) {
+    let world = app.world_mut();
+    let window = world
+        .query_filtered::<Entity, With<Window>>()
+        .single(world)
+        .unwrap();
+    world.write_message(bevy::input::keyboard::KeyboardInput {
+        key_code: code,
+        logical_key,
+        state: if pressed {
+            bevy::input::ButtonState::Pressed
+        } else {
+            bevy::input::ButtonState::Released
+        },
+        text: None,
+        repeat: false,
+        window,
+    });
+    app.update();
+}
+
+#[test]
+fn contextual_keyboard_activation_commits_the_selected_investigator() {
+    use bevy::input::keyboard::Key;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("keyboard-choice.json");
+    let mut app = host(path.clone());
+    click_source(
+        &mut app,
+        controls::Source::Investigator(Investigator::Patrice),
+    );
+    app.update();
+    let lead = button_with_label(&mut app, "Choose Patrice Hathaway as lead investigator").unwrap();
+    assert_eq!(app.world().resource::<InputFocus>().get(), Some(lead));
+    keyboard(&mut app, KeyCode::Enter, Key::Enter, true);
+    keyboard(&mut app, KeyCode::Enter, Key::Enter, false);
+    let saved = continuity::load_session(path).unwrap().observe_for_play();
+    assert_eq!(saved.revision, 1);
+    assert_eq!(saved.lead, Some(Investigator::Patrice));
+    assert_eq!(saved, app.world().resource::<Table>().view());
+}
+
+#[test]
+fn context_captures_home_and_escape_and_backdrop_dismiss_without_a_decision() {
+    use bevy::input::keyboard::Key;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("dismiss.json");
+    let mut app = host(path.clone());
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Focus(Area::Overview));
+    app.update();
+    let pose = app.world().resource::<Orbit>().pose();
+    let view = app.world().resource::<Table>().view();
+    click_source(&mut app, controls::Source::Investigator(Investigator::Tony));
+    app.update();
+    keyboard(&mut app, KeyCode::Home, Key::Home, true);
+    assert_eq!(app.world().resource::<Orbit>().pose(), pose);
+    keyboard(&mut app, KeyCode::Home, Key::Home, false);
+    keyboard(&mut app, KeyCode::Escape, Key::Escape, true);
+    keyboard(&mut app, KeyCode::Escape, Key::Escape, false);
+    assert!(!app.world().resource::<Table>().context.is_open());
+    assert_eq!(app.world().resource::<Table>().view(), view);
+    click_source(&mut app, controls::Source::Investigator(Investigator::Tony));
+    let world = app.world_mut();
+    let backdrop = world
+        .query_filtered::<Entity, With<controls::Backdrop>>()
+        .single(world)
+        .unwrap();
+    click_mesh_observer(&mut app, backdrop);
+    assert!(!app.world().resource::<Table>().context.is_open());
+    assert!(button_with_label(&mut app, "Choose Tony Morgan as lead investigator").is_none());
+    assert_eq!(app.world().resource::<Table>().view(), view);
+    assert!(!path.exists());
+}
+
+#[test]
 fn native_choice_persists_before_showing_real_opening_hands() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("gathering.json");
     let mut app = host(path.clone());
-    let entity = {
-        let world = app.world_mut();
-        let mut query = world.query_filtered::<(Entity, &Children), With<Button>>();
-        query
-            .iter(world)
-            .find_map(|(entity, children)| {
-                children
-                    .iter()
-                    .any(|child| {
-                        world
-                            .get::<Text>(child)
-                            .is_some_and(|text| text.0 == "Choose Tony Morgan as lead investigator")
-                    })
-                    .then_some(entity)
-            })
-            .expect("production lead button is rendered")
-    };
+    let lead = "Choose Tony Morgan as lead investigator";
+    assert!(button_with_label(&mut app, lead).is_none());
+    click_source(&mut app, controls::Source::Investigator(Investigator::Tony));
+    assert_eq!(app.world().resource::<Table>().view().revision, 0);
+    assert!(!path.exists(), "Opening a card menu cannot save a decision");
+    let entity = button_with_label(&mut app, lead).expect("The card menu offers its lead choice");
+    assert!(button_with_label(&mut app, "Choose Patrice Hathaway as lead investigator").is_none());
     app.world_mut().trigger(Activate { entity });
     app.update();
     let saved = continuity::load_session(path).unwrap().observe_for_play();
@@ -140,6 +331,7 @@ fn assert_pointer_lead_choice(raw_window_events: bool, continuing_health_observa
                 Vec2::new(1600.0, 1000.0),
                 scale,
             );
+            click_source(&mut app, controls::Source::Investigator(Investigator::Tony));
             for _ in 0..5 {
                 update(&mut app);
             }
@@ -326,16 +518,16 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
     app.update();
     let text = rendered_text(&mut app);
     assert!(text.contains(&format!(
-        "Agenda {} · {} doom",
+        "Agenda {}  /  {} doom",
         play.agenda, play.agenda_doom
     )));
     assert!(text.contains(&format!("Act {}", play.act)));
     for enemy in &play.scenario.enemies {
-        assert!(text.contains(&format!("{} · copy {}", enemy.card.title, enemy.card.id)));
+        assert!(text.contains(&format!("{}  /  copy {}", enemy.card.title, enemy.card.id)));
     }
     for player in &play.players {
         for asset in &player.assets {
-            assert!(text.contains(&format!("{} · copy {}", asset.card.title, asset.card.id)));
+            assert!(text.contains(&format!("{}  /  copy {}", asset.card.title, asset.card.id)));
         }
     }
     assert!(inspection_text(&view, "01112").unwrap().contains("Hallway"));
@@ -354,7 +546,7 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
     let mut room_position = |name: &str| {
         let (_, label) = labels
             .iter(world)
-            .find(|(text, _)| text.0.starts_with(&format!("{name} ·")))
+            .find(|(text, _)| text.0.starts_with(&format!("{name}  /")))
             .unwrap();
         world.get::<Transform>(label.0).unwrap().translation
     };
@@ -419,29 +611,390 @@ fn unrevealed_room_inspection_preserves_the_observed_face() {
     );
 }
 
+#[test]
+fn unrevealed_room_mesh_and_inspection_never_use_revealed_art_as_a_fallback() {
+    for include_unrevealed_art in [true, false] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = host(directory.path().join("hidden-room.json"));
+        let (revealed, unrevealed) = {
+            let mut images = app.world_mut().resource_mut::<Assets<Image>>();
+            (images.add(Image::default()), images.add(Image::default()))
+        };
+        let mut handles = vec![("card-01115", revealed.clone())];
+        if include_unrevealed_art {
+            handles.push(("card-01115-back", unrevealed.clone()));
+        }
+        app.insert_resource(art::Art::with_images_for_test(handles));
+        {
+            let mut table = app.world_mut().resource_mut::<Table>();
+            table.session =
+                Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
+            assert!(
+                table
+                    .view()
+                    .play
+                    .unwrap()
+                    .scenario
+                    .locations
+                    .iter()
+                    .any(|room| { room.code == "01115" && !room.revealed })
+            );
+            table.dirty = true;
+        }
+        app.update();
+        let world = app.world_mut();
+        let room = world
+            .query::<(Entity, &ContextTarget)>()
+            .iter(world)
+            .find_map(|(entity, target)| {
+                (target.source == controls::Source::Location("01115".into())).then_some(entity)
+            })
+            .unwrap();
+        let textures: Vec<_> = world
+            .get::<Children>(room)
+            .into_iter()
+            .flat_map(|children| children.iter())
+            .filter_map(|child| world.get::<MeshMaterial3d<StandardMaterial>>(child))
+            .filter_map(|material| {
+                world
+                    .resource::<Assets<StandardMaterial>>()
+                    .get(&material.0)
+            })
+            .filter_map(|material| material.base_color_texture.clone())
+            .collect();
+        assert!(
+            !textures.contains(&revealed),
+            "The hidden room cannot expose its revealed face"
+        );
+        assert_eq!(textures.contains(&unrevealed), include_unrevealed_art);
+        app.world_mut()
+            .resource_mut::<Actions>()
+            .0
+            .push(Action::Inspect("Parlor".into(), "01115".into()));
+        app.update();
+        let world = app.world_mut();
+        let inspection_images: Vec<_> = world
+            .query::<&ImageNode>()
+            .iter(world)
+            .map(|image| image.image.clone())
+            .collect();
+        assert_eq!(
+            inspection_images,
+            if include_unrevealed_art {
+                vec![unrevealed]
+            } else {
+                vec![]
+            }
+        );
+    }
+}
+
+#[test]
+fn ordinary_act_and_agenda_inspect_landscape_without_rotating_the_book_face_twice() {
+    use bevy::camera::primitives::MeshAabb;
+    for (source, role) in [
+        (controls::Source::Act, "card-01108"),
+        (controls::Source::Agenda, "card-01105"),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = host(directory.path().join("scenario-inspection.json"));
+        let image = app
+            .world_mut()
+            .resource_mut::<Assets<Image>>()
+            .add(Image::default());
+        app.insert_resource(art::Art::with_images_for_test([(role, image.clone())]));
+        activate_choice(&mut app, "lead:tony");
+        for _ in 0..3 {
+            activate_choice(&mut app, "confirm-mulligan");
+        }
+        finish_presentation(&mut app);
+        let world = app.world_mut();
+        let root = world
+            .query::<(Entity, &ContextTarget)>()
+            .iter(world)
+            .find_map(|(entity, target)| (target.source == source).then_some(entity))
+            .unwrap();
+        let root_transform = world.get::<Transform>(root).unwrap();
+        assert!(
+            root_transform.rotation.abs_diff_eq(
+                Quat::from_rotation_x(75_f32.to_radians())
+                    * Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+                0.0001
+            ),
+            "The book root already rotates the original portrait image into a landscape page"
+        );
+        let face = world
+            .get::<Children>(root)
+            .unwrap()
+            .iter()
+            .find(|child| {
+                world
+                    .get::<MeshMaterial3d<StandardMaterial>>(*child)
+                    .and_then(|material| {
+                        world
+                            .resource::<Assets<StandardMaterial>>()
+                            .get(&material.0)
+                    })
+                    .is_some_and(|material| material.base_color_texture.as_ref() == Some(&image))
+            })
+            .expect("The original scenario face is bound to the book page");
+        assert_eq!(
+            world.get::<Transform>(face).unwrap().rotation,
+            Quat::IDENTITY
+        );
+        let mesh = world.get::<Mesh3d>(face).unwrap();
+        let bounds = world
+            .resource::<Assets<Mesh>>()
+            .get(&mesh.0)
+            .unwrap()
+            .get_aabb()
+            .unwrap();
+        assert!((bounds.half_extents.x * 2. - 1.35).abs() < 0.0001);
+        assert!((bounds.half_extents.z * 2. - 1.89).abs() < 0.0001);
+
+        click_source(&mut app, source);
+        if app.world().resource::<Table>().context.is_open() {
+            let entity = button_with_label(&mut app, "Inspect").unwrap();
+            app.world_mut().trigger(Activate { entity });
+            app.update();
+        }
+        let world = app.world_mut();
+        let (image_node, node, transform, parent) = world
+            .query::<(&ImageNode, &Node, &UiTransform, &ChildOf)>()
+            .single(world)
+            .unwrap();
+        assert_eq!(image_node.image, image);
+        assert_eq!(
+            transform.rotation,
+            Rot2::degrees(-90.),
+            "The inspector must rotate sideways Act/Agenda artwork into readable landscape"
+        );
+        let frame = world.get::<Node>(parent.parent()).unwrap();
+        let (Val::Px(width), Val::Px(height)) = (frame.width, frame.height) else {
+            panic!("The image frame must have measured dimensions")
+        };
+        assert!(width > height);
+        assert!((width / height - 7. / 5.).abs() < 0.0001);
+        assert_eq!((node.width, node.height), (Val::Px(height), Val::Px(width)));
+    }
+}
+
+#[test]
+fn a_pickable_standee_mesh_bubbles_to_its_investigator_menu() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host(directory.path().join("standee.json"));
+    {
+        let mut table = app.world_mut().resource_mut::<Table>();
+        table.session =
+            Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringPriestDefeat);
+        table.dirty = true;
+    }
+    app.update();
+    let world = app.world_mut();
+    let root = world
+        .query_filtered::<(Entity, &ContextTarget), Without<Mesh3d>>()
+        .iter(world)
+        .find_map(|(entity, target)| {
+            (target.source == controls::Source::Investigator(Investigator::Tony)).then_some(entity)
+        })
+        .expect("Tony has a rendered standee root");
+    let mesh = world
+        .get::<Children>(root)
+        .unwrap()
+        .iter()
+        .find(|child| world.get::<Mesh3d>(*child).is_some())
+        .expect("The standee has a pickable mesh child");
+    assert!(
+        world
+            .get::<Pickable>(mesh)
+            .is_none_or(|pickable| pickable.is_hoverable)
+    );
+    let before = world.resource::<Table>().view();
+    click_mesh_observer(&mut app, mesh);
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .context
+            .is_menu_source(&controls::Source::Investigator(Investigator::Tony))
+    );
+    assert_eq!(app.world().resource::<Table>().view(), before);
+}
+
+#[test]
+fn replay_story_inspection_reveals_only_the_displayed_reverse_and_keeps_missing_art_readable() {
+    let mut session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
+    let choose = |session: &mut Session, id: &str| {
+        session
+            .choose(session.observe_for_play().revision, id)
+            .unwrap();
+    };
+    choose(&mut session, "round-end:advance-act");
+    for investigator in 0..3 {
+        for _ in 0..3 {
+            choose(&mut session, &format!("act:contribute:{investigator}"));
+        }
+    }
+    choose(&mut session, "bounty:400:0");
+    choose(&mut session, "round-end:ghoul-doom");
+    choose(&mut session, "mythos:begin");
+    let final_revision = session.observe_for_play().revision;
+    for revealed in [false, true] {
+        for reverse_art_present in [false, true] {
+            // The entire future recording is present in both cases. Only the
+            // displayed presentation prefix may determine which face is public.
+            let mut replay = Replay::new(session.recording()).unwrap();
+            loop {
+                let view = replay.current();
+                if view.revision == final_revision
+                    && replay.current_presentation_sequence().is_some()
+                    && view
+                        .play
+                        .as_ref()
+                        .is_some_and(|play| play.agenda == 3 && (play.agenda_doom == 0) == revealed)
+                {
+                    break;
+                }
+                assert!(
+                    replay.next(),
+                    "The real advancement must include both doom faces"
+                );
+            }
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("story-replay.json");
+            continuity::save_session(&path, &session).unwrap();
+            let saved = std::fs::read(&path).unwrap();
+            let mut app = host(path.clone());
+            let (front, back, previous_act, future_act) = {
+                let mut images = app.world_mut().resource_mut::<Assets<Image>>();
+                (
+                    images.add(Image::default()),
+                    images.add(Image::default()),
+                    images.add(Image::default()),
+                    images.add(Image::default()),
+                )
+            };
+            let mut handles = vec![
+                ("card-01107", front.clone()),
+                ("card-01109-back", previous_act.clone()),
+                ("card-01110-back", future_act.clone()),
+            ];
+            if reverse_art_present {
+                handles.push(("card-01107-back", back.clone()));
+            }
+            app.insert_resource(art::Art::with_images_for_test(handles));
+            {
+                let mut table = app.world_mut().resource_mut::<Table>();
+                table.session = session.clone();
+                table.replay = Some(replay);
+                table.dirty = true;
+            }
+            app.update();
+            let world = app.world_mut();
+            let scene_images: Vec<_> = world
+                .query::<&MeshMaterial3d<StandardMaterial>>()
+                .iter(world)
+                .filter_map(|material| {
+                    world
+                        .resource::<Assets<StandardMaterial>>()
+                        .get(&material.0)
+                })
+                .filter_map(|material| material.base_color_texture.clone())
+                .collect();
+            assert_eq!(scene_images.contains(&front), !revealed);
+            assert_eq!(
+                scene_images.contains(&back),
+                revealed && reverse_art_present
+            );
+            assert!(!scene_images.contains(&future_act));
+
+            click_source(&mut app, controls::Source::Agenda);
+            let world = app.world_mut();
+            let inspected_images: Vec<_> = world
+                .query::<&ImageNode>()
+                .iter(world)
+                .map(|image| image.image.clone())
+                .collect();
+            assert_eq!(inspected_images.contains(&front), !revealed);
+            assert_eq!(
+                inspected_images.contains(&back),
+                revealed && reverse_art_present
+            );
+            let text = rendered_text(&mut app);
+            assert_eq!(
+                text.contains("Each investigator that has not resigned is defeated"),
+                revealed,
+                "Reverse rules must use the same public prefix, even when the reverse image is missing"
+            );
+            app.world_mut()
+                .resource_mut::<Actions>()
+                .0
+                .push(Action::Close);
+            app.update();
+            click_source(&mut app, controls::Source::Act);
+            let world = app.world_mut();
+            assert!(
+                world
+                    .query::<&ImageNode>()
+                    .iter(world)
+                    .any(|image| image.image == previous_act),
+                "The current Act inspector retains an already revealed previous reverse"
+            );
+            assert!(
+                !world
+                    .query::<&ImageNode>()
+                    .iter(world)
+                    .any(|image| image.image == future_act)
+            );
+            assert!(
+                rendered_text(&mut app).contains("Spawn the set-aside Ghoul Priest in the Hallway")
+            );
+            assert!(
+                !rendered_text(&mut app).contains("This hell-pit is my home!"),
+                "A defeat ending cannot reveal Act3's successful-ending choices"
+            );
+            assert_eq!(std::fs::read(path).unwrap(), saved);
+        }
+    }
+}
+
 fn activate_choice(app: &mut App, id: &str) {
     finish_presentation(app);
-    let label = app
-        .world()
-        .resource::<Table>()
-        .view()
+    let view = app.world().resource::<Table>().view();
+    let label = view
         .choices
-        .into_iter()
+        .iter()
         .find(|choice| choice.id == id)
         .unwrap()
-        .label;
-    let world = app.world_mut();
-    let mut query = world.query_filtered::<(Entity, &Children), With<Button>>();
-    let entity = query
-        .iter(world)
-        .find_map(|(entity, children)| {
-            children
-                .iter()
-                .any(|child| world.get::<Text>(child).is_some_and(|text| text.0 == label))
-                .then_some(entity)
-        })
-        .expect("The legal choice has a production button");
-    world.trigger(Activate { entity });
+        .label
+        .clone();
+    if button_with_label(app, &label).is_none() {
+        let source = {
+            let world = app.world_mut();
+            world
+                .query::<&ContextTarget>()
+                .iter(world)
+                .find_map(|target| {
+                    controls::source_choices(&view, &target.source)
+                        .iter()
+                        .any(|choice| choice.id == id)
+                        .then(|| target.source.clone())
+                })
+        };
+        if let Some(source) = source {
+            click_source(app, source);
+        } else {
+            let pending = button_with_label(app, "Pending decision").expect(
+                "A legal choice must have a visible card source or pending-decision control",
+            );
+            app.world_mut().trigger(Activate { entity: pending });
+            app.update();
+        }
+    }
+    let entity = button_with_label(app, &label)
+        .or_else(|| button_with_label(app, &feedback::menu::label(&label)))
+        .expect("The selected context or global controls offer the legal choice");
+    app.world_mut().trigger(Activate { entity });
     app.update();
 }
 
@@ -475,7 +1028,7 @@ fn live_runtime_choice_keeps_manual_camera_and_replay_follows_with_manual_overri
     let view = app.world().resource::<Table>().view();
     let test = view.play.as_ref().unwrap().test.as_ref().unwrap();
     assert!(rendered_text(&mut app).contains(&format!(
-        "Printed base {} · Difficulty {}",
+        "Printed base {}  /  Difficulty {}",
         test.base_skill, test.difficulty
     )));
     assert_eq!(
@@ -526,13 +1079,13 @@ fn live_runtime_choice_keeps_manual_camera_and_replay_follows_with_manual_overri
 }
 
 #[test]
-fn actual_long_choice_panel_takes_focus_and_scrolls_by_keyboard_without_choosing() {
+fn actual_search_pile_menu_takes_focus_and_scrolls_by_keyboard_without_choosing() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = host(directory.path().join("long-list.json"));
     {
         let mut table = app.world_mut().resource_mut::<Table>();
-        table.session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Search(
-            crate::gathering::SearchFixture::TonyEvents,
+        table.session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Backpack(
+            crate::gathering::BackpackFixture::Search,
         ));
         table.dirty = true;
     }
@@ -548,13 +1101,26 @@ fn actual_long_choice_panel_takes_focus_and_scrolls_by_keyboard_without_choosing
     for _ in 0..5 {
         app.update();
     }
+    let pack = app.world().resource::<Table>().view().play.unwrap().players[0]
+        .hand
+        .iter()
+        .find(|card| card.code == "04037")
+        .unwrap()
+        .id;
+    activate_choice(&mut app, &format!("action:ordinary:play:{pack}"));
+    activate_choice(&mut app, "backpack:search");
+    finish_presentation(&mut app);
+    click_source(&mut app, controls::Source::SearchPlayer);
+    for _ in 0..3 {
+        app.update();
+    }
     let before = app.world().resource::<Table>().view();
-    assert!(before.choices.len() > 10);
+    assert_eq!(before.play.as_ref().unwrap().searched_player.len(), 6);
     let focus = app
         .world()
         .resource::<InputFocus>()
         .get()
-        .expect("First legal choice receives focus");
+        .expect("The shared contextual menu receives focus");
     assert!(app.world().get::<Button>(focus).is_some());
     let window = {
         let world = app.world_mut();
@@ -574,10 +1140,9 @@ fn actual_long_choice_panel_takes_focus_and_scrolls_by_keyboard_without_choosing
         });
     app.update();
     let world = app.world_mut();
-    let mut panels = world.query::<(&ScrollablePanel, &ScrollPosition, &ComputedNode)>();
-    let (_, scroll, node) = panels
-        .iter(world)
-        .find(|(panel, _, _)| !panel.inspection)
+    let (scroll, node) = world
+        .query_filtered::<(&ScrollPosition, &ComputedNode), With<controls::Menu>>()
+        .single(world)
         .unwrap();
     assert!(
         node.content_size().y > node.size().y,
@@ -626,7 +1191,7 @@ fn native_paid_ward_and_unapplied_horror_remain_visible_and_inspectable() {
     );
     let text = rendered_text(&mut app);
     assert!(text.contains("1 horror on Jacqueline Fine"));
-    assert!(text.contains("Resolving cards · 1"));
+    assert!(text.contains("Resolving cards  /  1"));
 }
 
 #[test]
@@ -777,7 +1342,7 @@ fn committed_physical_card_moves_from_hand_and_inspection_preserves_its_position
     activate_choice(&mut app, &format!("commit:{promise}"));
     activate_choice(&mut app, "commit:confirm");
     finish_presentation(&mut app);
-    assert!(rendered_text(&mut app).contains("Cards +4 · Other bonuses +0 · Chaos pending"));
+    assert!(rendered_text(&mut app).contains("Cards +4  /  Other bonuses +0  /  Chaos pending"));
     assert_eq!(physical_position(&mut app, promise), origin);
     let end = layout::test_commitment(1, 0);
     assert_ne!(origin, end);

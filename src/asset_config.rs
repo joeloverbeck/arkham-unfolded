@@ -30,6 +30,7 @@ enum Experiment {
     Jacqueline,
     Tony,
     Party,
+    Gathering,
 }
 
 impl AssetConfig {
@@ -44,6 +45,10 @@ impl AssetConfig {
 
     pub fn load_party() -> Result<Self, String> {
         Self::load_for(Experiment::Party)
+    }
+
+    pub fn load_gathering() -> Result<Self, String> {
+        Self::load_for(Experiment::Gathering)
     }
 
     fn load_for(experiment: Experiment) -> Result<Self, String> {
@@ -166,6 +171,7 @@ fn locations(
         // An explicit saved choice always takes precedence and is never migrated here.
         Experiment::Tony => ("tony.toml", "tony-assets-v4"),
         Experiment::Party => ("party.toml", "party-assets-v1"),
+        Experiment::Gathering => ("gathering.toml", "gathering-assets-v1"),
     };
     Ok((
         base(config_home, ".config")?
@@ -293,6 +299,22 @@ mod tests {
         let party_root = dir.path().join("chosen-party");
         party.save_root(&party_root).unwrap();
         assert_eq!(load(Experiment::Party).root(), party_root);
+        assert_eq!(fs::read(tony.path()).unwrap(), tony_bytes);
+        assert_eq!(fs::read(jacqueline.path()).unwrap(), legacy_bytes);
+
+        let party_bytes = fs::read(party.path()).unwrap();
+        let mut gathering = load(Experiment::Gathering);
+        assert_eq!(
+            gathering.root(),
+            dir.path()
+                .join(".local/share/arkham-unfolded/gathering-assets-v1")
+        );
+        assert!(gathering.path().ends_with("arkham-unfolded/gathering.toml"));
+        assert!(!gathering.path().exists());
+        let gathering_root = dir.path().join("chosen-gathering");
+        gathering.save_root(&gathering_root).unwrap();
+        assert_eq!(load(Experiment::Gathering).root(), gathering_root);
+        assert_eq!(fs::read(party.path()).unwrap(), party_bytes);
         assert_eq!(fs::read(tony.path()).unwrap(), tony_bytes);
         assert_eq!(fs::read(jacqueline.path()).unwrap(), legacy_bytes);
     }

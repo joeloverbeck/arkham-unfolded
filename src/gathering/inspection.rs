@@ -5,7 +5,19 @@ use super::cards;
 /// Inspect a scenario card's currently visible face. The caller supplies the
 /// observed location state; this never reveals an act or agenda reverse.
 pub fn scenario_card(code: &str, revealed: bool) -> Option<String> {
-    super::scenario::inspect(code, revealed).map(|text| readable(&text))
+    let face = if revealed {
+        super::scenario::InspectionFace::RevealedLocation
+    } else {
+        super::scenario::InspectionFace::Front
+    };
+    super::scenario::inspect(code, face).map(|text| readable(&text))
+}
+
+/// Readable reverse text for an Act or Agenda whose reverse is already known.
+/// The caller must establish public knowledge before offering this inspection.
+pub fn scenario_card_reverse(code: &str) -> Option<String> {
+    super::scenario::inspect(code, super::scenario::InspectionFace::StoryReverse)
+        .map(|text| readable(&text))
 }
 
 /// Full printed fields and effective rules for a selected player card.
@@ -121,4 +133,59 @@ fn readable(value: &str) -> String {
         value = value.replace(&format!("[{symbol}]"), &format!("[{name}]"));
     }
     value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn story_reverse_inspection_contains_the_six_selected_advancement_effects() {
+        for (code, effect) in [
+            ("01105", "each investigator discards 1 card at random"),
+            (
+                "01106",
+                "Shuffle the encounter discard pile into the encounter deck",
+            ),
+            (
+                "01107",
+                "Each investigator that has not resigned is defeated",
+            ),
+            ("01108", "Remove the Study from the game"),
+            ("01109", "Spawn the set-aside Ghoul Priest in the Hallway"),
+            (
+                "01110",
+                "This hell-pit is my home! No way are we burning it! (Resolution 2)",
+            ),
+        ] {
+            let text =
+                scenario_card_reverse(code).unwrap_or_else(|| panic!("Missing reverse for {code}"));
+            assert!(text.contains(effect), "{code}: {text}");
+            assert!(text.contains("Reverse:"), "{code}: {text}");
+            assert!(!text.contains("Front:"), "{code}: {text}");
+        }
+    }
+
+    #[test]
+    fn reverse_inspection_rejects_locations_reference_cards_and_unknown_codes() {
+        for code in ["01104", "01111", "01115", "01116", "06003", "unknown"] {
+            assert!(scenario_card_reverse(code).is_none(), "{code}");
+        }
+    }
+
+    #[test]
+    fn location_reveal_flag_cannot_reveal_story_reverses() {
+        for code in ["01105", "01106", "01107", "01108", "01109", "01110"] {
+            let front = scenario_card(code, false).unwrap();
+            assert!(front.contains("Front:"), "{code}: {front}");
+            assert!(!front.contains("Reverse:"), "{code}: {front}");
+            assert_eq!(scenario_card(code, true).unwrap(), front);
+        }
+        let hidden = scenario_card("01115", false).unwrap();
+        assert!(hidden.contains("You cannot move into the Parlor"));
+        assert!(!hidden.contains("Parley"));
+        let revealed = scenario_card("01115", true).unwrap();
+        assert!(revealed.contains("[Action]: Parley. Test [Intellect] (4)"));
+        assert!(!revealed.contains("You cannot move into the Parlor"));
+    }
 }

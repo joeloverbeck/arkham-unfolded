@@ -130,6 +130,25 @@ pub(crate) fn position_labels(
     }
 }
 
+/// Prepared-art role for each supported physical chaos-token face.
+pub(crate) fn image_role(face: crate::TokenFace) -> &'static str {
+    use crate::TokenFace;
+    match face {
+        TokenFace::PlusOne => "token/plus_one",
+        TokenFace::Zero => "token/zero",
+        TokenFace::MinusOne => "token/minus_one",
+        TokenFace::MinusTwo => "token/minus_two",
+        TokenFace::MinusThree => "token/minus_three",
+        TokenFace::MinusFour => "token/minus_four",
+        TokenFace::Skull => "token/skull",
+        TokenFace::Cultist => "token/cultist",
+        TokenFace::Tablet => "token/tablet",
+        TokenFace::AutoFail => "token/auto_fail",
+        TokenFace::ElderSign => "token/elder_sign",
+        TokenFace::Curse => "token/curse",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

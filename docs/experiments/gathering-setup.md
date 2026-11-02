@@ -5,9 +5,10 @@ under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). It uses 
 actual three selected starting lists, rather than the prepared Study experiment's
 scripted hands. **Completing mulligans now begins ordinary scenario play.** The
 first full round and all following mythos draws have driver-level evidence.
-The native pointer route through setup, one action and replay also passes.
-Readability has known gaps; physical keyboard checks and owner gameplay acceptance
-remain outstanding. This is not an accepted complete-scenario delivery.
+The earlier native pointer route through setup, one action and replay passed with
+readable substitutes. The artwork and contextual-menu continuation is a new
+candidate awaiting a bounded native check. Physical keyboard checks, a complete
+native playthrough and owner acceptance remain outstanding.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and
@@ -39,17 +40,58 @@ The native table uses the same session and save file:
 
 ```sh
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment gathering --save /tmp/arkham-gathering-setup.session.json --no-art
+  --experiment gathering --save /tmp/arkham-gathering-setup.session.json \
+  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
 ```
 
-Choose a lead investigator and use the offered mulligan controls. Click a card
-for its printed fields and effective rules. The encounter deck inspection lists
-its starting quantities without revealing shuffled order. Camera controls use
-the existing Overview, Scenario and investigator views. Save, Reopen, History
-and Replay operate on this setup; replay permits inspection but no live choices.
-Headless tests exercise the rendered lead button and save/replay protections.
-The native retest below verifies a bounded pointer route; visual and owner
-acceptance remain outstanding.
+Click an investigator card to open its contextual menu and choose the lead.
+Click each opening-hand card to select or undo its mulligan; confirm the hand
+using the table-wide control. During play, cards, piles, locations and revealed
+tokens offer their legal actions through the same shared menu renderer as Party.
+Clicking a component with no available action opens inspection directly; otherwise
+choose **Inspect** for enlarged artwork and effective rules. The encounter deck
+inspection lists its starting quantities without revealing shuffled order.
+Act and Agenda inspection also includes their previously revealed reverse sides.
+Replay limits those images and texts to the moment being viewed.
+
+Camera controls use the existing Overview, Scenario and investigator views.
+Save, Reopen, History and Replay operate on the full session; replay permits
+inspection but no live choices. Menus use Tab/Shift+Tab and Enter/Space; Esc
+closes them. Camera keys are suspended while a contextual menu captures input.
+Headless tests exercise the actual menu controls and save/replay protections.
+The older native retest below does not verify this new artwork/menu candidate.
+
+### Artwork preparation and selection
+
+The README uses the verified collection already prepared on this machine. To
+prepare another portable collection from the original local archive, first use
+the [existing reveal-icon download](../../README.md#prepare-the-tony-artwork), then:
+
+```sh
+cargo run --locked --bin arkham-assets -- prepare-gathering \
+  --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
+  --reveal-icon /tmp/arkham-reveal-icon.png \
+  --output "$HOME/.local/share/arkham-unfolded/gathering-assets-v1"
+cargo run --locked --bin arkham-assets -- check-gathering \
+  "$HOME/.local/share/arkham-unfolded/gathering-assets-v1"
+```
+
+The finite recipe contains 140 roles: 94 card identities, 11 reverse/unrevealed
+sides, card backs, investigator standees, token/class artwork, reveal icon and
+symbol font. Location roles explicitly distinguish unrevealed and revealed
+faces. Preparation preserves source bytes and the archive; an identical complete
+destination is reusable, while conflicting or incomplete output is refused.
+Runtime loads only verified files from the prepared collection. Copy its whole
+folder, including `manifest.json`, to relocate it; ordinary play needs no archive.
+
+`--art-root PATH` selects a folder for that launch. **Choose asset folder** saves
+the next-launch preference in `$XDG_CONFIG_HOME/arkham-unfolded/gathering.toml`
+(normally `~/.config/arkham-unfolded/gathering.toml`). Without an override or saved
+preference, Gathering uses `$XDG_DATA_HOME/arkham-unfolded/gathering-assets-v1`
+(normally `~/.local/share/arkham-unfolded/gathering-assets-v1`). Other experiments'
+settings remain separate. `--no-art` is available for diagnostic substitute mode.
+Startup reports the chosen folder and verified coverage; absent or corrupt roles
+use readable substitutes rather than an unchecked image.
 
 The driver prints the current observation and legal choices. Send one JSON
 request per line. At the initial decision, for example:

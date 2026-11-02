@@ -1,5 +1,6 @@
 //! Presentation of the shared runtime observation. No legality or hidden state lives here.
 
+use super::controls::Source;
 use super::*;
 use crate::gathering::{CardView, Phase, PlayObservation};
 
@@ -71,6 +72,12 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
         return Some(pile_text(
             "Backpack search · revealed cards",
             &play.searched_player,
+        ));
+    }
+    if code == "searched-encounter" {
+        return Some(pile_text(
+            "Encounter search · revealed cards",
+            &play.searched_encounter,
         ));
     }
     if let Some(id) = code
@@ -422,27 +429,111 @@ struct Painter<'a, 'w, 's> {
     commands: &'a mut Commands<'w, 's>,
     meshes: &'a mut Assets<Mesh>,
     materials: &'a mut Assets<StandardMaterial>,
+    context: &'a CardRender<'a>,
 }
 
 impl Painter<'_, '_, '_> {
-    fn card(&mut self, at: Vec3, title: &str, code: &str, color: Color) -> Entity {
-        card(
+    fn card(&mut self, at: Vec3, title: &str, code: &str, color: Color, source: Source) -> Entity {
+        let entity = card(
             self.commands,
             self.meshes,
             self.materials,
+            self.context,
             at,
             title,
             code,
             false,
             color,
-        )
+        );
+        self.context.bind(self.commands, entity, source);
+        entity
+    }
+
+    fn selectable(&mut self, entity: Entity, selection: controls::Selection) {
+        self.context
+            .bind(self.commands, entity, selection.source.clone());
+        self.commands.entity(entity).remove::<Pickable>().observe(
+            move |event: On<PointerClick>,
+                  targets: Query<&ContextTarget>,
+                  mut queue: ResMut<Actions>| {
+                if event.button == bevy::picking::pointer::PointerButton::Primary
+                    && let Ok(target) = targets.get(entity)
+                {
+                    queue.0.push(Action::Select(
+                        target.epoch,
+                        target.revision,
+                        selection.clone(),
+                    ));
+                }
+            },
+        );
+    }
+
+    fn count(
+        &mut self,
+        at: Vec3,
+        kind: crate::tabletop_counters::CounterKind,
+        amount: u8,
+        source: Source,
+    ) {
+        use crate::tabletop_counters::{CounterKind, CounterVisual, spawn_count};
+        let (role, title) = match kind {
+            CounterKind::Clue => ("token/clue", "Clues"),
+            CounterKind::Resource => ("token/resource", "Resources"),
+        };
+        if let Some((token, label)) = spawn_count(
+            self.commands,
+            self.meshes,
+            self.materials,
+            CounterVisual {
+                kind,
+                amount,
+                image: self.context.art.image(role),
+                at,
+                scale: 0.85,
+            },
+        ) {
+            self.commands.entity(token).insert(ScenePiece);
+            self.commands
+                .entity(label)
+                .remove::<crate::tabletop_counters::CounterLabel>()
+                .insert((ScenePiece, WorldLabel(at + Vec3::Y * 0.2, false)));
+            let inspect_code = match &source {
+                Source::Investigator(who) => investigator_code(*who).into(),
+                Source::Location(code) => code.clone(),
+                _ => String::new(),
+            };
+            self.selectable(
+                token,
+                controls::Selection {
+                    source,
+                    at,
+                    title: format!("{title} · {amount}"),
+                    inspect_code,
+                },
+            );
+        }
+    }
+
+    fn caption(&mut self, at: Vec3, value: String) {
+        self.commands.spawn((
+            ScenePiece,
+            WorldLabel(at + Vec3::new(0., 0., 1.25), false),
+            self.context.art.text(value, 12., PAPER),
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(160),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ));
     }
 
     fn label(&mut self, at: Vec3, value: String) {
         self.commands.spawn((
             ScenePiece,
             WorldLabel(at, true),
-            text(value, 15., PAPER),
+            self.context.art.text(value, 15., PAPER),
             Node {
                 position_type: PositionType::Absolute,
                 width: px(400),
@@ -452,7 +543,14 @@ impl Painter<'_, '_, '_> {
         ));
     }
 
-    fn token(&mut self, at: Vec3, face: crate::TokenFace, state: ShownTokenState, ordinal: usize) {
+    fn token(
+        &mut self,
+        at: Vec3,
+        face: crate::TokenFace,
+        state: ShownTokenState,
+        ordinal: usize,
+        active: bool,
+    ) {
         let status = match state {
             ShownTokenState::Cancelled => crate::TokenStatus::Canceled,
             ShownTokenState::Resolved => crate::TokenStatus::Resolved,
@@ -466,12 +564,27 @@ impl Painter<'_, '_, '_> {
                 face,
                 status,
                 ordinal: Some(ordinal),
-                image: None,
+                image: self
+                    .context
+                    .art
+                    .image(crate::tabletop_tokens::image_role(face)),
                 transform: Transform::from_translation(at),
                 label_offset: Vec3::Y * 0.2,
             },
         );
         self.commands.entity(disk).insert(ScenePiece);
+        let title = format!("Token {ordinal} · {}\n{}", face.label(), state.label());
+        if active {
+            self.selectable(
+                disk,
+                controls::Selection {
+                    source: Source::Token(ordinal - 1),
+                    at,
+                    title: title.clone(),
+                    inspect_code: "chaos-bag".into(),
+                },
+            );
+        }
         if matches!(state, ShownTokenState::Ignored) {
             self.commands
                 .entity(disk)
@@ -488,11 +601,7 @@ impl Painter<'_, '_, '_> {
             .insert((
                 ScenePiece,
                 WorldLabel(at + Vec3::Y * 0.2, false),
-                Text::new(format!(
-                    "Token {ordinal} · {}\n{}",
-                    face.label(),
-                    state.label()
-                )),
+                Text::new(crate::tabletop::readable_text(title)),
             ));
     }
 }
@@ -501,15 +610,31 @@ pub(super) fn render(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    view: &Observation,
+    context: &CardRender<'_>,
 ) {
+    let view = context.view;
     let Some(play) = &view.play else { return };
     let mut paint = Painter {
         commands,
         meshes,
         materials,
+        context,
     };
     for (index, player) in play.players.iter().enumerate() {
+        for (at, kind, amount) in [
+            (
+                layout::investigator_resource(index),
+                crate::tabletop_counters::CounterKind::Resource,
+                player.resources,
+            ),
+            (
+                layout::investigator_clue(index),
+                crate::tabletop_counters::CounterKind::Clue,
+                player.clues,
+            ),
+        ] {
+            paint.count(at, kind, amount, Source::Investigator(player.investigator));
+        }
         for (slot, asset) in player.assets.iter().enumerate() {
             let attached = play
                 .backpacks
@@ -536,11 +661,28 @@ pub(super) fn render(
                 ),
                 &inspection,
                 PAPER,
+                attached.map_or(Source::Card(asset.card.id), |_| {
+                    Source::Backpack(asset.card.id)
+                }),
             );
             paint
                 .commands
                 .entity(entity)
                 .insert(motion::PhysicalCard(asset.card.id));
+            paint.caption(
+                layout::investigator_asset(index, slot),
+                format!(
+                    "{} · Uses {}\nDamage {} · Horror {}{}",
+                    if asset.ready { "Ready" } else { "Exhausted" },
+                    asset.uses,
+                    asset.damage,
+                    asset.horror,
+                    attached.map_or(String::new(), |attached| format!(
+                        "\n{} attached",
+                        attached.cards.len()
+                    )),
+                ),
+            );
         }
         for (slot, threat) in player.threats.iter().enumerate() {
             let entity = paint.card(
@@ -548,6 +690,7 @@ pub(super) fn render(
                 &format!("{} · copy {}", threat.title, threat.id),
                 &threat.code,
                 PAPER,
+                Source::Card(threat.id),
             );
             paint
                 .commands
@@ -559,12 +702,14 @@ pub(super) fn render(
             &format!("Discard · {} cards", player.discard.len()),
             &format!("discard:{}", player.investigator.id()),
             MUTED,
+            Source::Discard(player.investigator),
         );
         paint.card(
             layout::investigator_deck(index),
             &format!("Deck · {} cards", player.deck_count),
             "hidden-player-deck",
             MUTED,
+            Source::Deck(player.investigator),
         );
         if !player.removed.is_empty() {
             paint.card(
@@ -572,55 +717,73 @@ pub(super) fn render(
                 &format!("Removed · {} cards", player.removed.len()),
                 &format!("removed:{}", player.investigator.id()),
                 MUTED,
+                Source::Removed(player.investigator),
             );
         }
     }
-    for (side, code, label) in [
+    for (side, code, label, source) in [
         (
             layout::ScenarioBookSide::Agenda,
             format!("{:05}", 1104 + usize::from(play.agenda)),
             format!("Agenda {} · {} doom", play.agenda, play.agenda_doom),
+            Source::Agenda,
         ),
         (
             layout::ScenarioBookSide::Act,
             format!("{:05}", 1107 + usize::from(play.act)),
             format!("Act {}", play.act),
+            Source::Act,
         ),
     ] {
         let pose = layout::scenario_book_card_transform(side, Vec2::new(1.35, 1.89));
-        let entity = paint.card(pose.translation, &label, &code, PAPER);
+        let entity = paint.card(pose.translation, &label, &code, PAPER, source);
         paint.commands.entity(entity).insert(pose);
+        paint.caption(pose.translation, label);
     }
     paint.card(
         layout::SCENARIO_REFERENCE,
         "The Gathering · Standard",
         "01104",
         PAPER,
+        Source::ScenarioReference,
     );
     paint.card(
         layout::test_bag(),
         &format!("Chaos bag · {} tokens", play.bag_count),
         "chaos-bag",
         MUTED,
+        Source::Bag,
     );
     paint.card(
         layout::ENCOUNTER_DECK,
         &format!("Encounter deck · {} cards", play.encounter_deck_count),
         "encounter-deck",
         MUTED,
+        Source::EncounterDeck,
     );
     paint.card(
         layout::ENCOUNTER_DISCARD,
         &format!("Encounter discard · {} cards", play.encounter_discard.len()),
         "encounter-discard",
         MUTED,
+        Source::EncounterDiscard,
     );
     paint.card(
         layout::VICTORY_DISPLAY,
         &format!("Victory display · {} cards", play.scenario.victory.len()),
         "victory",
         MUTED,
+        Source::Victory,
     );
+    if !play.scenario.removed.is_empty() {
+        paint.card(
+            layout::VICTORY_DISPLAY + Vec3::new(0., 0., 3.),
+            &format!("Scenario removed · {} cards", play.scenario.removed.len()),
+            "scenario-removed",
+            MUTED,
+            Source::ScenarioRemoved,
+        );
+    }
     let map = crate::tabletop_gathering_map::GatheringMap::new(
         play.scenario
             .locations
@@ -647,7 +810,19 @@ pub(super) fn render(
             },
             room.clues
         );
-        paint.card(at, &title, &room.code, PAPER);
+        paint.card(
+            at,
+            &title,
+            &room.code,
+            PAPER,
+            Source::Location(room.code.clone()),
+        );
+        paint.count(
+            layout::location_clue(at),
+            crate::tabletop_counters::CounterKind::Clue,
+            room.clues,
+            Source::Location(room.code.clone()),
+        );
         let occupants = play.players.iter().enumerate().filter(|(_, player)| {
             !player.defeated && !player.resigned && player.location == room.code
         });
@@ -659,12 +834,39 @@ pub(super) fn render(
                     paint.commands,
                     paint.meshes,
                     paint.materials,
-                    None,
+                    context
+                        .art
+                        .image(&format!(
+                            "standee/{}",
+                            investigator_code(play.players[index].investigator)
+                        ))
+                        .as_ref(),
                     position,
                     layout::investigator_class(index),
                     Vec2::new(1.35, 1.89),
                 );
                 paint.commands.entity(entity).insert(ScenePiece);
+                // Shared standees keep their meshes non-pickable by default. Here
+                // their mesh hits bubble to the investigator's menu observer.
+                paint.commands.queue(move |world: &mut World| {
+                    let children = world
+                        .get::<Children>(entity)
+                        .map(|children| children.to_vec())
+                        .unwrap_or_default();
+                    for child in children {
+                        world.entity_mut(child).remove::<Pickable>();
+                    }
+                });
+                let who = play.players[index].investigator;
+                paint.selectable(
+                    entity,
+                    controls::Selection {
+                        source: Source::Investigator(who),
+                        at: position,
+                        title: who.name().into(),
+                        inspect_code: investigator_code(who).into(),
+                    },
+                );
             }
         }
         if let Some(fog) = &room.fog {
@@ -673,6 +875,7 @@ pub(super) fn render(
                 &format!("{} · copy {}", fog.title, fog.id),
                 &fog.code,
                 PAPER,
+                Source::Card(fog.id),
             );
         }
     }
@@ -699,11 +902,26 @@ pub(super) fn render(
             ),
             &enemy.card.code,
             PAPER,
+            Source::Card(enemy.card.id),
         );
         paint
             .commands
             .entity(entity)
             .insert(motion::PhysicalCard(enemy.card.id));
+        paint.caption(
+            enemy_position(slot),
+            format!(
+                "{} · Damage {}\nDoom {} · Bounties {}",
+                if enemy.exhausted {
+                    "Exhausted"
+                } else {
+                    "Ready"
+                },
+                enemy.damage,
+                enemy.doom,
+                enemy.bounties,
+            ),
+        );
     }
     if play.scenario.lita_in_play
         && !play
@@ -716,8 +934,30 @@ pub(super) fn render(
             "Lita Chantler · Parlor",
             "01117",
             PAPER,
+            Source::Lita,
         );
     }
+    // All public cards awaiting a decision share the same spaced rows. Searches
+    // can leave their event resolving while the revealed choices are displayed.
+    let committed_count = play.test.as_ref().map_or(0, |test| test.committed.len());
+    let player_search_offset = committed_count + play.searched_encounter.len();
+    let resolving_offset = player_search_offset + play.searched_player.len();
+    let resolving_cards: Vec<_> = play
+        .pending
+        .resolving_cards
+        .iter()
+        .filter(|card| {
+            !play.test.as_ref().is_some_and(|test| {
+                test.source_card
+                    .as_ref()
+                    .is_some_and(|source| source.id == card.id)
+            }) && !play
+                .pending_revelation
+                .as_ref()
+                .is_some_and(|pending| pending.card.id == card.id)
+        })
+        .collect();
+    let public_count = resolving_offset + resolving_cards.len();
     if let Some(test) = &play.test {
         paint.label(
             layout::test_heading(),
@@ -735,11 +975,12 @@ pub(super) fn render(
                 &format!("{} · copy {}", source.title, source.id),
                 &source.code,
                 PAPER,
+                Source::Card(source.id),
             );
         }
         for (slot, committed) in test.committed.iter().enumerate() {
             let entity = paint.card(
-                layout::test_commitment(test.committed.len(), slot),
+                layout::test_commitment(public_count, slot),
                 &format!(
                     "{} · copy {}\n{}",
                     committed.card.title,
@@ -748,6 +989,7 @@ pub(super) fn render(
                 ),
                 &committed.card.code,
                 PAPER,
+                Source::Card(committed.card.id),
             );
             paint
                 .commands
@@ -766,14 +1008,25 @@ pub(super) fn render(
             ),
             &pending.card.code,
             PAPER,
+            Source::Card(pending.card.id),
+        );
+    }
+    if !play.searched_encounter.is_empty() {
+        paint.card(
+            layout::test_source(),
+            &format!("Encounter search · {} cards", play.searched_encounter.len()),
+            "searched-encounter",
+            PAPER,
+            Source::SearchEncounter,
         );
     }
     for (slot, searched) in play.searched_encounter.iter().enumerate() {
         paint.card(
-            layout::test_commitment(play.searched_encounter.len(), slot),
+            layout::test_commitment(public_count, committed_count + slot),
             &format!("Search · {} · copy {}", searched.title, searched.id),
             &searched.code,
             PAPER,
+            Source::Card(searched.id),
         );
     }
     if !play.searched_player.is_empty() {
@@ -785,7 +1038,17 @@ pub(super) fn render(
             ),
             "searched-player",
             PAPER,
+            Source::SearchPlayer,
         );
+        for (slot, searched) in play.searched_player.iter().enumerate() {
+            paint.card(
+                layout::test_commitment(public_count, player_search_offset + slot),
+                &format!("Search · {} · copy {}", searched.title, searched.id),
+                &searched.code,
+                PAPER,
+                Source::Card(searched.id),
+            );
+        }
     }
     if !play.pending.resolving_cards.is_empty() {
         paint.card(
@@ -793,7 +1056,17 @@ pub(super) fn render(
             &format!("Resolving cards · {}", play.pending.resolving_cards.len()),
             "resolving-cards",
             PAPER,
+            Source::Resolving,
         );
+        for (slot, resolving) in resolving_cards.iter().enumerate() {
+            paint.card(
+                layout::test_commitment(public_count, resolving_offset + slot),
+                &format!("Resolving · {} · copy {}", resolving.title, resolving.id),
+                &resolving.code,
+                PAPER,
+                Source::Card(resolving.id),
+            );
+        }
     }
     if play.pending.discard.is_some() {
         paint.card(
@@ -801,6 +1074,7 @@ pub(super) fn render(
             "Pending discard order",
             "pending-discard",
             PAPER,
+            Source::PendingDiscard,
         );
     }
     if let Some(tokens) = &play.tokens {
@@ -814,7 +1088,13 @@ pub(super) fn render(
             } else {
                 ShownTokenState::Revealed
             };
-            paint.token(layout::test_token(false, slot), *token, state, slot + 1);
+            paint.token(
+                layout::test_token(false, slot),
+                *token,
+                state,
+                slot + 1,
+                true,
+            );
         }
     } else if let Some(test) = &play.test {
         for (slot, token) in test.revealed.iter().enumerate() {
@@ -823,6 +1103,7 @@ pub(super) fn render(
                 *token,
                 ShownTokenState::Resolved,
                 slot + 1,
+                true,
             );
         }
         for (slot, (token, state)) in test
@@ -836,7 +1117,13 @@ pub(super) fn render(
             )
             .enumerate()
         {
-            paint.token(layout::test_token(true, slot), *token, state, slot + 1);
+            paint.token(
+                layout::test_token(true, slot),
+                *token,
+                state,
+                slot + 1,
+                false,
+            );
         }
     }
     if let Some(sealed) = &play.premonition {
@@ -855,6 +1142,7 @@ pub(super) fn render(
             ),
             &sealed.card.code,
             PAPER,
+            Source::Card(sealed.card.id),
         );
     }
 }

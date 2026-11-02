@@ -1,13 +1,15 @@
 //! Native consumer of the Gathering decision seam. Rules remain in gathering::Session.
 
 use crate::{
+    asset_config::AssetConfig,
     gathering::{
         Investigator, Observation, PresentationMoment, Session,
         continuity::{self, Replay},
     },
+    tabletop::asset_settings::AssetSettings,
     tabletop_camera::{CameraMode, Capture, FrameInput, Orbit},
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
-    tabletop_health::{HealthAssets, RenderHealth, TabletopHealthPlugin, exit_result},
+    tabletop_health::{RenderHealth, TabletopHealthPlugin, exit_result},
     tabletop_layout::{self as layout, Area},
     tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin},
 };
@@ -23,8 +25,11 @@ use bevy::{
 };
 use std::path::PathBuf;
 
+mod art;
+mod controls;
 mod motion;
 mod play;
+mod story;
 
 const INK: Color = Color::srgb(0.035, 0.055, 0.065);
 const PAPER: Color = Color::srgb(0.91, 0.89, 0.81);
@@ -34,6 +39,12 @@ const GOLD: Color = Color::srgb(0.86, 0.69, 0.37);
 #[derive(Clone)]
 enum Action {
     Choose(u64, u64, String),
+    Select(u64, u64, controls::Selection),
+    ContextChoice(u64, u64, u64, String),
+    ContextInspect(u64, u64, u64, String, String),
+    DismissContext,
+    PendingChoices,
+    AssetFolder,
     Inspect(String, String),
     Save,
     Reopen,
@@ -71,6 +82,7 @@ struct Table {
     last_rendered: Option<Observation>,
     last_rendered_health: Option<(bool, String)>,
     motion_origins: motion::Origins,
+    context: controls::Context,
 }
 
 impl Table {
@@ -79,7 +91,7 @@ impl Table {
             session,
             replay: None,
             save_path,
-            notice: "Readable card substitutes. Each decision saves before it takes effect.".into(),
+            notice: "Each decision saves before it takes effect.".into(),
             inspection: None,
             history_open: false,
             epoch: 0,
@@ -92,6 +104,7 @@ impl Table {
             last_rendered: None,
             last_rendered_health: None,
             motion_origins: motion::Origins::default(),
+            context: controls::Context::default(),
         }
     }
 
@@ -121,6 +134,23 @@ impl Table {
     fn modal(&self) -> bool {
         self.inspection.is_some() || self.history_open
     }
+
+    fn story_faces(&self, view: &Observation) -> story::Faces {
+        if let Some(replay) = &self.replay {
+            story::Faces::for_view(
+                replay.recording(),
+                view,
+                replay.current_presentation_sequence(),
+            )
+        } else {
+            let sequence = self
+                .presentation
+                .get(self.presentation_index)
+                .filter(|_| self.is_presenting())
+                .map(|moment| moment.sequence);
+            story::Faces::for_view(&self.session.recording(), view, sequence)
+        }
+    }
 }
 
 #[derive(Component)]
@@ -132,31 +162,140 @@ struct Panel;
 #[derive(Component)]
 struct WorldLabel(Vec3, bool);
 #[derive(Component)]
+struct HoverLabel;
+#[derive(Component)]
 struct ScrollablePanel {
     inspection: bool,
 }
 
-pub fn run() -> Result<(), String> {
-    let mut save = PathBuf::from("local/gathering/setup.session.json");
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--experiment" => {
-                if args.next().as_deref() != Some("gathering") {
-                    return Err("Use --experiment gathering.".into());
-                }
+#[derive(Component)]
+struct ContextTarget {
+    epoch: u64,
+    revision: u64,
+    source: controls::Source,
+}
+
+struct CardRender<'a> {
+    art: &'a art::Art,
+    view: &'a Observation,
+    epoch: u64,
+    story: &'a story::Faces,
+}
+
+impl CardRender<'_> {
+    fn bind(&self, commands: &mut Commands, entity: Entity, source: controls::Source) {
+        commands.entity(entity).insert(ContextTarget {
+            epoch: self.epoch,
+            revision: self.view.revision,
+            source,
+        });
+    }
+
+    fn image(&self, code: &str) -> Option<Handle<Image>> {
+        if self.story.is_reverse(code) {
+            return self.art.card(code, true);
+        }
+        if let Some(play) = &self.view.play {
+            if let Some(room) = play
+                .scenario
+                .locations
+                .iter()
+                .find(|room| room.code == code)
+            {
+                return self.art.card(code, !room.revealed);
             }
-            "--save" => save = args.next().ok_or("--save needs a path")?.into(),
-            "--no-art" => {}
-            "--help" | "-h" => {
-                println!(
-                    "The Gathering\n--experiment gathering\n--save PATH\n--no-art\nReopens an existing session; a new path starts setup and scenario play."
-                );
-                return Ok(());
+            if let Some(id) = code
+                .strip_prefix("backpack:")
+                .and_then(|id| id.parse::<u16>().ok())
+            {
+                return play
+                    .players
+                    .iter()
+                    .flat_map(|player| &player.assets)
+                    .find(|asset| asset.card.id == id)
+                    .and_then(|asset| self.art.card(&asset.card.code, false));
             }
-            _ => return Err(format!("Unknown Gathering option: {arg}")),
+            if let Some(who) = code.strip_prefix("discard:") {
+                return play
+                    .players
+                    .iter()
+                    .find(|player| player.investigator.id() == who)
+                    .and_then(|player| player.discard.last())
+                    .and_then(|card| self.art.card(&card.code, false));
+            }
+            if code == "encounter-discard" {
+                return play
+                    .encounter_discard
+                    .last()
+                    .and_then(|card| self.art.card(&card.code, false));
+            }
+        }
+        match code {
+            "hidden-player-deck" => self.art.image("card-back/player"),
+            "encounter-deck" => self.art.image("card-back/encounter"),
+            "chaos-bag" => self.art.image("ui/reveal-chaos-token"),
+            _ => self.art.card(code, false),
         }
     }
+
+    fn rules(&self, code: &str) -> Option<String> {
+        if self.story.is_reverse(code) {
+            crate::gathering::inspection::scenario_card_reverse(code)
+        } else {
+            inspection_text(self.view, code)
+        }
+    }
+}
+
+struct Options {
+    save: PathBuf,
+    art_root: Option<PathBuf>,
+    config: AssetConfig,
+}
+
+impl Options {
+    fn parse(
+        config: AssetConfig,
+        mut args: impl Iterator<Item = String>,
+    ) -> Result<Option<Self>, String> {
+        let mut save = PathBuf::from("local/gathering/setup.session.json");
+        let mut root = None;
+        let mut no_art = false;
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--experiment" => {
+                    if args.next().as_deref() != Some("gathering") {
+                        return Err("Use --experiment gathering.".into());
+                    }
+                }
+                "--save" => save = args.next().ok_or("--save needs a path")?.into(),
+                "--art-root" => {
+                    root = Some(PathBuf::from(args.next().ok_or("--art-root needs a path")?))
+                }
+                "--no-art" => no_art = true,
+                "--help" | "-h" => {
+                    println!(
+                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--no-art\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden."
+                    );
+                    return Ok(None);
+                }
+                _ => return Err(format!("Unknown Gathering option: {arg}")),
+            }
+        }
+        Ok(Some(Self {
+            save,
+            art_root: (!no_art).then(|| root.unwrap_or_else(|| config.root().to_path_buf())),
+            config,
+        }))
+    }
+}
+
+pub fn run() -> Result<(), String> {
+    let Some(options) = Options::parse(AssetConfig::load_gathering()?, std::env::args().skip(1))?
+    else {
+        return Ok(());
+    };
+    let save = options.save;
     let session = if save.exists() {
         continuity::load_session(&save).map_err(|error| error.to_string())?
     } else {
@@ -169,45 +308,76 @@ pub fn run() -> Result<(), String> {
             "This is a privileged verification fixture, not an ordinary Gathering setup.".into(),
         );
     }
+    let prepared = art::Prepared::new(options.art_root)?;
+    eprintln!(
+        "Experiment: The Gathering (--experiment gathering)\nArtwork root: {}\n{}",
+        prepared
+            .root()
+            .map_or_else(|| "disabled".into(), |path| path.display().to_string()),
+        prepared.status()
+    );
+    let mut table = Table::new(session, save);
+    if let Some(warning) = options.config.warning() {
+        table.notice = format!("Asset settings: {warning}");
+    }
     let mut app = App::new();
     app.insert_resource(ClearColor(INK))
-        .insert_resource(Table::new(session, save))
+        .insert_resource(table)
         .insert_resource(Orbit::new(CameraMode::Jacqueline))
-        .insert_resource(HealthAssets::new([]))
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Arkham Unfolded — Gathering Setup".into(),
-                resolution: (1600, 1000).into(),
-                ..default()
-            }),
-            ..default()
-        }))
+        .insert_resource(AssetSettings::new_gathering(options.config))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Arkham Unfolded — Gathering Setup".into(),
+                        resolution: (1600, 1000).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(prepared.asset_plugin()),
+        )
         .add_plugins(MeshPickingPlugin)
         .add_plugins(TabletopPacingPlugin)
         .add_plugins(TabletopHealthPlugin);
+    let art = prepared.load(app.world().resource::<AssetServer>());
+    app.insert_resource(art.health_assets())
+        .insert_resource(art);
     install(&mut app);
     exit_result(app.run())
 }
 
 /// The same registration is used by the native app and headless input tests.
 fn install(app: &mut App) {
+    controls::install(app);
     app.init_resource::<Actions>()
+        .init_resource::<art::Art>()
         .add_plugins(feedback::FeedbackPlugin)
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
+                poll_settings,
                 handle_actions,
                 advance_presentation,
                 keyboard_panel_scroll,
                 camera_controls,
                 render,
+                controls::render,
+                contextual_feedback,
                 motion::animate,
                 world_labels,
             )
                 .chain(),
         )
         .add_systems(Last, request_redraw.in_set(RequestRedraw));
+}
+
+fn poll_settings(mut settings: Option<ResMut<AssetSettings>>, mut table: ResMut<Table>) {
+    if let Some(message) = settings.as_mut().and_then(|settings| settings.poll()) {
+        table.notice = message;
+        table.dirty = true;
+    }
 }
 
 fn handle_actions(
@@ -217,13 +387,49 @@ fn handle_actions(
     mut orbit: ResMut<Orbit>,
     keys: Res<ButtonInput<KeyCode>>,
     mut feedback: ResMut<FeedbackSettings>,
+    mut settings: Option<ResMut<AssetSettings>>,
 ) {
+    let revision = table
+        .last_rendered
+        .as_ref()
+        .map_or_else(|| table.view().revision, |view| view.revision);
+    let epoch = table.epoch;
+    let replay_index = table.replay.as_ref().map(Replay::index);
+    table.context.sync(epoch, revision, replay_index);
+    if !health.allows_play()
+        || health.just_became_ready()
+        || settings.as_ref().is_some_and(|settings| settings.is_busy())
+    {
+        table.context.reset();
+    }
     if keys.just_pressed(KeyCode::Escape) {
         actions.0.push(Action::Close);
     }
     for action in actions.0.drain(..) {
-        if (!health.allows_play() || health.just_became_ready())
-            && !matches!(action, Action::Focus(_) | Action::Close)
+        let action = match action {
+            Action::ContextChoice(generation, epoch, revision, id)
+                if table.context.accepts(generation) =>
+            {
+                Action::Choose(epoch, revision, id)
+            }
+            Action::ContextChoice(..) => continue,
+            Action::ContextInspect(generation, epoch, revision, title, code)
+                if table.context.accepts(generation)
+                    && epoch == table.epoch
+                    && revision == table.view().revision =>
+            {
+                Action::Inspect(title, code)
+            }
+            Action::ContextInspect(..) => continue,
+            action => action,
+        };
+        if (!health.allows_play()
+            || health.just_became_ready()
+            || settings.as_ref().is_some_and(|settings| settings.is_busy()))
+            && !matches!(
+                action,
+                Action::Focus(_) | Action::Close | Action::AssetFolder
+            )
         {
             continue;
         }
@@ -238,6 +444,7 @@ fn handle_actions(
                 table.notice =
                     match continuity::commit_choice(&path, &mut table.session, revision, &id) {
                         Ok(()) => {
+                            table.context.reset();
                             table.presentation =
                                 table.session.presentation_after(revision).to_vec();
                             table.presentation_index = 0;
@@ -254,7 +461,38 @@ fn handle_actions(
                 table.dirty = true;
             }
             Action::Choose(_, _, _) => {}
+            Action::Select(epoch, revision, selection)
+                if epoch == table.epoch && revision == table.view().revision && !table.modal() =>
+            {
+                let view = table.view();
+                let live = table.replay.is_none() && !table.is_presenting();
+                if let Some(effect) = table.context.select(&view, selection, live) {
+                    if let controls::SelectionEffect::Inspect(title, code) = effect {
+                        table.inspection = Some((title, code));
+                        table.epoch += 1;
+                    }
+                    table.dirty = true;
+                }
+            }
+            Action::Select(..) | Action::ContextChoice(..) | Action::ContextInspect(..) => {}
+            Action::DismissContext => table.context.dismiss(),
+            Action::PendingChoices
+                if table.replay.is_none() && !table.modal() && !table.is_presenting() =>
+            {
+                table.context.open_pending();
+            }
+            Action::PendingChoices => {}
+            Action::AssetFolder => {
+                if let Some(settings) = settings.as_mut() {
+                    table.context.reset();
+                    settings.choose();
+                    table.notice =
+                        "Choose a prepared Gathering artwork folder. Restart to apply it.".into();
+                    table.dirty = true;
+                }
+            }
             Action::Focus(area) => {
+                table.context.dismiss();
                 orbit.focus(layout::focus(area));
                 if table.is_presenting() {
                     table.presentation_paused = true;
@@ -262,6 +500,7 @@ fn handle_actions(
                 table.dirty = true;
             }
             Action::Follow => {
+                table.context.dismiss();
                 let following = !orbit.is_following();
                 orbit.set_following(following);
                 orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
@@ -284,18 +523,21 @@ fn handle_actions(
             }
             Action::PresentationNext | Action::PresentationPause | Action::PresentationFinish => {}
             Action::Close => {
+                table.context.reset();
                 table.epoch += 1;
                 table.inspection = None;
                 table.history_open = false;
                 table.dirty = true;
             }
             Action::Inspect(title, code) => {
+                table.context.reset();
                 table.epoch += 1;
                 table.inspection = Some((title, code));
                 table.history_open = false;
                 table.dirty = true;
             }
             Action::History => {
+                table.context.reset();
                 table.epoch += 1;
                 table.history_open = true;
                 table.inspection = None;
@@ -311,6 +553,7 @@ fn handle_actions(
             Action::Reopen if table.replay.is_none() => {
                 match continuity::load_session(&table.save_path) {
                     Ok(session) if !session.is_verification_fixture() => {
+                        table.context.reset();
                         table.epoch += 1;
                         if session != table.session {
                             table.presentation.clear();
@@ -334,6 +577,7 @@ fn handle_actions(
             Action::Replay => {
                 match Replay::new(table.session.recording()) {
                     Ok(replay) => {
+                        table.context.reset();
                         table.live_follow = orbit.is_following();
                         table.epoch += 1;
                         table.replay = Some(replay);
@@ -363,6 +607,7 @@ fn handle_actions(
                 }
             }
             Action::Live => {
+                table.context.reset();
                 table.epoch += 1;
                 table.replay = None;
                 table.inspection = None;
@@ -374,7 +619,8 @@ fn handle_actions(
             Action::Reopen | Action::Save => {}
         }
     }
-    feedback.blocked = table.modal();
+    feedback.blocked =
+        table.modal() || settings.as_ref().is_some_and(|settings| settings.is_busy());
 }
 
 fn setup(
@@ -394,14 +640,7 @@ fn setup(
 }
 
 fn text(value: impl Into<String>, size: f32, color: Color) -> impl Bundle {
-    (
-        Text::new(value),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(size),
-            ..default()
-        },
-        TextColor(color),
-    )
+    crate::tabletop_harm_text::ui(value, size, color, &None)
 }
 
 fn button(parent: &mut ChildSpawnerCommands, label: &str, action: Action) -> Entity {
@@ -431,18 +670,19 @@ fn card(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    context: &CardRender<'_>,
     at: Vec3,
     title: &str,
     code: &str,
     selected: bool,
     color: Color,
 ) -> Entity {
-    let action = Action::Inspect(title.into(), code.into());
-    let (width, length) = if matches!(code, "06003" | "06005" | "60401") {
-        (2.6, 1.85)
-    } else {
-        (1.35, 1.89)
-    };
+    let title = title.to_owned();
+    let code = code.to_owned();
+    let image = context.image(&code);
+    let has_art = image.is_some();
+    let landscape = matches!(code.as_str(), "06003" | "06005" | "60401");
+    let (width, length) = if landscape { (2.6, 1.85) } else { (1.35, 1.89) };
     let entity = commands
         .spawn((
             ScenePiece,
@@ -450,32 +690,127 @@ fn card(
             MeshMaterial3d(materials.add(color)),
             Transform::from_translation(at),
         ))
-        .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
-            if event.button == bevy::picking::pointer::PointerButton::Primary {
-                queue.0.push(action.clone());
+        .observe({
+            let title = title.clone();
+            let code = code.clone();
+            move |event: On<PointerClick>,
+                  targets: Query<&ContextTarget>,
+                  mut queue: ResMut<Actions>| {
+                if event.button == bevy::picking::pointer::PointerButton::Primary {
+                    queue.0.push(if let Ok(target) = targets.get(event.entity) {
+                        Action::Select(
+                            target.epoch,
+                            target.revision,
+                            controls::Selection {
+                                source: target.source.clone(),
+                                at,
+                                title: title.clone(),
+                                inspect_code: code.clone(),
+                            },
+                        )
+                    } else {
+                        Action::Inspect(title.clone(), code.clone())
+                    });
+                }
             }
         })
         .id();
+    if let Some(image) = image {
+        let (face_width, face_length, rotation) = if landscape {
+            (
+                length,
+                width,
+                Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            )
+        } else {
+            (width, length, Quat::IDENTITY)
+        };
+        commands.entity(entity).with_children(|parent| {
+            parent.spawn((
+                Mesh3d(meshes.add(Plane3d::default().mesh().size(face_width, face_length))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color_texture: Some(image),
+                    unlit: true,
+                    ..default()
+                })),
+                Transform::from_xyz(0., 0.045, 0.).with_rotation(rotation),
+                Pickable::IGNORE,
+            ));
+        });
+    }
     feedback::attach_card_feedback(commands, meshes, materials, entity, width, length, 0.04);
     commands.entity(entity).insert(CardFeedback {
         pending_choice: selected,
+        symbol_font: context.art.symbol_font().clone(),
         ..default()
     });
-    commands.spawn((
-        ScenePiece,
-        WorldLabel(at + Vec3::Y * 0.1, false),
-        motion::CardLabel(entity),
-        text(title, 13., INK),
-        Node {
-            position_type: PositionType::Absolute,
-            width: px(130),
-            padding: UiRect::all(px(3)),
-            ..default()
-        },
-        BackgroundColor(PAPER),
-        Pickable::IGNORE,
-    ));
+    let label = commands
+        .spawn((
+            ScenePiece,
+            WorldLabel(at + Vec3::Y * 0.1, false),
+            motion::CardLabel(entity),
+            context.art.text(title, 13., INK),
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(130),
+                padding: UiRect::all(px(3)),
+                ..default()
+            },
+            BackgroundColor(PAPER),
+            Pickable::IGNORE,
+        ))
+        .id();
+    if has_art {
+        commands.entity(label).insert(HoverLabel);
+    }
     entity
+}
+
+fn inspection_image(
+    parent: &mut ChildSpawnerCommands,
+    image: Handle<Image>,
+    code: &str,
+    available_width: f32,
+) {
+    let landscape = matches!(
+        code,
+        "06003" | "06005" | "60401" | "01105" | "01106" | "01107" | "01108" | "01109" | "01110"
+    );
+    let width = available_width
+        .max(160.)
+        .min(if landscape { 760. } else { 430. });
+    let height = width * if landscape { 5. / 7. } else { 7. / 5. };
+    parent
+        .spawn(Node {
+            width: px(width),
+            height: px(height),
+            flex_shrink: 0.,
+            align_self: AlignSelf::Center,
+            ..default()
+        })
+        .with_children(|frame| {
+            frame.spawn((
+                ImageNode::new(image),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: percent(50),
+                    top: percent(50),
+                    width: px(if landscape { height } else { width }),
+                    height: px(if landscape { width } else { height }),
+                    ..default()
+                },
+                UiTransform {
+                    translation: Val2::percent(-50, -50),
+                    rotation: if landscape {
+                        Rot2::degrees(-90.)
+                    } else {
+                        Rot2::IDENTITY
+                    },
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+        });
 }
 
 fn inspection_text(view: &Observation, code: &str) -> Option<String> {
@@ -514,14 +849,18 @@ type PriorRenderedCard<'a> = (
     Option<&'a motion::CardMotion>,
 );
 
+#[allow(clippy::too_many_arguments)]
 fn render(
     mut commands: Commands,
     mut table: ResMut<Table>,
     health: Res<RenderHealth>,
+    art: Res<art::Art>,
     old: Query<PriorRenderedCard<'_>, RenderedContent>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     orbit: Res<Orbit>,
+    mut focus: Option<ResMut<InputFocus>>,
+    window: Single<&Window>,
 ) {
     // Health sampling changes every frame. Rebuilding for those observations
     // destroys the controls between pointer hover, press, and release.
@@ -536,6 +875,11 @@ fn render(
     }
     table.last_rendered_health = Some((health.allows_play(), health.status().to_owned()));
     table.dirty = false;
+    if !table.context.is_open()
+        && let Some(focus) = focus.as_mut()
+    {
+        focus.clear();
+    }
     let mut origins = motion::Origins::from_view(table.last_rendered.as_ref());
     for (entity, card, transform, motion) in &old {
         if let (Some(card), Some(transform)) = (card, transform) {
@@ -546,12 +890,20 @@ fn render(
     table.motion_origins = origins;
     let view = table.view();
     table.last_rendered = Some(view.clone());
+    let story = table.story_faces(&view);
+    let context = CardRender {
+        art: &art,
+        view: &view,
+        epoch: table.epoch,
+        story: &story,
+    };
     for (index, investigator) in view.investigators.iter().enumerate() {
         for (slot, hand) in investigator.hand.iter().enumerate() {
             let entity = card(
                 &mut commands,
                 &mut meshes,
                 &mut materials,
+                &context,
                 layout::hand_position(index, investigator.hand.len(), slot),
                 &format!("{} · copy {}", hand.title, hand.id),
                 &hand.code,
@@ -566,6 +918,7 @@ fn render(
             commands
                 .entity(entity)
                 .insert(motion::PhysicalCard(hand.id));
+            context.bind(&mut commands, entity, controls::Source::Card(hand.id));
         }
         for (slot, permanent) in investigator
             .permanents
@@ -577,6 +930,7 @@ fn render(
                 &mut commands,
                 &mut meshes,
                 &mut materials,
+                &context,
                 layout::investigator_asset(index, slot),
                 &permanent.title,
                 &permanent.code,
@@ -586,11 +940,13 @@ fn render(
             commands
                 .entity(entity)
                 .insert(motion::PhysicalCard(permanent.id));
+            context.bind(&mut commands, entity, controls::Source::Card(permanent.id));
         }
-        card(
+        let entity = card(
             &mut commands,
             &mut meshes,
             &mut materials,
+            &context,
             layout::investigator_card(index),
             investigator.investigator.name(),
             match investigator.investigator {
@@ -601,10 +957,15 @@ fn render(
             false,
             layout::investigator_color(index),
         );
+        context.bind(
+            &mut commands,
+            entity,
+            controls::Source::Investigator(investigator.investigator),
+        );
         commands.spawn((
             ScenePiece,
             WorldLabel(layout::investigator_heading(index), true),
-            text(
+            art.text(
                 view.play.as_ref().map_or_else(
                     || {
                         format!(
@@ -630,7 +991,7 @@ fn render(
         ));
     }
     if view.play.is_some() {
-        play::render(&mut commands, &mut meshes, &mut materials, &view);
+        play::render(&mut commands, &mut meshes, &mut materials, &context);
     } else if let Some(scenario) = &view.scenario {
         for (side, codes, label) in [
             (
@@ -646,6 +1007,7 @@ fn render(
                     &mut commands,
                     &mut meshes,
                     &mut materials,
+                    &context,
                     pose.translation,
                     label,
                     code,
@@ -653,38 +1015,60 @@ fn render(
                     PAPER,
                 );
                 commands.entity(entity).insert(pose);
+                context.bind(
+                    &mut commands,
+                    entity,
+                    match side {
+                        layout::ScenarioBookSide::Agenda => controls::Source::Agenda,
+                        layout::ScenarioBookSide::Act => controls::Source::Act,
+                    },
+                );
             }
         }
-        card(
+        let reference = card(
             &mut commands,
             &mut meshes,
             &mut materials,
+            &context,
             layout::SCENARIO_REFERENCE,
             "The Gathering · Standard",
             &scenario.reference,
             false,
             PAPER,
         );
-        card(
+        context.bind(
+            &mut commands,
+            reference,
+            controls::Source::ScenarioReference,
+        );
+        let study = card(
             &mut commands,
             &mut meshes,
             &mut materials,
+            &context,
             layout::SCENARIO_MAP_CENTER,
             &format!("Study · {} clues", scenario.study_clues),
             "01111",
             false,
             PAPER,
         );
-        card(
+        context.bind(
+            &mut commands,
+            study,
+            controls::Source::Location("01111".into()),
+        );
+        let encounter = card(
             &mut commands,
             &mut meshes,
             &mut materials,
+            &context,
             layout::ENCOUNTER_DECK,
             &format!("Encounter deck · {} cards", scenario.encounter_deck_count),
             "encounter-deck",
             false,
             MUTED,
         );
+        context.bind(&mut commands, encounter, controls::Source::EncounterDeck);
     }
     commands
         .spawn((
@@ -720,7 +1104,14 @@ fn render(
                 ("Patrice", Area::Investigator(1)),
                 ("Jacqueline", Area::Investigator(2)),
             ] {
-                button(p, label, Action::Focus(area));
+                let entity = button(p, label, Action::Focus(area));
+                if area == Area::Overview
+                    && !table.modal()
+                    && !table.context.is_open()
+                    && controls::global_choices(&view).is_empty()
+                {
+                    p.commands().entity(entity).insert(AutoFocus);
+                }
             }
             button(
                 p,
@@ -756,8 +1147,10 @@ fn render(
         ))
         .observe(scroll_panel)
         .with_children(|p| {
+            p.spawn(text(art.status(), 12., MUTED));
             if !health.allows_play() {
                 p.spawn(text(health.status(), 20., GOLD));
+                button(p, "Choose asset folder", Action::AssetFolder);
                 return;
             }
             if let Some(replay) = &table.replay {
@@ -772,6 +1165,13 @@ fn render(
                 ));
             }
             p.spawn(text(&view.prompt, 18., PAPER));
+            if table.replay.is_none() && !table.is_presenting() && !view.choices.is_empty() {
+                p.spawn(text(
+                    "Click a card or table component for its available actions.",
+                    13.,
+                    MUTED,
+                ));
+            }
             if table.is_presenting() {
                 p.spawn(text(
                     format!(
@@ -815,7 +1215,7 @@ fn render(
                     );
                     button(row, "Show pending choice", Action::PresentationFinish);
                 } else if !table.modal() {
-                    for (index, choice) in view.choices.iter().enumerate() {
+                    for (index, choice) in controls::global_choices(&view).into_iter().enumerate() {
                         let entity = button(
                             row,
                             &choice.label,
@@ -824,6 +1224,9 @@ fn render(
                         if index == 0 {
                             row.commands().entity(entity).insert(AutoFocus);
                         }
+                    }
+                    if !controls::pending_choices(&view).is_empty() {
+                        button(row, "Pending decision", Action::PendingChoices);
                     }
                 }
             });
@@ -835,6 +1238,7 @@ fn render(
             })
             .with_children(|row| {
                 button(row, "History", Action::History);
+                button(row, "Choose asset folder", Action::AssetFolder);
                 if table.replay.is_none() {
                     button(row, "Save", Action::Save);
                     button(row, "Reopen", Action::Reopen);
@@ -848,10 +1252,10 @@ fn render(
                 Panel,
                 Node {
                     position_type: PositionType::Absolute,
-                    left: percent(22),
-                    right: percent(22),
-                    top: percent(14),
-                    bottom: percent(38),
+                    left: percent(12),
+                    right: percent(12),
+                    top: percent(10),
+                    bottom: percent(18),
                     padding: UiRect::all(px(20)),
                     flex_direction: FlexDirection::Column,
                     row_gap: px(12),
@@ -865,13 +1269,43 @@ fn render(
             ))
             .observe(scroll_panel)
             .with_children(|p| {
+                let close = button(p, "Close", Action::Close);
+                p.commands().entity(close).insert(AutoFocus);
                 if let Some((title, code)) = &table.inspection {
                     p.spawn(text(title, 24., GOLD));
+                    if let Some(image) = context.image(code) {
+                        inspection_image(p, image, code, window.width() * 0.76 - 40.);
+                    }
                     if code.len() == 5 && code.bytes().all(|byte| byte.is_ascii_digit()) {
                         p.spawn(text(format!("Card {code}"), 14., MUTED));
                     }
-                    if let Some(rules) = inspection_text(&view, code) {
-                        p.spawn(text(rules, 17., PAPER));
+                    if let Some(rules) = context.rules(code) {
+                        p.spawn(art.text(rules, 17., PAPER));
+                    }
+                    if let Some(current) = story::StoryCard::from_code(code) {
+                        for previous in story
+                            .known_reverses(current.side())
+                            .filter(|card| *card != current)
+                        {
+                            p.spawn(text(
+                                format!("Previously revealed · {}", previous.title()),
+                                22.,
+                                GOLD,
+                            ));
+                            if let Some(image) = art.card(previous.code(), true) {
+                                inspection_image(
+                                    p,
+                                    image,
+                                    previous.code(),
+                                    window.width() * 0.76 - 40.,
+                                );
+                            }
+                            if let Some(rules) =
+                                crate::gathering::inspection::scenario_card_reverse(previous.code())
+                            {
+                                p.spawn(art.text(rules, 17., PAPER));
+                            }
+                        }
                     }
                 } else {
                     p.spawn(text("Action history", 22., GOLD));
@@ -879,8 +1313,7 @@ fn render(
                         p.spawn(text(line, 15., PAPER));
                     }
                 }
-                let close = button(p, "Close", Action::Close);
-                p.commands().entity(close).insert(AutoFocus);
+                button(p, "Close", Action::Close);
             });
     }
 }
@@ -902,23 +1335,30 @@ fn keyboard_panel_scroll(
     table: Res<Table>,
     mut panels: Query<(&ScrollablePanel, &mut ScrollPosition, &ComputedNode)>,
 ) {
+    if table.context.captures_keyboard() {
+        return;
+    }
     for (panel, mut scroll, node) in &mut panels {
         if panel.inspection != table.modal() {
             continue;
         }
-        let maximum = (node.content_size().y - node.size().y).max(0.);
-        if keys.just_pressed(KeyCode::PageDown) {
-            scroll.y = (scroll.y + node.size().y * 0.8).min(maximum);
-        }
-        if keys.just_pressed(KeyCode::PageUp) {
-            scroll.y = (scroll.y - node.size().y * 0.8).max(0.);
-        }
-        if keys.just_pressed(KeyCode::End) {
-            scroll.y = maximum;
-        }
-        if keys.just_pressed(KeyCode::Home) {
-            scroll.y = 0.;
-        }
+        scroll_with_keys(&keys, &mut scroll, node);
+    }
+}
+
+fn scroll_with_keys(keys: &ButtonInput<KeyCode>, scroll: &mut ScrollPosition, node: &ComputedNode) {
+    let maximum = (node.content_size().y - node.size().y).max(0.);
+    if keys.just_pressed(KeyCode::PageDown) {
+        scroll.y = (scroll.y + node.size().y * 0.8).min(maximum);
+    }
+    if keys.just_pressed(KeyCode::PageUp) {
+        scroll.y = (scroll.y - node.size().y * 0.8).max(0.);
+    }
+    if keys.just_pressed(KeyCode::End) {
+        scroll.y = maximum;
+    }
+    if keys.just_pressed(KeyCode::Home) {
+        scroll.y = 0.;
     }
 }
 
@@ -959,7 +1399,9 @@ fn camera_controls(
     focusable: Query<(), With<Button>>,
     hover: Option<Res<bevy::picking::hover::HoverMap>>,
     ui_nodes: Query<(), With<Node>>,
+    settings: Option<Res<AssetSettings>>,
 ) {
+    let blocked = table.modal() || settings.as_ref().is_some_and(|settings| settings.is_busy());
     let over_ui = hover
         .as_ref()
         .and_then(|hover| hover.get(&bevy::picking::pointer::PointerId::Mouse))
@@ -971,18 +1413,22 @@ fn camera_controls(
         scroll_y: crate::tabletop_camera::wheel_steps(&scroll),
         dt: time.delta_secs(),
         capture: Capture {
-            pointer_blocked: table.modal(),
+            pointer_blocked: blocked,
             over_ui,
-            keyboard: table.modal()
+            keyboard: blocked
+                || table.context.captures_keyboard()
                 || focus
                     .as_ref()
                     .and_then(|f| f.get())
                     .is_some_and(|entity| focusable.contains(entity)),
-            wheel: table.modal() || over_ui,
+            wheel: blocked || table.context.is_open() || over_ui,
         },
         reduced_motion: false,
     });
     **camera = step.transform;
+    if step.manual_navigation && table.context.is_open() {
+        table.context.dismiss();
+    }
     if step.stopped_following {
         table.dirty = true;
     }
@@ -992,22 +1438,31 @@ fn camera_controls(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn world_labels(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     orbit: Res<Orbit>,
     mut labels: Query<(
         &WorldLabel,
         Option<&motion::CardLabel>,
+        Option<&HoverLabel>,
+        &ComputedNode,
         &mut Node,
         &mut Visibility,
     )>,
     cards: Query<&Transform>,
+    hover: Option<Res<bevy::picking::hover::HoverMap>>,
 ) {
-    for (label, card, mut node, mut visibility) in &mut labels {
+    let hovered = hover
+        .as_ref()
+        .and_then(|map| map.get(&bevy::picking::pointer::PointerId::Mouse));
+    for (label, card, hover_only, computed, mut node, mut visibility) in &mut labels {
         let anchor = card
             .and_then(|card| cards.get(card.0).ok())
             .map_or(label.0, |transform| transform.translation + Vec3::Y * 0.1);
-        if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
+        let hidden = hover_only.is_some()
+            && !card.is_some_and(|card| hovered.is_some_and(|hits| hits.contains_key(&card.0)));
+        if hidden || (orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1) {
             *visibility = Visibility::Hidden;
         } else if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor) {
             let width = if let Val::Px(width) = node.width {
@@ -1015,12 +1470,25 @@ fn world_labels(
             } else {
                 130.
             };
-            node.left = px(point.x - width / 2.);
-            node.top = px(point.y);
+            let viewport = camera
+                .0
+                .logical_viewport_size()
+                .unwrap_or(Vec2::new(1280., 720.));
+            node.left = px((point.x - width / 2.).clamp(8., (viewport.x - width - 8.).max(8.)));
+            node.top = px(point.y.clamp(
+                72.,
+                (viewport.y - computed.size().y * computed.inverse_scale_factor - 100.).max(72.),
+            ));
             *visibility = Visibility::Inherited;
         } else {
             *visibility = Visibility::Hidden;
         }
+    }
+}
+
+fn contextual_feedback(table: Res<Table>, mut cards: Query<(&ContextTarget, &mut CardFeedback)>) {
+    for (target, mut feedback) in &mut cards {
+        feedback.menu_source = table.context.is_menu_source(&target.source);
     }
 }
 

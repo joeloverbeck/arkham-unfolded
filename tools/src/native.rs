@@ -560,10 +560,8 @@ fn launch_environment(overrides: &std::collections::BTreeMap<&str, PathBuf>) -> 
 fn launch(args: Launch) -> Result<u8> {
     ensure!(
         args.experiment != Experiment::Gathering
-            || (args.art_root.is_none()
-                && args.screenshot.is_none()
-                && args.initial_view.is_none()),
-        "Gathering uses readable substitutes and does not support --art-root, --screenshot, or --initial-view"
+            || (args.screenshot.is_none() && args.initial_view.is_none()),
+        "Gathering does not support --screenshot or --initial-view"
     );
     let directory = resolve(&args.output_dir)?;
     let binary = args.binary.canonicalize()?;
@@ -634,7 +632,7 @@ fn launch(args: Launch) -> Result<u8> {
         .arg(&save);
     if let Some(root) = args.art_root {
         command.arg("--art-root").arg(resolve(&root)?);
-    } else if args.no_art || args.experiment == Experiment::Gathering {
+    } else if args.no_art {
         command.arg("--no-art");
     }
     if let Some(path) = &screenshot {

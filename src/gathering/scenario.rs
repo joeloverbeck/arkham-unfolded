@@ -1900,30 +1900,53 @@ pub(super) fn rebuild_empty_encounter(game: &mut Game) {
 /// Readable original-face rules for the selected scenario identities. This is
 /// inspection text, not a parser or a promise that every ability is executable.
 /// The caller supplies a visible card identity; this never examines deck order.
-pub(super) fn inspect(code: &str, revealed: bool) -> Option<String> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum InspectionFace {
+    Front,
+    RevealedLocation,
+    StoryReverse,
+}
+
+pub(super) fn inspect(code: &str, face: InspectionFace) -> Option<String> {
     let title = content::title(code)?;
+    if face == InspectionFace::StoryReverse {
+        let details = match code {
+            "01105" => {
+                "Agenda 1\nReverse: The lead investigator must decide (choose one): Either each investigator discards 1 card at random from his or her hand, or the lead investigator takes 2 horror."
+            }
+            "01106" => {
+                "Agenda 2\nReverse: Shuffle the encounter discard pile into the encounter deck. Discard cards from the top of the encounter deck until a Ghoul enemy is discarded. The lead investigator draws that enemy."
+            }
+            "01107" => {
+                "Agenda 3\nReverse:\nIf the investigators are at Act 1 or 2, they are trapped inside the house as the ghouls tear them apart. (Resolution 3)\nIf the investigators are at Act 3, they barely escape with their lives, allowing the ghouls to run rampant. Each investigator that has not resigned is defeated and suffers 1 physical trauma."
+            }
+            "01108" => {
+                "Act 1\nReverse:\nPut into play the set-aside Hallway, Cellar, Attic, and Parlor.\nDiscard each enemy in the Study.\nPlace each investigator in the Hallway.\nRemove the Study from the game."
+            }
+            "01109" => {
+                "Act 2\nReverse:\nThe barrier blocking passage into the parlor has vanished. Reveal the Parlor.\nPut the set-aside Lita Chantler into play in the Parlor.\nSpawn the set-aside Ghoul Priest in the Hallway."
+            }
+            "01110" => {
+                "Act 3\nReverse: The lead investigator must decide (choose one):\nIt was never much of a home. Burn it down! (Resolution 1)\nThis hell-pit is my home! No way are we burning it! (Resolution 2)"
+            }
+            _ => return None,
+        };
+        return Some(format!("{title} · {code}\n{details}"));
+    }
     let details = match code {
         "01104" => {
             "Scenario reference — Easy / Standard face\n[Skull] −X. X is the number of Ghoul enemies at your location.\n[Cultist] −1. If you fail, take 1 horror.\n[Tablet] −2. If there is a Ghoul enemy at your location, take 1 damage."
         }
-        "01105" => {
-            "Agenda 1 · Doom threshold 3\nFront: No additional rules text.\nReverse: The lead investigator must decide (choose one): Either each investigator discards 1 card at random from his or her hand, or the lead investigator takes 2 horror."
-        }
-        "01106" => {
-            "Agenda 2 · Doom threshold 7\nFront: No additional rules text.\nReverse: Shuffle the encounter discard pile into the encounter deck. Discard cards from the top of the encounter deck until a Ghoul enemy is discarded. The lead investigator draws that enemy."
-        }
+        "01105" => "Agenda 1 · Doom threshold 3\nFront: No additional rules text.",
+        "01106" => "Agenda 2 · Doom threshold 7\nFront: No additional rules text.",
         "01107" => {
-            "Agenda 3 · Doom threshold 10\nFront:\nForced — At the end of the enemy phase: Each unengaged Ghoul enemy moves 1 location towards the Parlor.\nForced — At the end of the round: Place 1 doom on this agenda for each Ghoul enemy in the Hallway or Parlor.\nReverse:\nIf the investigators are at Act 1 or 2, they are trapped inside the house as the ghouls tear them apart. (Resolution 3)\nIf the investigators are at Act 3, they barely escape with their lives, allowing the ghouls to run rampant. Each investigator that has not resigned is defeated and suffers 1 physical trauma."
+            "Agenda 3 · Doom threshold 10\nFront:\nForced — At the end of the enemy phase: Each unengaged Ghoul enemy moves 1 location towards the Parlor.\nForced — At the end of the round: Place 1 doom on this agenda for each Ghoul enemy in the Hallway or Parlor."
         }
-        "01108" => {
-            "Act 1 · Clue threshold 2 per investigator\nFront: No additional rules text.\nReverse:\nPut into play the set-aside Hallway, Cellar, Attic, and Parlor.\nDiscard each enemy in the Study.\nPlace each investigator in the Hallway.\nRemove the Study from the game."
-        }
+        "01108" => "Act 1 · Clue threshold 2 per investigator\nFront: No additional rules text.",
         "01109" => {
-            "Act 2 · Clue threshold 3 per investigator\nFront:\nObjective — When the round ends, investigators in the Hallway may, as a group, spend the requisite number of clues to advance.\nReverse:\nThe barrier blocking passage into the parlor has vanished. Reveal the Parlor.\nPut the set-aside Lita Chantler into play in the Parlor.\nSpawn the set-aside Ghoul Priest in the Hallway."
+            "Act 2 · Clue threshold 3 per investigator\nFront:\nObjective — When the round ends, investigators in the Hallway may, as a group, spend the requisite number of clues to advance."
         }
-        "01110" => {
-            "Act 3\nFront: Objective — If the Ghoul Priest is defeated, advance.\nReverse: The lead investigator must decide (choose one):\nIt was never much of a home. Burn it down! (Resolution 1)\nThis hell-pit is my home! No way are we burning it! (Resolution 2)"
-        }
+        "01110" => "Act 3\nFront: Objective — If the Ghoul Priest is defeated, advance.",
         STUDY => {
             "Location\nUnrevealed: No rules text.\nRevealed: Shroud 2 · Clues 2 per investigator. No additional rules text.\nNo connecting-location symbols."
         }
@@ -1983,20 +2006,8 @@ pub(super) fn inspect(code: &str, revealed: bool) -> Option<String> {
         }
         _ => return None,
     };
-    // Act/agenda reverses are withheld until a future caller supplies an
-    // explicit current-face representation. A boolean location reveal flag
-    // must not accidentally expose their unreached consequences.
-    let public_details = if matches!(
-        code,
-        "01105" | "01106" | "01107" | "01108" | "01109" | "01110"
-    ) {
-        details
-            .split("\nReverse:")
-            .next()
-            .unwrap_or(details)
-            .to_owned()
-    } else if matches!(code, STUDY | HALLWAY | ATTIC | CELLAR | PARLOR) {
-        if revealed {
+    let public_details = if matches!(code, STUDY | HALLWAY | ATTIC | CELLAR | PARLOR) {
+        if face == InspectionFace::RevealedLocation {
             format!(
                 "Location\nRevealed:{}",
                 details.split_once("\nRevealed:").expect("Location faces").1

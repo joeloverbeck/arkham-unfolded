@@ -81,6 +81,16 @@ impl Replay {
         &self.recording
     }
 
+    /// The displayed transient's cutoff within its decision revision.
+    pub fn current_presentation_sequence(&self) -> Option<u32> {
+        match self.positions[self.index] {
+            ReplayPosition::Decision(_) => None,
+            ReplayPosition::Presentation(index) => {
+                Some(self.recording.presentation_moments[index].sequence)
+            }
+        }
+    }
+
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> bool {
         if self.index + 1 >= self.len() {

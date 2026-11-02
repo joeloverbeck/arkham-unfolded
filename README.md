@@ -18,14 +18,17 @@ On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 cd /home/joeloverbeck/src/arkham-unfolded
 mkdir -p local/gathering
 cargo run --locked --features tabletop --bin arkham-tabletop -- \
-  --experiment gathering --save local/gathering/session.json --no-art
+  --experiment gathering --save local/gathering/session.json \
+  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
 ```
 
-This starts original **The Gathering on Standard**, using the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine decks. Keep the terminal open and the window visible and focused during **Checking graphics...**. On a new save, the heading says **The Gathering · Standard · Setup**: choose a lead investigator and complete all three mulligans to begin ordinary scenario play.
+This starts original **The Gathering on Standard**, using the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine decks and the prepared artwork on this machine. Keep the terminal open and the window visible and focused during **Checking graphics...**. On a new save, the heading says **The Gathering · Standard · Setup**: click an investigator card and choose them as lead from its contextual menu. Click individual hand cards for mulligan choices, then confirm each investigator's hand to begin ordinary scenario play.
 
 Every decision autosaves to `local/gathering/session.json`. Run the same command to resume. To start another game while retaining this one, change the filename, for example to `local/gathering/session-2.json`. The `local/` directory is ignored by Git. The first build can take several minutes; subsequent launches reuse it.
 
-This candidate currently uses readable card substitutes (`--no-art`). The native setup → first action → replay route has passed; a complete native scenario playthrough and visual acceptance remain outstanding. Known visual issues include overlapping labels, missing separator glyphs and clipping. See the [Gathering guide](docs/experiments/gathering-setup.md) for controls, verified behavior and older-save compatibility.
+During play, click cards, locations, decks and tokens for their contextual actions. Choose **Inspect** for enlarged artwork and effective rules. Table-wide decisions and save/replay controls remain in the bottom panel. Gathering's artwork collection includes all 94 card identities needed by the selected decks and original scenario, with the necessary card backs and shared tokens. It is separate from Party's smaller collection.
+
+The earlier native setup → first action → replay check used readable substitutes. The artwork and contextual-menu integration is a new candidate awaiting its own bounded native check; a complete native scenario playthrough and owner acceptance remain outstanding. See the [Gathering guide](docs/experiments/gathering-setup.md) for artwork preparation, controls, verified behavior and older-save compatibility.
 
 ## Launch and resume the party experiment
 
