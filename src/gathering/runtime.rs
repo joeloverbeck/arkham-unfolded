@@ -31,6 +31,17 @@ pub enum HostileFixture {
     JacquelineCancellation,
     Tokens(super::tokens::TokenFixture),
     Draws(super::draws::DrawFixture),
+    Lifecycle(super::elimination::LifecycleFixture),
+    Search(super::encounter_search::SearchFixture),
+    Assets(super::player_cards::AssetFixture),
+    TestCards(super::test_cards::TestCardFixture),
+    Retry(super::retry::RetryFixture),
+    Tony(super::tony_effects::TonyEffectFixture),
+    Boosts(super::test_boosts::BoostFixture),
+    SpellEvents(super::spell_events::SpellEventFixture),
+    PlayerEvents(super::player_events::PlayerEventFixture),
+    Harm(super::harm_cards::HarmFixture),
+    CryptChill(super::crypt_chill::CryptChillFixture),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +75,7 @@ pub enum Window {
     BeforeReveal,
     Reveal,
     WouldFail,
+    AfterSuccess,
     Results,
     VerificationBoundary,
 }
@@ -109,6 +121,7 @@ pub(super) struct PlayerState {
     pub resigned: bool,
     pub ordinary_actions: u8,
     pub completed_actions_this_phase: u8,
+    pub actions_taken_this_turn: u8,
     pub restricted_tony_action_used: bool,
     pub turn_finished: bool,
     pub physical_trauma: u8,
@@ -132,6 +145,8 @@ pub struct PlayerView {
     pub removed: Vec<CardView>,
     pub defeated: bool,
     pub resigned: bool,
+    pub physical_trauma: u8,
+    pub mental_trauma: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -145,6 +160,29 @@ pub(super) type PendingRevelation = RevelationView;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum Frame {
+    HarmCard(super::harm_cards::HarmCard),
+    HandDiscard(super::harm_cards::HandDiscard),
+    Idol(super::harm_cards::IdolDecision),
+    CryptChill(super::crypt_chill::ChillDecision),
+    GrantedAction {
+        owner: Investigator,
+    },
+    RestoreTurn {
+        previous_actor: Option<Investigator>,
+        previous_phase: Phase,
+    },
+    // Historical serialized name; this is the shared ST6 success/failure
+    // reaction window, which closes before any ST7 result is applied.
+    SuccessWindow,
+    AssetEntry(super::player_cards::AssetEntry),
+    AfterTest(super::retry::AfterTestState),
+    RetryEvent {
+        owner: Investigator,
+        event: CardView,
+    },
+    TestCard(super::test_cards::TestCardDecision),
+    EncounterSearch(super::encounter_search::SearchDecision),
+    Elimination(super::elimination::EliminationDecision),
     Revelation(PendingRevelation),
     Scenario(ScenarioDecision),
     Tony(super::tony_cards::TonyDecision),
@@ -181,27 +219,62 @@ pub(super) enum Frame {
         pending: Vec<u16>,
         spell: Option<super::spells::SpellActivation>,
         asset: Option<super::player_cards::PreparedAsset>,
+        event: Option<super::encounter_search::PaidEvent>,
     },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum TestResultEffect {
+    OldKeyring {
+        owner: Investigator,
+        asset: u16,
+    },
+    Resourceful {
+        owner: Investigator,
+        card: u16,
+    },
+    Resources {
+        owner: Investigator,
+        amount: u8,
+        source: String,
+    },
     Operation,
     TakeHeart,
-    Draw { owner: Investigator },
-    Horror { amount: u8, source: String },
-    Damage { amount: u8, source: String },
+    Draw {
+        owner: Investigator,
+    },
+    Horror {
+        amount: u8,
+        source: String,
+        origin: HarmOrigin,
+    },
+    Damage {
+        amount: u8,
+        source: String,
+        origin: HarmOrigin,
+    },
+}
+
+/// Rules provenance supplied by the effect that produces the harm. Source text
+/// remains presentation/history only and never determines card eligibility.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) enum HarmOrigin {
+    EncounterCard,
+    EnemyAttack { enemy: u16 },
+    PlayerCard,
+    GameRule,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct HarmAssignment {
-    investigator: Investigator,
-    damage: u8,
-    horror: u8,
-    direct: bool,
-    source: String,
-    enemy_attack: Option<u16>,
-    allocations: Vec<(Option<u16>, u8, u8)>,
+    pub investigator: Investigator,
+    pub damage: u8,
+    pub horror: u8,
+    pub direct: bool,
+    pub source: String,
+    pub origin: HarmOrigin,
+    pub allocations: Vec<(Option<u16>, u8, u8)>,
+    pub prevention_closed: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum HarmContinuation {
@@ -220,6 +293,9 @@ pub(super) enum TestOperation {
         encounter: u16,
     },
     GraspingHands {
+        encounter: u16,
+    },
+    CryptChill {
         encounter: u16,
     },
     DiscardThreat {
@@ -251,6 +327,12 @@ pub struct CommittedCard {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct SkillTest {
+    pub boosts: super::test_boosts::BoostState,
+    pub tony: super::tony_effects::TonyTestState,
+    pub spell_drawback_triggered: bool,
+    pub completed_granted_action: Option<Investigator>,
+    pub is_retry: bool,
+    pub card_effects: super::test_cards::TestCardState,
     pub operation: TestOperation,
     pub tester: Investigator,
     pub skill: Skill,
@@ -297,6 +379,8 @@ pub struct TestResult {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayObservation {
+    pub searched_encounter: Vec<CardView>,
+    pub lead: Investigator,
     pub window: Window,
     pub players: Vec<PlayerView>,
     pub pending_revelation: Option<RevelationView>,
@@ -318,6 +402,7 @@ pub struct PlayObservation {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct Game {
+    pub tony: super::tony_effects::TonyRoundState,
     pub players: Vec<PlayerState>,
     pub lead: Investigator,
     pub agenda: u8,
@@ -406,6 +491,7 @@ impl Game {
                     resigned: false,
                     ordinary_actions: 3,
                     completed_actions_this_phase: 0,
+                    actions_taken_this_turn: 0,
                     restricted_tony_action_used: false,
                     turn_finished: false,
                     physical_trauma: player.physical_trauma,
@@ -419,7 +505,7 @@ impl Game {
             encounter_deck: encounters.iter().enumerate().map(|(index, code)| CardView {id:300+index as u16,code:code.clone(),title:content::title(code).expect("Encounter").into(),weakness:false}).collect(),
             encounter_discard:vec![],scenario:ScenarioState::new(),round:1,phase:Phase::Investigation,actor:None,frames:vec![],test:None,completed_tests:vec![],
             history:vec!["The first investigation phase begins directly after actual preparation; skip the first mythos phase. Investigators choose their turn order. [RR p23–24]".into()],
-            random,bag:super::standard_bag(),fixture_tokens:vec![],token_cursor:0,ordinary_flow:true,tokens:None,jacqueline_uses:0,action_in_progress:None,stopped:None,premonition:None,
+            random,bag:super::standard_bag(),fixture_tokens:vec![],token_cursor:0,ordinary_flow:true,tokens:None,jacqueline_uses:0,action_in_progress:None,stopped:None,premonition:None,tony:Default::default(),
         }
     }
     pub(super) fn fixture(
@@ -465,6 +551,7 @@ impl Game {
                     resigned: false,
                     ordinary_actions: 3,
                     completed_actions_this_phase: 0,
+                    actions_taken_this_turn: 0,
                     restricted_tony_action_used: false,
                     turn_finished: false,
                     physical_trauma: investigator.physical_trauma,
@@ -532,7 +619,7 @@ impl Game {
             encounter_discard: vec![], encounter_deck, scenario, round: 2, phase: Phase::Mythos, actor: None,
             frames: vec![Frame::Revelation(PendingRevelation { card: encounter, drawn_by: Investigator::Patrice, started: false, cancelled: false })],
             test: None, completed_tests: vec![], history: vec!["Privileged P1 verification state: Patrice is in Cellar, Tony in Attic, Jacqueline in Hallway; no other modifier or same-location supporting ability is active. This is not ordinary setup or evidence of complete playable Gathering.".into()],
-            random: seed, bag: super::standard_bag(), fixture_tokens: vec![TokenFace::MinusOne, TokenFace::MinusTwo], token_cursor: 0, ordinary_flow:false,tokens:None,jacqueline_uses:0,action_in_progress:None,stopped:None,premonition:None,
+            random: seed, bag: super::standard_bag(), fixture_tokens: vec![TokenFace::MinusOne, TokenFace::MinusTwo], token_cursor: 0, ordinary_flow:false,tokens:None,jacqueline_uses:0,action_in_progress:None,stopped:None,premonition:None,tony:Default::default(),
         };
         super::scenario::prepare_fixture(&mut game, fixture);
         if let HostileFixture::Tokens(case) = fixture {
@@ -540,6 +627,40 @@ impl Game {
         }
         if let HostileFixture::Draws(case) = fixture {
             super::draws::configure_fixture(&mut game, case).expect("Bound draw fixture");
+        }
+        if let HostileFixture::Lifecycle(case) = fixture {
+            super::elimination::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::Search(case) = fixture {
+            super::encounter_search::configure_fixture(&mut game, case)
+                .expect("Bound search fixture");
+        }
+        if let HostileFixture::Assets(case) = fixture {
+            super::player_cards::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::TestCards(case) = fixture {
+            super::test_cards::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::Retry(case) = fixture {
+            super::retry::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::Tony(case) = fixture {
+            super::tony_effects::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::Boosts(case) = fixture {
+            super::test_boosts::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::SpellEvents(case) = fixture {
+            super::spell_events::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::PlayerEvents(case) = fixture {
+            super::player_events::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::Harm(case) = fixture {
+            super::harm_cards::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::CryptChill(case) = fixture {
+            super::crypt_chill::configure_fixture(&mut game, case);
         }
         if fixture == HostileFixture::DissonantVoicesAssetPlay {
             for frame in game.frames.drain(..) {
@@ -638,6 +759,8 @@ impl Game {
 
     pub(super) fn observe(&self) -> PlayObservation {
         PlayObservation {
+            searched_encounter: super::encounter_search::visible_cards(self),
+            lead: self.lead,
             window: self.test.as_ref().map_or(
                 if self.frames.is_empty()
                     && self.ordinary_flow
@@ -677,6 +800,8 @@ impl Game {
                     },
                     defeated: p.defeated,
                     resigned: p.resigned,
+                    physical_trauma: p.physical_trauma,
+                    mental_trauma: p.mental_trauma,
                 })
                 .collect(),
             pending_revelation: self.frames.iter().find_map(|frame| match frame {
@@ -718,12 +843,34 @@ impl Game {
 
     pub(super) fn decision_owner(&self) -> Option<Investigator> {
         match self.frames.last() {
+            Some(Frame::GrantedAction { owner }) => return Some(*owner),
+            Some(Frame::AssetEntry(entry)) => return Some(entry.actor()),
+            Some(Frame::AfterTest(state)) => return Some(state.test.tester),
+            Some(Frame::TestCard(_)) => return super::test_cards::decision_owner(self),
+            Some(Frame::EncounterSearch(decision))
+                if (self.test.is_none() && self.tokens.is_none())
+                    || !matches!(
+                        decision,
+                        super::encounter_search::SearchDecision::FinishEvent { .. }
+                    ) =>
+            {
+                return Some(super::encounter_search::decision_owner(decision));
+            }
+            Some(Frame::Elimination(decision)) => {
+                return match decision {
+                    super::elimination::EliminationDecision::Trauma(who) => Some(*who),
+                    super::elimination::EliminationDecision::Lead => None,
+                };
+            }
             Some(Frame::Combat(decision)) => return Some(super::combat::decision_owner(decision)),
             Some(Frame::AssetPlacement(prepared)) => return Some(prepared.actor),
             Some(Frame::Scenario(ScenarioDecision::Ending)) => return Some(self.lead),
             Some(Frame::Tony(_)) => return Some(Investigator::Tony),
             Some(Frame::QuarrySpawn { .. }) => return Some(self.lead),
             Some(Frame::Harm(harm)) => return Some(harm.investigator),
+            Some(Frame::Idol(decision)) => return Some(decision.owner()),
+            Some(Frame::CryptChill(decision)) => return Some(decision.owner),
+            Some(Frame::HandDiscard(discard)) => return Some(discard.current.unwrap_or(self.lead)),
             Some(Frame::DiscardCards { owner, .. }) => return Some(*owner),
             Some(Frame::Draw(draw)) => return Some(draw.investigator),
             Some(Frame::Phase(decision)) if self.test.is_none() && self.tokens.is_none() => {
@@ -743,6 +890,25 @@ impl Game {
             .or_else(|| {
                 self.frames.last().map(|frame| match frame {
                     Frame::Revelation(revelation) => revelation.drawn_by,
+                    Frame::HarmCard(event) => event.owner,
+                    Frame::Idol(decision) => decision.owner(),
+                    Frame::CryptChill(decision) => decision.owner,
+                    Frame::HandDiscard(discard) => discard.current.unwrap_or(self.lead),
+                    Frame::GrantedAction { owner } => *owner,
+                    Frame::RestoreTurn { previous_actor, .. } => {
+                        previous_actor.unwrap_or(self.lead)
+                    }
+                    Frame::SuccessWindow => self.test.as_ref().expect("Success reaction").tester,
+                    Frame::AssetEntry(entry) => entry.actor(),
+                    Frame::AfterTest(state) => state.test.tester,
+                    Frame::RetryEvent { owner, .. } => *owner,
+                    Frame::TestCard(_) => {
+                        super::test_cards::decision_owner(self).expect("Test card decision owner")
+                    }
+                    Frame::EncounterSearch(decision) => {
+                        super::encounter_search::decision_owner(decision)
+                    }
+                    Frame::Elimination(_) => self.lead,
                     Frame::Scenario(_) => self.lead,
                     Frame::Tony(_) => Investigator::Tony,
                     Frame::Harm(harm) => harm.investigator,
@@ -768,7 +934,45 @@ impl Game {
             .or(self.actor)
     }
 
+    fn outcome_reaction_choices(&self) -> Vec<Choice> {
+        let mut choices = super::tony_effects::success_choices(self);
+        choices.extend(super::test_cards::failure_choices(self));
+        choices
+    }
+
     pub(super) fn choices(&self) -> Vec<Choice> {
+        if let Some(Frame::GrantedAction { owner }) = self.frames.last() {
+            return self.granted_action_choices(*owner);
+        }
+        if matches!(self.frames.last(), Some(Frame::SuccessWindow)) {
+            let mut choices = self.outcome_reaction_choices();
+            choices.push(choice(
+                "success:pass",
+                "Continue after test-outcome reactions",
+            ));
+            return choices;
+        }
+        if let Some(Frame::AssetEntry(entry)) = self.frames.last() {
+            return super::player_cards::entry_choices(self, entry);
+        }
+        if let Some(Frame::AfterTest(state)) = self.frames.last() {
+            return super::retry::choices(self, state);
+        }
+        if matches!(self.frames.last(), Some(Frame::TestCard(_))) {
+            return super::test_cards::choices(self);
+        }
+        if let Some(Frame::EncounterSearch(decision)) = self.frames.last()
+            && ((self.test.is_none() && self.tokens.is_none())
+                || !matches!(
+                    decision,
+                    super::encounter_search::SearchDecision::FinishEvent { .. }
+                ))
+        {
+            return super::encounter_search::choices(self, decision);
+        }
+        if let Some(Frame::Elimination(decision)) = self.frames.last() {
+            return super::elimination::choices(self, decision);
+        }
         if let Some(Frame::DiscardCards { remaining, .. }) = self.frames.last() {
             return remaining
                 .iter()
@@ -815,24 +1019,45 @@ impl Game {
         if let Some(Frame::Harm(harm)) = self.frames.last() {
             return self.harm_choices(harm);
         }
+        if let Some(Frame::Idol(decision)) = self.frames.last() {
+            return super::harm_cards::idol_choices(self, decision);
+        }
+        if let Some(Frame::CryptChill(decision)) = self.frames.last() {
+            return super::crypt_chill::choices(self, decision);
+        }
+        if let Some(Frame::HandDiscard(discard)) = self.frames.last() {
+            return super::harm_cards::discard_choices(self, discard);
+        }
         if let Some(Frame::TestResults(effects)) = self.frames.last() {
             return effects
                 .iter()
                 .enumerate()
                 .map(|(index, effect)| {
                     let label = match effect {
+                        TestResultEffect::OldKeyring { .. } => {
+                            "Spend an Old Keyring key after successful investigation".into()
+                        }
                         TestResultEffect::Operation => "Apply this skill test's effect".into(),
+                        TestResultEffect::Resourceful { owner, .. } => format!(
+                            "{} resolves Resourceful's Survivor card recovery",
+                            owner.name()
+                        ),
+                        TestResultEffect::Resources {
+                            owner,
+                            amount,
+                            source,
+                        } => format!("{} gains {amount} resources from {source}", owner.name()),
                         TestResultEffect::TakeHeart => {
                             "Take Heart: draw 2 cards, then gain 2 resources".into()
                         }
                         TestResultEffect::Draw { owner } => {
                             format!("{} draws 1 card", owner.name())
                         }
-                        TestResultEffect::Horror { amount, source } => format!(
+                        TestResultEffect::Horror { amount, source, .. } => format!(
                             "Take {amount} horror from {}",
                             content::title(source).unwrap_or(source)
                         ),
-                        TestResultEffect::Damage { amount, source } => format!(
+                        TestResultEffect::Damage { amount, source, .. } => format!(
                             "Take {amount} damage from {}",
                             content::title(source).unwrap_or(source)
                         ),
@@ -853,6 +1078,7 @@ impl Game {
                 }
                 Window::Commitment => {
                     let mut choices = self.commit_choices();
+                    choices.extend(super::tony_effects::commitment_choices(self));
                     choices.push(choice("commit:confirm", "Confirm committed cards"));
                     choices
                 }
@@ -869,6 +1095,19 @@ impl Game {
             };
         }
         let revelation = match self.frames.last() {
+            Some(Frame::HarmCard(_)) => return vec![],
+            Some(Frame::CryptChill(_)) => unreachable!("Handled asset loss"),
+            Some(Frame::Idol(decision)) => return super::harm_cards::idol_choices(self, decision),
+            Some(Frame::HandDiscard(discard)) => {
+                return super::harm_cards::discard_choices(self, discard);
+            }
+            Some(Frame::GrantedAction { .. }) | Some(Frame::RestoreTurn { .. }) => return vec![],
+            Some(Frame::SuccessWindow) => unreachable!("Handled success window"),
+            Some(Frame::AssetEntry(_)) => unreachable!("Handled asset entry"),
+            Some(Frame::AfterTest(_)) | Some(Frame::RetryEvent { .. }) => return vec![],
+            Some(Frame::TestCard(_)) => unreachable!("Handled test card"),
+            Some(Frame::EncounterSearch(_)) => unreachable!("Handled encounter search"),
+            Some(Frame::Elimination(_)) => unreachable!("Handled elimination"),
             Some(Frame::Revelation(revelation)) => revelation,
             Some(Frame::Scenario(decision)) => return super::scenario::choices(self, decision),
             Some(Frame::Tony(decision)) => return super::tony_cards::choices(self, decision),
@@ -929,7 +1168,7 @@ impl Game {
     }
 
     fn cancellation_choices(&self, revelation: &PendingRevelation) -> Vec<Choice> {
-        let mut choices = Vec::new();
+        let mut choices = super::harm_cards::revelation_choices(self, revelation);
         if !revelation.started
             && !revelation.card.weakness
             && super::scenario::enemy_definition(&revelation.card.code).is_none()
@@ -959,7 +1198,57 @@ impl Game {
                 "That choice is not offered by the running effect.".into(),
             ));
         }
-        if matches!(self.frames.last(), Some(Frame::DiscardCards { .. })) {
+        if let Some(Frame::GrantedAction { owner }) = self.frames.last().cloned() {
+            self.frames.pop();
+            if let Some(actor) = self.action_in_progress.take() {
+                self.complete_action(actor);
+            }
+            self.frames.push(Frame::RestoreTurn {
+                previous_actor: self.actor,
+                previous_phase: self.phase,
+            });
+            self.actor = Some(owner);
+            self.phase = Phase::Investigation;
+            self.players[owner.index()].ordinary_actions += 1;
+            self.choose_investigation(&format!(
+                "action:ordinary:{}",
+                id.strip_prefix("granted:").expect("Granted action")
+            ))?;
+        } else if matches!(self.frames.last(), Some(Frame::SuccessWindow)) {
+            self.frames.pop();
+            if id == "success:pass" {
+                super::tony_effects::close_success_window(self);
+                self.finish_test()?;
+            } else {
+                let index = self.frames.len();
+                if id.starts_with("test-card:found:") {
+                    super::test_cards::choose_failure(self, id)?;
+                } else {
+                    super::tony_effects::choose_success(self, id)?;
+                }
+                self.frames.insert(index, Frame::SuccessWindow);
+            }
+        } else if matches!(self.frames.last(), Some(Frame::AssetEntry(_))) {
+            let Some(Frame::AssetEntry(entry)) = self.frames.pop() else {
+                unreachable!()
+            };
+            super::player_cards::choose_entry(self, entry, id)?;
+        } else if matches!(self.frames.last(), Some(Frame::AfterTest(_))) {
+            super::retry::choose(self, id)?;
+        } else if matches!(self.frames.last(), Some(Frame::TestCard(_))) {
+            super::test_cards::choose(self, id)?;
+        } else if matches!(self.frames.last(), Some(Frame::EncounterSearch(decision)) if self.test.is_none() && self.tokens.is_none() || !matches!(decision,super::encounter_search::SearchDecision::FinishEvent{..}))
+        {
+            super::encounter_search::choose(self, id)?;
+        } else if matches!(self.frames.last(), Some(Frame::Elimination(_))) {
+            super::elimination::choose(self, id)?;
+        } else if matches!(self.frames.last(), Some(Frame::HandDiscard(_))) {
+            super::harm_cards::choose_discard(self, id)?;
+        } else if matches!(self.frames.last(), Some(Frame::Idol(_))) {
+            super::harm_cards::choose_idol(self, id)?;
+        } else if matches!(self.frames.last(), Some(Frame::CryptChill(_))) {
+            super::crypt_chill::choose(self, id)?;
+        } else if matches!(self.frames.last(), Some(Frame::DiscardCards { .. })) {
             self.choose_discard_order(id)?;
         } else if matches!(self.frames.last(), Some(Frame::Draw(_))) {
             super::draws::choose(self, id)?;
@@ -1001,6 +1290,8 @@ impl Game {
             self.token_step(step)?;
         } else if let Some(card) = id.strip_prefix("premonition:") {
             super::tokens::play_premonition(self, card.parse().expect("Premonition identity"))?;
+        } else if id.starts_with("fast-asset:") {
+            super::player_cards::play_fast(self, self.actor.expect("Owner turn fast asset"), id)?;
         } else if matches!(self.frames.last(), Some(Frame::Phase(_)))
             && self.test.is_none()
             && !id.starts_with("violin:")
@@ -1030,7 +1321,7 @@ impl Game {
                     attack.horror,
                     false,
                     &attack.source_code,
-                    Some(enemy),
+                    HarmOrigin::EnemyAttack { enemy },
                 )?;
             }
         } else if let Some(location) = id.strip_prefix("quarry:") {
@@ -1066,6 +1357,8 @@ impl Game {
             || id == "act:advance"
         {
             self.choose_investigation(id)?;
+        } else if id.starts_with("ward:") {
+            super::harm_cards::play_ward(self, id)?;
         } else if let Some(id) = id.strip_prefix("test-of-will:") {
             let id: u16 = id
                 .parse()
@@ -1097,6 +1390,8 @@ impl Game {
                 Skill::Willpower,
                 3,
             )?;
+        } else if id.starts_with("boost:") {
+            super::test_boosts::choose(self, id)?;
             self.history.push("Pay 1 resource and place A Test of Will in limbo while its willpower (3) test resolves. The original encounter revelation has not begun. [60513; RR ST.1]".into());
         } else if id.starts_with("violin:") {
             let parts: Vec<_> = id.split(':').collect();
@@ -1140,6 +1435,7 @@ impl Game {
                 _ => return Err(RuleError("No player window is pending.".into())),
             };
         } else if id == "commit:confirm" {
+            super::tony_effects::pay_commitment_costs(self)?;
             let test = self.test.as_mut().expect("Commitment test");
             for player in &mut self.players {
                 let mut index = 0;
@@ -1156,8 +1452,12 @@ impl Game {
             }
             test.selected.clear();
             test.window = Window::BeforeReveal;
+            super::test_cards::committed(self)?;
+        } else if id.starts_with("tony:watch:") {
+            super::tony_effects::choose_commitment(self, id)?;
         } else if let Some(id) = id.strip_prefix("commit:") {
             let id: u16 = id.parse().expect("Offered commitment");
+            super::tony_effects::reset_commitment(self, id);
             let selected = &mut self.test.as_mut().expect("Commitment test").selected;
             if let Some(index) = selected.iter().position(|&selected| selected == id) {
                 selected.remove(index);
@@ -1241,6 +1541,12 @@ impl Game {
             _ => None,
         };
         self.test = Some(SkillTest {
+            boosts: Default::default(),
+            tony: Default::default(),
+            spell_drawback_triggered: false,
+            completed_granted_action: None,
+            is_retry: false,
+            card_effects: Default::default(),
             operation,
             tester,
             skill,
@@ -1260,7 +1566,7 @@ impl Game {
             lita_checked: false,
             retaliate_checked: false,
         });
-        Ok(())
+        super::test_cards::begin_test(self)
     }
 
     pub(super) fn random_index(&mut self, upper: usize) -> usize {
@@ -1281,6 +1587,28 @@ impl Game {
     fn token_step(&mut self, step: super::tokens::TokenStep) -> Result<(), RuleError> {
         match step {
             super::tokens::TokenStep::Pending | super::tokens::TokenStep::Finished => {}
+            super::tokens::TokenStep::RevealedBatch { faces } => {
+                self.frames.push(Frame::ResumeTokens);
+                self.apply_spell_drawback(&faces)?;
+            }
+            super::tokens::TokenStep::ApplyTablet => {
+                self.frames.push(Frame::ResumeTokens);
+                let tester = self.test.as_ref().expect("Symbol test").tester;
+                if self
+                    .scenario
+                    .ghouls_at(&self.players[tester.index()].location)
+                    > 0
+                {
+                    self.queue_harm(
+                        tester,
+                        1,
+                        0,
+                        false,
+                        "01104 Tablet",
+                        HarmOrigin::EncounterCard,
+                    )?;
+                }
+            }
             super::tokens::TokenStep::DrawElderSign => {
                 self.frames.push(Frame::ResumeTokens);
                 self.draw_player(Investigator::Jacqueline, 1)?;
@@ -1290,7 +1618,7 @@ impl Game {
                 ignored,
                 cancelled,
                 eyes_match,
-                ..
+                symbols_applied,
             } => {
                 let mut modifier = 0;
                 for token in &resolved {
@@ -1303,12 +1631,16 @@ impl Game {
                 test.modifier = modifier;
                 test.eyes_match = eyes_match;
                 let tester = test.tester;
-                let harms = super::scenario::symbol_consequences(
-                    self,
-                    tester,
-                    &self.test.as_ref().expect("Test").revealed,
-                    super::scenario::SymbolTiming::ApplySymbols,
-                );
+                let harms = if symbols_applied {
+                    vec![]
+                } else {
+                    super::scenario::symbol_consequences(
+                        self,
+                        tester,
+                        &self.test.as_ref().expect("Test").revealed,
+                        super::scenario::SymbolTiming::ApplySymbols,
+                    )
+                };
                 self.frames
                     .push(Frame::AfterHarm(HarmContinuation::ApplySymbols));
                 for harm in harms.into_iter().rev() {
@@ -1318,29 +1650,44 @@ impl Game {
                         harm.horror,
                         false,
                         "01104 Tablet",
-                        None,
+                        HarmOrigin::EncounterCard,
                     )?;
                 }
-                if let Some(drawback) = super::spells::reveal_drawback(
-                    self,
-                    &self.test.as_ref().expect("Spell test").revealed,
-                ) {
-                    if drawback.discard {
-                        self.frames
-                            .push(Frame::Spell(super::spells::SpellDecision::MistsDiscard(
-                                tester,
-                            )));
-                    } else {
-                        self.queue_harm(
-                            tester,
-                            drawback.damage,
-                            drawback.horror,
-                            false,
-                            drawback.source,
-                            None,
-                        )?;
-                    }
+                if !symbols_applied {
+                    let faces = self.test.as_ref().expect("Spell test").revealed.clone();
+                    self.apply_spell_drawback(&faces)?;
                 }
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_spell_drawback(&mut self, faces: &[TokenFace]) -> Result<(), RuleError> {
+        if self
+            .test
+            .as_ref()
+            .is_none_or(|test| test.spell_drawback_triggered)
+        {
+            return Ok(());
+        }
+        if let Some(drawback) = super::spells::reveal_drawback(self, faces) {
+            let test = self.test.as_mut().expect("Spell test");
+            test.spell_drawback_triggered = true;
+            let tester = test.tester;
+            if drawback.discard {
+                self.frames
+                    .push(Frame::Spell(super::spells::SpellDecision::MistsDiscard(
+                        tester,
+                    )));
+            } else {
+                self.queue_harm(
+                    tester,
+                    drawback.damage,
+                    drawback.horror,
+                    false,
+                    drawback.source,
+                    HarmOrigin::PlayerCard,
+                )?;
             }
         }
         Ok(())
@@ -1365,8 +1712,8 @@ impl Game {
             return Ok(());
         };
         match card.code.as_str() {
-            "02038" => self.queue_harm(actor, 1, 0, true, "02038", None)?,
-            "02039" => self.queue_harm(actor, 0, 1, true, "02039", None)?,
+            "02038" => self.queue_harm(actor, 1, 0, true, "02038", HarmOrigin::EncounterCard)?,
+            "02039" => self.queue_harm(actor, 0, 1, true, "02039", HarmOrigin::EncounterCard)?,
             "01164" => self.begin_test(
                 TestOperation::DiscardThreat {
                     owner: actor,
@@ -1448,6 +1795,14 @@ impl Game {
             choice("resource", "Gain 1 resource"),
             choice("draw", "Draw 1 card"),
         ];
+        if player.location == "01115"
+            && self
+                .scenario
+                .location("01115")
+                .is_some_and(|location| location.revealed)
+        {
+            actions.push(choice("resign", "Resign: leave the house"));
+        }
         if self.scenario.location(&player.location).is_some() {
             actions.push(choice("investigate", "Investigate this location"));
         }
@@ -1492,7 +1847,23 @@ impl Game {
                 ));
             }
         }
+        if actor == Investigator::Patrice {
+            for card in &player.hand {
+                if card.code == "06017" {
+                    actions.push(choice(
+                        &format!("fight:{}", card.id),
+                        "Fight Watcher from Another Dimension in your hand",
+                    ));
+                    actions.push(choice(
+                        &format!("evade:{}", card.id),
+                        "Evade Watcher from Another Dimension in your hand",
+                    ));
+                }
+            }
+        }
         actions.extend(super::player_cards::play_choices(self, actor));
+        actions.extend(super::player_cards::asset_action_choices(self, actor));
+        actions.extend(super::encounter_search::action_choices(self, actor));
         actions.extend(super::spells::action_choices(self, actor));
         if self.scenario.lita_in_play
             && super::scenario::lita_controller(self).is_none()
@@ -1528,13 +1899,19 @@ impl Game {
             if actor == Investigator::Tony
                 && !player.restricted_tony_action_used
                 && player.ordinary_actions >= cost - 1
-                && (action.id.starts_with("fight:") || action.id.starts_with("engage:"))
+                && (matches!(
+                    super::encounter_search::action_designator(&action.id),
+                    Some("fight" | "engage")
+                ) || action.id.starts_with("fight:")
+                    || action.id.starts_with("engage:"))
             {
-                let enemy_id = action
-                    .id
-                    .split(':')
-                    .nth(1)
-                    .and_then(|id| id.parse::<u16>().ok());
+                let enemy_id = super::encounter_search::action_enemy(&action.id).or_else(|| {
+                    action
+                        .id
+                        .split(':')
+                        .nth(1)
+                        .and_then(|id| id.parse::<u16>().ok())
+                });
                 if self
                     .scenario
                     .enemies
@@ -1566,11 +1943,20 @@ impl Game {
         } else {
             1
         };
-        base + u8::from(
-            !player.frozen_action_used
-                && player.threats.iter().any(|card| card.code == "01164")
-                && matches!(action.split(':').next(), Some("move" | "fight" | "evade")),
-        )
+        base + if !player.frozen_action_used
+            && matches!(
+                super::encounter_search::action_designator(action)
+                    .or_else(|| action.split(':').next()),
+                Some("move" | "fight" | "evade")
+            ) {
+            player
+                .threats
+                .iter()
+                .filter(|card| card.code == "01164")
+                .count() as u8
+        } else {
+            0
+        }
     }
 
     fn choose_investigation(&mut self, id: &str) -> Result<(), RuleError> {
@@ -1601,6 +1987,7 @@ impl Game {
                     .find(|candidate| candidate.id() == actor)
                     .expect("Offered actor"),
             );
+            self.players[self.actor.expect("Selected turn").index()].actions_taken_this_turn = 0;
             return Ok(());
         }
         let actor = self.actor.expect("Action turn");
@@ -1623,12 +2010,23 @@ impl Game {
         } else {
             None
         };
-        let asset = if spell.is_none() && action.starts_with("play:") {
+        let event = if action.starts_with("play:tony:") {
+            Some(super::encounter_search::pay_action(self, actor, action)?)
+        } else {
+            None
+        };
+        let asset = if spell.is_none() && event.is_none() && action.starts_with("play:") {
             Some(super::player_cards::pay_asset(self, actor, action)?)
         } else {
             None
         };
-        if super::scenario::provokes_opportunity(action.split(':').next().expect("Action")) {
+        if !asset
+            .as_ref()
+            .is_some_and(|asset| asset.card.code == "07029")
+            && super::encounter_search::provokes_opportunity(action).unwrap_or_else(|| {
+                super::scenario::provokes_opportunity(action.split(':').next().expect("Action"))
+            })
+        {
             let pending = super::scenario::opportunity_attacks(self, actor)
                 .into_iter()
                 .map(|attack| attack.enemy)
@@ -1640,12 +2038,15 @@ impl Game {
                     pending,
                     spell,
                     asset,
+                    event,
                 });
                 return Ok(());
             }
         }
         if let Some(spell) = spell {
             super::spells::resolve_action(self, spell)
+        } else if let Some(event) = event {
+            super::encounter_search::resolve_action(self, event)
         } else if let Some(asset) = asset {
             self.finish_asset(asset)
         } else {
@@ -1654,7 +2055,11 @@ impl Game {
     }
 
     fn perform_action(&mut self, actor: Investigator, action: &str) -> Result<(), RuleError> {
-        if action == "resource" {
+        if action.contains(":cane:") {
+            super::player_cards::activate_asset_action(self, actor, action)?;
+        } else if action == "resign" {
+            super::elimination::begin(self, actor, super::elimination::Cause::Resignation)?;
+        } else if action == "resource" {
             self.players[actor.index()].resources += 1;
         } else if action == "draw" {
             self.draw_player(actor, 1)?;
@@ -1688,15 +2093,22 @@ impl Game {
         } else {
             let details: Vec<_> = action.split(':').collect();
             let enemy_id: u16 = details[1].parse().expect("Enemy action");
-            let enemy = self
+            let code = self
                 .scenario
                 .enemies
                 .iter()
                 .find(|enemy| enemy.card.id == enemy_id)
+                .map(|enemy| enemy.card.code.clone())
+                .or_else(|| {
+                    self.players[actor.index()]
+                        .hand
+                        .iter()
+                        .find(|card| card.id == enemy_id && card.code == "06017")
+                        .map(|card| card.code.clone())
+                })
                 .expect("Action enemy");
-            let values = super::scenario::enemy_definition(&enemy.card.code);
-            let card_values =
-                cards::definition(&enemy.card.code).and_then(|definition| definition.enemy);
+            let values = super::scenario::enemy_definition(&code);
+            let card_values = cards::definition(&code).and_then(|definition| definition.enemy);
             match details[0] {
                 "engage" => {
                     self.scenario
@@ -1768,10 +2180,189 @@ impl Game {
         self.actor = None;
     }
 
+    pub(super) fn clear_eliminated_continuations(
+        &mut self,
+        who: Investigator,
+    ) -> Result<(), RuleError> {
+        super::tokens::eliminate(self, who)?;
+        let abort_test = self.test.as_ref().is_some_and(|test| test.tester == who);
+        let mut abandoned = vec![];
+        if abort_test {
+            abandoned.push(self.test.take().expect("Eliminated tester"));
+        } else if let Some(test) = &mut self.test {
+            let mut index = 0;
+            while index < test.committed.len() {
+                if test.committed[index].owner == who {
+                    self.players[who.index()]
+                        .removed
+                        .push(test.committed.remove(index).card);
+                } else {
+                    index += 1;
+                }
+            }
+        }
+        let frames = std::mem::take(&mut self.frames);
+        for frame in frames {
+            match frame {
+                Frame::TestCleanup(test) if test.tester == who => abandoned.push(*test),
+                Frame::TestResults(_)
+                | Frame::TestCard(_)
+                | Frame::SuccessWindow
+                | Frame::AfterHarm(HarmContinuation::ApplySymbols)
+                | Frame::ResumeTokens
+                | Frame::Combat(_)
+                    if abort_test => {}
+                Frame::AfterTest(state) if state.test.tester == who => {}
+                Frame::RetryEvent { owner, event } if owner == who => {
+                    self.players[who.index()].removed.push(event)
+                }
+                Frame::AssetEntry(entry) if entry.actor() == who => {}
+                Frame::Idol(decision) if decision.owner() == who => {}
+                Frame::CryptChill(decision) if decision.owner == who => {}
+                Frame::GrantedAction { owner } if owner == who => {}
+                Frame::Harm(harm) if harm.investigator == who => {}
+                Frame::GainResources { investigator, .. } | Frame::TurnEnd { investigator, .. }
+                    if investigator == who => {}
+                Frame::Revelation(revelation) if revelation.drawn_by == who => {
+                    if revelation.card.weakness {
+                        self.players[who.index()].removed.push(revelation.card);
+                    } else {
+                        self.encounter_discard.push(revelation.card);
+                    }
+                }
+                Frame::DiscardCards {
+                    owner,
+                    mut remaining,
+                    mut ordered,
+                } if owner == who => {
+                    self.players[who.index()].removed.append(&mut remaining);
+                    self.players[who.index()].removed.append(&mut ordered);
+                }
+                Frame::AssetPlacement(prepared) if prepared.actor == who => {
+                    self.players[who.index()].removed.push(prepared.card)
+                }
+                Frame::Opportunity {
+                    investigator,
+                    action,
+                    pending,
+                    spell,
+                    asset,
+                    event,
+                } if investigator == who => {
+                    if let Some(asset) = asset {
+                        self.players[who.index()].removed.push(asset.card);
+                    }
+                    if let Some(spell) = spell {
+                        super::spells::cancel_action(self, spell);
+                    }
+                    if let Some(event) = event {
+                        super::encounter_search::cancel_action(self, event);
+                    }
+                    self.frames.push(Frame::Opportunity {
+                        investigator,
+                        action,
+                        pending,
+                        spell: None,
+                        asset: None,
+                        event: None,
+                    });
+                }
+                other => self.frames.push(other),
+            }
+        }
+        for test in abandoned {
+            super::tokens::return_test_tokens(
+                self,
+                test.revealed,
+                test.ignored_tokens,
+                test.cancelled_tokens,
+            );
+            for committed in test.committed {
+                let owner = &mut self.players[committed.owner.index()];
+                if owner.defeated || owner.resigned {
+                    owner.removed.push(committed.card);
+                } else {
+                    self.frames.push(Frame::DiscardCards {
+                        owner: committed.owner,
+                        remaining: vec![committed.card],
+                        ordered: vec![],
+                    });
+                }
+            }
+            if let TestOperation::CancelRevelation { event, owner, .. } = test.operation
+                && !test.is_retry
+            {
+                if self.players[owner.index()].defeated || self.players[owner.index()].resigned {
+                    self.players[owner.index()].removed.push(event);
+                } else {
+                    self.players[owner.index()].discard.push(event);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn enable_fixture_turn(&mut self, investigator: Investigator) {
         self.ordinary_flow = true;
         self.phase = Phase::Investigation;
         self.actor = Some(investigator);
+    }
+
+    pub(super) fn complete_action(&mut self, actor: Investigator) {
+        self.players[actor.index()].completed_actions_this_phase += 1;
+        if self.is_actual_turn(actor) {
+            self.players[actor.index()].actions_taken_this_turn += 1;
+        }
+    }
+
+    pub(super) fn is_actual_turn(&self, actor: Investigator) -> bool {
+        if let Some((previous_actor, previous_phase)) = self.frames.iter().find_map(|frame| {
+            if let Frame::RestoreTurn {
+                previous_actor,
+                previous_phase,
+            } = frame
+            {
+                Some((*previous_actor, *previous_phase))
+            } else {
+                None
+            }
+        }) {
+            return previous_phase == Phase::Investigation && previous_actor == Some(actor);
+        }
+        self.phase == Phase::Investigation && self.actor == Some(actor)
+    }
+
+    pub(super) fn begin_granted_action(&mut self, owner: Investigator) {
+        let boundary = self
+            .frames
+            .iter()
+            .rposition(|frame| matches!(frame, Frame::Phase(_)))
+            .map_or(0, |index| index + 1);
+        self.frames.insert(boundary, Frame::GrantedAction { owner });
+    }
+
+    fn granted_action_choices(&self, owner: Investigator) -> Vec<Choice> {
+        if self.players[owner.index()].defeated || self.players[owner.index()].resigned {
+            return vec![];
+        }
+        let mut projection = self.clone();
+        projection.frames.push(Frame::RestoreTurn {
+            previous_actor: self.actor,
+            previous_phase: self.phase,
+        });
+        projection.actor = Some(owner);
+        projection.phase = Phase::Investigation;
+        projection.players[owner.index()].ordinary_actions += 1;
+        projection
+            .investigation_choices()
+            .into_iter()
+            .filter_map(|mut choice| {
+                let action = choice.id.strip_prefix("action:ordinary:")?.to_owned();
+                choice.id = format!("granted:{action}");
+                choice.label = format!("Use the granted action: {}", choice.label);
+                Some(choice)
+            })
+            .collect()
     }
 
     pub(super) fn move_investigator(
@@ -1796,10 +2387,20 @@ impl Game {
             self.check_engagement(enemy);
         }
         let (damage, horror) = super::scenario::location_entry_harm(location);
-        self.queue_harm(actor, damage, horror, false, location, None)
+        self.queue_harm(
+            actor,
+            damage,
+            horror,
+            false,
+            location,
+            HarmOrigin::EncounterCard,
+        )
     }
 
-    fn scenario_step(&mut self, step: super::scenario::ScenarioStep) -> Result<(), RuleError> {
+    pub(super) fn scenario_step(
+        &mut self,
+        step: super::scenario::ScenarioStep,
+    ) -> Result<(), RuleError> {
         use super::scenario::ScenarioStep;
         match step {
             ScenarioStep::Continue | ScenarioStep::Finished => {}
@@ -1820,25 +2421,27 @@ impl Game {
             ScenarioStep::LeadHorror => {
                 self.frames
                     .push(Frame::AfterHarm(HarmContinuation::AgendaOne));
-                self.queue_harm(self.lead, 0, 2, false, "01105", None)?;
+                self.queue_harm(self.lead, 0, 2, false, "01105", HarmOrigin::EncounterCard)?;
             }
         }
         Ok(())
     }
 
-    fn defeat_remaining(&mut self) {
+    fn defeat_remaining(&mut self) -> Result<(), RuleError> {
         let mut gained = [0; 3];
-        for player in &mut self.players {
-            if !player.resigned && !player.defeated {
-                player.defeated = true;
-                player.physical_trauma += 1;
-                gained[player.investigator.index()] = 1;
+        for who in Investigator::ALL {
+            if !self.players[who.index()].resigned && !self.players[who.index()].defeated {
+                gained[who.index()] = 1;
+                super::elimination::begin(self, who, super::elimination::Cause::Agenda)?;
             }
         }
-        super::scenario::finish_resolution(self, super::scenario::Resolution::NoResolution);
+        if self.scenario.outcome.is_none() {
+            super::scenario::finish_resolution(self, super::scenario::Resolution::NoResolution);
+        }
         if let Some(outcome) = &mut self.scenario.outcome {
             outcome.physical_trauma_gained = gained;
         }
+        Ok(())
     }
 
     pub(super) fn scenario_consequence(
@@ -1856,7 +2459,7 @@ impl Game {
             ScenarioConsequence::ResolutionThree => {
                 super::scenario::finish_resolution(self, super::scenario::Resolution::Overrun)
             }
-            ScenarioConsequence::DefeatNonResigned => self.defeat_remaining(),
+            ScenarioConsequence::DefeatNonResigned => self.defeat_remaining()?,
         }
         Ok(())
     }
@@ -1868,7 +2471,7 @@ impl Game {
         horror: u8,
         direct: bool,
         source: &str,
-        enemy_attack: Option<u16>,
+        origin: HarmOrigin,
     ) -> Result<(), RuleError> {
         if damage == 0 && horror == 0 {
             return Ok(());
@@ -1879,8 +2482,9 @@ impl Game {
             horror,
             direct,
             source: source.into(),
-            enemy_attack,
+            origin,
             allocations: vec![],
+            prevention_closed: false,
         }));
         Ok(())
     }
@@ -1889,10 +2493,12 @@ impl Game {
         let damage_assigned: u8 = harm.allocations.iter().map(|(_, damage, _)| *damage).sum();
         let horror_assigned: u8 = harm.allocations.iter().map(|(_, _, horror)| *horror).sum();
         if damage_assigned == harm.damage && horror_assigned == harm.horror {
-            return vec![choice(
+            let mut choices = super::harm_cards::prevention_choices(self, harm);
+            choices.push(choice(
                 "harm:confirm",
                 "Apply the assigned damage and horror simultaneously",
-            )];
+            ));
+            return choices;
         }
         let mut choices = Vec::new();
         for (kind, remaining) in [
@@ -1935,6 +2541,9 @@ impl Game {
     }
 
     fn choose_harm(&mut self, id: &str) -> Result<(), RuleError> {
+        if id.starts_with("deny:") || id.starts_with("idol:") {
+            return super::harm_cards::choose_prevention(self, id);
+        }
         if id == "harm:confirm" {
             let Some(Frame::Harm(harm)) = self.frames.pop() else {
                 unreachable!()
@@ -1982,21 +2591,20 @@ impl Game {
                     index += 1;
                 }
             }
-            if player.damage >= player.health || player.horror >= player.sanity {
-                player.defeated = true;
-                player.turn_finished = true;
-                if self.actor == Some(harm.investigator) {
-                    self.actor = None;
-                }
-            }
-            if investigator_took_harm && !player.defeated {
+            let departed_assets: Vec<_> = defeated_assets
+                .iter()
+                .map(|card| card.id)
+                .chain(removed_lita.iter().map(|card| card.id))
+                .collect();
+            let lethal = player.damage >= player.health || player.horror >= player.sanity;
+            if investigator_took_harm && !lethal {
                 for asset in &mut player.assets {
                     if asset.card.code == "10111" {
                         asset.uses = (asset.uses + 1).min(2);
                     }
                 }
             }
-            if player.defeated || player.resigned {
+            if lethal || player.defeated || player.resigned {
                 player.removed.extend(defeated_assets);
             } else if defeated_assets.len() > 1 {
                 self.frames.push(Frame::DiscardCards {
@@ -2010,10 +2618,20 @@ impl Game {
             if let Some(card) = removed_lita {
                 super::scenario::remove_lita(self, card);
             }
+            for asset in departed_assets {
+                super::tony_effects::asset_left_play(self, asset);
+            }
             self.history.push(format!(
                 "Resolve {} damage and {} horror from {} with the selected assignments.",
                 harm.damage, harm.horror, harm.source
             ));
+            if lethal {
+                super::elimination::begin(
+                    self,
+                    harm.investigator,
+                    super::elimination::Cause::Harm,
+                )?;
+            }
         } else {
             let parts: Vec<_> = id.split(':').collect();
             let target = if parts[2] == "investigator" {
@@ -2082,6 +2700,10 @@ impl Game {
 
     pub(super) fn player_window_choices(&self) -> Vec<Choice> {
         let mut choices = super::tokens::premonition_choices(self);
+        choices.extend(super::test_boosts::choices(self));
+        if let Some(actor) = self.actor {
+            choices.extend(super::player_cards::fast_choices(self, actor));
+        }
         for owner in &self.players {
             if owner.defeated || owner.resigned {
                 continue;
@@ -2240,7 +2862,7 @@ impl Game {
         base
     }
 
-    fn result(&self, test: &SkillTest) -> (i32, bool, i32) {
+    pub(super) fn result(&self, test: &SkillTest) -> (i32, bool, i32) {
         if let Some(result) = test.final_result {
             return result;
         }
@@ -2255,21 +2877,16 @@ impl Game {
             TestOperation::Fight { skill_bonus, .. } => skill_bonus,
             _ => 0,
         };
-        let lita_bonus = i32::from(
-            test.skill == Skill::Combat
-                && super::scenario::lita_controller(self)
-                    .is_some_and(|owner| self.players[owner.index()].location == player.location),
-        );
         let total = if automatic_failure {
             0
         } else {
-            (i32::from(player.base_skills[test.skill.index()])
+            (super::test_cards::base_skill(self, test.tester, test.skill)
                 + icons
                 + test.modifier
                 + test.bonus
                 + operation_bonus
-                + lita_bonus)
-                .max(0)
+                + super::test_cards::skill_modifier(self, test))
+            .max(0)
         };
         let vision = self.players.iter().any(|owner| {
             owner.location == player.location
@@ -2300,6 +2917,25 @@ impl Game {
         let effect = effects.remove(index);
         let tester = self.test.as_ref().expect("Test").tester;
         match effect {
+            TestResultEffect::OldKeyring { owner, asset } => {
+                super::test_cards::spend_key(self, owner, asset)?
+            }
+            TestResultEffect::Resourceful { owner, card } => {
+                super::test_cards::start_resourceful(self, owner, card)?
+            }
+            TestResultEffect::Resources {
+                owner,
+                amount,
+                source,
+            } => {
+                if !self.players[owner.index()].defeated && !self.players[owner.index()].resigned {
+                    self.players[owner.index()].resources += amount;
+                    self.history.push(format!(
+                        "{} gains {amount} resources from {source} during test results.",
+                        owner.name()
+                    ));
+                }
+            }
             TestResultEffect::Operation => self.apply_test_operation()?,
             TestResultEffect::TakeHeart => {
                 self.frames.push(Frame::GainResources {
@@ -2310,12 +2946,16 @@ impl Game {
                 self.history.push("Take Heart resolves on the failed test: draw two cards and gain two resources. [04201]".into());
             }
             TestResultEffect::Draw { owner } => self.draw_player(owner, 1)?,
-            TestResultEffect::Horror { amount, source } => {
-                self.queue_harm(tester, 0, amount, false, &source, None)?
-            }
-            TestResultEffect::Damage { amount, source } => {
-                self.queue_harm(tester, amount, 0, false, &source, None)?
-            }
+            TestResultEffect::Horror {
+                amount,
+                source,
+                origin,
+            } => self.queue_harm(tester, 0, amount, false, &source, origin)?,
+            TestResultEffect::Damage {
+                amount,
+                source,
+                origin,
+            } => self.queue_harm(tester, amount, 0, false, &source, origin)?,
         }
         Ok(())
     }
@@ -2345,7 +2985,17 @@ impl Game {
         }
         let test = self.test.as_ref().expect("Completing test");
         if !test.results_started {
-            let mut effects = Vec::new();
+            if !test.tony.success_window_closed {
+                if !self.outcome_reaction_choices().is_empty() {
+                    self.test.as_mut().expect("Test").window = Window::AfterSuccess;
+                    self.frames.push(Frame::SuccessWindow);
+                    return Ok(());
+                }
+                super::tony_effects::close_success_window(self);
+            }
+            let test = self.test.as_ref().expect("Test");
+            let mut effects = super::test_cards::result_effects(self, test);
+            effects.extend(super::tony_effects::result_effects(self, test));
             if !success {
                 for harm in super::scenario::symbol_consequences(
                     self,
@@ -2356,6 +3006,7 @@ impl Game {
                     effects.push(TestResultEffect::Horror {
                         amount: harm.horror,
                         source: "01104 Cultist".into(),
+                        origin: HarmOrigin::EncounterCard,
                     });
                 }
                 if test.committed.iter().any(|card| card.card.code == "04201") {
@@ -2367,6 +3018,7 @@ impl Game {
                     effects.push(TestResultEffect::Horror {
                         amount: failure_margin as u8,
                         source: "01163".into(),
+                        origin: HarmOrigin::EncounterCard,
                     });
                 }
                 if matches!(test.operation, TestOperation::GraspingHands { .. })
@@ -2375,6 +3027,7 @@ impl Game {
                     effects.push(TestResultEffect::Damage {
                         amount: failure_margin as u8,
                         source: "01162".into(),
+                        origin: HarmOrigin::EncounterCard,
                     });
                 }
             } else {
@@ -2385,7 +3038,16 @@ impl Game {
                 }
             }
             let operation_applies = match test.operation {
+                TestOperation::Fight { enemy, .. } | TestOperation::Evade { enemy }
+                    if self.players[test.tester.index()]
+                        .hand
+                        .iter()
+                        .any(|card| card.id == enemy && card.code == "06017") =>
+                {
+                    true
+                }
                 TestOperation::RottingRemains { .. } | TestOperation::GraspingHands { .. } => false,
+                TestOperation::CryptChill { .. } => !success,
                 TestOperation::Fight { enemy, .. } => {
                     success
                         || self
@@ -2402,6 +3064,9 @@ impl Game {
                 effects.push(TestResultEffect::Operation);
             }
             let test = self.test.as_mut().expect("Test");
+            // Conditional skill text creates its delayed continuation in ST7;
+            // retain only provenance when ST8 later removes physical cards.
+            super::tony_effects::capture_commits(test);
             test.results_started = true;
             test.window = Window::Results;
             if !effects.is_empty() {
@@ -2436,7 +3101,7 @@ impl Game {
                     attack.horror,
                     false,
                     &attack.source_code,
-                    Some(enemy),
+                    HarmOrigin::EnemyAttack { enemy },
                 )?;
                 return Ok(());
             }
@@ -2469,11 +3134,15 @@ impl Game {
     }
 
     fn complete_test_cleanup(&mut self, test: SkillTest) -> Result<(), RuleError> {
+        if let Some(actor) = test.completed_granted_action {
+            self.complete_action(actor);
+        }
         let (total, success, failure_margin) = test.final_result.expect("Completed test result");
         let source = match &test.operation {
             TestOperation::CancelRevelation { .. } => "A Test of Will",
             TestOperation::RottingRemains { .. } => "Rotting Remains",
             TestOperation::GraspingHands { .. } => "Grasping Hands",
+            TestOperation::CryptChill { .. } => "Crypt Chill",
             TestOperation::DiscardThreat { .. } => "Frozen in Fear",
             TestOperation::LitaParley => "Lita Chantler Parley",
             TestOperation::Fight { .. } => "Fight",
@@ -2488,18 +3157,28 @@ impl Game {
             success,
             failure_margin,
         });
-        self.bag.extend(test.revealed);
-        self.bag.extend(test.ignored_tokens);
-        self.bag.extend(test.cancelled_tokens);
-        match test.operation {
+        super::tokens::return_test_tokens(
+            self,
+            test.revealed.clone(),
+            test.ignored_tokens.clone(),
+            test.cancelled_tokens.clone(),
+        );
+        match &test.operation {
             TestOperation::CancelRevelation { event, owner, .. } => {
-                self.players[owner.index()].discard.push(event)
+                if !test.is_retry {
+                    self.players[owner.index()].discard.push(event.clone());
+                }
             }
             TestOperation::RottingRemains { encounter }
-            | TestOperation::GraspingHands { encounter } => self.complete_revelation(encounter)?,
+            | TestOperation::GraspingHands { encounter }
+            | TestOperation::CryptChill { encounter }
+                if !test.is_retry =>
+            {
+                self.complete_revelation(*encounter)?;
+            }
             _ => {}
         }
-        Ok(())
+        super::retry::begin(self, test)
     }
 
     fn apply_test_operation(&mut self) -> Result<(), RuleError> {
@@ -2509,6 +3188,46 @@ impl Game {
             .expect("Applying skill-test results")
             .clone();
         let (total, success, _) = test.final_result.expect("ST6 outcome is fixed");
+        let hand_target = match test.operation {
+            TestOperation::Fight { enemy, .. } | TestOperation::Evade { enemy } => Some(enemy),
+            _ => None,
+        };
+        if let Some(index) = hand_target.and_then(|id| {
+            self.players[test.tester.index()]
+                .hand
+                .iter()
+                .position(|card| card.id == id && card.code == "06017")
+        }) {
+            let card = self.players[test.tester.index()].hand.remove(index);
+            if success {
+                self.players[test.tester.index()].discard.push(card);
+                if matches!(test.operation, TestOperation::Evade { .. })
+                    && test
+                        .source_card
+                        .as_ref()
+                        .is_some_and(|source| source.code == "04029")
+                {
+                    self.frames
+                        .push(Frame::Spell(super::spells::SpellDecision::MistsMove(
+                            test.tester,
+                        )));
+                }
+            } else {
+                let id = card.id;
+                self.scenario.enemies.push(super::scenario::EnemyState {
+                    card,
+                    location: self.players[test.tester.index()].location.clone(),
+                    engaged: Some(test.tester),
+                    exhausted: false,
+                    damage: 0,
+                    doom: 0,
+                    bounties: 0,
+                    owner: Some(test.tester),
+                });
+                self.scenario_step(super::scenario::ScenarioStep::EnemyEntered(id))?;
+            }
+            return Ok(());
+        }
         match test.operation {
             TestOperation::CancelRevelation {
                 event,
@@ -2535,6 +3254,11 @@ impl Game {
                 self.complete_revelation(encounter)?;
             }
             TestOperation::GraspingHands { encounter } => self.complete_revelation(encounter)?,
+            TestOperation::CryptChill { .. } => {
+                if !success {
+                    super::crypt_chill::failed(self, test.tester)?;
+                }
+            }
             TestOperation::DiscardThreat { owner, card } => {
                 if success {
                     let threats = &mut self.players[owner.index()].threats;
@@ -2639,7 +3363,14 @@ impl Game {
                     .and_then(|target| target.engaged)
                     .filter(|victim| *victim != test.tester)
                 {
-                    self.queue_harm(victim, damage, 0, false, "failed-fight", None)?;
+                    self.queue_harm(
+                        victim,
+                        damage,
+                        0,
+                        false,
+                        "failed-fight",
+                        HarmOrigin::GameRule,
+                    )?;
                 }
             }
         }
@@ -2704,6 +3435,12 @@ impl Game {
                 Skill::Agility,
                 3,
             ),
+            "01167" => self.begin_test(
+                TestOperation::CryptChill { encounter: id },
+                investigator,
+                Skill::Willpower,
+                4,
+            ),
             "01164" | "01165" | "01168" => {
                 let card = self.take_revelation(id)?.card;
                 super::scenario::place_persistent_treachery(self, card, investigator)
@@ -2754,6 +3491,77 @@ impl Game {
 
     fn settle(&mut self) -> Result<(), RuleError> {
         loop {
+            if matches!(self.frames.last(), Some(Frame::HandDiscard(_))) {
+                if super::harm_cards::advance_discard(self)? {
+                    continue;
+                }
+                return Ok(());
+            }
+            if matches!(self.frames.last(), Some(Frame::HarmCard(_))) {
+                super::harm_cards::finish(self)?;
+                continue;
+            }
+            if let Some(Frame::GrantedAction { owner }) = self.frames.last() {
+                if self.players[owner.index()].defeated || self.players[owner.index()].resigned {
+                    self.frames.pop();
+                    continue;
+                }
+                return Ok(());
+            }
+            if self.test.is_none()
+                && self.tokens.is_none()
+                && matches!(self.frames.last(), Some(Frame::RestoreTurn { .. }))
+            {
+                if let Some(actor) = self.action_in_progress.take() {
+                    self.complete_action(actor);
+                }
+                let Some(Frame::RestoreTurn {
+                    previous_actor,
+                    previous_phase,
+                }) = self.frames.pop()
+                else {
+                    unreachable!()
+                };
+                self.actor = previous_actor.filter(|actor| {
+                    !self.players[actor.index()].defeated && !self.players[actor.index()].resigned
+                });
+                self.phase = previous_phase;
+                continue;
+            }
+            if matches!(self.frames.last(), Some(Frame::SuccessWindow)) {
+                if !self.outcome_reaction_choices().is_empty() {
+                    return Ok(());
+                }
+                self.frames.pop();
+                super::tony_effects::close_success_window(self);
+                self.finish_test()?;
+                continue;
+            }
+            if let Some(Frame::AfterTest(state)) = self.frames.last() {
+                if !super::retry::choices(self, state).is_empty() {
+                    return Ok(());
+                }
+                self.frames.pop();
+                continue;
+            }
+            if self.test.is_none()
+                && self.tokens.is_none()
+                && matches!(self.frames.last(), Some(Frame::RetryEvent { .. }))
+            {
+                let Some(Frame::RetryEvent { owner, event }) = self.frames.pop() else {
+                    unreachable!()
+                };
+                let player = &mut self.players[owner.index()];
+                if player.defeated || player.resigned {
+                    player.removed.push(event);
+                } else {
+                    player.discard.push(event);
+                }
+                continue;
+            }
+            if matches!(self.frames.last(), Some(Frame::Elimination(_))) {
+                return Ok(());
+            }
             if matches!(self.frames.last(), Some(Frame::TestCleanup(_))) {
                 let Some(Frame::TestCleanup(test)) = self.frames.pop() else {
                     unreachable!()
@@ -2893,6 +3701,7 @@ impl Game {
                     action,
                     spell,
                     asset,
+                    event,
                     ..
                 }) = self.frames.pop()
                 else {
@@ -2903,6 +3712,8 @@ impl Game {
                 {
                     if let Some(spell) = spell {
                         super::spells::resolve_action(self, spell)?;
+                    } else if let Some(event) = event {
+                        super::encounter_search::resolve_action(self, event)?;
                     } else if let Some(asset) = asset {
                         self.finish_asset(asset)?;
                     } else {
@@ -2914,6 +3725,9 @@ impl Game {
                     }
                     if let Some(spell) = spell {
                         super::spells::cancel_action(self, spell);
+                    }
+                    if let Some(event) = event {
+                        super::encounter_search::cancel_action(self, event);
                     }
                 }
                 continue;
@@ -2942,7 +3756,21 @@ impl Game {
             if self.frames.is_empty()
                 && let Some(actor) = self.action_in_progress.take()
             {
-                self.players[actor.index()].completed_actions_this_phase += 1;
+                self.complete_action(actor);
+            }
+            if self.frames.is_empty()
+                && self.test.is_none()
+                && self.tokens.is_none()
+                && self.phase == Phase::Investigation
+                && self.actor.is_none()
+                && self.scenario.outcome.is_none()
+                && self
+                    .players
+                    .iter()
+                    .all(|player| player.turn_finished || player.defeated || player.resigned)
+            {
+                super::phases::begin_enemy(self);
+                continue;
             }
             let Some(Frame::Revelation(revelation)) = self.frames.last() else {
                 return Ok(());

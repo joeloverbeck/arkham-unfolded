@@ -3,7 +3,7 @@
 
 use super::{
     Investigator,
-    runtime::{Frame, Game, PendingRevelation, Phase},
+    runtime::{Frame, Game, HarmOrigin, Phase},
     scenario::{self, EnemyAttack, ScenarioDecision, ScenarioStep},
 };
 use crate::{Choice, RuleError};
@@ -46,6 +46,46 @@ pub(super) enum PhaseDecision {
         index: usize,
     },
     InvestigationBegin,
+}
+
+/// Captured player order survives nested effects, but eliminated players never
+/// receive another attack/draw/hand-limit decision. Preserve the cursor's next
+/// surviving player rather than restarting a phase after a lead change.
+pub(super) fn eliminate(game: &mut Game, who: Investigator) {
+    fn prune(decision: &mut PhaseDecision, who: Investigator) {
+        if let PhaseDecision::PlayerWindow { next: Some(next) } = decision {
+            prune(next, who);
+            return;
+        }
+        let was_patrice = matches!(decision, PhaseDecision::PatriceDiscard { .. })
+            && who == Investigator::Patrice;
+        match decision {
+            PhaseDecision::EnemyAttacks { order, index }
+            | PhaseDecision::UpkeepDraw { order, index }
+            | PhaseDecision::PatriceDiscard { order, index, .. }
+            | PhaseDecision::HandLimit { order, index }
+            | PhaseDecision::MythosDraw { order, index } => {
+                if let Some(removed) = order.iter().position(|candidate| *candidate == who) {
+                    order.remove(removed);
+                    if removed < *index {
+                        *index -= 1;
+                    }
+                }
+                if was_patrice {
+                    *decision = PhaseDecision::UpkeepDraw {
+                        order: order.clone(),
+                        index: *index,
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+    for frame in &mut game.frames {
+        if let Frame::Phase(decision) = frame {
+            prune(decision, who);
+        }
+    }
 }
 
 fn choice(id: impl Into<String>, label: impl Into<String>) -> Choice {
@@ -322,7 +362,9 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                     attack.horror,
                     false,
                     &attack.source_code,
-                    Some(attack.enemy),
+                    HarmOrigin::EnemyAttack {
+                        enemy: attack.enemy,
+                    },
                 )?;
             }
         }
@@ -515,18 +557,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                         index: index + 1,
                     },
                 );
-                let player = &game.players[investigator.index()];
-                if !player.defeated
-                    && !player.resigned
-                    && let Some(card) = game.encounter_deck.pop()
-                {
-                    game.frames.push(Frame::Revelation(PendingRevelation {
-                        card,
-                        drawn_by: investigator,
-                        started: false,
-                        cancelled: false,
-                    }));
-                }
+                super::encounter_search::begin_mythos_draw(game, investigator)?;
             } else {
                 player_window(game, Some(PhaseDecision::InvestigationBegin));
             }

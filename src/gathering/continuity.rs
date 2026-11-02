@@ -14,6 +14,9 @@ use std::{
 
 const FORMAT_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 8 * 1024 * 1024;
+const SETUP_V1_SOURCE: &str = "c35be2c:issue-89-gathering-setup-v1";
+const SETUP_V1_APP_VERSION: &str = "0.1.0";
+const SETUP_V1_READER: &str = "7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3";
 
 pub struct Replay {
     recording: Recording,
@@ -244,9 +247,19 @@ fn decode_envelope(bytes: &[u8], kind: &str) -> Result<Envelope, ContinuityError
         || envelope.source_revision != SOURCE_REVISION
         || envelope.app_version != APP_VERSION
     {
-        return Err(ContinuityError(
-            "This record requires a different compatible application/source version.".into(),
-        ));
+        if envelope.format_version == 1
+            && envelope.source_revision == SETUP_V1_SOURCE
+            && envelope.app_version == SETUP_V1_APP_VERSION
+            && envelope.kind == kind
+        {
+            return Err(ContinuityError(format!(
+                "This Gathering record requires source {SETUP_V1_SOURCE}, preserved by reader commit {SETUP_V1_READER}. This build writes {SOURCE_REVISION}. The original file was left unchanged; use the exact resume/replay instructions in docs/experiments/gathering-setup.md#record-compatibility. No migration was performed."
+            )));
+        }
+        return Err(ContinuityError(format!(
+            "This record requires application {} / source {} / format {} / kind {}; this reader accepts application {APP_VERSION} / source {SOURCE_REVISION} / format {FORMAT_VERSION} / kind {kind}. The original file was left unchanged.",
+            envelope.app_version, envelope.source_revision, envelope.format_version, envelope.kind
+        )));
     }
     Ok(envelope)
 }

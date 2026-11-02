@@ -19,6 +19,7 @@ pub enum TokenFixture {
     ProtectedNumbers,
     ArbiterCancellation,
     DarkProphecy,
+    RobesProphecy,
     NestedProphecyCleanup,
     EyesKatarina,
     EyesIgnoredMatch,
@@ -26,6 +27,7 @@ pub enum TokenFixture {
     VoiceRaLethalOpportunity,
     Premonition,
     PremonitionOlive,
+    PremonitionEyes,
 }
 
 pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
@@ -67,13 +69,31 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
             });
             jacqueline.resources -= 3;
         }
-        TokenFixture::DarkProphecy | TokenFixture::NestedProphecyCleanup => {
+        TokenFixture::DarkProphecy
+        | TokenFixture::RobesProphecy
+        | TokenFixture::NestedProphecyCleanup => {
             let index = jacqueline
                 .deck
                 .iter()
                 .position(|card| card.code == "04032")
                 .expect("Selected Dark Prophecy");
             jacqueline.hand.push(jacqueline.deck.remove(index));
+            if case == TokenFixture::RobesProphecy {
+                let at = jacqueline
+                    .deck
+                    .iter()
+                    .position(|card| card.code == "60412")
+                    .expect("Selected Robes");
+                let card = jacqueline.deck.remove(at);
+                jacqueline.assets.push(AssetView {
+                    card,
+                    ready: true,
+                    uses: 0,
+                    damage: 0,
+                    horror: 0,
+                });
+                jacqueline.resources = 0;
+            }
             if case == TokenFixture::NestedProphecyCleanup {
                 let index = jacqueline
                     .deck
@@ -141,9 +161,11 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
                 }
             }
         }
-        TokenFixture::Premonition | TokenFixture::PremonitionOlive => {
+        TokenFixture::Premonition
+        | TokenFixture::PremonitionOlive
+        | TokenFixture::PremonitionEyes => {
             for (code, threat) in [("04199", false), ("60403", true)] {
-                if threat && case == TokenFixture::PremonitionOlive {
+                if threat && case != TokenFixture::Premonition {
                     continue;
                 }
                 let index = jacqueline
@@ -158,23 +180,36 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
                     jacqueline.hand.push(card);
                 }
             }
+            let spell = if case == TokenFixture::PremonitionEyes {
+                "11067"
+            } else {
+                "60408"
+            };
             let index = jacqueline
                 .deck
                 .iter()
-                .position(|card| card.code == "60408")
-                .expect("Clairvoyance");
+                .position(|card| card.code == spell)
+                .expect("Selected investigation spell");
             let card = jacqueline.deck.remove(index);
             jacqueline.assets.push(AssetView {
                 card,
                 ready: true,
-                uses: 3,
+                uses: if case == TokenFixture::PremonitionEyes {
+                    9
+                } else {
+                    3
+                },
                 damage: 0,
                 horror: 0,
             });
-            jacqueline.resources -= 4;
+            jacqueline.resources -= if case == TokenFixture::PremonitionEyes {
+                3
+            } else {
+                4
+            };
             jacqueline.location = super::scenario::CELLAR.into();
             jacqueline.damage = 1;
-            if case == TokenFixture::PremonitionOlive {
+            if case != TokenFixture::Premonition {
                 let index = jacqueline
                     .deck
                     .iter()
@@ -200,12 +235,12 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
     }
     if matches!(
         case,
-        TokenFixture::Premonition | TokenFixture::PremonitionOlive
+        TokenFixture::Premonition | TokenFixture::PremonitionOlive | TokenFixture::PremonitionEyes
     ) {
         let card = jacqueline.hand[0].id;
         game.enable_fixture_turn(Investigator::Jacqueline);
         play_premonition(game, card).expect("Legal fast play");
-        game.set_fixture_tokens(if case == TokenFixture::PremonitionOlive {
+        game.set_fixture_tokens(if case != TokenFixture::Premonition {
             vec![
                 TokenFace::ElderSign,
                 TokenFace::PlusOne,
@@ -325,7 +360,10 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
         TokenFace::Zero,
         TokenFace::MinusOne,
     ]);
-    if case == TokenFixture::DarkProphecy {
+    if matches!(
+        case,
+        TokenFixture::DarkProphecy | TokenFixture::RobesProphecy
+    ) {
         game.set_fixture_tokens(vec![
             TokenFace::ElderSign,
             TokenFace::Skull,
@@ -360,6 +398,7 @@ pub enum TokenStage {
     Declaration,
     Cancellation,
     Selection,
+    Effects,
     Resolving,
 }
 
@@ -387,6 +426,7 @@ struct RevealNode {
     event: Option<super::CardView>,
     chosen: Vec<usize>,
     sealed: Option<SealedPremonition>,
+    sealed_card_departed: bool,
 }
 
 impl RevealNode {
@@ -403,6 +443,7 @@ impl RevealNode {
             event: None,
             chosen: vec![],
             sealed: None,
+            sealed_card_departed: false,
         }
     }
 
@@ -467,18 +508,162 @@ pub struct TokenResolution {
     active: Vec<usize>,
     notified_elders: Vec<usize>,
     eyes_source: Option<u16>,
+    previous_roots: Vec<RevealNode>,
+    batch_notified: bool,
+    symbols_done: Vec<usize>,
 }
 
 pub(super) enum TokenStep {
     Pending,
     DrawElderSign,
+    RevealedBatch {
+        faces: Vec<TokenFace>,
+    },
+    ApplyTablet,
     Finished,
     Complete {
         resolved: Vec<TokenFace>,
         ignored: Vec<TokenFace>,
         cancelled: Vec<TokenFace>,
         eyes_match: bool,
+        symbols_applied: bool,
     },
+}
+
+/// Ten physical curse tokens exist. Held and sealed tokens are unavailable for
+/// adding, including a resolved curse awaiting ST8 cleanup.
+pub(super) fn add_curse(game: &mut Game) -> bool {
+    let count_faces = |faces: &[TokenFace]| {
+        faces
+            .iter()
+            .filter(|&&face| face == TokenFace::Curse)
+            .count()
+    };
+    let mut held = count_faces(&game.bag);
+    held += game
+        .premonition
+        .as_ref()
+        .map_or(0, |sealed| count_faces(&sealed.faces));
+    if let Some(tokens) = &game.tokens {
+        held += count_faces(&tokens.revealed) + sealed_curses(&tokens.root);
+        held += tokens
+            .previous_roots
+            .iter()
+            .map(sealed_curses)
+            .sum::<usize>();
+    }
+    if let Some(test) = &game.test {
+        held += count_faces(&test.revealed)
+            + count_faces(&test.ignored_tokens)
+            + count_faces(&test.cancelled_tokens);
+    }
+    if held >= 10 {
+        return false;
+    }
+    game.bag.push(TokenFace::Curse);
+    true
+}
+
+fn sealed_curses(node: &RevealNode) -> usize {
+    node.sealed.as_ref().map_or(0, |sealed| {
+        sealed
+            .faces
+            .iter()
+            .filter(|&&face| face == TokenFace::Curse)
+            .count()
+    }) + node.children.iter().map(sealed_curses).sum::<usize>()
+}
+
+pub(super) fn return_test_tokens(
+    game: &mut Game,
+    resolved: Vec<TokenFace>,
+    ignored: Vec<TokenFace>,
+    cancelled: Vec<TokenFace>,
+) {
+    game.bag.extend(
+        resolved
+            .into_iter()
+            .filter(|face| *face != TokenFace::Curse),
+    );
+    game.bag.extend(ignored);
+    game.bag.extend(cancelled);
+}
+
+/// Elimination removes owned cards without returning tokens held by another
+/// investigator's still-running test. A sealed replacement already in progress
+/// retains its token effect after its source card leaves play.
+pub(super) fn eliminate(game: &mut Game, who: Investigator) -> Result<(), RuleError> {
+    if game
+        .premonition
+        .as_ref()
+        .is_some_and(|sealed| sealed.controller == who)
+    {
+        let sealed = game.premonition.take().expect("Owned Premonition");
+        game.bag.extend(sealed.faces);
+        game.players[who.index()].removed.push(sealed.card);
+    }
+    let Some(mut tokens) = game.tokens.take() else {
+        return Ok(());
+    };
+    if tokens.revealer == who {
+        game.bag.extend(
+            tokens
+                .revealed
+                .drain(..)
+                .enumerate()
+                .filter_map(|(index, face)| {
+                    (face != TokenFace::Curse || !tokens.symbols_done.contains(&index))
+                        .then_some(face)
+                }),
+        );
+        abandon_node(game, &mut tokens.root, who);
+        for node in &mut tokens.previous_roots {
+            abandon_node(game, node, who);
+        }
+        match tokens.purpose {
+            TokenPurpose::VoiceRa { event, .. } | TokenPurpose::Premonition { event, .. } => {
+                game.players[who.index()].removed.push(event)
+            }
+            _ => {}
+        }
+    } else {
+        depart_sealed_source(game, &mut tokens.root, who);
+        game.tokens = Some(tokens);
+    }
+    Ok(())
+}
+
+fn abandon_node(game: &mut Game, node: &mut RevealNode, revealer: Investigator) {
+    if let Some(event) = node.event.take() {
+        game.players[revealer.index()].removed.push(event);
+    }
+    if let Some(sealed) = node.sealed.take() {
+        game.bag.extend(sealed.faces);
+        if !node.sealed_card_departed {
+            let owner = &mut game.players[sealed.controller.index()];
+            if owner.defeated || owner.resigned || sealed.controller == revealer {
+                owner.removed.push(sealed.card);
+            } else {
+                owner.discard.push(sealed.card);
+            }
+        }
+    }
+    for child in &mut node.children {
+        abandon_node(game, child, revealer);
+    }
+}
+
+fn depart_sealed_source(game: &mut Game, node: &mut RevealNode, who: Investigator) {
+    if let Some(sealed) = &node.sealed
+        && sealed.controller == who
+        && !node.sealed_card_departed
+    {
+        game.players[who.index()].removed.push(sealed.card.clone());
+        node.sealed_card_departed = true;
+    }
+    for child in &mut node.children {
+        depart_sealed_source(game, child, who);
+    }
 }
 
 pub(super) fn begin(
@@ -532,6 +717,9 @@ pub(super) fn begin(
         active: vec![],
         notified_elders: vec![],
         eyes_source,
+        previous_roots: vec![],
+        batch_notified: false,
+        symbols_done: vec![],
     });
     Ok(())
 }
@@ -896,6 +1084,19 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
             }
             result
         }
+        TokenStage::Effects => pending_symbols(game, tokens)
+            .into_iter()
+            .map(|index| {
+                choice(
+                    format!("tokens:effect:{index}"),
+                    format!(
+                        "Resolve {} token {} next",
+                        tokens.revealed[index].label(),
+                        index + 1
+                    ),
+                )
+            })
+            .collect(),
         TokenStage::Resolving => vec![],
     }
 }
@@ -925,9 +1126,11 @@ fn draw_node(game: &mut Game, node: &mut RevealNode, pool: &mut Pool<'_>) -> Res
             node.drawn.push(pool.revealed.len());
             pool.revealed.push(face);
         }
-        game.players[sealed.controller.index()]
-            .discard
-            .push(sealed.card);
+        if !node.sealed_card_departed {
+            game.players[sealed.controller.index()]
+                .discard
+                .push(sealed.card);
+        }
         game.history.push("Premonition supplies its sealed token(s) instead of this bag reveal, then is discarded. Its mandatory replacement precedes optional reactions to that original reveal. [04199; RR replacement effects; Legacy FAQ 2.5]".into());
         node.done = true;
         return Ok(());
@@ -1046,12 +1249,44 @@ pub(super) fn resume(game: &mut Game) -> Result<TokenStep, RuleError> {
         game.tokens = Some(tokens);
         return Ok(TokenStep::Pending);
     }
-    let eyes_match = tokens.root.policy == Policy::Eyes
-        && tokens.root.chosen.first().is_some_and(|chosen| {
-            tokens
-                .ignored
+    if tokens.purpose == TokenPurpose::SkillTest {
+        if !tokens.batch_notified {
+            tokens.batch_notified = true;
+            tokens.stage = TokenStage::Resolving;
+            let faces = tokens
+                .root
+                .drawn
                 .iter()
-                .any(|ignored| tokens.revealed[*ignored] == tokens.revealed[*chosen])
+                .filter(|index| {
+                    !tokens.ignored.contains(index) && !tokens.cancelled.contains(index)
+                })
+                .map(|&index| tokens.revealed[index])
+                .collect();
+            game.tokens = Some(tokens);
+            return Ok(TokenStep::RevealedBatch { faces });
+        }
+        let effects = pending_symbols(game, &tokens);
+        if let [index] = effects.as_slice() {
+            return resolve_symbol(game, tokens, *index);
+        }
+        if !effects.is_empty() {
+            tokens.stage = TokenStage::Effects;
+            game.tokens = Some(tokens);
+            return Ok(TokenStep::Pending);
+        }
+    }
+    let eyes_match = tokens
+        .previous_roots
+        .iter()
+        .chain(std::iter::once(&tokens.root))
+        .any(|root| {
+            root.policy == Policy::Eyes
+                && root.chosen.first().is_some_and(|chosen| {
+                    tokens
+                        .ignored
+                        .iter()
+                        .any(|ignored| tokens.revealed[*ignored] == tokens.revealed[*chosen])
+                })
         });
     let (mut resolved, mut ignored, mut cancelled) = (vec![], vec![], vec![]);
     for (index, face) in tokens.revealed.into_iter().enumerate() {
@@ -1065,12 +1300,13 @@ pub(super) fn resume(game: &mut Game) -> Result<TokenStep, RuleError> {
     }
     match tokens.purpose {
         TokenPurpose::SkillTest => {
-            game.history.push(format!("Token revelation completes: {} resolved, {} ignored, {} cancelled. All physical tokens remain out of the bag until test cleanup. [RR ST.8; FAQ 2.5]", resolved.len(), ignored.len(), cancelled.len()));
+            game.history.push(format!("Token revelation completes: {} resolved, {} ignored, {} cancelled. Physical tokens stay out of the bag until cleanup; resolved curses return to the token pool at ST8. [RR ST.8; Innsmouth p1; FAQ 2.5]", resolved.len(), ignored.len(), cancelled.len()));
             Ok(TokenStep::Complete {
                 resolved,
                 ignored,
                 cancelled,
                 eyes_match,
+                symbols_applied: true,
             })
         }
         TokenPurpose::DarkFuture { investigator, card } => {
@@ -1115,7 +1351,93 @@ pub(super) fn resume(game: &mut Game) -> Result<TokenStep, RuleError> {
     }
 }
 
+fn pending_symbols(game: &Game, tokens: &TokenResolution) -> Vec<usize> {
+    tokens
+        .revealed
+        .iter()
+        .enumerate()
+        .filter_map(|(index, face)| {
+            if tokens.ignored.contains(&index)
+                || tokens.cancelled.contains(&index)
+                || tokens.symbols_done.contains(&index)
+            {
+                return None;
+            }
+            let applies = match face {
+                TokenFace::Curse => true,
+                TokenFace::Tablet => {
+                    game.scenario
+                        .ghouls_at(&game.players[tokens.revealer.index()].location)
+                        > 0
+                }
+                TokenFace::ElderSign if tokens.revealer == Investigator::Tony => game.players[0]
+                    .assets
+                    .iter()
+                    .any(|asset| asset.card.code == "06010"),
+                _ => false,
+            };
+            applies.then_some(index)
+        })
+        .collect()
+}
+
+fn resolve_symbol(
+    game: &mut Game,
+    mut tokens: TokenResolution,
+    index: usize,
+) -> Result<TokenStep, RuleError> {
+    tokens.symbols_done.push(index);
+    match tokens.revealed[index] {
+        TokenFace::Curse => {
+            tokens.previous_roots.push(std::mem::replace(
+                &mut tokens.root,
+                RevealNode::group(Policy::All, 1),
+            ));
+            tokens.active.clear();
+            tokens.selected.clear();
+            tokens.batch_notified = false;
+            tokens.stage = TokenStage::Declaration;
+            game.history.push("Resolve a curse: -2 and reveal another token. The additional reveal has its own would-reveal opportunity; the curse stays held until test cleanup. [Innsmouth p1]".into());
+            game.tokens = Some(tokens);
+            Ok(TokenStep::Pending)
+        }
+        TokenFace::Tablet => {
+            tokens.stage = TokenStage::Resolving;
+            game.tokens = Some(tokens);
+            Ok(TokenStep::ApplyTablet)
+        }
+        TokenFace::ElderSign => {
+            let contracts = game.players[0]
+                .assets
+                .iter_mut()
+                .find(|asset| asset.card.code == "06010")
+                .expect("Tony's Contracts");
+            contracts.uses = contracts
+                .uses
+                .checked_add(1)
+                .ok_or_else(|| RuleError("Bounty counter exceeds the supported range.".into()))?;
+            game.history.push(
+                "Tony resolves elder sign and places 1 bounty on Bounty Contracts. [06003]".into(),
+            );
+            tokens.stage = TokenStage::Resolving;
+            game.tokens = Some(tokens);
+            resume(game)
+        }
+        _ => unreachable!("Selected symbol consequence"),
+    }
+}
+
 pub(super) fn choose(game: &mut Game, id: &str) -> Result<TokenStep, RuleError> {
+    if let Some(index) = id.strip_prefix("tokens:effect:") {
+        let index: usize = index
+            .parse()
+            .map_err(|_| RuleError("Invalid token consequence.".into()))?;
+        if !choices(game).iter().any(|choice| choice.id == id) {
+            return Err(RuleError("That token consequence is unavailable.".into()));
+        }
+        let tokens = game.tokens.take().expect("Pending token effect");
+        return resolve_symbol(game, tokens, index);
+    }
     if !choices(game).iter().any(|choice| choice.id == id) {
         return Err(RuleError("That token choice is unavailable.".into()));
     }

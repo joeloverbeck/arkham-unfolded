@@ -12,6 +12,58 @@ fn first_choice(game: &Session) -> (u64, String) {
 }
 
 #[test]
+fn incompatible_source_is_identified_before_decoding_a_session_or_recording_payload() {
+    use sha2::{Digest, Sha256};
+    let directory = tempfile::tempdir().unwrap();
+    for kind in ["gathering-session", "gathering-recording"] {
+        // This deliberately invalid payload tests header dispatch only. Genuine
+        // historical7b producer/read/resume evidence is retained separately.
+        let mut envelope = serde_json::json!({
+            "format_version":1,"kind":kind,
+            "source_revision":"c35be2c:issue-89-gathering-setup-v1",
+            "app_version":"0.1.0",
+            "payload":{"not_a_valid_session_or_recording":true},"checksum":""
+        });
+        let bytes = serde_json::to_vec(&(
+            &envelope["format_version"],
+            &envelope["kind"],
+            &envelope["source_revision"],
+            &envelope["app_version"],
+            &envelope["payload"],
+        ))
+        .unwrap();
+        envelope["checksum"] = serde_json::json!(format!("{:x}", Sha256::digest(bytes)));
+        let path = directory.path().join(format!("{kind}.json"));
+        let original = serde_json::to_vec_pretty(&envelope).unwrap();
+        std::fs::write(&path, &original).unwrap();
+        let error = if kind == "gathering-session" {
+            load_session(&path).unwrap_err().to_string()
+        } else {
+            load_recording(&path).unwrap_err().to_string()
+        };
+        assert!(
+            error.contains("c35be2c:issue-89-gathering-setup-v1"),
+            "{error}"
+        );
+        assert!(
+            error.contains("7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3"),
+            "{error}"
+        );
+        assert!(
+            error.contains("docs/experiments/gathering-setup.md"),
+            "{error}"
+        );
+        assert!(!error.contains("Invalid record"), "{error}");
+        if kind == "gathering-session" {
+            assert!(save_session(&path, &Session::with_seed(89)).is_err());
+        } else {
+            assert!(save_recording(&path, &Session::with_seed(89).recording()).is_err());
+        }
+        assert_eq!(std::fs::read(path).unwrap(), original);
+    }
+}
+
+#[test]
 fn committed_setup_choice_reopens_exactly_and_failed_save_keeps_live_randomness() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("gathering.json");

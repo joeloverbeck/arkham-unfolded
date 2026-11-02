@@ -1,4 +1,4 @@
-//! The selected charged investigation, fight and evasion abilities.
+//! The selected investigation, fight and evasion asset abilities.
 //! Costs precede opportunity attacks; captured ability text survives its asset.
 
 use super::{
@@ -47,12 +47,25 @@ pub(super) fn action_choices(game: &Game, who: Investigator) -> Vec<Choice> {
     }
     for asset in &player.assets {
         let code = asset.card.code.as_str();
-        if !matches!(code, "11067" | "60408" | "60407" | "04029")
+        // Eyes still has a choose-one instruction at zero charges. Flattening
+        // two Olive-sealed Premonition tokens into that choice would silently
+        // choose an unresolved group interpretation (FAQ2.5 §2.5/p17). Keep
+        // this composition unavailable before action payment; pay_action uses
+        // this same list, so a forged activation cannot bypass the boundary.
+        if code == "11067"
+            && game
+                .premonition
+                .as_ref()
+                .is_some_and(|sealed| sealed.faces.len() > 1)
+        {
+            continue;
+        }
+        if !matches!(code, "11067" | "60408" | "60407" | "04029" | "60507")
             || (code != "11067" && asset.uses == 0)
         {
             continue;
         }
-        if matches!(code, "11067" | "60408") {
+        if matches!(code, "11067" | "60408" | "60507") {
             if game.scenario.shroud(&player.location).is_some() {
                 choices.push(choice(
                     format!("investigate:spell:{}", asset.card.id),
@@ -83,6 +96,17 @@ pub(super) fn action_choices(game: &Game, who: Investigator) -> Vec<Choice> {
                         "{} {} with {} (spend 1 charge)",
                         if action == "fight" { "Fight" } else { "Evade" },
                         enemy.card.title,
+                        asset.card.title
+                    ),
+                ));
+            }
+            for watcher in player.hand.iter().filter(|card| card.code == "06017") {
+                let action = if code == "60407" { "fight" } else { "evade" };
+                choices.push(choice(
+                    format!("{action}:{}:spell:{}", watcher.id, asset.card.id),
+                    format!(
+                        "{} Watcher in your hand with {} (spend 1 charge)",
+                        if action == "fight" { "Fight" } else { "Evade" },
                         asset.card.title
                     ),
                 ));
@@ -131,12 +155,14 @@ pub(super) fn pay_action(
         .find(|asset| asset.card.id == asset_id)
         .expect("Offered asset");
     let source = asset.card.clone();
-    if source.code != "11067" {
+    if !matches!(source.code.as_str(), "11067" | "60507") {
         asset.uses -= 1;
     }
     let (operation, difficulty) = if parts[0] == "investigate" {
         let location = player.location.clone();
-        let difficulty = i32::from(game.scenario.shroud(&location).expect("Offered location"));
+        let difficulty = (i32::from(game.scenario.shroud(&location).expect("Offered location"))
+            - if source.code == "60507" { 2 } else { 0 })
+        .max(0);
         (
             TestOperation::Investigate {
                 location,
@@ -151,9 +177,16 @@ pub(super) fn pay_action(
             .enemies
             .iter()
             .find(|enemy| enemy.card.id == enemy_id)
+            .map(|enemy| &enemy.card)
+            .or_else(|| {
+                player
+                    .hand
+                    .iter()
+                    .find(|card| card.id == enemy_id && card.code == "06017")
+            })
             .expect("Offered enemy");
-        let printed = scenario::enemy_definition(&enemy.card.code);
-        let weakness = cards::definition(&enemy.card.code).and_then(|card| card.enemy);
+        let printed = scenario::enemy_definition(&enemy.code);
+        let weakness = cards::definition(&enemy.code).and_then(|card| card.enemy);
         if parts[0] == "fight" {
             (
                 TestOperation::Fight {
@@ -185,7 +218,11 @@ pub(super) fn pay_action(
     Ok(SpellActivation::Test {
         investigator: who,
         operation,
-        skill: Skill::Willpower,
+        skill: if source.code == "60507" {
+            Skill::Intellect
+        } else {
+            Skill::Willpower
+        },
         difficulty,
         source,
     })

@@ -44,6 +44,15 @@ fn watcher_interrupts_the_batch_before_reshuffle_and_take_heart_rewards_wait() {
     for _ in 0..3 {
         choose(&mut session, "harm:damage:investigator");
     }
+    assert!(
+        session
+            .observe_for_play()
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("deny:") && choice.id.ends_with(":damage")),
+        "Watcher is an enemy attack, so Patrice's actual Deny is a genuine optional prevention after assignment"
+    );
+    choose(&mut session, "harm:confirm");
     let after_draw = session.observe_for_play();
     let patrice = &after_draw.play.as_ref().unwrap().players[1];
     assert_eq!(
@@ -76,6 +85,59 @@ fn watcher_interrupts_the_batch_before_reshuffle_and_take_heart_rewards_wait() {
         before.bag_count + 1,
         "The completed test returns its held token once"
     );
+}
+
+#[test]
+fn denying_watchers_attack_finishes_the_event_before_the_interrupted_draw_resets() {
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Draws(DrawFixture::PatriceExhaustion));
+    let before = session.observe_for_play().play.unwrap();
+    let deny = before.players[1]
+        .hand
+        .iter()
+        .find(|card| card.code == "05032")
+        .unwrap()
+        .id;
+    choose(&mut session, "result:0");
+    for _ in 0..3 {
+        choose(&mut session, "harm:damage:investigator");
+    }
+    choose(&mut session, &format!("deny:{deny}:damage"));
+    let resumed = session.observe_for_play();
+    let player = &resumed.play.as_ref().unwrap().players[1];
+    assert_eq!(player.damage, 0);
+    assert_eq!(
+        player.deck_count, 2,
+        "Deny finishes into the discard pile before the interrupted draw resets the original two discarded cards plus that event, then draws one"
+    );
+    assert_eq!(
+        player.hand.len(),
+        before.players[1].hand.len() + 1,
+        "One event was played and the full two-card batch now completes"
+    );
+    assert_eq!(
+        player.resources, 3,
+        "Take Heart's resources still wait for the draw's exhaustion horror"
+    );
+    assert!(
+        !resumed
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("deny:")),
+        "Player-deck exhaustion is not an encounter effect or enemy attack"
+    );
+    choose(&mut session, "harm:horror:investigator");
+    let after = session.observe_for_play().play.unwrap();
+    assert_eq!(
+        (
+            after.players[1].damage,
+            after.players[1].horror,
+            after.players[1].resources
+        ),
+        (0, 1, 5)
+    );
+    assert!(after.completed_tests.len() > before.completed_tests.len());
+    session.validate().unwrap();
 }
 
 #[test]

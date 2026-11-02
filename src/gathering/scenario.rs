@@ -503,8 +503,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<ScenarioStep, RuleErro
         }
         ScenarioDecision::AgendaOne if id == "agenda:lead-horror" => Ok(ScenarioStep::LeadHorror),
         ScenarioDecision::AgendaOne => {
-            agenda_one_discard(game);
-            game.agenda = 2;
+            super::harm_cards::begin_agenda_discard(game);
             Ok(ScenarioStep::Continue)
         }
         ScenarioDecision::ActPayment {
@@ -1205,25 +1204,24 @@ pub(super) fn agenda_one_can_discard(game: &Game) -> bool {
     })
 }
 
-pub(super) fn agenda_one_discard(game: &mut Game) {
-    for player_index in 0..game.players.len() {
-        let player = &game.players[player_index];
-        if player.defeated || player.resigned {
-            continue;
-        }
-        let eligible: Vec<usize> = player
-            .hand
-            .iter()
-            .enumerate()
-            .filter(|(_, card)| card.code != "06017")
-            .map(|(index, _)| index)
-            .collect();
-        if !eligible.is_empty() {
-            let index = eligible[game.random_index(eligible.len())];
-            let player = &mut game.players[player_index];
-            let card = player.hand.remove(index);
-            player.discard.push(card);
-        }
+pub(super) fn agenda_one_discard_player(game: &mut Game, who: Investigator) {
+    let player_index = who.index();
+    let player = &game.players[player_index];
+    if player.defeated || player.resigned {
+        return;
+    }
+    let eligible: Vec<usize> = player
+        .hand
+        .iter()
+        .enumerate()
+        .filter(|(_, card)| card.code != "06017")
+        .map(|(index, _)| index)
+        .collect();
+    if !eligible.is_empty() {
+        let index = eligible[game.random_index(eligible.len())];
+        let player = &mut game.players[player_index];
+        let card = player.hand.remove(index);
+        player.discard.push(card);
     }
 }
 

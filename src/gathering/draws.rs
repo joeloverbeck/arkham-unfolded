@@ -3,8 +3,8 @@
 use super::{
     CardView, Investigator, cards,
     runtime::{
-        AssetState, CommittedCard, Frame, Game, PendingRevelation, Skill, TestOperation,
-        TestResultEffect, Window,
+        AssetState, CommittedCard, Frame, Game, HarmOrigin, PendingRevelation, Skill,
+        TestOperation, TestResultEffect, Window,
     },
 };
 use crate::{Choice, RuleError, TokenFace};
@@ -24,6 +24,23 @@ pub(super) struct DrawState {
     revelations: Vec<CardView>,
     exhaustion_horror: u8,
     collected: bool,
+}
+
+pub(super) fn eliminate(game: &mut Game, who: Investigator) {
+    let mut index = 0;
+    while index < game.frames.len() {
+        if matches!(&game.frames[index],Frame::Draw(draw) if draw.investigator == who) {
+            let Frame::Draw(mut draw) = game.frames.remove(index) else {
+                unreachable!()
+            };
+            game.players[who.index()].removed.append(&mut draw.drawn);
+            game.players[who.index()]
+                .removed
+                .append(&mut draw.revelations);
+        } else {
+            index += 1;
+        }
+    }
 }
 
 pub(super) fn begin(
@@ -97,7 +114,7 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
                 values.attack_horror,
                 false,
                 "Watcher from Another Dimension [06017]",
-                Some(watcher_id),
+                HarmOrigin::EnemyAttack { enemy: watcher_id },
             )?;
             return Ok(());
         }
@@ -133,7 +150,7 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
             amount,
             false,
             "Player-deck exhaustion [RR Drawing Cards]",
-            None,
+            HarmOrigin::GameRule,
         )?;
     }
     Ok(())

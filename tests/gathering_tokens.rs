@@ -50,6 +50,46 @@ fn reach_reveal(session: &mut Session) {
 }
 
 #[test]
+fn robes_cannot_reduce_dark_prophecy_because_its_printed_trait_is_only_augury() {
+    use arkham_unfolded_experiment::gathering::TokenFixture;
+    // Bound original face df42c9255e4bf557adb016fad3af22b8229e7ffb83becdd0056dd9480df7540f.
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::RobesProphecy));
+    reach_reveal(&mut session);
+    let before = session.observe_for_play();
+    assert!(
+        !before
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tokens:prophecy:"))
+    );
+    let play = before.play.as_ref().unwrap();
+    let robes = play.players[2]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "60412")
+        .unwrap();
+    let event = play.players[2]
+        .hand
+        .iter()
+        .find(|card| card.code == "04032")
+        .unwrap();
+    assert!(robes.ready);
+    assert_eq!(play.players[2].resources, 0);
+    assert!(
+        session
+            .choose(
+                before.revision,
+                &format!("tokens:prophecy:0:{}:robes:{}", event.id, robes.card.id)
+            )
+            .is_err()
+    );
+    assert_eq!(session.observe_for_play(), before);
+    choose(&mut session, "test:reveal");
+    session.validate().unwrap();
+}
+
+#[test]
 fn voice_of_ra_counts_curse_and_elder_sign_without_skill_test_effects() {
     use arkham_unfolded_experiment::gathering::TokenFixture;
     let mut session =
@@ -178,6 +218,58 @@ fn olive_seals_two_premonition_tokens_and_both_resolve_with_one_spell_drawback()
     );
     assert_eq!(play.bag_count, 16);
     assert!(play.premonition.is_none());
+}
+
+#[test]
+fn eyes_with_two_premonition_tokens_is_withheld_without_spending_an_action_or_charges() {
+    use arkham_unfolded_experiment::gathering::TokenFixture;
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::PremonitionEyes));
+    let olive = session
+        .observe_for_play()
+        .choices
+        .iter()
+        .find(|choice| choice.id.starts_with("tokens:olive:"))
+        .unwrap()
+        .id
+        .clone();
+    choose(&mut session, &olive);
+    choose(&mut session, "test:reveal");
+    choose(&mut session, "tokens:keep:0");
+    choose(&mut session, "tokens:keep:1");
+    choose(&mut session, "tokens:confirm");
+    let before = session.observe_for_play();
+    let play = before.play.as_ref().unwrap();
+    assert_eq!(
+        play.premonition.as_ref().unwrap().faces,
+        [TokenFace::ElderSign, TokenFace::PlusOne]
+    );
+    assert_eq!(play.bag_count, 14);
+    let eyes = play.players[2]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "11067")
+        .unwrap();
+    assert_eq!(eyes.uses, 9);
+    assert_eq!(play.actions_remaining[2], 3);
+    let unavailable = format!("action:ordinary:investigate:spell:{}", eyes.card.id);
+    assert!(
+        !before.choices.iter().any(|choice| choice.id == unavailable),
+        "The unresolved Eyes/Premonition group composition must be gated before payment, not reduced to a zero-charge physical-token selection"
+    );
+    assert!(
+        before
+            .choices
+            .iter()
+            .any(|choice| choice.id == "action:ordinary:investigate")
+    );
+    assert!(session.choose(before.revision, &unavailable).is_err());
+    assert_eq!(
+        session.observe_for_play(),
+        before,
+        "A forged unsupported activation cannot spend an action, resource, charge, or sealed token"
+    );
+    session.validate().unwrap();
 }
 
 #[test]

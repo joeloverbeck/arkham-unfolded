@@ -218,6 +218,15 @@ pub(super) fn activate_fight(
     asset_id: u16,
     enemy_id: u16,
 ) -> Result<(), RuleError> {
+    let chamber_bonus = super::tony_effects::attack_bonus(game, asset_id);
+    let last_ammo = game.players[actor.index()]
+        .assets
+        .iter()
+        .find(|asset| asset.card.id == asset_id)
+        .is_some_and(|asset| {
+            asset.uses == 1
+                && cards::definition(&asset.card.code).is_some_and(|card| card.has_trait("Firearm"))
+        });
     let operation = fight_operation(game, actor, asset_id, enemy_id)?;
     let enemy = game
         .scenario
@@ -233,6 +242,15 @@ pub(super) fn activate_fight(
         })
         .ok_or_else(|| RuleError("No supported enemy fight value is available.".into()))?;
     game.begin_test(operation, actor, Skill::Combat, i32::from(combat))?;
+    game.test
+        .as_mut()
+        .expect("Activated weapon test")
+        .tony
+        .last_ammo = last_ammo.then_some(asset_id);
+    // The selected retry interpretation resets this consumed temporary bonus;
+    // only printed weapon modifiers remain in the originating operation.
+    game.test.as_mut().expect("Activated weapon test").bonus += chamber_bonus;
+    super::tony_effects::consume_attack_bonus(game, asset_id);
     let player = &mut game.players[actor.index()];
     let index = player
         .assets

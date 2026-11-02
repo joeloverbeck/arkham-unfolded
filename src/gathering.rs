@@ -3,11 +3,21 @@
 //! The production decision path implements setup only. A complete scenario's
 //! abilities and phases remain unavailable; old experiment records stay separate.
 
+mod asset_entry;
 mod cards;
 mod combat;
 mod content;
+mod crypt_chill;
+pub use crypt_chill::CryptChillFixture;
 mod draws;
+mod elimination;
+mod harm_cards;
+pub use elimination::LifecycleFixture;
+pub use harm_cards::HarmFixture;
+mod encounter_search;
 pub use draws::DrawFixture;
+pub use encounter_search::SearchFixture;
+pub use player_cards::AssetFixture;
 pub mod continuity;
 pub mod inspection;
 mod phases;
@@ -15,10 +25,22 @@ mod player_cards;
 mod tokens;
 pub use scenario::{Resolution, ResolutionRecord};
 pub use tokens::TokenFixture;
+mod retry;
 mod runtime;
+pub use retry::RetryFixture;
+mod player_events;
 mod scenario;
+mod spell_events;
+pub use player_events::PlayerEventFixture;
 mod spells;
+pub use spell_events::SpellEventFixture;
 mod tony_cards;
+mod tony_effects;
+pub use tony_effects::TonyEffectFixture;
+mod test_boosts;
+mod test_cards;
+pub use test_boosts::BoostFixture;
+pub use test_cards::TestCardFixture;
 
 pub use runtime::{HostileFixture, PlayObservation};
 
@@ -28,7 +50,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, io::Read};
 
-pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-setup-v1";
+pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-runtime-v2";
 const DECK_PROJECTION: &str = include_str!("../docs/research/issue-1-decks.json");
 const DECK_PROJECTION_SHA256: &str =
     "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb";
