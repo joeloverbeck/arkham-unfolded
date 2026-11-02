@@ -42,6 +42,12 @@ Publishing an issue or applying a readiness label follows the authority and feas
 
 Before changing GitHub settings or diagnosing a publication refusal, read [GitHub administration](github-administration.md) for the accepted contribution/publication policy, the verified personal-repository request and recovery procedure. Read live settings as the authority; merge and issue acceptance remain separate decisions.
 
+## Current handoff
+
+Designate one issue comment as the current handoff and retain its URL. It owns the current candidate, completed checks, remaining acceptance checklist, next acceptance boundary and publication status. Read that comment before updating it, edit it by identity, and verify the exact body afterward. Reuse it as results and owner decisions arrive; carry forward accepted checks unless a later change invalidates them.
+
+Keep review results, native observations and authorization decisions as dated evidence records linked from the current handoff. Link each new record back to that handoff. Those records describe what happened at that revision and its evidence limits; current pending/completed status belongs in the handoff. Preserve the distinction between an owner's acceptance and observations the agent did not perform. New evidence or an owner decision updates the single current checklist without synchronizing copies of it across earlier comments.
+
 ## Bounded context reads
 
 Start with issue metadata and the current body. Discover comments in small pages, then fetch the bodies needed to understand the decisions and current authority:
@@ -54,20 +60,27 @@ gh api repos/joeloverbeck/arkham-unfolded/issues/comments/<comment-id> --jq .bod
 
 Follow linked decisions and continue pages as needed for the requested coverage. An index locates evidence; it does not replace reading relevant comment bodies. Read back each write using its returned issue or comment identity.
 
-For memory or historical records, scope by repository before searching task keywords. For a memory index with `applies_to` records, locate this repository's entries first:
+For memory or historical records, scope by repository before searching task keywords. Use bounded literal search for discovery. For a memory index with `applies_to` records, locate this repository's entries first:
 
 ```sh
-rg -n -B 3 -F 'applies_to: cwd=/home/joeloverbeck/src/arkham-unfolded;' /path/to/MEMORY.md
+scripts/tools search-context /path/to/MEMORY.md \
+  --find 'applies_to: cwd=/home/joeloverbeck/src/arkham-unfolded;' --context 3
 ```
 
-Use the matching section heading and its next peer heading to discover the current inclusive line range. Replace `START` and `END` below with those bounds, save a bounded page, then search only that page for the task terms and its continuation:
+Use the returned section heading verbatim. Replace `SELECTED GROUP` below with that heading's title; the search stays inside that section, including its children:
 
 ```sh
-scripts/tools read-context /path/to/MEMORY.md --start START --end END --max-bytes 6000 > /tmp/arkham-memory-page.txt &&
-rg -n 'record-check|publication|read-context|^NEXT|^END' /tmp/arkham-memory-page.txt
+scripts/tools search-context /path/to/MEMORY.md \
+  --heading '# Task Group: SELECTED GROUP' --find 'publication' --context 2
 ```
 
-Choose terms for the current task. Read matching passages in context and follow relevant evidence links. Follow each `NEXT` continuation before treating a section as exhausted; a page without a keyword match does not establish absence from later pages. Widen the search only when the scoped lookup has no relevant result or the task requires another repository's history.
+Choose literal terms for the current task. Read matching passages in context and follow relevant evidence links. Widen the search only when the scoped lookup has no relevant result or the task requires another repository's history. For structured records such as saves, inspect keys/counts first and select the fields needed for the current question; retain the full record on disk.
+
+`search-context` accepts a nonempty, case-sensitive `--find` string, an optional inclusive `--start`/`--end` range and an optional exact `--heading` line. It recognizes `#`–`######` headings outside backtick/tilde fenced blocks; a section ends at the next heading of the same or higher level. Setext headings are not section selectors. Missing or ambiguous headings fail explicitly; narrow the line range to select a repeated heading. `--context N` adds neighboring lines clipped to the selected scope and merges overlapping excerpts.
+
+The complete search output defaults to 6,000 bytes, adjustable with `--max-bytes` (512–12,000). Whole source lines and their original numbers are preserved; `...` marks omitted gaps. `MATCHES` counts matching lines in the whole selected scope. `NO MATCHES` with `END` is a completed empty result. An oversized next line is refused without silently shortening or skipping it.
+
+For a search `NEXT`, repeat the same path and query/scope options and replace the previous continuation arguments with the printed `--next-line`, `--max-bytes` and `--sha256`. The hash binds the complete source, query, heading, line bounds and context size. A changed source or search refuses continuation before emitting source text. Follow pages through `END` before treating the results as fully read.
 
 For a whole file, omit the range; to read from a known line through EOF, supply only `--start`:
 
@@ -76,7 +89,7 @@ scripts/tools read-context docs/foundation/mission.md
 scripts/tools read-context docs/principles/principles-for-repos.md --start 130
 ```
 
-For selected sections of long files, locate headings or rule identifiers with `rg -n`, then read the required inclusive range through the bounded reader. Take an explicit `--end` from discovered line numbers or a line count; a range beyond EOF is refused:
+For selected sections of long files, locate headings or rule identifiers with `search-context`, then read the required inclusive range through the bounded reader. Take an explicit `--end` from discovered line numbers or a line count; a range beyond EOF is refused:
 
 ```sh
 scripts/tools read-context docs/principles/principles-for-repos.md --start 130 --end 173

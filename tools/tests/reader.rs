@@ -11,7 +11,7 @@ fn read(path: &std::path::Path, args: &[&str]) -> std::process::Output {
 
 #[test]
 fn help_identifies_the_batch_file_and_both_byte_limits() {
-    for command in ["read-context", "read-context-batch"] {
+    for command in ["read-context", "read-context-batch", "search-context"] {
         let result = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
             .args([command, "--help"])
             .output()
@@ -25,6 +25,14 @@ fn help_identifies_the_batch_file_and_both_byte_limits() {
             assert!(help.contains("<REQUESTS_FILE>"), "{help}");
             assert!(help.contains("Path to a JSON file containing"), "{help}");
             assert!(help.contains("{path, start?, end?}"), "{help}");
+        }
+        if command == "search-context" {
+            assert!(help.contains("--find <FIND>"), "{help}");
+            assert!(help.contains("--heading <HEADING>"), "{help}");
+            assert!(
+                help.contains("repeat the same path and query/scope options"),
+                "{help}"
+            );
         }
     }
 }

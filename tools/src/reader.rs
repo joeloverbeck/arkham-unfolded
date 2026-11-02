@@ -3,6 +3,9 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf};
 
+mod search;
+pub use search::{Args as SearchArgs, page as search};
+
 #[derive(ClapArgs)]
 pub struct Args {
     /// UTF-8 file to read; never modified.
