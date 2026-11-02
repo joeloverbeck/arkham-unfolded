@@ -5,6 +5,7 @@ pub mod assets;
 pub mod continuity;
 pub mod encounter_discard;
 mod explanation;
+pub mod gathering;
 pub mod party;
 #[cfg(feature = "tabletop")]
 pub mod party_tabletop;
