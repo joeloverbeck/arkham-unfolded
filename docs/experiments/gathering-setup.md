@@ -6,11 +6,12 @@ actual three selected starting lists, rather than the prepared Study experiment'
 scripted hands. **Completing mulligans now begins ordinary scenario play.** The
 first full round and all following mythos draws have driver-level evidence.
 The earlier native pointer route through setup, one action and replay passed with
-readable substitutes. An artwork-enabled check now verifies card menus,
-investigator inspection and setup completion. Its offscreen-label and mulligan-owner
-display defects are repaired in this candidate, pending native recheck. First-action
-and replay checks with artwork, physical keyboard checks, a complete native
-playthrough and owner acceptance remain outstanding.
+readable substitutes. Artwork-enabled checks now verify card menus,
+investigator inspection, setup completion, a first action through Patrice's card
+menu, and replay back to the live table. The retest also verifies the repaired
+offscreen labels and all three mulligan owner labels. Physical keyboard checks,
+Act/Agenda inspection, a complete native playthrough and owner acceptance remain
+outstanding.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and
@@ -61,9 +62,17 @@ Save, Reopen, History and Replay operate on the full session; replay permits
 inspection but no live choices. Menus use Tab/Shift+Tab and Enter/Space; Esc
 closes them. Camera keys are suspended while a contextual menu captures input.
 Headless tests exercise the actual menu controls and save/replay protections.
-The [artwork-enabled native evidence](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6590517420)
-records the exercised route and its limits. The older no-art native retest below
-does not verify the new artwork/menu path.
+The [artwork-enabled setup evidence](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6590517420)
+and [action/replay retest with independent audit](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6590847507)
+record the exercised routes and their limits. The retest resumed a copy of the
+isolated setup save, began Patrice's turn through her card menu, and gained one
+resource: resources changed from 5 to 6 and actions from 3 to 2. Replay showed all
+three mulligan owner labels and returned to the unchanged live state. It covered
+setup replay moments, not replay of the resource action itself. The repaired
+offscreen headings no longer stacked at the window edge in the inspected views.
+Adjacent Arcane Research asset captions still run together in the live focused
+view; broader populated-layout readability remains unverified. The older no-art
+native retest below does not verify the new artwork/menu path.
 
 ### Artwork preparation and selection
 
