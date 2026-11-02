@@ -23,8 +23,22 @@ cargo run --locked --bin arkham-driver -- \
 
 Use a new file path to begin a separate setup. Repeating the command reopens that
 file. The JSON driver works offline without artwork or the source archive. This
-is a developer-accessible player interface; no new native tabletop screen or
-human gameplay acceptance is claimed.
+is a developer-accessible player interface.
+
+The native setup uses the same session and save file:
+
+```sh
+cargo run --locked --features tabletop --bin arkham-tabletop -- \
+  --experiment gathering --save /tmp/arkham-gathering-setup.session.json --no-art
+```
+
+Choose a lead investigator and use the offered mulligan controls. Click a card
+for its printed fields and effective rules. The encounter deck inspection lists
+its starting quantities without revealing shuffled order. Camera controls use
+the existing Overview, Scenario and investigator views. Save, Reopen, History
+and Replay operate on this setup; replay permits inspection but no live choices.
+Headless tests exercise the rendered lead button and save/replay protections.
+The actual window has not yet received visual, physical-input or owner acceptance.
 
 The driver prints the current observation and legal choices. Send one JSON
 request per line. At the initial decision, for example:
@@ -72,10 +86,19 @@ inventory is 40 physical cards: the other 14 have explicit destinations. Counts
 and public inventory summaries do not reveal hidden draw order.
 
 The component assembly does not yet present the scenario introduction or
-act/agenda narrative in a native screen. The final observation explains that
+advanced act/agenda narrative. The final observation explains that
 scenario play is unavailable and offers no
 invented gameplay choices. Full card effects, complete rounds, scenario endings,
-native presentation and their corresponding continuity checks remain part of
+complete native presentation and their corresponding continuity checks remain part of
 the complete Gathering target. The issue's
 [current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060)
 owns the exact implementation status and evidence.
+
+The verification-only runtime now exercises actual post-mulligan hands and ordinary
+actions, selected card effects, scenario advancement and ending records, phase
+flow, and interrupted draws and tests. Named hostile fixtures are explicitly
+marked and rejected by the ordinary driver and native setup launcher. Their
+passing tests do not establish complete selected-card coverage or native gameplay.
+In particular, [nested token groups and some Premonition compositions](../research/issue-89-token-compositions.md)
+still have explicit unsupported boundaries. The runtime is not enabled as ordinary
+scenario play while those and other reachable behaviors remain incomplete.

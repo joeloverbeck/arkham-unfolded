@@ -6,6 +6,8 @@ pub mod continuity;
 pub mod encounter_discard;
 mod explanation;
 pub mod gathering;
+#[cfg(feature = "tabletop")]
+pub mod gathering_tabletop;
 pub mod party;
 #[cfg(feature = "tabletop")]
 pub mod party_tabletop;

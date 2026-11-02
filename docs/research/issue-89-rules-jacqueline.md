@@ -273,6 +273,13 @@ research or invent a ruling.
 
 ## Custody and implementation implications
 
+Implementation follow-up: [selected token-composition findings](issue-89-token-compositions.md)
+record the FAQ's group-preservation requirement and the unresolved scope of
+Premonition on an existing multi-token request. The worked witnesses above do not
+establish arbitrary nested Olive/Prophecy/Eyes/Jacqueline combinations. Those
+compositions remain an explicit implementation boundary; a flat list of surviving
+physical tokens is insufficient evidence for their outer choices.
+
 Exact inspected path/variant/hash bindings are retained in
 `local/issue-89-evidence/rules-investigation/jacqueline-image-bindings.json`, SHA-256
 `fed902b207229b3f4b98a3c86b79e4598c0fb846d90a4534a9461f7f9f93ccde`.

@@ -93,6 +93,12 @@ pub fn run() -> Result<(), String> {
         Some(path) => load_session(path).map_err(|error| error.to_string())?,
         None => Session::new().map_err(|e| e.to_string())?,
     };
+    if game.is_verification_fixture() {
+        return Err(
+            "This record is a privileged verification fixture, not an ordinary Gathering setup."
+                .into(),
+        );
+    }
     save_session(&options.save, &game).map_err(|error| error.to_string())?;
     let mut replay = None;
     emit(&mut output, &response(&game, None, "ready", None))?;
@@ -153,10 +159,11 @@ pub fn run() -> Result<(), String> {
                     continue;
                 }
                 match load_session(&options.save) {
-                    Ok(saved) => {
+                    Ok(saved) if !saved.is_verification_fixture() => {
                         game = saved;
                         emit(&mut output, &response(&game, None, "reopened", None))?;
                     }
+                    Ok(_) => emit(&mut output, &response(&game, None, "refused", Some("A privileged verification fixture cannot replace the live player setup.".into())))?,
                     Err(error) => emit(
                         &mut output,
                         &response(&game, None, "refused", Some(error.to_string())),

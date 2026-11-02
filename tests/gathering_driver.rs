@@ -5,6 +5,29 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[test]
+fn ordinary_player_driver_refuses_privileged_fixture_records() {
+    use arkham_unfolded_experiment::gathering::{HostileFixture, Session, continuity};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("verification.json");
+    let fixture = Session::with_hostile_fixture(HostileFixture::PatriceCancellationVision);
+    continuity::save_session(&path, &fixture).unwrap();
+    let original = std::fs::read(&path).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_arkham-driver"))
+        .args(["--experiment", "gathering", "--save"])
+        .arg(&path)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "a fixture is not an ordinary player setup"
+    );
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(response["error"].as_str().unwrap().contains("verification"));
+    assert_eq!(std::fs::read(path).unwrap(), original);
+}
+
 fn run(directory: &Path, args: &[&str], requests: &[Value]) -> Vec<Value> {
     let mut child = Command::new(env!("CARGO_BIN_EXE_arkham-driver"))
         .current_dir(directory)

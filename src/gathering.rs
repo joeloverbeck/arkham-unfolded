@@ -3,8 +3,24 @@
 //! The production decision path implements setup only. A complete scenario's
 //! abilities and phases remain unavailable; old experiment records stay separate.
 
+mod cards;
+mod combat;
 mod content;
+mod draws;
+pub use draws::DrawFixture;
 pub mod continuity;
+pub mod inspection;
+mod phases;
+mod player_cards;
+mod tokens;
+pub use scenario::{Resolution, ResolutionRecord};
+pub use tokens::TokenFixture;
+mod runtime;
+mod scenario;
+mod spells;
+mod tony_cards;
+
+pub use runtime::{HostileFixture, PlayObservation};
 
 pub use crate::party::Investigator;
 use crate::{APP_VERSION, Choice, RuleError, TokenFace};
@@ -17,12 +33,19 @@ const DECK_PROJECTION: &str = include_str!("../docs/research/issue-1-decks.json"
 const DECK_PROJECTION_SHA256: &str =
     "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb";
 
+/// Effective selected-card text for readable inspection. Metadata does not imply
+/// that the corresponding gameplay ability has been implemented.
+pub fn card_rules(code: &str) -> Option<&'static str> {
+    cards::definition(code).map(|card| card.effective_text)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
     ChooseLead,
     Mulligan,
     GameplayUnavailable,
+    Playing,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,6 +128,10 @@ pub struct Observation {
     pub investigators: Vec<InvestigatorView>,
     pub scenario: Option<ScenarioSetup>,
     pub standard_bag: Vec<TokenFace>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification_fixture: Option<HostileFixture>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub play: Option<PlayObservation>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +142,8 @@ pub struct Recording {
     // Verification inputs belong to the private record, never to player views.
     seed: u64,
     decisions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verification_fixture: Option<HostileFixture>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,6 +163,10 @@ pub struct Session {
     decisions: Vec<String>,
     history: Vec<String>,
     moments: Vec<Observation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verification_fixture: Option<HostileFixture>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    runtime: Option<runtime::Game>,
 }
 
 #[derive(Deserialize)]
@@ -260,7 +293,7 @@ impl Session {
                 deck_projection_sha256: digest, taboo_id: 10, decks: sources },
             lead: None, mulligan_index: 0, investigators, decks,
             excluded_weaknesses: vec![vec![], vec![], vec![]], encounter_deck: vec![],
-            scenario: None, decisions: vec![], moments: vec![],
+            scenario: None, decisions: vec![], moments: vec![], verification_fixture: None, runtime: None,
             history: vec!["Fresh campaign preparation: choose the lead investigator. The retained starting lists use the three owner-selected basic weaknesses; no previous campaign history is imported. Rules and taboo 10 are pinned to the #89 research, not claimed to be the latest available release.".into()],
         };
         session.moments.push(session.observe());
@@ -268,6 +301,9 @@ impl Session {
     }
 
     fn decision_owner(&self) -> Option<Investigator> {
+        if let Some(game) = &self.runtime {
+            return game.decision_owner();
+        }
         (self.stage == Stage::Mulligan).then(|| {
             Investigator::ALL[(self.lead.expect("Mulligan lead").index() + self.mulligan_index) % 3]
         })
@@ -318,7 +354,29 @@ impl Session {
             Stage::GameplayUnavailable => {
                 "Setup is assembled. Gameplay is unavailable: selected card abilities, scenario phases and resolutions are not yet implemented. This is not a playable Gathering session or a scenario ending."
             }
+            Stage::Playing => {
+                choices = self.runtime.as_ref().expect("Runtime stage").choices();
+                if choices.is_empty() {
+                    "The privileged P1 verification reached its boundary. This is not a scenario resolution; ordinary complete Gathering remains unavailable."
+                } else {
+                    "Privileged rules verification: choose among implemented P1 opportunities. Ordinary complete Gathering remains unavailable."
+                }
+            }
         };
+        let mut investigators = self.investigators.clone();
+        if let Some(game) = &self.runtime {
+            for player in &game.players {
+                let view = &mut investigators[player.investigator.index()];
+                view.resources = player.resources;
+                view.damage = player.damage;
+                view.horror = player.horror;
+                view.physical_trauma = player.physical_trauma;
+                view.mental_trauma = player.mental_trauma;
+                view.hand = player.hand.clone();
+                view.deck_count = player.deck.len();
+                view.location = Some(player.location.clone());
+            }
+        }
         Observation {
             revision: self.revision,
             stage: self.stage,
@@ -326,11 +384,13 @@ impl Session {
             choices,
             history: self.history.clone(),
             source: self.source.clone(),
-            lead: self.lead,
+            lead: self.runtime.as_ref().map(|game| game.lead).or(self.lead),
             decision_owner: self.decision_owner(),
-            investigators: self.investigators.clone(),
+            investigators,
             scenario: self.scenario.clone(),
             standard_bag: standard_bag(),
+            verification_fixture: self.verification_fixture,
+            play: self.runtime.as_ref().map(runtime::Game::observe),
         }
     }
 
@@ -341,7 +401,7 @@ impl Session {
     pub fn choose(&mut self, revision: u64, id: &str) -> Result<(), RuleError> {
         if revision != self.revision {
             return Err(RuleError(
-                "This choice is stale. Observe the current setup decision.".into(),
+                "This choice is stale. Observe the current decision.".into(),
             ));
         }
         let choice = self
@@ -350,7 +410,7 @@ impl Session {
             .into_iter()
             .find(|choice| choice.id == id)
             .ok_or_else(|| {
-                RuleError("That choice is not available at this setup decision.".into())
+                RuleError("That choice is not available at the current decision.".into())
             })?;
         let mut candidate = self.clone();
         candidate.apply(id)?;
@@ -363,6 +423,11 @@ impl Session {
     }
 
     fn apply(&mut self, id: &str) -> Result<(), RuleError> {
+        if let Some(game) = &mut self.runtime {
+            game.choose(id)?;
+            self.history.append(&mut game.history);
+            return Ok(());
+        }
         if let Some(name) = id.strip_prefix("lead:") {
             self.lead = Investigator::ALL.into_iter().find(|i| i.id() == name);
             for offset in 0..3 {
@@ -412,6 +477,18 @@ impl Session {
                 self.assemble_scenario()?;
                 self.stage = Stage::GameplayUnavailable;
                 self.history.push("Opening hands and mulligans are complete; set-aside weaknesses return to their owners' shuffled decks without revelation. The original Gathering components are assembled: Study with six clues; 26 encounter cards; 14 cards in their other setup destinations. Stop before gameplay, which remains unimplemented. [RR p27; CG p2]".into());
+                if self.verification_fixture == Some(HostileFixture::GatheringFromSetup) {
+                    let mut game = runtime::Game::after_setup(
+                        self.lead.expect("Setup lead"),
+                        self.random,
+                        &self.investigators,
+                        &self.decks,
+                        &self.encounter_deck,
+                    );
+                    self.history.append(&mut game.history);
+                    self.runtime = Some(game);
+                    self.stage = Stage::Playing;
+                }
             }
         }
         Ok(())
@@ -503,11 +580,14 @@ impl Session {
             moments: self.moments.clone(),
             seed: self.seed,
             decisions: self.decisions.clone(),
+            verification_fixture: self.verification_fixture,
         }
     }
 
     pub fn same_run(&self, other: &Self) -> bool {
-        self.seed == other.seed && self.source == other.source
+        self.seed == other.seed
+            && self.source == other.source
+            && self.verification_fixture == other.verification_fixture
     }
 
     pub fn is_continuation_of(&self, prior: &Self) -> bool {
@@ -521,7 +601,7 @@ impl Session {
     }
 
     pub fn validate(&self) -> Result<(), RuleError> {
-        let mut reconstructed = Self::from_seed(self.seed)?;
+        let mut reconstructed = Self::from_origin(self.seed, self.verification_fixture)?;
         for decision in &self.decisions {
             reconstructed.choose(reconstructed.revision, decision)?;
         }
@@ -534,6 +614,39 @@ impl Session {
     }
 }
 
+impl Session {
+    /// Private verification setup, unavailable from ordinary player preparation.
+    #[doc(hidden)]
+    pub fn with_hostile_fixture(fixture: HostileFixture) -> Self {
+        Self::from_origin(89, Some(fixture)).expect("Bound hostile fixture")
+    }
+
+    pub fn is_verification_fixture(&self) -> bool {
+        self.verification_fixture.is_some()
+    }
+
+    fn from_origin(seed: u64, fixture: Option<HostileFixture>) -> Result<Self, RuleError> {
+        let mut session = Self::from_seed(seed)?;
+        if let Some(fixture) = fixture {
+            session.verification_fixture = Some(fixture);
+            if fixture == HostileFixture::GatheringFromSetup {
+                session.history.push("Privileged verification will continue from these actual opening hands into the incomplete runtime; ordinary play remains unavailable.".into());
+                session.moments = vec![session.observe()];
+                return Ok(session);
+            }
+            session.stage = Stage::Playing;
+            session.lead = Some(Investigator::Patrice);
+            session.history = vec!["Privileged source-derived runtime verification; this is not an ordinary fresh campaign.".into()];
+            let mut game =
+                runtime::Game::fixture(fixture, seed, &session.investigators, &session.decks);
+            session.history.append(&mut game.history);
+            session.runtime = Some(game);
+            session.moments = vec![session.observe()];
+        }
+        Ok(session)
+    }
+}
+
 pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
     if recording.source_revision != SOURCE_REVISION
         || recording.app_version != APP_VERSION
@@ -543,7 +656,7 @@ pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
             "Unsupported or empty Gathering setup recording.".into(),
         ));
     }
-    let mut reconstructed = Session::from_seed(recording.seed)?;
+    let mut reconstructed = Session::from_origin(recording.seed, recording.verification_fixture)?;
     for decision in &recording.decisions {
         reconstructed.choose(reconstructed.revision, decision)?;
     }
