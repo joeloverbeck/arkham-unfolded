@@ -298,6 +298,189 @@ fn ordinary_setup_tab_navigation_survives_graphics_admission() {
     );
 }
 
+#[test]
+fn production_world_labels_hide_outside_each_viewport_edge_and_keep_visible_edge_padding() {
+    for scale in [1., 2.] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = host(directory.path().join("projected-labels.json"));
+        let size = Vec2::new(1600., 1000.);
+        crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+        for _ in 0..3 {
+            app.update();
+        }
+        let world = app.world_mut();
+        let label = world
+            .query::<(Entity, &WorldLabel, &Text)>()
+            .iter(world)
+            .find_map(|(entity, label, text)| {
+                (label.1 && text.0.starts_with("Tony Morgan")).then_some(entity)
+            })
+            .expect("The production renderer supplies Tony's heading");
+        for (point, visible) in [
+            (Vec2::new(-20., 500.), false),
+            (Vec2::new(1620., 500.), false),
+            (Vec2::new(800., -20.), false),
+            (Vec2::new(800., 1020.), false),
+            (Vec2::new(1., 1.), true),
+            (Vec2::new(1599., 999.), true),
+            (Vec2::new(800., 500.), true),
+        ] {
+            let anchor = {
+                let world = app.world_mut();
+                let (camera, transform) = world
+                    .query_filtered::<(&Camera, &GlobalTransform), With<MainCamera>>()
+                    .single(world)
+                    .unwrap();
+                let anchor = camera
+                    .viewport_to_world(transform, point)
+                    .unwrap()
+                    .get_point(10.);
+                assert!(
+                    camera
+                        .world_to_viewport(transform, anchor)
+                        .unwrap()
+                        .abs_diff_eq(point, 0.01)
+                );
+                anchor
+            };
+            app.world_mut().get_mut::<WorldLabel>(label).unwrap().0 = anchor;
+            app.update();
+            assert_eq!(
+                *app.world().get::<Visibility>(label).unwrap() != Visibility::Hidden,
+                visible,
+                "scale={scale}, projected anchor={point}"
+            );
+            if visible {
+                let node = app.world().get::<Node>(label).unwrap();
+                let (Val::Px(left), Val::Px(top), Val::Px(width)) =
+                    (node.left, node.top, node.width)
+                else {
+                    panic!("World label placement uses measured logical pixels")
+                };
+                assert!(left >= 8. && left + width <= size.x - 8.);
+                assert!(top >= 72. && top < size.y - 100.);
+            }
+        }
+    }
+}
+
+#[test]
+fn mulligan_prompt_names_each_typed_owner_without_changing_the_camera() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host(directory.path().join("mulligan-owner.json"));
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .view()
+            .decision_owner
+            .is_none()
+    );
+    let pose = app.world().resource::<Orbit>().pose();
+    activate_choice(&mut app, "lead:patrice");
+    for owner in [
+        Investigator::Patrice,
+        Investigator::Jacqueline,
+        Investigator::Tony,
+    ] {
+        let view = app.world().resource::<Table>().view();
+        assert_eq!(view.stage, crate::gathering::Stage::Mulligan);
+        assert_eq!(view.decision_owner, Some(owner));
+        let text = rendered_text(&mut app);
+        assert_eq!(
+            text.matches(&format!("{}'s decision", owner.name()))
+                .count(),
+            1,
+            "The global mulligan prompt must identify its current owner"
+        );
+        for other in Investigator::ALL
+            .into_iter()
+            .filter(|other| *other != owner)
+        {
+            assert!(!text.contains(&format!("{}'s decision", other.name())));
+        }
+        assert_eq!(app.world().resource::<Orbit>().pose(), pose);
+        activate_choice(&mut app, "confirm-mulligan");
+    }
+    finish_presentation(&mut app);
+    let view = app.world().resource::<Table>().view();
+    assert!(view.play.is_some());
+    assert!(
+        !rendered_text(&mut app).contains("'s decision"),
+        "Scenario play already names its decision owner in the phase status"
+    );
+    assert_eq!(app.world().resource::<Orbit>().pose(), pose);
+}
+
+#[test]
+fn artwork_hover_labels_require_both_a_hovered_card_and_a_visible_anchor() {
+    use bevy::{
+        ecs::system::RunSystemOnce,
+        picking::{backend::HitData, hover::HoverMap, pointer::PointerId},
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host(directory.path().join("hover-label.json"));
+    let image = app
+        .world_mut()
+        .resource_mut::<Assets<Image>>()
+        .add(Image::default());
+    app.insert_resource(art::Art::with_images_for_test([("card-06003", image)]));
+    app.world_mut().resource_mut::<Table>().dirty = true;
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Focus(Area::Investigator(0)));
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+        &mut app,
+        Vec2::new(1600., 1000.),
+        1.,
+    );
+    for _ in 0..3 {
+        app.update();
+    }
+    let world = app.world_mut();
+    let (label, card) = world
+        .query::<(Entity, &motion::CardLabel)>()
+        .iter(world)
+        .find_map(|(entity, label)| {
+            world
+                .get::<ContextTarget>(label.0)
+                .is_some_and(|target| {
+                    target.source == controls::Source::Investigator(Investigator::Tony)
+                })
+                .then_some((entity, label.0))
+        })
+        .unwrap();
+    assert!(world.get::<HoverLabel>(label).is_some());
+    assert_eq!(*world.get::<Visibility>(label).unwrap(), Visibility::Hidden);
+    let (camera_entity, camera, transform) = world
+        .query_filtered::<(Entity, &Camera, &GlobalTransform), With<MainCamera>>()
+        .single(world)
+        .unwrap();
+    let outside = camera
+        .viewport_to_world(transform, Vec2::new(-20., 500.))
+        .unwrap()
+        .get_point(10.);
+    // A synthetic picking result exercises the same production label projection
+    // against the actual rendered card and its artwork-only label.
+    world
+        .resource_mut::<HoverMap>()
+        .entry(PointerId::Mouse)
+        .or_default()
+        .insert(card, HitData::new(camera_entity, 1., None, None));
+    world.run_system_once(world_labels).unwrap();
+    assert_eq!(
+        *world.get::<Visibility>(label).unwrap(),
+        Visibility::Inherited
+    );
+    world.get_mut::<Transform>(card).unwrap().translation = outside - Vec3::Y * 0.1;
+    world.run_system_once(world_labels).unwrap();
+    assert_eq!(
+        *world.get::<Visibility>(label).unwrap(),
+        Visibility::Hidden,
+        "Hover cannot pin an offscreen card's label to the viewport edge"
+    );
+}
+
 fn assert_pointer_lead_choice(raw_window_events: bool, continuing_health_observations: bool) {
     use bevy::{
         camera::RenderTarget,

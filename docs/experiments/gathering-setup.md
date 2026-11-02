@@ -6,9 +6,11 @@ actual three selected starting lists, rather than the prepared Study experiment'
 scripted hands. **Completing mulligans now begins ordinary scenario play.** The
 first full round and all following mythos draws have driver-level evidence.
 The earlier native pointer route through setup, one action and replay passed with
-readable substitutes. The artwork and contextual-menu continuation is a new
-candidate awaiting a bounded native check. Physical keyboard checks, a complete
-native playthrough and owner acceptance remain outstanding.
+readable substitutes. An artwork-enabled check now verifies card menus,
+investigator inspection and setup completion. Its offscreen-label and mulligan-owner
+display defects are repaired in this candidate, pending native recheck. First-action
+and replay checks with artwork, physical keyboard checks, a complete native
+playthrough and owner acceptance remain outstanding.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and
@@ -59,7 +61,9 @@ Save, Reopen, History and Replay operate on the full session; replay permits
 inspection but no live choices. Menus use Tab/Shift+Tab and Enter/Space; Esc
 closes them. Camera keys are suspended while a contextual menu captures input.
 Headless tests exercise the actual menu controls and save/replay protections.
-The older native retest below does not verify this new artwork/menu candidate.
+The [artwork-enabled native evidence](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6590517420)
+records the exercised route and its limits. The older no-art native retest below
+does not verify the new artwork/menu path.
 
 ### Artwork preparation and selection
 

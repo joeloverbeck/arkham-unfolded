@@ -28,7 +28,7 @@ Every decision autosaves to `local/gathering/session.json`. Run the same command
 
 During play, click cards, locations, decks and tokens for their contextual actions. Choose **Inspect** for enlarged artwork and effective rules. Table-wide decisions and save/replay controls remain in the bottom panel. Gathering's artwork collection includes all 94 card identities needed by the selected decks and original scenario, with the necessary card backs and shared tokens. It is separate from Party's smaller collection.
 
-The earlier native setup → first action → replay check used readable substitutes. The artwork and contextual-menu integration is a new candidate awaiting its own bounded native check; a complete native scenario playthrough and owner acceptance remain outstanding. See the [Gathering guide](docs/experiments/gathering-setup.md) for artwork preparation, controls, verified behavior and older-save compatibility.
+The artwork-enabled native check verified card menus, investigator inspection and completion of setup. It exposed two display issues—offscreen labels stacking at the edge and an unnamed mulligan owner—which are repaired in this candidate. Native verification of those repairs, the first action and replay remains outstanding; the earlier first-action/replay check used readable substitutes. A complete native scenario playthrough and owner acceptance also remain outstanding. See the [Gathering guide](docs/experiments/gathering-setup.md) for artwork preparation, controls, verified behavior and older-save compatibility.
 
 ## Launch and resume the party experiment
 

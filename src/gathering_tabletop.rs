@@ -1164,6 +1164,11 @@ fn render(
                     GOLD,
                 ));
             }
+            if view.play.is_none()
+                && let Some(owner) = view.decision_owner
+            {
+                p.spawn(text(format!("{}'s decision", owner.name()), 16., GOLD));
+            }
             p.spawn(text(&view.prompt, 18., PAPER));
             if table.replay.is_none() && !table.is_presenting() && !view.choices.is_empty() {
                 p.spawn(text(
@@ -1465,15 +1470,19 @@ fn world_labels(
         if hidden || (orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1) {
             *visibility = Visibility::Hidden;
         } else if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor) {
+            let viewport = camera
+                .0
+                .logical_viewport_size()
+                .unwrap_or(Vec2::new(1280., 720.));
+            if !Rect::from_corners(Vec2::ZERO, viewport).contains(point) {
+                *visibility = Visibility::Hidden;
+                continue;
+            }
             let width = if let Val::Px(width) = node.width {
                 width
             } else {
                 130.
             };
-            let viewport = camera
-                .0
-                .logical_viewport_size()
-                .unwrap_or(Vec2::new(1280., 720.));
             node.left = px((point.x - width / 2.).clamp(8., (viewport.x - width - 8.).max(8.)));
             node.top = px(point.y.clamp(
                 72.,
