@@ -486,37 +486,43 @@ pub(super) fn render(
         .0
         .world_to_viewport(camera.1, at)
         .unwrap_or(size * 0.5);
-    commands
-        .spawn((
-            feedback::menu::panel(anchor, size, 110., (size.y * 0.29).min(250.) + 20.),
-            BackgroundColor(INK),
-            GlobalZIndex(50),
-            Menu,
-            TabGroup::modal(),
-        ))
-        .observe(scroll_panel)
-        .with_children(|p| {
-            p.spawn(art.text(
-                format!(
-                    "{}\n{}",
-                    ui::turn_heading(&table.view()),
-                    feedback::KEYBOARD_HINT
-                ),
-                14.,
-                GOLD,
-            ));
-            if entries.is_empty() {
-                p.spawn(art.text("No legal action here at this decision.", 14., MUTED));
-            }
-            for (index, entry) in entries.into_iter().enumerate() {
-                let label = feedback::menu::label(&entry.label);
-                let entity = ui::button(&art, p, &label, entry.action);
-                p.commands().entity(entity).insert(feedback::menu::row());
-                if index == 0 {
-                    p.commands()
-                        .entity(entity)
-                        .insert(bevy::input_focus::AutoFocus);
-                }
-            }
-        });
+    use feedback::menu::{Item, MenuText};
+    let mut content = vec![Item::Text(
+        format!(
+            "{}\n{}",
+            ui::turn_heading(&table.view()),
+            feedback::KEYBOARD_HINT
+        ),
+        14.,
+        GOLD,
+    )];
+    if entries.is_empty() {
+        content.push(Item::Text(
+            "No legal action here at this decision.".into(),
+            14.,
+            MUTED,
+        ));
+    }
+    content.extend(
+        entries
+            .into_iter()
+            .map(|entry| Item::Action(feedback::menu::label(&entry.label), entry.action)),
+    );
+    let menu = feedback::menu::spawn(
+        &mut commands,
+        feedback::menu::panel(anchor, size, 110., (size.y * 0.29).min(250.) + 20.),
+        (BackgroundColor(INK), GlobalZIndex(50), Menu),
+        MenuText {
+            symbol_font: &art.symbol_font,
+            action_size: 14.,
+            action_pickable: Pickable::IGNORE,
+        },
+        content,
+        |row, action| {
+            row.observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
+                queue.0.push(action.clone());
+            });
+        },
+    );
+    commands.entity(menu).observe(scroll_panel);
 }
