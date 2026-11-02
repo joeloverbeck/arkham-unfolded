@@ -5,8 +5,9 @@ under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). It uses 
 actual three selected starting lists, rather than the prepared Study experiment's
 scripted hands. **Completing mulligans now begins ordinary scenario play.** The
 first full round and all following mythos draws have driver-level evidence.
-Actual-window readability, physical controls and owner gameplay acceptance remain
-unverified; this is not an accepted complete-scenario delivery.
+The native pointer route through setup, one action and replay also passes.
+Readability has known gaps; physical keyboard checks and owner gameplay acceptance
+remain outstanding. This is not an accepted complete-scenario delivery.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and
@@ -47,7 +48,8 @@ its starting quantities without revealing shuffled order. Camera controls use
 the existing Overview, Scenario and investigator views. Save, Reopen, History
 and Replay operate on this setup; replay permits inspection but no live choices.
 Headless tests exercise the rendered lead button and save/replay protections.
-The actual window has not yet received visual, physical-input or owner acceptance.
+The native retest below verifies a bounded pointer route; visual and owner
+acceptance remain outstanding.
 
 The driver prints the current observation and legal choices. Send one JSON
 request per line. At the initial decision, for example:
@@ -155,7 +157,20 @@ status, while preserving controls across ordinary sampling updates. The toolbar
 and decision panel now register ordered Tab groups. The previously failing
 tests pass, including raw mouse events at scales 1 and 2 with same-frame and
 separate-frame press/release. These checks establish the reproduced regression
-repair; a native retest is still required to verify the repaired executable.
+repair. The subsequent owner-authorized native retest of `0d5310b` passed the
+bounded route: lead choice, all three mulligans, ordinary scenario entry,
+Patrice gaining one resource (5 to 6 resources; 3 to 2 actions), replay from
+moment 1 of 8 to 2 of 8, and return to the live table. The isolated save ended at
+revision 6, stage `playing`. The pointer grant closed at 21:34:04 UTC and the
+isolated process was confirmed absent by 21:34:17, before the 21:36:14 deadline.
+The supervisor was explicitly interrupted for cleanup, so its exit 130 is not
+normal-exit evidence. Retest receipts and captures are under
+`~/.cache/agent-tmp/arkham-89-native-0d5310b/`.
+
+This establishes the observed native pointer route, not a full scenario
+playthrough, physical keyboard verification or owner acceptance. Captures also
+show overlapping card labels, missing separator glyphs and right-edge clipping;
+visual readability remains unfinished.
 Captures and event receipts from the failed check remain local under
 `~/.cache/agent-tmp/arkham-89-native-fbf82d3/`.
 
