@@ -469,43 +469,50 @@ pub(super) fn draw_menu(
         .and_then(|(camera, transform)| camera.world_to_viewport(transform, selection.at).ok())
         .unwrap_or(size * 0.5);
     let bottom_reserved = (size.y * 0.29).min(250.0) + 20.0;
-    commands
-        .spawn((
-            feedback::menu::panel(anchor, size, 68., bottom_reserved),
+    use feedback::menu::{Item, MenuText};
+    let mut content = vec![Item::Text(
+        format!(
+            "{} · Tony's decision\n{}",
+            source_name(&view, selection.source),
+            feedback::KEYBOARD_HINT,
+        ),
+        14.0,
+        GOLD,
+    )];
+    if entries.is_empty() {
+        content.push(Item::Text(
+            "No cards or legal actions here.".into(),
+            15.0,
+            MUTED,
+        ));
+    }
+    content.extend(entries.into_iter().map(|entry| {
+        let label = feedback::menu::label(&entry.label);
+        let label = match entry.warning {
+            Some(warning) => format!("{label}\n{warning}"),
+            None => label,
+        };
+        Item::Action(label, entry.action)
+    }));
+    let menu = feedback::menu::spawn(
+        &mut commands,
+        feedback::menu::panel(anchor, size, 68., bottom_reserved),
+        (
             BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.97)),
             GlobalZIndex(50),
             Menu,
-            TabGroup::modal(),
-        ))
-        .observe(scroll_panel)
-        .with_children(|p| {
-            p.spawn(art.text(
-                format!(
-                    "{} · Tony's decision\n{}",
-                    source_name(&view, selection.source),
-                    feedback::KEYBOARD_HINT,
-                ),
-                14.0,
-                GOLD,
-            ));
-            if entries.is_empty() {
-                p.spawn(art.text("No cards or legal actions here.", 15.0, MUTED));
-            }
-            for (index, entry) in entries.into_iter().enumerate() {
-                let label = feedback::menu::label(&entry.label);
-                let label = match entry.warning {
-                    Some(warning) => format!("{label}\n{warning}"),
-                    None => label,
-                };
-                let entity = button(&art, p, &label, entry.action, false);
-                p.commands()
-                    .entity(entity)
-                    .insert((feedback::context_button(), feedback::menu::row()));
-                if index == 0 {
-                    p.commands()
-                        .entity(entity)
-                        .insert(bevy::input_focus::AutoFocus);
-                }
-            }
-        });
+        ),
+        MenuText {
+            symbol_font: &art.symbol_font,
+            action_size: 16.,
+            action_pickable: Pickable::default(),
+        },
+        content,
+        |row, action| {
+            row.observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
+                queue.0.push(action.clone());
+            });
+        },
+    );
+    commands.entity(menu).observe(scroll_panel);
 }

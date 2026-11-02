@@ -6,6 +6,7 @@ use std::time::Duration;
 use crate::tabletop_standee_checks as standee_checks;
 
 mod encounter_discard;
+mod menu;
 mod skill_summary;
 
 #[test]

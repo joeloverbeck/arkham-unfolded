@@ -1,6 +1,91 @@
-//! Shared screen-space geometry for contextual action lists.
+//! Contextual action-list construction. Adapters own content, typed activation
+//! bindings, menu lifetime, placement constraints and scrolling policy.
 
-use bevy::prelude::*;
+use bevy::{
+    input_focus::{
+        AutoFocus,
+        tab_navigation::{TabGroup, TabIndex},
+    },
+    picking::hover::Hovered,
+    prelude::*,
+    ui_widgets::Button,
+};
+
+/// Ordered adapter-authored text and actions; labels already contain their
+/// presentation-only detail breaks. This module never interprets game choices.
+pub(crate) enum Item<A> {
+    Text(String, f32, Color),
+    Action(String, A),
+}
+
+/// The existing adapters use different action text sizes and picking targets.
+pub(crate) struct MenuText<'a> {
+    pub symbol_font: &'a Option<Handle<Font>>,
+    pub action_size: f32,
+    pub action_pickable: Pickable,
+}
+
+/// Build the complete modal list, acquiring focus at its first actionable row.
+/// The returned root accepts the adapter's scroll observer and cleanup markers.
+/// `bind` attaches typed activation behavior; creating/focusing a row does not
+/// invoke that behavior. Ordinary utility/inspection buttons remain independent.
+pub(crate) fn spawn<A>(
+    commands: &mut Commands,
+    panel: Node,
+    decoration: impl Bundle,
+    text: MenuText,
+    items: impl IntoIterator<Item = Item<A>>,
+    mut bind: impl FnMut(&mut EntityCommands, A),
+) -> Entity {
+    commands
+        .spawn((
+            panel,
+            decoration,
+            TabGroup::modal(),
+            ScrollPosition::default(),
+        ))
+        .with_children(|parent| {
+            let mut first = true;
+            for item in items {
+                match item {
+                    Item::Text(value, size, color) => {
+                        parent.spawn(crate::tabletop_harm_text::ui(
+                            value,
+                            size,
+                            color,
+                            text.symbol_font,
+                        ));
+                    }
+                    Item::Action(label, action) => {
+                        let mut button = parent.spawn((
+                            Button,
+                            Hovered::default(),
+                            TabIndex(0),
+                            AccessibleLabel::new(label.clone()),
+                            row(),
+                            super::context_button(),
+                            BackgroundColor(super::NEUTRAL),
+                        ));
+                        if first {
+                            button.insert(AutoFocus);
+                            first = false;
+                        }
+                        bind(&mut button, action);
+                        button.with_child((
+                            crate::tabletop_harm_text::ui(
+                                label,
+                                text.action_size,
+                                Color::srgb(0.91, 0.89, 0.81),
+                                text.symbol_font,
+                            ),
+                            text.action_pickable,
+                        ));
+                    }
+                }
+            }
+        })
+        .id()
+}
 
 /// Keep rows beside their source, fitting the actual viewport and reserved UI.
 /// Height follows content until the available space requires vertical scrolling.
@@ -55,7 +140,7 @@ pub(crate) fn label(value: &str) -> String {
 }
 
 /// A column lets its text wrap to the row's width without a fixed row height.
-pub(crate) fn row() -> Node {
+fn row() -> Node {
     Node {
         width: percent(100),
         min_width: px(0),
@@ -89,8 +174,15 @@ mod tests {
 
     #[test]
     fn long_action_rows_wrap_without_overlapping_inspect_at_viewport_edges() {
-        for size in [UVec2::new(1600, 1000), UVec2::new(420, 320)] {
+        for (size, adapter) in [UVec2::new(1600, 1000), UVec2::new(420, 320)]
+            .into_iter()
+            .flat_map(|size| {
+                ["tony", "party", "jacqueline", "replay"].map(|adapter| (size, adapter))
+            })
+        {
             let mut app = crate::tabletop_layout::heading_checks::app();
+            app.init_resource::<Assets<StandardMaterial>>()
+                .add_plugins(crate::tabletop_feedback::FeedbackPlugin);
             let window = app
                 .world_mut()
                 .spawn((
@@ -114,59 +206,113 @@ mod tests {
                 },
                 RenderTarget::Window(WindowRef::Entity(window)),
             ));
-            let panel = app
-                .world_mut()
-                .spawn(panel(
+            // Real adapter content, including their surrounding heading/hint
+            // and status recipes. Only the content varies; construction is production.
+            let hint = crate::tabletop_feedback::KEYBOARD_HINT;
+            let gold = super::super::GOLD;
+            let muted = Color::srgb(0.62, 0.71, 0.70);
+            let bottom_reserved = (size.y as f32 * 0.29).min(250.) + 20.;
+            let (top, bottom, action_size, mut content) = match adapter {
+                "tony" => (68., bottom_reserved, 16., vec![
+                    Item::Text(format!("Study · Tony's decision\n{hint}"), 14., gold),
+                    Item::Action("Investigate\n1 action\nAttack of opportunity: Ghoul Minion\n1 damage + 1 horror".into(), ()),
+                ]),
+                "party" => (110., bottom_reserved, 14., vec![
+                    Item::Text(format!("Patrice's turn\n{hint}"), 14., gold),
+                    Item::Action(label("Patrice: Investigate Study (one action; intellect against shroud 2)"), ()),
+                ]),
+                "jacqueline" => (12., 12., 16., vec![
+                    Item::Text("Promise of Power".into(), 17., gold),
+                    Item::Text(hint.into(), 14., muted),
+                    Item::Action(label("Commit Promise of Power (+4 willpower; add a curse)"), ()),
+                    Item::Action("Dismiss".into(), ()),
+                ]),
+                "replay" => (12., 12., 16., vec![
+                    Item::Text("Promise of Power".into(), 17., gold),
+                    Item::Text(hint.into(), 14., muted),
+                    Item::Text("Recorded view / inspection only".into(), 14., muted),
+                    Item::Text("No available game action".into(), 14., muted),
+                    Item::Action("Dismiss".into(), ()),
+                ]),
+                _ => unreachable!(),
+            };
+            content.push(Item::Action("Inspect".into(), ()));
+            let panel = spawn(
+                &mut app.world_mut().commands(),
+                super::panel(
                     size.as_vec2() - Vec2::splat(2.),
                     size.as_vec2(),
-                    12.,
-                    12.,
-                ))
-                .id();
-            let mut rows = Vec::new();
-            let mut texts = Vec::new();
-            for label in [
-                "Patrice: Investigate Study (one action; intellect against shroud 2)\nAttack of opportunity: Ghoul Minion, 1 damage and 1 horror",
-                "Inspect",
-            ] {
-                let text = app
-                    .world_mut()
-                    .spawn(crate::tabletop_harm_text::ui(
-                        super::label(label),
-                        16.,
-                        Color::WHITE,
-                        &None,
-                    ))
-                    .id();
-                let row = app.world_mut().spawn(row()).add_child(text).id();
-                app.world_mut().entity_mut(panel).add_child(row);
-                rows.push(row);
-                texts.push(text);
-            }
+                    top,
+                    bottom,
+                ),
+                BackgroundColor(Color::BLACK),
+                MenuText {
+                    // Absent symbol art must retain readable English glyphs.
+                    symbol_font: &None,
+                    action_size,
+                    action_pickable: if adapter == "party" {
+                        Pickable::IGNORE
+                    } else {
+                        Pickable::default()
+                    },
+                },
+                content,
+                |_, ()| {},
+            );
+            app.world_mut().flush();
             app.finish();
             app.cleanup();
             for _ in 0..5 {
                 app.update();
             }
-            let panel_rect = rect(app.world(), panel);
-            let action_rect = rect(app.world(), rows[0]);
-            let inspect_rect = rect(app.world(), rows[1]);
-            let text_rect = rect(app.world(), texts[0]);
-            assert!(panel_rect.min.cmpge(Vec2::ZERO).all());
-            assert!(panel_rect.max.cmple(size.as_vec2()).all());
-            assert!(action_rect.height() > inspect_rect.height());
-            assert!(action_rect.max.y < inspect_rect.min.y);
-            assert!(text_rect.min.cmpge(action_rect.min).all());
-            assert!(text_rect.max.cmple(action_rect.max).all());
-            assert!(
-                text_rect.height() > 32.,
-                "long text must wrap: {text_rect:?}"
+            let world = app.world();
+            let children = world.get::<Children>(panel).unwrap();
+            let rows: Vec<_> = children
+                .iter()
+                .filter(|e| world.get::<Button>(*e).is_some())
+                .collect();
+            assert_eq!(
+                world.resource::<bevy::input_focus::InputFocus>().get(),
+                Some(rows[0])
             );
-            let layout = app
-                .world()
-                .get::<bevy::text::TextLayoutInfo>(texts[0])
-                .unwrap();
-            assert!(!layout.glyphs.is_empty(), "test must lay out real glyphs");
+            assert!(world.get::<TabGroup>(panel).is_some());
+            let panel_rect = rect(app.world(), panel);
+            assert!(panel_rect.min.x >= 12. && panel_rect.max.x <= size.x as f32 - 12.);
+            assert!(panel_rect.min.y >= top.min(size.y as f32 * 0.2));
+            assert!(panel_rect.max.y <= size.y as f32 - bottom + 0.1);
+            let mut previous_bottom = f32::NEG_INFINITY;
+            for child in children.iter() {
+                let child_rect = rect(world, child);
+                assert!(
+                    child_rect.min.y > previous_bottom,
+                    "{adapter}: children overlap"
+                );
+                previous_bottom = child_rect.max.y;
+                let text = if world.get::<Button>(child).is_some() {
+                    world.get::<Children>(child).unwrap()[0]
+                } else {
+                    child
+                };
+                let text_rect = rect(world, text);
+                let layout = world.get::<bevy::text::TextLayoutInfo>(text).unwrap();
+                assert!(!layout.glyphs.is_empty(), "{adapter}: real glyphs required");
+                assert!(text_rect.min.cmpge(child_rect.min - Vec2::splat(0.1)).all());
+                assert!(text_rect.max.cmple(child_rect.max + Vec2::splat(0.1)).all());
+                assert!(
+                    layout.size.x <= text_rect.width() + 0.1,
+                    "{adapter}: glyphs overflow"
+                );
+            }
+            if adapter != "replay" {
+                let action_text = world.get::<Children>(rows[0]).unwrap()[0];
+                assert!(
+                    rect(world, action_text).height() > 32.,
+                    "{adapter}: details must wrap"
+                );
+                assert!(
+                    rect(world, rows[0]).height() > rect(world, *rows.last().unwrap()).height()
+                );
+            }
         }
     }
 }

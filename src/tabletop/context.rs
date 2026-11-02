@@ -447,89 +447,76 @@ pub(super) fn show(
                 queue.0.push(Action::DismissContext);
             }
         });
-    commands
-        .spawn((
-            crate::tabletop_feedback::menu::panel(context.anchor, viewport, 12., 12.),
+    use crate::tabletop_feedback::menu::{self, Item, MenuText};
+    let mut content = vec![
+        Item::Text(title, 17., GOLD),
+        Item::Text(crate::tabletop_feedback::KEYBOARD_HINT.into(), 14., MUTED),
+    ];
+    if table.replay.is_some() {
+        content.push(Item::Text(
+            "Recorded view / inspection only".into(),
+            14.,
+            MUTED,
+        ));
+    }
+    if choices.is_empty() {
+        content.push(Item::Text("No available game action".into(), 14., MUTED));
+    }
+    for choice in choices {
+        let (label, action) = if matches!(source, Source::Token(_)) {
+            let marked = context.pending.as_deref() == Some(choice.id.as_str());
+            (
+                format!(
+                    "{}{}",
+                    if marked { "Selected: " } else { "" },
+                    cancellation_label(choice)
+                ),
+                Action::PrepareCancellation(generation, choice.id.clone()),
+            )
+        } else {
+            (
+                choice_label(choice).to_owned(),
+                Action::ContextChoose(generation, view.revision, choice.id.clone()),
+            )
+        };
+        content.push(Item::Action(menu::label(&label), action));
+    }
+    if let Some(id) = context
+        .pending
+        .as_ref()
+        .filter(|_| table.replay.is_none() && matches!(source, Source::Token(_)))
+    {
+        content.push(Item::Action(
+            "Confirm cancellation".into(),
+            Action::ContextChoose(generation, view.revision, id.clone()),
+        ));
+    }
+    content.push(Item::Action("Dismiss".into(), Action::DismissContext));
+    if let Source::Card(index) = source {
+        content.push(Item::Action("Inspect".into(), Action::Inspect(index)));
+    }
+    let menu = menu::spawn(
+        commands,
+        menu::panel(context.anchor, viewport, 12., 12.),
+        (
             BackgroundColor(INK),
             BorderColor::all(GOLD),
             GlobalZIndex(66),
-            TabGroup::modal(),
-            ScrollPosition::default(),
             Panel,
-        ))
-        .observe(scroll_panel)
-        .with_children(|parent| {
-            // A modal tab group must acquire focus before Tab can navigate it.
-            let mut first_button = true;
-            let mut menu_button = |parent: &mut ChildSpawnerCommands,
-                                   art: &Art,
-                                   label: &str,
-                                   action: Action,
-                                   _primary: bool| {
-                let label = crate::tabletop_feedback::menu::label(label);
-                let entity = button(parent, art, &label, action, false);
-                parent.commands().entity(entity).insert((
-                    crate::tabletop_feedback::context_button(),
-                    crate::tabletop_feedback::menu::row(),
-                ));
-                if first_button {
-                    parent
-                        .commands()
-                        .entity(entity)
-                        .insert(bevy::input_focus::AutoFocus);
-                    first_button = false;
-                }
-            };
-            parent.spawn(art.text(title, 17.0, GOLD));
-            parent.spawn(art.text(crate::tabletop_feedback::KEYBOARD_HINT, 14.0, MUTED));
-            if table.replay.is_some() {
-                parent.spawn(art.text("Recorded view / inspection only", 14.0, MUTED));
-            }
-            if choices.is_empty() {
-                parent.spawn(art.text("No available game action", 14.0, MUTED));
-            }
-            for choice in choices {
-                if matches!(source, Source::Token(_)) {
-                    let marked = context.pending.as_deref() == Some(choice.id.as_str());
-                    menu_button(
-                        parent,
-                        art,
-                        &format!(
-                            "{}{}",
-                            if marked { "Selected: " } else { "" },
-                            cancellation_label(choice)
-                        ),
-                        Action::PrepareCancellation(generation, choice.id.clone()),
-                        marked,
-                    );
-                } else {
-                    menu_button(
-                        parent,
-                        art,
-                        choice_label(choice),
-                        Action::ContextChoose(generation, view.revision, choice.id.clone()),
-                        true,
-                    );
-                }
-            }
-            if let Some(id) = context
-                .pending
-                .as_ref()
-                .filter(|_| table.replay.is_none() && matches!(source, Source::Token(_)))
-            {
-                menu_button(
-                    parent,
-                    art,
-                    "Confirm cancellation",
-                    Action::ContextChoose(generation, view.revision, id.clone()),
-                    true,
-                );
-            }
-            menu_button(parent, art, "Dismiss", Action::DismissContext, false);
-            if let Source::Card(index) = source {
-                menu_button(parent, art, "Inspect", Action::Inspect(index), false);
-            }
-        });
+        ),
+        MenuText {
+            symbol_font: &art.symbol_font,
+            action_size: 16.,
+            action_pickable: Pickable::default(),
+        },
+        content,
+        |row, action| {
+            row.observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
+                queue.0.push(action.clone());
+            });
+        },
+    );
+    commands.entity(menu).observe(scroll_panel);
 }
 
 pub(super) fn focus_strip(
