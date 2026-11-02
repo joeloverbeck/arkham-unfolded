@@ -1,6 +1,6 @@
 # Selected token composition: source findings
 
-2026-11-02. Read-only investigation for #89; no implementation or activation claim.
+2026-11-02. Source investigation and bounded implementation evidence for [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). Ordinary play remains gated.
 
 The sources establish group preservation and advance declaration. They do **not** supply an exact ruling for every selected composition. Eyes/Olive has a useful source-derived interpretation. Dark Prophecy's mixed-group eligibility, Jacqueline's cancellation of a mixed group, and Premonition's replacement scope on an existing multi-token request remain qualified below.
 
@@ -43,4 +43,83 @@ The competing one-position reading would leave N−1 pending positions and mater
 
 ## Implementation consequence
 
-Keep outer positions, physical-token membership, declaration order, and each ignore/cancel decision separately representable. The existing J1–J4 witnesses can remain valid without proving these broader combinations. A later consumer test should use the distinguishing cases above only after its interpretation is explicitly justified. No code was edited in this investigation.
+Keep outer positions, physical-token membership, declaration order, and each ignore/cancel decision separately representable. The existing J1–J4 witnesses can remain valid without proving these broader combinations.
+
+## Bounded Eyes → Olive candidate
+
+The implementation follows the **qualified source-derived interpretation**, not a published exact Eyes/Olive ruling. Its finite rule is: declare Olive on one Eyes position before revealing; reveal the entire batch together; choose an Eyes position while Olive's group is intact; ignore the unchosen positions; only if Olive's position survives, choose its two survivors. On success, compare every surviving member of the chosen position with ignored tokens, awarding at most one additional clue. A token ignored inside the selected group is not itself a surviving chosen token. Cancellation is distinct from ignoring.
+
+This follows the published Statue/Olive outer-before-inner order (FAQ p17), with Eyes supplying the same outer choose-one shape. The multiple-token treatment and one-trigger limit come from §2.5 (p12). Applying Eyes' matching rule to inner ignored tokens follows the explicit Eyes/Katarina example (p22); applying that rule to Olive's surviving group is a derivation. These sources justify this reversible candidate without manufacturing an exact publisher example.
+
+The public Session witnesses use original Study (shroud 2), Jacqueline's unmodified willpower 5, no Ghouls, no Dark Future, one spent Eyes charge, and exhausted Olive. The independent physical batch is `G=[-1,-2,skull]`, `A=[-1]`; skull is 0 here.
+
+| Player decision | Resolved tokens | Ignored tokens | Total / clues |
+| --- | --- | --- | --- |
+| Choose A, with no inner Olive choice | A's `-1` | All three G members | 4 / 2 |
+| Choose G, then keep `-1` and skull | G's `-1, skull` | G's `-2`, A's `-1` | 4 / 2 |
+| Choose G, then keep `-2` and skull | G's `-2, skull` | Both `-1` tokens | 3 / 1 |
+
+A second-position variant uses the same physical draw order with `A=[-1]`, `G=[-2,skull,-1]`. Choosing G and retaining `-2,-1` gives total 2 and 2 clues: only the later retained member matches A. This challenges both position identity and checking all survivors.
+
+`tests/gathering_tokens.rs` exercises these outcomes through real Eyes activation, not a direct test-result setter. Pending outer and inner selections save/reopen with the same four held physical tokens and choices; replay reproduces the selected outcomes. Bag custody is 16 → 12 → 16; the action, charge and Olive exhaustion happen once. The outer window refuses a forged flattened token choice. A separate witness with active Dark Future refuses Olive's nested declaration without exhausting it or changing the saved state.
+
+The implemented path does **not** settle Dark Future's protected partial groups, Dark Prophecy's mixed-group preference, Jacqueline's mixed-group cancellation, or Premonition replacing a multi-token request. Those restrictions remain. The fixed decks also do not permit simultaneous Olive/Katarina or two controlled copies of unique Olive, so those are not invented requirements for this candidate. This bounded consumer evidence is neither full selected-card coverage nor ordinary/native play acceptance.
+
+## Remaining playable-entry dependency
+
+The follow-up source audit found no additional attributable publisher ruling
+that eliminates these differences. An exact published example for every
+combination is unnecessary; general rules can establish an implementation.
+Here the unresolved choices change physical draws, cancellation opportunities
+or mandatory weakness resolution, so a convenient test outcome is insufficient.
+
+The clearest mandatory case is Premonition remaining in play when Jacqueline
+ends her turn with Dark Future. The latter requests five tokens. With two
+numerical tokens sealed on Premonition, whole-request replacement resolves only
+those two and leaves Dark Future in play. One-position replacement leaves four
+bag positions, which could include elder sign and remove the weakness. The
+whole-request reading remains the strongest provisional interpretation; it does
+not settle the other mixed-group predicates.
+
+This reachability is source-derived and the current refusal is code-confirmed:
+the turn-end frame calls `tokens::begin_dark_future`, whose five-token request
+reaches the multi-token Premonition guard. No combined public Session execution
+is claimed for that mandatory case. Ordinary entry remains closed. Voice of Ra
+with sealed Premonition is now withheld before payment through the shared action
+eligibility path; a forged activation preserves the entire Session, while an
+ordinary supported action still provokes the actual engaged enemy. This contains
+the optional failure without asserting that the official composition is illegal
+or that the mandatory Dark Future case has been solved.
+
+The recommendation is to preserve this implementation and obtain the specific
+publisher clarification. A build using explicit local interpretations or a
+reduced interaction set would change the supported-content or fidelity promise.
+The owner need not adjudicate the official rule. The Grim Rule (FAQ §1.5) is an
+at-table expedient, not an independent oracle for hardcoding all such cases.
+
+### Publisher question draft — not sent
+
+These questions concern original versions under Legacy FAQ 2.5 and taboo 10,
+including §2.5, §2.10 and the p17 Olive/Grotesque Statue nesting examples:
+
+1. Jacqueline has Dark Future (`60403`) and Premonition (`04199`) holding two
+   numerical tokens. Does Premonition replace the whole mandatory five-token
+   request, or one position with four bag tokens still to reveal? Does the same
+   answer govern Voice of Ra's (`60416`, taboo) three-token request and symbol
+   reward? If positions remain, can their optional would-reveal reactions occur?
+2. In a normal one-token test, Jacqueline (`60401`) adds two tokens and Olive
+   (`04197`) replaces one position. The batch is `G=[auto-fail,-1,-2]`, `A=[0]`,
+   `B=[+1]`. What is the selection/cancellation order and cancellation unit?
+   Can G be cancelled as one auto-fail unit, or must physical tokens be selected?
+   How does Dark Future affect a mixed protected/unprotected group?
+3. Dark Prophecy (`04032`, taboo) is outermost, Olive occupies one of its five
+   positions, that group is `[skull,-1,-2]` and the other positions are numerical.
+   Must the group be selected for containing skull? May Olive then ignore that
+   sole skull, or is eligibility checked against the eventual survivors?
+4. Eyes of the Dreamer (`11067`) reveals one additional token, with Olive on one
+   position and Dark Future active. The positions are `G=[skull,-1,-2]` and
+   `A=[0]`. What outer/inner selections are legal when the unchosen group would
+   contain a symbol that cannot be ignored?
+
+No external inquiry has been sent. These questions isolate replacement scope,
+cancellation units, symbol eligibility and protected partial groups.

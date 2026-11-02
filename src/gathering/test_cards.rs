@@ -457,7 +457,7 @@ pub(super) fn skill_modifier(game: &Game, test: &SkillTest) -> i32 {
     let added_will = if test
         .source_card
         .as_ref()
-        .is_some_and(|card| matches!(card.code.as_str(), "06117" | "06201"))
+        .is_some_and(|card| matches!(card.code.as_str(), "06117" | "06201" | "06164"))
     {
         base_skill(game, test.tester, Skill::Willpower)
             + player

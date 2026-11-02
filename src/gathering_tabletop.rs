@@ -2,7 +2,7 @@
 
 use crate::{
     gathering::{
-        Investigator, Observation, Session,
+        Investigator, Observation, PresentationMoment, Session,
         continuity::{self, Replay},
     },
     tabletop_camera::{CameraMode, Capture, FrameInput, Orbit},
@@ -13,12 +13,18 @@ use crate::{
 };
 use bevy::{
     input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
-    input_focus::{InputFocus, tab_navigation::TabIndex},
+    input_focus::{
+        AutoFocus, InputFocus,
+        tab_navigation::{TabGroup, TabIndex},
+    },
     picking::hover::Hovered,
     prelude::*,
     ui_widgets::{Activate, Button},
 };
 use std::path::PathBuf;
+
+mod motion;
+mod play;
 
 const INK: Color = Color::srgb(0.035, 0.055, 0.065);
 const PAPER: Color = Color::srgb(0.91, 0.89, 0.81);
@@ -38,6 +44,10 @@ enum Action {
     History,
     Close,
     Focus(Area),
+    Follow,
+    PresentationNext,
+    PresentationPause,
+    PresentationFinish,
 }
 
 #[derive(Resource, Default)]
@@ -53,6 +63,13 @@ struct Table {
     history_open: bool,
     epoch: u64,
     dirty: bool,
+    live_follow: bool,
+    presentation: Vec<PresentationMoment>,
+    presentation_index: usize,
+    presentation_clock: f32,
+    presentation_paused: bool,
+    last_rendered: Option<Observation>,
+    motion_origins: motion::Origins,
 }
 
 impl Table {
@@ -66,14 +83,37 @@ impl Table {
             history_open: false,
             epoch: 0,
             dirty: true,
+            live_follow: false,
+            presentation: vec![],
+            presentation_index: 0,
+            presentation_clock: 0.,
+            presentation_paused: false,
+            last_rendered: None,
+            motion_origins: motion::Origins::default(),
         }
     }
 
     fn view(&self) -> Observation {
-        self.replay.as_ref().map_or_else(
+        if let Some(replay) = &self.replay {
+            return replay.current().clone();
+        }
+        self.presentation.get(self.presentation_index).map_or_else(
             || self.session.observe_for_play(),
-            |replay| replay.current().clone(),
+            |moment| self.session.observe_presentation(moment),
         )
+    }
+
+    fn is_presenting(&self) -> bool {
+        self.replay.is_none() && self.presentation_index < self.presentation.len()
+    }
+
+    fn next_presentation(&mut self) {
+        if self.is_presenting() {
+            self.presentation_index += 1;
+            self.presentation_clock = 0.;
+            self.epoch += 1;
+            self.dirty = true;
+        }
     }
 
     fn modal(&self) -> bool {
@@ -89,6 +129,10 @@ struct ScenePiece;
 struct Panel;
 #[derive(Component)]
 struct WorldLabel(Vec3, bool);
+#[derive(Component)]
+struct ScrollablePanel {
+    inspection: bool,
+}
 
 pub fn run() -> Result<(), String> {
     let mut save = PathBuf::from("local/gathering/setup.session.json");
@@ -150,7 +194,16 @@ fn install(app: &mut App) {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (handle_actions, camera_controls, render, world_labels).chain(),
+            (
+                handle_actions,
+                advance_presentation,
+                keyboard_panel_scroll,
+                camera_controls,
+                render,
+                motion::animate,
+                world_labels,
+            )
+                .chain(),
         )
         .add_systems(Last, request_redraw.in_set(RequestRedraw));
 }
@@ -174,18 +227,60 @@ fn handle_actions(
         }
         match action {
             Action::Choose(epoch, revision, id)
-                if epoch == table.epoch && table.replay.is_none() && !table.modal() =>
+                if epoch == table.epoch
+                    && table.replay.is_none()
+                    && !table.modal()
+                    && !table.is_presenting() =>
             {
                 let path = table.save_path.clone();
                 table.notice =
                     match continuity::commit_choice(&path, &mut table.session, revision, &id) {
-                        Ok(()) => "Decision saved.".into(),
+                        Ok(()) => {
+                            table.presentation =
+                                table.session.presentation_after(revision).to_vec();
+                            table.presentation_index = 0;
+                            table.presentation_clock = 0.;
+                            table.presentation_paused = false;
+                            table.epoch += 1;
+                            orbit.update_follow_target(Some(layout::focus(play::focus(
+                                &table.view(),
+                            ))));
+                            "Decision saved.".into()
+                        }
                         Err(error) => format!("Decision not committed: {error}"),
                     };
                 table.dirty = true;
             }
             Action::Choose(_, _, _) => {}
-            Action::Focus(area) => orbit.focus(layout::focus(area)),
+            Action::Focus(area) => {
+                orbit.focus(layout::focus(area));
+                if table.is_presenting() {
+                    table.presentation_paused = true;
+                }
+                table.dirty = true;
+            }
+            Action::Follow => {
+                let following = !orbit.is_following();
+                orbit.set_following(following);
+                orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
+                table.dirty = true;
+            }
+            Action::PresentationNext if !table.modal() => {
+                table.next_presentation();
+                orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
+            }
+            Action::PresentationPause if table.is_presenting() => {
+                table.presentation_paused = !table.presentation_paused;
+                table.dirty = true;
+            }
+            Action::PresentationFinish if !table.modal() && table.is_presenting() => {
+                table.presentation_index = table.presentation.len();
+                table.presentation_clock = 0.;
+                table.epoch += 1;
+                table.dirty = true;
+                orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
+            }
+            Action::PresentationNext | Action::PresentationPause | Action::PresentationFinish => {}
             Action::Close => {
                 table.epoch += 1;
                 table.inspection = None;
@@ -215,6 +310,11 @@ fn handle_actions(
                 match continuity::load_session(&table.save_path) {
                     Ok(session) if !session.is_verification_fixture() => {
                         table.epoch += 1;
+                        if session != table.session {
+                            table.presentation.clear();
+                            table.presentation_index = 0;
+                            table.presentation_clock = 0.;
+                        }
                         table.session = session;
                         table.inspection = None;
                         table.history_open = false;
@@ -232,10 +332,13 @@ fn handle_actions(
             Action::Replay => {
                 match Replay::new(table.session.recording()) {
                     Ok(replay) => {
+                        table.live_follow = orbit.is_following();
                         table.epoch += 1;
                         table.replay = Some(replay);
                         table.inspection = None;
                         table.history_open = false;
+                        orbit.set_following(true);
+                        orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
                     }
                     Err(error) => table.notice = format!("Replay unavailable: {error}"),
                 }
@@ -245,12 +348,16 @@ fn handle_actions(
                 if let Some(replay) = &mut table.replay {
                     replay.next();
                     table.dirty = true;
+                    orbit.set_following(true);
+                    orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
                 }
             }
             Action::Back => {
                 if let Some(replay) = &mut table.replay {
                     replay.back();
                     table.dirty = true;
+                    orbit.set_following(true);
+                    orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
                 }
             }
             Action::Live => {
@@ -259,6 +366,8 @@ fn handle_actions(
                 table.inspection = None;
                 table.history_open = false;
                 table.dirty = true;
+                orbit.set_following(table.live_follow);
+                orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
             }
             Action::Reopen | Action::Save => {}
         }
@@ -293,7 +402,7 @@ fn text(value: impl Into<String>, size: f32, color: Color) -> impl Bundle {
     )
 }
 
-fn button(parent: &mut ChildSpawnerCommands, label: &str, action: Action) {
+fn button(parent: &mut ChildSpawnerCommands, label: &str, action: Action) -> Entity {
     parent
         .spawn((
             Button,
@@ -311,7 +420,8 @@ fn button(parent: &mut ChildSpawnerCommands, label: &str, action: Action) {
         .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| queue.0.push(action.clone()))
         .with_children(|p| {
             p.spawn(text(label, 15., PAPER));
-        });
+        })
+        .id()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -352,6 +462,7 @@ fn card(
     commands.spawn((
         ScenePiece,
         WorldLabel(at + Vec3::Y * 0.1, false),
+        motion::CardLabel(entity),
         text(title, 13., INK),
         Node {
             position_type: PositionType::Absolute,
@@ -366,6 +477,9 @@ fn card(
 }
 
 fn inspection_text(view: &Observation, code: &str) -> Option<String> {
+    if view.play.is_some() {
+        return play::inspect(view, code);
+    }
     if let Some(text) = crate::gathering::inspection::card(code) {
         return Some(text);
     }
@@ -391,38 +505,64 @@ fn inspection_text(view: &Observation, code: &str) -> Option<String> {
 }
 
 type RenderedContent = Or<(With<ScenePiece>, With<Panel>)>;
+type PriorRenderedCard<'a> = (
+    Entity,
+    Option<&'a motion::PhysicalCard>,
+    Option<&'a Transform>,
+    Option<&'a motion::CardMotion>,
+);
 
 fn render(
     mut commands: Commands,
     mut table: ResMut<Table>,
     health: Res<RenderHealth>,
-    old: Query<Entity, RenderedContent>,
+    old: Query<PriorRenderedCard<'_>, RenderedContent>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    orbit: Res<Orbit>,
 ) {
     if !table.dirty && !health.is_changed() {
         return;
     }
     table.dirty = false;
-    for entity in &old {
+    let mut origins = motion::Origins::from_view(table.last_rendered.as_ref());
+    for (entity, card, transform, motion) in &old {
+        if let (Some(card), Some(transform)) = (card, transform) {
+            origins.remember(card.0, transform.translation, motion);
+        }
         commands.entity(entity).despawn();
     }
+    table.motion_origins = origins;
     let view = table.view();
+    table.last_rendered = Some(view.clone());
     for (index, investigator) in view.investigators.iter().enumerate() {
         for (slot, hand) in investigator.hand.iter().enumerate() {
-            card(
+            let entity = card(
                 &mut commands,
                 &mut meshes,
                 &mut materials,
                 layout::hand_position(index, investigator.hand.len(), slot),
-                &hand.title,
+                &format!("{} · copy {}", hand.title, hand.id),
                 &hand.code,
-                investigator.selected_mulligan.contains(&hand.id),
+                investigator.selected_mulligan.contains(&hand.id)
+                    || view
+                        .play
+                        .as_ref()
+                        .and_then(|play| play.test.as_ref())
+                        .is_some_and(|test| test.selected.contains(&hand.id)),
                 PAPER,
             );
+            commands
+                .entity(entity)
+                .insert(motion::PhysicalCard(hand.id));
         }
-        for (slot, permanent) in investigator.permanents.iter().enumerate() {
-            card(
+        for (slot, permanent) in investigator
+            .permanents
+            .iter()
+            .enumerate()
+            .filter(|_| view.play.is_none())
+        {
+            let entity = card(
                 &mut commands,
                 &mut meshes,
                 &mut materials,
@@ -432,6 +572,9 @@ fn render(
                 false,
                 PAPER,
             );
+            commands
+                .entity(entity)
+                .insert(motion::PhysicalCard(permanent.id));
         }
         card(
             &mut commands,
@@ -451,13 +594,18 @@ fn render(
             ScenePiece,
             WorldLabel(layout::investigator_heading(index), true),
             text(
-                format!(
-                    "{}\nResources {} · Deck {} · Damage {} · Horror {}",
-                    investigator.investigator.name(),
-                    investigator.resources,
-                    investigator.deck_count,
-                    investigator.damage,
-                    investigator.horror
+                view.play.as_ref().map_or_else(
+                    || {
+                        format!(
+                            "{}\nResources {} · Deck {} · Damage {} · Horror {}",
+                            investigator.investigator.name(),
+                            investigator.resources,
+                            investigator.deck_count,
+                            investigator.damage,
+                            investigator.horror
+                        )
+                    },
+                    |play| play::player_status(play, index),
                 ),
                 15.,
                 PAPER,
@@ -470,7 +618,9 @@ fn render(
             Pickable::IGNORE,
         ));
     }
-    if let Some(scenario) = &view.scenario {
+    if view.play.is_some() {
+        play::render(&mut commands, &mut meshes, &mut materials, &view);
+    } else if let Some(scenario) = &view.scenario {
         for (side, codes, label) in [
             (
                 layout::ScenarioBookSide::Agenda,
@@ -541,16 +691,34 @@ fn render(
             BackgroundColor(INK),
         ))
         .with_children(|p| {
-            p.spawn(text("The Gathering · Standard · Setup", 22., GOLD));
+            p.spawn(text(
+                if view.play.is_some() {
+                    "The Gathering · Standard"
+                } else {
+                    "The Gathering · Standard · Setup"
+                },
+                22.,
+                GOLD,
+            ));
             for (label, area) in [
                 ("Overview", Area::Overview),
                 ("Scenario", Area::Scenario),
+                ("Test", Area::Test),
                 ("Tony", Area::Investigator(0)),
                 ("Patrice", Area::Investigator(1)),
                 ("Jacqueline", Area::Investigator(2)),
             ] {
                 button(p, label, Action::Focus(area));
             }
+            button(
+                p,
+                if orbit.is_following() {
+                    "Automatic camera: on"
+                } else {
+                    "Automatic camera: off"
+                },
+                Action::Follow,
+            );
         });
     commands
         .spawn((
@@ -568,6 +736,10 @@ fn render(
                 ..default()
             },
             BackgroundColor(INK),
+        ))
+        .insert((
+            ScrollPosition::default(),
+            ScrollablePanel { inspection: false },
         ))
         .observe(scroll_panel)
         .with_children(|p| {
@@ -587,6 +759,20 @@ fn render(
                 ));
             }
             p.spawn(text(&view.prompt, 18., PAPER));
+            if table.is_presenting() {
+                p.spawn(text(
+                    format!(
+                        "Event {} of {} · The decision is saved",
+                        table.presentation_index + 1,
+                        table.presentation.len()
+                    ),
+                    14.,
+                    MUTED,
+                ));
+            }
+            if let Some(status) = play::status(&view) {
+                p.spawn(text(status, 16., GOLD));
+            }
             p.spawn(Node {
                 flex_direction: FlexDirection::Row,
                 flex_wrap: FlexWrap::Wrap,
@@ -602,14 +788,29 @@ fn render(
                     if replay.index() + 1 < replay.len() {
                         button(row, "Next moment", Action::Next);
                     }
-                    button(row, "Return to live setup", Action::Live);
+                    button(row, "Return to live table", Action::Live);
+                } else if table.is_presenting() && !table.modal() {
+                    button(row, "Next event", Action::PresentationNext);
+                    button(
+                        row,
+                        if table.presentation_paused {
+                            "Resume presentation"
+                        } else {
+                            "Pause presentation"
+                        },
+                        Action::PresentationPause,
+                    );
+                    button(row, "Show pending choice", Action::PresentationFinish);
                 } else if !table.modal() {
-                    for choice in &view.choices {
-                        button(
+                    for (index, choice) in view.choices.iter().enumerate() {
+                        let entity = button(
                             row,
                             &choice.label,
                             Action::Choose(table.epoch, view.revision, choice.id.clone()),
                         );
+                        if index == 0 {
+                            row.commands().entity(entity).insert(AutoFocus);
+                        }
                     }
                 }
             });
@@ -645,12 +846,17 @@ fn render(
                     ..default()
                 },
                 BackgroundColor(INK),
+                ScrollPosition::default(),
+                ScrollablePanel { inspection: true },
+                TabGroup::modal(),
             ))
             .observe(scroll_panel)
             .with_children(|p| {
                 if let Some((title, code)) = &table.inspection {
                     p.spawn(text(title, 24., GOLD));
-                    p.spawn(text(format!("Card {code}"), 14., MUTED));
+                    if code.len() == 5 && code.bytes().all(|byte| byte.is_ascii_digit()) {
+                        p.spawn(text(format!("Card {code}"), 14., MUTED));
+                    }
                     if let Some(rules) = inspection_text(&view, code) {
                         p.spawn(text(rules, 17., PAPER));
                     }
@@ -660,7 +866,8 @@ fn render(
                         p.spawn(text(line, 15., PAPER));
                     }
                 }
-                button(p, "Close", Action::Close);
+                let close = button(p, "Close", Action::Close);
+                p.commands().entity(close).insert(AutoFocus);
             });
     }
 }
@@ -677,13 +884,61 @@ fn scroll_panel(event: On<PointerScroll>, mut nodes: Query<(&mut ScrollPosition,
     }
 }
 
+fn keyboard_panel_scroll(
+    keys: Res<ButtonInput<KeyCode>>,
+    table: Res<Table>,
+    mut panels: Query<(&ScrollablePanel, &mut ScrollPosition, &ComputedNode)>,
+) {
+    for (panel, mut scroll, node) in &mut panels {
+        if panel.inspection != table.modal() {
+            continue;
+        }
+        let maximum = (node.content_size().y - node.size().y).max(0.);
+        if keys.just_pressed(KeyCode::PageDown) {
+            scroll.y = (scroll.y + node.size().y * 0.8).min(maximum);
+        }
+        if keys.just_pressed(KeyCode::PageUp) {
+            scroll.y = (scroll.y - node.size().y * 0.8).max(0.);
+        }
+        if keys.just_pressed(KeyCode::End) {
+            scroll.y = maximum;
+        }
+        if keys.just_pressed(KeyCode::Home) {
+            scroll.y = 0.;
+        }
+    }
+}
+
+fn advance_presentation(
+    time: Res<PresentationTime>,
+    health: Res<RenderHealth>,
+    mut table: ResMut<Table>,
+    mut orbit: ResMut<Orbit>,
+) {
+    if !health.allows_play() || table.modal() || table.presentation_paused || !table.is_presenting()
+    {
+        return;
+    }
+    table.presentation_clock += time.delta_secs();
+    let duration = table
+        .presentation
+        .get(table.presentation_index)
+        .map_or(2., |moment| {
+            (1. + moment.caption.chars().count() as f32 / 40.).clamp(2., 6.)
+        });
+    if table.presentation_clock >= duration {
+        table.next_presentation();
+        orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn camera_controls(
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
     scroll: Res<AccumulatedMouseScroll>,
     window: Single<&Window>,
-    table: Res<Table>,
+    mut table: ResMut<Table>,
     time: Res<PresentationTime>,
     mut orbit: ResMut<Orbit>,
     mut camera: Single<&mut Transform, With<MainCamera>>,
@@ -715,17 +970,33 @@ fn camera_controls(
         reduced_motion: false,
     });
     **camera = step.transform;
+    if step.stopped_following {
+        table.dirty = true;
+    }
+    if step.manual_navigation && table.is_presenting() {
+        table.presentation_paused = true;
+        table.dirty = true;
+    }
 }
 
 fn world_labels(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     orbit: Res<Orbit>,
-    mut labels: Query<(&WorldLabel, &mut Node, &mut Visibility)>,
+    mut labels: Query<(
+        &WorldLabel,
+        Option<&motion::CardLabel>,
+        &mut Node,
+        &mut Visibility,
+    )>,
+    cards: Query<&Transform>,
 ) {
-    for (label, mut node, mut visibility) in &mut labels {
+    for (label, card, mut node, mut visibility) in &mut labels {
+        let anchor = card
+            .and_then(|card| cards.get(card.0).ok())
+            .map_or(label.0, |transform| transform.translation + Vec3::Y * 0.1);
         if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
             *visibility = Visibility::Hidden;
-        } else if let Ok(point) = camera.0.world_to_viewport(camera.1, label.0) {
+        } else if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor) {
             let width = if let Val::Px(width) = node.width {
                 width
             } else {
@@ -740,8 +1011,20 @@ fn world_labels(
     }
 }
 
-fn request_redraw(orbit: Res<Orbit>, health: Res<RenderHealth>, mut redraw: ResMut<Redraw>) {
-    if orbit.is_moving() || health.is_checking() {
+fn request_redraw(
+    orbit: Res<Orbit>,
+    health: Res<RenderHealth>,
+    table: Res<Table>,
+    moving: Query<(), With<motion::CardMotion>>,
+    mut redraw: ResMut<Redraw>,
+) {
+    if (!moving.is_empty()
+        && !table.modal()
+        && !(table.is_presenting() && table.presentation_paused))
+        || orbit.is_moving()
+        || health.is_checking()
+        || (table.is_presenting() && !table.presentation_paused && !table.modal())
+    {
         redraw.request();
     }
 }

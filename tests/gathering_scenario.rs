@@ -511,7 +511,13 @@ fn lead_orders_voices_and_ghoul_doom_after_the_act_when_opportunity() {
         choose(&mut session, "round-end:decline-act");
         let at = session.observe();
         assert_eq!(at.decision_owner, Some(Investigator::Tony));
-        assert_eq!(at.choices.len(), 2);
+        assert_eq!(
+            at.choices
+                .iter()
+                .filter(|choice| choice.id != "undo")
+                .count(),
+            2
+        );
         let (first, second) = if voices_first {
             (voices_choice.as_str(), "round-end:ghoul-doom")
         } else {
@@ -524,6 +530,7 @@ fn lead_orders_voices_and_ghoul_doom_after_the_act_when_opportunity() {
             between
                 .choices
                 .iter()
+                .filter(|choice| choice.id != "undo")
                 .map(|choice| choice.id.as_str())
                 .collect::<Vec<_>>(),
             [second]

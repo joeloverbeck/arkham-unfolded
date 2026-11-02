@@ -145,7 +145,14 @@ fn losing_sign_magick_requires_a_saved_arcane_slot_choice_before_test_cleanup() 
     reveal(&mut session);
     choose(&mut session, &format!("chill:{sign}"));
     let pending = session.observe();
-    assert_eq!(pending.choices.len(), 3);
+    assert_eq!(
+        pending
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "undo")
+            .count(),
+        3
+    );
     assert!(pending.play.as_ref().unwrap().test.is_some());
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("slot.json");

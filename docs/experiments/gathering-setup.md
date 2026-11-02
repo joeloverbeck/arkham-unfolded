@@ -25,7 +25,7 @@ Use a new file path to begin a separate setup. Repeating the command reopens tha
 file. The JSON driver works offline without artwork or the source archive. This
 is a developer-accessible player interface.
 
-Records from the previous setup-v1 checkpoint use the preserved reader described
+Records from previous setup-v1 and runtime-v2 checkpoints use the preserved readers described
 under [Record compatibility](#record-compatibility), rather than this build.
 
 The native setup uses the same session and save file:
@@ -88,12 +88,10 @@ set-aside cards, and shuffles the exact 26-card encounter multiset. The source
 inventory is 40 physical cards: the other 14 have explicit destinations. Counts
 and public inventory summaries do not reveal hidden draw order.
 
-The component assembly does not yet present the scenario introduction or
-advanced act/agenda narrative. The final observation explains that
-scenario play is unavailable and offers no
-invented gameplay choices. Full card effects, complete rounds, scenario endings,
-complete native presentation and their corresponding continuity checks remain part of
-the complete Gathering target. The issue's
+The ordinary setup boundary explains that scenario play is unavailable.
+The verification runtime records scenario introduction and advancement moments,
+but complete card coverage and native play acceptance remain part of the complete
+Gathering target. The issue's
 [current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060)
 owns the exact implementation status and evidence.
 
@@ -106,27 +104,59 @@ In particular, [nested token groups and some Premonition compositions](../resear
 still have explicit unsupported boundaries. The runtime is not enabled as ordinary
 scenario play while those and other reachable behaviors remain incomplete.
 
+The current runtime increment adds Backpack's searched attachments, Ethereal Form,
+Peter Sylvestre's end-of-turn healing and the documented Eyes of the Dreamer / Olive
+composition. Safe Undo is offered until a new hidden-information or randomness
+boundary; Undo remains in chronological history and replay. The original
+encounter assembly is unchanged: independent inventory checks account for every
+physical copy and its setup destination, rather than trusting set names alone.
+
+Recorded presentation moments retain automatic token reveals, test results,
+draws, harm and scenario transitions before cleanup. Replay can inspect these
+moments without recomputing outcomes. The native adapter consumes the same public
+projections for locations, enemies, assets, threats, commitments, pending costs
+and token custody. Its live playback offers Next event, Pause/Resume and Show
+pending choice; rules choices wait until that playback finishes. Inspection pauses
+playback and card movement. Camera follow is optional in live play and resumes
+on replay navigation after a manual override.
+
+Each rules decision is saved before its presentation begins. Reopening that
+session in the same window preserves an unfinished presentation; a fresh process
+opens at the saved pending choice, with the intervening moments retained in
+Replay. The visual cursor is not a separately persisted game decision. Compact
+JSON keeps the measured 250-choice defeat recording below the existing 8 MiB
+limit. This is a measured path, not an upper bound for every possible game.
+Headless production-system checks cover these adapter behaviors; physical input,
+readability, artwork and owner acceptance still require the actual window.
+
 ## Record compatibility
 
 New Gathering sessions and recordings identify
-`c35be2c:issue-89-gathering-runtime-v2`. This distinguishes the expanded runtime
-state from `c35be2c:issue-89-gathering-setup-v1`; it does not claim a new rules or
-taboo update. The envelope format and other experiments' readers are unchanged.
+`c35be2c:issue-89-gathering-runtime-v3`. This identifies the expanded card state
+and player-visible projections; it does not claim a new rules or taboo update.
+The envelope format and other experiments' readers are unchanged.
 
-Setup-v1 records remain readable and resumable with preserved commit
-`7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3`. This applies to **ordinary setup
-records as well as verification fixtures**, even though ordinary setup behavior
+Historical records remain readable and resumable with their preserved source:
+
+| Record source identity | Preserved reader commit |
+| --- | --- |
+| `c35be2c:issue-89-gathering-setup-v1` | `7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3` |
+| `c35be2c:issue-89-gathering-runtime-v2` | `f431de9af84bedf20e0024370b9e6aaa8819a1ef` |
+
+This applies to **ordinary setup records as well as verification fixtures**, even though ordinary setup behavior
 has not expanded. The current reader refuses their source identity before
 decoding the Session or Recording payload, names the required preserved reader,
 and leaves the original bytes unchanged. No personal-save migration is performed.
 Do not edit a record's version fields to bypass the check: runtime fields and
 the exact replayed decision history differ.
 
-From a repository clone containing that commit, prepare its separate reader:
+From a repository clone containing the required commit, prepare its separate reader.
+The example selects runtime-v2; use the setup-v1 commit from the table for that source:
 
 ```sh
-gathering_reader_dir=$(mktemp -d /tmp/arkham-gathering-setup-v1.XXXXXX)
-git archive 7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3 | tar -x -C "$gathering_reader_dir"
+gathering_reader_commit=f431de9af84bedf20e0024370b9e6aaa8819a1ef
+gathering_reader_dir=$(mktemp -d /tmp/arkham-gathering-reader.XXXXXX)
+git archive "$gathering_reader_commit" | tar -x -C "$gathering_reader_dir"
 cargo build --locked --manifest-path "$gathering_reader_dir/Cargo.toml" \
   --target-dir "$gathering_reader_dir/target" --bin arkham-driver
 ```
@@ -148,7 +178,7 @@ cp -- /absolute/path/original.session.json "$gathering_resume_dir/session.json"
 The driver prints the exact pending observation. Use its offered revision and
 choice ID to continue. For recorded replay, send `{"op":"replay"}`, then
 `{"op":"next"}` or `{"op":"back"}`; `{"op":"live"}` returns to the saved
-live state and `{"op":"quit"}` exits. A completed setup-v1 record stays at its
+live state and `{"op":"quit"}` exits. A completed historical setup record stays at its
 original unavailable-gameplay boundary. It does not become a new playable run.
 
 For native ordinary setup resume, build and run the same preserved source with
@@ -222,3 +252,10 @@ revelation and pending skill test: the preserved reader loaded/replayed all four
 and resumed each nonterminal case. The new reader rejects all eight original
 session/recording files with the explicit compatibility message. This establishes
 the preserved-reader route, not a migration or native visual acceptance.
+
+The runtime-v3 change repeats that compatibility probe against actual runtime-v2
+source at `f431de9`: eight historical session/recording files cover the same four
+positions. Its reader loaded and replayed all cases and resumed nonterminal
+sessions; the new reader refused both loading and replacement without changing
+any original bytes. These probes use temporary developer records, not personal
+saves.

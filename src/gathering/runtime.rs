@@ -27,6 +27,7 @@ pub enum HostileFixture {
     GatheringHunters,
     SimultaneousAssetDefeat,
     DissonantVoicesAssetPlay,
+    TestModifierFreeze,
     JacquelineProtectedTokens,
     JacquelineCancellation,
     Tokens(super::tokens::TokenFixture),
@@ -42,6 +43,10 @@ pub enum HostileFixture {
     PlayerEvents(super::player_events::PlayerEventFixture),
     Harm(super::harm_cards::HarmFixture),
     CryptChill(super::crypt_chill::CryptChillFixture),
+    Peter(super::peter::PeterFixture),
+    Ethereal(super::ethereal_form::EtherealFixture),
+    Backpack(super::backpack::BackpackFixture),
+    SelectedWitness(super::selected_witnesses::SelectedWitness),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,7 +87,7 @@ pub enum Window {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum Phase {
+pub enum Phase {
     Investigation,
     Enemy,
     Upkeep,
@@ -175,6 +180,7 @@ pub(super) enum Frame {
     // reaction window, which closes before any ST7 result is applied.
     SuccessWindow,
     AssetEntry(super::player_cards::AssetEntry),
+    Backpack(super::backpack::BackpackDecision),
     AfterTest(super::retry::AfterTestState),
     RetryEvent {
         owner: Investigator,
@@ -213,6 +219,10 @@ pub(super) enum Frame {
         investigator: Investigator,
         pending: Vec<u16>,
     },
+    Peter {
+        owner: Investigator,
+    },
+    ExpireEthereal,
     Opportunity {
         investigator: Investigator,
         action: String,
@@ -349,16 +359,32 @@ pub(super) struct SkillTest {
     pub results_started: bool,
     pub eyes_match: bool,
     pub final_result: Option<(i32, bool, i32)>,
+    pub final_modifiers: Option<TestModifiers>,
     pub lita_checked: bool,
     pub retaliate_checked: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestModifiers {
+    /// Effective icons of committed cards, including their printed conditions.
+    pub cards: i32,
+    /// Paid boosts, the originating ability, and applicable static modifiers.
+    pub other: i32,
+    /// Pending until the resolved tokens' numerical contribution is known.
+    pub chaos: Option<i32>,
+    pub automatic_failure: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestView {
+    pub source_card: Option<CardView>,
+    pub ignored_tokens: Vec<TokenFace>,
+    pub cancelled_tokens: Vec<TokenFace>,
     pub tester: Investigator,
     pub skill: Skill,
     pub difficulty: i32,
     pub base_skill: i32,
+    pub modifiers: TestModifiers,
     pub selected: Vec<u16>,
     pub committed: Vec<CommittedCard>,
     pub revealed: Vec<TokenFace>,
@@ -379,6 +405,11 @@ pub struct TestResult {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayObservation {
+    pub pending: super::presentation::PendingView,
+    pub ethereal: Vec<Investigator>,
+    pub phase: Phase,
+    pub backpacks: Vec<super::backpack::AttachedCards>,
+    pub searched_player: Vec<CardView>,
     pub searched_encounter: Vec<CardView>,
     pub lead: Investigator,
     pub window: Window,
@@ -402,6 +433,10 @@ pub struct PlayObservation {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct Game {
+    #[serde(skip)]
+    pub presentation: Vec<super::moments::StepSnapshot>,
+    pub ethereal: Vec<Investigator>,
+    pub backpacks: Vec<super::backpack::AttachedCards>,
     pub tony: super::tony_effects::TonyRoundState,
     pub players: Vec<PlayerState>,
     pub lead: Investigator,
@@ -501,7 +536,7 @@ impl Game {
             })
             .collect();
         Self {
-            players,lead,agenda:1,agenda_doom:0,act:1,
+            players,lead,agenda:1,agenda_doom:0,act:1,backpacks:vec![],ethereal:vec![],presentation:vec![],
             encounter_deck: encounters.iter().enumerate().map(|(index, code)| CardView {id:300+index as u16,code:code.clone(),title:content::title(code).expect("Encounter").into(),weakness:false}).collect(),
             encounter_discard:vec![],scenario:ScenarioState::new(),round:1,phase:Phase::Investigation,actor:None,frames:vec![],test:None,completed_tests:vec![],
             history:vec!["The first investigation phase begins directly after actual preparation; skip the first mythos phase. Investigators choose their turn order. [RR p23–24]".into()],
@@ -619,7 +654,7 @@ impl Game {
             encounter_discard: vec![], encounter_deck, scenario, round: 2, phase: Phase::Mythos, actor: None,
             frames: vec![Frame::Revelation(PendingRevelation { card: encounter, drawn_by: Investigator::Patrice, started: false, cancelled: false })],
             test: None, completed_tests: vec![], history: vec!["Privileged P1 verification state: Patrice is in Cellar, Tony in Attic, Jacqueline in Hallway; no other modifier or same-location supporting ability is active. This is not ordinary setup or evidence of complete playable Gathering.".into()],
-            random: seed, bag: super::standard_bag(), fixture_tokens: vec![TokenFace::MinusOne, TokenFace::MinusTwo], token_cursor: 0, ordinary_flow:false,tokens:None,jacqueline_uses:0,action_in_progress:None,stopped:None,premonition:None,tony:Default::default(),
+            random: seed, bag: super::standard_bag(), fixture_tokens: vec![TokenFace::MinusOne, TokenFace::MinusTwo], token_cursor: 0, ordinary_flow:false,tokens:None,jacqueline_uses:0,action_in_progress:None,stopped:None,premonition:None,tony:Default::default(),backpacks:vec![],ethereal:vec![],presentation:vec![],
         };
         super::scenario::prepare_fixture(&mut game, fixture);
         if let HostileFixture::Tokens(case) = fixture {
@@ -661,6 +696,41 @@ impl Game {
         }
         if let HostileFixture::CryptChill(case) = fixture {
             super::crypt_chill::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::Peter(case) = fixture {
+            super::peter::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::Ethereal(case) = fixture {
+            super::ethereal_form::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::Backpack(case) = fixture {
+            super::backpack::configure_fixture(&mut game, case);
+        }
+        if let HostileFixture::SelectedWitness(case) = fixture {
+            super::selected_witnesses::configure_fixture(&mut game, case);
+        }
+        if fixture == HostileFixture::TestModifierFreeze {
+            let Some(Frame::Revelation(original)) = game.frames.pop() else {
+                unreachable!("Prepared encounter");
+            };
+            game.encounter_deck.push(original.card);
+            let card = take(&mut game.encounter_deck, "01162");
+            game.frames.push(Frame::Revelation(PendingRevelation {
+                card,
+                drawn_by: Investigator::Patrice,
+                started: false,
+                cancelled: false,
+            }));
+            let peter = take(&mut game.players[1].deck, "02033");
+            game.players[1].assets.push(AssetState {
+                card: peter,
+                ready: true,
+                uses: 0,
+                damage: 0,
+                horror: 0,
+            });
+            game.set_fixture_tokens(vec![TokenFace::MinusFour]);
+            game.history = vec!["Privileged modifier witness: Patrice faces actual Grasping Hands with her original one-health Peter Sylvestre. His agility bonus applies at ST6; his later defeat during damage results must not rewrite that arithmetic. [02033; 01162; RR ST6–8]".into()];
         }
         if fixture == HostileFixture::DissonantVoicesAssetPlay {
             for frame in game.frames.drain(..) {
@@ -757,8 +827,30 @@ impl Game {
         game
     }
 
+    pub(super) fn capture_presentation(&mut self, caption: impl Into<String>) {
+        self.capture_public_view(caption, self.observe());
+    }
+
+    pub(super) fn capture_public_view(
+        &mut self,
+        caption: impl Into<String>,
+        play: PlayObservation,
+    ) {
+        let caption = caption.into();
+        if self
+            .presentation
+            .last()
+            .is_some_and(|prior| prior.play == play && prior.caption == caption)
+        {
+            return;
+        }
+        self.presentation
+            .push(super::moments::StepSnapshot { caption, play });
+    }
+
     pub(super) fn observe(&self) -> PlayObservation {
         PlayObservation {
+            pending: super::presentation::observe(self),
             searched_encounter: super::encounter_search::visible_cards(self),
             lead: self.lead,
             window: self.test.as_ref().map_or(
@@ -811,12 +903,16 @@ impl Game {
             test: self.test.as_ref().map(|test| {
                 let result = (!test.revealed.is_empty()).then(|| self.result(test));
                 TestView {
+                    source_card: test.source_card.clone(),
+                    ignored_tokens: test.ignored_tokens.clone(),
+                    cancelled_tokens: test.cancelled_tokens.clone(),
                     tester: test.tester,
                     skill: test.skill,
                     difficulty: test.difficulty,
                     base_skill: i32::from(
                         self.players[test.tester.index()].base_skills[test.skill.index()],
                     ),
+                    modifiers: self.test_modifiers(test),
                     selected: test.selected.clone(),
                     committed: test.committed.clone(),
                     revealed: test.revealed.clone(),
@@ -833,6 +929,10 @@ impl Game {
             scenario: self.scenario.clone(),
             bag_count: self.bag.len(),
             round: self.round,
+            phase: self.phase,
+            ethereal: self.ethereal.clone(),
+            backpacks: self.backpacks.clone(),
+            searched_player: super::backpack::searched_cards(self),
             actor: self.actor,
             actions_remaining: std::array::from_fn(|i| self.players[i].ordinary_actions),
             encounter_deck_count: self.encounter_deck.len(),
@@ -900,6 +1000,7 @@ impl Game {
                     }
                     Frame::SuccessWindow => self.test.as_ref().expect("Success reaction").tester,
                     Frame::AssetEntry(entry) => entry.actor(),
+                    Frame::Backpack(decision) => decision.owner(),
                     Frame::AfterTest(state) => state.test.tester,
                     Frame::RetryEvent { owner, .. } => *owner,
                     Frame::TestCard(_) => {
@@ -928,6 +1029,8 @@ impl Game {
                     Frame::Combat(decision) => super::combat::decision_owner(decision),
                     Frame::AssetPlacement(prepared) => prepared.actor,
                     Frame::TurnEnd { investigator, .. } => *investigator,
+                    Frame::Peter { owner } => *owner,
+                    Frame::ExpireEthereal => self.lead,
                     Frame::Opportunity { investigator, .. } => *investigator,
                 })
             })
@@ -941,6 +1044,12 @@ impl Game {
     }
 
     pub(super) fn choices(&self) -> Vec<Choice> {
+        if let Some(Frame::Backpack(decision)) = self.frames.last() {
+            return super::backpack::choices(self, decision);
+        }
+        if let Some(Frame::Peter { owner }) = self.frames.last() {
+            return super::peter::choices(self, *owner);
+        }
         if let Some(Frame::GrantedAction { owner }) = self.frames.last() {
             return self.granted_action_choices(*owner);
         }
@@ -1096,6 +1205,9 @@ impl Game {
         }
         let revelation = match self.frames.last() {
             Some(Frame::HarmCard(_)) => return vec![],
+            Some(Frame::ExpireEthereal) => return vec![],
+            Some(Frame::Peter { owner }) => return super::peter::choices(self, *owner),
+            Some(Frame::Backpack(decision)) => return super::backpack::choices(self, decision),
             Some(Frame::CryptChill(_)) => unreachable!("Handled asset loss"),
             Some(Frame::Idol(decision)) => return super::harm_cards::idol_choices(self, decision),
             Some(Frame::HandDiscard(discard)) => {
@@ -1197,6 +1309,14 @@ impl Game {
             return Err(RuleError(
                 "That choice is not offered by the running effect.".into(),
             ));
+        }
+        if matches!(self.frames.last(), Some(Frame::Peter { .. })) {
+            super::peter::choose(self, id)?;
+            return self.settle();
+        }
+        if matches!(self.frames.last(), Some(Frame::Backpack(_))) {
+            super::backpack::choose(self, id)?;
+            return self.settle();
         }
         if let Some(Frame::GrantedAction { owner }) = self.frames.last().cloned() {
             self.frames.pop();
@@ -1525,6 +1645,13 @@ impl Game {
         skill: Skill,
         difficulty: i32,
     ) -> Result<(), RuleError> {
+        if matches!(operation, TestOperation::Fight { .. })
+            && super::ethereal_form::is_ethereal(self, tester)
+        {
+            return Err(RuleError(
+                "An ethereal investigator cannot attack an enemy.".into(),
+            ));
+        }
         if self.test.is_some() {
             return Err(RuleError(
                 "A second skill test cannot start while another is running.".into(),
@@ -1563,6 +1690,7 @@ impl Game {
             results_started: false,
             eyes_match: false,
             final_result: None,
+            final_modifiers: None,
             lita_checked: false,
             retaliate_checked: false,
         });
@@ -1588,6 +1716,11 @@ impl Game {
         match step {
             super::tokens::TokenStep::Pending | super::tokens::TokenStep::Finished => {}
             super::tokens::TokenStep::RevealedBatch { faces } => {
+                if self.tokens.as_ref().is_some_and(|tokens| {
+                    !tokens.ignored.is_empty() || !tokens.cancelled.is_empty()
+                }) {
+                    self.capture_presentation("The selected chaos tokens remain after ignored and cancelled tokens are excluded.");
+                }
                 self.frames.push(Frame::ResumeTokens);
                 self.apply_spell_drawback(&faces)?;
             }
@@ -1610,6 +1743,7 @@ impl Game {
                 }
             }
             super::tokens::TokenStep::DrawElderSign => {
+                self.capture_presentation("Jacqueline ignores or cancels an elder sign and must draw a card before the reveal continues.");
                 self.frames.push(Frame::ResumeTokens);
                 self.draw_player(Investigator::Jacqueline, 1)?;
             }
@@ -1727,6 +1861,56 @@ impl Game {
             _ => unreachable!("Offered turn-end source"),
         }
         Ok(())
+    }
+
+    /// Conservative Gathering-specific Undo barriers. Deck changes catch draws
+    /// from already shuffled decks; fixture cursor changes catch deterministic
+    /// token witnesses that do not advance the ordinary random generator.
+    pub(super) fn undo_barrier_since(&self, prior: &Self) -> bool {
+        self.random != prior.random
+            || self.token_cursor != prior.token_cursor
+            || self.encounter_deck != prior.encounter_deck
+            || self
+                .players
+                .iter()
+                .zip(&prior.players)
+                .any(|(now, before)| now.deck != before.deck)
+            || self.act != prior.act
+            || self.agenda != prior.agenda
+            || self.scenario.outcome.is_some()
+            || prior.scenario.outcome.is_some()
+            || self.scenario.lita_in_play != prior.scenario.lita_in_play
+            || self.scenario.priest_spawned != prior.scenario.priest_spawned
+            || self.scenario.locations.iter().any(|location| {
+                location.revealed
+                    && !prior
+                        .scenario
+                        .locations
+                        .iter()
+                        .any(|previous| previous.code == location.code && previous.revealed)
+            })
+            || super::backpack::searched_cards(self) != super::backpack::searched_cards(prior)
+            || super::encounter_search::visible_cards(self)
+                != super::encounter_search::visible_cards(prior)
+            || self.tokens.as_ref().is_some_and(|tokens| {
+                !tokens.revealed.is_empty()
+                    && prior
+                        .tokens
+                        .as_ref()
+                        .is_none_or(|previous| previous.revealed != tokens.revealed)
+            })
+            || self.premonition != prior.premonition
+            || self.frames.iter().any(|frame| {
+                matches!(
+                    frame,
+                    Frame::Scenario(
+                        ScenarioDecision::AgendaOne
+                            | ScenarioDecision::AgendaTwoSearch
+                            | ScenarioDecision::Ending
+                            | ScenarioDecision::LitaRecipient
+                    )
+                ) && !prior.frames.contains(frame)
+            })
     }
 
     pub(super) fn draw_token(&mut self) -> Result<TokenFace, RuleError> {
@@ -1889,6 +2073,15 @@ impl Game {
         }
         let mut choices = Vec::new();
         for action in actions {
+            if super::ethereal_form::is_ethereal(self, actor)
+                && matches!(
+                    super::encounter_search::action_designator(&action.id)
+                        .or_else(|| action.id.split(':').next()),
+                    Some("fight" | "engage")
+                )
+            {
+                continue;
+            }
             let cost = self.action_cost(actor, &action.id);
             if player.ordinary_actions >= cost {
                 choices.push(choice(
@@ -2220,6 +2413,7 @@ impl Game {
                 Frame::Idol(decision) if decision.owner() == who => {}
                 Frame::CryptChill(decision) if decision.owner == who => {}
                 Frame::GrantedAction { owner } if owner == who => {}
+                Frame::Peter { owner } if owner == who => {}
                 Frame::Harm(harm) if harm.investigator == who => {}
                 Frame::GainResources { investigator, .. } | Frame::TurnEnd { investigator, .. }
                     if investigator == who => {}
@@ -2394,7 +2588,13 @@ impl Game {
             false,
             location,
             HarmOrigin::EncounterCard,
-        )
+        )?;
+        self.capture_presentation(format!(
+            "{} enters {}.",
+            actor.name(),
+            content::title(location).unwrap_or(location)
+        ));
+        Ok(())
     }
 
     pub(super) fn scenario_step(
@@ -2417,6 +2617,7 @@ impl Game {
             ScenarioStep::RoundEnded => {
                 self.round += 1;
                 super::phases::begin_mythos(self);
+                super::ethereal_form::expire(self);
             }
             ScenarioStep::LeadHorror => {
                 self.frames
@@ -2624,6 +2825,13 @@ impl Game {
             self.history.push(format!(
                 "Resolve {} damage and {} horror from {} with the selected assignments.",
                 harm.damage, harm.horror, harm.source
+            ));
+            self.capture_presentation(format!(
+                "{} resolves {} damage and {} horror from {}.",
+                harm.investigator.name(),
+                harm.damage,
+                harm.horror,
+                harm.source
             ));
             if lethal {
                 super::elimination::begin(
@@ -2862,38 +3070,48 @@ impl Game {
         base
     }
 
+    fn test_modifiers(&self, test: &SkillTest) -> TestModifiers {
+        if let Some(modifiers) = &test.final_modifiers {
+            return modifiers.clone();
+        }
+        let cards = test
+            .committed
+            .iter()
+            .map(|entry| self.commit_icons(test, &entry.card))
+            .sum();
+        let operation_bonus = match test.operation {
+            TestOperation::Fight { skill_bonus, .. } => skill_bonus,
+            _ => 0,
+        };
+        TestModifiers {
+            cards,
+            other: test.bonus + operation_bonus + super::test_cards::skill_modifier(self, test),
+            chaos: (!test.revealed.is_empty()).then_some(test.modifier),
+            automatic_failure: test.revealed.contains(&TokenFace::AutoFail),
+        }
+    }
+
     pub(super) fn result(&self, test: &SkillTest) -> (i32, bool, i32) {
         if let Some(result) = test.final_result {
             return result;
         }
         let player = &self.players[test.tester.index()];
-        let icons: i32 = test
-            .committed
-            .iter()
-            .map(|entry| self.commit_icons(test, &entry.card))
-            .sum();
-        let automatic_failure = test.revealed.contains(&TokenFace::AutoFail);
-        let operation_bonus = match test.operation {
-            TestOperation::Fight { skill_bonus, .. } => skill_bonus,
-            _ => 0,
-        };
-        let total = if automatic_failure {
+        let modifiers = self.test_modifiers(test);
+        let total = if modifiers.automatic_failure {
             0
         } else {
             (super::test_cards::base_skill(self, test.tester, test.skill)
-                + icons
-                + test.modifier
-                + test.bonus
-                + operation_bonus
-                + super::test_cards::skill_modifier(self, test))
-            .max(0)
+                + modifiers.cards
+                + modifiers.chaos.unwrap_or(0)
+                + modifiers.other)
+                .max(0)
         };
         let vision = self.players.iter().any(|owner| {
             owner.location == player.location
                 && owner.threats.iter().any(|card| card.code == "05041")
         });
-        let success =
-            !automatic_failure && (total > test.difficulty || total == test.difficulty && !vision);
+        let success = !modifiers.automatic_failure
+            && (total > test.difficulty || total == test.difficulty && !vision);
         (total, success, (test.difficulty - total).max(0))
     }
 
@@ -2964,8 +3182,13 @@ impl Game {
         let test = self.test.as_ref().expect("Completing test");
         let (total, success, failure_margin) = self.result(test);
         if test.final_result.is_none() {
-            self.test.as_mut().expect("Completing test").final_result =
-                Some((total, success, failure_margin));
+            let mut modifiers = self.test_modifiers(test);
+            // ST6 fixes the contribution even if a completed reveal retained
+            // no physical tokens; an established zero is no longer pending.
+            modifiers.chaos = Some(test.modifier);
+            let test = self.test.as_mut().expect("Completing test");
+            test.final_result = Some((total, success, failure_margin));
+            test.final_modifiers = Some(modifiers);
         }
         if !self.test.as_ref().expect("Completing test").lita_checked {
             self.test.as_mut().expect("Completing test").lita_checked = true;
@@ -3069,6 +3292,11 @@ impl Game {
             super::tony_effects::capture_commits(test);
             test.results_started = true;
             test.window = Window::Results;
+            self.capture_presentation(if success {
+                "The skill test succeeds. Apply its result effects next."
+            } else {
+                "The skill test fails. Apply its result effects next."
+            });
             if !effects.is_empty() {
                 self.frames.push(Frame::TestResults(effects));
                 return Ok(());
@@ -3178,7 +3406,9 @@ impl Game {
             }
             _ => {}
         }
-        super::retry::begin(self, test)
+        super::retry::begin(self, test)?;
+        self.capture_presentation("The skill test finishes. Committed cards and chaos tokens return to their proper zones.");
+        Ok(())
     }
 
     fn apply_test_operation(&mut self) -> Result<(), RuleError> {
@@ -3205,6 +3435,14 @@ impl Game {
                     && test
                         .source_card
                         .as_ref()
+                        .is_some_and(|source| source.code == "06164")
+                {
+                    super::ethereal_form::succeeded(self, test.tester);
+                }
+                if matches!(test.operation, TestOperation::Evade { .. })
+                    && test
+                        .source_card
+                        .as_ref()
                         .is_some_and(|source| source.code == "04029")
                 {
                     self.frames
@@ -3217,7 +3455,8 @@ impl Game {
                 self.scenario.enemies.push(super::scenario::EnemyState {
                     card,
                     location: self.players[test.tester.index()].location.clone(),
-                    engaged: Some(test.tester),
+                    engaged: (!super::ethereal_form::is_ethereal(self, test.tester))
+                        .then_some(test.tester),
                     exhausted: false,
                     damage: 0,
                     doom: 0,
@@ -3304,6 +3543,13 @@ impl Game {
                     if test
                         .source_card
                         .as_ref()
+                        .is_some_and(|source| source.code == "06164")
+                    {
+                        super::ethereal_form::succeeded(self, test.tester);
+                    }
+                    if test
+                        .source_card
+                        .as_ref()
                         .is_some_and(|source| source.code == "04029")
                     {
                         self.frames
@@ -3314,6 +3560,9 @@ impl Game {
                 }
             }
             TestOperation::Fight { enemy, damage, .. } => {
+                if super::ethereal_form::is_ethereal(self, test.tester) {
+                    return Ok(());
+                }
                 if success {
                     let target = self
                         .scenario
@@ -3413,7 +3662,7 @@ impl Game {
             revelation.drawn_by,
         );
         revelation.started = true;
-        match code.as_str() {
+        let result = match code.as_str() {
             "01166" => {
                 let consequence = super::scenario::resolve_ancient_evils(self)?;
                 self.history.push("Ancient Evils resolves after the unsuccessful/declined cancellation: add 1 doom and check advancement immediately. [01166]".into());
@@ -3486,11 +3735,38 @@ impl Game {
             _ => Err(RuleError(
                 "This encounter revelation is not implemented yet.".into(),
             )),
-        }
+        };
+        result?;
+        let title = content::title(&code).unwrap_or(&code);
+        let caption = match code.as_str() {
+            "01162" | "01163" | "01167" => format!(
+                "{title} requires {} to perform a skill test.",
+                investigator.name()
+            ),
+            "02038" | "02039" | "05041" | "60403" => {
+                format!("{title} enters {}'s threat area.", investigator.name())
+            }
+            "06017" => "Watcher from Another Dimension remains in Patrice's hand.".into(),
+            "06012" => "Tony's Quarry awaits its farthest-location spawn choice.".into(),
+            _ => format!("Resolve {title}'s revelation consequences."),
+        };
+        self.capture_presentation(caption);
+        Ok(())
     }
 
     fn settle(&mut self) -> Result<(), RuleError> {
         loop {
+            if matches!(self.frames.last(), Some(Frame::ExpireEthereal)) {
+                self.frames.pop();
+                super::ethereal_form::expire(self);
+                continue;
+            }
+            if matches!(self.frames.last(), Some(Frame::Backpack(_))) {
+                return Ok(());
+            }
+            if matches!(self.frames.last(), Some(Frame::Peter { .. })) {
+                return Ok(());
+            }
             if matches!(self.frames.last(), Some(Frame::HandDiscard(_))) {
                 if super::harm_cards::advance_discard(self)? {
                     continue;
@@ -3622,6 +3898,10 @@ impl Game {
                 };
                 if !self.players[investigator.index()].defeated {
                     self.players[investigator.index()].resources += amount;
+                    self.capture_presentation(format!(
+                        "{} gains {amount} resources.",
+                        investigator.name()
+                    ));
                 }
                 continue;
             }
@@ -3744,12 +4024,8 @@ impl Game {
                 self.frames.pop();
                 self.players[actor.index()].turn_finished = true;
                 self.actor = None;
-                if self
-                    .players
-                    .iter()
-                    .all(|player| player.turn_finished || player.defeated || player.resigned)
-                {
-                    super::phases::begin_enemy(self);
+                if !super::peter::begin(self, actor) {
+                    super::peter::finish_turn_end(self);
                 }
                 continue;
             }

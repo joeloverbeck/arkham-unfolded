@@ -638,6 +638,15 @@ fn pending_lucky_reopens_and_replays_without_repeating_costs_draws_or_doom() {
     while replay.next() {}
     assert_eq!(replay.current(), &result);
     assert_eq!(load_session(&path).unwrap().observe(), result);
+    for moment in resumed
+        .presentation_after(pending.observe().revision)
+        .iter()
+        .rev()
+    {
+        assert!(replay.back());
+        assert!(replay.current().choices.is_empty());
+        assert_eq!(replay.current(), &resumed.observe_presentation(moment));
+    }
     assert!(replay.back());
     assert_eq!(replay.current(), &pending.observe());
 }

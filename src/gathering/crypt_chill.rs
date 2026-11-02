@@ -83,7 +83,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
     if asset.card.code == "01117" {
         super::scenario::remove_lita(game, asset.card);
     } else {
-        game.players[owner.index()].discard.push(asset.card);
+        super::backpack::discard_host(game, owner, asset.card);
     }
     super::tony_effects::asset_left_play(game, id);
     let player = &game.players[owner.index()];

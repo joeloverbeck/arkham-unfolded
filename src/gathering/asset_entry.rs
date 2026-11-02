@@ -42,6 +42,10 @@ pub(super) fn after_play(game: &mut Game, actor: Investigator, asset: u16) {
         return;
     };
     let entry = match card.card.code.as_str() {
+        "04037" => {
+            super::backpack::after_play(game, actor, asset);
+            return;
+        }
         "07029" => AssetEntry::SwordCane { actor, asset },
         "06011" => AssetEntry::LongColt { actor, asset },
         _ => return,
@@ -181,7 +185,9 @@ fn cane_choices(game: &Game, actor: Investigator, asset_id: u16, free: bool) -> 
         if enemy.location != player.location {
             continue;
         }
-        if enemy.card.code != "06012" || enemy.engaged.is_some() {
+        if (enemy.card.code != "06012" || enemy.engaged.is_some())
+            && !super::ethereal_form::is_ethereal(game, actor)
+        {
             for skill in ["combat", "willpower"] {
                 choices.push(choice(
                     format!("fight:cane:{asset_id}:{}:{skill}", enemy.card.id),

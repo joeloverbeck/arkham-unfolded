@@ -379,6 +379,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
             for enemy in moved.into_iter().rev() {
                 game.check_engagement(enemy);
             }
+            game.capture_presentation("The enemy phase ends. Upkeep begins.");
         }
         PhaseDecision::UpkeepReady => {
             for player in &mut game.players {
@@ -402,6 +403,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
             for enemy in engage.into_iter().rev() {
                 game.check_engagement(enemy);
             }
+            game.capture_presentation("Ready exhausted cards during upkeep.");
         }
         PhaseDecision::UpkeepDraw { order, index } => {
             if let Some(&investigator) = order.get(index) {
@@ -446,6 +448,9 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                 // FAQ1.6/Legacy2.5: one simultaneous draw, then revelations;
                 // do not refill again after a drawn weakness leaves the hand.
                 let count = 5usize.saturating_sub(player.hand.len());
+                game.capture_presentation(
+                    "Patrice discards her non-weakness hand before drawing her replacement hand.",
+                );
                 push(
                     game,
                     PhaseDecision::UpkeepDraw {
@@ -518,6 +523,9 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
             } else if matches!(scenario::queue_round_end_at(game), ScenarioStep::RoundEnded) {
                 game.round += 1;
                 begin_mythos(game);
+                super::ethereal_form::expire(game);
+            } else {
+                super::ethereal_form::queue_expiry(game);
             }
         }
         PhaseDecision::MythosBegin => {
@@ -525,6 +533,9 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                 .agenda_doom
                 .checked_add(1)
                 .ok_or_else(|| RuleError("Agenda doom counter overflow.".into()))?;
+            game.capture_presentation(
+                "Place one doom for the mythos phase, then check the agenda threshold.",
+            );
             if let Some(consequence) = scenario::check_agenda(game)? {
                 // Agenda consequences may eliminate the lead. Determine the
                 // following player order only after those effects finish.
@@ -595,6 +606,7 @@ pub(super) fn begin_investigation(game: &mut Game) {
         player.completed_actions_this_phase = 0;
     }
     player_window(game, None);
+    game.capture_presentation("The investigation phase begins.");
 }
 pub(super) fn begin_enemy(game: &mut Game) {
     game.phase = Phase::Enemy;
@@ -605,6 +617,7 @@ pub(super) fn begin_enemy(game: &mut Game) {
     game.frames.push(Frame::Phase(PhaseDecision::Hunters {
         remaining: super::scenario::ready_hunters(game),
     }));
+    game.capture_presentation("The enemy phase begins.");
 }
 pub(super) fn begin_mythos(game: &mut Game) {
     game.phase = Phase::Mythos;
@@ -613,4 +626,5 @@ pub(super) fn begin_mythos(game: &mut Game) {
         player.completed_actions_this_phase = 0;
     }
     game.frames.push(Frame::Phase(PhaseDecision::MythosBegin));
+    game.capture_presentation("A new round begins with the mythos phase.");
 }

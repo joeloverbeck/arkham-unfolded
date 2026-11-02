@@ -604,11 +604,15 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<ScenarioStep, RuleErro
                     game.frames
                         .push(Frame::Scenario(ScenarioDecision::RoundEndComplete));
                 }
+                super::ethereal_form::queue_expiry(game);
                 game.frames.push(Frame::Scenario(
                     available_act_payment(game, true).expect("Validated payment"),
                 ));
                 Ok(ScenarioStep::Continue)
             } else {
+                if matches!(step, ScenarioStep::Continue) {
+                    super::ethereal_form::queue_expiry(game);
+                }
                 Ok(step)
             }
         }
@@ -985,6 +989,16 @@ pub(super) fn finish_resolution(game: &mut Game, resolution: Resolution) {
             .push(Frame::Scenario(ScenarioDecision::LitaRecipient));
     }
     game.history.push(format!("The Gathering ends: {resolution:?}. No remaining action, test, reward or phase continuation is resolved. [RR p22; CG pp2–3]"));
+    game.capture_presentation(match resolution {
+        Resolution::NoResolution => {
+            "You escape with Lita, who urges you to confront the threat beneath Arkham."
+        }
+        Resolution::BurnHouse => "The house burns. Lita leads you away to face the wider threat.",
+        Resolution::RefuseToBurn => {
+            "You save your home and reject Lita's demand, but listen to her warning."
+        }
+        Resolution::Overrun => "The barrier traps those still inside as the ghouls close in.",
+    });
 }
 
 /// An agenda reverse must finish through the runtime's pending-decision path
@@ -1157,6 +1171,9 @@ pub(super) fn advance_act_one(game: &mut Game) {
     }
     game.act = 2;
     game.history.push("Trapped opens the four rooms, discards Study enemies without defeating them, places the investigators in Hallway and removes Study. [01108b]".into());
+    game.capture_presentation(
+        "A doorway beneath the rug leads into the altered hallway. The study closes behind you.",
+    );
 }
 
 /// Original Barrier reverse. Engagement/prey ties and Bounty Contracts remain
@@ -1192,6 +1209,7 @@ pub(super) fn advance_act_two(game: &mut Game) -> Result<u16, RuleError> {
     });
     game.act = 3;
     game.history.push("The Barrier reveals Parlor, puts Lita Chantler there and spawns the Ghoul Priest in Hallway. Resolve engagement and eligible entry reactions before continuing the round-end sequence. [01109b; FAQ §2.2]".into());
+    game.capture_presentation("You extinguish the barrier. A furious woman waits in the parlor as the Ghoul Priest enters the hallway.");
     Ok(400)
 }
 
@@ -1251,7 +1269,8 @@ pub(super) fn spawn_encounter_enemy(
     game.scenario.enemies.push(EnemyState {
         card,
         location,
-        engaged: definition.spawn.is_none().then_some(drawer),
+        engaged: (definition.spawn.is_none() && !super::ethereal_form::is_ethereal(game, drawer))
+            .then_some(drawer),
         exhausted: false,
         damage: 0,
         doom: 0,
@@ -1300,7 +1319,12 @@ pub(super) fn engagement_candidates(game: &Game, enemy_id: u16) -> Vec<Investiga
     let mut candidates: Vec<_> = game
         .players
         .iter()
-        .filter(|player| !player.defeated && !player.resigned && player.location == enemy.location)
+        .filter(|player| {
+            !player.defeated
+                && !player.resigned
+                && player.location == enemy.location
+                && !super::ethereal_form::is_ethereal(game, player.investigator)
+        })
         .map(|player| player.investigator)
         .collect();
     apply_prey(game, &enemy.card.code, &mut candidates);
@@ -1563,6 +1587,11 @@ pub(super) fn remove_defeated_enemy(
     } else {
         game.encounter_discard.push(enemy.card.clone());
     }
+    game.capture_presentation(if ends_scenario {
+        "The Priest falls and the swarm retreats. Lita demands that the house be burned.".into()
+    } else {
+        format!("{} is defeated and leaves play.", enemy.card.title)
+    });
     Ok(DefeatedEnemy {
         enemy,
         ends_scenario,
@@ -1772,6 +1801,7 @@ pub(super) fn resolve_ancient_evils(
         "Ancient Evils places one doom and permits an immediate agenda check. [01166; RR p9]"
             .into(),
     );
+    game.capture_presentation("Ancient Evils adds one doom. Check whether the agenda advances.");
     check_agenda(game)
 }
 
@@ -1808,6 +1838,11 @@ pub(super) fn check_agenda(game: &mut Game) -> Result<Option<ScenarioConsequence
         "Agenda {} advances at {total} total doom; remove doom from all cards before resolving its reverse. [RR pp3,9]",
         game.agenda
     ));
+    game.capture_presentation(match game.agenda {
+        1 => "The house decays around you, its familiar rooms giving way to earth.",
+        2 => "A ghoul breaks through the floor, exposing tunnels beneath the house.",
+        _ => "Creatures erupt from the ground as the infestation breaks free.",
+    });
     Ok(Some(match game.agenda {
         1 => ScenarioConsequence::AgendaOneChoice,
         2 => ScenarioConsequence::AgendaTwoGhoulSearch,

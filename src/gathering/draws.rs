@@ -26,6 +26,14 @@ pub(super) struct DrawState {
     collected: bool,
 }
 
+impl DrawState {
+    /// The completed batch has exposed these faces before revelation ordering.
+    /// Cards held during an unfinished simultaneous draw remain hidden.
+    pub(super) fn pending_revelations(&self) -> &[CardView] {
+        &self.revelations
+    }
+}
+
 pub(super) fn eliminate(game: &mut Game, who: Investigator) {
     let mut index = 0;
     while index < game.frames.len() {
@@ -129,6 +137,17 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
         }
         draw.collected = true;
         game.history.push(format!("{} completes the simultaneous card draw. Resolve any drawn revelations in the investigator's chosen order. [FAQ 2.5 p17]", draw.investigator.name()));
+        let mut play = game.observe();
+        play.pending
+            .resolving_cards
+            .extend(draw.revelations.iter().cloned());
+        game.capture_public_view(
+            format!(
+                "{} draws the completed batch of player cards. Resolve drawn weaknesses next.",
+                draw.investigator.name()
+            ),
+            play,
+        );
     }
     if draw.revelations.len() > 1 {
         game.frames.push(Frame::Draw(draw));
@@ -204,6 +223,7 @@ fn queue_revelation(game: &mut Game, investigator: Investigator, card: CardView)
         started: false,
         cancelled: false,
     }));
+    game.capture_presentation("A drawn weakness awaits its revelation.");
 }
 
 fn take(pool: &mut Vec<CardView>, code: &str) -> CardView {

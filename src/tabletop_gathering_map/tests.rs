@@ -1,24 +1,19 @@
 use super::*;
 use bevy::mesh::VertexAttributeValues;
 
-fn location(code: &str, revealed: bool) -> LocationView {
-    LocationView {
-        name: "Display name is not topology".into(),
-        code: code.into(),
-        revealed,
-        clues: 0,
-    }
+fn location(code: &str, revealed: bool) -> (&str, bool) {
+    (code, revealed)
 }
 
 fn map(revealed: bool) -> GatheringMap {
     GatheringMap::new(
-        &[
+        [
             location("01112", true),
             location("01113", revealed),
             location("01114", revealed),
             location("01115", revealed),
         ],
-        Vec2::new(super::super::CARD_WIDTH, super::super::CARD_LENGTH),
+        Vec2::new(1.35, 1.89),
     )
     .unwrap()
 }
@@ -125,18 +120,18 @@ fn inspected_original_faces_produce_only_the_three_reciprocal_hallway_pairs() {
             ]
         );
     }
-    let study = GatheringMap::new(&[location("01111", true)], Vec2::new(1.35, 1.89)).unwrap();
+    let study = GatheringMap::new([location("01111", true)], Vec2::new(1.35, 1.89)).unwrap();
     assert!(study.links.is_empty());
     let partial = GatheringMap::new(
-        &[location("01112", true), location("01113", false)],
+        [location("01112", true), location("01113", false)],
         Vec2::new(1.35, 1.89),
     )
     .unwrap();
     assert_eq!(partial.links.len(), 1);
     assert_eq!(partial.links[0].0.to, Room::Attic);
-    assert!(GatheringMap::entry_blocked(&location("01115", false)));
-    assert!(!GatheringMap::entry_blocked(&location("01115", true)));
-    assert!(!GatheringMap::entry_blocked(&location("01113", false)));
+    assert!(GatheringMap::entry_blocked("01115", false));
+    assert!(!GatheringMap::entry_blocked("01115", true));
+    assert!(!GatheringMap::entry_blocked("01113", false));
 }
 
 #[test]
@@ -146,7 +141,7 @@ fn relative_layout_reserves_every_standee_and_captions_within_the_real_scenario_
     assert!(graph.position("01113").z < center.z);
     assert!(graph.position("01114").z > center.z);
     assert!(graph.position("01115").x > center.x);
-    let card_size = Vec2::new(super::super::CARD_WIDTH, super::super::CARD_LENGTH);
+    let card_size = Vec2::new(1.35, 1.89);
     let radius = crate::tabletop_standees::radius_for(card_size);
     for placement in &graph.placements {
         let bounds = placement.footprint.bounds;
@@ -174,13 +169,13 @@ fn relative_layout_reserves_every_standee_and_captions_within_the_real_scenario_
 fn visible_input_order_and_occupancy_independent_fields_do_not_relayout_the_map() {
     let first = map(false);
     let second = GatheringMap::new(
-        &[
+        [
             location("01115", true),
             location("01114", false),
             location("01113", true),
             location("01112", false),
         ],
-        Vec2::new(super::super::CARD_WIDTH, super::super::CARD_LENGTH),
+        Vec2::new(1.35, 1.89),
     )
     .unwrap();
     for code in ["01112", "01113", "01114", "01115"] {

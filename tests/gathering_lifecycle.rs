@@ -157,7 +157,14 @@ fn simultaneous_damage_and_horror_defeat_has_a_saved_choice_of_one_trauma() {
     ));
     lethal_attack(&mut session);
     let pending = session.observe();
-    assert_eq!(pending.choices.len(), 2);
+    assert_eq!(
+        pending
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "undo")
+            .count(),
+        2
+    );
     assert_eq!(pending.play.as_ref().unwrap().players[2].physical_trauma, 0);
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("trauma.json");

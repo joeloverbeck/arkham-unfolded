@@ -1,9 +1,11 @@
 //! Original Gathering preparation for the fixed #89 party.
 //!
 //! The production decision path implements setup only. A complete scenario's
-//! abilities and phases remain unavailable; old experiment records stay separate.
+//! ordinary scenario play remains unavailable; old experiment records stay separate.
 
 mod asset_entry;
+mod backpack;
+pub use backpack::BackpackFixture;
 mod cards;
 mod combat;
 mod content;
@@ -11,6 +13,8 @@ mod crypt_chill;
 pub use crypt_chill::CryptChillFixture;
 mod draws;
 mod elimination;
+mod ethereal_form;
+pub use ethereal_form::EtherealFixture;
 mod harm_cards;
 pub use elimination::LifecycleFixture;
 pub use harm_cards::HarmFixture;
@@ -20,8 +24,14 @@ pub use encounter_search::SearchFixture;
 pub use player_cards::AssetFixture;
 pub mod continuity;
 pub mod inspection;
+mod moments;
+mod peter;
 mod phases;
+pub use moments::PresentationMoment;
+pub use peter::PeterFixture;
 mod player_cards;
+mod presentation;
+pub use presentation::{DiscardView, HarmAllocation, HarmView, PendingView};
 mod tokens;
 pub use scenario::{Resolution, ResolutionRecord};
 pub use tokens::TokenFixture;
@@ -30,6 +40,8 @@ mod runtime;
 pub use retry::RetryFixture;
 mod player_events;
 mod scenario;
+mod selected_witnesses;
+pub use selected_witnesses::SelectedWitness;
 mod spell_events;
 pub use player_events::PlayerEventFixture;
 mod spells;
@@ -42,7 +54,7 @@ mod test_cards;
 pub use test_boosts::BoostFixture;
 pub use test_cards::TestCardFixture;
 
-pub use runtime::{HostileFixture, PlayObservation};
+pub use runtime::{HostileFixture, Phase, PlayObservation};
 
 pub use crate::party::Investigator;
 use crate::{APP_VERSION, Choice, RuleError, TokenFace};
@@ -50,7 +62,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, io::Read};
 
-pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-runtime-v2";
+pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-runtime-v3";
 const DECK_PROJECTION: &str = include_str!("../docs/research/issue-1-decks.json");
 const DECK_PROJECTION_SHA256: &str =
     "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb";
@@ -161,6 +173,7 @@ pub struct Recording {
     pub source_revision: String,
     pub app_version: String,
     pub moments: Vec<Observation>,
+    pub presentation_moments: Vec<PresentationMoment>,
     // Verification inputs belong to the private record, never to player views.
     seed: u64,
     decisions: Vec<String>,
@@ -185,6 +198,11 @@ pub struct Session {
     decisions: Vec<String>,
     history: Vec<String>,
     moments: Vec<Observation>,
+    presentation_moments: Vec<PresentationMoment>,
+    // Normalized live choices point into the append-only audit. Undo itself
+    // never appears here, so restoring a position cannot recursively replay it.
+    active_decisions: Vec<usize>,
+    undo_floor: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     verification_fixture: Option<HostileFixture>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -315,7 +333,7 @@ impl Session {
                 deck_projection_sha256: digest, taboo_id: 10, decks: sources },
             lead: None, mulligan_index: 0, investigators, decks,
             excluded_weaknesses: vec![vec![], vec![], vec![]], encounter_deck: vec![],
-            scenario: None, decisions: vec![], moments: vec![], verification_fixture: None, runtime: None,
+            scenario: None, decisions: vec![], moments: vec![], presentation_moments: vec![], active_decisions: vec![], undo_floor: 0, verification_fixture: None, runtime: None,
             history: vec!["Fresh campaign preparation: choose the lead investigator. The retained starting lists use the three owner-selected basic weaknesses; no previous campaign history is imported. Rules and taboo 10 are pinned to the #89 research, not claimed to be the latest available release.".into()],
         };
         session.moments.push(session.observe());
@@ -374,17 +392,28 @@ impl Session {
                 "Choose any opening-hand cards to replace, then confirm the one allowed mulligan. Replacements reveal new information and cannot be undone."
             }
             Stage::GameplayUnavailable => {
-                "Setup is assembled. Gameplay is unavailable: selected card abilities, scenario phases and resolutions are not yet implemented. This is not a playable Gathering session or a scenario ending."
+                "Setup is assembled. Gameplay is unavailable: selected rules coverage and native play verification remain incomplete. This is not a playable Gathering session or a scenario ending."
             }
             Stage::Playing => {
-                choices = self.runtime.as_ref().expect("Runtime stage").choices();
-                if choices.is_empty() {
+                let game = self.runtime.as_ref().expect("Runtime stage");
+                choices = game.choices();
+                if game.scenario.outcome.is_some() {
+                    "Privileged verification reached the recorded Gathering resolution. Its consequences are shown in the resolution record; ordinary complete Gathering remains unavailable."
+                } else if choices.is_empty() {
                     "The privileged P1 verification reached its boundary. This is not a scenario resolution; ordinary complete Gathering remains unavailable."
                 } else {
                     "Privileged rules verification: choose among implemented P1 opportunities. Ordinary complete Gathering remains unavailable."
                 }
             }
         };
+        if self.active_decisions.len() > self.undo_floor {
+            choices.push(Choice {
+                id: "undo".into(),
+                label: "Undo the last choice; no hidden information or random outcome crossed"
+                    .into(),
+                cancel_faces: vec![],
+            });
+        }
         let mut investigators = self.investigators.clone();
         if let Some(game) = &self.runtime {
             for player in &game.players {
@@ -420,6 +449,17 @@ impl Session {
         self.observe()
     }
 
+    pub fn presentation_after(&self, revision: u64) -> &[PresentationMoment] {
+        let start = self
+            .presentation_moments
+            .partition_point(|moment| moment.revision <= revision);
+        &self.presentation_moments[start..]
+    }
+
+    pub fn observe_presentation(&self, moment: &PresentationMoment) -> Observation {
+        moments::project(&self.moments, &self.presentation_moments, moment)
+    }
+
     pub fn choose(&mut self, revision: u64, id: &str) -> Result<(), RuleError> {
         if revision != self.revision {
             return Err(RuleError(
@@ -435,12 +475,83 @@ impl Session {
                 RuleError("That choice is not available at the current decision.".into())
             })?;
         let mut candidate = self.clone();
-        candidate.apply(id)?;
+        if id == "undo" {
+            candidate.restore_previous_position()?;
+            if let Some(game) = &mut candidate.runtime {
+                game.capture_presentation("Undo restores the previous position. The earlier choices remain in the recording.");
+            }
+        } else {
+            candidate.apply(id)?;
+            candidate.active_decisions.push(self.decisions.len());
+            if candidate.crossed_undo_boundary(self) {
+                candidate.undo_floor = candidate.active_decisions.len();
+            }
+        }
         candidate.revision += 1;
+        if self.runtime.is_none()
+            && let Some(game) = &mut candidate.runtime
+        {
+            game.capture_presentation("While investigating disappearances at the lead investigator's home, you hear chanting and movement below. The study's door vanishes.");
+        }
+        if let Some(game) = &mut candidate.runtime {
+            for (sequence, snapshot) in std::mem::take(&mut game.presentation)
+                .into_iter()
+                .enumerate()
+            {
+                candidate.presentation_moments.push(PresentationMoment {
+                    revision: candidate.revision,
+                    sequence: u32::try_from(sequence).map_err(|_| {
+                        RuleError("Too many presentation steps in one decision.".into())
+                    })?,
+                    caption: snapshot.caption,
+                    play: snapshot.play,
+                });
+            }
+        }
         candidate.decisions.push(id.into());
         candidate.history.push(choice.label);
         candidate.moments.push(candidate.observe());
         *self = candidate;
+        Ok(())
+    }
+
+    fn crossed_undo_boundary(&self, prior: &Self) -> bool {
+        self.random != prior.random
+            || self.decks != prior.decks
+            || self.encounter_deck != prior.encounter_deck
+            || match (&self.runtime, &prior.runtime) {
+                (Some(current), Some(previous)) => current.undo_barrier_since(previous),
+                (None, None) => false,
+                _ => true,
+            }
+    }
+
+    fn restore_previous_position(&mut self) -> Result<(), RuleError> {
+        if self.active_decisions.len() <= self.undo_floor {
+            return Err(RuleError(
+                "Undo cannot cross revealed information or a random outcome.".into(),
+            ));
+        }
+        let mut active = self.active_decisions.clone();
+        active.pop();
+        let mut restored = Self::from_origin(self.seed, self.verification_fixture)?;
+        for &index in &active {
+            let decision = self
+                .decisions
+                .get(index)
+                .filter(|decision| decision.as_str() != "undo")
+                .ok_or_else(|| RuleError("Invalid active decision in the Undo record.".into()))?;
+            restored.choose(restored.revision, decision)?;
+        }
+        // The rules position rewinds; the chronological evidence never does.
+        restored.revision = self.revision;
+        restored.decisions = self.decisions.clone();
+        restored.history = self.history.clone();
+        restored.moments = self.moments.clone();
+        restored.presentation_moments = self.presentation_moments.clone();
+        restored.active_decisions = active;
+        restored.undo_floor = self.undo_floor;
+        *self = restored;
         Ok(())
     }
 
@@ -600,6 +711,7 @@ impl Session {
             source_revision: SOURCE_REVISION.into(),
             app_version: APP_VERSION.into(),
             moments: self.moments.clone(),
+            presentation_moments: self.presentation_moments.clone(),
             seed: self.seed,
             decisions: self.decisions.clone(),
             verification_fixture: self.verification_fixture,
@@ -616,6 +728,9 @@ impl Session {
         self.same_run(prior)
             && self.decisions.starts_with(&prior.decisions)
             && self.moments.starts_with(&prior.moments)
+            && self
+                .presentation_moments
+                .starts_with(&prior.presentation_moments)
     }
 
     pub fn is_fresh(&self) -> bool {
@@ -661,6 +776,7 @@ impl Session {
             session.history = vec!["Privileged source-derived runtime verification; this is not an ordinary fresh campaign.".into()];
             let mut game =
                 runtime::Game::fixture(fixture, seed, &session.investigators, &session.decks);
+            game.presentation.clear();
             session.history.append(&mut game.history);
             session.runtime = Some(game);
             session.moments = vec![session.observe()];
@@ -682,7 +798,9 @@ pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
     for decision in &recording.decisions {
         reconstructed.choose(reconstructed.revision, decision)?;
     }
-    if reconstructed.moments != recording.moments {
+    if reconstructed.moments != recording.moments
+        || reconstructed.presentation_moments != recording.presentation_moments
+    {
         return Err(RuleError(
             "Gathering recording does not match its recorded decisions and pinned inputs.".into(),
         ));

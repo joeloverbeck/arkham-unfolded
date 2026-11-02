@@ -160,6 +160,7 @@ fn complete(game: &mut Game, who: Investigator) -> Result<(), RuleError> {
         }
     }
     super::draws::eliminate(game, who);
+    super::backpack::eliminate(game, who);
     super::harm_cards::eliminate(game, who);
     super::phases::eliminate(game, who);
     super::encounter_search::eliminate(game, who);

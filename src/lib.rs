@@ -23,6 +23,8 @@ mod tabletop_discard;
 #[cfg(feature = "tabletop")]
 mod tabletop_feedback;
 #[cfg(feature = "tabletop")]
+mod tabletop_gathering_map;
+#[cfg(feature = "tabletop")]
 mod tabletop_harm_text;
 #[cfg(feature = "tabletop")]
 mod tabletop_harm_tokens;

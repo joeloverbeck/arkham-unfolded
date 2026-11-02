@@ -119,6 +119,7 @@ pub(super) fn action_designator(action: &str) -> Option<&'static str> {
     Some(match action.split(':').nth(3) {
         Some(GET_OVER_HERE | "06201") => "fight",
         Some("06117" | "04272") => "investigate",
+        Some("06164") => "evade",
         _ => "play",
     })
 }
@@ -131,7 +132,7 @@ pub(super) fn provokes_opportunity(action: &str) -> Option<bool> {
     action_designator(action).map(|_| {
         !matches!(
             action.split(':').nth(3),
-            Some(SCENE | GET_OVER_HERE | "06201")
+            Some(SCENE | GET_OVER_HERE | "06201" | "06164")
         )
     })
 }
@@ -549,6 +550,10 @@ fn draw_encounter(game: &mut Game, owner: Investigator) {
             started: false,
             cancelled: false,
         }));
+        game.capture_presentation(format!(
+            "{} draws an encounter card. Its revelation has not resolved.",
+            owner.name()
+        ));
     }
 }
 
@@ -622,7 +627,13 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
             }
         }
         SearchDecision::FinishEvent { event } => {
+            let caption = format!(
+                "{} finishes resolving {}.",
+                event.owner.name(),
+                event.card.title
+            );
             super::player_events::finish_event(game, event);
+            game.capture_presentation(caption);
         }
         SearchDecision::ChooseEnemy { event, .. } => {
             if id == "search:no-match" {

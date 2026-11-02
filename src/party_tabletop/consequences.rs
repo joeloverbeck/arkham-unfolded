@@ -269,9 +269,14 @@ impl Transfer {
         {
             return None;
         }
-        let map =
-            location_map::GatheringMap::new(&after.locations, Vec2::new(CARD_WIDTH, CARD_LENGTH))
-                .ok()?;
+        let map = location_map::GatheringMap::new(
+            after
+                .locations
+                .iter()
+                .map(|location| (location.code.as_str(), location.revealed)),
+            Vec2::new(CARD_WIDTH, CARD_LENGTH),
+        )
+        .ok()?;
         Some(Self {
             investigator,
             previous_count: previous.clues,

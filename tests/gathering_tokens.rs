@@ -50,6 +50,279 @@ fn reach_reveal(session: &mut Session) {
 }
 
 #[test]
+fn eyes_can_ignore_the_whole_olive_group_before_olive_selects_any_tokens() {
+    use arkham_unfolded_experiment::gathering::{TokenFixture, continuity};
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesOlive));
+    let play = session.observe_for_play().play.unwrap();
+    let eyes = play.players[2]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "11067")
+        .unwrap()
+        .card
+        .id;
+    let olive = play.players[2]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "04197")
+        .unwrap()
+        .card
+        .id;
+    choose(
+        &mut session,
+        &format!("action:ordinary:investigate:spell:{eyes}"),
+    );
+    choose(&mut session, "window:pass");
+    choose(&mut session, "commit:confirm");
+    choose(&mut session, "window:pass");
+    choose(&mut session, "tokens:eyes:1");
+    choose(&mut session, &format!("tokens:olive:0:{olive}"));
+    choose(&mut session, "test:reveal");
+    let outer = session.observe_for_play();
+    let play = outer.play.as_ref().unwrap();
+    assert_eq!(
+        play.tokens.as_ref().unwrap().revealed,
+        [
+            TokenFace::MinusOne,
+            TokenFace::MinusTwo,
+            TokenFace::Skull,
+            TokenFace::MinusOne
+        ]
+    );
+    assert_eq!(play.bag_count, 12);
+    assert!(
+        !outer
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tokens:keep:")),
+        "An inner physical-token choice must not precede the Eyes position choice"
+    );
+    assert!(session.choose(outer.revision, "tokens:keep:0").is_err());
+    assert_eq!(
+        session.observe_for_play(),
+        outer,
+        "A forged flattened choice cannot mutate the group or pay again"
+    );
+    choose(&mut session, "tokens:position:1");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("eyes-outer.json");
+    continuity::save_session(&path, &session).unwrap();
+    let mut reopened = continuity::load_session(&path).unwrap();
+    assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+    choose(&mut session, "tokens:confirm");
+    choose(&mut reopened, "tokens:confirm");
+    assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+    let after = session.observe_for_play().play.unwrap();
+    assert_eq!(after.completed_tests.last().unwrap().total, 4);
+    assert_eq!(
+        after.players[2].clues, 2,
+        "The selected ordinary -1 matches an ignored member of Olive's entire group"
+    );
+    assert_eq!(after.bag_count, 16);
+    assert_eq!(after.actions_remaining[2], 2);
+    assert_eq!(
+        after.players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.id == eyes)
+            .unwrap()
+            .uses,
+        8
+    );
+    assert!(
+        !after.players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.id == olive)
+            .unwrap()
+            .ready
+    );
+}
+
+#[test]
+fn eyes_chooses_olive_before_its_two_survivors_and_matches_only_the_retained_members() {
+    use arkham_unfolded_experiment::gathering::{
+        TokenFixture,
+        continuity::{self, Replay},
+    };
+    // Independent source-derived oracle: Study shroud 2, willpower 5,
+    // G=[-1,-2,skull(0)] and A=[-1]. FAQ p17 preserves G until Eyes chooses it;
+    // §2.5 and p22 give one extra clue only if a surviving member matches.
+    for (position, kept, outer_ignored, expected_total, expected_clues) in [
+        (0, [0, 2], 3, 4, 2),
+        (0, [1, 2], 3, 3, 1),
+        // With Olive second, only the later retained member (-1) matches.
+        (1, [1, 3], 0, 2, 2),
+    ] {
+        let mut session =
+            Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesOlive));
+        let play = session.observe_for_play().play.unwrap();
+        let eyes = play.players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.code == "11067")
+            .unwrap()
+            .card
+            .id;
+        let olive = play.players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.code == "04197")
+            .unwrap()
+            .card
+            .id;
+        choose(
+            &mut session,
+            &format!("action:ordinary:investigate:spell:{eyes}"),
+        );
+        choose(&mut session, "window:pass");
+        choose(&mut session, "commit:confirm");
+        choose(&mut session, "window:pass");
+        choose(&mut session, "tokens:eyes:1");
+        choose(&mut session, &format!("tokens:olive:{position}:{olive}"));
+        assert!(
+            !session
+                .observe_for_play()
+                .choices
+                .iter()
+                .any(|choice| choice.id.starts_with("tokens:jacqueline")
+                    || choice.id.starts_with("tokens:prophecy:"))
+        );
+        choose(&mut session, "test:reveal");
+        choose(&mut session, &format!("tokens:position:{position}"));
+        choose(&mut session, "tokens:confirm");
+        let inner = session.observe_for_play();
+        let tokens = inner.play.as_ref().unwrap().tokens.as_ref().unwrap();
+        assert_eq!(
+            tokens.revealed,
+            [
+                TokenFace::MinusOne,
+                TokenFace::MinusTwo,
+                TokenFace::Skull,
+                TokenFace::MinusOne
+            ]
+        );
+        assert_eq!(
+            tokens.ignored,
+            [outer_ignored],
+            "Eyes ignores A before Olive chooses its survivors"
+        );
+        assert!(
+            tokens.cancelled.is_empty(),
+            "Ignoring does not become cancellation"
+        );
+        assert_eq!(inner.play.as_ref().unwrap().bag_count, 12);
+        assert!(
+            !inner
+                .choices
+                .iter()
+                .any(|choice| choice.id == format!("tokens:keep:{outer_ignored}")
+                    || choice.id.starts_with("tokens:position:"))
+        );
+        choose(&mut session, &format!("tokens:keep:{}", kept[0]));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("eyes-inner.json");
+        continuity::save_session(&path, &session).unwrap();
+        let mut reopened = continuity::load_session(&path).unwrap();
+        assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+        for active in [&mut session, &mut reopened] {
+            choose(active, &format!("tokens:keep:{}", kept[1]));
+            choose(active, "tokens:confirm");
+        }
+        assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+        let after = reopened.observe_for_play().play.unwrap();
+        assert_eq!(after.completed_tests.last().unwrap().total, expected_total);
+        assert_eq!(after.players[2].clues, expected_clues);
+        assert_eq!(after.bag_count, 16);
+        assert_eq!(after.actions_remaining[2], 2);
+        assert_eq!(
+            after.players[2]
+                .assets
+                .iter()
+                .find(|asset| asset.card.id == eyes)
+                .unwrap()
+                .uses,
+            8
+        );
+        assert!(
+            !after.players[2]
+                .assets
+                .iter()
+                .find(|asset| asset.card.id == olive)
+                .unwrap()
+                .ready
+        );
+        let mut replay = Replay::new(reopened.recording()).unwrap();
+        while replay.next() {}
+        assert_eq!(replay.current(), &reopened.observe_for_play());
+    }
+}
+
+#[test]
+fn eyes_olive_keeps_the_dark_future_partial_group_boundary_without_spending_olive() {
+    use arkham_unfolded_experiment::gathering::TokenFixture;
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesOliveProtected));
+    let play = session.observe_for_play().play.unwrap();
+    let eyes = play.players[2]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "11067")
+        .unwrap()
+        .card
+        .id;
+    let olive = play.players[2]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "04197")
+        .unwrap()
+        .card
+        .id;
+    choose(
+        &mut session,
+        &format!("action:ordinary:investigate:spell:{eyes}"),
+    );
+    choose(&mut session, "window:pass");
+    choose(&mut session, "commit:confirm");
+    choose(&mut session, "window:pass");
+    choose(&mut session, "tokens:eyes:1");
+    let before = session.observe_for_play();
+    assert!(
+        !before
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tokens:olive:"))
+    );
+    assert!(
+        session
+            .choose(before.revision, &format!("tokens:olive:0:{olive}"))
+            .is_err()
+    );
+    assert_eq!(session.observe_for_play(), before);
+    let play = before.play.unwrap();
+    assert!(
+        play.players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.id == olive)
+            .unwrap()
+            .ready
+    );
+    assert_eq!(
+        play.players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.id == eyes)
+            .unwrap()
+            .uses,
+        8
+    );
+    assert_eq!(play.actions_remaining[2], 2);
+    assert_eq!(play.bag_count, 16);
+}
+
+#[test]
 fn robes_cannot_reduce_dark_prophecy_because_its_printed_trait_is_only_augury() {
     use arkham_unfolded_experiment::gathering::TokenFixture;
     // Bound original face df42c9255e4bf557adb016fad3af22b8229e7ffb83becdd0056dd9480df7540f.

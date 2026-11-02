@@ -171,9 +171,16 @@ pub(super) fn synchronize(
         layout::scenario_heading(),
         true,
     );
-    let map = location_map::GatheringMap::new(&view.locations, Vec2::new(CARD_WIDTH, CARD_LENGTH))
-        .expect("the prepared Gathering map must fit its scenario surface");
-    map.spawn(&mut commands, &mut meshes, &mut materials);
+    let map = location_map::GatheringMap::new(
+        view.locations
+            .iter()
+            .map(|location| (location.code.as_str(), location.revealed)),
+        Vec2::new(CARD_WIDTH, CARD_LENGTH),
+    )
+    .expect("the prepared Gathering map must fit its scenario surface");
+    for entity in map.spawn(&mut commands, &mut meshes, &mut materials) {
+        commands.entity(entity).insert(Scene);
+    }
     for location in &view.locations {
         let at = map.position(&location.code);
         let role = format!("card/{}", location.code);
@@ -193,7 +200,7 @@ pub(super) fn synchronize(
             format!(
                 "{}\n{}",
                 location.name,
-                if location_map::GatheringMap::entry_blocked(location) {
+                if location_map::GatheringMap::entry_blocked(&location.code, location.revealed) {
                     "Entry blocked".into()
                 } else if location.revealed {
                     String::new()

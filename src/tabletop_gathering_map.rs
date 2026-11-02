@@ -1,8 +1,7 @@
 //! The Gathering's visible connections, relative placement, and physical links.
 //! These are presentation projections of the inspected card faces, not movement rules.
 
-use super::{Scene, layout};
-use crate::party::LocationView;
+use crate::tabletop_layout as layout;
 use bevy::{asset::RenderAssetUsages, prelude::*, render::render_resource::PrimitiveTopology};
 
 #[cfg(test)]
@@ -65,7 +64,7 @@ struct Connection {
 }
 
 #[derive(Component)]
-pub(super) struct ConnectionVisual;
+pub(crate) struct ConnectionVisual;
 
 #[derive(Clone, Copy, Debug)]
 struct Footprint {
@@ -131,18 +130,21 @@ struct Placement {
     footprint: Footprint,
 }
 
-pub(super) struct GatheringMap {
+pub(crate) struct GatheringMap {
     placements: Vec<Placement>,
     links: Vec<(Connection, Vec<Vec2>)>,
 }
 
 impl GatheringMap {
-    pub fn new(locations: &[LocationView], size: Vec2) -> Result<Self, &'static str> {
+    pub fn new<'a>(
+        locations: impl IntoIterator<Item = (&'a str, bool)>,
+        size: Vec2,
+    ) -> Result<Self, &'static str> {
         let mut shown = locations
-            .iter()
-            .map(|location| {
-                Room::from_code(&location.code)
-                    .map(|room| (room, location.revealed))
+            .into_iter()
+            .map(|(code, revealed)| {
+                Room::from_code(code)
+                    .map(|room| (room, revealed))
                     .ok_or("location is not part of the prepared Gathering map")
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -227,18 +229,20 @@ impl GatheringMap {
             .at
     }
 
-    pub fn entry_blocked(location: &LocationView) -> bool {
-        location.code == "01115" && !location.revealed
+    pub fn entry_blocked(code: &str, revealed: bool) -> bool {
+        code == "01115" && !revealed
     }
 
+    /// Return root entities so each renderer owns its own scene cleanup.
     pub fn spawn(
         &self,
         commands: &mut Commands,
         meshes: &mut Assets<Mesh>,
         materials: &mut Assets<StandardMaterial>,
-    ) {
+    ) -> Vec<Entity> {
+        let mut entities = Vec::with_capacity(self.links.len());
         if self.links.is_empty() {
-            return;
+            return entities;
         }
         let rim = materials.add(StandardMaterial {
             base_color: Color::srgb(0.16, 0.13, 0.08),
@@ -256,7 +260,7 @@ impl GatheringMap {
                 (true, false) => "→",
                 _ => "←",
             };
-            commands
+            let root = commands
                 .spawn((
                     Name::new(format!(
                         "Location connection {} {arrow} {}",
@@ -267,7 +271,6 @@ impl GatheringMap {
                     Transform::IDENTITY,
                     Visibility::default(),
                     Pickable::IGNORE,
-                    Scene,
                 ))
                 .with_children(|parent| {
                     for (half_width, height, material) in [
@@ -281,8 +284,11 @@ impl GatheringMap {
                             Pickable::IGNORE,
                         ));
                     }
-                });
+                })
+                .id();
+            entities.push(root);
         }
+        entities
     }
 }
 

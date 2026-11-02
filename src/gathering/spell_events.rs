@@ -40,7 +40,7 @@ struct EventOption {
 }
 
 pub(super) fn is_action(action: &str) -> bool {
-    matches!(action.split(':').nth(3), Some("06117" | "06201"))
+    matches!(action.split(':').nth(3), Some("06117" | "06201" | "06164"))
 }
 
 fn options(
@@ -56,10 +56,13 @@ fn options(
     }
     let mut options = vec![];
     for card in &player.hand {
-        if !matches!(card.code.as_str(), "06117" | "06201") {
+        if !matches!(card.code.as_str(), "06117" | "06201" | "06164") {
             continue;
         }
-        let surcharge = if uncaged && card.code == "06201" {
+        if card.code == "06201" && super::ethereal_form::is_ethereal(game, owner) {
+            continue;
+        }
+        let surcharge = if uncaged && matches!(card.code.as_str(), "06201" | "06164") {
             super::asset_entry::frozen_surcharge(game, owner)
         } else {
             0
@@ -87,6 +90,46 @@ fn options(
                         },
                         skill: Skill::Intellect,
                         difficulty: i32::from(shroud),
+                        engage: None,
+                        granted: uncaged,
+                    },
+                ));
+            }
+        } else if card.code == "06164" {
+            for enemy in game
+                .scenario
+                .enemies
+                .iter()
+                .filter(|enemy| enemy.engaged == Some(owner))
+            {
+                let difficulty = scenario::enemy_definition(&enemy.card.code)
+                    .map(|definition| definition.evade)
+                    .or_else(|| {
+                        cards::definition(&enemy.card.code)?
+                            .enemy
+                            .map(|values| values.evade)
+                    })
+                    .expect("Selected enemy evade");
+                effects.push((
+                    format!(":{}", enemy.card.id),
+                    SpellEventEffect {
+                        operation: TestOperation::Evade {
+                            enemy: enemy.card.id,
+                        },
+                        skill: Skill::Agility,
+                        difficulty: i32::from(difficulty),
+                        engage: None,
+                        granted: uncaged,
+                    },
+                ));
+            }
+            for watcher in player.hand.iter().filter(|card| card.code == "06017") {
+                effects.push((
+                    format!(":{}", watcher.id),
+                    SpellEventEffect {
+                        operation: TestOperation::Evade { enemy: watcher.id },
+                        skill: Skill::Agility,
+                        difficulty: 5,
                         engage: None,
                         granted: uncaged,
                     },
@@ -180,6 +223,15 @@ fn options(
                             "; attack Watcher from Another Dimension in your hand (copy {enemy})"
                         )
                     }
+                } else if let TestOperation::Evade { enemy } = effect.operation {
+                    let title = game
+                        .scenario
+                        .enemies
+                        .iter()
+                        .find(|target| target.card.id == enemy)
+                        .map(|target| target.card.title.as_str())
+                        .unwrap_or("Watcher from Another Dimension in your hand");
+                    format!("; evade {title} (copy {enemy})")
                 } else {
                     String::new()
                 };
@@ -264,8 +316,8 @@ pub(super) fn pay_action(
         .clone();
     if !uncaged {
         super::player_cards::pay_spell_cost(game, owner, &code, option.robes)?;
-    } else if code == "06201" {
-        super::asset_entry::pay_frozen_surcharge(game, owner, "Uncage's Spectral Razor")?;
+    } else if matches!(code.as_str(), "06201" | "06164") {
+        super::asset_entry::pay_frozen_surcharge(game, owner, "Uncage's fight or evade event")?;
     }
     let player = &mut game.players[owner.index()];
     let at = player

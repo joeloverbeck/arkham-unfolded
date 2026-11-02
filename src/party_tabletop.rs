@@ -11,6 +11,7 @@ use crate::{
         CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
     },
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
+    tabletop_gathering_map as location_map,
     tabletop_health::{HealthAssets, RenderHealth, TabletopHealthPlugin, exit_result},
     tabletop_layout::{self as layout, Area},
     tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin},
@@ -35,7 +36,6 @@ use std::{
 mod cards;
 mod consequences;
 mod controls;
-mod location_map;
 mod scene;
 mod ui;
 use cards::CARDS;

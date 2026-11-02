@@ -14,26 +14,63 @@ use std::{
 
 const FORMAT_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 8 * 1024 * 1024;
-const SETUP_V1_SOURCE: &str = "c35be2c:issue-89-gathering-setup-v1";
-const SETUP_V1_APP_VERSION: &str = "0.1.0";
-const SETUP_V1_READER: &str = "7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3";
+const PRESERVED_APP_VERSION: &str = "0.1.0";
+const PRESERVED_READERS: [(&str, &str); 2] = [
+    (
+        "c35be2c:issue-89-gathering-setup-v1",
+        "7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3",
+    ),
+    (
+        "c35be2c:issue-89-gathering-runtime-v2",
+        "f431de9af84bedf20e0024370b9e6aaa8819a1ef",
+    ),
+];
 
 pub struct Replay {
     recording: Recording,
+    positions: Vec<ReplayPosition>,
     index: usize,
+    projected: Option<Observation>,
+}
+
+enum ReplayPosition {
+    Decision(usize),
+    Presentation(usize),
 }
 
 impl Replay {
     pub fn new(recording: Recording) -> Result<Self, ContinuityError> {
         validate_recording(&recording)?;
+        let mut positions =
+            Vec::with_capacity(recording.moments.len() + recording.presentation_moments.len());
+        let mut presentation = 0;
+        for (index, decision) in recording.moments.iter().enumerate() {
+            while recording
+                .presentation_moments
+                .get(presentation)
+                .is_some_and(|moment| moment.revision == decision.revision)
+            {
+                positions.push(ReplayPosition::Presentation(presentation));
+                presentation += 1;
+            }
+            positions.push(ReplayPosition::Decision(index));
+        }
         Ok(Self {
             recording,
+            positions,
             index: 0,
+            projected: None,
         })
     }
 
     pub fn current(&self) -> &Observation {
-        &self.recording.moments[self.index]
+        match self.positions[self.index] {
+            ReplayPosition::Decision(index) => &self.recording.moments[index],
+            ReplayPosition::Presentation(_) => self
+                .projected
+                .as_ref()
+                .expect("Selected presentation projection"),
+        }
     }
 
     pub fn recording(&self) -> &Recording {
@@ -46,6 +83,7 @@ impl Replay {
             return false;
         }
         self.index += 1;
+        self.project_current();
         true
     }
 
@@ -54,6 +92,7 @@ impl Replay {
             return false;
         }
         self.index -= 1;
+        self.project_current();
         true
     }
 
@@ -62,11 +101,22 @@ impl Replay {
     }
 
     pub fn len(&self) -> usize {
-        self.recording.moments.len()
+        self.positions.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.recording.moments.is_empty()
+        self.positions.is_empty()
+    }
+
+    fn project_current(&mut self) {
+        self.projected = match self.positions[self.index] {
+            ReplayPosition::Decision(_) => None,
+            ReplayPosition::Presentation(index) => Some(super::moments::project(
+                &self.recording.moments,
+                &self.recording.presentation_moments,
+                &self.recording.presentation_moments[index],
+            )),
+        };
     }
 }
 
@@ -128,7 +178,10 @@ fn envelope(kind: &str, payload: serde_json::Value) -> Result<Vec<u8>, Continuit
         checksum: String::new(),
     };
     envelope.checksum = envelope.checksum()?;
-    Ok(serde_json::to_vec_pretty(&envelope)?)
+    // Whitespace is not record identity. Compact encoding keeps the same
+    // payload/checksum readable by existing readers without spending the
+    // bounded record capacity on repeated snapshot indentation.
+    Ok(serde_json::to_vec(&envelope)?)
 }
 
 pub fn save_session(path: impl AsRef<Path>, session: &Session) -> Result<(), ContinuityError> {
@@ -248,12 +301,14 @@ fn decode_envelope(bytes: &[u8], kind: &str) -> Result<Envelope, ContinuityError
         || envelope.app_version != APP_VERSION
     {
         if envelope.format_version == 1
-            && envelope.source_revision == SETUP_V1_SOURCE
-            && envelope.app_version == SETUP_V1_APP_VERSION
+            && envelope.app_version == PRESERVED_APP_VERSION
             && envelope.kind == kind
+            && let Some((source, reader)) = PRESERVED_READERS
+                .iter()
+                .find(|(source, _)| *source == envelope.source_revision)
         {
             return Err(ContinuityError(format!(
-                "This Gathering record requires source {SETUP_V1_SOURCE}, preserved by reader commit {SETUP_V1_READER}. This build writes {SOURCE_REVISION}. The original file was left unchanged; use the exact resume/replay instructions in docs/experiments/gathering-setup.md#record-compatibility. No migration was performed."
+                "This Gathering record requires source {source}, preserved by reader commit {reader}. This build writes {SOURCE_REVISION}. The original file was left unchanged; use the exact resume/replay instructions in docs/experiments/gathering-setup.md#record-compatibility. No migration was performed."
             )));
         }
         return Err(ContinuityError(format!(

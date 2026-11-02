@@ -35,7 +35,10 @@ fn choice(id: String, label: String) -> Choice {
 pub(super) fn action_choices(game: &Game, who: Investigator) -> Vec<Choice> {
     let player = &game.players[who.index()];
     let mut choices = vec![];
-    if !player.threats.iter().any(|card| card.code == "01165") {
+    // Premonition's replacement scope for Voice's three-token request remains
+    // unresolved (issue-89-token-compositions.md). Withhold it before action
+    // payment and opportunity attacks; pay_action validates this same list.
+    if game.premonition.is_none() && !player.threats.iter().any(|card| card.code == "01165") {
         for card in &player.hand {
             if card.code == "60416" {
                 choices.push(choice(

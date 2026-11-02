@@ -392,13 +392,12 @@ fn pay_asset_inner(
             .map(|id| id.parse().expect("Advertised replacement"))
             .collect()
     };
-    let player = &game.players[actor.index()];
-    let index = player
-        .hand
-        .iter()
-        .position(|card| card.id == card_id)
-        .expect("Advertised hand card");
-    let code = player.hand[index].code.clone();
+    let code = super::backpack::playable_cards(game, actor)
+        .into_iter()
+        .find(|card| card.id == card_id)
+        .expect("Advertised playable card")
+        .code
+        .clone();
     let resource_cost = if mode == PlayMode::LongColtFree {
         0
     } else if mode == PlayMode::Uncage {
@@ -410,7 +409,7 @@ fn pay_asset_inner(
     } else {
         pay_spell_cost(game, actor, &code, robes)?
     };
-    let card = game.players[actor.index()].hand.remove(index);
+    let card = super::backpack::take_for_play(game, actor, card_id);
     game.history.push(format!("{} pays {resource_cost} resources for {}; the card waits in limbo until its play effect resolves. [RR Appendix I]", actor.name(), card.title));
     Ok(PreparedAsset {
         actor,
@@ -440,6 +439,7 @@ pub(super) fn resolve_asset(
     }
     let player = &mut game.players[prepared.actor.index()];
     let mut removed_lita = None;
+    let mut discarded_assets = vec![];
     let departed_assets = prepared.replacements.clone();
     for id in prepared.replacements {
         let index = player
@@ -451,7 +451,7 @@ pub(super) fn resolve_asset(
         if discarded.code == "01117" {
             removed_lita = Some(discarded);
         } else {
-            player.discard.push(discarded);
+            discarded_assets.push(discarded);
         }
     }
     game.history.push(format!("{} puts {} into play after its costs and any attacks of opportunity. [RR Play Action; Slots]", prepared.actor.name(), prepared.card.title));
@@ -470,6 +470,12 @@ pub(super) fn resolve_asset(
         super::tony_effects::asset_left_play(game, asset);
     }
     super::asset_entry::after_play(game, prepared.actor, asset_id);
+    super::backpack::discard_replaced(game, prepared.actor, discarded_assets);
+    game.capture_presentation(format!(
+        "{} puts {} into play.",
+        prepared.actor.name(),
+        definition.title
+    ));
     Ok(None)
 }
 
@@ -563,9 +569,8 @@ fn asset_choices(game: &Game, actor: Investigator, mode: PlayMode) -> Vec<Choice
     {
         return vec![];
     }
-    player
-        .hand
-        .iter()
+    super::backpack::playable_cards(game, actor)
+        .into_iter()
         .flat_map(|card| {
             let Some(definition) = cards::definition(&card.code) else {
                 return vec![];
@@ -580,7 +585,6 @@ fn asset_choices(game: &Game, actor: Investigator, mode: PlayMode) -> Vec<Choice
                 // consumers. Never silently spend an action on a Fast asset or
                 // skip a player's entry reaction.
                 || !mode.permits(definition)
-                || card.code == "04037"
                 || definition.unique
                     && game
                         .players
