@@ -1,7 +1,9 @@
 # Complete Gathering assessment
 
 Assessment for [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89),
-2026-11-02, against `a4a50c8a2ddb72cd7a2edf5d074ba5a57311a907`.
+2026-11-02, initially against `a4a50c8a2ddb72cd7a2edf5d074ba5a57311a907`,
+reassessed from `450e418194cfcd5c4e1f7b7f48fa68f066522f69` after Joel supplied
+the actual basic weaknesses and requested stronger encounter-deck evidence.
 This report is a decision proposal. The issue's current handoff owns acceptance,
 allowance, checks and publication status. The accompanying
 [preparation record](gathering-assessment-preparation.md) preserves the earlier
@@ -9,11 +11,12 @@ interview unchanged.
 
 ## Decision in brief
 
-**Narrow the next activation to resolving real preparation, then return with the
-bound inputs before activating gameplay implementation. Keep complete original
-The Gathering on Standard as the selected playable milestone.** The existing
-experiments are valuable foundations, but full-scenario implementation is not
-ready for an unconditional fixed estimate or activation.
+**The starting weakness scope and Gathering encounter inventory are now bound.
+Drop the random-weakness preparation detour; finish the remaining named card-rule
+expectations before activating the real-start gameplay increment.** Keep complete
+original The Gathering on Standard as the selected playable milestone. This
+reassessment removes two input uncertainties, while the existing experiments
+still do not establish full-scenario implementation readiness.
 
 The three accepted deck snapshots and taboo response are unchanged on this
 inspection. The difficult work is connected behavior: the full decks can be drawn
@@ -22,12 +25,20 @@ rejoins, encounter effects interrupt decisions, and unsuccessful outcomes must
 produce campaign records. Removing the current endpoint would expose states the
 Party implementation expressly rejects.
 
-Two preparation facts cannot be silently filled in. Patrice and Jacqueline have
-unresolved basic weaknesses; their actual selections must be retained even if
-unsupported. The all-official pool also needs a verified eligibility and quantity
-projection, including duplicate prints and special selection restrictions.
-Catalog counts alone do not provide that. Neither selection nor campaign creation
-was performed in this assessment.
+Joel has identified Jacqueline's **Chronophobia `02039`** and Patrice's
+**The 13th Vision `05041`**; Tony retains **Internal Injury `02038`**. These are
+owner-supplied corrections to the starting snapshots, not agent-selected draws.
+Only those three basic weaknesses need implementation for this start. No general
+weakness pool, random selection, successor-weakness chain or upgraded deck import
+is required. The source snapshot remains unchanged; preparation must bind the
+two explicit replacements alongside it.
+
+Encounter completeness has a direct official cross-check: **Learn to Play p8
+enumerates all six sets, their copy totals and collector-number ranges**.
+Together they contain 40 cards. Original setup keeps 14 outside the encounter
+draw pile, leaving exactly 26. Section 3 gives the complete identity/quantity
+table, publisher print-file evidence and the proposed exact-composition checks.
+This establishes the inventory; future tests must still establish its execution.
 
 There is a source identity warning worth retaining: the currently linked
 Grimoire still says 1.1 but differs from the earlier retained 1.1 bytes. A version
@@ -42,9 +53,9 @@ continuity together. It is a checkpoint inside full-Gathering delivery, not a ne
 prepared experiment or a substitute acceptance target. Its reachable content is
 large; one round does not mean a small card subset.
 
-The alternative is to commit immediately to full Gathering with unresolved inputs
-and a broad contingency. That buys earlier coding but hides content and oracle
-risk. Parking is reasonable if the estimated effort below exceeds appetite;
+The remaining alternative is to commit immediately to full Gathering before the
+named interaction expectations are complete. That buys earlier coding but hides
+oracle risk. Parking is reasonable if the estimated effort below exceeds appetite;
 there is no evidence here that another prepared demonstration would satisfy the
 selected outcome. No follow-up issue, architecture, engine or implementation is
 activated by this recommendation.
@@ -68,9 +79,9 @@ identified by exact bytes, not dates inferred from URL paths.
 
 The current Grimoire adds whole-deck-search shuffling language on p21 and removes
 the former Decoy Trap erratum on p41. These inspected edits do not directly change
-the selected older starting-card identities. Chapter Two weaknesses could make
-its current rules relevant. Do not adopt it wholesale over the legacy sources,
-or exclude newer eligible weaknesses to avoid reconciliation.
+the selected older starting-card identities. All three selected basic weaknesses
+also predate Chapter Two. Do not adopt the Grimoire wholesale over the legacy
+sources; a later separately selected input may require fresh reconciliation.
 
 Precedence proposal: original English card/scenario identity, applicable official
 errata, then the pinned taboo overlay; specific rules override general rules,
@@ -95,8 +106,8 @@ completeness or full effective-text review.
 | Accepted deck | Current observed revision | Preparation consequence |
 | --- | --- | --- |
 | [Tony 5392133](https://arkhamdb.com/api/public/deck/5392133.json) | 0.5; updated 2025-10-07 11:56:28 UTC | 35 slot copies / 22 codes; Guardian secondary class, Internal Injury already specified |
-| [Patrice 5391062](https://arkhamdb.com/api/public/deck/5391062.json) | 0.7; updated 2025-10-07 11:56:14 UTC | 45 / 25; basic weakness unresolved |
-| [Jacqueline 5389418](https://arkhamdb.com/api/public/deck/5389418.json) | 0.9; updated 2025-10-07 11:55:52 UTC | 35 / 22; basic weakness unresolved, two Arcane Research permanents |
+| [Patrice 5391062](https://arkhamdb.com/api/public/deck/5391062.json) | 0.7; updated 2025-10-07 11:56:14 UTC | 45 / 25 in retained API snapshot; replace its `01000` copy with owner-bound The 13th Vision `05041` |
+| [Jacqueline 5389418](https://arkhamdb.com/api/public/deck/5389418.json) | 0.9; updated 2025-10-07 11:55:52 UTC | 35 / 22 in retained API snapshot; replace its `01000` copy with owner-bound Chronophobia `02039`; retain two Arcane Research permanents |
 
 All complete live deck responses and the [taboo response](https://arkhamdb.com/api/public/taboos/)
 match the hashes in `issue-1-evidence.json`. There is no observed slot or metadata
@@ -106,7 +117,8 @@ latest when preparation runs. Quick Thinking `02229`, Dark Prophecy `04032` and
 Voice of Ra `60416` have identical relevant overlays in 9 and 10. The complete
 [deck projection](issue-1-decks.json) remains the identity inventory: 64 distinct
 slot codes including the placeholder, 66 physical identities with investigators.
-This is not a behavior-completeness count. Historical descriptions, XP and trauma
+Those figures describe the historical snapshot, before the two owner-bound
+weakness replacements; they are not a behavior-completeness count. Historical descriptions, XP and trauma
 are not imported; Jacqueline's two legitimate Arcane Research mental trauma are.
 
 ### Retention and recovery
@@ -135,59 +147,54 @@ commits, and no evidence-management system is proposed.
 ## 2. Real preparation and refusal
 
 Prepare in this order: bind campaign/difficulty and source revisions; bind exact
-decks, class choices, legality, signatures and permanents; reconcile the eligible
-weakness multiset; resolve and retain actual selections; close reachable behavior
-support (including successors); then apply real campaign/scenario setup. A source
-mismatch or unsupported behavior must identify the deficit before play, preserving
-the last accepted preparation. Reopening must not redraw, charge twice or repeat
-trauma. Missing art uses readable substitutes instead of blocking rules support.
+starting snapshots plus the owner-supplied weakness replacements below; check
+class choices, legality, signatures, permanents and reachable behavior support;
+then apply real campaign/scenario setup. A source mismatch or unsupported
+behavior must identify the deficit before play, preserving the accepted inputs.
+Reopening must not replace a weakness, charge twice or repeat trauma. Missing
+art uses readable substitutes instead of blocking rules support.
 
-**Weakness facts:** Learn to Play p19 selects weaknesses after the other deck
-cards. FAQ pp16–17 bases the pool on one copy of each product, retaining supplied
-quantities and removing assigned copies from a shared pool. It is not a uniform
-draw over names. The Dream-Eaters insert p3 allows Multiplayer-only weaknesses
-when there is more than one investigator: one human controlling three qualifies.
-Campaign-only weaknesses remain eligible because this is a campaign start.
-Class restrictions follow investigator class, not off-class deck access.
+| Investigator | Fixed basic weakness (one copy) | Behavior to implement |
+| --- | --- | --- |
+| Tony | Internal Injury `02038` | Existing selected card: threat-area revelation, end-of-own-turn direct damage, two-action removal |
+| Jacqueline | [Chronophobia `02039`](https://arkhamdb.com/card/02039) | Threat-area revelation; one direct horror at the end of her own turn; a single activation costing two actions removes it |
+| Patrice | [The 13th Vision `05041`](https://arkhamdb.com/card/05041) | Threat-area revelation; investigators at her location fail skill-test ties; a single activation costing two actions removes it |
 
-The inspected canonical metadata contains 65 basic-weakness identities with
-summed quantity 77, excluding `01000`. The live API has 77 subtype records with
-summed quantity 107: it additionally exposes eight Revised Core reprints (ten
-copies), three 2026-core reprints (five copies), and the 15-count placeholder.
-**Neither count is a certified eligible pool or probability distribution.**
-Naively summing API rows includes placeholders and duplicate editions; filtering
-only canonical subtype fields misses alias records.
+Joel supplied the latter two identities on 2026-11-02, reporting that he had
+recorded them in his upgraded decks. This is the provenance of the correction;
+the assessment does not claim to have inspected those upgraded lists. Apply the
+correction to the starting snapshots, without importing upgrades, prior XP,
+trauma or other history. Keep the raw `issue-1-decks.json` and API bytes unchanged
+because the existing experiments consume that historical projection. New
+preparation binds each original deck revision and its explicit replacement of
+one `01000`; a placeholder surviving in the prepared playable deck is an error.
 
-Necessary handling includes these concrete cases:
+Both new original English faces were visually checked, including their two
+action icons (which the plain webpage extraction omits). They introduce no
+weakness evolution chain, setup XP grant or random-pool operation. Their genuine
+cross-card costs remain: direct horror against Jacqueline's reduced sanity
+margin, same-location help removing threats, and failure-on-tie interactions
+with Lucky!, Take Heart and failure-margin consequences. Section 4 adds worked
+expectations; a tie must not be implemented as a blanket skill penalty.
 
-- Exclude `01000`, signatures and non-basic campaign/evolution successors from
-  initial draws. Preserve the three Unspeakable Oath subtitles as distinct cards.
-- Include Multiplayer-only `06035`–`06038`; apply campaign eligibility to Dark
-  Pact, Doomed, Unspeakable Oaths and Offer You Cannot Refuse.
-- Apply Scarlet Keys class restrictions: Underprepared `09128` for Patrice,
-  Ectoplasmic Horror `09127` for Jacqueline; off-class access grants no exception.
-- Reserve Tony's assigned Internal Injury copy. Retain one shared remaining pool
-  for later additions, with each recipient's restrictions applied.
-- Support selected evolving weaknesses and their reachable successors. FAQ p17
-  preserves Dark Pact/Doomed custody after replacement. Offer You Cannot Refuse
-  grants XP on acquisition and can reopen preparation; do not silently choose
-  upgrades, waive the effect or assert the original starting slots stay sufficient.
+**Resolved scope deficit:** no all-official weakness census, edition-weighting
+policy or random draw is a prerequisite for these three starting decks. The
+earlier pool investigation remains historical evidence at commit `450e418`,
+not a pending task. Only an actually reached later campaign requirement for a
+new weakness can reopen selection/support work. That later boundary does not
+authorize preemptive implementation of unselected weaknesses now. No ArkhamDB
+deck, personal record or campaign state was changed by this reassessment.
 
-**Exact deficit:** a publisher-backed completeness check and a reconciled
-edition/reprint quantity policy for this all-official virtual collection are not
-complete. Printed restrictions and successor closure have not been visually
-verified for every potential draw. Recommended proposal: collapse equivalent
-reprints to original identity and count that product's quantities once; preserve
-true subtitle variants and genuinely new identities, and expose changed reprint
-text as a deliberate version choice. That is a proposed local interpretation of
-the virtual collection, not a newly invented official rule or an already accepted
-pool. It must be resolved before drawing.
-
-Actual Patrice/Jacqueline selections must then be bound **before finalizing the
-playable implementation content set and its cost**. A legal unsupported selection
-stays selected and blocks launch. Recovery is implementing it or a separately
-accepted change of scope, never redrawing until supported. This assessment did
-not select anything, create a campaign, or alter a personal deck/record.
+Source bindings in the unchanged external archive: Chronophobia face variant
+`700c94271661862d`, SHA-256
+`8774151d492fd96faaaea5654bb4b8684335eb6adddddd1d8b88d95b9aeeaf5d`;
+The 13th Vision variant `54ff6e0f4fbce54b`, SHA-256
+`ee8fddb57f0503184c89fe118c76f125b0d7508bc8630cea141a5404d1d83bb4`.
+The catalog resolves these to their original English Dunwich #39 / Circle Undone
+#41 face paths. No named erratum was found for either in retained FAQ 2.5, and
+neither has a taboo 10 entry. RR pp3–5,9,20,26 and FAQ §§1.2/2.1/2.9 govern the
+action, threat-area, direct-horror and result interactions. The image inspection
+does not authenticate the archive's publisher provenance; images remain external.
 
 ## 3. Behavior and coverage
 
@@ -209,8 +216,8 @@ pending complete effective-text reconciliation.
 | Patrice/signatures | `06005,06016,06017`: upkeep hand replacement, hand maximum, simultaneous draw/revelation, reshuffle/hidden retention, resource/draw gift, in-hand enemy Fight/Evade, failed spawn and deck-exhaustion attack |
 | Patrice attacks/movement/clues | `04029,60407,06201,06164,01079,04272,60507`: alternate skills, charges/backlash, optional movement/arrival harm, engagement and round-duration effects, failure-margin clues, discard play/shuffle, shroud/key lifecycle |
 | Patrice protection/recursion | `03039,06165,04200,01080,01065,05032,60513,09102,10111,02033`: distinct retrieval eligibility; retry after failure consequences; would-fail modifier; cancellation versus prevention; defensive nested test; discard costs/restrictions; assignment, replenishment and healing |
-| Patrice economy/skills | `03033,04201,01093,02192,07032,01000`: spell cost reduction, failure rewards to tester, max/self-test/base-skill constraints, immediate curse insertion or committer horror; unresolved basic weakness |
-| Jacqueline/signatures/preparation | `60401,60402,60403,04109,01000`: same-location optional reveal replacement and per-round limit/Arbiter exception; prohibition on cancel/ignore; end-turn non-test reveal; permanent trauma and later Spell discount; unresolved weakness |
+| Patrice economy/skills/basic weakness | `03033,04201,01093,02192,07032,05041`: spell cost reduction, failure rewards to tester, max/self-test/base-skill constraints, immediate curse insertion or committer horror; local failure-on-tie and shared two-action threat removal |
+| Jacqueline/signatures/preparation/basic weakness | `60401,60402,60403,04109,02039`: same-location optional reveal replacement and per-round limit/Arbiter exception; prohibition on cancel/ignore; end-turn non-test reveal; permanent trauma and later Spell discount; own-turn direct horror and shared two-action threat removal |
 | Jacqueline token composition | `04197,04199,04032,11067,11069,11097,60419,60411`: predeclared nested replacements, sealing/substitution, curse continuation/custody, taboo selection, ignored-token matches, reveal-sensitive icons, retrieval and outcome prediction |
 | Jacqueline actions/assets | `60408,06117,06201,07029,03033,60412,60416,05112,01065,05032`: skill substitution/addition, clues/backlash, location-trigger ignore limits, on-play activation, discounts, non-test income, restricted arcane slot, cancellation/prevention |
 
@@ -224,12 +231,110 @@ The source order above governs discrepancies with transcriptions.
 ### Scenario, rounds and adverse branches
 
 CG p2 selects **The Gathering, Rats, Ghouls, Striking Fear, Ancient Evils and
-Chilling Cold**. Original identities are `01104–01119` and `01159–01168`.
-The starting encounter deck has 26 cards: Flesh-Eater and Icy Ghoul one each;
-Rats three; Ghoul Minion three; Ravenous Ghoul one; Grasping Hands and Rotting
-Remains three each; Frozen in Fear and Dissonant Voices two each; Ancient Evils
-three; Crypt Chill and Obscuring Fog two each. This arithmetic checks inventory,
-not semantic completeness.
+Chilling Cold**. The independent publisher inventory is
+[AHC60 Learn to Play p8](https://cdn.svc.asmodee.net/production-fantasyflightgames/uploads/2026/09/ahc60_learn_to_play_web-1.pdf),
+headed “The Gathering Card List”: 16 + 3 + 7 + 7 + 3 + 4 = **40 physical cards**.
+It gives the complete collector-number ranges and explicitly instructs gathering
+all copies using each card's printed encounter-set number (`#/#`). It also allows
+other investigator selections/counts; the inventory is not limited to the
+tutorial's Roland/Wendy party. CG and Learn to Play pp8–9 determine disposition.
+
+The five [publisher Chapter One encounter PDFs](https://www.fantasyflightgames.com/product/arkham-horror-the-card-game/#support)
+independently supply every numbered physical copy in the shared sets. Their
+original names, printed core numbers, encounter symbols, rules text and numerical
+values were checked against the original archive faces. They are not Return To,
+optional refraction or Chapter Two replacements. All sixteen numbered Gathering
+faces and the ten shared-set identity faces were visually inspected. The six sets
+close their printed number ranges without gaps or duplicate positions.
+
+| Set | Original identity | Card | Printed positions | Copies | Initial destination |
+| --- | --- | --- | --- | ---: | --- |
+| Gathering | `01104` | The Gathering reference | 1/16 | 1 | Scenario reference, Easy/Standard face |
+| Gathering | `01105` | What's Going On?! | 2/16 | 1 | Agenda deck, current |
+| Gathering | `01106` | Rise of the Ghouls | 3/16 | 1 | Agenda deck, second |
+| Gathering | `01107` | They're Getting Out! | 4/16 | 1 | Agenda deck, third |
+| Gathering | `01108` | Trapped | 5/16 | 1 | Act deck, current |
+| Gathering | `01109` | The Barrier | 6/16 | 1 | Act deck, second |
+| Gathering | `01110` | What Have You Done? | 7/16 | 1 | Act deck, third |
+| Gathering | `01111` | Study | 8/16 | 1 | In play, starting location |
+| Gathering | `01112` | Hallway | 9/16 | 1 | Set aside |
+| Gathering | `01113` | Attic | 10/16 | 1 | Set aside |
+| Gathering | `01114` | Cellar | 11/16 | 1 | Set aside |
+| Gathering | `01115` | Parlor | 12/16 | 1 | Set aside |
+| Gathering | `01116` | Ghoul Priest | 13/16 | 1 | Set aside |
+| Gathering | `01117` | Lita Chantler | 14/16 | 1 | Set aside |
+| Gathering | `01118` | Flesh-Eater | 15/16 | 1 | Encounter deck |
+| Gathering | `01119` | Icy Ghoul | 16/16 | 1 | Encounter deck |
+| Rats | `01159` | Swarm of Rats | 1–3/3 | 3 | Encounter deck |
+| Ghouls | `01160` | Ghoul Minion | 1–3/7 | 3 | Encounter deck |
+| Ghouls | `01161` | Ravenous Ghoul | 4/7 | 1 | Encounter deck |
+| Ghouls | `01162` | Grasping Hands | 5–7/7 | 3 | Encounter deck |
+| Striking Fear | `01163` | Rotting Remains | 1–3/7 | 3 | Encounter deck |
+| Striking Fear | `01164` | Frozen in Fear | 4–5/7 | 2 | Encounter deck |
+| Striking Fear | `01165` | Dissonant Voices | 6–7/7 | 2 | Encounter deck |
+| Ancient Evils | `01166` | Ancient Evils | 1–3/3 | 3 | Encounter deck |
+| Chilling Cold | `01167` | Crypt Chill | 1–2/4 | 2 | Encounter deck |
+| Chilling Cold | `01168` | Obscuring Fog | 3–4/4 | 2 | Encounter deck |
+
+The **14 non-deck cards** are one reference, three agendas, three acts, Study,
+and six set-aside cards (four locations, Priest and Lita). Thus **40 − 14 = 26**
+initial encounter cards. Each double-sided card is one physical card, not two.
+These copy counts do not scale with investigator count. Standard selects the
+reference face and chaos bag, not a different encounter-card multiset. These
+personal basic weaknesses belong to investigator decks, not this encounter deck.
+
+The source-derived expected initial multiset is:
+
+```json
+{"01118":1,"01119":1,"01159":3,"01160":3,"01161":1,"01162":3,"01163":3,"01164":2,"01165":2,"01166":3,"01167":2,"01168":2}
+```
+
+Future implementation must compare **every original identity and copy quantity**
+with this expectation, and separately check all fourteen non-deck destinations.
+Reject missing, extra, substituted and excess-copy cards. Include a same-total
+negative case (replace an Ancient Evils with a fourth Rat), a missing-copy case,
+and a premature Ghoul Priest inclusion. A total-count check or a set of twelve
+unique names would miss these errors. Verify through the real preparation path,
+without exposing hidden deck order in normal player observations. These are
+proposed acceptance checks; no new gameplay test was implemented here.
+
+This establishes original Gathering's inventory completeness from independent
+publisher evidence, not merely agreement with ArkhamDB. It does not establish
+rules execution. Archive duplicate entries may reuse a single scan (for example
+Rats 1/3); those entries are not independent evidence of three copies. The
+publisher PDFs supply positions 1/3, 2/3 and 3/3 separately. The Gathering image
+copies retain an archive-provenance limit, but publisher p8's sixteen-card range
+and the inspected numbered faces leave no unidentified inventory member.
+
+#### Encounter evidence custody
+
+Retrieved on 2026-11-02; all files below are retained under ignored
+`local/issue-89-evidence/encounter-audit/`. The publisher labels these English
+resources Chapter One; the printable cards retain original core numbers and
+©2016 markings, with no separate numbered print-file revision. Face pages are
+odd-numbered PDF pages, in printed-copy order; backs occupy the even pages.
+
+| File / publisher link | Bytes | SHA-256 |
+| --- | ---: | --- |
+| [Learn to Play](https://cdn.svc.asmodee.net/production-fantasyflightgames/uploads/2026/09/ahc60_learn_to_play_web-1.pdf), `learn-to-play.pdf` | 4,636,917 | `f82790f81af3731f11f0a7ddc267feb0644b47d20842a973f1023de709568ab0` |
+| [Rats](https://cdn.svc.asmodee.net/production-fantasyflightgames/uploads/2026/09/rats.pdf), `rats.pdf` | 2,605,975 | `ebe274169ebfe5f0daec22ddef091b06eaaab4baaf7d055f58ea4a35c90e5929` |
+| [Ghouls](https://cdn.svc.asmodee.net/production-fantasyflightgames/uploads/2026/09/ghouls.pdf), `ghouls.pdf` | 6,414,630 | `2acb9b5c68a53c70f68b477e08c9cdf4505289d40814562a314ce2cdf136ff18` |
+| [Striking Fear](https://cdn.svc.asmodee.net/production-fantasyflightgames/uploads/2026/09/striking_fear.pdf), `striking-fear.pdf` | 5,617,016 | `4d24cd47f4d93c293a9b2cfbde0932e18235a92b86172860c9bd11a497b5ecbd` |
+| [Ancient Evils](https://cdn.svc.asmodee.net/production-fantasyflightgames/uploads/2026/09/ancient_evils.pdf), `ancient-evils.pdf` | 2,548,907 | `ad4776223844cc4ba1669f880314134cc950d4e456edf0fcda5cca5dd999f6c2` |
+| [Chilling Cold](https://cdn.svc.asmodee.net/production-fantasyflightgames/uploads/2026/09/chilling_cold.pdf), `chilling-cold.pdf` | 4,015,048 | `f534100759f11e7595de265c595259df7fca0286ffa5ec476a9f0ce79cbba8ff` |
+
+The Learn to Play bytes match the earlier retained copy despite a different URL.
+Scoped original-image paths, variant IDs and hashes are retained in
+`encounter-image-bindings.json` beside these files (14,549 bytes; SHA-256
+`635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0`);
+all 26 face files and the five
+revealed-location backs were hash-checked successfully. Gathering's numbered
+sequence uses `01104` face and `01105–01110` faces, `01111–01115` revealed backs,
+and `01116–01119` faces. This binds the visual inspection without publishing
+artwork. Custody/recovery limits in section 1 still apply: no independent backup
+has been verified, and a later download must match the hash or undergo new review.
+
+#### Required scenario behavior
 
 | Obligation | Source-derived coverage required |
 | --- | --- |
@@ -274,7 +379,7 @@ full-scenario tests. Fixture randomness is private test control.
    Bounty Contracts begins with six bounties. Opening-hand/mulligan weaknesses are
    replaced without revelation and shuffled back at the prescribed boundary.
    Sources: RR pp16,27; `04109`, `06010`; fresh-deck play contract. Actual selected
-   weaknesses can add obligations; this example does not choose them.
+   weaknesses are the fixed three above; this example does not randomize them.
 2. **Patrice across exhaustion.** Healthy Patrice holds Watcher plus four ordinary
    cards; her deck has two ordinary cards and an ample discard. With no other
    relevant effect, upkeep discards four, retains Watcher and draws four. Emptying
@@ -344,9 +449,45 @@ full-scenario tests. Fixture randomness is private test control.
     Resignation drops carried clues; that can prevent a location qualifying for
     victory. Sources: CG pp2–3, RR pp10,21, `01113/01116`. Prior trauma and weakness
     effects persist separately.
+11. **Shared removal costs two actions, once.** Tony and Jacqueline are together;
+    Chronophobia is in Jacqueline's threat area. On his turn Tony can spend two
+    ordinary actions on its removal, but cannot pool one action with hers or use
+    his restricted bounty Fight/Engage action to make up the cost. Remote Tony
+    cannot activate it. If engaged with a ready Ghoul Minion, he receives one
+    opportunity attack before resolution, not two because of two action icons.
+    Assuming he survives, discard to Jacqueline's pile. The same access/cost rule
+    applies to The 13th Vision. Sources: inspected faces, RR pp3–5,20,
+    FAQ §§1.2/2.1.
+12. **Chronophobia's own-turn boundary.** Jacqueline starts with two horror from
+    Arcane Research. With Chronophobia in her threat area and no prevention, ending
+    her turn brings her to three horror directly on her investigator; an ally
+    cannot absorb it through ordinary allocation. Other investigators' turn ends
+    do not trigger it. Drawing it during upkeep does not retroactively charge the
+    already-ended turn. Removal before her turn ends prevents that instance's
+    forced effect. Reopening a completed boundary must not charge it again.
+    Sources: inspected Chronophobia, RR p9/timing, FAQ §2.1. Direct horror can still
+    be prevented by an applicable effect; reaching sanity invokes normal defeat.
+13. **Vision fails ties by zero.** Patrice with Vision tests Rotting Remains at
+    willpower 4 and resolves `−1`: 3 against 3 fails by zero. With Take Heart
+    committed, she receives its two cards/two resources but takes zero
+    margin-based horror. Alternatively, at the would-fail window she can pay for
+    Lucky!: skill becomes 5, success by two, no Take Heart reward. Both choices
+    remain hers. A same-location Jacqueline tie also fails while Vision is at
+    Patrice's location; a remote test does not. Take Heart rewards the testing
+    investigator, not necessarily its committer. Sources: inspected `05041`,
+    `01080`, `04201`, RR p26. Difficulty+1 would produce the wrong failure and
+    success margins, so it is not an equivalent implementation.
+14. **Zero difficulty is an ordinary comparison.** Patrice plays Winging It from
+    discard to investigate Attic. Shroud 1 becomes 0; intellect 2 with `−2` becomes
+    0. Under her Vision, that 0–0 tie fails: no clue or bonus clue. Winging It's
+    subsequent shuffle still happens. Without the local Vision effect the same
+    ordinary tie succeeds. Auto-fail remains failure even at difficulty zero and
+    cannot be overcome by Lucky!'s skill increase; do not confuse zero difficulty
+    with an actual automatic-success effect. Sources: `05041`, `04272`, `01113`,
+    RR p5 and FAQ §2.9/pp16–17.
 
 **Remaining source/oracle deficits:** all mapped original-card/errata combinations
-have not been adjudicated; actual basic weaknesses are unbound; full traces are
+have not been adjudicated; the basic weaknesses are now bound; full traces are
 still needed for Dark Future with multi-reveal/seal/replacement chains, nested
 A Test of Will, retry/retaliation/after-test ordering, and simultaneous Act 2 /
 Agenda 3 / end-round resets. These block an unqualified complete-Gathering
@@ -428,15 +569,18 @@ campaign estimate.
 
 | Work for complete Gathering | Aggregate engineering hours | Main uncertainty |
 | --- | ---: | --- |
-| Source reconciliation, independent expectations, preparation adjudication | 12–30 | Weakness pool/actual selections; nested timing and effective text |
+| Source reconciliation, independent expectations, preparation adjudication | 8–20 | Remaining selected-card timing/effective text; initial weakness selection and encounter membership now resolved |
 | Real preparation, rules and selected content | 80–180 | Full deck lifecycle, interruptions, enemy/phase/scenario integration |
 | Independent verification and repairs | 45–100 | Adverse branches, refusals, persisted continuations and oracle quality |
 | Tabletop and offline continuity integration | 25–60 | Crowded real states, exact pending choices, replay and recovery |
-| **Planning total** | **162–370** | No defensible closed upper bound before weakness identities and remaining rules gaps close |
+| **Planning total** | **158–360** | Fixed starting content; remaining rules, verification and integration uncertainty |
 
 Expect at least factor-of-two uncertainty; the range is an order-of-magnitude
-judgment, not a confidence interval. Two selected weaknesses may introduce
-materially different continuations. The first real-round checkpoint could
+judgment, not a confidence interval or guaranteed upper bound. Compared with the
+initial 162–370-hour range, remove roughly 4–10 hours of random-pool/preparation
+research and the unknown weakness-family contingency. The two known cards add
+specific ordinary threat/action and result-comparison cases already represented
+in this assessment; they do not remove the full-deck or round machinery. The first real-round checkpoint could
 consume much of this effort because all starting cards and early scenario
 advancement are reachable. Existing persistence and presentation code reduces
 some integration uncertainty but does not make full card support cheap.
@@ -450,18 +594,17 @@ also separate: reserve roughly 4–12 engineering hours for a material source or
 record-compatibility update, then re-estimate if behavior changes rather than
 silently consuming that allowance.
 
-**Recommended next bounded proposal, not activated:** allow at most eight
-aggregate engineering hours to finish the eligible pool and effective-input
-reconciliation, expose the revision-bound preparation result through the
-existing player observation/choice boundary, and bind actual selections only
-under an explicitly authorized preparation operation. Show unsupported
-selections and preserve them without redraw. Return the exact content delta,
-source evidence and revised estimate. A refusal is an honest preparation result;
-it does not establish playable Gathering. Stop at the first unresolved governing
-semantics that cannot be localized, at the effort ceiling, or at the existing
-non-convergence tripwires. Do not open implementation-ticket fan-out before this
-result. If the preparation cannot close in this bound, return to narrow or park;
-do not automatically extend it.
+**Revised next bounded proposal, not activated:** the former eight-hour random
+pool/preparation implementation proposal is withdrawn. Use at most eight
+aggregate source-adjudication hours to close the remaining named interaction
+families in section 4 and complete original-card/errata reconciliation for this
+fixed input set. Return worked legal/adverse expectations and an implementation
+brief against the accepted player-observation/choice/persistence seam. This is
+the remaining fidelity prerequisite, not a new weakness selector or preparation
+UI project. No further owner selection of starting weaknesses is needed. Stop at
+an unresolved governing conflict that cannot be localized, the effort ceiling,
+or existing non-convergence tripwires; return exact deficits without an automatic
+extension. No child-ticket fan-out is selected by this report.
 
 **Conditional gameplay proposal:** after those inputs and an implementation
 allowance are accepted, implement original Gathering for this exact party on
@@ -472,7 +615,8 @@ randomness for play; private deterministic fixtures may target the worked cases,
 but cannot become player abilities or hide unsupported draws. Use the existing
 player-observation/choice/persistence seam for TDD; no private-type-only oracle.
 
-The first hostile trace should connect legal opening hands, a cooperative test,
+The first hostile trace should connect legal opening hands, a cooperative test
+under The 13th Vision with a genuine failure/Lucky! decision, shared threat removal,
 Patrice's upkeep with Watcher retained, round-limit reset, a following mythos
 encounter, a saved pending response/token choice, an adverse outcome and replay.
 Check legal alternatives and refusals as well as success. Before claiming that
@@ -506,11 +650,12 @@ git show HEAD:docs/research/issue-89-gathering-assessment.md | less
 
 1. Read “Decision in brief” and this effort/disposition section. Expected result:
    the next commitment and its limits are understandable without decoding source
-   data. Choose whether the recommended preparation-first direction is worth its
-   proposed eight-hour ceiling, or narrow/park it.
+   data. Judge the revised source-adjudication proposal and its eight-hour ceiling,
+   or narrow/park it; the former random-pool preparation proposal is withdrawn.
 2. Inspect the source/preparation deficits and the worked adverse outcomes below
-   the decision summary. Expected result: unknown weakness scope and rules gaps
-   remain visible; report acceptance does not certify gameplay or resolve them.
+   the decision summary and the encounter inventory in section 3. Expected result:
+   starting weaknesses and encounter membership are resolved, while remaining
+   rule-oracle gaps stay visible; report acceptance does not certify gameplay.
 3. Accept the assessment, request a bounded correction, narrow the next proposal,
    or park. Stop after 20 cumulative minutes or sooner if the decision is unclear;
    a retry consumes the same allowance. Acceptance alone does not activate the
