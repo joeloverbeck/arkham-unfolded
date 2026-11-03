@@ -542,6 +542,51 @@ fn production_hand_captions_do_not_overlap_after_text_layout() {
     }
 }
 
+#[test]
+fn production_chaos_captions_do_not_overlap_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+    let directory = tempfile::tempdir().unwrap();
+    for size in [Vec2::new(1280., 800.), Vec2::new(1600., 1000.)] {
+        for scale in [1., 2.] {
+            let path = directory
+                .path()
+                .join(format!("chaos-captions-{}-{scale}.json", size.x));
+            let mut app = host(path.clone());
+            app.insert_resource(Table::new(Session::with_seed(14376244771021323084), path));
+            app.world_mut().resource_mut::<Table>().reduced_motion = true;
+            app.update();
+            for id in [
+                "lead:tony",
+                "confirm-mulligan",
+                "confirm-mulligan",
+                "confirm-mulligan",
+                "turn:patrice",
+                "action:ordinary:resource",
+            ] {
+                activate_choice(&mut app, id);
+            }
+            finish_presentation(&mut app);
+            heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+            for area in [Area::Scenario, Area::Test] {
+                app.world_mut()
+                    .resource_mut::<Actions>()
+                    .0
+                    .push(Action::Focus(area));
+                for _ in 0..5 {
+                    app.update();
+                }
+                let world = app.world_mut();
+                let panel = world
+                    .query_filtered::<(Entity, &Node), With<Panel>>()
+                    .iter(world)
+                    .find_map(|(entity, node)| (node.bottom == px(10.)).then_some(entity))
+                    .unwrap();
+                heading_checks::assert_chaos_captions(&mut app, panel, size, scale, area);
+            }
+        }
+    }
+}
+
 fn assert_pointer_lead_choice(raw_window_events: bool, continuing_health_observations: bool) {
     use bevy::{
         camera::RenderTarget,

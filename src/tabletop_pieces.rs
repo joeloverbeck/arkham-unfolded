@@ -130,9 +130,10 @@ pub(crate) fn chaos_area(
         false,
         symbol_font,
     );
-    let pool_at = bag_at - Vec3::X * 2.;
+    let pool_at = layout::test_curse_pool();
     let pool = commands
         .spawn((
+            Name::new("Curse pool"),
             Mesh3d(meshes.add(Cylinder::new(0.6, 0.12))),
             MeshMaterial3d(materials.add(Color::srgb(0.25, 0.16, 0.32))),
             Transform::from_translation(pool_at),

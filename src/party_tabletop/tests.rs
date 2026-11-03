@@ -148,18 +148,19 @@ fn installed_token_return_clears_physical_tokens_and_sends_resolved_curse_to_poo
         }
         if !reduced_motion {
             let world = app.world_mut();
+            let pool = world
+                .query::<(&Name, &Transform)>()
+                .iter(world)
+                .find_map(|(name, transform)| {
+                    (name.as_str() == "Curse pool").then_some(transform.translation)
+                })
+                .expect("the production scene renders the curse pool");
             let destinations: Vec<_> = world
                 .query::<&ReturningToken>()
                 .iter(world)
                 .map(|token| token.destination)
                 .collect();
-            assert_eq!(
-                destinations
-                    .iter()
-                    .filter(|&&at| at == scene::curse_pool_at())
-                    .count(),
-                1
-            );
+            assert_eq!(destinations.iter().filter(|&&at| at == pool).count(), 1);
             assert_eq!(
                 destinations
                     .iter()
@@ -351,6 +352,37 @@ fn production_hand_captions_do_not_overlap_after_text_layout() {
                 .unwrap();
             heading_checks::assert_hand_captions(&mut app, &captions, panel, size, scale);
             heading_checks::assert_sideways_caption_wrapping(&mut app, &captions);
+        }
+    }
+}
+
+#[test]
+fn production_chaos_captions_do_not_overlap_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+    let directory = tempfile::tempdir().unwrap();
+    for size in [Vec2::new(1280., 800.), Vec2::new(1600., 1000.)] {
+        for scale in [1., 2.] {
+            let (mut app, _) = selection_lifecycle::production_app(
+                directory
+                    .path()
+                    .join(format!("chaos-captions-{}-{scale}.json", size.x)),
+                RenderHealth::ready_for_test(),
+            );
+            app.world_mut().resource_mut::<Table>().reduced_motion = true;
+            heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+            for area in [Area::Scenario, Area::Test] {
+                act(&mut app, Action::Focus(area));
+                for _ in 0..5 {
+                    app.update();
+                }
+                let world = app.world_mut();
+                let panel = world
+                    .query_filtered::<(Entity, &Node), With<Panel>>()
+                    .iter(world)
+                    .find_map(|(entity, node)| (node.bottom == px(10.)).then_some(entity))
+                    .unwrap();
+                heading_checks::assert_chaos_captions(&mut app, panel, size, scale, area);
+            }
         }
     }
 }

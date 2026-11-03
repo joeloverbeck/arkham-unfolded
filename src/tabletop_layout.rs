@@ -221,6 +221,11 @@ pub(crate) fn test_bag() -> Vec3 {
     TEST_CENTER + Vec3::new(5.3, 0.35, -3.1)
 }
 
+pub(crate) fn test_curse_pool() -> Vec3 {
+    // Separate the two upright captions in both Scenario and Test focus.
+    test_bag() - Vec3::X * 4.
+}
+
 pub(crate) fn test_source() -> Vec3 {
     TEST_CENTER + Vec3::new(-2.3, 0.05, -3.2)
 }

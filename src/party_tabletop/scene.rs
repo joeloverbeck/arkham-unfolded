@@ -505,6 +505,3 @@ pub(super) fn synchronize(
         false,
     );
 }
-pub(super) fn curse_pool_at() -> Vec3 {
-    layout::test_bag() - Vec3::X * 2.
-}

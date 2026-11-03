@@ -104,7 +104,7 @@ impl State {
                     status: crate::TokenStatus::Resolved,
                     start: layout::test_token(false, slot),
                     end: if *face == crate::TokenFace::Curse {
-                        layout::test_bag() - Vec3::X * 2.
+                        layout::test_curse_pool()
                     } else {
                         layout::test_bag()
                     },
@@ -313,7 +313,7 @@ pub(super) fn advance(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gathering::{HostileFixture, SelectedWitness, TokenFixture};
+    use crate::gathering::{HostileFixture, TestCardFixture, TokenFixture};
 
     fn step(session: &mut Session, views: &mut Vec<Observation>, id: &str) {
         let revision = session.observe_for_play().revision;
@@ -478,11 +478,22 @@ mod tests {
 
     #[test]
     fn actual_test_cleanup_returns_tokens_only_after_recorded_completion() {
-        let mut session = Session::with_hostile_fixture(HostileFixture::SelectedWitness(
-            SelectedWitness::GraspingHands,
-        ));
+        let mut session =
+            Session::with_hostile_fixture(HostileFixture::TestCards(TestCardFixture::PromiseCurse));
         let mut views = vec![session.observe_for_play()];
-        step(&mut session, &mut views, "revelation:resolve");
+        let promise = views[0].play.as_ref().unwrap().players[1]
+            .hand
+            .iter()
+            .find(|card| card.code == "07032")
+            .unwrap()
+            .id;
+        for id in [
+            "window:pass".into(),
+            format!("commit:{promise}"),
+            "commit:confirm".into(),
+        ] {
+            step(&mut session, &mut views, &id);
+        }
         for _ in 0..8 {
             let view = session.observe_for_play();
             if view.choices.iter().any(|choice| choice.id == "test:reveal") {
@@ -495,8 +506,23 @@ mod tests {
             step(&mut session, &mut views, id);
         }
         step(&mut session, &mut views, "test:reveal");
+        step(&mut session, &mut views, "test:reveal");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("token-return.json");
+        let mut app = super::super::tests::host(path.clone());
+        app.insert_resource(Table::new(session, path));
+        app.update();
+        let world = app.world_mut();
+        let pool = world
+            .query::<(&Name, &Transform)>()
+            .iter(world)
+            .find_map(|(name, transform)| {
+                (name.as_str() == "Curse pool").then_some(transform.translation)
+            })
+            .expect("the production scene renders the curse pool");
         let mut state = State::default();
         let mut departures = 0;
+        let mut curses = 0;
         for pair in views.windows(2) {
             state.prepare(Some(&pair[0]), &pair[1], true, false);
             if !state.departures.is_empty() {
@@ -505,15 +531,21 @@ mod tests {
                     pair[0].play.as_ref().unwrap().completed_tests.len() + 1
                 );
                 departures += state.departures.len();
-                assert!(
-                    state
-                        .departures
-                        .iter()
-                        .all(|token| token.end == layout::test_bag())
-                );
+                for token in &state.departures {
+                    if token.face == crate::TokenFace::Curse {
+                        curses += 1;
+                        assert_eq!(
+                            token.end, pool,
+                            "resolved curse must return to the rendered pool"
+                        );
+                    } else {
+                        assert_eq!(token.end, layout::test_bag());
+                    }
+                }
                 state.departures.clear();
             }
         }
-        assert_eq!(departures, 1);
+        assert_eq!(departures, 2);
+        assert_eq!(curses, 1);
     }
 }

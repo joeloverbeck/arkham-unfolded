@@ -148,7 +148,7 @@ impl View {
                     ReturningToken::new(
                         at,
                         if token.face == TokenFace::Curse && token.status == TokenStatus::Resolved {
-                            scene::curse_pool_at()
+                            layout::test_curse_pool()
                         } else {
                             layout::test_bag()
                         },

@@ -41,6 +41,29 @@ pub(crate) fn viewport<C: Component>(app: &mut App, size: Vec2, scale: f32) {
     *target = RenderTarget::Window(WindowRef::Entity(window_entity));
 }
 
+fn rendered_text_bounds(world: &World, entity: Entity, scale: f32) -> Rect {
+    let computed = world.get::<ComputedNode>(entity).unwrap();
+    let layout = world.get::<TextLayoutInfo>(entity).unwrap();
+    let transform = world.get::<UiGlobalTransform>(entity).unwrap();
+    assert!(world.get::<InheritedVisibility>(entity).unwrap().get());
+    assert!(
+        !layout.glyphs.is_empty(),
+        "caption must have real font glyphs"
+    );
+    let mut rect = Rect {
+        min: Vec2::splat(f32::INFINITY),
+        max: Vec2::splat(f32::NEG_INFINITY),
+    };
+    // Match the renderer: node width includes empty space, not just visible ink.
+    for glyph in &layout.glyphs {
+        let half = glyph.atlas_info.rect.size() / 2.;
+        let at = computed.content_box().min + glyph.position;
+        rect.min = rect.min.min(transform.transform_point2(at - half) / scale);
+        rect.max = rect.max.max(transform.transform_point2(at + half) / scale);
+    }
+    rect
+}
+
 pub(crate) fn assert_harm_captions<C: Component>(
     app: &mut App,
     captions: [Entity; 2],
@@ -166,21 +189,7 @@ pub(crate) fn assert_hand_captions(
         .iter()
         .map(|&entity| {
             let text = world.get::<Text>(entity).unwrap();
-            let computed = world.get::<ComputedNode>(entity).unwrap();
-            let layout = world.get::<TextLayoutInfo>(entity).unwrap();
-            let transform = world.get::<UiGlobalTransform>(entity).unwrap();
-            assert!(world.get::<InheritedVisibility>(entity).unwrap().get());
-            assert!(!layout.glyphs.is_empty(), "{} must have rendered glyphs", text.0);
-            let mut rect = Rect {
-                min: Vec2::splat(f32::INFINITY),
-                max: Vec2::splat(f32::NEG_INFINITY),
-            };
-            for glyph in &layout.glyphs {
-                let half = glyph.atlas_info.rect.size() / 2.;
-                let at = computed.content_box().min + glyph.position;
-                rect.min = rect.min.min(transform.transform_point2(at - half) / scale);
-                rect.max = rect.max.max(transform.transform_point2(at + half) / scale);
-            }
+            let rect = rendered_text_bounds(world, entity, scale);
             assert!(
                 rect.min.cmpge(Vec2::ZERO).all() && rect.max.cmple(size).all(),
                 "{} at {size:?}, {scale}x: complete caption must fit: {rect:?}", text.0
@@ -197,6 +206,42 @@ pub(crate) fn assert_hand_captions(
             "hand captions must not overlap at {size:?}, {scale}x: {pair:?}"
         );
     }
+}
+
+pub(crate) fn assert_chaos_captions(
+    app: &mut App,
+    decision_panel: Entity,
+    size: Vec2,
+    scale: f32,
+    area: Area,
+) {
+    let world = app.world_mut();
+    let captions = ["Curse pool\n10 tokens", "Chaos bag\n16 tokens"].map(|expected| {
+        world
+            .query_filtered::<(Entity, &Text), With<crate::tabletop_pieces::WorldLabel>>()
+            .iter(world)
+            .find_map(|(entity, text)| (text.0 == expected).then_some(entity))
+            .unwrap_or_else(|| panic!("the production scene must retain {expected:?}"))
+    });
+    let panel_node = world.get::<ComputedNode>(decision_panel).unwrap();
+    let panel_transform = world.get::<UiGlobalTransform>(decision_panel).unwrap();
+    let panel_top = panel_transform.transform_point2(-panel_node.size() / 2.).y / scale;
+    let rectangles = captions.map(|entity| {
+        let rect = rendered_text_bounds(world, entity, scale);
+        if area == Area::Test {
+            assert!(rect.max.y + 0.5 <= panel_top, "chaos caption {rect:?} must clear panel top {panel_top} at {area:?}, {size:?}, {scale}x");
+            assert!(rect.min.cmpge(Vec2::ZERO).all() && rect.max.cmple(size).all(),
+                "Test focus must show the complete chaos caption: {rect:?} at {size:?}, {scale}x");
+        }
+        rect
+    });
+    assert!(
+        rectangles[0].max.x + 0.5 <= rectangles[1].min.x
+            || rectangles[1].max.x + 0.5 <= rectangles[0].min.x
+            || rectangles[0].max.y + 0.5 <= rectangles[1].min.y
+            || rectangles[1].max.y + 0.5 <= rectangles[0].min.y,
+        "Curse pool and Chaos bag captions must not overlap at {area:?}, {size:?}, {scale}x: {rectangles:?}"
+    );
 }
 
 pub(crate) fn assert_sideways_caption_wrapping(app: &mut App, captions: &[Entity]) {

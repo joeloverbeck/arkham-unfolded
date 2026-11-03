@@ -14,9 +14,14 @@ contextual card menu and the shared Inspect panel. It exposed overlapping hand
 captions and an unsupported multiplication glyph. The follow-up shares projected
 caption widths between Party and Gathering and uses the readable `x` spelling.
 Production font-layout tests reproduce the overlap before the fix and pass after
-it; native verification of that repair, a complete native playthrough and owner
-acceptance remain outstanding. Earlier native checks below concern the superseded
-presentation.
+it. A second native check confirmed the hand captions, panel clearance, Menu and
+replay/return route. It exposed crowding between the Curse-pool and Chaos-bag
+captions in the scenario view. The shared Test-area renderer now leaves more
+space between the pool and bag while retaining the same fonts and two-line
+labels. Both renderers and their token-return animations share the pool position.
+This follow-up still needs native verification; detailed scenario/deck
+checks, a complete native playthrough and owner acceptance remain outstanding.
+Earlier native checks below concern the superseded presentation.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and
