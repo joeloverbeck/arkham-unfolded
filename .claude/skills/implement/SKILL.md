@@ -14,6 +14,8 @@ Choose a task branch before editing: reuse an existing topic branch when its com
 
 After selecting the branch, record its current commit (`git rev-parse HEAD`) as the review fixed point before making changes.
 
+For tabletop UI work, establish the [inherited presentation baseline](../../../docs/experiments/jacqueline-curse.md#visual-and-wording-review) before coding, including when adding a scenario or mode. Carry its affected sections, implementation paths and authorized differences into the review brief.
+
 Use the [TDD guide](../tdd/SKILL.md) at pre-agreed seams, selecting the workflow for a behavior change or a refactor that preserves behavior.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end.

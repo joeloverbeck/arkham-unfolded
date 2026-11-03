@@ -80,6 +80,13 @@ inspection but no live choices. Menus use Tab/Shift+Tab and Enter/Space; Esc
 closes them. Camera keys are suspended while a contextual menu captures input.
 Headless tests exercise the actual menu controls and save/replay protections.
 
+For a static layout capture, use the [isolated native diagnostics](jacqueline-curse.md#launch-capture-and-interact)
+with `--experiment gathering --initial-view scenario --screenshot scenario.png --quit-after-screenshot`
+and the prepared artwork root above. The capture waits
+for graphics readiness and exits after writing the image. This checks rendering;
+it does not verify camera-button interaction or gameplay. Agree the desktop
+interval before an agent launch.
+
 Two full-scenario additions are prepared for owner review. Several unengaged
 enemies occupy a small local pile beside their room; clicking the room or any
 enemy offers every enemy's inspections and legal actions. Engaged enemies use

@@ -34,6 +34,179 @@ pub(super) fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) ->
 }
 
 #[test]
+fn gathering_accepts_static_capture_options_without_writing_settings_or_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = directory.path().join("gathering.toml");
+    let save = directory.path().join("session.json");
+    let screenshot = directory.path().join("scenario.png");
+    let options = Options::parse(
+        AssetConfig::load_at(settings.clone(), directory.path().join("assets")),
+        [
+            "--experiment",
+            "gathering",
+            "--save",
+            save.to_str().unwrap(),
+            "--initial-view",
+            "scenario",
+            "--screenshot",
+            screenshot.to_str().unwrap(),
+            "--quit-after-screenshot",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(options.save, save);
+    assert!(!save.exists());
+    assert!(!settings.exists());
+    assert!(!screenshot.exists());
+}
+
+#[test]
+fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_options() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = directory.path().join("settings.toml");
+    let parse = |args: &[&str]| {
+        Options::parse(
+            AssetConfig::load_at(settings.clone(), directory.path().join("art")),
+            args.iter().copied().map(str::to_owned),
+        )
+    };
+    let mut app = App::new();
+    parse(&[]).unwrap().unwrap().configure_diagnostics(&mut app);
+    assert_eq!(
+        app.world().resource::<Orbit>().pose(),
+        Orbit::new(CameraMode::Jacqueline).pose()
+    );
+    for (name, area) in [
+        ("overview", Area::Overview),
+        ("scenario", Area::Scenario),
+        ("test", Area::Test),
+        ("tony", Area::Investigator(0)),
+        ("patrice", Area::Investigator(1)),
+        ("jacqueline", Area::Investigator(2)),
+    ] {
+        parse(&["--initial-view", name])
+            .unwrap()
+            .unwrap()
+            .configure_diagnostics(&mut app);
+        assert_eq!(
+            app.world().resource::<Orbit>().pose().target,
+            layout::focus(area).0
+        );
+        assert!(!app.world().resource::<Orbit>().is_following());
+    }
+    for args in [
+        vec!["--initial-view"],
+        vec!["--initial-view", "unknown"],
+        vec!["--screenshot"],
+        vec!["--quit-after-screenshot"],
+    ] {
+        assert!(parse(&args).is_err(), "{args:?}");
+    }
+    assert!(!settings.exists());
+}
+
+#[test]
+fn gathering_static_capture_waits_for_graphics_and_finishes_the_actual_write() {
+    use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
+
+    let directory = tempfile::tempdir().unwrap();
+    let save = directory.path().join("session.json");
+    let screenshot = directory.path().join("nested/scenario.png");
+    let mut app = host(save.clone());
+    let before = app.world().resource::<Table>().session.clone();
+    app.add_message::<AppExit>();
+    let options = Options::parse(
+        AssetConfig::load_at(
+            directory.path().join("settings"),
+            directory.path().join("art"),
+        ),
+        [
+            "--initial-view",
+            "scenario",
+            "--screenshot",
+            screenshot.to_str().unwrap(),
+            "--quit-after-screenshot",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    )
+    .unwrap()
+    .unwrap();
+    options.configure_diagnostics(&mut app);
+    assert_eq!(
+        app.world().resource::<Orbit>().pose().target,
+        layout::focus(Area::Scenario).0
+    );
+    for health in [
+        RenderHealth::default(),
+        RenderHealth::failed_for_test(),
+        RenderHealth::just_ready_for_test(),
+    ] {
+        app.insert_resource(health);
+        for _ in 0..100 {
+            app.update();
+        }
+        assert_eq!(
+            app.world_mut()
+                .query::<&Screenshot>()
+                .iter(app.world())
+                .count(),
+            0
+        );
+        assert!(app.world().resource::<Messages<AppExit>>().is_empty());
+    }
+    app.insert_resource(RenderHealth::ready_for_test());
+    for _ in 0..100 {
+        app.update();
+    }
+    let entity = app
+        .world_mut()
+        .query_filtered::<Entity, With<Screenshot>>()
+        .single(app.world())
+        .expect("the registered Gathering path must request a capture");
+    assert!(!screenshot.exists());
+    assert!(app.world().resource::<Messages<AppExit>>().is_empty());
+    app.world_mut().trigger(ScreenshotCaptured {
+        entity,
+        image: capture_test_image(),
+    });
+    assert!(
+        std::fs::read(&screenshot)
+            .unwrap()
+            .starts_with(b"\x89PNG\r\n\x1a\n")
+    );
+    assert!(
+        app.world()
+            .resource::<Messages<AppExit>>()
+            .iter_current_update_messages()
+            .any(AppExit::is_success)
+    );
+    assert_eq!(app.world().resource::<Table>().session, before);
+    assert!(!save.exists());
+}
+
+fn capture_test_image() -> Image {
+    use bevy::{
+        asset::RenderAssetUsages,
+        render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+    };
+    Image::new_fill(
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[255, 0, 0, 255],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD,
+    )
+}
+
+#[test]
 fn gathering_options_enable_default_and_saved_art_without_changing_preferences() {
     let directory = tempfile::tempdir().unwrap();
     let settings = directory.path().join("gathering.toml");

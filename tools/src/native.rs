@@ -558,11 +558,6 @@ fn launch_environment(overrides: &std::collections::BTreeMap<&str, PathBuf>) -> 
 }
 
 fn launch(args: Launch) -> Result<u8> {
-    ensure!(
-        args.experiment != Experiment::Gathering
-            || (args.screenshot.is_none() && args.initial_view.is_none()),
-        "Gathering does not support --screenshot or --initial-view"
-    );
     let directory = resolve(&args.output_dir)?;
     let binary = args.binary.canonicalize()?;
     let source_save = args.load.map(fs::canonicalize).transpose()?;

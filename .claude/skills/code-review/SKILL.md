@@ -64,6 +64,8 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 
 Issue both sub-agent calls together, in the foreground, and aggregate the reports they return. Start each reviewer with a fresh context (`fork_turns: "none"` when supported). Give each a self-contained brief with the repository location, captured candidate and fixed point, approved scope and requirements, relevant instruction and standards paths, and its review task. The brief and referenced artifacts must supply everything needed without the implementation conversation.
 
+For tabletop UI changes, include the [inherited presentation baseline](../../../docs/experiments/jacqueline-curse.md#visual-and-wording-review): accepted implementation and revision, affected sections, shared component paths, preserved behavior and authorized differences. Both reviewers compare the actual consumer paths with that baseline; importing a shared module alone does not establish preservation. Identify missing native comparison evidence separately from code findings.
+
 **Standards sub-agent prompt** should include:
 
 - The captured candidate's location and identity, full diff command and commit list.
