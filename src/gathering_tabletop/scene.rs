@@ -48,7 +48,11 @@ pub(super) fn replace_caption(commands: &mut Commands, card: Entity, text: Optio
             .collect::<Vec<_>>();
         for label in labels {
             if let Some(text) = &text {
-                world.get_mut::<Text>(label).unwrap().0 = text.clone();
+                world.get_mut::<Text>(label).unwrap().0 =
+                    crate::tabletop::readable_text(text.clone());
+                world
+                    .entity_mut(label)
+                    .insert(AccessibleLabel::new(text.clone()));
             } else {
                 world.entity_mut(label).despawn();
             }
@@ -519,7 +523,7 @@ mod tests {
                         .then_some(text.0.clone())
                 })
                 .collect::<Vec<_>>();
-            assert_eq!(captions, ["Arcane Research ×2"]);
+            assert_eq!(captions, ["Arcane Research x2"]);
             let targets = world
                 .query::<(&Name, &motion::PhysicalCard, &ContextTarget)>()
                 .iter(world)

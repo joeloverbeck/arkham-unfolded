@@ -20,6 +20,14 @@ fn short_name(who: Investigator) -> &'static str {
     who.name().split_whitespace().next().unwrap_or(who.name())
 }
 
+pub(super) fn choice_label(choice: &crate::Choice) -> &str {
+    if choice.id == "undo" {
+        "Undo last choice"
+    } else {
+        &choice.label
+    }
+}
+
 fn turn_heading(view: &Observation) -> String {
     if let Some(play) = &view.play {
         if play.scenario.outcome.is_some() {
@@ -276,7 +284,17 @@ pub(super) fn render(
             {
                 p.spawn(art.text(format!("{}'s decision", owner.name()), 16., GOLD));
             }
-            p.spawn(art.text(&view.prompt, 18., PAPER));
+            // During ordinary play the phase and pending choice below already
+            // describe what to do. Keep setup, ending and refusal explanations.
+            if view
+                .play
+                .as_ref()
+                .is_none_or(|play| play.scenario.outcome.is_some())
+                || view.choices.iter().all(|choice| choice.id == "undo")
+                || view.verification_fixture.is_some()
+            {
+                p.spawn(art.text(&view.prompt, 18., PAPER));
+            }
             if table.is_presenting() {
                 p.spawn(art.text(
                     format!(
@@ -321,7 +339,7 @@ pub(super) fn render(
                         let entity = control(
                             art,
                             row,
-                            &choice.label,
+                            choice_label(&choice),
                             Action::Choose(table.epoch, view.revision, choice.id.clone()),
                         );
                         if index == 0
@@ -340,7 +358,11 @@ pub(super) fn render(
             if let Some(selected) = selected_commitments(view) {
                 p.spawn(art.text(selected, 13., GOLD));
             }
-            if table.replay.is_none() && !table.is_presenting() && !view.choices.is_empty() {
+            if view.play.is_none()
+                && table.replay.is_none()
+                && !table.is_presenting()
+                && !view.choices.is_empty()
+            {
                 p.spawn(art.text("Click a card or table component for its available actions. Portrait buttons only move the camera.", 12., MUTED));
             }
             if !table.notice.is_empty() {

@@ -428,13 +428,14 @@ pub(super) fn synchronize(
                 Some(Source::Hand(held.id)),
                 revision,
             );
-            label(
+            let caption = label(
                 &mut commands,
                 &art,
                 held.title.clone(),
                 at + Vec3::Z * 1.0,
                 false,
             );
+            commands.entity(caption).insert(pieces::CardCaption);
         }
     }
     let test_heading = label(

@@ -9,9 +9,14 @@ The owner rejected the earlier interface because it departed from the accepted
 Party presentation. The correction shares Party's production screen, portrait
 rail with **TURN**, inspection and story-reading panels, physical cards, captions,
 investigator counters, counted decks, chaos bag, Reveal control and motion paths.
-The earlier native checks below concern the superseded presentation. A native
-comparison of this correction, a complete native playthrough and owner acceptance
-remain outstanding.
+The five-minute artwork comparison on 2026-11-03 confirmed portrait focus, the
+contextual card menu and the shared Inspect panel. It exposed overlapping hand
+captions and an unsupported multiplication glyph. The follow-up shares projected
+caption widths between Party and Gathering and uses the readable `x` spelling.
+Production font-layout tests reproduce the overlap before the fix and pass after
+it; native verification of that repair, a complete native playthrough and owner
+acceptance remain outstanding. Earlier native checks below concern the superseded
+presentation.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and

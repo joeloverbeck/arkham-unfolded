@@ -146,6 +146,114 @@ pub(crate) fn app() -> App {
     app
 }
 
+/// Measure actual text glyphs after the production scene and camera systems ran.
+pub(crate) fn assert_hand_captions(
+    app: &mut App,
+    captions: &[Entity],
+    decision_panel: Entity,
+    size: Vec2,
+    scale: f32,
+) {
+    assert!(
+        captions.len() >= 4,
+        "exercise neighboring captions in a full hand"
+    );
+    let world = app.world();
+    let panel_node = world.get::<ComputedNode>(decision_panel).unwrap();
+    let panel_transform = world.get::<UiGlobalTransform>(decision_panel).unwrap();
+    let panel_top = panel_transform.transform_point2(-panel_node.size() / 2.).y / scale;
+    let mut rectangles = captions
+        .iter()
+        .map(|&entity| {
+            let text = world.get::<Text>(entity).unwrap();
+            let computed = world.get::<ComputedNode>(entity).unwrap();
+            let layout = world.get::<TextLayoutInfo>(entity).unwrap();
+            let transform = world.get::<UiGlobalTransform>(entity).unwrap();
+            assert!(world.get::<InheritedVisibility>(entity).unwrap().get());
+            assert!(!layout.glyphs.is_empty(), "{} must have rendered glyphs", text.0);
+            let mut rect = Rect {
+                min: Vec2::splat(f32::INFINITY),
+                max: Vec2::splat(f32::NEG_INFINITY),
+            };
+            for glyph in &layout.glyphs {
+                let half = glyph.atlas_info.rect.size() / 2.;
+                let at = computed.content_box().min + glyph.position;
+                rect.min = rect.min.min(transform.transform_point2(at - half) / scale);
+                rect.max = rect.max.max(transform.transform_point2(at + half) / scale);
+            }
+            assert!(
+                rect.min.cmpge(Vec2::ZERO).all() && rect.max.cmple(size).all(),
+                "{} at {size:?}, {scale}x: complete caption must fit: {rect:?}", text.0
+            );
+            assert!(rect.max.y + 0.5 <= panel_top,
+                "{} at {size:?}, {scale}x: caption bottom {} must clear decision panel top {panel_top}", text.0, rect.max.y);
+            (text.0.clone(), rect)
+        })
+        .collect::<Vec<_>>();
+    rectangles.sort_by(|a, b| a.1.min.x.total_cmp(&b.1.min.x));
+    for pair in rectangles.windows(2) {
+        assert!(
+            pair[0].1.max.x + 0.5 <= pair[1].1.min.x,
+            "hand captions must not overlap at {size:?}, {scale}x: {pair:?}"
+        );
+    }
+}
+
+pub(crate) fn assert_sideways_caption_wrapping(app: &mut App, captions: &[Entity]) {
+    let mut keys = ButtonInput::default();
+    keys.press(KeyCode::ArrowLeft);
+    app.world_mut().resource_mut::<Orbit>().step(FrameInput {
+        keys: &keys,
+        buttons: &ButtonInput::default(),
+        window: &Window {
+            focused: true,
+            ..default()
+        },
+        scroll_y: 0.,
+        dt: std::f32::consts::FRAC_PI_2,
+        capture: Capture::default(),
+        reduced_motion: true,
+    });
+    for pitch in [1., 0.45] {
+        if pitch < 1. {
+            let mut keys = ButtonInput::default();
+            keys.press(KeyCode::ArrowDown);
+            app.world_mut().resource_mut::<Orbit>().step(FrameInput {
+                keys: &keys,
+                buttons: &ButtonInput::default(),
+                window: &Window {
+                    focused: true,
+                    ..default()
+                },
+                scroll_y: 0.,
+                dt: (1. - pitch) / 0.7,
+                capture: Capture::default(),
+                reduced_motion: true,
+            });
+        }
+        for _ in 0..5 {
+            app.update();
+        }
+        for &entity in captions {
+            let text = app.world().get::<Text>(entity).unwrap();
+            let layout = app.world().get::<TextLayoutInfo>(entity).unwrap();
+            assert!(!layout.glyphs.is_empty());
+            let lines = layout
+                .glyphs
+                .iter()
+                .map(|glyph| glyph.line_index)
+                .max()
+                .unwrap()
+                + 1;
+            assert!(
+                lines <= 4,
+                "sideways camera at pitch {pitch} must not collapse {} into a letter-by-letter column, got {lines} lines",
+                text.0
+            );
+        }
+    }
+}
+
 pub(crate) fn assert_heading<C: Component>(app: &mut App, camera_marker: C, scale: f32) {
     let world = app.world_mut();
     let window = world

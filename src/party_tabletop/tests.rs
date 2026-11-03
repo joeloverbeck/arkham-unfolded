@@ -305,6 +305,56 @@ fn production_harm_captions_clear_cards_and_each_other_after_text_layout() {
     }
 }
 
+#[test]
+fn production_hand_captions_do_not_overlap_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+    let directory = tempfile::tempdir().unwrap();
+    for size in [Vec2::new(1280., 800.), Vec2::new(1600., 1000.)] {
+        for scale in [1., 2.] {
+            let (mut app, _) = selection_lifecycle::production_app(
+                directory
+                    .path()
+                    .join(format!("hand-captions-{}-{scale}.json", size.x)),
+                RenderHealth::ready_for_test(),
+            );
+            app.world_mut().resource_mut::<Table>().reduced_motion = true;
+            for id in ["select:patrice", "draw", "draw", "draw"] {
+                choose(&mut app, id);
+            }
+            heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+            act(&mut app, Action::Focus(Area::Investigator(1)));
+            for _ in 0..5 {
+                app.update();
+            }
+            let view = app.world().resource::<Table>().view();
+            let hand = &view.investigator(Investigator::Patrice).hand;
+            assert_eq!(hand.len(), 4);
+            let world = app.world_mut();
+            let captions = hand
+                .iter()
+                .enumerate()
+                .map(|(slot, held)| {
+                    let at = layout::hand_position(1, hand.len(), slot) + Vec3::Z;
+                    world
+                        .query::<(Entity, &WorldLabel, &Text)>()
+                        .iter(world)
+                        .find_map(|(entity, anchor, text)| {
+                            (anchor.0 == at && text.0 == held.title).then_some(entity)
+                        })
+                        .expect("every hand card has its production caption")
+                })
+                .collect::<Vec<_>>();
+            let panel = world
+                .query_filtered::<(Entity, &Node), With<Panel>>()
+                .iter(world)
+                .find_map(|(entity, node)| (node.bottom == px(10.)).then_some(entity))
+                .unwrap();
+            heading_checks::assert_hand_captions(&mut app, &captions, panel, size, scale);
+            heading_checks::assert_sideways_caption_wrapping(&mut app, &captions);
+        }
+    }
+}
+
 fn app(path: PathBuf) -> App {
     app_in(App::new(), path)
 }

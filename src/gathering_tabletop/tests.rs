@@ -455,7 +455,10 @@ fn artwork_card_captions_use_party_positions_without_hover_or_copy_ids() {
         Visibility::Inherited
     );
     assert_eq!(world.get::<Text>(label).unwrap().0, held.title);
-    assert_eq!(world.get::<Node>(label).unwrap().width, px(190.));
+    let Val::Px(width) = world.get::<Node>(label).unwrap().width else {
+        panic!("card caption must have a projected pixel width");
+    };
+    assert!((1.0..190.0).contains(&width));
     assert!(
         world
             .get::<BackgroundColor>(label)
@@ -468,8 +471,75 @@ fn artwork_card_captions_use_party_positions_without_hover_or_copy_ids() {
         .single(world)
         .unwrap();
     let point = camera.world_to_viewport(transform, anchor).unwrap();
-    assert_eq!(world.get::<Node>(label).unwrap().left, px(point.x - 95.));
+    assert_eq!(
+        world.get::<Node>(label).unwrap().left,
+        px(point.x - width / 2.)
+    );
     assert_eq!(world.get::<Node>(label).unwrap().top, px(point.y));
+}
+
+#[test]
+fn production_hand_captions_do_not_overlap_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+    let directory = tempfile::tempdir().unwrap();
+    for size in [Vec2::new(1280., 800.), Vec2::new(1600., 1000.)] {
+        for scale in [1., 2.] {
+            let path = directory
+                .path()
+                .join(format!("hand-captions-{}-{scale}.json", size.x));
+            let mut app = host(path.clone());
+            app.insert_resource(Table::new(Session::with_seed(14376244771021323084), path));
+            app.world_mut().resource_mut::<Table>().reduced_motion = true;
+            app.update();
+            for id in [
+                "lead:tony",
+                "confirm-mulligan",
+                "confirm-mulligan",
+                "confirm-mulligan",
+                "turn:patrice",
+                "action:ordinary:resource",
+            ] {
+                activate_choice(&mut app, id);
+            }
+            finish_presentation(&mut app);
+            heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+            app.world_mut()
+                .resource_mut::<Actions>()
+                .0
+                .push(Action::Focus(Area::Investigator(1)));
+            for _ in 0..5 {
+                app.update();
+            }
+            let view = app.world().resource::<Table>().view();
+            let hand = &view.investigators[1].hand;
+            assert_eq!(hand.len(), 5);
+            let world = app.world_mut();
+            let captions = hand
+                .iter()
+                .map(|held| {
+                    world
+                        .query::<(Entity, &motion::CardLabel)>()
+                        .iter(world)
+                        .find_map(|(entity, caption)| {
+                            world
+                                .get::<ContextTarget>(caption.0)
+                                .is_some_and(|target| {
+                                    target.source == controls::Source::Card(held.id)
+                                })
+                                .then_some(entity)
+                        })
+                        .expect("every hand card has its production caption")
+                })
+                .collect::<Vec<_>>();
+            let panel = world
+                .query_filtered::<(Entity, &Node), With<Panel>>()
+                .iter(world)
+                .find_map(|(entity, node)| (node.bottom == px(10.)).then_some(entity))
+                .unwrap();
+            heading_checks::assert_hand_captions(&mut app, &captions, panel, size, scale);
+            heading_checks::assert_sideways_caption_wrapping(&mut app, &captions);
+        }
+    }
 }
 
 fn assert_pointer_lead_choice(raw_window_events: bool, continuing_health_observations: bool) {
@@ -1175,13 +1245,8 @@ fn replay_story_inspection_reveals_only_the_displayed_reverse_and_keeps_missing_
 fn activate_choice(app: &mut App, id: &str) {
     finish_presentation(app);
     let view = app.world().resource::<Table>().view();
-    let label = view
-        .choices
-        .iter()
-        .find(|choice| choice.id == id)
-        .unwrap()
-        .label
-        .clone();
+    let choice = view.choices.iter().find(|choice| choice.id == id).unwrap();
+    let label = ui::choice_label(choice).to_owned();
     if button_with_label(app, &label).is_none() {
         let source = {
             let world = app.world_mut();

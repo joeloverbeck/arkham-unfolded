@@ -832,6 +832,7 @@ fn camera_controls(
     }
     **camera = step.transform;
 }
+#[allow(clippy::type_complexity)]
 fn world_labels(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     orbit: Res<Orbit>,
@@ -839,11 +840,12 @@ fn world_labels(
         &WorldLabel,
         &ComputedNode,
         Has<layout::TestAreaHeading>,
+        Has<crate::tabletop_pieces::CardCaption>,
         &mut Node,
         &mut Visibility,
     )>,
 ) {
-    for (label, computed, test_heading, mut node, mut visibility) in &mut labels {
+    for (label, computed, test_heading, card_caption, mut node, mut visibility) in &mut labels {
         if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
             *visibility = Visibility::Hidden;
             continue;
@@ -854,6 +856,12 @@ fn world_labels(
             camera.0.world_to_viewport(camera.1, label.0).ok()
         };
         if let Some(point) = point {
+            if card_caption
+                && let Some(width) =
+                    crate::tabletop_pieces::CardCaption::width(camera.0, camera.1, label.0)
+            {
+                node.width = px(width);
+            }
             let width = match node.width {
                 Val::Px(width) => width,
                 _ => 190.0,

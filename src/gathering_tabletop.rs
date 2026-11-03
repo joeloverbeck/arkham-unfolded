@@ -101,7 +101,7 @@ impl Table {
             session,
             replay: None,
             save_path,
-            notice: "Each decision saves before it takes effect.".into(),
+            notice: String::new(),
             inspection: None,
             history_open: false,
             menu_open: false,
@@ -569,7 +569,7 @@ fn handle_actions(
                             if reveal_focus {
                                 orbit.focus(layout::focus(Area::Test));
                             }
-                            "Decision saved.".into()
+                            String::new()
                         }
                         Err(error) => format!("Decision not committed: {error}"),
                     };
@@ -846,6 +846,11 @@ fn card(
             )
         });
         let label = scene::label(commands, context, title, at + offset, false);
+        if story::StoryCard::from_code(&code).is_none() {
+            commands
+                .entity(label)
+                .insert(crate::tabletop_pieces::CardCaption);
+        }
         commands
             .entity(label)
             .insert(motion::CardLabel(entity, offset));
@@ -1113,12 +1118,14 @@ fn world_labels(
         Option<&motion::CardLabel>,
         &ComputedNode,
         Has<layout::TestAreaHeading>,
+        Has<crate::tabletop_pieces::CardCaption>,
         &mut Node,
         &mut Visibility,
     )>,
     cards: Query<&Transform>,
 ) {
-    for (label, card, computed, test_heading, mut node, mut visibility) in &mut labels {
+    for (label, card, computed, test_heading, card_caption, mut node, mut visibility) in &mut labels
+    {
         if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
             *visibility = Visibility::Hidden;
             continue;
@@ -1137,6 +1144,12 @@ fn world_labels(
             camera.0.world_to_viewport(camera.1, anchor).ok()
         };
         if let Some(point) = point {
+            if card_caption
+                && let Some(width) =
+                    crate::tabletop_pieces::CardCaption::width(camera.0, camera.1, anchor)
+            {
+                node.width = px(width);
+            }
             let width = match node.width {
                 Val::Px(width) => width,
                 _ => 190.,

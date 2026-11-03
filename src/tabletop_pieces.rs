@@ -13,6 +13,26 @@ const PAPER: Color = Color::srgb(0.91, 0.89, 0.81);
 #[derive(Component)]
 pub(crate) struct WorldLabel(pub Vec3, pub bool);
 
+/// Card titles wrap inside their projected lane instead of overlapping neighbors.
+#[derive(Component)]
+pub(crate) struct CardCaption;
+
+impl CardCaption {
+    pub(crate) fn width(camera: &Camera, transform: &GlobalTransform, at: Vec3) -> Option<f32> {
+        // The closest card centers (the hand) are 1.93 world units apart.
+        // Leave a gap on both sides, while retaining Party's 190px maximum.
+        let left = camera
+            .world_to_viewport(transform, at - Vec3::X * 0.875)
+            .ok()?;
+        let right = camera
+            .world_to_viewport(transform, at + Vec3::X * 0.875)
+            .ok()?;
+        // At a sideways orbit the lane runs vertically on screen; its length
+        // still provides readable wrapping space for upright UI text.
+        Some(left.distance(right).clamp(1., 190.))
+    }
+}
+
 pub(crate) fn label(
     commands: &mut Commands,
     value: impl Into<String>,
