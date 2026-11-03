@@ -324,4 +324,5 @@ fn replace_record(
         },
         |previous| load_session(previous).map(|_| ()),
     )
+    .map(|_| ())
 }

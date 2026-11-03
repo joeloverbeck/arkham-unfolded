@@ -1,5 +1,7 @@
 //! Record one check invocation so its result survives a lost tool session.
 
+mod resources;
+
 use crate::process::{Completion, OwnedChild};
 use anyhow::{Context, Result};
 use clap::Args;
@@ -18,6 +20,9 @@ pub struct CheckArgs {
     /// Fresh directory for check.log and run.json; its parent must exist.
     #[arg(long)]
     output_dir: PathBuf,
+    /// Capture host pressure/memory and the child's visible cgroup once per second.
+    #[arg(long)]
+    resources: bool,
     /// Noninteractive check executable and arguments, using the current directory and environment.
     #[arg(last = true, required = true, num_args = 1.., value_name = "COMMAND")]
     command: Vec<String>,
@@ -43,6 +48,8 @@ struct Record {
     exit_code: Option<i32>,
     signal: Option<i32>,
     error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resources: Option<resources::Report>,
 }
 
 fn now() -> Result<u128> {
@@ -69,6 +76,7 @@ pub fn run(args: CheckArgs) -> Result<u8> {
         exit_code: None,
         signal: None,
         error: None,
+        resources: None,
     };
     fs::create_dir(&args.output_dir).with_context(|| {
         format!(
@@ -77,9 +85,20 @@ pub fn run(args: CheckArgs) -> Result<u8> {
         )
     })?;
     let directory = fs::canonicalize(&args.output_dir)?;
+    let mut resources = args
+        .resources
+        .then(|| resources::Capture::start(&directory));
+    record.resources = resources.as_ref().map(|capture| capture.report.clone());
     save(&directory, &record)?;
     // Opening this once and cloning the handle preserves both streams in one file.
-    let result = capture(&directory, &mut record);
+    let result = capture(&directory, &mut record, &mut resources);
+    if let Some(mut capture) = resources {
+        capture.finish();
+        if let Some(error) = &capture.report.error {
+            eprintln!("Resource capture incomplete: {error}");
+        }
+        record.resources = Some(capture.report);
+    }
     record.finished_unix_ms = Some(now()?);
     if let Err(error) = &result {
         record.status = Status::Incomplete;
@@ -91,7 +110,11 @@ pub fn run(args: CheckArgs) -> Result<u8> {
     result
 }
 
-fn capture(directory: &Path, record: &mut Record) -> Result<u8> {
+fn capture(
+    directory: &Path,
+    record: &mut Record,
+    resources: &mut Option<resources::Capture>,
+) -> Result<u8> {
     let log = File::create_new(directory.join("check.log"))?;
     let mut command = Command::new(&record.command[0]);
     command
@@ -104,6 +127,9 @@ fn capture(directory: &Path, record: &mut Record) -> Result<u8> {
     record.pid = Some(child.id());
     save(directory, record)?;
     let completion = loop {
+        if let Some(resources) = resources {
+            resources.sample(Some(child.id()));
+        }
         match child.wait(Duration::from_secs(1))? {
             Completion::TimedOut => continue,
             completion => break completion,

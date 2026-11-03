@@ -55,6 +55,8 @@ enum Action {
     Inspect(String, String),
     Save,
     Reopen,
+    Restart(u64),
+    ConfirmRestart(u64),
     Replay,
     Next,
     Back,
@@ -80,6 +82,7 @@ struct Table {
     inspection: Option<(String, String)>,
     history_open: bool,
     menu_open: bool,
+    restart_confirmation: bool,
     reduced_motion: bool,
     reading: story::Reading,
     epoch: u64,
@@ -106,6 +109,7 @@ impl Table {
             inspection: None,
             history_open: false,
             menu_open: false,
+            restart_confirmation: false,
             reduced_motion: false,
             reading,
             epoch: 0,
@@ -146,7 +150,10 @@ impl Table {
     }
 
     fn modal(&self) -> bool {
-        self.reading.current().is_some() || self.inspection.is_some() || self.history_open
+        self.reading.current().is_some()
+            || self.inspection.is_some()
+            || self.history_open
+            || self.restart_confirmation
     }
 
     fn story_faces(&self, view: &Observation) -> story::Faces {
@@ -533,6 +540,8 @@ fn handle_actions(
             matches!(action, Action::ContinueStory)
                 || (table.replay.is_some()
                     && matches!(action, Action::Next | Action::Back | Action::Live))
+        } else if table.restart_confirmation {
+            matches!(action, Action::Close | Action::ConfirmRestart(_))
         } else {
             matches!(action, Action::Close)
         };
@@ -679,6 +688,7 @@ fn handle_actions(
                 table.inspection = None;
                 table.history_open = false;
                 table.menu_open = false;
+                table.restart_confirmation = false;
                 table.dirty = true;
             }
             Action::Inspect(title, code) => {
@@ -728,6 +738,49 @@ fn handle_actions(
                 }
                 table.dirty = true;
             }
+            Action::Restart(epoch)
+                if epoch == table.epoch && table.menu_open && table.replay.is_none() =>
+            {
+                table.context.reset();
+                table.epoch += 1;
+                table.menu_open = false;
+                table.restart_confirmation = true;
+                table.notice.clear();
+                table.dirty = true;
+            }
+            Action::ConfirmRestart(epoch)
+                if epoch == table.epoch && table.restart_confirmation && table.replay.is_none() =>
+            {
+                let result =
+                    Session::new()
+                        .map_err(|error| error.to_string())
+                        .and_then(|session| {
+                            continuity::restart_session(&table.save_path, &table.session, &session)
+                                .map(|archive| (session, archive))
+                                .map_err(|error| error.to_string())
+                        });
+                match result {
+                    Ok((session, archive)) => {
+                        let mut next = Table::new(session, table.save_path.clone());
+                        next.epoch = table.epoch.wrapping_add(1);
+                        next.reduced_motion = table.reduced_motion;
+                        next.notice = format!(
+                            "Started a new Gathering attempt. Previous attempt archived at {}",
+                            archive.display()
+                        );
+                        eprintln!("{}", next.notice);
+                        *table = next;
+                        consequences.clear();
+                        orbit.set_following(false);
+                        orbit.focus(layout::focus(Area::Overview));
+                    }
+                    Err(error) => {
+                        table.notice = format!("Restart failed: {error}");
+                        table.dirty = true;
+                    }
+                }
+            }
+            Action::Restart(_) | Action::ConfirmRestart(_) => {}
             Action::Replay => {
                 consequences.clear();
                 match Replay::new(table.session.recording()) {
@@ -1102,9 +1155,11 @@ fn camera_controls(
     hover: Option<Res<bevy::picking::hover::HoverMap>>,
     ui_nodes: Query<(), With<Node>>,
     settings: Option<Res<AssetSettings>>,
-    shortcut: Res<crate::tabletop_reveal::Shortcut>,
+    mut shortcut: ResMut<crate::tabletop_reveal::Shortcut>,
 ) {
-    let blocked = table.modal() || settings.as_ref().is_some_and(|settings| settings.is_busy());
+    let blocked = table.modal()
+        || table.menu_open
+        || settings.as_ref().is_some_and(|settings| settings.is_busy());
     let over_ui = hover
         .as_ref()
         .and_then(|hover| hover.get(&bevy::picking::pointer::PointerId::Mouse))
@@ -1125,6 +1180,7 @@ fn camera_controls(
                     .as_ref()
                     .and_then(|f| f.get())
                     .is_some_and(|entity| focusable.contains(entity)),
+            pan: Some(blocked),
             wheel: blocked || table.context.is_open() || shortcut.is_open() || over_ui,
         },
         reduced_motion: table.reduced_motion,
@@ -1133,10 +1189,13 @@ fn camera_controls(
     if step.manual_navigation && table.context.is_open() {
         table.context.dismiss();
     }
+    if step.manual_navigation && shortcut.is_open() {
+        shortcut.dismiss();
+    }
     if step.stopped_following {
         table.dirty = true;
     }
-    if step.manual_navigation && table.is_presenting() {
+    if step.manual_navigation && table.is_presenting() && !table.presentation_paused {
         table.presentation_paused = true;
         table.dirty = true;
     }

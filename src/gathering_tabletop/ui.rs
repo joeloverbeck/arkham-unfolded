@@ -387,6 +387,12 @@ pub(super) fn render(
             if table.replay.is_none() {
                 button(art, p, "Save live attempt", Action::Save);
                 button(art, p, "Reopen saved attempt", Action::Reopen);
+                button(
+                    art,
+                    p,
+                    "Restart The Gathering…",
+                    Action::Restart(table.epoch),
+                );
                 button(art, p, "Open recorded replay", Action::Replay);
             }
             button(
@@ -404,11 +410,45 @@ pub(super) fn render(
             button(art, p, "Close menu", Action::Dismiss);
         });
     }
-    if let Some(card) = table.reading.current() {
+    if table.restart_confirmation {
+        restart_confirmation(commands, table, art, size);
+    } else if let Some(card) = table.reading.current() {
         story_reading(commands, table, art, size, card);
     } else if table.modal() {
         inspection(commands, table, view, art, size, context);
     }
+}
+
+fn restart_confirmation(commands: &mut Commands, table: &Table, art: &art::Art, size: Vec2) {
+    let barrier = screen::inspection(
+        commands,
+        Panel,
+        (),
+        art.symbol_font(),
+        size,
+        "Restart The Gathering?",
+        |_| {},
+        |body, _| {
+            body.spawn((
+                art.text(
+                    "Start again with fresh shuffles, lead selection and mulligans. Your selected decks and rules stay the same. The current attempt will be archived; Reopen saved attempt will resume the new attempt.",
+                    20., PAPER,
+                ),
+                Node { width: percent(100), ..default() },
+            ));
+            if !table.notice.is_empty() {
+                body.spawn(art.text(&table.notice, 18., GOLD));
+            }
+            screen::controls(body, |row| {
+                let cancel = control(art, row, "Cancel", Action::Close);
+                row.commands().entity(cancel).insert(AutoFocus);
+                control(art, row, "Restart", Action::ConfirmRestart(table.epoch));
+            });
+        },
+    );
+    commands
+        .entity(barrier)
+        .observe(|_: On<RequestClose>, mut actions: ResMut<Actions>| actions.0.push(Action::Close));
 }
 
 fn story_reading(

@@ -1,5 +1,8 @@
 use super::*;
 
+mod navigation;
+mod restart;
+
 pub(super) fn host(path: PathBuf) -> App {
     host_with_pointer_input(path, false)
 }

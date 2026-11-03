@@ -1365,6 +1365,7 @@ fn camera_controls(
             pointer_blocked: modal,
             over_ui,
             keyboard: captures_keys,
+            pan: None,
             wheel: table.context.is_open() || shortcut.as_ref().is_some_and(|s| s.is_open()),
         },
         reduced_motion: table.reduced_motion,

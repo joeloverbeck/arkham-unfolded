@@ -821,6 +821,7 @@ fn camera_controls(
             pointer_blocked: modal,
             over_ui,
             keyboard,
+            pan: None,
             wheel: table.context.is_open() || shortcut.is_open(),
         },
         reduced_motion: table.reduced_motion,

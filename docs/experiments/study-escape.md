@@ -6,7 +6,8 @@
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
-cargo run --locked --features tabletop --bin arkham-tabletop -- --experiment party
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop --experiment party
 ```
 
 The window says **Prepared Study Escape**. All three investigators start in Study, with six clues on the location and none held. Each has one turn with three ordinary actions. Choose their order, Investigate, Draw, gain a Resource or end a turn early. Finish one investigator's turn before beginning another; ending early does not reserve actions for later. The named turn indicator and portrait badge remain visible while other investigators provide legal commitments or reactions, including after their own turns have ended. Supporting choices name their performing investigator. Camera focus does not select the active investigator. Card inspection and history explain the available effects and consequences.
@@ -28,7 +29,8 @@ Undo cannot cross a committed card or token reveal. An unobserved Patrice shuffl
 The player driver uses the same choices and persistence authority:
 
 ```sh
-cargo run --locked --bin arkham-driver -- --experiment party --save /absolute/path/new-attempt.json
+scripts/dev cargo build --locked --bin arkham-driver &&
+target/debug/arkham-driver --experiment party --save /absolute/path/new-attempt.json
 ```
 
 Send JSON lines such as `{"op":"observe"}`, then `{"op":"choose","revision":0,"id":"select:tony"}` using the current observation's revision and offered choice ID. It also accepts save, replay, next, back, live, export with a path, and quit. Use `--load` to resume an existing record. Ordinary player commands cannot select random outcomes or inspect hidden deck order.
@@ -38,11 +40,11 @@ Send JSON lines such as `{"op":"observe"}`, then `{"op":"choose","revision":0,"i
 Party artwork has its own prepared collection and `party.toml` preference. Existing collections and settings remain intact. Missing art leaves readable substitutes; use `--no-art` explicitly or `--art-root /absolute/path/collection` for a temporary selection. The developer prepares the collection from the unchanged archive and the verified reveal-icon input:
 
 ```sh
-cargo run --locked --bin arkham-assets -- prepare-party \
+scripts/dev cargo run --locked --bin arkham-assets -- prepare-party \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /absolute/path/reveal-chaos-token.png \
   --output /absolute/path/new-party-assets
-cargo run --locked --bin arkham-assets -- check-party /absolute/path/new-party-assets
+scripts/dev cargo run --locked --bin arkham-assets -- check-party /absolute/path/new-party-assets
 ```
 
 `resources/party-asset-selection.json` binds all 57 selected images/font inputs and their transformations, including the clue face, shaped resource counter and six class icon/background pairs. The v2 collection preserves recognition of v1's existing artwork; old collections report the new missing images and use readable substitutes. A fresh output directory is required unless its complete contents already match. Runtime reads only the prepared collection. The source PDFs and deck responses remain in the declared local evidence custody; verification of their exact bytes does not establish an independent backup.
@@ -94,7 +96,8 @@ The owner-accepted [#77](https://github.com/joeloverbeck/arkham-unfolded/issues/
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
   --experiment party \
   --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/party-assets-v2 \
   --save /home/joeloverbeck/.cache/agent-tmp/arkham-77-owner.session.json
@@ -133,7 +136,7 @@ For the older experiments, the matching reference arguments are `--experiment to
 The developer witness is a standalone Rust example importing the unchanged production layout, camera, standee and harm-token renderers. It does not instrument the application library, open saves or provide gameplay. Its permanent banner reads **Presentation fixture - not a playable position**. Build and capture it in a fresh directory:
 
 ```sh
-cargo build --locked --features tabletop --example layout_capacity
+scripts/dev cargo build --locked --features tabletop --example layout_capacity
 scripts/tools native launch --binary "$PWD/target/debug/examples/layout_capacity" \
   --output-dir "$HOME/.cache/agent-tmp/arkham-layout-fixture-01" \
   --art-root "$ARKHAM_ART_ROOT" --initial-view patrice \

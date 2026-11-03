@@ -74,6 +74,8 @@ pub(crate) struct Capture {
     pub pointer_blocked: bool,
     pub over_ui: bool,
     pub keyboard: bool,
+    /// WASD capture when it differs from other camera keys; otherwise inherit keyboard capture.
+    pub pan: Option<bool>,
     pub wheel: bool,
 }
 
@@ -228,6 +230,8 @@ impl Orbit {
                 self.focus(self.mode.home());
                 changed = true;
             }
+        }
+        if input.window.focused && !input.capture.pan.unwrap_or(input.capture.keyboard) {
             let delta = pan_delta(input.keys, self.pose.yaw, input.dt, self.pose.distance);
             if delta != Vec3::ZERO {
                 self.pose.target += delta;

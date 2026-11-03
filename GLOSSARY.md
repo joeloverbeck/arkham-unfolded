@@ -84,6 +84,10 @@ _Avoid_: Space on the location card, investigator area
 An explicitly arranged game state from which a bounded play task begins. It does not imply that campaign setup or the preceding turns have been played through.
 _Avoid_: Fresh campaign, scripted outcome
 
+**Scenario attempt**:
+One play of a scenario, with its own starting state, player decisions and random outcomes. Reopening continues the same attempt; restarting begins a new one.
+_Avoid_: Replay when referring to a new attempt
+
 **Source archive**:
 The externally owned Arkham Horror LCG resource collection from which material is selected for this application. It remains intact when selected assets are prepared for use.
 _Avoid_: Installed assets, prepared asset collection

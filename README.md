@@ -17,18 +17,21 @@ On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
 mkdir -p local/gathering
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
   --experiment gathering --save local/gathering/session.json \
   --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
 ```
 
 This starts original **The Gathering on Standard**, using the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine decks and the prepared artwork on this machine. Keep the terminal open and the window visible and focused during **Checking graphics...**. On a new save, the heading says **The Gathering · Standard · Setup**: click an investigator card and choose them as lead from its contextual menu. Click individual hand cards for mulligan choices, then confirm each investigator's hand to begin ordinary scenario play.
 
-Every decision autosaves to `local/gathering/session.json`. Run the same command to resume. To start another game while retaining this one, change the filename, for example to `local/gathering/session-2.json`. The `local/` directory is ignored by Git. The first build can take several minutes; subsequent launches reuse it.
+Every decision autosaves to `local/gathering/session.json`. Run the same command to resume. To start over, choose **Menu → Restart The Gathering… → Restart**. This returns to setup with fresh shuffles and archives the previous attempt beside the save; its exact path appears on screen and in the terminal. **Cancel** or Escape keeps the current attempt. **Reopen saved attempt** resumes the new attempt after a restart. See the [recovery instructions](docs/experiments/gathering-setup.md#restart-and-recover-an-attempt) to resume an archive. The `local/` directory is ignored by Git. The first build can take several minutes; subsequent launches reuse it.
 
 During play, click cards, locations, decks and tokens for their contextual actions. Choose **Inspect** for enlarged artwork and effective rules; piles offer their individual cards. The portrait rail moves the camera, and **TURN** identifies the current investigator independently of camera focus. **Menu** at the upper right contains history, motion settings, save/reopen, replay and artwork settings. The bottom panel holds the current decision and table-wide choices. Gathering's artwork collection includes all 94 card identities needed by the selected decks and original scenario, with the necessary card backs and shared tokens. It is separate from Party's smaller collection.
 
-Earlier artwork-enabled native checks verified setup, one action and replay on the superseded presentation. They do not verify this correction's appearance or physical input. Two full-scenario presentations are proposed for owner review: local enemy piles beside their rooms, and a blocking reading panel for newly revealed Act/Agenda reverses. Its **Continue** advances the presentation of the saved transition without repeating rules effects. See the [Gathering guide](docs/experiments/gathering-setup.md) for details, artwork preparation and older-save compatibility.
+Hold **WASD** to pan, including when an ordinary button has keyboard focus. Panning dismisses an open card-action list without choosing an action. Inspect, Menu and other blocking dialogs suspend camera input; closing them restores it without clicking the table. Tab/Shift+Tab and Enter/Space continue to navigate and activate buttons.
+
+On 2026-11-03, Joel verified immediate WASD, Inspect blocking and release, continuous panning after playing Azure Flame, restart cancellation, fresh setup and reopening the new attempt in a bounded native check. This confirms that reported control/restart route; broader presentation comparison and a full native scenario playthrough remain outstanding. Two full-scenario presentations are proposed for owner review: local enemy piles beside their rooms, and a blocking reading panel for newly revealed Act/Agenda reverses. Its **Continue** advances the presentation of the saved transition without repeating rules effects. See the [Gathering guide](docs/experiments/gathering-setup.md) for evidence, artwork preparation and older-save compatibility.
 
 ## Launch and resume the party experiment
 
@@ -36,7 +39,8 @@ On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
   --experiment party \
   --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/party-assets-v2 \
   --save /home/joeloverbeck/.cache/agent-tmp/arkham-55-owner-8a08cc9.session.json
@@ -54,7 +58,8 @@ On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
   --experiment tony \
   --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/tony-assets-v5
 ```
@@ -99,11 +104,11 @@ The developer/agent prepares the selected files once; ordinary play needs only t
 curl --fail --location \
   https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png \
   --output /tmp/arkham-reveal-icon.png
-cargo run --locked --bin arkham-assets -- prepare-tony \
+scripts/dev cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /tmp/arkham-reveal-icon.png \
   --output "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
-cargo run --locked --bin arkham-assets -- check-tony \
+scripts/dev cargo run --locked --bin arkham-assets -- check-tony \
   "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
 ```
 
@@ -118,8 +123,9 @@ Without a command-line override or saved preference, Tony uses `$XDG_DATA_HOME/a
 A temporary `--art-root PATH` overrides the saved setting for that launch. Replace that option and its path with `--no-art` to use readable substitutes. Copy the whole prepared folder, including `manifest.json`, to relocate it:
 
 ```sh
-cargo run --locked --bin arkham-assets -- check-tony /absolute/path/to/copied-assets
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
+scripts/dev cargo run --locked --bin arkham-assets -- check-tony /absolute/path/to/copied-assets
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
   --experiment tony --art-root /absolute/path/to/copied-assets
 ```
 
@@ -130,7 +136,8 @@ The check reports missing or changed files and exits unsuccessfully for an incom
 The no-argument application mode retains the earlier Jacqueline skill-test experiment, its records and its own artwork preference:
 
 ```sh
-cargo run --locked --features tabletop --bin arkham-tabletop
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop
 ```
 
 Its saves use `local/experiment/curse.session.json`. See the [Jacqueline guide](docs/experiments/jacqueline-curse.md#build-and-run) for the first clicks, alternate case and legacy asset preparation. Tony and Jacqueline records use separate readers; there is no automatic migration.
@@ -171,6 +178,31 @@ Content support follows the owner's actual use. Starting decks, campaign content
 The built experiment runs offline. A clean clone needs no artwork or credentials for the checks or readable tabletop substitutes. Run `scripts/check` for tracked-file hygiene, formatting, strict Clippy, and the Rust tool, rules, continuity and tabletop tests. Rustup uses the compiler and components in `rust-toolchain.toml`. The Ubuntu PR workflow runs the same phase launchers as named steps without a display or private assets; the portal transport tests start a private `dbus-daemon`. CI compiles its small Rust toolchain-preparation entry point directly with `rustc` before restoring Cargo's cache; the full tools package builds afterward.
 
 On Linux x86_64 and aarch64, the file-replacement lock test uses `ptrace` to observe its own driver child. The test environment must permit this child tracing. If a restricted agent or container sandbox denies it with `Operation not permitted`, rerun the unchanged check in an authorized environment that permits child tracing. Successful verification requires the tracing test to execute and pass.
+
+Local development defaults to two Cargo jobs. Development and test builds keep file-and-line backtraces for workspace code and omit dependency debug data, reducing the memory and disk load of linking the tabletop test suite. For full variable and dependency debugging, opt in with `scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop --profile debug-full`; its executable is `target/debug-full/arkham-tabletop`.
+
+`scripts/check` runs its phases in a transient user systemd scope: 12 GiB memory pressure threshold, 16 GiB hard memory limit, 1 GiB swap limit, six CPU equivalents and CPU weight 20. Use `scripts/dev COMMAND [ARG...]` for other local builds and individual checks, for example:
+
+```sh
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop
+scripts/dev scripts/check-app
+```
+
+Protected commands share a lock on this checkout's directory. A second command waits up to 30 seconds, then exits with code 75 if the checkout is still busy; retry after the active build finishes. Invoke `scripts/check` directly: it already uses `scripts/dev`, so wrapping it again would wait on its own lock. Separate checkouts have separate locks. Run the built tabletop executable separately so compilation limits and the lock do not affect play.
+
+The repository's [VS Code settings](.vscode/settings.json) route rust-analyzer's diagnostics and build-script/procedural-macro compilation through the same launcher, with the tabletop feature enabled. These use rust-analyzer's [command overrides](https://rust-analyzer.github.io/book/configuration#rust-analyzer.check.overrideCommand). A busy editor check can be rerun with **rust-analyzer: Run flycheck** after the full check finishes; other editors need equivalent local configuration.
+
+The launcher requires `flock` and a running user systemd manager; a failed scope launch stops the command without an unlimited retry. CPU and memory controller delegation is a host prerequisite: verify the effective cgroup limits when setting up another host, since accepted systemd properties alone do not prove enforcement. A hard-limit failure is a failed check, never permission to retry without limits. Direct Cargo commands retain the job/debug defaults but do not get the systemd limits or checkout lock. CI continues to run the named phase launchers under its existing runner settings.
+
+For a retained check with resource measurements, prepare the small helper under the limits, then run its recorder outside the build scope:
+
+```sh
+scripts/dev cargo build --locked -p arkham-tools &&
+target/debug/arkham-tools record-check --resources \
+  --output-dir /absolute/path/to/new-check-record -- scripts/check
+```
+
+The output directory must be new and its parent must exist. `run.json` retains the command's status and exit code; `resources.jsonl` samples host memory, CPU counters and pressure plus the child's visible cgroup about once per second. Kernel values retain their original names and units. Each reading exposes unavailable files as errors; `resources.error` reports capture/write failures without changing the command's exit status. Sampling runs inside the recorder, so completion or interruption leaves no separate sampler process. Only a finished record with exit code zero proves check success. Resource samples can miss short spikes or the last counters before a scope disappears; an observed `memory.peak` is not a guaranteed final peak. An abruptly killed recorder leaves incomplete evidence.
 
 Repository helpers live in the independent `arkham-tools` Cargo package. `scripts/tools --help` lists the bounded reader, Git-index guard, native verification and profiling commands; building these helpers does not compile Bevy. The launcher isolates its build artifacts from application compilation so context reads can proceed during a build, while Cargo still rebuilds changed helper sources. Its invocation parameters leave the caller's build-directory environment available to commands such as `record-check`. The index guard rejects generated caches and recognizable non-Rust executable source/template filenames, including force-added files. Inline code, templates and invocation-only shell remain subject to review under the [implementation-language contract](docs/foundation/mission.md#implementation-language). See the experiment guide for [native verification](docs/experiments/jacqueline-curse.md#developer-native-verification), external inputs, records and evidence limits.
 

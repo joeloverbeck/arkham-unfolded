@@ -1,0 +1,9 @@
+[build]
+jobs = 2
+
+# Apply to both the application workspace and the standalone renderer checks.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

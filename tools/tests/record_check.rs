@@ -9,11 +9,19 @@ use std::{
 mod support;
 
 fn record(root: &Path, output: &Path, mode: &str) -> Command {
+    record_options(root, output, mode, false)
+}
+
+fn record_options(root: &Path, output: &Path, mode: &str, resources: bool) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_arkham-tools"));
     command
         .current_dir(root)
         .args(["record-check", "--output-dir"])
-        .arg(output)
+        .arg(output);
+    if resources {
+        command.arg("--resources");
+    }
+    command
         .arg("--")
         .arg(support::fixture().join("child"))
         .args(["--fixture-record-check", mode]);
@@ -22,6 +30,56 @@ fn record(root: &Path, output: &Path, mode: &str) -> Command {
 
 fn metadata(output: &Path) -> Value {
     serde_json::from_slice(&fs::read(output.join("run.json")).unwrap()).unwrap()
+}
+
+#[test]
+fn optional_resource_capture_keeps_measurements_and_original_failure_status() {
+    let root = tempfile::tempdir().unwrap();
+    for code in [0, 42] {
+        let directory = root.path().join(format!("measured-{code}"));
+        let result = record_options(root.path(), &directory, &code.to_string(), true)
+            .env("ARKHAM_FIXTURE_DESCENDANT", "1")
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(code), "{result:?}");
+        let completed = metadata(&directory);
+        assert_eq!(completed["status"], "finished");
+        assert_eq!(completed["exit_code"], code);
+        let descendant = fs::read_to_string(root.path().join("descendant.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(!process_is_alive(descendant));
+        assert!(completed["resources"]["error"].is_null());
+        assert!(completed["resources"]["finished_unix_ms"].is_u64());
+        let samples: Vec<Value> = fs::read_to_string(directory.join("resources.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert!(samples.len() >= 2, "capture must include start and finish");
+        assert_eq!(completed["resources"]["samples"], samples.len());
+        for sample in &samples {
+            assert!(sample["unix_ms"].is_u64());
+            assert!(
+                sample["host"]["/proc/meminfo"]["text"]
+                    .as_str()
+                    .unwrap()
+                    .contains("MemAvailable:")
+            );
+            assert!(
+                sample["host"]["/proc/stat"]["text"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("cpu ")
+            );
+        }
+        assert!(
+            samples
+                .windows(2)
+                .all(|pair| pair[0]["unix_ms"].as_u64() <= pair[1]["unix_ms"].as_u64())
+        );
+    }
 }
 
 #[test]
@@ -49,6 +107,8 @@ fn complete_logs_and_metadata_preserve_success_and_original_failure_codes() {
             assert!(log.contains(expected), "{log}");
         }
         let completed = metadata(&directory);
+        assert!(completed.get("resources").is_none());
+        assert!(!directory.join("resources.jsonl").exists());
         assert_eq!(completed["status"], "finished");
         assert_eq!(completed["exit_code"], code);
         assert_eq!(completed["signal"], Value::Null);
@@ -75,7 +135,7 @@ fn launch_failure_is_incomplete_and_never_reports_a_successful_exit() {
     let directory = root.path().join("failed");
     let result = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
         .current_dir(root.path())
-        .args(["record-check", "--output-dir"])
+        .args(["record-check", "--resources", "--output-dir"])
         .arg(&directory)
         .arg("--")
         .arg(root.path().join("missing-program"))
@@ -138,7 +198,7 @@ struct Running {
 impl Running {
     fn start(root: &Path) -> Self {
         let directory = root.join("run");
-        let child = record(root, &directory, "wait")
+        let child = record_options(root, &directory, "wait", true)
             .env("ARKHAM_FIXTURE_DESCENDANT", "1")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -221,6 +281,20 @@ fn controlled_interruption_records_the_outcome_and_cleans_the_owned_group() {
         let root = tempfile::tempdir().unwrap();
         let mut running = Running::start(root.path());
         let descendant = running.descendant.unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while fs::read_to_string(running.directory.join("resources.jsonl"))
+            .unwrap()
+            .lines()
+            .filter(|line| serde_json::from_str::<Value>(line).is_ok())
+            .count()
+            < 3
+        {
+            assert!(
+                Instant::now() < deadline,
+                "periodic resource sampling did not advance"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
         // SAFETY: the supervisor is still owned and running in this test.
         assert_eq!(unsafe { libc::kill(running.child.id() as i32, signal) }, 0);
         assert_eq!(running.wait().code(), Some(130));
@@ -229,6 +303,14 @@ fn controlled_interruption_records_the_outcome_and_cleans_the_owned_group() {
         assert!(completed["finished_unix_ms"].is_u64());
         assert!(!process_is_alive(running.pid));
         assert!(!process_is_alive(descendant));
+        assert!(completed["resources"]["error"].is_null());
+        assert!(completed["resources"]["finished_unix_ms"].is_u64());
+        let measurements = fs::read(running.directory.join("resources.jsonl")).unwrap();
+        thread::sleep(Duration::from_millis(100));
+        assert_eq!(
+            fs::read(running.directory.join("resources.jsonl")).unwrap(),
+            measurements
+        );
     }
 }
 
@@ -265,4 +347,11 @@ fn killed_supervisor_leaves_running_metadata_as_incomplete_evidence() {
     assert_eq!(stale["status"], "running");
     assert!(stale["finished_unix_ms"].is_null());
     assert!(stale["exit_code"].is_null());
+    assert!(stale["resources"]["finished_unix_ms"].is_null());
+    let measurements = fs::read(running.directory.join("resources.jsonl")).unwrap();
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(
+        fs::read(running.directory.join("resources.jsonl")).unwrap(),
+        measurements
+    );
 }
