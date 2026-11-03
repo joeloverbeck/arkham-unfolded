@@ -2,30 +2,33 @@
 
 This is the local implementation candidate for original Gathering
 under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). It uses the
-actual three selected starting lists, rather than the prepared Study experiment's
-scripted hands. **Completing mulligans now begins ordinary scenario play.** The
-first full round and all following mythos draws have driver-level evidence.
-The owner rejected the earlier interface because it departed from the accepted
-Party presentation. The correction shares Party's production screen, portrait
-rail with **TURN**, inspection and story-reading panels, physical cards, captions,
-investigator counters, counted decks, chaos bag, Reveal control and motion paths.
-The five-minute artwork comparison on 2026-11-03 confirmed portrait focus, the
-contextual card menu and the shared Inspect panel. It exposed overlapping hand
-captions and an unsupported multiplication glyph. The follow-up shares projected
-caption widths between Party and Gathering and uses the readable `x` spelling.
-Production font-layout tests reproduce the overlap before the fix and pass after
-it. A second native check confirmed the hand captions, panel clearance, Menu and
-replay/return route. It exposed crowding between the Curse-pool and Chaos-bag
-captions in the scenario view. The shared Test-area renderer now leaves more
-space between the pool and bag while retaining the same fonts and two-line
-labels. Both renderers and their token-return animations share the pool position.
-The next native check confirmed those two captions were separate, encounter
-inventory scrolling and Agenda inspection. It exposed a collision between the
-pool count and the commitment heading in Scenario focus. The pool now sits
-slightly farther from the commitment area, and both production renderers test
-all three captions together. This final spacing needs native confirmation;
-Act inspection, a complete native playthrough and owner acceptance remain outstanding.
-Earlier native checks below concern the superseded presentation.
+actual three selected starting lists. **Completing mulligans begins ordinary
+scenario play.** The first full round and all following mythos draws have
+driver-level evidence. The corrected interface shares Party's production screen,
+portrait rail with **TURN**, inspection and story-reading panels, physical cards,
+captions, investigator counters, counted decks, chaos bag, Reveal control and
+motion paths. The [current verification status](#presentation-correction-verification)
+below distinguishes completed checks from the remaining native playthrough and
+owner acceptance.
+
+Joel accepted the [setup visibility, automatic live presentation and Scenario
+layout refinement](../adr/0002-persistent-table-areas.md#gathering-setup-visibility-and-automatic-live-presentation)
+on 2026-11-03, including a victory-pile caption with its card count and summed
+Victory points, and then authorized implementation. The local candidate now
+shows the initial Scenario and Test arrangement before lead selection and
+through mulligans, including after restart. This is a projection of public setup
+membership; actual deck assembly, random consumption, legal choices and records
+retain their original order. Each physical Arcane Research has its own caption.
+
+Ordinary live consequences finish automatically, including while panning or
+changing focus. Inspection and blocking dialogs suspend them only while open;
+story reading still requires Continue. Manual event stepping belongs to Replay.
+The pool and bag share one row. Scenario has matched heading spacing, adjacent
+encounter piles at upper left, a victory pile at upper right, a book nearer the
+far edge, and a bounded Map region. The Victory display shows its card count and
+summed points, excluding resolution bonuses. Eligible locations join that displayed
+pile at scenario end; the adapter projects this from older terminal observations
+without rewriting their records or awards.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and
@@ -36,6 +39,160 @@ FAQ 2.5 and Grimoire 1.1; the existing original-content precedence remains appli
 This dated check is not a guarantee about a future campaign's latest version.
 The original deck revisions and explicit weakness selections are
 visible in the observation. Original ArkhamDB snapshots remain unchanged.
+
+## Presentation correction verification
+
+Current status as of 2026-11-03:
+
+| Evidence | Current result |
+| --- | --- |
+| Automated checks | The full `scripts/check` passed after the retrospective follow-up: `/tmp/gathering-retro-full-check/run.json`, `finished`, exit 0. The three prepared-save startup checks also passed separately at `/tmp/gathering-retro-startup-check/run.json`. Production layout coverage compares rendered caption and heading glyphs with each other and both raised book meshes at 1280×800 and 1600×1000, at 1×/2× scale. |
+| Code review | Both axes found no introduced issues in the final caption candidate. The exact source and new-file identities are retained in the [verification history](#verification-history). |
+| Targeted native checks | Confirmed early Scenario setup, individual Arcane Research captions, Hard Knocks returning to ordinary play without acknowledgment, aligned bag/pool models and captions, expanded Map layout, heading clearance, and the final Agenda/Act captions clear of the book. Artwork and substitute captures covered initial Scenario layout. |
+| Still unverified | Direct Act inspection, a complete native Gathering playthrough, physical keyboard and simultaneous input during motion, and owner acceptance. The targeted checks do not close these gaps or establish Party caption clearance. |
+
+The final native capture used executable SHA256
+`0ada4534ce80c8387934ef2b29b5a57331ea1b2decc7430e4badc32a9b1a12da`.
+The retrospective check rebuilt the executable as
+`4b42c7fc398a8e06cf9f6b55ffd7cc8fc5fae359a4bd097726b2027b7ae28ccd`;
+the native observations refer to the captured binary, with no additional native
+interval for the subsequent save-loader extraction.
+The [history](#verification-history) retains its build/check records, the three
+native intervals and the earlier failures repaired during them. Historical
+pending statements describe those earlier candidates, not the current status.
+
+The approved retrospective follow-up retains the geometry regression, adds
+production-startup checks for ordinary prepared review saves and their visible
+story barriers, tightens baseline evidence in code review, and documents bounded
+process diagnostics. Native startup and the new headless checks share the same
+save loader; no game rule or story acknowledgment changes. The checks reproduce
+the revision-61 Act reading panel and verify that revision 62 exposes all four
+map locations without that modal. Consulted
+rules: `PURP`, `WORK`, `EVID-3`, `EVID-4`, `EVID-5`, `EVID-6`, `BOUND`, `INT`,
+`AGENT`, and `OPS`.
+
+### Verification history
+
+<details>
+<summary>Retained correction, review and native evidence</summary>
+
+The 2026-11-03 correction starts at `9cd5d8c`. The pre-native `scripts/check`
+record at `/tmp/gathering-ui-verified-check/run.json` is `finished` with exit 0;
+its complete output is `check.log` in that directory. Coverage includes initial
+setup, restart and reopening, unchanged setup recordings, individual permanent
+captions, automatic presentation during camera navigation, retained story and
+inspection barriers, empty/populated Scenario font layout at 1280×800 and
+1600×1000 at 1×/2× scale, and Victory membership/counts/points in live observations,
+reopening and Replay. Terminal-location witnesses are explicitly privileged
+presentation inputs; the recorded Priest fight exercises the actual rules seam.
+
+The standards review found no code findings. The requirements review identified
+a missing shared heading consumer in the older Jacqueline experiment; that
+consumer and its title wrapping were corrected. Both review axes found no
+remaining code issues in source snapshot
+`aef160b7255d970ca234ba82db1ab50b0e525c293762ec735ee72a05464958ff`
+(`/tmp/gathering-ui-review/candidate-v3.patch`, plus its separately captured new
+Victory test). The review does not establish native readability or owner acceptance.
+
+The normal native build also finished with exit 0 at
+`/tmp/gathering-ui-ready-build/run.json`. Executable
+`target/debug/arkham-tabletop` has SHA256
+`18aab4dcbcbd88c420f48cf2d2f5fbed9f31ea7f17750dc177c2f7846128f4a9`.
+Prepared ordinary seed-89 review saves are `/tmp/gathering-ui-start.session.json`,
+`/tmp/gathering-ui-hard-knocks.session.json` and
+`/tmp/gathering-ui-expanded.session.json`. They use legal decisions and carry no
+verification-fixture flag; the expanded map is at revision 61. Preparation is
+recorded in `/tmp/gathering-ui-prepare.rs`.
+
+Joel authorized a five-minute native interval on 2026-11-03, from 18:52:19 to
+18:57:19 UTC. With the executable above, pointer input played Tony's Hard Knocks:
+resources fell from five to three, actions from three to two, the asset appeared,
+and normal decisions returned without a presentation acknowledgment. A subsequent
+right-drag orbited the camera. The input grant closed at 18:54:16 UTC; the
+interactive launcher then exited 130 on intentional cleanup. This does not
+establish physical keyboard behavior or simultaneous input during card motion.
+
+Three isolated static runs exited 0. The initial Scenario capture showed the
+Study, standees, Act/Agenda, encounter deck, empty named pile footprints and Map
+border before lead selection. The bag and pool captions shared a row. The
+Jacqueline capture showed a separate Arcane Research caption for each permanent.
+The expanded-map save opened the Act story screen, so that capture verifies the
+retained reading barrier, not expanded-map readability. The last screenshot was
+saved at 18:56:48 UTC; no further desktop activity followed the interval.
+Manifests, logs, input events and images are retained under
+`~/.cache/agent-tmp/gathering-ui-review-20261103-1793731939/`.
+
+Native inspection found the Scenario heading overlapping the raised book. The
+correction restores Test's original centered spacing and applies that clearance
+to Scenario. The extended production layout regression compares rendered heading
+glyphs against both actual page meshes; it failed before this correction and
+passed afterwards (`/tmp/gathering-heading-native-regression/run.json`, exit 101;
+`/tmp/gathering-heading-native-fixed/run.json`, exit 0). The owner-authorized
+follow-up below checks this repair, the expanded map and the dedicated Test view
+under the [desktop-interval procedure](jacqueline-curse.md#launch-capture-and-interact).
+Owner acceptance remains separate. The compact Victory caption places count and
+points on two lines beneath its named footprint; the encounter footprints use
+Deck and Discard, as investigator areas do.
+
+After the heading repair, the full `scripts/check` record
+`/tmp/gathering-ui-post-native-check/run.json` finished with exit 0. Both review
+axes found no introduced code issues in source snapshot
+`45248f5d8fdbdac53ec5a4c074178882bf9e220fa26e91b6a59990ff334c77d7`
+(`/tmp/gathering-ui-review/candidate-v4.patch`, plus
+`new-files/src/gathering_tabletop/tests/victory-v4.rs`, SHA256
+`b8631c04aa8892bb7b07919b8565142d1c5fd014aba3af2ca3d0c3398f9cea21`).
+The rebuilt normal executable has SHA256
+`6d262ae0ed9ac464c5967a9b00a7c0f327f82accf8b8b3b7662c116874b59958`;
+`/tmp/gathering-ui-post-native-build/run.json` is `finished` with exit 0.
+The isolated expanded-map follow-up save is
+`/tmp/gathering-ui-expanded-followup.session.json`, at revision 62 after the legal
+`turn:end` decision. `/tmp/gathering-ui-prepare-followup.rs` records preparation;
+the original revision-61 input remains unchanged.
+
+Joel authorized a two-minute follow-up from 19:10:27 to 19:12:27 UTC. Four static
+runs used that rebuilt executable and exited 0. Initial Scenario captures with
+artwork and substitutes confirmed that the heading cleared the book. The
+revision-62 expanded map showed Hallway, Attic, Cellar, blocked Parlor, standees
+and links within the Map boundary. Test focus showed aligned bag/pool models and
+captions, separated from the commitment region. The final image was saved at
+19:12:04 UTC and every window closed within the interval; no pointer-input grant
+was used. Records and inspected images are under
+`~/.cache/agent-tmp/gathering-ui-followup-20261103-1793733027/`.
+
+The expanded view also exposed a remaining Agenda-caption collision with its
+book page. Extending the production geometry check to all upper Scenario labels
+reproduced a slight collision even for the short setup caption at 1280×800
+(`/tmp/gathering-agenda-native-regression/run.json`, exit 101). The subsequent
+correction anchors Agenda's right-aligned text left of the book and Act's
+left-aligned text to its right, keeping the caption width away from both pages.
+This caption correction was made after the native interval and is not verified
+by the captures above.
+
+The expanded geometry regression passed afterwards at
+`/tmp/gathering-agenda-native-fixed/run.json`. The full repository check and normal
+build both finished with exit 0 at `/tmp/gathering-ui-caption-check/run.json` and
+`/tmp/gathering-ui-caption-build/run.json`. The resulting executable SHA256 is
+`0ada4534ce80c8387934ef2b29b5a57331ea1b2decc7430e4badc32a9b1a12da`.
+Both review axes found no introduced code issues in the final caption source
+snapshot, `/tmp/gathering-ui-review/candidate-v5.patch` (SHA256
+`186b9a34328e6426abfd888a0819ffd97883118e6729b6a91c6d632c22b1c8fa`), plus
+`new-files/src/gathering_tabletop/tests/victory-v5.rs` (SHA256
+`b607d9341703ad21f987d4534daea30913c2a9452652671ff32913d6a8a0332b`).
+A suggested Party caption issue was withdrawn after comparison with the fixed
+point: its long centered captions predate this patch, and no introduced
+regression was established. That comparison does not establish native Party
+caption clearance. The final capture below checks Gathering's caption alignment;
+this was the final presentation change before the capture.
+
+Joel authorized one final 60-second interval from 19:23:12 to 19:24:12 UTC. The
+expanded-map static capture used that same checked executable and exited 0. The
+inspected image shows `Agenda 1 / 0 doom` entirely left of its page and `Act 2`
+entirely right of its page, clear of the book and neighboring labels. The
+Scenario heading remains clear above the book. The image was saved at 19:23:30
+UTC and the window closed within the interval. The manifest, log and `scene.png`
+are retained under `~/.cache/agent-tmp/gathering-caption-20261103-1793733792/`.
+
+</details>
 
 ## Run and resume
 
@@ -254,10 +411,13 @@ Recorded presentation moments retain automatic token reveals, test results,
 draws, harm and scenario transitions before cleanup. Replay can inspect these
 moments without recomputing outcomes. The native adapter consumes the same public
 projections for locations, enemies, assets, threats, commitments, pending costs
-and token custody. Its live playback offers Next event, Pause/Resume and Show
-pending choice; rules choices wait until that playback finishes. Inspection pauses
-playback and card movement. Camera follow is optional in live play and resumes
-on replay navigation after a manual override.
+and token custody. Live consequences advance after their visible motion, retaining
+brief holds for revealed tokens and pending harm. Each moment is rendered before
+advancement; routine captions do not impose a reading-length delay or require
+acknowledgment. Genuine rules decisions and newly revealed story text remain
+explicit. Inspection and blocking dialogs suspend playback and card movement only
+while open. Camera navigation does not pause playback. Follow is optional in live
+play and resumes on replay navigation after a manual override.
 
 Each rules decision is saved before its presentation begins. Reopening that
 session in the same window preserves an unfinished presentation; a fresh process

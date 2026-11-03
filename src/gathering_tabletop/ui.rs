@@ -295,17 +295,6 @@ pub(super) fn render(
             {
                 p.spawn(art.text(&view.prompt, 18., PAPER));
             }
-            if table.is_presenting() {
-                p.spawn(art.text(
-                    format!(
-                        "Event {} of {} · The decision is saved",
-                        table.presentation_index + 1,
-                        table.presentation.len()
-                    ),
-                    14.,
-                    MUTED,
-                ));
-            }
             if let Some(status) = play::status(view) {
                 p.spawn(art.text(status, 15., GOLD));
             }
@@ -321,20 +310,7 @@ pub(super) fn render(
                         control(art, row, "Next moment", Action::Next);
                     }
                     control(art, row, "Return to live table", Action::Live);
-                } else if table.is_presenting() && !table.modal() {
-                    control(art, row, "Next event", Action::PresentationNext);
-                    control(
-                        art,
-                        row,
-                        if table.presentation_paused {
-                            "Resume presentation"
-                        } else {
-                            "Pause presentation"
-                        },
-                        Action::PresentationPause,
-                    );
-                    control(art, row, "Show pending choice", Action::PresentationFinish);
-                } else if !table.modal() {
+                } else if !table.is_presenting() && !table.modal() {
                     for (index, choice) in controls::global_choices(view).into_iter().enumerate() {
                         let entity = control(
                             art,
@@ -641,11 +617,7 @@ mod tests {
         let action = Action::Choose(table.epoch, view.revision, id.to_owned());
         app.world_mut().resource_mut::<Actions>().0.push(action);
         app.update();
-        app.world_mut()
-            .resource_mut::<Actions>()
-            .0
-            .push(Action::PresentationFinish);
-        app.update();
+        super::super::tests::finish_presentation(app);
     }
 
     #[test]

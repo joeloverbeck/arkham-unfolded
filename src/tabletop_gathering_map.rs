@@ -175,17 +175,7 @@ impl GatheringMap {
             })
             .collect();
         // Leave the far strip for the book and decks, and a margin at the mat edge.
-        let half_width = layout::SCENARIO_SIZE.x / 2.0 - 0.2;
-        let usable = Rect::from_corners(
-            Vec2::new(
-                layout::SCENARIO_CENTER.x - half_width,
-                layout::SCENARIO_FAR_EDGE + 4.5,
-            ),
-            Vec2::new(
-                layout::SCENARIO_CENTER.x + half_width,
-                layout::SCENARIO_CENTER.z + layout::SCENARIO_SIZE.y / 2.0 - 0.2,
-            ),
-        );
+        let usable = layout::scenario_map_bounds();
         if placements.iter().any(|placement| {
             !usable.contains(placement.footprint.bounds.min)
                 || !usable.contains(placement.footprint.bounds.max)

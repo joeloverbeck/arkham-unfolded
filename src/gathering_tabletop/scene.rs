@@ -116,13 +116,19 @@ pub(super) fn render(
     context: &CardRender<'_>,
 ) {
     let view = context.view;
-    label(
+    let scenario_heading = label(
         commands,
         context,
         "Scenario",
         layout::scenario_heading(),
         true,
     );
+    commands
+        .entity(scenario_heading)
+        .insert(layout::ScenarioAreaHeading);
+    for (name, at) in layout::scenario_zone_labels() {
+        label(commands, context, name, at, false);
+    }
     let heading = label(commands, context, "Test area", layout::test_heading(), true);
     commands.entity(heading).insert(layout::TestAreaHeading);
     for (name, at) in layout::test_zone_labels() {
@@ -239,21 +245,6 @@ pub(super) fn render(
                     .entity(entity)
                     .insert(motion::PhysicalCard(permanent.id));
                 context.bind(commands, entity, controls::Source::Card(permanent.id));
-                if permanent.code == "04109" {
-                    let first = !investigator.permanents[..slot]
-                        .iter()
-                        .any(|card| card.code == "04109");
-                    let count = investigator
-                        .permanents
-                        .iter()
-                        .filter(|card| card.code == "04109")
-                        .count();
-                    replace_caption(
-                        commands,
-                        entity,
-                        first.then(|| format!("Arcane Research ×{count}")),
-                    );
-                }
             }
             deck(
                 commands,
@@ -276,7 +267,8 @@ pub(super) fn render(
     }
     if view.play.is_some() {
         play::render(commands, meshes, materials, context);
-    } else if let Some(scenario) = &view.scenario {
+    } else {
+        let scenario = view.scenario_for_display();
         for (side, codes, title, source) in [
             (
                 layout::ScenarioBookSide::Agenda,
@@ -350,6 +342,14 @@ pub(super) fn render(
             scenario.encounter_deck_count,
             controls::Source::EncounterDeck,
             true,
+        );
+        play::render_setup_pieces(
+            commands,
+            meshes,
+            materials,
+            context,
+            &map,
+            scenario.study_clues,
         );
     }
 }
@@ -446,6 +446,23 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(labels.iter().any(|(_, text, _, _)| text.0 == "Scenario"));
         assert!(labels.iter().any(|(_, text, _, _)| text.0 == "Test area"));
+        for source in [
+            controls::Source::Location("01111".into()),
+            controls::Source::Agenda,
+            controls::Source::Act,
+            controls::Source::EncounterDeck,
+            controls::Source::ScenarioReference,
+            controls::Source::Bag,
+        ] {
+            assert!(
+                pieces.iter().any(|(_, target, _, _)| *target == source),
+                "{source:?}"
+            );
+        }
+        // The public preview must not move setup or reveal a shuffled order.
+        assert!(view.scenario.is_none());
+        assert!(view.play.is_none());
+        assert_eq!(view.stage, crate::gathering::Stage::ChooseLead);
         assert!(
             !labels
                 .iter()
@@ -456,6 +473,20 @@ mod tests {
                 .iter()
                 .filter(|(_, _, node, _)| node.width == px(190.))
                 .all(|(_, _, _, background)| background.is_none_or(|color| color.0.alpha() == 0.))
+        );
+        assert_eq!(
+            world
+                .query::<&Name>()
+                .iter(world)
+                .filter(|name| name.as_str() == "Investigator standee")
+                .count(),
+            3
+        );
+        assert!(
+            world
+                .query::<&Counter>()
+                .iter(world)
+                .any(|counter| counter.kind == CounterKind::Clue && counter.amount == 6)
         );
     }
 
@@ -495,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn arcane_research_has_one_party_caption_and_two_physical_menu_targets_in_setup_and_play() {
+    fn arcane_research_labels_each_physical_copy_in_setup_and_play() {
         let directory = tempfile::tempdir().unwrap();
         for complete in [false, true] {
             let mut session = Session::with_seed(19);
@@ -523,7 +554,7 @@ mod tests {
                         .then_some(text.0.clone())
                 })
                 .collect::<Vec<_>>();
-            assert_eq!(captions, ["Arcane Research x2"]);
+            assert_eq!(captions, ["Arcane Research", "Arcane Research"]);
             let targets = world
                 .query::<(&Name, &motion::PhysicalCard, &ContextTarget)>()
                 .iter(world)

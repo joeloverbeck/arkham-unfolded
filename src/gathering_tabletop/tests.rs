@@ -2,12 +2,84 @@ use super::*;
 
 mod navigation;
 mod restart;
+mod review_saves;
+mod victory;
+
+fn assert_initial_table(app: &mut App) {
+    let view = app.world().resource::<Table>().view();
+    assert!(view.play.is_none());
+    assert!(inspection_text(&view, "01111").unwrap().contains("Study"));
+    for hidden in ["01112", "01113", "01116", "01106", "01109"] {
+        assert!(
+            inspection_text(&view, hidden).is_none(),
+            "{hidden} must remain hidden"
+        );
+    }
+    let world = app.world_mut();
+    let sources = world
+        .query::<&ContextTarget>()
+        .iter(world)
+        .map(|target| target.source.clone())
+        .collect::<Vec<_>>();
+    for source in [
+        controls::Source::Bag,
+        controls::Source::Act,
+        controls::Source::Agenda,
+        controls::Source::EncounterDeck,
+        controls::Source::Location("01111".into()),
+    ] {
+        assert!(
+            sources.contains(&source),
+            "initial table must render {source:?}"
+        );
+    }
+    assert_eq!(
+        world
+            .query::<&Name>()
+            .iter(world)
+            .filter(|name| name.as_str() == "Investigator standee")
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn initial_table_remains_visible_through_mulligans_and_reopening() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("setup.json");
+    let mut app = host(path);
+    let mut expected = Session::with_seed(19);
+    assert_initial_table(&mut app);
+    for id in ["lead:jacqueline", "confirm-mulligan", "confirm-mulligan"] {
+        activate_choice(&mut app, id);
+        expected.choose(expected.observe().revision, id).unwrap();
+        assert_initial_table(&mut app);
+        assert_eq!(
+            app.world().resource::<Table>().session.recording(),
+            expected.recording()
+        );
+    }
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Reopen);
+    app.update();
+    assert_initial_table(&mut app);
+    assert_eq!(
+        app.world().resource::<Table>().session.recording(),
+        expected.recording()
+    );
+}
 
 pub(super) fn host(path: PathBuf) -> App {
     host_with_pointer_input(path, false)
 }
 
 pub(super) fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) -> App {
+    host_with_table(Table::new(Session::with_seed(19), path), raw_window_events)
+}
+
+fn host_with_table(table: Table, raw_window_events: bool) -> App {
     let mut app = crate::tabletop_layout::heading_checks::app();
     if raw_window_events {
         // Both are supplied by DefaultPlugins in native startup.
@@ -20,7 +92,7 @@ pub(super) fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) ->
         .init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>()
         .init_resource::<art::Art>()
-        .insert_resource(Table::new(Session::with_seed(19), path))
+        .insert_resource(table)
         .insert_resource(RenderHealth::ready_for_test())
         .insert_resource(Orbit::new(CameraMode::Jacqueline));
     app.world_mut().spawn((
@@ -1498,14 +1570,25 @@ fn activate_choice(app: &mut App, id: &str) {
     app.update();
 }
 
-fn finish_presentation(app: &mut App) {
-    if app.world().resource::<Table>().is_presenting() {
-        app.world_mut()
-            .resource_mut::<Actions>()
-            .0
-            .push(Action::PresentationFinish);
+pub(super) fn finish_presentation(app: &mut App) {
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(std::time::Duration::from_millis(100));
+    for _ in 0..200 {
+        let table = app.world().resource::<Table>();
+        if !table.is_presenting() || table.presentation_blocked() {
+            break;
+        }
         app.update();
     }
+    let table = app.world().resource::<Table>();
+    assert!(
+        !table.is_presenting() || table.presentation_blocked(),
+        "live presentation must finish automatically"
+    );
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(std::time::Duration::ZERO);
 }
 
 #[test]
@@ -1776,7 +1859,7 @@ fn native_automatic_reveal_is_presented_after_commit_and_cannot_accept_rules_inp
     app.update();
     assert_eq!(app.world().resource::<Table>().view(), first_view);
     assert_eq!(std::fs::read(&path).unwrap(), saved);
-    assert!(rendered_text(&mut app).contains("Next event"));
+    assert!(!rendered_text(&mut app).contains("Next event"));
     // Inspection pauses the real presentation clock, without hiding its token face.
     app.world_mut()
         .resource_mut::<Actions>()
@@ -1794,7 +1877,7 @@ fn native_automatic_reveal_is_presented_after_commit_and_cannot_accept_rules_inp
     app.world_mut()
         .resource_mut::<Actions>()
         .0
-        .extend([Action::Close, Action::PresentationNext]);
+        .push(Action::Close);
     app.update();
     assert_eq!(
         app.world().resource::<Table>().session.observe_for_play(),
@@ -1840,7 +1923,6 @@ fn committed_physical_card_moves_from_hand_and_inspection_preserves_its_position
     activate_choice(&mut app, "window:pass");
     activate_choice(&mut app, &format!("commit:{promise}"));
     activate_choice(&mut app, "commit:confirm");
-    finish_presentation(&mut app);
     let summary = rendered_text(&mut app);
     assert!(
         summary.contains("cards +4") && summary.contains("chaos pending"),
@@ -1908,9 +1990,8 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
             break;
         }
         app.world_mut()
-            .resource_mut::<Actions>()
-            .0
-            .push(Action::PresentationNext);
+            .resource_mut::<PresentationTime>()
+            .advance_by(std::time::Duration::from_millis(100));
         app.update();
     }
     assert_eq!(
@@ -1934,11 +2015,10 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
         1
     );
     let pose = app.world().resource::<Orbit>().pose();
-    app.world_mut().resource_mut::<Actions>().0.extend([
-        Action::Close,
-        Action::Focus(Area::Investigator(2)),
-        Action::PresentationFinish,
-    ]);
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .extend([Action::Close, Action::Focus(Area::Investigator(2))]);
     app.world_mut()
         .resource_mut::<PresentationTime>()
         .advance_by(std::time::Duration::from_secs(20));

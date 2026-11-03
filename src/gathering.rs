@@ -171,6 +171,36 @@ pub struct ScenarioSetup {
     pub skip_first_mythos: bool,
 }
 
+impl ScenarioSetup {
+    /// Fixed, public setup membership. No shuffle or investigator decision is
+    /// performed here; the session assembles the actual deck after mulligans.
+    fn initial() -> Result<Self, RuleError> {
+        let inventory = content::ENCOUNTER
+            .iter()
+            .map(|&(code, count)| (code.to_owned(), count))
+            .collect();
+        let encounter_inventory = quantities(&inventory)?;
+        Ok(Self {
+            title: "The Gathering".into(),
+            difficulty: "Standard".into(),
+            reference: "01104".into(),
+            agenda: ["01105", "01106", "01107"].map(String::from).to_vec(),
+            act: ["01108", "01109", "01110"].map(String::from).to_vec(),
+            locations: vec!["01111".into()],
+            study_clues: 6,
+            set_aside: ["01112", "01113", "01114", "01115", "01116", "01117"]
+                .map(String::from)
+                .to_vec(),
+            encounter_deck_count: encounter_inventory
+                .iter()
+                .map(|entry| usize::from(entry.quantity))
+                .sum(),
+            encounter_inventory,
+            skip_first_mythos: true,
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Observation {
     pub revision: u64,
@@ -188,6 +218,18 @@ pub struct Observation {
     pub verification_fixture: Option<HostileFixture>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub play: Option<PlayObservation>,
+}
+
+#[cfg(feature = "tabletop")]
+impl Observation {
+    /// Presentation only: keep serialized observations and random consumption
+    /// unchanged while showing the known starting arrangement during setup.
+    pub(crate) fn scenario_for_display(&self) -> std::borrow::Cow<'_, ScenarioSetup> {
+        self.scenario.as_ref().map_or_else(
+            || std::borrow::Cow::Owned(ScenarioSetup::initial().expect("fixed Gathering catalog")),
+            std::borrow::Cow::Borrowed,
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -695,12 +737,8 @@ impl Session {
     }
 
     fn assemble_scenario(&mut self) -> Result<(), RuleError> {
-        let inventory = content::ENCOUNTER
-            .iter()
-            .map(|&(code, count)| (code.to_owned(), count))
-            .collect();
-        let encounter_inventory = quantities(&inventory)?;
-        for entry in &encounter_inventory {
+        let scenario = ScenarioSetup::initial()?;
+        for entry in &scenario.encounter_inventory {
             self.encounter_deck.extend(std::iter::repeat_n(
                 entry.code.clone(),
                 usize::from(entry.quantity),
@@ -713,21 +751,7 @@ impl Session {
         for investigator in &mut self.investigators {
             investigator.location = Some("01111".into());
         }
-        self.scenario = Some(ScenarioSetup {
-            title: "The Gathering".into(),
-            difficulty: "Standard".into(),
-            reference: "01104".into(),
-            agenda: ["01105", "01106", "01107"].map(String::from).to_vec(),
-            act: ["01108", "01109", "01110"].map(String::from).to_vec(),
-            locations: vec!["01111".into()],
-            study_clues: 6,
-            set_aside: ["01112", "01113", "01114", "01115", "01116", "01117"]
-                .map(String::from)
-                .to_vec(),
-            encounter_inventory,
-            encounter_deck_count: self.encounter_deck.len(),
-            skip_first_mythos: true,
-        });
+        self.scenario = Some(scenario);
         Ok(())
     }
 

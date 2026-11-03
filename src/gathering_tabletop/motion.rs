@@ -3,6 +3,8 @@
 use super::*;
 use std::collections::BTreeMap;
 
+pub(super) const CARD_DURATION: f32 = 0.35;
+
 #[derive(Component)]
 pub(super) struct PhysicalCard(pub u16);
 
@@ -109,7 +111,7 @@ pub(super) fn animate(
         Option<&mut CardMotion>,
     )>,
 ) {
-    let paused = table.modal() || (table.is_presenting() && table.presentation_paused);
+    let paused = table.presentation_blocked();
     for (entity, card, mut transform, motion) in &mut cards {
         if table.reduced_motion {
             if let Some(motion) = motion {
@@ -120,9 +122,9 @@ pub(super) fn animate(
         }
         if let Some(mut motion) = motion {
             if !paused {
-                motion.elapsed = (motion.elapsed + time.delta_secs()).min(0.35);
+                motion.elapsed = (motion.elapsed + time.delta_secs()).min(CARD_DURATION);
             }
-            let fraction = motion.elapsed / 0.35;
+            let fraction = motion.elapsed / CARD_DURATION;
             // Smooth endpoints keep a stopped inspection stable.
             let blend = fraction * fraction * (3. - 2. * fraction);
             transform.translation = motion.start.lerp(motion.end, blend);
@@ -150,7 +152,7 @@ pub(super) fn animate(
                         })
                 });
             if let Some(motion) = motion {
-                let fraction = motion.elapsed / 0.35;
+                let fraction = motion.elapsed / CARD_DURATION;
                 transform.translation = motion
                     .start
                     .lerp(motion.end, fraction * fraction * (3. - 2. * fraction));

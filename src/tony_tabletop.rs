@@ -1388,6 +1388,7 @@ fn world_labels(
         &WorldLabel,
         &ComputedNode,
         Has<layout::TestAreaHeading>,
+        Has<layout::ScenarioAreaHeading>,
         Has<OverviewHeading>,
         Option<&OuterLabel>,
         &mut Node,
@@ -1395,13 +1396,25 @@ fn world_labels(
     )>,
 ) {
     let (camera, transform) = *camera;
-    for (label, computed, test_heading, heading, standee, mut node, mut visibility) in &mut labels {
+    for (
+        label,
+        computed,
+        test_heading,
+        scenario_heading,
+        heading,
+        standee,
+        mut node,
+        mut visibility,
+    ) in &mut labels
+    {
         if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !heading {
             *visibility = Visibility::Hidden;
             continue;
         }
         let point = if test_heading {
             layout::test_heading_screen_position(camera, transform, computed)
+        } else if scenario_heading {
+            layout::scenario_heading_screen_position(camera, transform, computed)
         } else {
             camera.world_to_viewport(transform, label.0).ok()
         };

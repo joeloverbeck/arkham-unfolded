@@ -122,13 +122,16 @@ pub(super) fn synchronize(
         commands.entity(entity).despawn();
     }
     let revision = view.revision;
-    label(
+    let scenario_heading = label(
         &mut commands,
         &art,
         "Scenario",
         layout::scenario_heading(),
         true,
     );
+    commands
+        .entity(scenario_heading)
+        .insert(layout::ScenarioAreaHeading);
     let map = location_map::GatheringMap::new(
         view.locations
             .iter()

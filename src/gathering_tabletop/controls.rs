@@ -130,6 +130,22 @@ struct Inspection {
 /// Public pile members supply inspection faces; no deck contents or private
 /// continuation frames participate in this projection.
 fn inspections(view: &Observation, selection: &Selection) -> Vec<Inspection> {
+    if matches!(selection.source, Source::Victory)
+        && let Some(play) = &view.play
+    {
+        let cards = play.scenario.victory_display();
+        if !cards.is_empty() {
+            return cards
+                .iter()
+                .rev()
+                .map(|card| Inspection {
+                    title: card.title.into(),
+                    code: card.code.into(),
+                    details: None,
+                })
+                .collect();
+        }
+    }
     if matches!(selection.source, Source::Bag | Source::Token(_)) {
         return vec![Inspection {
             title: "The Gathering · Standard reference".into(),
@@ -154,7 +170,6 @@ fn inspections(view: &Observation, selection: &Selection) -> Vec<Inspection> {
                 }
             }
             Source::EncounterDiscard => cards.extend(play.encounter_discard.iter().rev()),
-            Source::Victory => cards.extend(play.scenario.victory.iter().rev()),
             Source::ScenarioRemoved => cards.extend(play.scenario.removed.iter().rev()),
             Source::SearchPlayer => cards.extend(&play.searched_player),
             Source::SearchEncounter => cards.extend(&play.searched_encounter),
@@ -528,16 +543,13 @@ pub(super) fn exists(view: &Observation, source: &Source) -> bool {
         | Source::Removed(who) => view.investigators.iter().any(|p| p.investigator == *who),
         Source::Card(id) => !card_sources(view, *id).is_empty(),
         Source::Location(code) => view.play.as_ref().map_or_else(
-            || {
-                view.scenario
-                    .as_ref()
-                    .is_some_and(|s| s.locations.contains(code))
+            || view.scenario_for_display().locations.contains(code),
+            |play| {
+                play.scenario.locations.iter().any(|l| &l.code == code)
+                    && !play.scenario.location_in_victory_display(code)
             },
-            |play| play.scenario.locations.iter().any(|l| &l.code == code),
         ),
-        Source::Act | Source::Agenda | Source::EncounterDeck | Source::ScenarioReference => {
-            view.scenario.is_some() || view.play.is_some()
-        }
+        Source::Act | Source::Agenda | Source::EncounterDeck | Source::ScenarioReference => true,
         Source::Bag => true,
         Source::Token(index) => view.play.as_ref().is_some_and(|play| {
             play.tokens.as_ref().map_or_else(

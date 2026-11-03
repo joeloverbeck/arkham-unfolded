@@ -118,7 +118,6 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
             "Encounter discard",
             &play.encounter_discard,
         ),
-        ("victory", "Victory display", &play.scenario.victory),
         (
             "scenario-removed",
             "Scenario removed cards",
@@ -128,6 +127,19 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
         if code == key {
             return Some(pile_text(title, cards));
         }
+    }
+    if code == "victory" {
+        let cards = play.scenario.victory_display();
+        let points: u8 = cards.iter().map(|card| card.points).sum();
+        let mut text = format!("Victory display · {} cards · {points} VP", cards.len());
+        for card in cards {
+            text.push_str(&format!(
+                "\n\n{}\n{}",
+                card.title,
+                crate::gathering::inspection::scenario_card(card.code, true).unwrap_or_default()
+            ));
+        }
+        return Some(text);
     }
     if code == "encounter-deck" {
         let inventory = view
@@ -409,6 +421,68 @@ struct Painter<'a, 'w, 's> {
 }
 
 impl Painter<'_, '_, '_> {
+    fn chaos_area(&mut self, bag_count: usize, curse_pool: Option<u8>) {
+        let chaos = crate::tabletop_pieces::chaos_area(
+            self.commands,
+            self.meshes,
+            self.materials,
+            bag_count,
+            curse_pool,
+            self.context.art.symbol_font(),
+        );
+        for entity in chaos.entities {
+            self.commands.entity(entity).insert(ScenePiece);
+        }
+        self.selectable(
+            chaos.bag,
+            controls::Selection {
+                source: Source::Bag,
+                at: layout::test_bag(),
+                title: "Chaos bag".into(),
+                inspect_code: "chaos-bag".into(),
+            },
+        );
+    }
+
+    fn standee(&mut self, at: Vec3, slot: usize, index: usize, who: Investigator) {
+        let size = Vec2::new(1.35, 1.89);
+        let Some(position) = layout::location_standee_position(at, size, slot) else {
+            return;
+        };
+        let entity = crate::tabletop_standees::spawn(
+            self.commands,
+            self.meshes,
+            self.materials,
+            self.context
+                .art
+                .image(&format!("standee/{}", investigator_code(who)))
+                .as_ref(),
+            position,
+            layout::investigator_class(index),
+            size,
+        );
+        self.commands.entity(entity).insert(ScenePiece);
+        // Mesh hits bubble to the investigator's menu observer.
+        self.commands.queue(move |world: &mut World| {
+            let children = world
+                .get::<Children>(entity)
+                .map(|children| children.to_vec())
+                .unwrap_or_default();
+            for child in children {
+                world.entity_mut(child).remove::<Pickable>();
+            }
+        });
+        self.selectable(
+            entity,
+            controls::Selection {
+                source: Source::Investigator(who),
+                at: position,
+                title: who.name().into(),
+                inspect_code: investigator_code(who).into(),
+            },
+        );
+    }
+
     fn card(&mut self, at: Vec3, title: &str, code: &str, color: Color, source: Source) -> Entity {
         let entity = card(
             self.commands,
@@ -540,6 +614,35 @@ impl Painter<'_, '_, '_> {
     }
 }
 
+pub(super) fn render_setup_pieces(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    context: &CardRender<'_>,
+    map: &crate::tabletop_gathering_map::GatheringMap,
+    study_clues: u8,
+) {
+    let mut paint = Painter {
+        commands,
+        meshes,
+        materials,
+        context,
+    };
+    paint.chaos_area(context.view.standard_bag.len(), Some(10));
+    let study = map.position("01111");
+    paint.count(
+        layout::location_clue(study),
+        crate::tabletop_counters::CounterKind::Clue,
+        study_clues,
+        Source::Location("01111".into()),
+    );
+    for (index, investigator) in context.view.investigators.iter().enumerate() {
+        paint.standee(study, index, index, investigator.investigator);
+    }
+    paint.caption(layout::ENCOUNTER_DISCARD, "0 cards".into());
+    paint.caption(layout::VICTORY_DISPLAY, "0 cards\n0 VP".into());
+}
+
 pub(super) fn render(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -609,21 +712,6 @@ pub(super) fn render(
                         }
                     }
                 });
-            }
-            if asset.card.code == "04109" {
-                let first = !player.assets[..slot]
-                    .iter()
-                    .any(|asset| asset.card.code == "04109");
-                let count = player
-                    .assets
-                    .iter()
-                    .filter(|asset| asset.card.code == "04109")
-                    .count();
-                super::scene::replace_caption(
-                    paint.commands,
-                    entity,
-                    first.then(|| format!("Arcane Research ×{count}")),
-                );
             }
         }
         for (slot, threat) in player.threats.iter().enumerate() {
@@ -703,27 +791,7 @@ pub(super) fn render(
         PAPER,
         Source::ScenarioReference,
     );
-    let bag_at = layout::test_bag();
-    let chaos = crate::tabletop_pieces::chaos_area(
-        paint.commands,
-        paint.meshes,
-        paint.materials,
-        play.bag_count,
-        play.curse_pool,
-        context.art.symbol_font(),
-    );
-    for entity in chaos.entities {
-        paint.commands.entity(entity).insert(ScenePiece);
-    }
-    paint.selectable(
-        chaos.bag,
-        controls::Selection {
-            source: Source::Bag,
-            at: bag_at,
-            title: "Chaos bag".into(),
-            inspect_code: "chaos-bag".into(),
-        },
-    );
+    paint.chaos_area(play.bag_count, play.curse_pool);
     super::scene::deck(
         paint.commands,
         paint.meshes,
@@ -749,24 +817,34 @@ pub(super) fn render(
     } else {
         paint.caption(layout::ENCOUNTER_DISCARD, "0 cards".into());
     }
-    if let Some(top) = play.scenario.victory.last() {
+    let victory = play.scenario.victory_display();
+    let points: u8 = victory.iter().map(|card| card.points).sum();
+    let victory_caption = format!("Victory display · {} cards · {points} VP", victory.len());
+    if let Some(top) = victory.last() {
         let entity = paint.card(
             layout::VICTORY_DISPLAY,
-            &format!("Victory display · {} cards", play.scenario.victory.len()),
+            &victory_caption,
             "victory",
             PAPER,
             Source::Victory,
         );
-        paint
-            .commands
-            .entity(entity)
-            .insert(motion::PhysicalCard(top.id));
-    } else {
-        paint.caption(layout::VICTORY_DISPLAY, "0 cards".into());
+        if let Some(id) = top.physical_id {
+            paint
+                .commands
+                .entity(entity)
+                .insert(motion::PhysicalCard(id));
+        }
+        // The footprint supplies the pile name. Keep its changing count and
+        // points compact instead of wrapping a whole sentence to a card's width.
+        super::scene::replace_caption(paint.commands, entity, None);
     }
+    paint.caption(
+        layout::VICTORY_DISPLAY,
+        format!("{} cards\n{points} VP", victory.len()),
+    );
     if let Some(top) = play.scenario.removed.last() {
         let entity = paint.card(
-            layout::VICTORY_DISPLAY + Vec3::new(0., 0., 3.),
+            layout::SCENARIO_REMOVED,
             &format!("Scenario removed · {} cards", play.scenario.removed.len()),
             "scenario-removed",
             MUTED,
@@ -776,11 +854,17 @@ pub(super) fn render(
             .commands
             .entity(entity)
             .insert(motion::PhysicalCard(top.id));
+        super::scene::replace_caption(paint.commands, entity, None);
+        paint.caption(
+            layout::SCENARIO_REMOVED,
+            format!("Removed\n{} cards", play.scenario.removed.len()),
+        );
     }
     let map = crate::tabletop_gathering_map::GatheringMap::new(
         play.scenario
             .locations
             .iter()
+            .filter(|room| !play.scenario.location_in_victory_display(&room.code))
             .map(|room| (room.code.as_str(), room.revealed)),
         Vec2::new(1.35, 1.89),
     )
@@ -788,7 +872,12 @@ pub(super) fn render(
     for link in map.spawn(paint.commands, paint.meshes, paint.materials) {
         paint.commands.entity(link).insert(ScenePiece);
     }
-    for room in &play.scenario.locations {
+    for room in play
+        .scenario
+        .locations
+        .iter()
+        .filter(|room| !play.scenario.location_in_victory_display(&room.code))
+    {
         let at = map.position(&room.code);
         let title = if crate::tabletop_gathering_map::GatheringMap::entry_blocked(
             &room.code,
@@ -814,48 +903,8 @@ pub(super) fn render(
         let occupants = play.players.iter().enumerate().filter(|(_, player)| {
             !player.defeated && !player.resigned && player.location == room.code
         });
-        for (slot, (index, _)) in occupants.enumerate() {
-            if let Some(position) =
-                layout::location_standee_position(at, Vec2::new(1.35, 1.89), slot)
-            {
-                let entity = crate::tabletop_standees::spawn(
-                    paint.commands,
-                    paint.meshes,
-                    paint.materials,
-                    context
-                        .art
-                        .image(&format!(
-                            "standee/{}",
-                            investigator_code(play.players[index].investigator)
-                        ))
-                        .as_ref(),
-                    position,
-                    layout::investigator_class(index),
-                    Vec2::new(1.35, 1.89),
-                );
-                paint.commands.entity(entity).insert(ScenePiece);
-                // Shared standees keep their meshes non-pickable by default. Here
-                // their mesh hits bubble to the investigator's menu observer.
-                paint.commands.queue(move |world: &mut World| {
-                    let children = world
-                        .get::<Children>(entity)
-                        .map(|children| children.to_vec())
-                        .unwrap_or_default();
-                    for child in children {
-                        world.entity_mut(child).remove::<Pickable>();
-                    }
-                });
-                let who = play.players[index].investigator;
-                paint.selectable(
-                    entity,
-                    controls::Selection {
-                        source: Source::Investigator(who),
-                        at: position,
-                        title: who.name().into(),
-                        inspect_code: investigator_code(who).into(),
-                    },
-                );
-            }
+        for (slot, (index, player)) in occupants.enumerate() {
+            paint.standee(at, slot, index, player.investigator);
         }
         if let Some(fog) = &room.fog {
             paint.card(
@@ -868,6 +917,9 @@ pub(super) fn render(
         }
     }
     for (slot, enemy) in play.scenario.enemies.iter().enumerate() {
+        if play.scenario.location_in_victory_display(&enemy.location) {
+            continue;
+        }
         let group: Vec<_> = play
             .scenario
             .enemies

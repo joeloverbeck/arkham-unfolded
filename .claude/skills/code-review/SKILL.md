@@ -66,6 +66,8 @@ Issue both sub-agent calls together, in the foreground, and aggregate the report
 
 For tabletop UI changes, include the [inherited presentation baseline](../../../docs/experiments/jacqueline-curse.md#visual-and-wording-review): accepted implementation and revision, affected sections, shared component paths, preserved behavior and authorized differences. Both reviewers compare the actual consumer paths with that baseline; importing a shared module alone does not establish preservation. Identify missing native comparison evidence separately from code findings.
 
+Require both reviewers to identify each affected production consumer, including older modes that share changed code. For each claimed regression, cite the fixed-point and candidate paths and explain the behavior before and after the change, with a reproduction or a causal trace through those consumers. Classify a finding as introduced, pre-existing, or unverified. A plausible collision or failure without baseline evidence is an unverified concern, not a confirmed regression; name the missing check and keep it separate from confirmed findings. A pre-existing spec or standards breach may still be reported, with its baseline status explicit.
+
 **Standards sub-agent prompt** should include:
 
 - The captured candidate's location and identity, full diff command and commit list.

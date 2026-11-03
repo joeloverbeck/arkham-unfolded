@@ -4,7 +4,7 @@ An English-language Arkham Horror: The Card Game application for Ubuntu, planned
 
 **Status: bounded Rust/3D experiments. The campaign is not playable yet.** The original Jacqueline/Patrice skill-test mode remains available. Tony mode offers an owner-accepted complete turn from a prepared Gathering position under [#22](https://github.com/joeloverbeck/arkham-unfolded/issues/22).
 
-The [Gathering candidate](docs/experiments/gathering-setup.md) under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89) continues from actual selected decks, scenario assembly and mulligans into ordinary scenario play. Driver checks exercise a full first round and all following mythos draws, including fresh-process reopening and replay. The runtime includes selected card effects, phases, resolutions, safe Undo and recorded intermediate events. Difficult token compositions use documented source-derived interpretations. **The owner rejected its earlier presentation.** The correction reuses Party's production interface and pieces; native comparison of this correction, a full native scenario playthrough and owner acceptance remain outstanding. [Launch Gathering](#launch-and-resume-the-gathering) using the command below.
+The [Gathering candidate](docs/experiments/gathering-setup.md) under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89) continues from actual selected decks, scenario assembly and mulligans into ordinary scenario play. Driver checks exercise a full first round and all following mythos draws, including fresh-process reopening and replay. The runtime includes selected card effects, phases, resolutions, safe Undo and recorded intermediate events. Difficult token compositions use documented source-derived interpretations. The corrected presentation reuses Party's production interface and pieces. Targeted native checks confirmed the setup layout, captions and automatic return to play; see the [current verification status](docs/experiments/gathering-setup.md#presentation-correction-verification) for evidence and remaining checks. A full native scenario playthrough and owner acceptance remain outstanding. [Launch Gathering](#launch-and-resume-the-gathering) using the command below.
 
 See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, saves, undo, replay and player driver, including the [two-session verification walkthrough](docs/experiments/tony-turn.md#owner-verification).
 
@@ -203,6 +203,16 @@ target/debug/arkham-tools record-check --resources \
 ```
 
 The output directory must be new and its parent must exist. `run.json` retains the command's status and exit code; `resources.jsonl` samples host memory, CPU counters and pressure plus the child's visible cgroup about once per second. Kernel values retain their original names and units. Each reading exposes unavailable files as errors; `resources.error` reports capture/write failures without changing the command's exit status. Sampling runs inside the recorder, so completion or interruption leaves no separate sampler process. Only a finished record with exit code zero proves check success. Resource samples can miss short spikes or the last counters before a scope disappears; an observed `memory.peak` is not a guaranteed final peak. An abruptly killed recorder leaves incomplete evidence.
+
+For a running or apparently stalled check, inspect its retained record first, then a bounded log tail. If the record is still running, use its exact `pid` with compact process columns; replace `RECORDED_PID` below with that number. This avoids dumping wrapper arguments or unrelated processes:
+
+```sh
+cat /absolute/path/to/new-check-record/run.json
+tail -n 40 /absolute/path/to/new-check-record/check.log
+ps -p RECORDED_PID -o pid,etime,stat,comm
+```
+
+A live PID shows process presence, not check success. Use a finished `run.json` even when the tool session's terminal status was lost; losing that status alone does not justify rerunning unchanged work. If the process has gone away without a finished record, retain the result as incomplete.
 
 Repository helpers live in the independent `arkham-tools` Cargo package. `scripts/tools --help` lists the bounded reader, Git-index guard, native verification and profiling commands; building these helpers does not compile Bevy. The launcher isolates its build artifacts from application compilation so context reads can proceed during a build, while Cargo still rebuilds changed helper sources. Its invocation parameters leave the caller's build-directory environment available to commands such as `record-check`. The index guard rejects generated caches and recognizable non-Rust executable source/template filenames, including force-added files. Inline code, templates and invocation-only shell remain subject to review under the [implementation-language contract](docs/foundation/mission.md#implementation-language). See the experiment guide for [native verification](docs/experiments/jacqueline-curse.md#developer-native-verification), external inputs, records and evidence limits.
 

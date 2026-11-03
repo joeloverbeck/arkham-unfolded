@@ -21,9 +21,10 @@ pub(crate) const SCENARIO_FAR_EDGE: f32 = SCENARIO_CENTER.z - SCENARIO_SIZE.y / 
 pub(crate) const SCENARIO_MAP_CENTER: Vec3 = Vec3::new(0.0, 0.05, -8.5);
 /// The scenario's token reference stays beside the test, including between tests.
 pub(crate) const SCENARIO_REFERENCE: Vec3 = Vec3::new(-4.9, 0.05, TEST_CENTER.z - 3.2);
-pub(crate) const ENCOUNTER_DECK: Vec3 = Vec3::new(-6.0, 0.05, SCENARIO_FAR_EDGE + 2.5);
-pub(crate) const ENCOUNTER_DISCARD: Vec3 = Vec3::new(6.0, 0.125, SCENARIO_FAR_EDGE + 2.5);
-pub(crate) const VICTORY_DISPLAY: Vec3 = Vec3::new(6.0, 0.05, SCENARIO_FAR_EDGE + 5.5);
+pub(crate) const ENCOUNTER_DECK: Vec3 = Vec3::new(-7.0, 0.05, SCENARIO_FAR_EDGE + 2.5);
+pub(crate) const ENCOUNTER_DISCARD: Vec3 = Vec3::new(-4.2, 0.05, SCENARIO_FAR_EDGE + 2.5);
+pub(crate) const VICTORY_DISPLAY: Vec3 = Vec3::new(6.8, 0.05, SCENARIO_FAR_EDGE + 2.5);
+pub(crate) const SCENARIO_REMOVED: Vec3 = Vec3::new(3.7, 0.05, SCENARIO_FAR_EDGE + 2.5);
 pub(crate) const TEST_CENTER: Vec3 = Vec3::new(0.0, 0.0, 8.0);
 /// Area focus views retain component captions; Overview suppresses this detail.
 pub(crate) const DETAIL_LABEL_DISTANCE: f32 = 40.0;
@@ -59,7 +60,7 @@ pub(crate) fn location_standee_position(
     Some(center + Vec3::new(side * offset, 0.0, row * pair_offset))
 }
 
-#[derive(Clone, Copy)]
+#[derive(Component, Clone, Copy)]
 pub(crate) enum ScenarioBookSide {
     Agenda,
     Act,
@@ -78,7 +79,7 @@ pub(crate) fn scenario_book_card_transform(
     Transform::from_xyz(
         side * portrait_size.y / 2.0,
         0.05 + portrait_size.x / 2.0 * tilt.sin(),
-        SCENARIO_FAR_EDGE + 2.5,
+        SCENARIO_FAR_EDGE + 0.8,
     )
     .with_rotation(Quat::from_rotation_x(tilt) * Quat::from_rotation_y(std::f32::consts::FRAC_PI_2))
 }
@@ -110,7 +111,31 @@ pub(crate) fn test_heading() -> Vec3 {
 #[derive(Component)]
 pub(crate) struct TestAreaHeading;
 
-/// Center this screen-space heading inside its projected gap, including UI padding.
+#[derive(Component)]
+pub(crate) struct ScenarioAreaHeading;
+
+/// Equal logical-pixel clearance includes the full text node, not just its anchor.
+pub(crate) fn scenario_heading_screen_position(
+    camera: &Camera,
+    transform: &GlobalTransform,
+    node: &ComputedNode,
+) -> Option<Vec2> {
+    let height = node.size().y * node.inverse_scale_factor;
+    let test_heading = test_heading_screen_position(camera, transform, node)?;
+    let test_edge = camera
+        .world_to_viewport(
+            transform,
+            Vec3::new(0.0, 0.0, TEST_CENTER.z - TEST_SIZE.y / 2.0),
+        )
+        .ok()?;
+    let clearance = test_edge.y - test_heading.y - height;
+    let edge = camera
+        .world_to_viewport(transform, Vec3::new(0.0, 0.0, SCENARIO_FAR_EDGE))
+        .ok()?;
+    Some(edge - Vec2::Y * (height + clearance))
+}
+
+/// Center the full heading, including UI padding, between the two surfaces.
 /// At an extreme angle or zoom there may be no readable space for a heading.
 pub(crate) fn test_heading_screen_position(
     camera: &Camera,
@@ -130,10 +155,11 @@ pub(crate) fn test_heading_screen_position(
             Vec3::new(0.0, 0.0, TEST_CENTER.z - TEST_SIZE.y / 2.0),
         )
         .ok()?;
-    if height <= 0.0 || (test_edge.y - scenario_edge.y).abs() < height + 2.0 {
+    if height <= 0.0 || test_edge.y - scenario_edge.y < height + 2.0 {
         return None;
     }
-    Some((scenario_edge + test_edge) / 2.0 - Vec2::Y * height / 2.0)
+    let clearance = (test_edge.y - scenario_edge.y - height) / 2.0;
+    Some(test_edge - Vec2::Y * (height + clearance))
 }
 
 pub(crate) fn investigator_card(index: usize) -> Vec3 {
@@ -218,12 +244,12 @@ pub(crate) fn hand_position(index: usize, count: usize, slot: usize) -> Vec3 {
 }
 
 pub(crate) fn test_bag() -> Vec3 {
-    TEST_CENTER + Vec3::new(5.3, 0.35, -3.1)
+    TEST_CENTER + Vec3::new(5.3, 0.35, -3.9)
 }
 
 pub(crate) fn test_curse_pool() -> Vec3 {
-    // Clear both the bag caption and the commitment heading in either focus.
-    test_bag() - Vec3::new(4., 0., 0.8)
+    // One row, far enough back to clear the commitment heading in either focus.
+    test_bag() - Vec3::new(4., 0., 0.)
 }
 
 pub(crate) fn test_source() -> Vec3 {
@@ -264,6 +290,28 @@ pub(crate) fn test_zone_labels() -> [(&'static str, Vec3); 3] {
         ("Committed cards", TEST_CENTER + Vec3::new(0.0, 0.05, -1.8)),
         ("Revealed", TEST_CENTER + Vec3::new(-3.4, 0.05, 1.8)),
         ("Canceled", TEST_CENTER + Vec3::new(3.3, 0.05, 1.8)),
+    ]
+}
+
+pub(crate) fn scenario_map_bounds() -> Rect {
+    Rect::from_corners(
+        Vec2::new(
+            SCENARIO_CENTER.x - SCENARIO_SIZE.x / 2.0 + 0.2,
+            SCENARIO_FAR_EDGE + 4.5,
+        ),
+        Vec2::new(
+            SCENARIO_CENTER.x + SCENARIO_SIZE.x / 2.0 - 0.2,
+            SCENARIO_CENTER.z + SCENARIO_SIZE.y / 2.0 - 0.2,
+        ),
+    )
+}
+
+pub(crate) fn scenario_zone_labels() -> [(&'static str, Vec3); 4] {
+    [
+        ("Deck", ENCOUNTER_DECK - Vec3::Z * 1.7),
+        ("Discard", ENCOUNTER_DISCARD - Vec3::Z * 1.7),
+        ("Victory display", VICTORY_DISPLAY - Vec3::Z * 1.7),
+        ("Map", Vec3::new(0.0, 0.05, scenario_map_bounds().min.y)),
     ]
 }
 
@@ -341,6 +389,22 @@ pub(crate) fn spawn_surfaces(
         SCENARIO_SIZE,
         Color::srgb(0.11, 0.22, 0.24),
     );
+    let map = scenario_map_bounds();
+    for (center, size) in [
+        (ENCOUNTER_DECK, Vec2::new(1.95, 3.4)),
+        (ENCOUNTER_DISCARD, Vec2::new(1.95, 3.4)),
+        (VICTORY_DISPLAY, Vec2::new(1.95, 3.4)),
+        (Vec3::new(map.center().x, 0.0, map.center().y), map.size()),
+    ] {
+        region(
+            commands,
+            meshes,
+            materials,
+            center,
+            size,
+            Color::srgb(0.22, 0.33, 0.35),
+        );
+    }
     surface(
         commands,
         meshes,
@@ -556,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn test_heading_centers_its_full_pixel_height_between_projected_edges() {
+    fn area_headings_keep_equal_edge_clearance_and_fit_between_surfaces() {
         use bevy::camera::{CameraProjection, RenderTargetInfo};
 
         for scale in [1.0, 2.0] {
@@ -592,6 +656,15 @@ mod tests {
                     .unwrap();
                 assert!(heading.y >= far.y.min(near.y) + 1.0);
                 assert!(heading.y + 22.0 <= far.y.max(near.y) - 1.0);
+                let scenario =
+                    scenario_heading_screen_position(&camera, &transform, &node).unwrap();
+                let scenario_edge = camera
+                    .world_to_viewport(&transform, Vec3::new(0.0, 0.0, SCENARIO_FAR_EDGE))
+                    .unwrap();
+                assert!(
+                    ((scenario_edge.y - scenario.y - 22.0) - (near.y - heading.y - 22.0)).abs()
+                        < 0.001
+                );
                 let crowded = ComputedNode {
                     size: Vec2::new(190.0, 1000.0) * scale,
                     ..node

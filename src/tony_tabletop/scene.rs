@@ -324,12 +324,20 @@ pub(super) fn synchronize_scene(
     ] {
         world_label(&mut commands, &art, text.into(), at, MUTED);
     }
-    area_heading(
+    let scenario_heading = area_heading(
         &mut commands,
         &art,
         "Scenario".into(),
         layout::scenario_heading(),
     );
+    commands
+        .entity(scenario_heading)
+        .insert(layout::ScenarioAreaHeading)
+        .entry::<Node>()
+        .and_modify(|mut node| {
+            node.padding.top = px(1.0);
+            node.padding.bottom = px(1.0);
+        });
     let test_heading = area_heading(
         &mut commands,
         &art,

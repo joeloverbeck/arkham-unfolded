@@ -417,7 +417,15 @@ fn synchronize(
         GOLD,
         &art.symbol_font,
     );
-    commands.entity(scenario_name).insert(LabelDisplay::Always);
+    commands
+        .entity(scenario_name)
+        .insert((tabletop_layout::ScenarioAreaHeading, LabelDisplay::Always))
+        .entry::<Node>()
+        .and_modify(|mut node| {
+            node.width = px(200.0);
+            node.padding.top = px(1.0);
+            node.padding.bottom = px(1.0);
+        });
     label(
         &mut commands,
         "Encounter deck\nReserved / not represented",
@@ -706,6 +714,7 @@ fn label_positions(
         &WorldLabel,
         &ComputedNode,
         Has<tabletop_layout::TestAreaHeading>,
+        Has<tabletop_layout::ScenarioAreaHeading>,
         &LabelDisplay,
         Option<&StandeeLabel>,
         Option<&HarmCaption>,
@@ -713,11 +722,22 @@ fn label_positions(
         &mut Visibility,
     )>,
 ) {
-    for (anchor, computed, test_heading, display, standee, harm, mut node, mut visibility) in
-        &mut labels
+    for (
+        anchor,
+        computed,
+        test_heading,
+        scenario_heading,
+        display,
+        standee,
+        harm,
+        mut node,
+        mut visibility,
+    ) in &mut labels
     {
         let point = if test_heading {
             tabletop_layout::test_heading_screen_position(camera.0, camera.1, computed)
+        } else if scenario_heading {
+            tabletop_layout::scenario_heading_screen_position(camera.0, camera.1, computed)
         } else {
             camera.0.world_to_viewport(camera.1, anchor.0).ok()
         };
@@ -729,7 +749,7 @@ fn label_positions(
                 None => point.x - width / 2.0,
             });
             node.top = px(point.y
-                - if harm.is_some() || test_heading {
+                - if harm.is_some() || test_heading || scenario_heading {
                     0.0
                 } else {
                     16.0
