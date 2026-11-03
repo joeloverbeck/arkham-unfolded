@@ -5,6 +5,9 @@ pub mod assets;
 pub mod continuity;
 pub mod encounter_discard;
 mod explanation;
+pub mod gathering;
+#[cfg(feature = "tabletop")]
+pub mod gathering_tabletop;
 pub mod party;
 #[cfg(feature = "tabletop")]
 pub mod party_tabletop;
@@ -20,6 +23,8 @@ mod tabletop_discard;
 #[cfg(feature = "tabletop")]
 mod tabletop_feedback;
 #[cfg(feature = "tabletop")]
+mod tabletop_gathering_map;
+#[cfg(feature = "tabletop")]
 mod tabletop_harm_text;
 #[cfg(feature = "tabletop")]
 mod tabletop_harm_tokens;
@@ -30,6 +35,8 @@ mod tabletop_layout;
 #[cfg(feature = "tabletop")]
 mod tabletop_pacing;
 #[cfg(feature = "tabletop")]
+mod tabletop_pieces;
+#[cfg(feature = "tabletop")]
 mod tabletop_reveal;
 #[cfg(feature = "tabletop")]
 mod tabletop_skill_text;
@@ -39,6 +46,8 @@ mod tabletop_standee_checks;
 mod tabletop_standees;
 #[cfg(feature = "tabletop")]
 mod tabletop_tokens;
+#[cfg(feature = "tabletop")]
+mod tabletop_ui;
 pub mod tony;
 #[cfg(feature = "tabletop")]
 pub mod tony_tabletop;

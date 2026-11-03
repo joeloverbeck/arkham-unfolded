@@ -1,4 +1,4 @@
-//! One reveal affordance for both tables. Adapters supply current offered choices
+//! One reveal affordance for the tables. Adapters supply current offered choices
 //! and commit accepted requests through their existing persistence authority.
 
 use crate::{
@@ -6,6 +6,7 @@ use crate::{
     tabletop_pacing::{PresentationTime, Redraw, RequestRedraw},
 };
 use bevy::{
+    input::mouse::MouseScrollUnit,
     input_focus::{
         AutoFocus,
         tab_navigation::{TabGroup, TabIndex},
@@ -14,6 +15,7 @@ use bevy::{
     prelude::*,
     ui_widgets::{Activate, Button},
 };
+use std::borrow::Cow;
 
 pub(crate) const ART_ROLE: &str = "ui/reveal-chaos-token";
 const INK: Color = Color::srgb(0.035, 0.065, 0.075);
@@ -24,16 +26,46 @@ const FADE_SECONDS: f32 = 0.14;
 #[derive(Resource, Default)]
 pub(crate) struct Artwork(pub Option<Handle<Image>>);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Offer {
+    epoch: u64,
     revision: u64,
-    reaction: bool,
+    routes: Routes,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Routes {
+    Legacy { reaction: bool },
+    Offered(Vec<Choice>),
+}
+
+impl Offer {
+    fn needs_chooser(&self) -> bool {
+        match &self.routes {
+            Routes::Legacy { reaction } => *reaction,
+            Routes::Offered(choices) => choices.len() > 1,
+        }
+    }
+
+    fn choice(&self, route: Route) -> Option<Cow<'static, str>> {
+        match (&self.routes, route) {
+            (Routes::Legacy { .. }, Route::Normal) => Some(Cow::Borrowed("reveal")),
+            (Routes::Legacy { reaction: true }, Route::Jacqueline) => {
+                Some(Cow::Borrowed("use-jacqueline"))
+            }
+            (Routes::Offered(choices), Route::Offered(index)) => choices
+                .get(index)
+                .map(|choice| Cow::Owned(choice.id.clone())),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Route {
     Normal,
     Jacqueline,
+    Offered(usize),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -45,7 +77,7 @@ pub(crate) enum Request {
 
 pub(crate) enum Accepted {
     Opened,
-    Choice(u64, &'static str),
+    Choice(u64, Cow<'static, str>),
     Dismissed,
 }
 
@@ -57,10 +89,29 @@ pub(crate) struct Shortcut {
     reduced_motion: bool,
     dirty: bool,
     opacity: f32,
+    viewport: Option<Vec2>,
     requests: Vec<Request>,
 }
 
 impl Shortcut {
+    /// Explicit routes supplied by a consumer's current rules observation.
+    pub(crate) fn sync_offered(
+        &mut self,
+        epoch: u64,
+        revision: u64,
+        choices: &[Choice],
+        available: bool,
+        reduced_motion: bool,
+    ) {
+        self.set_offer(
+            (available && !choices.is_empty()).then(|| Offer {
+                epoch,
+                revision,
+                routes: Routes::Offered(choices.to_vec()),
+            }),
+            reduced_motion,
+        );
+    }
     /// The offered choices are authoritative; a presentation-stage name is not.
     pub(crate) fn sync(
         &mut self,
@@ -70,9 +121,16 @@ impl Shortcut {
         reduced_motion: bool,
     ) {
         let offer = (available && choices.iter().any(|c| c.id == "reveal")).then(|| Offer {
+            epoch: 0,
             revision,
-            reaction: choices.iter().any(|c| c.id == "use-jacqueline"),
+            routes: Routes::Legacy {
+                reaction: choices.iter().any(|c| c.id == "use-jacqueline"),
+            },
         });
+        self.set_offer(offer, reduced_motion);
+    }
+
+    fn set_offer(&mut self, offer: Option<Offer>, reduced_motion: bool) {
         if offer != self.offer {
             self.offer = offer;
             self.dismiss();
@@ -102,26 +160,26 @@ impl Shortcut {
         if generation != self.generation {
             return None;
         }
-        let offer = self.offer?;
+        let offer = self.offer.clone()?;
         match request {
-            Request::Press(_) if offer.reaction => {
+            Request::Press(_) if offer.needs_chooser() => {
                 self.dismiss();
                 self.chooser = true;
                 Some(Accepted::Opened)
             }
             Request::Press(_) => {
+                let route = match &offer.routes {
+                    Routes::Legacy { .. } => Route::Normal,
+                    Routes::Offered(_) => Route::Offered(0),
+                };
+                let id = offer.choice(route)?;
                 self.dismiss();
-                Some(Accepted::Choice(offer.revision, "reveal"))
+                Some(Accepted::Choice(offer.revision, id))
             }
-            Request::Choose(_, route) if self.chooser && offer.reaction => {
+            Request::Choose(_, route) if self.chooser && offer.needs_chooser() => {
+                let id = offer.choice(route)?;
                 self.dismiss();
-                Some(Accepted::Choice(
-                    offer.revision,
-                    match route {
-                        Route::Normal => "reveal",
-                        Route::Jacqueline => "use-jacqueline",
-                    },
-                ))
+                Some(Accepted::Choice(offer.revision, id))
             }
             Request::Dismiss(_) => {
                 self.dismiss();
@@ -139,6 +197,7 @@ impl Plugin for RevealPlugin {
             .init_resource::<Artwork>()
             .init_resource::<PresentationTime>()
             .init_resource::<Redraw>()
+            .add_systems(Update, offered_keyboard_scroll)
             .add_systems(Last, request_redraw.in_set(RequestRedraw));
     }
 }
@@ -149,6 +208,109 @@ pub(crate) struct Root;
 pub(crate) struct FadeColor(Color);
 #[derive(Component)]
 pub(crate) struct RevealButton;
+#[derive(Component)]
+struct OfferedMenu;
+
+fn offered_scroll(
+    event: On<PointerScroll>,
+    mut menus: Query<(&mut ScrollPosition, &ComputedNode), With<OfferedMenu>>,
+) {
+    if let Ok((mut position, node)) = menus.get_mut(event.entity) {
+        let delta = event.y
+            * if event.unit == MouseScrollUnit::Line {
+                32.
+            } else {
+                1.
+            };
+        position.y =
+            (position.y - delta).clamp(0., (node.content_size().y - node.size().y).max(0.));
+    }
+}
+
+fn offered_keyboard_scroll(
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    shortcut: Res<Shortcut>,
+    mut menus: Query<(&mut ScrollPosition, &ComputedNode), With<OfferedMenu>>,
+) {
+    let Some(keys) = keys.filter(|_| shortcut.is_open()) else {
+        return;
+    };
+    for (mut position, node) in &mut menus {
+        let maximum = (node.content_size().y - node.size().y).max(0.);
+        if keys.just_pressed(KeyCode::PageDown) {
+            position.y = (position.y + node.size().y * 0.8).min(maximum);
+        }
+        if keys.just_pressed(KeyCode::PageUp) {
+            position.y = (position.y - node.size().y * 0.8).max(0.);
+        }
+        if keys.just_pressed(KeyCode::End) {
+            position.y = maximum;
+        }
+        if keys.just_pressed(KeyCode::Home) {
+            position.y = 0.;
+        }
+    }
+}
+
+fn offered_menu(
+    commands: &mut Commands,
+    choices: &[Choice],
+    generation: u64,
+    size: Vec2,
+    opacity: f32,
+) {
+    use feedback::menu::{Item, MenuText};
+    let mut items = vec![
+        Item::Text("Choose how to reveal".into(), 17., TEAL),
+        Item::Text(feedback::KEYBOARD_HINT.into(), 12., PAPER),
+    ];
+    items.extend(choices.iter().enumerate().map(|(index, choice)| {
+        Item::Action(
+            choice.label.clone(),
+            Request::Choose(generation, Route::Offered(index)),
+        )
+    }));
+    items.push(Item::Action("Cancel".into(), Request::Dismiss(generation)));
+    let menu = feedback::menu::spawn(
+        commands,
+        feedback::menu::panel(Vec2::new(16., size.y - 150.), size, 80., 130.),
+        (
+            BackgroundColor(INK.with_alpha(opacity)),
+            FadeColor(INK),
+            GlobalZIndex(70),
+            Root,
+            OfferedMenu,
+            UiTransform::default(),
+        ),
+        MenuText {
+            symbol_font: &None,
+            action_size: 16.,
+            action_pickable: Pickable::IGNORE,
+        },
+        items,
+        |row, request| {
+            row.insert((RevealButton, feedback::FeedbackOpacity(opacity)))
+                .observe(move |_: On<Activate>, mut shortcut: ResMut<Shortcut>| {
+                    shortcut.requests.push(request)
+                });
+        },
+    );
+    commands.entity(menu).observe(offered_scroll);
+    commands.queue(move |world: &mut World| {
+        let mut descendants = vec![menu];
+        while let Some(entity) = descendants.pop() {
+            if let Some(children) = world.get::<Children>(entity) {
+                descendants.extend(children.iter());
+            }
+            if let Some(color) = world.get::<TextColor>(entity).map(|color| color.0) {
+                world.entity_mut(entity).insert((
+                    FadeColor(color),
+                    TextColor(color.with_alpha(color.alpha() * opacity)),
+                ));
+            }
+        }
+    });
+}
 
 fn label(parent: &mut ChildSpawnerCommands, value: &str, size: f32, color: Color, opacity: f32) {
     parent.spawn((
@@ -173,6 +335,7 @@ fn button(
     parent
         .spawn((
             Button,
+            AccessibleLabel::new(value),
             Hovered::default(),
             TabIndex(0),
             RevealButton,
@@ -231,7 +394,24 @@ pub(crate) fn render(
     )>,
     buttons: Query<Entity, With<RevealButton>>,
     mut feedback_opacity: Query<&mut feedback::FeedbackOpacity, With<RevealButton>>,
+    windows: Query<&Window>,
 ) {
+    let viewport = windows
+        .iter()
+        .next()
+        .map_or(Vec2::new(1280., 720.), |window| {
+            Vec2::new(window.width(), window.height())
+        });
+    if shortcut.chooser
+        && matches!(
+            shortcut.offer.as_ref().map(|offer| &offer.routes),
+            Some(Routes::Offered(_))
+        )
+        && shortcut.viewport != Some(viewport)
+    {
+        shortcut.viewport = Some(viewport);
+        shortcut.dirty = true;
+    }
     let visible = shortcut.offer.is_some();
     let target = if visible { 1.0 } else { 0.0 };
     if shortcut.reduced_motion {
@@ -258,6 +438,18 @@ pub(crate) fn render(
         }
         let generation = shortcut.generation;
         let opacity = shortcut.opacity;
+        let offered = shortcut
+            .offer
+            .as_ref()
+            .and_then(|offer| match &offer.routes {
+                Routes::Offered(choices) => Some(choices),
+                Routes::Legacy { .. } => None,
+            });
+        if shortcut.chooser
+            && let Some(choices) = offered
+        {
+            offered_menu(&mut commands, choices, generation, viewport, opacity);
+        }
         commands
             .spawn((
                 Node {
@@ -279,7 +471,7 @@ pub(crate) fn render(
                 },
             ))
             .with_children(|parent| {
-                if shortcut.chooser {
+                if shortcut.chooser && offered.is_none() {
                     parent
                         .spawn((
                             Node {
@@ -368,5 +560,257 @@ fn request_redraw(shortcut: Res<Shortcut>, mut redraw: ResMut<Redraw>) {
     let target = if shortcut.offer.is_some() { 1.0 } else { 0.0 };
     if shortcut.dirty || shortcut.opacity != target {
         redraw.request();
+    }
+}
+
+#[cfg(test)]
+mod offered_tests {
+    use super::*;
+
+    fn choice(id: &str, label: &str) -> Choice {
+        Choice {
+            id: id.into(),
+            label: label.into(),
+            cancel_faces: vec![],
+        }
+    }
+
+    fn app(choices: &[Choice]) -> App {
+        let mut app = App::new();
+        app.add_plugins(RevealPlugin).add_systems(Update, render);
+        app.world_mut()
+            .resource_mut::<Shortcut>()
+            .sync_offered(3, 7, choices, true, true);
+        app.update();
+        app
+    }
+
+    fn click(app: &mut App, label: &str) -> Request {
+        let world = app.world_mut();
+        let entity = world
+            .query_filtered::<(Entity, &Children), With<Button>>()
+            .iter(world)
+            .find_map(|(entity, children)| {
+                children
+                    .iter()
+                    .any(|child| world.get::<Text>(child).is_some_and(|text| text.0 == label))
+                    .then_some(entity)
+            })
+            .unwrap_or_else(|| panic!("No offered button: {label}"));
+        world.trigger(Activate { entity });
+        world
+            .resource_mut::<Shortcut>()
+            .drain()
+            .pop()
+            .expect("A production button request")
+    }
+
+    #[test]
+    fn arbitrary_single_offer_keeps_its_canonical_choice_id() {
+        let mut app = app(&[choice("test:reveal", "Resolve the declared token reveal")]);
+        let request = click(&mut app, "Reveal chaos token");
+        let accepted = app.world_mut().resource_mut::<Shortcut>().admit(request);
+        assert!(matches!(accepted, Some(Accepted::Choice(7, id)) if id == "test:reveal"));
+    }
+
+    #[test]
+    fn explicit_requests_expire_on_epoch_changes_and_input_blocking() {
+        let choices = [choice("test:reveal", "Reveal")];
+        let mut app = app(&choices);
+        let stale = click(&mut app, "Reveal chaos token");
+        app.world_mut()
+            .resource_mut::<Shortcut>()
+            .sync_offered(4, 7, &choices, true, true);
+        assert!(
+            app.world_mut()
+                .resource_mut::<Shortcut>()
+                .admit(stale)
+                .is_none()
+        );
+        app.update();
+        let blocked = click(&mut app, "Reveal chaos token");
+        app.world_mut()
+            .resource_mut::<Shortcut>()
+            .sync_offered(4, 7, &choices, false, true);
+        assert!(
+            app.world_mut()
+                .resource_mut::<Shortcut>()
+                .admit(blocked)
+                .is_none()
+        );
+        app.update();
+        let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<Entity, With<RevealButton>>()
+                .iter(world)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn several_explicit_routes_render_the_authoritys_labels_and_submit_only_the_selected_id() {
+        let mut app = app(&[
+            choice("test:reveal", "Resolve this declared reveal"),
+            choice(
+                "tokens:olive:2:47",
+                "Exhaust Olive at reveal 2: reveal 3 and resolve 2",
+            ),
+        ]);
+        let press = click(&mut app, "Reveal chaos token");
+        assert!(matches!(
+            app.world_mut().resource_mut::<Shortcut>().admit(press),
+            Some(Accepted::Opened)
+        ));
+        app.update();
+        let request = click(
+            &mut app,
+            "Exhaust Olive at reveal 2: reveal 3 and resolve 2",
+        );
+        assert!(
+            matches!(app.world_mut().resource_mut::<Shortcut>().admit(request), Some(Accepted::Choice(7, id)) if id == "tokens:olive:2:47")
+        );
+    }
+
+    #[test]
+    fn long_offered_chooser_fits_and_scrolls_to_every_action() {
+        use bevy::{
+            camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo},
+            input::keyboard::{Key, KeyboardInput},
+            window::{PrimaryWindow, WindowRef},
+        };
+        let mut app = crate::tabletop_layout::heading_checks::app();
+        app.init_resource::<Assets<StandardMaterial>>()
+            .add_plugins((feedback::FeedbackPlugin, RevealPlugin))
+            .add_systems(Update, render);
+        let size = UVec2::new(420, 320);
+        let window = app
+            .world_mut()
+            .spawn((
+                Window {
+                    resolution: (size.x, size.y).into(),
+                    ..default()
+                },
+                PrimaryWindow,
+            ))
+            .id();
+        app.world_mut().spawn((
+            Camera {
+                computed: ComputedCameraValues {
+                    target_info: Some(RenderTargetInfo {
+                        physical_size: size,
+                        scale_factor: 1.,
+                    }),
+                    ..default()
+                },
+                ..default()
+            },
+            RenderTarget::Window(WindowRef::Entity(window)),
+        ));
+        let choices: Vec<_> = (0..20)
+            .map(|index| {
+                choice(
+                    &format!("offered:{index}"),
+                    &format!("Reveal option {index}: retain this complete descriptive label"),
+                )
+            })
+            .collect();
+        app.world_mut()
+            .resource_mut::<Shortcut>()
+            .sync_offered(3, 7, &choices, true, true);
+        app.update();
+        let press = click(&mut app, "Reveal chaos token");
+        app.world_mut().resource_mut::<Shortcut>().admit(press);
+        for _ in 0..3 {
+            app.update();
+        }
+        let world = app.world_mut();
+        let (menu, node, transform) = world
+            .query_filtered::<(Entity, &ComputedNode, &UiGlobalTransform), With<OfferedMenu>>()
+            .single(world)
+            .unwrap();
+        let bounds = Rect {
+            min: transform.transform_point2(-node.size() * 0.5),
+            max: transform.transform_point2(node.size() * 0.5),
+        };
+        assert!(bounds.min.cmpge(Vec2::ZERO).all());
+        assert!(bounds.max.cmple(size.as_vec2()).all());
+        assert!(node.content_size().y > node.size().y);
+        assert_eq!(world.get::<ScrollPosition>(menu).unwrap().y, 0.);
+        world.write_message(KeyboardInput {
+            key_code: KeyCode::End,
+            logical_key: Key::End,
+            state: bevy::input::ButtonState::Pressed,
+            text: None,
+            repeat: false,
+            window,
+        });
+        app.update();
+        assert!(app.world().get::<ScrollPosition>(menu).unwrap().y > 0.);
+        let resized = UVec2::new(520, 400);
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .unwrap()
+            .resolution
+            .set_physical_resolution(resized.x, resized.y);
+        let world = app.world_mut();
+        world
+            .query::<&mut Camera>()
+            .single_mut(world)
+            .unwrap()
+            .computed
+            .target_info
+            .as_mut()
+            .unwrap()
+            .physical_size = resized;
+        for _ in 0..3 {
+            app.update();
+        }
+        let world = app.world_mut();
+        let (resized_menu, node, transform) = world
+            .query_filtered::<(Entity, &ComputedNode, &UiGlobalTransform), With<OfferedMenu>>()
+            .single(world)
+            .unwrap();
+        assert_ne!(resized_menu, menu, "Resize refreshes the fitted panel");
+        let bounds = Rect {
+            min: transform.transform_point2(-node.size() * 0.5),
+            max: transform.transform_point2(node.size() * 0.5),
+        };
+        assert!(bounds.min.cmpge(Vec2::ZERO).all());
+        assert!(bounds.max.cmple(resized.as_vec2()).all());
+        for state in [
+            bevy::input::ButtonState::Released,
+            bevy::input::ButtonState::Pressed,
+        ] {
+            app.world_mut().write_message(KeyboardInput {
+                key_code: KeyCode::End,
+                logical_key: Key::End,
+                state,
+                text: None,
+                repeat: false,
+                window,
+            });
+            app.update();
+        }
+        let last = choices.last().unwrap();
+        let world = app.world_mut();
+        let (node, transform) = world
+            .query_filtered::<(&AccessibleLabel, &ComputedNode, &UiGlobalTransform), With<Button>>()
+            .iter(world)
+            .find_map(|(label, node, transform)| {
+                (label.0 == last.label).then_some((node, transform))
+            })
+            .unwrap();
+        let last_bounds = Rect {
+            min: transform.transform_point2(-node.size() * 0.5),
+            max: transform.transform_point2(node.size() * 0.5),
+        };
+        assert!(last_bounds.min.y >= bounds.min.y);
+        assert!(last_bounds.max.y <= bounds.max.y);
+        let request = click(&mut app, &last.label);
+        assert!(
+            matches!(app.world_mut().resource_mut::<Shortcut>().admit(request), Some(Accepted::Choice(7, id)) if id == last.id)
+        );
     }
 }

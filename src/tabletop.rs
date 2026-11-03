@@ -972,6 +972,7 @@ pub(crate) fn readable_text(value: String) -> String {
         .replace(['−', '–'], "-")
         .replace('§', "section ")
         .replace('·', " / ")
+        .replace('×', "x")
         .replace('—', " - ")
         .replace('→', ">")
         .replace('←', "<")

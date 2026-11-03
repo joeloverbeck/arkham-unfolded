@@ -1,3 +1,5 @@
+#[path = "driver/gathering.rs"]
+mod gathering;
 #[path = "driver/party.rs"]
 mod party;
 #[path = "driver/tony.rs"]
@@ -224,10 +226,15 @@ fn run() -> Result<(), String> {
 
 fn main() {
     let args: Vec<_> = std::env::args().collect();
+    let gathering_mode = args
+        .windows(2)
+        .any(|pair| pair == ["--experiment", "gathering"]);
     let party_mode = args
         .windows(2)
         .any(|pair| pair == ["--experiment", "party"]);
-    let result = if party_mode {
+    let result = if gathering_mode {
+        gathering::run()
+    } else if party_mode {
         party::run()
     } else if args.iter().any(|arg| arg == "--experiment") {
         tony::run()

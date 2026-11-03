@@ -148,18 +148,19 @@ fn installed_token_return_clears_physical_tokens_and_sends_resolved_curse_to_poo
         }
         if !reduced_motion {
             let world = app.world_mut();
+            let pool = world
+                .query::<(&Name, &Transform)>()
+                .iter(world)
+                .find_map(|(name, transform)| {
+                    (name.as_str() == "Curse pool").then_some(transform.translation)
+                })
+                .expect("the production scene renders the curse pool");
             let destinations: Vec<_> = world
                 .query::<&ReturningToken>()
                 .iter(world)
                 .map(|token| token.destination)
                 .collect();
-            assert_eq!(
-                destinations
-                    .iter()
-                    .filter(|&&at| at == scene::curse_pool_at())
-                    .count(),
-                1
-            );
+            assert_eq!(destinations.iter().filter(|&&at| at == pool).count(), 1);
             assert_eq!(
                 destinations
                     .iter()
@@ -300,6 +301,87 @@ fn production_harm_captions_clear_cards_and_each_other_after_text_layout() {
                         &mut app, captions, card, size, scale,
                     );
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn production_hand_captions_do_not_overlap_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+    let directory = tempfile::tempdir().unwrap();
+    for size in [Vec2::new(1280., 800.), Vec2::new(1600., 1000.)] {
+        for scale in [1., 2.] {
+            let (mut app, _) = selection_lifecycle::production_app(
+                directory
+                    .path()
+                    .join(format!("hand-captions-{}-{scale}.json", size.x)),
+                RenderHealth::ready_for_test(),
+            );
+            app.world_mut().resource_mut::<Table>().reduced_motion = true;
+            for id in ["select:patrice", "draw", "draw", "draw"] {
+                choose(&mut app, id);
+            }
+            heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+            act(&mut app, Action::Focus(Area::Investigator(1)));
+            for _ in 0..5 {
+                app.update();
+            }
+            let view = app.world().resource::<Table>().view();
+            let hand = &view.investigator(Investigator::Patrice).hand;
+            assert_eq!(hand.len(), 4);
+            let world = app.world_mut();
+            let captions = hand
+                .iter()
+                .enumerate()
+                .map(|(slot, held)| {
+                    let at = layout::hand_position(1, hand.len(), slot) + Vec3::Z;
+                    world
+                        .query::<(Entity, &WorldLabel, &Text)>()
+                        .iter(world)
+                        .find_map(|(entity, anchor, text)| {
+                            (anchor.0 == at && text.0 == held.title).then_some(entity)
+                        })
+                        .expect("every hand card has its production caption")
+                })
+                .collect::<Vec<_>>();
+            let panel = world
+                .query_filtered::<(Entity, &Node), With<Panel>>()
+                .iter(world)
+                .find_map(|(entity, node)| (node.bottom == px(10.)).then_some(entity))
+                .unwrap();
+            heading_checks::assert_hand_captions(&mut app, &captions, panel, size, scale);
+            heading_checks::assert_sideways_caption_wrapping(&mut app, &captions);
+        }
+    }
+}
+
+#[test]
+fn production_chaos_captions_do_not_overlap_after_text_layout() {
+    use crate::tabletop_layout::heading_checks;
+    let directory = tempfile::tempdir().unwrap();
+    for size in [Vec2::new(1280., 800.), Vec2::new(1600., 1000.)] {
+        for scale in [1., 2.] {
+            let (mut app, _) = selection_lifecycle::production_app(
+                directory
+                    .path()
+                    .join(format!("chaos-captions-{}-{scale}.json", size.x)),
+                RenderHealth::ready_for_test(),
+            );
+            app.world_mut().resource_mut::<Table>().reduced_motion = true;
+            heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+            for area in [Area::Scenario, Area::Test] {
+                act(&mut app, Action::Focus(area));
+                for _ in 0..5 {
+                    app.update();
+                }
+                let world = app.world_mut();
+                let panel = world
+                    .query_filtered::<(Entity, &Node), With<Panel>>()
+                    .iter(world)
+                    .find_map(|(entity, node)| (node.bottom == px(10.)).then_some(entity))
+                    .unwrap();
+                heading_checks::assert_chaos_captions(&mut app, panel, size, scale, area);
             }
         }
     }

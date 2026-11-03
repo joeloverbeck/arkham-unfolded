@@ -11,6 +11,7 @@ use crate::{
         CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
     },
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
+    tabletop_gathering_map as location_map,
     tabletop_health::{HealthAssets, RenderHealth, TabletopHealthPlugin, exit_result},
     tabletop_layout::{self as layout, Area},
     tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin},
@@ -18,14 +19,10 @@ use crate::{
 };
 use bevy::{
     input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
-    input_focus::{
-        InputFocus,
-        tab_navigation::{TabGroup, TabIndex},
-    },
-    picking::hover::Hovered,
+    input_focus::InputFocus,
     prelude::*,
     render::view::screenshot::{Capturing, Screenshot},
-    ui_widgets::{Activate, Button, ModalDialog, ModalDialogBarrier, RequestClose},
+    ui_widgets::{Activate, Button, RequestClose},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -35,7 +32,6 @@ use std::{
 mod cards;
 mod consequences;
 mod controls;
-mod location_map;
 mod scene;
 mod ui;
 use cards::CARDS;
@@ -231,8 +227,7 @@ struct Panel;
 struct Scene;
 #[derive(Component)]
 struct MainCamera;
-#[derive(Component)]
-struct WorldLabel(Vec3, bool);
+use crate::tabletop_pieces::WorldLabel;
 #[derive(Component)]
 struct CardSource(Source);
 #[derive(Component)]
@@ -837,6 +832,7 @@ fn camera_controls(
     }
     **camera = step.transform;
 }
+#[allow(clippy::type_complexity)]
 fn world_labels(
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     orbit: Res<Orbit>,
@@ -844,11 +840,12 @@ fn world_labels(
         &WorldLabel,
         &ComputedNode,
         Has<layout::TestAreaHeading>,
+        Has<crate::tabletop_pieces::CardCaption>,
         &mut Node,
         &mut Visibility,
     )>,
 ) {
-    for (label, computed, test_heading, mut node, mut visibility) in &mut labels {
+    for (label, computed, test_heading, card_caption, mut node, mut visibility) in &mut labels {
         if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
             *visibility = Visibility::Hidden;
             continue;
@@ -859,6 +856,12 @@ fn world_labels(
             camera.0.world_to_viewport(camera.1, label.0).ok()
         };
         if let Some(point) = point {
+            if card_caption
+                && let Some(width) =
+                    crate::tabletop_pieces::CardCaption::width(camera.0, camera.1, label.0)
+            {
+                node.width = px(width);
+            }
             let width = match node.width {
                 Val::Px(width) => width,
                 _ => 190.0,

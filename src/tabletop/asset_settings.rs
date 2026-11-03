@@ -20,6 +20,7 @@ enum Collection {
     Jacqueline,
     Tony,
     Party,
+    Gathering,
 }
 
 struct SelectionResult {
@@ -52,6 +53,13 @@ impl AssetSettings {
     pub(crate) fn new_party(config: AssetConfig) -> Self {
         Self {
             collection: Collection::Party,
+            ..Self::new(config)
+        }
+    }
+
+    pub(crate) fn new_gathering(config: AssetConfig) -> Self {
+        Self {
+            collection: Collection::Gathering,
             ..Self::new(config)
         }
     }
@@ -158,6 +166,7 @@ fn select_folder_with_mode(
         Collection::Jacqueline => assets::inspect(&path),
         Collection::Tony => assets::inspect_tony(&path),
         Collection::Party => assets::inspect_party(&path),
+        Collection::Gathering => assets::inspect_gathering(&path),
     };
     if !report.recognized {
         let message = "This folder is not a recognized prepared asset collection. Choose the folder containing the prepared collection's manifest. Your setting is unchanged.";
@@ -284,6 +293,54 @@ mod tests {
             } else {
                 assert!(result.is_none());
                 assert!(!file.exists());
+            }
+        }
+    }
+
+    #[test]
+    fn gathering_folder_selection_uses_its_own_collection_and_preserves_canceled_settings() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("gathering-art");
+        assets::write_gathering_manifest_without_payloads(&root);
+        let file = directory.path().join("gathering.toml");
+        let prior = directory.path().join("prior");
+        let mut config = AssetConfig::load_at(file.clone(), prior.clone());
+        config.save_root(&prior).unwrap();
+        let before = fs::read(&file).unwrap();
+        let mut settings = AssetSettings::new_gathering(config);
+        for confirm in [false, true] {
+            let mut round = 0;
+            let result = select_folder_with_mode(
+                &mut settings.config,
+                &mut |args| {
+                    round += 1;
+                    match round {
+                        1 => Ok(response(0, &format!("{}\n", root.display()))),
+                        2 => {
+                            assert!(
+                                args.contains(&"--question"),
+                                "A Gathering manifest must be recognized by Gathering's selector"
+                            );
+                            let message =
+                                args.iter().find(|arg| arg.starts_with("--text=")).unwrap();
+                            assert!(message.contains("This folder is incomplete"));
+                            Ok(response(if confirm { 0 } else { 1 }, ""))
+                        }
+                        _ => panic!("Unexpected additional dialog"),
+                    }
+                },
+                settings.collection,
+            )
+            .unwrap();
+            if confirm {
+                assert_eq!(result, Some(root.clone()));
+                assert_eq!(
+                    AssetConfig::load_at(file.clone(), prior.clone()).root(),
+                    root
+                );
+            } else {
+                assert!(result.is_none());
+                assert_eq!(fs::read(&file).unwrap(), before);
             }
         }
     }

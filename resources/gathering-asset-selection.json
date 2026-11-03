@@ -1,0 +1,2555 @@
+{
+  "assets": [
+    {
+      "bytes": 1130602,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 01049 variant 20286aee891e7210, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/01049/face.png",
+      "role": "card-01049",
+      "sha256": "8d45953114b5ec88b8cf3be8fe1198df730212bfcff93647839aa5f7fc638729",
+      "source": {
+        "bytes": 1130602,
+        "path": "images/cards/official/en/sce-base-save/Core/01049--Hard Knocks/20286aee891e7210/face.png",
+        "sha256": "8d45953114b5ec88b8cf3be8fe1198df730212bfcff93647839aa5f7fc638729"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1146841,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 01065 variant a578f974341f62bc, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/01065/face.png",
+      "role": "card-01065",
+      "sha256": "19299ce6cdaf6c0cba97987e5d6cf6ccb624b2f75f85ef7c2adff9358f3d0ee0",
+      "source": {
+        "bytes": 1146841,
+        "path": "images/cards/official/en/sce-base-save/Core/01065--Ward of Protection/a578f974341f62bc/face.png",
+        "sha256": "19299ce6cdaf6c0cba97987e5d6cf6ccb624b2f75f85ef7c2adff9358f3d0ee0"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1232709,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 01079 variant fba728a2c01eb169, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/01079/face.png",
+      "role": "card-01079",
+      "sha256": "b53f895ecf9adaae3a5f7db78a9f05c15c6effdb712cfa33849eb702fd30c77f",
+      "source": {
+        "bytes": 1232709,
+        "path": "images/cards/official/en/sce-base-save/Core/01079---Look what I found!---f2cb1343/fba728a2c01eb169/face.png",
+        "sha256": "b53f895ecf9adaae3a5f7db78a9f05c15c6effdb712cfa33849eb702fd30c77f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1115589,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 01080 variant ae7c3042a7b21187, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/01080/face.png",
+      "role": "card-01080",
+      "sha256": "7e7d7493ad88d4e4a783298b0d1ddb33b9c919da4b1d8f4c16815fedb4e1b824",
+      "source": {
+        "bytes": 1115589,
+        "path": "images/cards/official/en/sce-base-save/Core/01080--Lucky!/ae7c3042a7b21187/face.png",
+        "sha256": "7e7d7493ad88d4e4a783298b0d1ddb33b9c919da4b1d8f4c16815fedb4e1b824"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1183404,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 01089 variant c6da23b9ae042d18, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/01089/face.png",
+      "role": "card-01089",
+      "sha256": "4a8058f959ec5b911d77ca39f2782e750c61b399a567b657ad6de4766ab9376b",
+      "source": {
+        "bytes": 1183404,
+        "path": "images/cards/official/en/sce-base-save/Core/01089--Guts/c6da23b9ae042d18/face.png",
+        "sha256": "4a8058f959ec5b911d77ca39f2782e750c61b399a567b657ad6de4766ab9376b"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1213206,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 01093 variant 8bef7e9dd3e8401b, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/01093/face.png",
+      "role": "card-01093",
+      "sha256": "84458fdbeb058ebe7cdf32522f83fb0406fdde2c4ca3fdd668186d4fa6ffecb7",
+      "source": {
+        "bytes": 1213206,
+        "path": "images/cards/official/en/sce-base-save/Core/01093--Unexpected Courage/8bef7e9dd3e8401b/face.png",
+        "sha256": "84458fdbeb058ebe7cdf32522f83fb0406fdde2c4ca3fdd668186d4fa6ffecb7"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1007537,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant ee9f88be0fe1ad2b. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01104/face.png",
+      "role": "card-01104",
+      "sha256": "2c65c1d4b98f26f4268cfa4647b006ffa9a6d7030281a545e676ad41c1d9ceb5",
+      "source": {
+        "bytes": 1007537,
+        "path": "images/cards/official/en/night_of_the_zealot/Unassigned expansion/01104--Scenario/ee9f88be0fe1ad2b/face.png",
+        "sha256": "2c65c1d4b98f26f4268cfa4647b006ffa9a6d7030281a545e676ad41c1d9ceb5"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1390665,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 460aea194cbf717b. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01105/face.png",
+      "role": "card-01105",
+      "sha256": "eb8a3df46a9e1d52016872d530dee3c28a212cad3245077352fe3c6a0f6c370c",
+      "source": {
+        "bytes": 1390665,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01105--What's Going On-!--02c98a5d/460aea194cbf717b/face.png",
+        "sha256": "eb8a3df46a9e1d52016872d530dee3c28a212cad3245077352fe3c6a0f6c370c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1093169,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 460aea194cbf717b. Reverse uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01105/reverse.png",
+      "role": "card-01105-back",
+      "sha256": "d54c11b879e37166ae696878105f50b5b6dcab02fdb2d70fa19287338568dad1",
+      "source": {
+        "bytes": 1093169,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01105--What's Going On-!--02c98a5d/460aea194cbf717b/back.png",
+        "sha256": "d54c11b879e37166ae696878105f50b5b6dcab02fdb2d70fa19287338568dad1"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1328065,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 4520e435f426e9b0. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01106/face.png",
+      "role": "card-01106",
+      "sha256": "cfc0d2a093d69bd00986ecc54bb325210de75cf4fcf05585f29ca31f71e4c269",
+      "source": {
+        "bytes": 1328065,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01106--Rise of the Ghouls/4520e435f426e9b0/face.png",
+        "sha256": "cfc0d2a093d69bd00986ecc54bb325210de75cf4fcf05585f29ca31f71e4c269"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1087165,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 4520e435f426e9b0. Reverse uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01106/reverse.png",
+      "role": "card-01106-back",
+      "sha256": "c691ccc0579b9e213b240302206554baa671d6e01a199dd3613f4743020f1d6d",
+      "source": {
+        "bytes": 1087165,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01106--Rise of the Ghouls/4520e435f426e9b0/back.png",
+        "sha256": "c691ccc0579b9e213b240302206554baa671d6e01a199dd3613f4743020f1d6d"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1414470,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant b1631548ef428bd9. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01107/face.png",
+      "role": "card-01107",
+      "sha256": "638f1853ce1622221338ef46be725d2d7544736460446be0d33736dc6d058d3b",
+      "source": {
+        "bytes": 1414470,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01107--They're Getting Out!/b1631548ef428bd9/face.png",
+        "sha256": "638f1853ce1622221338ef46be725d2d7544736460446be0d33736dc6d058d3b"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1168414,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant b1631548ef428bd9. Reverse uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01107/reverse.png",
+      "role": "card-01107-back",
+      "sha256": "c76a5ce658a2d9af76e960e92a5ff53885395246710c4bd110f232b7041eceac",
+      "source": {
+        "bytes": 1168414,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01107--They're Getting Out!/b1631548ef428bd9/back.png",
+        "sha256": "c76a5ce658a2d9af76e960e92a5ff53885395246710c4bd110f232b7041eceac"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1139450,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 79184f89d96cf371. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01108/face.png",
+      "role": "card-01108",
+      "sha256": "ea48ef97d968da6bdba80d4bb27e8fa663a881c70f6e9e51a0b216aefe58fd7f",
+      "source": {
+        "bytes": 1139450,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01108--Trapped/79184f89d96cf371/face.png",
+        "sha256": "ea48ef97d968da6bdba80d4bb27e8fa663a881c70f6e9e51a0b216aefe58fd7f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1227226,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 79184f89d96cf371. Reverse uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01108/reverse.png",
+      "role": "card-01108-back",
+      "sha256": "c2a27ffffc807b7f2eea7c6da91a41808c4585ff7a41e74771be88679e606491",
+      "source": {
+        "bytes": 1227226,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01108--Trapped/79184f89d96cf371/back.png",
+        "sha256": "c2a27ffffc807b7f2eea7c6da91a41808c4585ff7a41e74771be88679e606491"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1273371,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant f3119cd519b58647. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01109/face.png",
+      "role": "card-01109",
+      "sha256": "e2237f76b48f7ec58850739a11cb7da78255ec65455dcfeab00b9aa725191b21",
+      "source": {
+        "bytes": 1273371,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01109--The Barrier/f3119cd519b58647/face.png",
+        "sha256": "e2237f76b48f7ec58850739a11cb7da78255ec65455dcfeab00b9aa725191b21"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1095583,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant f3119cd519b58647. Reverse uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01109/reverse.png",
+      "role": "card-01109-back",
+      "sha256": "473e5e3202bb2dddd6f78ff45285b3021ca14211c223457115eb4d84138cb402",
+      "source": {
+        "bytes": 1095583,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01109--The Barrier/f3119cd519b58647/back.png",
+        "sha256": "473e5e3202bb2dddd6f78ff45285b3021ca14211c223457115eb4d84138cb402"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1261614,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 738da6898fae3418. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01110/face.png",
+      "role": "card-01110",
+      "sha256": "6d4e26d5249d5da70f1a79a362dfb73cea7c151c965d195f7d92fd9bb4b316f8",
+      "source": {
+        "bytes": 1261614,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01110--What Have You Done---db5f0613/738da6898fae3418/face.png",
+        "sha256": "6d4e26d5249d5da70f1a79a362dfb73cea7c151c965d195f7d92fd9bb4b316f8"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1180579,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 738da6898fae3418. Reverse uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01110/reverse.png",
+      "role": "card-01110-back",
+      "sha256": "b69bc322cbec2ef43ffd38eb66595b543b8b6a6b33d8b405d824e24cd420f2e6",
+      "source": {
+        "bytes": 1180579,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01110--What Have You Done---db5f0613/738da6898fae3418/back.png",
+        "sha256": "b69bc322cbec2ef43ffd38eb66595b543b8b6a6b33d8b405d824e24cd420f2e6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1240391,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant aec837f768735442. Revealed location uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01111/face.png",
+      "role": "card-01111",
+      "sha256": "f9a4874007445ac47f66275266e034ea65665722580e1672d70cc6ae9121cf10",
+      "source": {
+        "bytes": 1240391,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01111--Study/aec837f768735442/back.png",
+        "sha256": "f9a4874007445ac47f66275266e034ea65665722580e1672d70cc6ae9121cf10"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1337845,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant aec837f768735442. Unrevealed location uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01111/reverse.png",
+      "role": "card-01111-back",
+      "sha256": "ea1390d9486abe7ea275b7501d87ec3a4eb73c5b27d01e3824d04b40d7b25334",
+      "source": {
+        "bytes": 1337845,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01111--Study/aec837f768735442/face.png",
+        "sha256": "ea1390d9486abe7ea275b7501d87ec3a4eb73c5b27d01e3824d04b40d7b25334"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1366881,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant e59fa22742aa5070. Revealed location uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01112/face.png",
+      "role": "card-01112",
+      "sha256": "5af07e38456e65821dc1ecd78e7a51728c23806167d9cf7bd3347b76b51e8bba",
+      "source": {
+        "bytes": 1366881,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01112--Hallway/e59fa22742aa5070/back.png",
+        "sha256": "5af07e38456e65821dc1ecd78e7a51728c23806167d9cf7bd3347b76b51e8bba"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1390283,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant e59fa22742aa5070. Unrevealed location uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01112/reverse.png",
+      "role": "card-01112-back",
+      "sha256": "f64d2d5bfde4da5a754ed77337fa7ee919f7ab75cb446fb3e70484afe6c952f8",
+      "source": {
+        "bytes": 1390283,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01112--Hallway/e59fa22742aa5070/face.png",
+        "sha256": "f64d2d5bfde4da5a754ed77337fa7ee919f7ab75cb446fb3e70484afe6c952f8"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1356773,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 800834c2e07131c2. Revealed location uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01113/face.png",
+      "role": "card-01113",
+      "sha256": "d9a83df9f1ca355b4e185c6ea168799d2d2d2f3262e44789df45bd9b8ec70582",
+      "source": {
+        "bytes": 1356773,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01113--Attic/800834c2e07131c2/back.png",
+        "sha256": "d9a83df9f1ca355b4e185c6ea168799d2d2d2f3262e44789df45bd9b8ec70582"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1178580,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 800834c2e07131c2. Unrevealed location uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01113/reverse.png",
+      "role": "card-01113-back",
+      "sha256": "23748e8a6e3d88723cc99cc61ec675045075ad40b2536ba3c0d21eeb1ad7da1c",
+      "source": {
+        "bytes": 1178580,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01113--Attic/800834c2e07131c2/face.png",
+        "sha256": "23748e8a6e3d88723cc99cc61ec675045075ad40b2536ba3c0d21eeb1ad7da1c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1318909,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 96eba9154b6a3047. Revealed location uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01114/face.png",
+      "role": "card-01114",
+      "sha256": "c74c3ede5b060ac0d0b0ca7b7a49ab9a2becb1c6bbf4f6527bc6d04ab5f5e1fc",
+      "source": {
+        "bytes": 1318909,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01114--Cellar/96eba9154b6a3047/back.png",
+        "sha256": "c74c3ede5b060ac0d0b0ca7b7a49ab9a2becb1c6bbf4f6527bc6d04ab5f5e1fc"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1187631,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 96eba9154b6a3047. Unrevealed location uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01114/reverse.png",
+      "role": "card-01114-back",
+      "sha256": "c4ec5587fb3e58ce07060303f32a19c8526b50b480beac3ded82f81420836a84",
+      "source": {
+        "bytes": 1187631,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01114--Cellar/96eba9154b6a3047/face.png",
+        "sha256": "c4ec5587fb3e58ce07060303f32a19c8526b50b480beac3ded82f81420836a84"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1261013,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 954f54490565c9d9. Revealed location uses archive back; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01115/face.png",
+      "role": "card-01115",
+      "sha256": "1d442de1e48a1dd81d56ca2c5d9c093c776f29447347ee52874962dc4f07795c",
+      "source": {
+        "bytes": 1261013,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01115--Parlor/954f54490565c9d9/back.png",
+        "sha256": "1d442de1e48a1dd81d56ca2c5d9c093c776f29447347ee52874962dc4f07795c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1266425,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 954f54490565c9d9. Unrevealed location uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01115/reverse.png",
+      "role": "card-01115-back",
+      "sha256": "e81df0029e99ff6279427c49769d2c6255b82a59e45aeef60b104bf822e23a89",
+      "source": {
+        "bytes": 1266425,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01115--Parlor/954f54490565c9d9/face.png",
+        "sha256": "e81df0029e99ff6279427c49769d2c6255b82a59e45aeef60b104bf822e23a89"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1291342,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 7e30f1a04d5435ba. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01116/face.png",
+      "role": "card-01116",
+      "sha256": "ac5be35a7f1442615c517202faa535fe8b712395e4b42d813a556120c52bb9c2",
+      "source": {
+        "bytes": 1291342,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01116--Ghoul Priest/7e30f1a04d5435ba/face.png",
+        "sha256": "ac5be35a7f1442615c517202faa535fe8b712395e4b42d813a556120c52bb9c2"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1185910,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 32d6269b0425dbb5. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01117/face.png",
+      "role": "card-01117",
+      "sha256": "3ebc418b413c85e9aa45fcba8c154df214892a8917fa9d982a0534b929a6ab29",
+      "source": {
+        "bytes": 1185910,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01117--Lita Chantler/32d6269b0425dbb5/face.png",
+        "sha256": "3ebc418b413c85e9aa45fcba8c154df214892a8917fa9d982a0534b929a6ab29"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1207283,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 1846bdad9509117a. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01118/face.png",
+      "role": "card-01118",
+      "sha256": "dce3d680f1ab83d65b45924d6ccfd742e7483130f928a8bff831a62e676e3048",
+      "source": {
+        "bytes": 1207283,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01118--Flesh-Eater/1846bdad9509117a/face.png",
+        "sha256": "dce3d680f1ab83d65b45924d6ccfd742e7483130f928a8bff831a62e676e3048"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1332936,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 14ea6afc8228348a. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01119/face.png",
+      "role": "card-01119",
+      "sha256": "56de11b7f1b405e43cdaa52e0ff37c3f497c350e4fb66a5bc18883b8105b1e5d",
+      "source": {
+        "bytes": 1332936,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01119--Icy Ghoul/14ea6afc8228348a/face.png",
+        "sha256": "56de11b7f1b405e43cdaa52e0ff37c3f497c350e4fb66a5bc18883b8105b1e5d"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1330571,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant cd08664fc9b49747. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01159/face.png",
+      "role": "card-01159",
+      "sha256": "9aae04ed0722d2d468e690b696794845a6c3e64bdd917fdbbb04d106c1f43926",
+      "source": {
+        "bytes": 1330571,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01159--Swarm of Rats/cd08664fc9b49747/face.png",
+        "sha256": "9aae04ed0722d2d468e690b696794845a6c3e64bdd917fdbbb04d106c1f43926"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1243440,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant d394ce9d19ec2cbb. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01160/face.png",
+      "role": "card-01160",
+      "sha256": "16f77cba517ecd3caf6e617f14c3968b6846f12a54f49699db6bd1868fd1fdd1",
+      "source": {
+        "bytes": 1243440,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01160--Ghoul Minion/d394ce9d19ec2cbb/face.png",
+        "sha256": "16f77cba517ecd3caf6e617f14c3968b6846f12a54f49699db6bd1868fd1fdd1"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1421883,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant c2fde100494c4e2b. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01161/face.png",
+      "role": "card-01161",
+      "sha256": "66caa7aa0b58e5ec7e1bd92849c6b4de85cd26b1658c7c29eeb6a423771afda7",
+      "source": {
+        "bytes": 1421883,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01161--Ravenous Ghoul/c2fde100494c4e2b/face.png",
+        "sha256": "66caa7aa0b58e5ec7e1bd92849c6b4de85cd26b1658c7c29eeb6a423771afda7"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1397057,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 4d813f6f60aea1c3. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01162/face.png",
+      "role": "card-01162",
+      "sha256": "530acb295202cf684b47ea4b3a017328a64c322c714d1ebddb64d7e2007ff22c",
+      "source": {
+        "bytes": 1397057,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01162--Grasping Hands/4d813f6f60aea1c3/face.png",
+        "sha256": "530acb295202cf684b47ea4b3a017328a64c322c714d1ebddb64d7e2007ff22c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1259989,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant c04ee6ea126520d2. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01163/face.png",
+      "role": "card-01163",
+      "sha256": "94995549a154435979ef494391b68340c6e4c5b73ba65918942f7382b7adfd82",
+      "source": {
+        "bytes": 1259989,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01163--Rotting Remains/c04ee6ea126520d2/face.png",
+        "sha256": "94995549a154435979ef494391b68340c6e4c5b73ba65918942f7382b7adfd82"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1401366,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 17c3a5f5c7c02bde. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01164/face.png",
+      "role": "card-01164",
+      "sha256": "89bfdb9af99600fa422681225489ebef642ba629464a302bd57b8042baf3a0eb",
+      "source": {
+        "bytes": 1401366,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01164--Frozen in Fear/17c3a5f5c7c02bde/face.png",
+        "sha256": "89bfdb9af99600fa422681225489ebef642ba629464a302bd57b8042baf3a0eb"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1294958,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant a7fc38dd0359c6f2. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01165/face.png",
+      "role": "card-01165",
+      "sha256": "02bd3f4e1e2ce571b1dfecea53c5bfd3a86acf76e2ba98e6f58f3640090553bb",
+      "source": {
+        "bytes": 1294958,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01165--Dissonant Voices/a7fc38dd0359c6f2/face.png",
+        "sha256": "02bd3f4e1e2ce571b1dfecea53c5bfd3a86acf76e2ba98e6f58f3640090553bb"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1373669,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant d1cbbd484201f04f. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01166/face.png",
+      "role": "card-01166",
+      "sha256": "54c75ad076981ad4058b24cf4ebbb9ab893dc9ce74f50301e0ce5b0eb6bc278e",
+      "source": {
+        "bytes": 1373669,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01166--Ancient Evils/d1cbbd484201f04f/face.png",
+        "sha256": "54c75ad076981ad4058b24cf4ebbb9ab893dc9ce74f50301e0ce5b0eb6bc278e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1417158,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant 4334c3e5bcc587b4. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01167/face.png",
+      "role": "card-01167",
+      "sha256": "12b35fb4dd6ac87ebfdbcb3674d8d27f9def4254a4f34b800e7c9a8634248e48",
+      "source": {
+        "bytes": 1417158,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01167--Crypt Chill/4334c3e5bcc587b4/face.png",
+        "sha256": "12b35fb4dd6ac87ebfdbcb3674d8d27f9def4254a4f34b800e7c9a8634248e48"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1353152,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original scenario image binding, variant dd23efd259809fad. Front uses archive face; copied unchanged. Binding SHA256 635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0.",
+      "path": "cards/01168/face.png",
+      "role": "card-01168",
+      "sha256": "0b6a1b3632829b467d680852792fbd2a69b74038c16b94ae790fb0dc7fb33d29",
+      "source": {
+        "bytes": 1353152,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01168--Obscuring Fog/dd23efd259809fad/face.png",
+        "sha256": "0b6a1b3632829b467d680852792fbd2a69b74038c16b94ae790fb0dc7fb33d29"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 928070,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 02033 variant 59a7be7d0c1af125, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/02033/face.png",
+      "role": "card-02033",
+      "sha256": "4140f80045fe61e21a5b3f02b1f968f1fee71c57f4443bc74b7070fbaca0b75e",
+      "source": {
+        "bytes": 928070,
+        "path": "images/cards/official/en/sce-base-save/The Dunwich Legacy/02033--Peter Sylvestre/59a7be7d0c1af125/face.png",
+        "sha256": "4140f80045fe61e21a5b3f02b1f968f1fee71c57f4443bc74b7070fbaca0b75e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 896921,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 02038 variant 7ba32ea06081d150, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/02038/face.png",
+      "role": "card-02038",
+      "sha256": "596d99447b67563925cb722630ad2d2f5154f2276a8dae3708773e5835a38e1b",
+      "source": {
+        "bytes": 896921,
+        "path": "images/cards/official/en/sce-base-save/The Dunwich Legacy/02038--Internal Injury/7ba32ea06081d150/face.png",
+        "sha256": "596d99447b67563925cb722630ad2d2f5154f2276a8dae3708773e5835a38e1b"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 990612,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 02039 variant 700c94271661862d, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/02039/face.png",
+      "role": "card-02039",
+      "sha256": "8774151d492fd96faaaea5654bb4b8684335eb6adddddd1d8b88d95b9aeeaf5d",
+      "source": {
+        "bytes": 990612,
+        "path": "images/cards/official/en/sce-base-save/The Dunwich Legacy/02039--Chronophobia/700c94271661862d/face.png",
+        "sha256": "8774151d492fd96faaaea5654bb4b8684335eb6adddddd1d8b88d95b9aeeaf5d"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1166436,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 02192 variant 235144356a4031a5, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/02192/face.png",
+      "role": "card-02192",
+      "sha256": "e770096ed4eddca086999bd81c57367ca7a85e6ec3abd27ae5a4d48f8f0fb08e",
+      "source": {
+        "bytes": 1166436,
+        "path": "images/cards/official/en/sce-base-save/The Dunwich Legacy/02192--Rise to the Occasion/235144356a4031a5/face.png",
+        "sha256": "e770096ed4eddca086999bd81c57367ca7a85e6ec3abd27ae5a4d48f8f0fb08e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1246147,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 02225 variant 836a95b562999691, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/02225/face.png",
+      "role": "card-02225",
+      "sha256": "513582bacefc2c775efe2fbb9a9bf9032e0b7f3fb32ff183e5a46c2ab3221e39",
+      "source": {
+        "bytes": 1246147,
+        "path": "images/cards/official/en/sce-base-save/The Dunwich Legacy/02225---If it bleeds...---e576ca5c/836a95b562999691/face.png",
+        "sha256": "513582bacefc2c775efe2fbb9a9bf9032e0b7f3fb32ff183e5a46c2ab3221e39"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1122181,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 02229 variant 42f1216ef11fc3b2, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/02229/face.png",
+      "role": "card-02229",
+      "sha256": "a7ad791d34a9dcecdb4d1189d53599ae480dd83cb39cafbcaf78bd7b57b923a6",
+      "source": {
+        "bytes": 1122181,
+        "path": "images/cards/official/en/sce-base-save/The Dunwich Legacy/02229--Quick Thinking/42f1216ef11fc3b2/face.png",
+        "sha256": "a7ad791d34a9dcecdb4d1189d53599ae480dd83cb39cafbcaf78bd7b57b923a6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1256163,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 03033 variant 4a9943e568f6f36a, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/03033/face.png",
+      "role": "card-03033",
+      "sha256": "1eae647fd3ef2ba6cb50bf8507fd87e9e1f519e1753d8cb9d2fdc18cba9b7a48",
+      "source": {
+        "bytes": 1256163,
+        "path": "images/cards/official/en/sce-base-save/The Path to Carcosa/03033--Uncage the Soul/4a9943e568f6f36a/face.png",
+        "sha256": "1eae647fd3ef2ba6cb50bf8507fd87e9e1f519e1753d8cb9d2fdc18cba9b7a48"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1126591,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 03039 variant 092e888e0dc80cc9, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/03039/face.png",
+      "role": "card-03039",
+      "sha256": "4484796513f9798b630542422549fe26ea674bb3cea045b831bf17808415c117",
+      "source": {
+        "bytes": 1126591,
+        "path": "images/cards/official/en/sce-base-save/The Path to Carcosa/03039--Resourceful/092e888e0dc80cc9/face.png",
+        "sha256": "4484796513f9798b630542422549fe26ea674bb3cea045b831bf17808415c117"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1025600,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 03233 variant 3659a5e2a57f3039, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/03233/face.png",
+      "role": "card-03233",
+      "sha256": "e8c71acdb5b7f513646b3d85382f0a5b7e7060e26fa5967ef2dfba87ffbb014c",
+      "source": {
+        "bytes": 1025600,
+        "path": "images/cards/official/en/sce-base-save/The Path to Carcosa/03233---Watch this!---ce8ff320/3659a5e2a57f3039/face.png",
+        "sha256": "e8c71acdb5b7f513646b3d85382f0a5b7e7060e26fa5967ef2dfba87ffbb014c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1240813,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 03263 variant 3914f45d3bcf7d81, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/03263/face.png",
+      "role": "card-03263",
+      "sha256": "7b99463996c27142be679288af31f19b7a2cb3e0f16425c0db34cf92d8d800a8",
+      "source": {
+        "bytes": 1240813,
+        "path": "images/cards/official/en/sce-base-save/The Path to Carcosa/03263--On the Hunt/3914f45d3bcf7d81/face.png",
+        "sha256": "7b99463996c27142be679288af31f19b7a2cb3e0f16425c0db34cf92d8d800a8"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1460676,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04029 variant 5495ace101088f63, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04029/face.png",
+      "role": "card-04029",
+      "sha256": "267625201b759f034072d9ce9cc628955303a1eccff138e67f6bde3b044b88bc",
+      "source": {
+        "bytes": 1460676,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04029--Mists of R'lyeh/5495ace101088f63/face.png",
+        "sha256": "267625201b759f034072d9ce9cc628955303a1eccff138e67f6bde3b044b88bc"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1618125,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04032 variant fef11ad90b439b1d, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04032/face.png",
+      "role": "card-04032",
+      "sha256": "df42c9255e4bf557adb016fad3af22b8229e7ffb83becdd0056dd9480df7540f",
+      "source": {
+        "bytes": 1618125,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04032--Dark Prophecy/fef11ad90b439b1d/face.png",
+        "sha256": "df42c9255e4bf557adb016fad3af22b8229e7ffb83becdd0056dd9480df7540f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1318217,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04037 variant 277d14a17e4394ed, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04037/face.png",
+      "role": "card-04037",
+      "sha256": "8a88a3465c7d9c78dcaeb18c8ee65dddd9445be8864dce9685ae95382cf5d076",
+      "source": {
+        "bytes": 1318217,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04037--Backpack/277d14a17e4394ed/face.png",
+        "sha256": "8a88a3465c7d9c78dcaeb18c8ee65dddd9445be8864dce9685ae95382cf5d076"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1116805,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04103 variant 4db8c1a15f3adf44, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04103/face.png",
+      "role": "card-04103",
+      "sha256": "02df1eb7531f5971eaee492b3e6eb10bb4ae7e81ea15acc10e4fca7283895cf8",
+      "source": {
+        "bytes": 1116805,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04103--Scene of the Crime/4db8c1a15f3adf44/face.png",
+        "sha256": "02df1eb7531f5971eaee492b3e6eb10bb4ae7e81ea15acc10e4fca7283895cf8"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1530328,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04107 variant bdddce53c2274d9c, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04107/face.png",
+      "role": "card-04107",
+      "sha256": "b56f5a53fc7a3746deb48c066330faff923088f284fb8e158dfacf2fb472dfd7",
+      "source": {
+        "bytes": 1530328,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04107--Lucky Cigarette Case/bdddce53c2274d9c/face.png",
+        "sha256": "b56f5a53fc7a3746deb48c066330faff923088f284fb8e158dfacf2fb472dfd7"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1223853,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04109 variant bbda1643868258c5, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04109/face.png",
+      "role": "card-04109",
+      "sha256": "f065b8ed9f4a191c25ad3c18d90a0e171d4ace03b2e6a372f9b965a1979da1d6",
+      "source": {
+        "bytes": 1223853,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04109--Arcane Research/bbda1643868258c5/face.png",
+        "sha256": "f065b8ed9f4a191c25ad3c18d90a0e171d4ace03b2e6a372f9b965a1979da1d6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1109494,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04150 variant 2b44580b5e7bb531, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04150/face.png",
+      "role": "card-04150",
+      "sha256": "8e5c3fde596e9bf3355357c0aa6574f31a00390f629fd32ef568952f72661cd7",
+      "source": {
+        "bytes": 1109494,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04150--Take the Initiative/2b44580b5e7bb531/face.png",
+        "sha256": "8e5c3fde596e9bf3355357c0aa6574f31a00390f629fd32ef568952f72661cd7"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1228006,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04197 variant b001e7acef79742a, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04197/face.png",
+      "role": "card-04197",
+      "sha256": "b848477fd5113bb1e9f1dee3cd42bf661ca5056a5b72dd70995debff60634401",
+      "source": {
+        "bytes": 1228006,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04197--Olive McBride/b001e7acef79742a/face.png",
+        "sha256": "b848477fd5113bb1e9f1dee3cd42bf661ca5056a5b72dd70995debff60634401"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1422547,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04199 variant 3605403473bae669, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04199/face.png",
+      "role": "card-04199",
+      "sha256": "182977e9d0d4a95bad43f2f48d1d922ea685f813c689feb616fdaed8ed23ef20",
+      "source": {
+        "bytes": 1422547,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04199--Premonition/3605403473bae669/face.png",
+        "sha256": "182977e9d0d4a95bad43f2f48d1d922ea685f813c689feb616fdaed8ed23ef20"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1152069,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04200 variant b1ac3fca6f842340, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04200/face.png",
+      "role": "card-04200",
+      "sha256": "452d65d0eed90fe1b84897dd6727739d801526f628fdf97399886c529d1258d8",
+      "source": {
+        "bytes": 1152069,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04200--Live and Learn/b1ac3fca6f842340/face.png",
+        "sha256": "452d65d0eed90fe1b84897dd6727739d801526f628fdf97399886c529d1258d8"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1130791,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04201 variant 6f284c1dab20826f, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04201/face.png",
+      "role": "card-04201",
+      "sha256": "b661bd859a7d40c6de1aa2e13861f31548b5e66b5ad4f8406b37b534950f560b",
+      "source": {
+        "bytes": 1130791,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04201--Take Heart/6f284c1dab20826f/face.png",
+        "sha256": "b661bd859a7d40c6de1aa2e13861f31548b5e66b5ad4f8406b37b534950f560b"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1030026,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 04272 variant 468bb8afbcc8c375, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/04272/face.png",
+      "role": "card-04272",
+      "sha256": "085f4bbc02b4b181d3f2e03a412d27656b48cd2ee029abea22de5ac5a0895e8e",
+      "source": {
+        "bytes": 1030026,
+        "path": "images/cards/official/en/sce-base-save/The Forgotten Age/04272--Winging It/468bb8afbcc8c375/face.png",
+        "sha256": "085f4bbc02b4b181d3f2e03a412d27656b48cd2ee029abea22de5ac5a0895e8e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1462792,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 05032 variant a6d538ac879300d6, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/05032/face.png",
+      "role": "card-05032",
+      "sha256": "e83fff7bbf1c2cfc8da8d98287edc9eeae006e6a93271ba0cb34cdb06a12d5de",
+      "source": {
+        "bytes": 1462792,
+        "path": "images/cards/official/en/sce-base-save/The Circle Undone/05032--Deny Existence/a6d538ac879300d6/face.png",
+        "sha256": "e83fff7bbf1c2cfc8da8d98287edc9eeae006e6a93271ba0cb34cdb06a12d5de"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1158545,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 05041 variant 54ff6e0f4fbce54b, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/05041/face.png",
+      "role": "card-05041",
+      "sha256": "ee8fddb57f0503184c89fe118c76f125b0d7508bc8630cea141a5404d1d83bb4",
+      "source": {
+        "bytes": 1158545,
+        "path": "images/cards/official/en/sce-base-save/The Circle Undone/05041--The 13th Vision/54ff6e0f4fbce54b/face.png",
+        "sha256": "ee8fddb57f0503184c89fe118c76f125b0d7508bc8630cea141a5404d1d83bb4"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1201194,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 05111 variant 24b9fe9e64bc90dd, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/05111/face.png",
+      "role": "card-05111",
+      "sha256": "3a7c9456337faa5faac693dfa811e320849c8f425271353261d8bc9247232928",
+      "source": {
+        "bytes": 1201194,
+        "path": "images/cards/official/en/sce-base-save/The Circle Undone/05111--Intel Report/24b9fe9e64bc90dd/face.png",
+        "sha256": "3a7c9456337faa5faac693dfa811e320849c8f425271353261d8bc9247232928"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1243109,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 05112 variant b6c8162f8eacf95f, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/05112/face.png",
+      "role": "card-05112",
+      "sha256": "8dec23b5d52f0d23ff2cef77f266a1b3a5f50a93610f1cf660c738f63726d0ec",
+      "source": {
+        "bytes": 1243109,
+        "path": "images/cards/official/en/sce-base-save/The Circle Undone/05112--Sign Magick/b6c8162f8eacf95f/face.png",
+        "sha256": "8dec23b5d52f0d23ff2cef77f266a1b3a5f50a93610f1cf660c738f63726d0ec"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 988687,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 05117 variant ed5f8f2c8196088f, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/05117/face.png",
+      "role": "card-05117",
+      "sha256": "e4e212fe754b3a80c31e19a99ffda1c29a0c6121866462db9e981a7b6e3eef70",
+      "source": {
+        "bytes": 988687,
+        "path": "images/cards/official/en/sce-base-save/The Circle Undone/05117--Tennessee Sour Mash/ed5f8f2c8196088f/face.png",
+        "sha256": "e4e212fe754b3a80c31e19a99ffda1c29a0c6121866462db9e981a7b6e3eef70"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1036828,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 05277 variant 9e325b0e27718bf5, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/05277/face.png",
+      "role": "card-05277",
+      "sha256": "5c08100adeea9b655c939aab05a908375b0d6bcdc76a964ba7abcea0f352d666",
+      "source": {
+        "bytes": 1036828,
+        "path": "images/cards/official/en/sce-base-save/The Circle Undone/05277--Small Favor/9e325b0e27718bf5/face.png",
+        "sha256": "5c08100adeea9b655c939aab05a908375b0d6bcdc76a964ba7abcea0f352d666"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1015054,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06003 variant 8549568e606cbff8, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06003/face.png",
+      "role": "card-06003",
+      "sha256": "26780c99a7084d89c3580af12ec082b2add4f0563cac36a1a6507f41c97752d1",
+      "source": {
+        "bytes": 1015054,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06003--Tony Morgan/8549568e606cbff8/face.png",
+        "sha256": "26780c99a7084d89c3580af12ec082b2add4f0563cac36a1a6507f41c97752d1"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1147636,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06005 variant 2961ee22e3bb9567, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06005/face.png",
+      "role": "card-06005",
+      "sha256": "2d03069fe11626fb5055ccad9db42022b494df20462b5de6972af8aaa642dd2c",
+      "source": {
+        "bytes": 1147636,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06005--Patrice Hathaway/2961ee22e3bb9567/face.png",
+        "sha256": "2d03069fe11626fb5055ccad9db42022b494df20462b5de6972af8aaa642dd2c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1102314,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06010 variant b1d29e8dbb446e23, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06010/face.png",
+      "role": "card-06010",
+      "sha256": "8050db0aca071b518bbfb9541aab74deafc01ed221a383158b673b21e590cf3e",
+      "source": {
+        "bytes": 1102314,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06010--Bounty Contracts/b1d29e8dbb446e23/face.png",
+        "sha256": "8050db0aca071b518bbfb9541aab74deafc01ed221a383158b673b21e590cf3e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1252665,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06011 variant 61929a7646d5d151, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06011/face.png",
+      "role": "card-06011",
+      "sha256": "f34a134b03333949de92228de6028389ea30d0c2625760cc1c7599ba499acb9f",
+      "source": {
+        "bytes": 1252665,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06011--Tony's .38 Long Colt/61929a7646d5d151/face.png",
+        "sha256": "f34a134b03333949de92228de6028389ea30d0c2625760cc1c7599ba499acb9f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 922369,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06012 variant 19563caf1fc37a1d, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06012/face.png",
+      "role": "card-06012",
+      "sha256": "261bc55458743b9eddaa3e5d46d2258a430c67f439303cf4058d5b809978a036",
+      "source": {
+        "bytes": 922369,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06012--Tony's Quarry/19563caf1fc37a1d/face.png",
+        "sha256": "261bc55458743b9eddaa3e5d46d2258a430c67f439303cf4058d5b809978a036"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1180101,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06016 variant 23d7a155fed6e144, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06016/face.png",
+      "role": "card-06016",
+      "sha256": "6e1933f3ca748e504b24cdac7b1972987c44cbb3ef160b9bfd93197ee47c794f",
+      "source": {
+        "bytes": 1180101,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06016--Patrice's Violin/23d7a155fed6e144/face.png",
+        "sha256": "6e1933f3ca748e504b24cdac7b1972987c44cbb3ef160b9bfd93197ee47c794f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 904735,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06017 variant 0ae110872a635693, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06017/face.png",
+      "role": "card-06017",
+      "sha256": "6852ad49c96415230c1c2c06c526f25ca57b334a3193de0a3ba5212cedd3819d",
+      "source": {
+        "bytes": 904735,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06017--Watcher from Another Dimension/0ae110872a635693/face.png",
+        "sha256": "6852ad49c96415230c1c2c06c526f25ca57b334a3193de0a3ba5212cedd3819d"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1100464,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06117 variant a05d4aef7f30d1b1, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06117/face.png",
+      "role": "card-06117",
+      "sha256": "c65b2c109be1851085f8dd6842372eadb28e5ff51532179161c23edd4ad013df",
+      "source": {
+        "bytes": 1100464,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06117--Read the Signs/a05d4aef7f30d1b1/face.png",
+        "sha256": "c65b2c109be1851085f8dd6842372eadb28e5ff51532179161c23edd4ad013df"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1173746,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06162 variant 93bbf969b7abcca0, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06162/face.png",
+      "role": "card-06162",
+      "sha256": "dd13789fe7d10ed753ea4c58c79f1baefc812bb6e164fd4228744cb24e4793a1",
+      "source": {
+        "bytes": 1173746,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06162--Gregory Gry/93bbf969b7abcca0/face.png",
+        "sha256": "dd13789fe7d10ed753ea4c58c79f1baefc812bb6e164fd4228744cb24e4793a1"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1280940,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06164 variant 3ba4642879e28463, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06164/face.png",
+      "role": "card-06164",
+      "sha256": "82575f240514a69aae9cb364d7bcf9b028cd244cb9e7ea6d1d57503081dfe30f",
+      "source": {
+        "bytes": 1280940,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06164--Ethereal Form/3ba4642879e28463/face.png",
+        "sha256": "82575f240514a69aae9cb364d7bcf9b028cd244cb9e7ea6d1d57503081dfe30f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1357820,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06165 variant 8788bfb50362abf3, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06165/face.png",
+      "role": "card-06165",
+      "sha256": "6388027ebf20b9ffde138ab8103f2d65dd0c2152cf05a2cd0d480e6671609b02",
+      "source": {
+        "bytes": 1357820,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06165--Scrounge for Supplies/8788bfb50362abf3/face.png",
+        "sha256": "6388027ebf20b9ffde138ab8103f2d65dd0c2152cf05a2cd0d480e6671609b02"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 455282,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 06201 variant f77893a43b56bbef, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/06201/face.jpg",
+      "role": "card-06201",
+      "sha256": "e16001c384b443f5bb66b5b0f37f8b8293ad5c2690a2e0766d3436670824408c",
+      "source": {
+        "bytes": 455282,
+        "path": "images/cards/official/en/sce-base-save/The Dream-Eaters/06201--Spectral Razor/f77893a43b56bbef/face.jpg",
+        "sha256": "e16001c384b443f5bb66b5b0f37f8b8293ad5c2690a2e0766d3436670824408c"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1546778,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 07029 variant b4929ac12ba38a5a, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/07029/face.png",
+      "role": "card-07029",
+      "sha256": "fd9d6edb4b407b3f103782d3750c6e107d4bffee19621ae650f5190f13ad16da",
+      "source": {
+        "bytes": 1546778,
+        "path": "images/cards/official/en/sce-base-save/The Innsmouth Conspiracy/07029--Sword Cane/b4929ac12ba38a5a/face.png",
+        "sha256": "fd9d6edb4b407b3f103782d3750c6e107d4bffee19621ae650f5190f13ad16da"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1449729,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 07032 variant b30f06cacc702078, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/07032/face.png",
+      "role": "card-07032",
+      "sha256": "2ee14826c949db4a6d1e3ebcd4a6dd77638d1e41edb4b87f70419ceff6fce61f",
+      "source": {
+        "bytes": 1449729,
+        "path": "images/cards/official/en/sce-base-save/The Innsmouth Conspiracy/07032--Promise of Power/b30f06cacc702078/face.png",
+        "sha256": "2ee14826c949db4a6d1e3ebcd4a6dd77638d1e41edb4b87f70419ceff6fce61f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 923587,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 09029 variant 0eb4fd5fa35b747b, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/09029/face.png",
+      "role": "card-09029",
+      "sha256": "d70f8cf1601ec6052db5813d410b8c28322beabf2f589a7457668fa5a6b30691",
+      "source": {
+        "bytes": 923587,
+        "path": "images/cards/official/en/sce-base-save/The Scarlet Keys/09029--One in the Chamber/0eb4fd5fa35b747b/face.png",
+        "sha256": "d70f8cf1601ec6052db5813d410b8c28322beabf2f589a7457668fa5a6b30691"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1128766,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 09068 variant 304055f6947160c2, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/09068/face.png",
+      "role": "card-09068",
+      "sha256": "778861c274d96421bb503ba32e25466209338196629c0aeec995a015fe05e170",
+      "source": {
+        "bytes": 1128766,
+        "path": "images/cards/official/en/sce-base-save/The Scarlet Keys/09068--Kicking the Hornet's Nest/304055f6947160c2/face.png",
+        "sha256": "778861c274d96421bb503ba32e25466209338196629c0aeec995a015fe05e170"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1377034,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 09102 variant 0ab8f676b3dfee63, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/09102/face.png",
+      "role": "card-09102",
+      "sha256": "b60c936e0c7efc6aaa80eef078d2f7651573c9be17a30ae077f7b7ad0c1bb795",
+      "source": {
+        "bytes": 1377034,
+        "path": "images/cards/official/en/sce-base-save/The Scarlet Keys/09102--Idol of Xanatos/0ab8f676b3dfee63/face.png",
+        "sha256": "b60c936e0c7efc6aaa80eef078d2f7651573c9be17a30ae077f7b7ad0c1bb795"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1196639,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 10111 variant d7cadb6220e87cb4, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/10111/face.png",
+      "role": "card-10111",
+      "sha256": "d9cc221792f0357ae9f9151a18c44a9b58a7f31a8f5ca8bb2b5c3386f9038fdf",
+      "source": {
+        "bytes": 1196639,
+        "path": "images/cards/official/en/sce-base-save/The Feast of Hemlock Vale/10111--Sparrow Mask/d7cadb6220e87cb4/face.png",
+        "sha256": "d9cc221792f0357ae9f9151a18c44a9b58a7f31a8f5ca8bb2b5c3386f9038fdf"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 426962,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 11067 variant 8a658f76fe0246fc, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/11067/face.jpg",
+      "role": "card-11067",
+      "sha256": "54828c35b8acd6aadc149040b433b1e2fea943fbf28421a7f822566c34a0a262",
+      "source": {
+        "bytes": 426962,
+        "path": "images/cards/official/en/sce-base-save/The Drowned City/11067--Eyes of the Dreamer/8a658f76fe0246fc/face.jpg",
+        "sha256": "54828c35b8acd6aadc149040b433b1e2fea943fbf28421a7f822566c34a0a262"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 442352,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 11069 variant 19faffed264fd344, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/11069/face.jpg",
+      "role": "card-11069",
+      "sha256": "ea6566b226dd96b47e77913c7609ae69109e9af53448038980dcbb9b6c449234",
+      "source": {
+        "bytes": 442352,
+        "path": "images/cards/official/en/sce-base-save/The Drowned City/11069--Katarina Sojka/19faffed264fd344/face.jpg",
+        "sha256": "ea6566b226dd96b47e77913c7609ae69109e9af53448038980dcbb9b6c449234"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 427937,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 11097 variant b5548316b839986c, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/11097/face.jpg",
+      "role": "card-11097",
+      "sha256": "ea601e324410a10bf95ed16e7f33843229c83ef7f0c0cd17b1466d5436e8f803",
+      "source": {
+        "bytes": 427937,
+        "path": "images/cards/official/en/sce-base-save/The Drowned City/11097--Confidence/b5548316b839986c/face.jpg",
+        "sha256": "ea601e324410a10bf95ed16e7f33843229c83ef7f0c0cd17b1466d5436e8f803"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1312294,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60114 variant 09639c31cf41433b, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60114/face.png",
+      "role": "card-60114",
+      "sha256": "00a0231cb0f36ecfb91ce477fbe29adc34b3b33d67d576f2893b5a93aaf5caca",
+      "source": {
+        "bytes": 1312294,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60114---Get over here!---bd651033/09639c31cf41433b/face.png",
+        "sha256": "00a0231cb0f36ecfb91ce477fbe29adc34b3b33d67d576f2893b5a93aaf5caca"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1251770,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60306 variant ce45a0f750270dbc, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60306/face.png",
+      "role": "card-60306",
+      "sha256": "7e5fd46a69f6250d585274bdc3d744f4659e72ad060bbfab95446ad1d9bdc3a0",
+      "source": {
+        "bytes": 1251770,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60306--Mauser C96/ce45a0f750270dbc/face.png",
+        "sha256": "7e5fd46a69f6250d585274bdc3d744f4659e72ad060bbfab95446ad1d9bdc3a0"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1102571,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60401 variant ba5b602644842ee4, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60401/face.png",
+      "role": "card-60401",
+      "sha256": "01c1bcf5bbef4356ee2c0224ff8b7ffad87ab1584a53533da53c0857eaa7b3da",
+      "source": {
+        "bytes": 1102571,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60401--Jacqueline Fine/ba5b602644842ee4/face.png",
+        "sha256": "01c1bcf5bbef4356ee2c0224ff8b7ffad87ab1584a53533da53c0857eaa7b3da"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1303259,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60402 variant 89d84f7ee9a3e2e4, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60402/face.png",
+      "role": "card-60402",
+      "sha256": "21fd3376d3a6c59f439dc77d6c0fbe84371a2d28df3bae48d8f047c9d5ade17a",
+      "source": {
+        "bytes": 1303259,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60402--Arbiter of Fates/89d84f7ee9a3e2e4/face.png",
+        "sha256": "21fd3376d3a6c59f439dc77d6c0fbe84371a2d28df3bae48d8f047c9d5ade17a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1325344,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60403 variant 936c2fb766f77ef8, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60403/face.png",
+      "role": "card-60403",
+      "sha256": "5a4368e4359688eaa0d1eaac30bd894fc33ae478353c33cc72cb0a292e2920fa",
+      "source": {
+        "bytes": 1325344,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60403--Dark Future/936c2fb766f77ef8/face.png",
+        "sha256": "5a4368e4359688eaa0d1eaac30bd894fc33ae478353c33cc72cb0a292e2920fa"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1347988,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60407 variant 0ce0e5b893e535c1, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60407/face.png",
+      "role": "card-60407",
+      "sha256": "011651ada2b16ef47570125141b492541314ac602a4507ba789d0516331c01dd",
+      "source": {
+        "bytes": 1347988,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60407--Azure Flame/0ce0e5b893e535c1/face.png",
+        "sha256": "011651ada2b16ef47570125141b492541314ac602a4507ba789d0516331c01dd"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1247082,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60408 variant 9f216ab02abc5ae4, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60408/face.png",
+      "role": "card-60408",
+      "sha256": "e5d7c691c81602a1fc5737c05f9182f7088061f8def927bbe3c6b3c5adcb5f8a",
+      "source": {
+        "bytes": 1247082,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60408--Clairvoyance/9f216ab02abc5ae4/face.png",
+        "sha256": "e5d7c691c81602a1fc5737c05f9182f7088061f8def927bbe3c6b3c5adcb5f8a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1228642,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60411 variant d63d534b51525379, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60411/face.png",
+      "role": "card-60411",
+      "sha256": "7814423a51a1b42bbb4b78c4c6cf71d3d7783eda1ae664bf0244bb4240babc20",
+      "source": {
+        "bytes": 1228642,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60411--Crystal Pendulum/d63d534b51525379/face.png",
+        "sha256": "7814423a51a1b42bbb4b78c4c6cf71d3d7783eda1ae664bf0244bb4240babc20"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1330687,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60412 variant 78e4918bc628f866, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60412/face.png",
+      "role": "card-60412",
+      "sha256": "5e3ade82df36d1e4d8164b2a391aae3ab14ebf581ade3feb51c548950f9a644a",
+      "source": {
+        "bytes": 1330687,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60412--Robes of Endless Night/78e4918bc628f866/face.png",
+        "sha256": "5e3ade82df36d1e4d8164b2a391aae3ab14ebf581ade3feb51c548950f9a644a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1289295,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60416 variant 5f1b30d6fa1d0182, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60416/face.png",
+      "role": "card-60416",
+      "sha256": "ca8e1abd4b1f4a2e6dea09833d6080b6ba18ccf174c7f4cdf9d3dcefd7fcbaef",
+      "source": {
+        "bytes": 1289295,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60416--Voice of Ra/5f1b30d6fa1d0182/face.png",
+        "sha256": "ca8e1abd4b1f4a2e6dea09833d6080b6ba18ccf174c7f4cdf9d3dcefd7fcbaef"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1274182,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60419 variant cd653f2d6baf48d0, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60419/face.png",
+      "role": "card-60419",
+      "sha256": "39f5366d732a2cc77a08979920604c243d3da38bfb646ea16adf1bacb5b25dda",
+      "source": {
+        "bytes": 1274182,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60419--Prescient/cd653f2d6baf48d0/face.png",
+        "sha256": "39f5366d732a2cc77a08979920604c243d3da38bfb646ea16adf1bacb5b25dda"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1529359,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60507 variant f750385472669c64, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60507/face.png",
+      "role": "card-60507",
+      "sha256": "9b8fcbb0e58e7daf441f223cf126332dbba48533e77d606705d60311b7a0829d",
+      "source": {
+        "bytes": 1529359,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60507--Old Keyring/f750385472669c64/face.png",
+        "sha256": "9b8fcbb0e58e7daf441f223cf126332dbba48533e77d606705d60311b7a0829d"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1361273,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 selected starting decks and fixed weaknesses; original English 60513 variant e1d9eba353e77747, unchanged image. Archive catalog SHA256 e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41.",
+      "path": "cards/60513/face.png",
+      "role": "card-60513",
+      "sha256": "6b7f095cd9c0813646a878bacbc3e968dc73d86da0fbe386fdb5185e2f8490f4",
+      "source": {
+        "bytes": 1361273,
+        "path": "images/cards/official/en/sce-base-save/Investigator Packs/60513--A Test of Will/e1d9eba353e77747/face.png",
+        "sha256": "6b7f095cd9c0813646a878bacbc3e968dc73d86da0fbe386fdb5185e2f8490f4"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1315605,
+      "dimensions": [
+        750,
+        1050
+      ],
+      "evidence": "#89 original Gathering encounter deck; standard hidden encounter back from pinned Ghoul Minion variant. Unchanged image.",
+      "path": "cards/encounter-back.png",
+      "role": "card-back/encounter",
+      "sha256": "c14152f0a5196af8e37324887ee7d63d927dfcfdd26fd036e31401c2cbfbe17f",
+      "source": {
+        "bytes": 1315605,
+        "path": "images/cards/official/en/night_of_the_zealot/Core/01160--Ghoul Minion/d394ce9d19ec2cbb/back.png",
+        "sha256": "c14152f0a5196af8e37324887ee7d63d927dfcfdd26fd036e31401c2cbfbe17f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1687056,
+      "evidence": "GitHub #22 owner deck-presentation follow-up: visually inspected standard player back, 750x1050 PNG RGBA. Catalog card 03263, variant 3914f45d3bcf7d81, unique_back=false, back_is_hidden=true, 1x1 grid slot 0; original source bytes copied unchanged.",
+      "path": "cards/player-back.png",
+      "role": "card-back/player",
+      "sha256": "f99036b94381c0699910654568ea69957d5004256b2f5a0d5657f92ae159a1d2",
+      "source": {
+        "bytes": 1687056,
+        "path": "images/cards/official/en/sce-base-save/The Path to Carcosa/03263--On the Hunt/3914f45d3bcf7d81/back.png",
+        "sha256": "f99036b94381c0699910654568ea69957d5004256b2f5a0d5657f92ae159a1d2"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7497,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/guardian/background.png",
+      "role": "class/guardian/background",
+      "sha256": "b665b6600551cfdfc083cc2a829601d9e014f99f4fb8e52d3f8a6d4b1c2fe607",
+      "source": {
+        "bytes": 7497,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/GuardianBackground--6cbf13f7d84ce332.png",
+        "sha256": "b665b6600551cfdfc083cc2a829601d9e014f99f4fb8e52d3f8a6d4b1c2fe607"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 6370,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/guardian/icon.png",
+      "role": "class/guardian/icon",
+      "sha256": "8721ee5e2a8b03fde10d8f643fdb09c5173f61d562ee06d1c4c4de04cf62c84a",
+      "source": {
+        "bytes": 6370,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Guardian--cbdd279955a9d345.png",
+        "sha256": "8721ee5e2a8b03fde10d8f643fdb09c5173f61d562ee06d1c4c4de04cf62c84a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7591,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/mystic/background.png",
+      "role": "class/mystic/background",
+      "sha256": "8f19e2b5d912269e7148606b7e884a28f3ebfd370aa65cc360f98ad60b83d5e6",
+      "source": {
+        "bytes": 7591,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/MysticBackground--96ea061c64073926.png",
+        "sha256": "8f19e2b5d912269e7148606b7e884a28f3ebfd370aa65cc360f98ad60b83d5e6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 6132,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/mystic/icon.png",
+      "role": "class/mystic/icon",
+      "sha256": "f1c76277c89151e8dea44a77c8d16778ba19d1376a2a44ad5a59472dbe4c6f1a",
+      "source": {
+        "bytes": 6132,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Mystic--038a914f8724f8eb.png",
+        "sha256": "f1c76277c89151e8dea44a77c8d16778ba19d1376a2a44ad5a59472dbe4c6f1a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7662,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/neutral/background.png",
+      "role": "class/neutral/background",
+      "sha256": "64aa83a7aac48a19ef14508b3bdd3c9a88812ecfe74d1ece0ac1368eee093564",
+      "source": {
+        "bytes": 7662,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/NeutralBackground--b16a9f1e00e8ea1e.png",
+        "sha256": "64aa83a7aac48a19ef14508b3bdd3c9a88812ecfe74d1ece0ac1368eee093564"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 13835,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/neutral/icon.png",
+      "role": "class/neutral/icon",
+      "sha256": "1f54bebb60e7dc9dd25b4014e80d8dc53cf7f619fe173b32c901f9941936eb51",
+      "source": {
+        "bytes": 13835,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Neutral--6d5b6296c3462ab3.png",
+        "sha256": "1f54bebb60e7dc9dd25b4014e80d8dc53cf7f619fe173b32c901f9941936eb51"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7475,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/rogue/background.png",
+      "role": "class/rogue/background",
+      "sha256": "ceb444e8fdd507a23d321e0ffa125880b3a7392b8f0e71359d7de490b9fa3bb3",
+      "source": {
+        "bytes": 7475,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/RogueBackground--96e3398d9513fa6b.png",
+        "sha256": "ceb444e8fdd507a23d321e0ffa125880b3a7392b8f0e71359d7de490b9fa3bb3"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 6895,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/rogue/icon.png",
+      "role": "class/rogue/icon",
+      "sha256": "00b41cc23efdc787fcca9fae28eba9074948b2cd8b19a0a4d6b98496cce16903",
+      "source": {
+        "bytes": 6895,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Rogue--08f418bd8a491428.png",
+        "sha256": "00b41cc23efdc787fcca9fae28eba9074948b2cd8b19a0a4d6b98496cce16903"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7384,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/seeker/background.png",
+      "role": "class/seeker/background",
+      "sha256": "acbd730bfa2030b08fa9c7fdf5f58d754a2cdd44349e072ca289dd9a1f498bfc",
+      "source": {
+        "bytes": 7384,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/SeekerBackground--9a2f78e6e9056921.png",
+        "sha256": "acbd730bfa2030b08fa9c7fdf5f58d754a2cdd44349e072ca289dd9a1f498bfc"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 5730,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/seeker/icon.png",
+      "role": "class/seeker/icon",
+      "sha256": "d0c948a268e4cf19a230ec55956ea4790374ba960d5e4fe3ace5c436f6935e19",
+      "source": {
+        "bytes": 5730,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Seeker--3dae70d1cce3e38c.png",
+        "sha256": "d0c948a268e4cf19a230ec55956ea4790374ba960d5e4fe3ace5c436f6935e19"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 7610,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/survivor/background.png",
+      "role": "class/survivor/background",
+      "sha256": "c6b7fcbb3bd94ad26bdb9cf7fe2a04236705157786cecb84787a4b0258446745",
+      "source": {
+        "bytes": 7610,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/SurvivorBackground--cd84098af74ad7c0.png",
+        "sha256": "c6b7fcbb3bd94ad26bdb9cf7fe2a04236705157786cecb84787a4b0258446745"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 5953,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "classes/survivor/icon.png",
+      "role": "class/survivor/icon",
+      "sha256": "e8e797a8e54539580224ee7618c04b5b89782571ce21aef18ebc937c296d048f",
+      "source": {
+        "bytes": 5953,
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/Survivor--234683c0781fbf62.png",
+        "sha256": "e8e797a8e54539580224ee7618c04b5b89782571ce21aef18ebc937c296d048f"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 144020,
+      "evidence": "docs/experiments/symbol-art.json; existing exact bundle extraction",
+      "path": "fonts/arkham-symbols.ttf",
+      "role": "font/symbols",
+      "sha256": "186176d7243c72d272a50c24e833fb77d983e7c4c6c99bc64f89c8322dbd8187",
+      "source": {
+        "bytes": 66412,
+        "path": "resources/other/unclassified/en/sce-base-save/font_arkhamicons--URL--49b407be28313ac7ad1b.unity3d",
+        "sha256": "ed518b255b4a177f246525d5fd6ed626c468cb46d843cca62cf72978faa1fb80"
+      },
+      "transform": {
+        "block_length": 66282,
+        "block_offset": 130,
+        "decoded_length": 154116,
+        "font_length": 144020,
+        "font_offset": 9592,
+        "kind": "unity_font"
+      }
+    },
+    {
+      "bytes": 559410,
+      "evidence": "docs/experiments/investigator-art.json#06003; variant af1ad7d5512a794f",
+      "path": "investigators/06003/standee.png",
+      "role": "standee/06003",
+      "sha256": "ce2f744bd0fd0da10837f2c1ecae4b4c621797d1d2bd2e8a10d19c5d6083f8d6",
+      "source": {
+        "bytes": 559410,
+        "path": "images/cards/unclassified/en/sce-base-save/Unassigned expansion/06003-m--Tony Morgan/af1ad7d5512a794f/face.png",
+        "sha256": "ce2f744bd0fd0da10837f2c1ecae4b4c621797d1d2bd2e8a10d19c5d6083f8d6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 525925,
+      "evidence": "docs/experiments/investigator-art.json#06005; variant 4f98f4d2d1046e13",
+      "path": "investigators/06005/standee.png",
+      "role": "standee/06005",
+      "sha256": "59daabddd3959071d18bf37a4826bf9cee134b63e00641bc756f3858ce281867",
+      "source": {
+        "bytes": 525925,
+        "path": "images/cards/unclassified/en/sce-base-save/Unassigned expansion/06005-m--Patrice Hathaway/4f98f4d2d1046e13/face.png",
+        "sha256": "59daabddd3959071d18bf37a4826bf9cee134b63e00641bc756f3858ce281867"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 395748,
+      "evidence": "docs/experiments/investigator-art.json#60401; variant 5eb524de9bdbc594",
+      "path": "investigators/60401/standee.png",
+      "role": "standee/60401",
+      "sha256": "a95b50cdd7c120f7b73e8ad28b451a32eec3d84c8882c4bff9851b84c221265d",
+      "source": {
+        "bytes": 395748,
+        "path": "images/cards/unclassified/en/sce-base-save/Unassigned expansion/60401-m--Jacqueline Fine/5eb524de9bdbc594/face.png",
+        "sha256": "a95b50cdd7c120f7b73e8ad28b451a32eec3d84c8882c4bff9851b84c221265d"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1068555,
+      "evidence": "Original SCE 1024px circular token set; token-red; asset 85878cdba39d1f1dcd42b407ab7451bf0ac2ba1405b05aa1ca55e69211c8f593",
+      "path": "tokens/auto_fail.png",
+      "role": "token/auto_fail",
+      "sha256": "5771760eef9547c85cb33e8756db4b8d000b7f4e302e9c383c28e47e9a5e6140",
+      "source": {
+        "bytes": 1068555,
+        "path": "images/other/unclassified/en/sce-base-save/token-red--URL--85878cdba39d1f1dcd42.png",
+        "sha256": "5771760eef9547c85cb33e8756db4b8d000b7f4e302e9c383c28e47e9a5e6140"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 495209,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "tokens/clue.png",
+      "role": "token/clue",
+      "sha256": "ad27146a4ac6bbd70b22ee923a895fb338185f19c1407387fade11565d4c58dc",
+      "source": {
+        "bytes": 358442,
+        "path": "images/other/unclassified/en/sce-base-save/Clue Counter--DiffuseURL--61cb6ee4c64be6c1fc9f.png",
+        "sha256": "618070e2ebd06c9eeb2023612be7fb0b06e67a53ef84401cb0254ee47f9892d3"
+      },
+      "transform": {
+        "height": 384,
+        "kind": "png_crop",
+        "source_height": 768,
+        "source_width": 768,
+        "width": 384,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "bytes": 1550581,
+      "evidence": "Original SCE 1024px circular token set; token-cultist; asset 40ea4816987295b83fd332c0e0eb60548840d8ed2f51856db13efaf17099283d",
+      "path": "tokens/cultist.png",
+      "role": "token/cultist",
+      "sha256": "7500f82209fa02b6b5c57c5e56c50e124d971e27bc1ea572607ef3f8d9470a0a",
+      "source": {
+        "bytes": 1550581,
+        "path": "images/other/unclassified/en/sce-base-save/token-cultist--URL--40ea4816987295b83fd3.png",
+        "sha256": "7500f82209fa02b6b5c57c5e56c50e124d971e27bc1ea572607ef3f8d9470a0a"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1642222,
+      "evidence": "docs/experiments/token-art.json#curse",
+      "path": "tokens/chaos/curse.png",
+      "role": "token/curse",
+      "sha256": "1b6f931ee161aee2c2f570a41e3f9addef062a67c904c8ef5ab433a661e12f9e",
+      "source": {
+        "bytes": 1642222,
+        "path": "images/other/unclassified/en/sce-base-save/token-curse--URL--99b4c1dd13e366b27eef.png",
+        "sha256": "1b6f931ee161aee2c2f570a41e3f9addef062a67c904c8ef5ab433a661e12f9e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 86002,
+      "evidence": "docs/research/attack-opportunity-and-harm-presentation.md; visually inspected actual SCE contained counter, transparent PNG; original bytes copied unchanged.",
+      "path": "tokens/damage.png",
+      "role": "token/damage",
+      "sha256": "34156f8361c5adef67c8afe40cfd960aea36b1e69956da00046120c01a1b247d",
+      "source": {
+        "bytes": 86002,
+        "path": "images/other/unclassified/en/sce-base-save/Damage--ImageURL--081d03144a6650cd7f9e.png",
+        "sha256": "34156f8361c5adef67c8afe40cfd960aea36b1e69956da00046120c01a1b247d"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1528014,
+      "evidence": "Original SCE 1024px circular token set; token-blue; asset 63bb698c7cd8905c83f3e658b8d0d31124ffa113bf6ad3caa1b8edd2933795a3",
+      "path": "tokens/elder_sign.png",
+      "role": "token/elder_sign",
+      "sha256": "ffabe7847d0eb77f0a7c3d676ccd3fbee6b46650fe5b1d5b62e109ed714a54ff",
+      "source": {
+        "bytes": 1528014,
+        "path": "images/other/unclassified/en/sce-base-save/token-blue--URL--63bb698c7cd8905c83f3.png",
+        "sha256": "ffabe7847d0eb77f0a7c3d676ccd3fbee6b46650fe5b1d5b62e109ed714a54ff"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 104192,
+      "evidence": "docs/research/attack-opportunity-and-harm-presentation.md; visually inspected actual SCE contained counter, transparent PNG; original bytes copied unchanged.",
+      "path": "tokens/horror.png",
+      "role": "token/horror",
+      "sha256": "cb7f3c7e20d1ecfcd133c605e7d6b01095b82d79acc2a18c9baee31d3b14d789",
+      "source": {
+        "bytes": 104192,
+        "path": "images/other/unclassified/en/sce-base-save/Horror--ImageURL--d429aca0b365fe75ed12.png",
+        "sha256": "cb7f3c7e20d1ecfcd133c605e7d6b01095b82d79acc2a18c9baee31d3b14d789"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1408216,
+      "evidence": "Original SCE 1024px circular token set; token-m4; asset dd8bb4080554799c1fc4c0b3707451cb8357c0772788b7b2bdcc82e0b66c2820",
+      "path": "tokens/minus_four.png",
+      "role": "token/minus_four",
+      "sha256": "56a10684ca7dd270f991bf18687051b1b83f8a1c106f11bf49610c379ac301fb",
+      "source": {
+        "bytes": 1408216,
+        "path": "images/other/unclassified/en/sce-base-save/token-m4--URL--dd8bb4080554799c1fc4.png",
+        "sha256": "56a10684ca7dd270f991bf18687051b1b83f8a1c106f11bf49610c379ac301fb"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1389043,
+      "evidence": "Original SCE 1024px circular token set; token-m1; asset 1a9e296081b25ca9baf0723e3c302fe30c86ead970be4f8b358296741538094e",
+      "path": "tokens/minus_one.png",
+      "role": "token/minus_one",
+      "sha256": "2e1a1af8ed0d6762ebd57f637078038392da9c5ecc63146f30901233457087c9",
+      "source": {
+        "bytes": 1389043,
+        "path": "images/other/unclassified/en/sce-base-save/token-m1--URL--1a9e296081b25ca9baf0.png",
+        "sha256": "2e1a1af8ed0d6762ebd57f637078038392da9c5ecc63146f30901233457087c9"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1413972,
+      "evidence": "Original SCE 1024px circular token set; token-m3; asset aeac1c0455433d704d215996ba23a21b5b03924232963d67ba401a3322bcdca6",
+      "path": "tokens/minus_three.png",
+      "role": "token/minus_three",
+      "sha256": "65bb6a867d34f426e2ed4c8a8484233e6f318e0416c877c7151c467629fef652",
+      "source": {
+        "bytes": 1413972,
+        "path": "images/other/unclassified/en/sce-base-save/token-m3--URL--aeac1c0455433d704d21.png",
+        "sha256": "65bb6a867d34f426e2ed4c8a8484233e6f318e0416c877c7151c467629fef652"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1415265,
+      "evidence": "Original SCE 1024px circular token set; token-m2; asset f0e0b9de45cd03220cb5af3cd35dc2da97cba5864f98ed03ca0748a9cfbe4ce6",
+      "path": "tokens/minus_two.png",
+      "role": "token/minus_two",
+      "sha256": "2c6ef7a4577cfc9b8c5c7d1bcc0315857c6d8b4b969103600ce1582f3b529227",
+      "source": {
+        "bytes": 1415265,
+        "path": "images/other/unclassified/en/sce-base-save/token-m2--URL--f0e0b9de45cd03220cb5.png",
+        "sha256": "2c6ef7a4577cfc9b8c5c7d1bcc0315857c6d8b4b969103600ce1582f3b529227"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1440502,
+      "evidence": "Original SCE 1024px circular token set; token-p1; asset f831a012dce4da805274aa87e183b967fad5284ad563452cd9390c93e2f361ba",
+      "path": "tokens/plus_one.png",
+      "role": "token/plus_one",
+      "sha256": "8fafc7e57789d04a3f7a348b9a6f59e98083110f6a1ad0dc6d9570eadff5a2c9",
+      "source": {
+        "bytes": 1440502,
+        "path": "images/other/unclassified/en/sce-base-save/token-p1--URL--f831a012dce4da805274.png",
+        "sha256": "8fafc7e57789d04a3f7a348b9a6f59e98083110f6a1ad0dc6d9570eadff5a2c9"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 56801,
+      "evidence": "GitHub #73; inspected archive original. Full clue emblem uses the exact upper-left 384px face, without masking or recoloring; resource and class PNGs are unchanged copies. PNG crop encoder: image 0.25.10, Fast compression, NoFilter.",
+      "path": "tokens/resource.png",
+      "role": "token/resource",
+      "sha256": "f3f6df74bb2cab4bb1743e9a26755b104e241795e5a08e18ee6696f02d794e52",
+      "source": {
+        "bytes": 56801,
+        "path": "images/other/unclassified/en/sce-base-save/Resource--ImageURL--224b07902d970cfdcc33.png",
+        "sha256": "f3f6df74bb2cab4bb1743e9a26755b104e241795e5a08e18ee6696f02d794e52"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1587462,
+      "evidence": "Original SCE 1024px circular token set; token-skull; asset ed40f66ae8eace832444753042a13b3a3584f7a092b1a5a0cf70e5ba20c21049",
+      "path": "tokens/skull.png",
+      "role": "token/skull",
+      "sha256": "fbecb892a168cbf061ff024cab04e9f9174b63f0e89f14a26433e83478a37523",
+      "source": {
+        "bytes": 1587462,
+        "path": "images/other/unclassified/en/sce-base-save/token-skull--URL--ed40f66ae8eace832444.png",
+        "sha256": "fbecb892a168cbf061ff024cab04e9f9174b63f0e89f14a26433e83478a37523"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1632000,
+      "evidence": "Original SCE 1024px circular token set; token-tablet; asset 98ca2f347732ad651e05d07c876003da3db6edf93806a10051f732c58bdd32e3",
+      "path": "tokens/tablet.png",
+      "role": "token/tablet",
+      "sha256": "f663e5d0b23b3f12c656b2f60634fa594d30f965f0258f82b82a7f8941cb50dd",
+      "source": {
+        "bytes": 1632000,
+        "path": "images/other/unclassified/en/sce-base-save/token-tablet--URL--98ca2f347732ad651e05.png",
+        "sha256": "f663e5d0b23b3f12c656b2f60634fa594d30f965f0258f82b82a7f8941cb50dd"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "bytes": 1176824,
+      "evidence": "Original SCE 1024px circular token set; token-0; asset 7ff653872e54829263ed5b7caf5e8efe324635cca8f06991db6eb259b4996a10",
+      "path": "tokens/zero.png",
+      "role": "token/zero",
+      "sha256": "dbec20a2a53a91edc7340c5fe60a40fbe42b732765cf1f21bee4433b3a61e0e6",
+      "source": {
+        "bytes": 1176824,
+        "path": "images/other/unclassified/en/sce-base-save/token-0--URL--7ff653872e54829263ed.png",
+        "sha256": "dbec20a2a53a91edc7340c5fe60a40fbe42b732765cf1f21bee4433b3a61e0e6"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    },
+    {
+      "attribution": {
+        "creator": "Lorc",
+        "download_url": "https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png",
+        "license": "CC BY 3.0",
+        "license_url": "https://creativecommons.org/licenses/by/3.0/",
+        "modification": "PNG copied unchanged; presentation may tint the white silhouette.",
+        "source_url": "https://game-icons.net/1x1/lorc/swap-bag.html",
+        "title": "Swap bag"
+      },
+      "bytes": 5829,
+      "evidence": "docs/adr/0002-persistent-table-areas.md#accepted-implementation-handoff",
+      "path": "ui/reveal-chaos-token.png",
+      "role": "ui/reveal-chaos-token",
+      "sha256": "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e",
+      "source": {
+        "bytes": 5829,
+        "input": "reveal_icon",
+        "path": "swap-bag.png",
+        "sha256": "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e"
+      },
+      "transform": {
+        "kind": "copy"
+      }
+    }
+  ],
+  "collection": "arkham-unfolded-gathering-v1",
+  "deck_projection_sha256": "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb",
+  "format_version": 1,
+  "scenario_binding_sha256": "635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0",
+  "scope": "Original Gathering, Standard, selected starting decks and three fixed basic weaknesses. Location primary roles are revealed; -back roles are unrevealed. Act/agenda -back roles are printed reverse sides.",
+  "source_catalog_sha256": "e89f4caec5d1c9b953cb05610bea5e4348823e12ec255d459b39d37add6a3e41"
+}

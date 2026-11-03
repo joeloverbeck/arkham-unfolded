@@ -41,6 +41,29 @@ pub(crate) fn viewport<C: Component>(app: &mut App, size: Vec2, scale: f32) {
     *target = RenderTarget::Window(WindowRef::Entity(window_entity));
 }
 
+fn rendered_text_bounds(world: &World, entity: Entity, scale: f32) -> Rect {
+    let computed = world.get::<ComputedNode>(entity).unwrap();
+    let layout = world.get::<TextLayoutInfo>(entity).unwrap();
+    let transform = world.get::<UiGlobalTransform>(entity).unwrap();
+    assert!(world.get::<InheritedVisibility>(entity).unwrap().get());
+    assert!(
+        !layout.glyphs.is_empty(),
+        "caption must have real font glyphs"
+    );
+    let mut rect = Rect {
+        min: Vec2::splat(f32::INFINITY),
+        max: Vec2::splat(f32::NEG_INFINITY),
+    };
+    // Match the renderer: node width includes empty space, not just visible ink.
+    for glyph in &layout.glyphs {
+        let half = glyph.atlas_info.rect.size() / 2.;
+        let at = computed.content_box().min + glyph.position;
+        rect.min = rect.min.min(transform.transform_point2(at - half) / scale);
+        rect.max = rect.max.max(transform.transform_point2(at + half) / scale);
+    }
+    rect
+}
+
 pub(crate) fn assert_harm_captions<C: Component>(
     app: &mut App,
     captions: [Entity; 2],
@@ -144,6 +167,145 @@ pub(crate) fn app() -> App {
     .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
     .init_resource::<Time<Real>>();
     app
+}
+
+/// Measure actual text glyphs after the production scene and camera systems ran.
+pub(crate) fn assert_hand_captions(
+    app: &mut App,
+    captions: &[Entity],
+    decision_panel: Entity,
+    size: Vec2,
+    scale: f32,
+) {
+    assert!(
+        captions.len() >= 4,
+        "exercise neighboring captions in a full hand"
+    );
+    let world = app.world();
+    let panel_node = world.get::<ComputedNode>(decision_panel).unwrap();
+    let panel_transform = world.get::<UiGlobalTransform>(decision_panel).unwrap();
+    let panel_top = panel_transform.transform_point2(-panel_node.size() / 2.).y / scale;
+    let mut rectangles = captions
+        .iter()
+        .map(|&entity| {
+            let text = world.get::<Text>(entity).unwrap();
+            let rect = rendered_text_bounds(world, entity, scale);
+            assert!(
+                rect.min.cmpge(Vec2::ZERO).all() && rect.max.cmple(size).all(),
+                "{} at {size:?}, {scale}x: complete caption must fit: {rect:?}", text.0
+            );
+            assert!(rect.max.y + 0.5 <= panel_top,
+                "{} at {size:?}, {scale}x: caption bottom {} must clear decision panel top {panel_top}", text.0, rect.max.y);
+            (text.0.clone(), rect)
+        })
+        .collect::<Vec<_>>();
+    rectangles.sort_by(|a, b| a.1.min.x.total_cmp(&b.1.min.x));
+    for pair in rectangles.windows(2) {
+        assert!(
+            pair[0].1.max.x + 0.5 <= pair[1].1.min.x,
+            "hand captions must not overlap at {size:?}, {scale}x: {pair:?}"
+        );
+    }
+}
+
+pub(crate) fn assert_chaos_captions(
+    app: &mut App,
+    decision_panel: Entity,
+    size: Vec2,
+    scale: f32,
+    area: Area,
+) {
+    let world = app.world_mut();
+    let captions = [
+        "Curse pool\n10 tokens",
+        "Chaos bag\n16 tokens",
+        "Committed cards",
+    ]
+    .map(|expected| {
+        world
+            .query_filtered::<(Entity, &Text), With<crate::tabletop_pieces::WorldLabel>>()
+            .iter(world)
+            .find_map(|(entity, text)| (text.0 == expected).then_some(entity))
+            .unwrap_or_else(|| panic!("the production scene must retain {expected:?}"))
+    });
+    let panel_node = world.get::<ComputedNode>(decision_panel).unwrap();
+    let panel_transform = world.get::<UiGlobalTransform>(decision_panel).unwrap();
+    let panel_top = panel_transform.transform_point2(-panel_node.size() / 2.).y / scale;
+    let rectangles = captions.map(|entity| {
+        let rect = rendered_text_bounds(world, entity, scale);
+        if area == Area::Test {
+            assert!(rect.max.y + 0.5 <= panel_top, "chaos caption {rect:?} must clear panel top {panel_top} at {area:?}, {size:?}, {scale}x");
+            assert!(rect.min.cmpge(Vec2::ZERO).all() && rect.max.cmple(size).all(),
+                "Test focus must show the complete chaos caption: {rect:?} at {size:?}, {scale}x");
+        }
+        rect
+    });
+    for (index, left) in rectangles.iter().enumerate() {
+        for right in &rectangles[index + 1..] {
+            assert!(
+                left.max.x + 0.5 <= right.min.x
+                    || right.max.x + 0.5 <= left.min.x
+                    || left.max.y + 0.5 <= right.min.y
+                    || right.max.y + 0.5 <= left.min.y,
+                "Curse pool, Chaos bag and Committed cards captions must not overlap at {area:?}, {size:?}, {scale}x: {left:?}, {right:?}"
+            );
+        }
+    }
+}
+
+pub(crate) fn assert_sideways_caption_wrapping(app: &mut App, captions: &[Entity]) {
+    let mut keys = ButtonInput::default();
+    keys.press(KeyCode::ArrowLeft);
+    app.world_mut().resource_mut::<Orbit>().step(FrameInput {
+        keys: &keys,
+        buttons: &ButtonInput::default(),
+        window: &Window {
+            focused: true,
+            ..default()
+        },
+        scroll_y: 0.,
+        dt: std::f32::consts::FRAC_PI_2,
+        capture: Capture::default(),
+        reduced_motion: true,
+    });
+    for pitch in [1., 0.45] {
+        if pitch < 1. {
+            let mut keys = ButtonInput::default();
+            keys.press(KeyCode::ArrowDown);
+            app.world_mut().resource_mut::<Orbit>().step(FrameInput {
+                keys: &keys,
+                buttons: &ButtonInput::default(),
+                window: &Window {
+                    focused: true,
+                    ..default()
+                },
+                scroll_y: 0.,
+                dt: (1. - pitch) / 0.7,
+                capture: Capture::default(),
+                reduced_motion: true,
+            });
+        }
+        for _ in 0..5 {
+            app.update();
+        }
+        for &entity in captions {
+            let text = app.world().get::<Text>(entity).unwrap();
+            let layout = app.world().get::<TextLayoutInfo>(entity).unwrap();
+            assert!(!layout.glyphs.is_empty());
+            let lines = layout
+                .glyphs
+                .iter()
+                .map(|glyph| glyph.line_index)
+                .max()
+                .unwrap()
+                + 1;
+            assert!(
+                lines <= 4,
+                "sideways camera at pitch {pitch} must not collapse {} into a letter-by-letter column, got {lines} lines",
+                text.0
+            );
+        }
+    }
 }
 
 pub(crate) fn assert_heading<C: Component>(app: &mut App, camera_marker: C, scale: f32) {

@@ -18,6 +18,39 @@ pub(crate) struct TokenVisual {
 #[derive(Component)]
 pub(crate) struct TokenLabel(Vec3);
 
+/// The settled tabletop return path; adapters own custody, admission and lifetime.
+#[derive(Component)]
+pub(crate) struct ReturningToken {
+    start: Vec3,
+    pub destination: Vec3,
+    elapsed: f32,
+}
+
+impl ReturningToken {
+    pub(crate) fn new(start: Vec3, destination: Vec3) -> Self {
+        Self {
+            start,
+            destination,
+            elapsed: 0.,
+        }
+    }
+
+    /// Returns true at arrival. The caller owns entity cleanup.
+    pub(crate) fn advance(&mut self, transform: &mut Transform, delta: f32, reduced: bool) -> bool {
+        self.elapsed += delta;
+        let fraction = if reduced {
+            1.
+        } else {
+            (self.elapsed / 0.6).clamp(0., 1.)
+        };
+        let eased = fraction * fraction * (3. - 2. * fraction);
+        transform.translation = self.start.lerp(self.destination, eased)
+            + Vec3::Y * (std::f32::consts::PI * fraction).sin() * 0.5;
+        transform.scale = Vec3::splat(1. - fraction * 0.9);
+        fraction >= 1.
+    }
+}
+
 /// Returns the disk and its separately projected label. Both belong to the
 /// caller's scene lifetime; the face and cancellation marks belong to the disk.
 pub(crate) fn spawn(
@@ -130,10 +163,45 @@ pub(crate) fn position_labels(
     }
 }
 
+/// Prepared-art role for each supported physical chaos-token face.
+pub(crate) fn image_role(face: crate::TokenFace) -> &'static str {
+    use crate::TokenFace;
+    match face {
+        TokenFace::PlusOne => "token/plus_one",
+        TokenFace::Zero => "token/zero",
+        TokenFace::MinusOne => "token/minus_one",
+        TokenFace::MinusTwo => "token/minus_two",
+        TokenFace::MinusThree => "token/minus_three",
+        TokenFace::MinusFour => "token/minus_four",
+        TokenFace::Skull => "token/skull",
+        TokenFace::Cultist => "token/cultist",
+        TokenFace::Tablet => "token/tablet",
+        TokenFace::AutoFail => "token/auto_fail",
+        TokenFace::ElderSign => "token/elder_sign",
+        TokenFace::Curse => "token/curse",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use bevy::{ecs::world::CommandQueue, mesh::VertexAttributeValues};
+
+    #[test]
+    fn shared_return_path_lifts_then_arrives_and_reduced_motion_finishes_immediately() {
+        let start = Vec3::new(-3., 0.2, 4.);
+        let end = Vec3::new(2., 0.1, -1.);
+        let mut motion = ReturningToken::new(start, end);
+        let mut transform = Transform::from_translation(start);
+        assert!(!motion.advance(&mut transform, 0.3, false));
+        assert!((transform.translation - (start.lerp(end, 0.5) + Vec3::Y * 0.5)).length() < 0.0001);
+        assert!((transform.scale.x - 0.55).abs() < 0.0001);
+        assert!(motion.advance(&mut transform, 0.3, false));
+        assert!((transform.translation - end).length() < 0.0001);
+        let mut motion = ReturningToken::new(start, end);
+        assert!(motion.advance(&mut transform, 0., true));
+        assert!((transform.translation - end).length() < 0.0001);
+    }
 
     #[test]
     fn artwork_sits_above_a_solid_disk_and_follows_its_reveal_transform() {

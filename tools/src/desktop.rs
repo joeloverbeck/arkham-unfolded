@@ -78,7 +78,8 @@ impl X11 {
             .reply()?;
         ensure!(
             name.value == TITLE
-                || name.value == "Arkham Unfolded — Prepared Study Escape".as_bytes(),
+                || name.value == "Arkham Unfolded — Prepared Study Escape".as_bytes()
+                || name.value == "Arkham Unfolded — Gathering Setup".as_bytes(),
             "Window is not the Arkham experiment client"
         );
         Ok(())

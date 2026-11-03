@@ -221,6 +221,11 @@ pub(crate) fn test_bag() -> Vec3 {
     TEST_CENTER + Vec3::new(5.3, 0.35, -3.1)
 }
 
+pub(crate) fn test_curse_pool() -> Vec3 {
+    // Clear both the bag caption and the commitment heading in either focus.
+    test_bag() - Vec3::new(4., 0., 0.8)
+}
+
 pub(crate) fn test_source() -> Vec3 {
     TEST_CENTER + Vec3::new(-2.3, 0.05, -3.2)
 }

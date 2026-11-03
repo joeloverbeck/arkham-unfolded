@@ -136,6 +136,89 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
     );
 }
 
+#[test]
+fn gathering_launch_uses_its_save_contract_for_fresh_and_copied_sessions() {
+    for (reopen, artwork) in [(false, false), (true, false), (false, true), (true, true)] {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("run");
+        let source = root.path().join("owner.session.json");
+        fs::write(&source, "owner pending decision").unwrap();
+        let mut command = launch(&support::fixture().join("child"), &directory);
+        command.args(["--experiment", "gathering", "--timeout-seconds", "5"]);
+        let art_root = root.path().join("prepared-art");
+        if artwork {
+            command.arg("--art-root").arg(&art_root);
+        } else {
+            command.arg("--no-art");
+        }
+        if reopen {
+            command.arg("--load").arg(&source);
+        }
+        let child = command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let metadata = running(&directory);
+        fs::write(directory.join("finish"), "").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let mut expected = vec![
+            directory.join("arkham-tabletop"),
+            "--experiment".into(),
+            "gathering".into(),
+            "--save".into(),
+            directory.join("session.json"),
+        ];
+        if artwork {
+            expected.extend(["--art-root".into(), art_root]);
+        } else {
+            expected.push("--no-art".into());
+        }
+        assert_eq!(metadata["argv"], serde_json::json!(expected));
+        assert_eq!(
+            metadata["launch_conditions"]["save_staging"],
+            if reopen { "verified-copy" } else { "fresh" }
+        );
+        assert_eq!(
+            fs::read_to_string(&source).unwrap(),
+            "owner pending decision"
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("session.json")).unwrap(),
+            "autosaved copy"
+        );
+    }
+}
+
+#[test]
+fn gathering_launch_rejects_unsupported_presentation_options_before_staging() {
+    for option in ["--screenshot", "--initial-view"] {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("run");
+        let output = launch(&support::fixture().join("child"), &directory)
+            .args([
+                "--experiment",
+                "gathering",
+                option,
+                if option == "--initial-view" {
+                    "scenario"
+                } else {
+                    "art"
+                },
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Gathering does not support"));
+        assert!(!directory.exists());
+    }
+}
+
 fn summary_events(output: &[u8], directory: &Path, completed: &Value) -> Vec<Value> {
     let events: Vec<Value> = String::from_utf8_lossy(output)
         .lines()

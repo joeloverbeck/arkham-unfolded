@@ -263,15 +263,28 @@ pub(crate) fn spawn_actions(
     materials: &mut Assets<StandardMaterial>,
     row: ActionRow,
 ) -> Vec<Entity> {
+    let spent = 3_u8.saturating_sub(row.remaining);
+    spawn_actions_with_allowance(commands, meshes, materials, row, 3, spent)
+}
+
+pub(crate) fn spawn_actions_with_allowance(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    row: ActionRow,
+    allowance: u8,
+    ordinary_spent: u8,
+) -> Vec<Entity> {
     let mut entities = Vec::new();
     let has_additional = row.additional.is_some();
-    let count = if has_additional { 4 } else { 3 };
+    let ordinary = usize::from(allowance);
+    let count = ordinary + usize::from(has_additional);
     for slot in 0..count {
-        let additional = slot == 3;
+        let additional = slot == ordinary;
         let spent = if additional {
             !row.additional.unwrap()
         } else {
-            slot >= usize::from(row.remaining)
+            slot >= ordinary.saturating_sub(usize::from(ordinary_spent))
         };
         let subdued = spent || row.turn_ended || (additional && !row.additional_eligible);
         let marker = ActionMarker {
@@ -279,7 +292,14 @@ pub(crate) fn spawn_actions(
             subdued,
             additional,
         };
-        let at = layout::investigator_action(row.investigator, slot, has_additional);
+        let at = if allowance == 3 {
+            layout::investigator_action(row.investigator, slot, has_additional)
+        } else {
+            let span =
+                count.saturating_sub(1) as f32 * 0.48 + if has_additional { 0.15 } else { 0. };
+            layout::investigator_action(row.investigator, 1, false)
+                + Vec3::X * (-span / 2. + slot as f32 * 0.48 + if additional { 0.15 } else { 0. })
+        };
         let mut root = commands.spawn((
             Name::new(if additional {
                 "Restricted additional action"
@@ -612,6 +632,55 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn expanded_ordinary_allowance_keeps_real_spends_separate_from_bonus() {
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let mut materials = Assets::<StandardMaterial>::default();
+        spawn_actions_with_allowance(
+            &mut Commands::new(&mut queue, &world),
+            &mut meshes,
+            &mut materials,
+            ActionRow {
+                investigator: 0,
+                remaining: 2,
+                turn_ended: false,
+                additional: Some(true),
+                additional_eligible: false,
+                class: InvestigatorClass::Rogue,
+                icon: None,
+                background: None,
+            },
+            4,
+            2,
+        );
+        queue.apply(&mut world);
+        let mut markers = world
+            .query::<(&ActionMarker, &Transform)>()
+            .iter(&world)
+            .map(|(marker, transform)| (*marker, transform.translation.x))
+            .collect::<Vec<_>>();
+        markers.sort_by(|left, right| left.1.total_cmp(&right.1));
+        assert_eq!(markers.len(), 5);
+        assert_eq!(
+            markers
+                .iter()
+                .filter(|(marker, _)| !marker.additional && marker.spent)
+                .count(),
+            2
+        );
+        assert_eq!(
+            markers
+                .iter()
+                .filter(|(marker, _)| !marker.additional && !marker.subdued)
+                .count(),
+            2
+        );
+        assert!(markers[4].0.additional && !markers[4].0.spent && markers[4].0.subdued);
+        assert!(markers.windows(2).all(|pair| pair[1].1 - pair[0].1 >= 0.47));
     }
 
     #[test]

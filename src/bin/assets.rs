@@ -1,14 +1,15 @@
 use arkham_unfolded_experiment::assets::{
-    PrepareResult, inspect, inspect_party, inspect_tony, prepare, prepare_party, prepare_tony,
+    PrepareResult, inspect, inspect_gathering, inspect_party, inspect_tony, prepare,
+    prepare_gathering, prepare_party, prepare_tony,
 };
 use std::path::PathBuf;
 
-const USAGE: &str = "arkham-assets prepare --source PATH --reveal-icon PATH --output PATH\narkham-assets check PATH\narkham-assets prepare-tony --source PATH --reveal-icon PATH --output PATH\narkham-assets check-tony PATH\narkham-assets prepare-party --source PATH --reveal-icon PATH --output PATH\narkham-assets check-party PATH\n\nPreparation copies only the selected assets into a fresh external directory.\nThe reveal icon is the pinned Lorc Swap bag PNG; preparation never downloads it.\nIt never changes the source archive or overwrites an existing collection.";
+const USAGE: &str = "arkham-assets prepare --source PATH --reveal-icon PATH --output PATH\narkham-assets check PATH\narkham-assets prepare-tony --source PATH --reveal-icon PATH --output PATH\narkham-assets check-tony PATH\narkham-assets prepare-party --source PATH --reveal-icon PATH --output PATH\narkham-assets check-party PATH\narkham-assets prepare-gathering --source PATH --reveal-icon PATH --output PATH\narkham-assets check-gathering PATH\n\nPreparation copies only the selected assets into a fresh external directory.\nThe reveal icon is the pinned Lorc Swap bag PNG; preparation never downloads it.\nIt never changes the source archive or overwrites an existing collection.";
 
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        Some(command @ ("prepare" | "prepare-tony" | "prepare-party")) => {
+        Some(command @ ("prepare" | "prepare-tony" | "prepare-party" | "prepare-gathering")) => {
             let mut source = None;
             let mut output = None;
             let mut reveal_icon = None;
@@ -31,11 +32,13 @@ fn run() -> Result<(), String> {
             let prepare = match command {
                 "prepare-tony" => prepare_tony,
                 "prepare-party" => prepare_party,
+                "prepare-gathering" => prepare_gathering,
                 _ => prepare,
             };
             let inspect = match command {
                 "prepare-tony" => inspect_tony,
                 "prepare-party" => inspect_party,
+                "prepare-gathering" => inspect_gathering,
                 _ => inspect,
             };
             match prepare(&source, &output, &reveal_icon).map_err(|error| error.to_string())? {
@@ -48,7 +51,7 @@ fn run() -> Result<(), String> {
             println!("{}", inspect(&output).summary());
             Ok(())
         }
-        Some(command @ ("check" | "check-tony" | "check-party")) => {
+        Some(command @ ("check" | "check-tony" | "check-party" | "check-gathering")) => {
             let root = PathBuf::from(args.next().ok_or("check requires a collection path")?);
             if args.next().is_some() {
                 return Err("check accepts one collection path".into());
@@ -56,6 +59,7 @@ fn run() -> Result<(), String> {
             let report = match command {
                 "check-tony" => inspect_tony(&root),
                 "check-party" => inspect_party(&root),
+                "check-gathering" => inspect_gathering(&root),
                 _ => inspect(&root),
             };
             println!("{}", report.summary());

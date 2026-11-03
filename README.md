@@ -4,9 +4,31 @@ An English-language Arkham Horror: The Card Game application for Ubuntu, planned
 
 **Status: bounded Rust/3D experiments. The campaign is not playable yet.** The original Jacqueline/Patrice skill-test mode remains available. Tony mode offers an owner-accepted complete turn from a prepared Gathering position under [#22](https://github.com/joeloverbeck/arkham-unfolded/issues/22).
 
+The [Gathering candidate](docs/experiments/gathering-setup.md) under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89) continues from actual selected decks, scenario assembly and mulligans into ordinary scenario play. Driver checks exercise a full first round and all following mythos draws, including fresh-process reopening and replay. The runtime includes selected card effects, phases, resolutions, safe Undo and recorded intermediate events. Difficult token compositions use documented source-derived interpretations. **The owner rejected its earlier presentation.** The correction reuses Party's production interface and pieces; native comparison of this correction, a full native scenario playthrough and owner acceptance remain outstanding. [Launch Gathering](#launch-and-resume-the-gathering) using the command below.
+
 See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, saves, undo, replay and player driver, including the [two-session verification walkthrough](docs/experiments/tony-turn.md#owner-verification).
 
 The owner-accepted [prepared Study escape attempt](docs/experiments/study-escape.md) under [#55](https://github.com/joeloverbeck/arkham-unfolded/issues/55) adds coordinated turns for all three investigators and an Act 1 closing decision. Investigators take complete turns in your chosen order. A persistent turn indicator and portrait badge identify whose turn it is, while supporting choices name the investigator performing them. Camera focus remains independent. Spending six clues reveals Act 1's story before Continue applies its effects and exposes the connected four-room map. Joel accepted the implementation on 2026-11-01 after using all three investigators to collect clues and advance the Act. This remains the prepared attempt, with play stopping at that endpoint. Use the [party launch command](#launch-and-resume-the-party-experiment) below.
+
+## Launch and resume The Gathering
+
+On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
+
+```sh
+cd /home/joeloverbeck/src/arkham-unfolded
+mkdir -p local/gathering
+cargo run --locked --features tabletop --bin arkham-tabletop -- \
+  --experiment gathering --save local/gathering/session.json \
+  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
+```
+
+This starts original **The Gathering on Standard**, using the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine decks and the prepared artwork on this machine. Keep the terminal open and the window visible and focused during **Checking graphics...**. On a new save, the heading says **The Gathering · Standard · Setup**: click an investigator card and choose them as lead from its contextual menu. Click individual hand cards for mulligan choices, then confirm each investigator's hand to begin ordinary scenario play.
+
+Every decision autosaves to `local/gathering/session.json`. Run the same command to resume. To start another game while retaining this one, change the filename, for example to `local/gathering/session-2.json`. The `local/` directory is ignored by Git. The first build can take several minutes; subsequent launches reuse it.
+
+During play, click cards, locations, decks and tokens for their contextual actions. Choose **Inspect** for enlarged artwork and effective rules; piles offer their individual cards. The portrait rail moves the camera, and **TURN** identifies the current investigator independently of camera focus. **Menu** at the upper right contains history, motion settings, save/reopen, replay and artwork settings. The bottom panel holds the current decision and table-wide choices. Gathering's artwork collection includes all 94 card identities needed by the selected decks and original scenario, with the necessary card backs and shared tokens. It is separate from Party's smaller collection.
+
+Earlier artwork-enabled native checks verified setup, one action and replay on the superseded presentation. They do not verify this correction's appearance or physical input. Two full-scenario presentations are proposed for owner review: local enemy piles beside their rooms, and a blocking reading panel for newly revealed Act/Agenda reverses. Its **Continue** advances the presentation of the saved transition without repeating rules effects. See the [Gathering guide](docs/experiments/gathering-setup.md) for details, artwork preparation and older-save compatibility.
 
 ## Launch and resume the party experiment
 
