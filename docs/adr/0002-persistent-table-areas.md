@@ -22,11 +22,39 @@ Selecting a physical card or component is the normal entry point for its current
 
 Inspect in the contextual controls opens the existing card inspection modal. Joel reports that this modal works well and selected retaining it instead of the proposed nonmodal edge panel. The modal continues to provide artwork and readable rules with its existing Close/Esc behavior. Opening or closing inspection does not choose a game action, change the camera, or discard a pending game decision or presentation-only selection. The contextual action menu closes when inspection opens; returning from inspection must not dispatch a stale action. Routine actions remain available through contextual controls without first opening full inspection. The benefit of a replacement inspector was unproven, so no inspector redesign is selected.
 
-Following the [contextual-control research](../research/tabletop-contextual-controls.md), Joel initially selected small labeled radial controls for short action sets, with a compact nearby list for detailed wording or constrained space. The [vertical action rows decision](#vertical-action-rows-and-commitment-eligibility) supersedes that menu shape. Left-click selects the exact component; a separate click activates an available action. Costs and opportunity-attack warnings remain visible locally before activation. Recurring actions retain a predictable order within the same context as legality changes. Compound card or token selections retain their complete legal alternatives and explicit completion step. Labels remain upright and readable, menus stay within the viewport, right-drag continues to orbit, and menu keyboard navigation must not also move the camera. A revision or mode change invalidates transient choices; replay permits inspection only. Escape or clicking empty space dismisses the menu without a game action. Native usability is assessed for each implemented refinement, separately from selecting its design.
+Following the [contextual-control research](../research/tabletop-contextual-controls.md), Joel initially selected small labeled radial controls for short action sets, with a compact nearby list for detailed wording or constrained space. The [vertical action rows decision](#vertical-action-rows-and-commitment-eligibility) supersedes that menu shape. Left-click selects the exact component; a separate click activates an available action. Costs and opportunity-attack warnings remain visible locally before activation. Recurring actions retain a predictable order within the same context as legality changes. Compound card or token selections retain their complete legal alternatives and explicit completion step. Labels remain upright and readable, menus stay within the viewport, right-drag continues to orbit, and Tab/Shift+Tab navigation and Enter/Space activation must not also move the camera. A revision or mode change invalidates transient choices; replay permits inspection only. Escape or clicking empty space dismisses the menu without a game action. Native usability is assessed for each implemented refinement, separately from selecting its design.
 
-Manual navigation includes holding unmodified WASD keys to pan across the table plane relative to the current camera direction: W forward, S backward, A left and D right. Panning preserves camera tilt and zoom, and releasing the keys stops movement. Like manual orbit and zoom, it overrides automatic following. Camera keys must not act while another control captures keyboard input or a blocking modal is open. The existing orbit and zoom controls remain available. Neither experiment provided manual panning at the decision's baseline revision.
+Manual navigation includes holding unmodified WASD keys to pan across the table plane relative to the current camera direction: W forward, S backward, A left and D right. Panning preserves camera tilt and zoom, and releasing the keys stops movement. Like manual orbit and zoom, it overrides automatic following. Blocking dialogs capture camera input; ordinary button focus alone does not capture WASD. The [keyboard-focus refinement](#keyboard-focus-and-camera-input) below defines this distinction. The existing orbit and zoom controls remain available. Neither experiment provided manual panning at the decision's original baseline revision.
 
 The overview supports orientation; focused views support readable play. Simultaneous readability of every card across the whole scene is not the aim. A permanent map inset or split view was considered but would reduce the space available to the focused investigator. The exact framing, spacing and transition timing remain reversible presentation choices to evaluate in use.
+
+### Keyboard focus and camera input
+
+On 2026-11-03, against `54c8d48cf9227dc862c1c7fcaaea0dfd7051a2b8`, Joel accepted
+this refinement for Gathering after reporting lost WASD input on load, after
+closing Inspect and repeatedly after playing Azure Flame. Keyboard focus on a
+button remains useful for explicit activation, but must not prevent manual
+panning. Camera focus retains its glossary meaning: the area framed for viewing.
+
+Unmodified WASD remains available with an ordinary button focused or a
+card-action list open. Beginning manual navigation dismisses that transient
+list without selecting a game action or discarding a pending commitment.
+Tab/Shift+Tab, Enter/Space and Escape retain their existing roles; this decision
+adds no arrow-key menu navigation. Continuous panning must survive UI updates,
+including post-action presentation, without an intervening click on the table.
+
+Inspect, history, the main Menu, story-reading panels, confirmation dialogs and
+folder-selection dialogs block camera input explicitly. Closing a blocking
+dialog restores WASD immediately without a background click. This supersedes
+the earlier broad interpretation that any focused control or open card-action
+list captures all camera keys. The earlier keyboard-test evidence records its
+original policy; it does not verify this refinement.
+
+The [Gathering design record](../experiments/gathering-setup.md#accepted-camera-input-and-restart-design)
+records the related restart and archive decisions, source findings and required
+verification. [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89)
+owns the work. The local Gathering candidate implements this refinement with
+production-input regressions; native physical-key verification remains pending.
 
 ## Why
 

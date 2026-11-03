@@ -42,7 +42,8 @@ visible in the observation. Original ArkhamDB snapshots remain unchanged.
 From the repository root:
 
 ```sh
-cargo run --locked --bin arkham-driver -- \
+scripts/dev cargo build --locked --bin arkham-driver &&
+target/debug/arkham-driver \
   --experiment gathering --save /tmp/arkham-gathering-setup.session.json
 ```
 
@@ -56,7 +57,8 @@ under [Record compatibility](#record-compatibility), rather than this build.
 The native table uses the same session and save file:
 
 ```sh
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
   --experiment gathering --save /tmp/arkham-gathering-setup.session.json \
   --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
 ```
@@ -74,10 +76,45 @@ Replay limits those images and texts to the moment being viewed.
 
 The portrait rail and Scenario, Test and Overview buttons retain Party's camera
 controls. The **TURN** badge follows the actual actor, not camera focus.
-**Menu** at the upper right contains Save, Reopen, History, Replay, reduced motion
+**Menu** at the upper right contains Save, Reopen, Restart, History, Replay, reduced motion
 and artwork settings. Save, Reopen, History and Replay operate on the full session; replay permits
 inspection but no live choices. Menus use Tab/Shift+Tab and Enter/Space; Esc
-closes them. Camera keys are suspended while a contextual menu captures input.
+closes them. Unmodified WASD pans even with an ordinary button focused, dismissing
+an open card-action list without choosing. Blocking Inspect, history, Menu, story,
+restart confirmation and folder-selection dialogs suspend camera input; closing
+them restores WASD without clicking the table.
+
+### Restart and recover an attempt
+
+Choose **Menu → Restart The Gathering…** in the live table, then **Restart** to
+return to lead selection, opening hands and mulligans with fresh shuffles. The
+selected investigators, decks, weaknesses and pinned rules stay the same, as do
+artwork and motion preferences. Cancel is initially focused; Enter activates
+Cancel, and Escape also cancels. Return from replay to the live table first.
+
+Before the active save is replaced, its exact bytes are retained beside it as
+`<save filename>.archived-<unique suffix>.json`. The success notice and terminal
+print the archive path. **Reopen saved attempt** resumes the new current
+attempt. Later autosaves rotate `.previous` but do not replace the archive.
+
+To resume an archived attempt, first close the running table, copy the archive
+to a separate working save, then pass that copy as `--save`. Replace the example
+archive path with the printed path; this creates a new recovery directory:
+
+```sh
+gathering_recovery_dir=$(mktemp -d /tmp/arkham-gathering-recovered.XXXXXX) &&
+cp -- /absolute/path/session.json.archived-ABC123.json "$gathering_recovery_dir/session.json" &&
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
+  --experiment gathering --save "$gathering_recovery_dir/session.json" \
+  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
+```
+
+This preserves the archive while the recovered copy receives autosaves. **Open
+recorded replay** then shows the recovered attempt's history. Restart refuses a
+missing, stale, busy or invalid save/recovery file and reports the reason inside
+the confirmation. Cancel and resolve that reason before retrying; the current
+live attempt and active save are retained.
 Headless tests exercise the actual menu controls and save/replay protections.
 
 For a static layout capture, use the [isolated native diagnostics](jacqueline-curse.md#launch-capture-and-interact)
@@ -121,11 +158,11 @@ prepare another portable collection from the original local archive, first use
 the [existing reveal-icon download](../../README.md#prepare-the-tony-artwork), then:
 
 ```sh
-cargo run --locked --bin arkham-assets -- prepare-gathering \
+scripts/dev cargo run --locked --bin arkham-assets -- prepare-gathering \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /tmp/arkham-reveal-icon.png \
   --output "$HOME/.local/share/arkham-unfolded/gathering-assets-v1"
-cargo run --locked --bin arkham-assets -- check-gathering \
+scripts/dev cargo run --locked --bin arkham-assets -- check-gathering \
   "$HOME/.local/share/arkham-unfolded/gathering-assets-v1"
 ```
 
@@ -268,6 +305,161 @@ show overlapping card labels, missing separator glyphs and right-edge clipping;
 visual readability remains unfinished.
 Captures and event receipts from the failed check remain local under
 `~/.cache/agent-tmp/arkham-89-native-fbf82d3/`.
+
+## Accepted camera input and restart design
+
+Joel accepted all three recommended decisions (Q1–Q3) in the 2026-11-03
+`grill-with-docs` interview against `54c8d48cf9227dc862c1c7fcaaea0dfd7051a2b8`,
+in response to his inability to test Gathering comfortably. The design is
+settled; Joel subsequently instructed, "Proceed with the implementation."
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89)
+and its [current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060)
+remain the work-control authority. The earlier full-scenario allocations remain
+exhausted; this activation selects the accepted camera/restart repair, not
+full-scenario completion. Local implementation and automated verification began
+at 13:48 UTC on 2026-11-03 on `fix/gathering-camera-restart`, with the repository's
+default two-hour boundary (15:48 UTC) and earlier scope/non-convergence stops.
+The result is one reviewable candidate that lets Joel navigate and restart his
+Gathering tests. The agreed seams are production keyboard/render registration
+and session save/load/replay. Native desktop use requires a fresh agreed interval;
+publication, personal-save mutation and broader gameplay acceptance are separate.
+
+Joel reports that WASD fails on load and after closing Inspect until he clicks
+the table. After playing Azure Flame, each subsequent pan moves briefly before
+a button takes focus again. He also needs an in-app way to start Gathering over.
+
+Source review at the starting revision supplied this explanation, without a
+native reproduction:
+
+- Gathering's [camera adapter](../../src/gathering_tabletop.rs) treats every
+  focused button as keyboard capture. Its [ordinary controls](../../src/gathering_tabletop/ui.rs)
+  automatically focus the first global choice, or Overview when none exists.
+  Closing Inspect rebuilds those controls.
+- During a post-choice presentation, each manual camera step marks the table
+  dirty, including steps after the presentation is already paused. Rebuilding
+  the controls can restore button focus and block the next step. This predicts
+  the reported click/pan/refocus loop without requiring an Azure Flame rules
+  defect. The source fallback is Overview; the exact runtime focus targets
+  reported by Joel still need reproduction.
+- Party lacks those ordinary-button autofocus assignments, although it also
+  blocks camera keys when a button is focused. Its accepted behavior is a
+  comparison, not proof that it already satisfies the newly accepted policy.
+- Gathering has no restart action. A new save filename creates a fresh setup.
+  Party already preserves the old attempt through an explicit restart, using
+  the shared [record replacement](../../src/record_replacement.rs) operation.
+
+The accepted decisions are:
+
+1. **Q1 — Camera input:** ordinary button focus and open
+   card-action lists leave unmodified WASD available. Holding a key pans
+   continuously, including after load, inspection and playing an asset;
+   releasing it stops movement. Beginning manual navigation dismisses a
+   transient action list without choosing an action. Preserve Tab/Shift+Tab,
+   Enter/Space and Escape controls; arrows currently have no menu-navigation
+   binding. Blocking Inspect, history, main Menu, story-reading, confirmation
+   and folder-selection dialogs capture camera input explicitly. Closing them
+   restores WASD without a background click. Joel selected this over keeping
+   card-action lists blocking WASD.
+   [ADR 0002](../adr/0002-persistent-table-areas.md#keyboard-focus-and-camera-input)
+   owns the refined camera-input contract;
+   the glossary's camera focus continues to mean the area framed for viewing.
+2. **Q2 — Restart meaning:** add **Restart The Gathering…** in the live
+   Menu during setup, play and after resolution. It starts an independent
+   attempt with fresh randomness, the same selected decks, weaknesses and
+   pinned rules, returning to lead selection and opening hands/mulligans.
+   Artwork and motion preferences persist. Joel selected fresh shuffles over
+   repeating the original deal. Confirm with Restart/Cancel, defaulting to
+   Cancel; Escape cancels. Replay stays read-only; return to live play before
+   restarting.
+3. **Q3 — Previous attempt:** preserve its exact saved record in
+   a unique archive before replacing the active save. The new attempt uses
+   the same active path, so **Reopen saved attempt** reopens the new attempt.
+   Archive recovery uses its launch path, which must be discoverable after
+   restart. Joel selected this over adding in-app recovery or discarding the
+   previous attempt. Cancellation preserves the current attempt. A stale save,
+   busy file or failed replacement leaves the current live attempt and active save intact;
+   the shared operation may already have left an archive or rotated recovery
+   file, so this is not a claim of multi-file transactionality.
+
+Implementation must add regressions through production keyboard and
+render registration: continuous WASD across several frames and rebuilds at
+startup, after Inspect, with ordinary focus, and after playing Azure Flame
+during active and paused presentation; modal capture and release; and keyboard
+activation without accidental game choices. Restart checks must cover cancel,
+fresh setup, save refusal, reopening the new attempt and recovery of the exact
+archived record. A bounded native run must then exercise Joel's actual
+sequence; static review and existing camera-action
+tests do not establish that physical input is repaired. This design covers
+these testing obstacles, not complete-scenario correctness or acceptance.
+
+The local implementation separates WASD capture from other keyboard capture and
+pauses a presentation only on the first manual-navigation frame. Before the fix,
+the registered input test reproduced no movement from the initially focused
+button. After enabling pan, the Azure Flame regression separately reproduced Tab
+focus being reset on every held-key frame; the one-time pause fixes that rebuild.
+The shared camera's other consumers retain their previous capture behavior.
+
+Independent review found that dismissing the reveal chooser on every manual
+frame also rebuilt its ordinary Reveal button. A focused-control input regression
+reproduced that stale focus; dismissal now runs only while the chooser is open.
+The regression passes and retains Enter activation after panning, plus dismissal
+of the open chooser without revealing a token. Its initial focus is fixture state;
+the subsequent keyboard input and activation use production registration.
+
+Restart uses the existing locked replacement operation, returning its unique
+archive path. The live table resets only after replacement succeeds; confirmation
+and choice callbacks are bound to the table generation. Tests exercise the actual
+Menu/confirmation registration, cancellation, modal pan capture/release,
+duplicate/stale callbacks, replay and graphics refusal, preference retention,
+fresh setup and reopening. Continuity checks recover exact original bytes and
+replay after later autosaves and repeated restarts, and cover stale/missing/busy
+records and invalid recovery files.
+
+The required `scripts/check` finished with exit 0 at
+`/tmp/arkham-controls-final-check/` on 2026-11-03: 395 library tests passed,
+one existing test ignored, and the integration/tool suites passed. The initial
+sandboxed run at `/tmp/arkham-controls-full-check/` failed because private D-Bus
+test sockets could not bind; the host-context run resolved that environmental
+restriction. The earlier normal tabletop build finished with exit 0 at
+`/tmp/arkham-controls-final-build/`; its executable SHA256 is
+`d27668f7670a33cf6cfc6964ea77a1da96c758c08185ed73021a267e87fb3fd0`.
+Each directory retains `check.log` and terminal `run.json`. Independent Standards
+and Spec review found no remaining findings after the Reveal-control correction.
+After Joel approved development resource protection, the full check passed again
+at `/tmp/arkham-build-policy-check-v2/`, followed by the normal build at
+`/tmp/arkham-build-policy-native-build/`. Both terminal records have exit 0.
+The executable used for the native check below has SHA256
+`0daf617a8976ca6eeba6329c75bb85cee7ef8dcca53202fab0d8fddcb516af2c`.
+The resource changes preserve the reviewed gameplay source and use the
+[documented build limits](../../README.md#current-use-and-external-inputs).
+
+On 2026-11-03, Joel authorized a five-minute native interval from 16:00:51 to
+16:05:51 UTC. The isolated Gathering window passed graphics admission with all
+140 artwork assets verified. Joel reported that immediate WASD moved continuously
+and stopped on release, then that all listed checks passed: Inspect blocked
+panning and Escape restored it without a table click; panning remained continuous
+after playing Azure Flame; restart cancellation, fresh setup and reopening the
+new attempt worked. These physical-input results are owner testimony. The first
+capture separately shows Azure Flame with four charges and Patrice with two
+resources and two actions. A later capture shows card inspection after restarting
+and continuing into play. Neither static capture proves continuous keyboard input.
+
+The window closed normally at 16:05:25 UTC with exit 0, before the cleanup reserve;
+the process was confirmed absent. Evidence is retained under
+`~/.cache/agent-tmp/arkham-controls-native-20261103/`: `run.json`, `app.log`,
+`current-state.png`, `after-restart.png` and the isolated save/archive. The archive
+matches the previous attempt byte for byte; both it and the restarted attempt
+load, reopen and initialize nine-moment replays through the production driver
+using separate validation destinations. Their save round trips preserve exact
+bytes. The new attempt has a different random seed and retains the same preparation
+source/deck definitions and excluded weaknesses. Joel continued into play after
+restart, so the final new save is beyond lead selection. Original personal saves
+and the launch-source copy are unchanged. This accepts the reported camera/restart
+route, not a complete scenario playthrough or broader presentation acceptance.
+
+Consulted rules: `AUTH-1`–`AUTH-3`, `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`,
+`EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`, `REP-1`–`REP-3`, `AGENT-1`–`AGENT-5`,
+`OPS-1`–`OPS-7`, `PUB-1` and `GOV-1`–`GOV-3`.
 
 ## Record compatibility
 

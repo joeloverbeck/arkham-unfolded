@@ -931,6 +931,7 @@ fn camera_controls(
             pointer_blocked: modal_open || table.history,
             over_ui,
             keyboard: keyboard_captured,
+            pan: None,
             wheel: context
                 .as_ref()
                 .is_some_and(|context| context.menu_open() || context.utilities_open())

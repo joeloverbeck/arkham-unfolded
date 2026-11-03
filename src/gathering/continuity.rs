@@ -223,6 +223,48 @@ pub fn save_session(path: impl AsRef<Path>, session: &Session) -> Result<(), Con
         },
         |previous| load_session(previous).map(|_| ()),
     )
+    .map(|_| ())
+}
+
+/// Starts a fresh attempt only after preserving the exact expected saved record.
+/// The returned archive remains independent of subsequent `.previous` rotation.
+pub fn restart_session(
+    path: impl AsRef<Path>,
+    expected: &Session,
+    session: &Session,
+) -> Result<PathBuf, ContinuityError> {
+    if !session.is_fresh() || session.is_verification_fixture() {
+        return Err(ContinuityError(
+            "Restart requires a fresh Gathering setup.".into(),
+        ));
+    }
+    session
+        .validate()
+        .map_err(|error| ContinuityError(error.to_string()))?;
+    if session.source != expected.source {
+        return Err(ContinuityError(
+            "Restart must preserve the selected decks and rules.".into(),
+        ));
+    }
+    let bytes = envelope("gathering-session", serde_json::to_value(session)?)?;
+    record_replacement::replace(
+        path.as_ref(),
+        &bytes,
+        MAX_RECORD_BYTES,
+        ContinuityError,
+        |existing| {
+            let existing = existing.ok_or_else(|| ContinuityError(
+                "The saved attempt is missing. Save the current attempt before restarting.".into(),
+            ))?;
+            let committed = decode_session(decode_envelope(existing, "gathering-session")?)?;
+            if &committed != expected {
+                return Err(ContinuityError("A different or later Gathering decision is already saved. Reopen it before restarting.".into()));
+            }
+            Ok(Replacement::Archive)
+        },
+        |previous| load_session(previous).map(|_| ()),
+    )?
+    .ok_or_else(|| ContinuityError("Restart did not retain the previous attempt.".into()))
 }
 
 /// A save failure preserves every live choice, card and unrevealed random outcome.
@@ -276,6 +318,7 @@ pub fn save_recording(
         },
         |previous| load_recording(previous).map(|_| ()),
     )
+    .map(|_| ())
 }
 
 pub fn load_recording(path: impl AsRef<Path>) -> Result<Recording, ContinuityError> {

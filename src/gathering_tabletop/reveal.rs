@@ -194,6 +194,48 @@ mod tests {
     }
 
     #[test]
+    fn held_pan_preserves_the_reveal_button_and_dismisses_only_an_open_chooser() {
+        use bevy::input::keyboard::Key;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("pan.json");
+        let session = ordinary_reveal();
+        let mut app = host(session.clone(), path.clone());
+        let reveal = button(&mut app, "Reveal chaos token").unwrap();
+        // Start with the renderer's actual control focused; keyboard input and
+        // activation below use the normal plugins and registered observers.
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(reveal, bevy::input_focus::FocusCause::Navigated);
+        app.world_mut()
+            .resource_mut::<PresentationTime>()
+            .advance_by(std::time::Duration::from_millis(100));
+        key(&mut app, KeyCode::KeyW, Key::Character("w".into()), true);
+        for _ in 0..5 {
+            let before = app.world().resource::<Orbit>().pose();
+            app.update();
+            assert!(app.world().resource::<Orbit>().pose().target.z < before.target.z);
+            let focused = app.world().resource::<InputFocus>().get();
+            assert!(
+                focused.is_some(),
+                "Panning must retain the focused Reveal control"
+            );
+            assert_eq!(focused, button(&mut app, "Reveal chaos token"));
+        }
+        key(&mut app, KeyCode::KeyW, Key::Character("w".into()), false);
+        key(&mut app, KeyCode::Enter, Key::Enter, true);
+        key(&mut app, KeyCode::Enter, Key::Enter, false);
+        assert!(app.world().resource::<Shortcut>().is_open());
+        key(&mut app, KeyCode::KeyW, Key::Character("w".into()), true);
+        assert!(!app.world().resource::<Shortcut>().is_open());
+        key(&mut app, KeyCode::KeyW, Key::Character("w".into()), false);
+        assert_eq!(app.world().resource::<Table>().session, session);
+        assert!(
+            !path.exists(),
+            "Opening/dismissing a chooser cannot reveal a token"
+        );
+    }
+
+    #[test]
     fn replay_and_failed_health_remove_live_reveal_input() {
         let directory = tempfile::tempdir().unwrap();
         let session = ordinary_reveal();

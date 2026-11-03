@@ -12,7 +12,8 @@ Open Terminal (`Ctrl` + `Alt` + `T`), then run the following. Replace the checko
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
-cargo run --locked --features tabletop --bin arkham-tabletop
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop
 ```
 
 The window is titled **Arkham Unfolded — Scripted Rules Experiment**. For development verification, run `scripts/check` from the same directory; checks are not a prerequisite to playing. For native rendering or interaction changes, also follow [developer native verification](#developer-native-verification).
@@ -28,8 +29,8 @@ The encounter discard begins empty. When Rotting Remains' revelation finishes, i
 For the other prepared case or a deliberate artwork-absence check:
 
 ```sh
-cargo run --locked --features tabletop --bin arkham-tabletop -- --case autofail
-cargo run --locked --features tabletop --bin arkham-tabletop -- --no-art
+target/debug/arkham-tabletop --case autofail
+target/debug/arkham-tabletop --no-art
 ```
 
 The normal asset root remains `$XDG_DATA_HOME/arkham-unfolded/assets-v2`, normally `~/.local/share/arkham-unfolded/assets-v2`, or the saved per-user preference in `$XDG_CONFIG_HOME/arkham-unfolded/config.toml`. The commands below prepare a fresh 15-file v3 collection including The Gathering's Easy / Standard reference; select it explicitly with `--art-root` or **Choose asset folder**. Earlier v1/v2 collections retain their verified artwork and show a readable reference substitute. Tony uses a separate `tony.toml` preference. Startup reports the experiment, resolved folder and completeness. **Choose asset folder** opens Ubuntu's `zenity` folder dialog, checks the collection, and offers to save it for the next launch. Restart to apply the choice. Canceling or a write failure preserves the previous setting. An incomplete recognized collection requires explicit confirmation to use substitutes; an unrecognized collection cannot be saved as a valid selection.
@@ -38,11 +39,11 @@ The normal asset root remains `$XDG_DATA_HOME/arkham-unfolded/assets-v2`, normal
 curl --fail --location \
   'https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png' \
   --output /tmp/arkham-reveal-icon.png
-cargo run --locked --bin arkham-assets -- prepare \
+scripts/dev cargo run --locked --bin arkham-assets -- prepare \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /tmp/arkham-reveal-icon.png \
   --output "$HOME/.local/share/arkham-unfolded/assets-v3"
-cargo run --locked --bin arkham-assets -- check "$HOME/.local/share/arkham-unfolded/assets-v3"
+scripts/dev cargo run --locked --bin arkham-assets -- check "$HOME/.local/share/arkham-unfolded/assets-v3"
 ```
 
 `--art-root PATH` selects another prepared collection for that launch without rewriting the preference; `--no-art` deliberately uses substitutes. The source archive is never a runtime fallback. Copying the whole prepared folder, including `manifest.json`, is sufficient to relocate the selected presentation assets. Personal saves and settings stay separate. Missing or changed files use readable substitutes, and original image/font bytes stay outside Git. A card's presence or absence never changes legal choices, rules outcomes or record compatibility. The [evidence manifest](../research/issue-1-evidence.json) preserves the source identities for the three original faces.
@@ -76,7 +77,8 @@ The reference is permanently at Test's upper-left, beside Rotting Remains when t
 The JSON-lines driver uses the same `Session::observe` and `Session::choose` functions as the tabletop:
 
 ```sh
-cargo run --locked --bin arkham-driver -- --case curse --save local/experiment/agent.session.json
+scripts/dev cargo build --locked --bin arkham-driver &&
+target/debug/arkham-driver --case curse --save local/experiment/agent.session.json
 ```
 
 It emits an initial `observation`, including its revision and currently legal choice IDs. Send a command on each line, for example `{"op":"observe"}` or `{"op":"choose","revision":0,"id":"commit-promise"}`. Always use the current returned revision and a returned choice ID. Other operations are `save`, `replay`, `next`, `back`, `live` and `quit`. A refused command returns an error and the unchanged observation. Replay refuses decisions and past-state saves. Successful choices autosave before being acknowledged.
@@ -116,6 +118,9 @@ Candidate: commit; executable/hash; completed check records.
 Run: exact launch/resume command; isolated save/settings/art paths; run manifest.
 Authority: accepted journey, total allowance and stop conditions.
 Capabilities: helper revision; supported actions needed by this route and limits.
+Human route, when the owner operates the game:
+  numbered action -> expected visible result; agreed capture pauses; close deadline
+  one report after closing: passed / failed / not tested for each item
 Route, highest-risk unverified behavior first:
   exact JSON command -> expected visible result -> required camera view/objects
   capture command -> what to inspect; mark unknown coordinates for the first capture
@@ -128,6 +133,8 @@ Recovery: app PID/start identity and window; supervisor and helper tool session 
 
 Copy the selected JSON examples from the interaction procedure below into the route, including capture and stop, so resumption needs no source lookup. Resolve target coordinates from an inspected client capture; examples are not preapproved click locations. Fill runtime identities as they become available and record the absolute deadline when the interval starts. Preparation grants no desktop access: launch, focus, consent and interaction stay inside the allowance actually authorized, including startup when that is part of the accepted interval. Keep the app's owner-review lifetime separate from the short control interval.
 
+When the owner supplies physical input, present the complete human route, expected results, capture pauses and stopping conditions before starting the timer or opening the game. Once the agreed interval begins, announce the absolute close deadline and let the owner follow that route without switching back to chat for routine instructions or intermediate answers. Request one combined report after the window closes, including anything untested. Interrupt during the run only for a planned capture pause, a failure, a stop condition or a necessary deadline reminder. The existing allowance and cleanup reserve still apply; delivering instructions late does not extend them.
+
 Before recording motion, frame both its source and destination with the relevant labels visible. Use a short recording for movement evidence; inspect it after cleanup when possible. Reserve time for the affected replay and fresh-process reopening checks before repeating an already observed path. At a context interruption, recover only the handoff, run manifest and last acknowledged event/capture, retaining the original deadline. An acknowledgement without a terminal result can hide partial input: inspect the existing helper's events before deciding whether any retry is safe. If the remaining budget cannot fit the next operation and cleanup, stop and leave that observation pending. The deadline and cleanup rules below remain controlling.
 
 ### Build an instrumented source copy
@@ -135,7 +142,7 @@ Before recording motion, frame both its source and destination with the relevant
 Before compiling a temporary instrumented source copy, use the isolated build helper. From the normal repository root, build the normal executable if it is absent, then choose a new output directory outside both checkouts:
 
 ```sh
-scripts/tools native build \
+scripts/dev scripts/tools native build \
   --source /absolute/path/to/diagnostic-source \
   --output-dir /absolute/path/to/fresh-diagnostic-build \
   --reference "$PWD/target/debug/arkham-tabletop"
@@ -156,7 +163,7 @@ Use the [compact native handoff](#prepare-a-compact-native-handoff) before the t
 Use a separate save and temporary settings for diagnostics. The Rust helper below targets the current Ubuntu GNOME/XWayland desktop; capture/input needs access to X11, the desktop session bus and its RemoteDesktop/ScreenCast portal, plus `xdotool` for explicit focus. `scripts/tools` builds only the small `arkham-tools` package. Its headless tests run in `scripts/check`, using a private `dbus-daemon` for protocol tests; no real desktop grant is requested by the tests. From the repository root, build the normal application and launch a disposable run:
 
 ```sh
-cargo build --locked --features tabletop --bin arkham-tabletop
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop
 mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
 review_dir=$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/arkham-native.XXXXXX")
 scripts/tools native launch \

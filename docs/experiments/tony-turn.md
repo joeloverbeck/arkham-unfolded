@@ -5,7 +5,8 @@
 ## Launch
 
 ```sh
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
   --experiment tony
 ```
 
@@ -78,13 +79,14 @@ Prepare the current collection of 42 images and one symbol font, including clue/
 curl --fail --location \
   'https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png' \
   --output /tmp/arkham-reveal-icon.png
-cargo run --locked --bin arkham-assets -- prepare-tony \
+scripts/dev cargo run --locked --bin arkham-assets -- prepare-tony \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /tmp/arkham-reveal-icon.png \
   --output "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
-cargo run --locked --bin arkham-assets -- check-tony \
+scripts/dev cargo run --locked --bin arkham-assets -- check-tony \
   "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
-cargo run --locked --features tabletop --bin arkham-tabletop -- \
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
   --experiment tony --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
 ```
 
@@ -99,7 +101,8 @@ The implementation consumes the exact source contract and independent worked exp
 ## Shared player driver and checks
 
 ```sh
-cargo run --locked --bin arkham-driver -- --experiment tony --save /tmp/new-tony-turn.json
+scripts/dev cargo build --locked --bin arkham-driver &&
+target/debug/arkham-driver --experiment tony --save /tmp/new-tony-turn.json
 ```
 
 The JSON-line protocol supports `observe`, `choose` with current `revision` and offered `id`, `save`, `replay`, `next`, `back`, `live`, `export` with a fresh `path`, and `quit`. Use `--load PATH` in another process to resume. Observations omit future card order and random state; deterministic token injection is a privileged test facility, never a player command. The UI and driver submit to the same rules and persistence authority.
@@ -111,7 +114,7 @@ Run `scripts/check`. Decision tests use #22's independent witnesses, including a
 Use legal driver choices to reach a state, then pass its save to the immutable native launcher. This example produces an opportunity attack's combined damage/horror counters and a held random chaos token:
 
 ```sh
-cargo build --locked --features tabletop --bin arkham-tabletop --bin arkham-driver
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop --bin arkham-driver
 tony_review=$(mktemp -d /tmp/arkham-tony-visual.XXXXXX)
 target/debug/arkham-driver --experiment tony --save "$tony_review/held.json" \
   > "$tony_review/driver.jsonl" <<'CHOICES'

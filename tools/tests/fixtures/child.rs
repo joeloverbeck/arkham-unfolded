@@ -3,6 +3,7 @@ use std::{env, fs, io::Write, process::{Command, ExitCode}, thread, time::Durati
 fn main() -> ExitCode {
     let args: Vec<_> = env::args_os().skip(1).collect();
     if args.first().is_some_and(|arg| arg == "--fixture-record-check") {
+        if let Some(marker) = env::var_os("ARKHAM_FIXTURE_STARTED") { fs::write(marker, "started").unwrap(); }
         println!("RECORD_CHECK_STDOUT");
         eprintln!("RECORD_CHECK_STDERR");
         println!("cwd={}", env::current_dir().unwrap().display());
@@ -21,6 +22,21 @@ fn main() -> ExitCode {
     }
     let program = env::args_os().next().unwrap();
     let name = std::path::Path::new(&program).file_name().unwrap();
+    // Substitute only the systemd boundary; execute the real check launchers.
+    // Effective resource enforcement is verified separately on the actual host.
+    if name == "systemd-run" {
+        if let Some(marker) = env::var_os("ARKHAM_FIXTURE_SCOPE_ENTERED") { fs::write(marker, "entered").unwrap(); }
+        if let Some(code) = env::var("ARKHAM_FIXTURE_SCOPE_EXIT").ok().and_then(|value| value.parse::<u8>().ok()).filter(|code| *code != 0) {
+            return ExitCode::from(code);
+        }
+        let separator = args.iter().position(|arg| arg == "--").unwrap();
+        return ExitCode::from(Command::new(&args[separator + 1]).args(&args[separator + 2..]).status().unwrap().code().unwrap_or(1) as u8);
+    }
+    if name == "cargo" && env::var_os("ARKHAM_FIXTURE_EDITOR").is_some() {
+        fs::write(env::var_os("ARKHAM_FIXTURE_TRACE").unwrap(), args.iter().map(|arg| arg.to_string_lossy()).collect::<Vec<_>>().join("\n")).unwrap();
+        println!("{{\"reason\":\"build-finished\",\"success\":true}}");
+        return ExitCode::SUCCESS;
+    }
     if let Ok(mode) = env::var("ARKHAM_FIXTURE_RUSTUP") {
         if name == "cargo" { eprintln!("CARGO_MUST_NOT_RUN_DURING_BOOTSTRAP"); return ExitCode::from(97); }
         let mut trace = fs::OpenOptions::new().create(true).append(true).open(env::var_os("ARKHAM_FIXTURE_TRACE").unwrap()).unwrap();

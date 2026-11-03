@@ -32,6 +32,7 @@ fn copy_gate(root: &Path) {
     fs::create_dir(root.join("scripts")).unwrap();
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     for name in [
+        "dev",
         "check",
         "check-index",
         "check-tools",
@@ -152,6 +153,7 @@ fn actual_repository_gate_stops_at_a_forbidden_index_before_later_checks() {
     let bin = root.join("bin");
     fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("cargo")).unwrap();
+    std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("systemd-run")).unwrap();
     let result = Command::new("bash")
         .arg(root.join("scripts/check"))
         .env(
@@ -181,17 +183,22 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
     let bin = root.join("bin");
     fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("cargo")).unwrap();
+    std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("systemd-run")).unwrap();
     let path = std::env::join_paths(
         std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
     )
     .unwrap();
     let trace = root.join("trace");
-    let run = |script: &str, fail_at: usize| {
+    let run = |script: &str, fail_at: usize, fail_scope: bool| {
         Command::new("bash")
             .arg(root.join("scripts").join(script))
             .env("PATH", &path)
             .env("ARKHAM_FIXTURE_CHECK", "1")
             .env("ARKHAM_FIXTURE_FAIL_CHECK", fail_at.to_string())
+            .env(
+                "ARKHAM_FIXTURE_SCOPE_EXIT",
+                if fail_scope { "78" } else { "0" },
+            )
             .env("ARKHAM_FIXTURE_TOOLS", env!("CARGO_BIN_EXE_arkham-tools"))
             .env("ARKHAM_FIXTURE_TRACE", &trace)
             .current_dir(root)
@@ -206,7 +213,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
         "test --locked -p arkham-unfolded-experiment --features tabletop",
         "test --locked --manifest-path vendor/wgpu-hal/Cargo.toml --lib --no-default-features --features vulkan vulkan::upload_memory::tests",
     ];
-    assert!(run("check", 0).status.success());
+    assert!(run("check", 0, false).status.success());
     assert_eq!(
         fs::read_to_string(&trace)
             .unwrap()
@@ -227,7 +234,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
     );
     fs::write(&trace, "").unwrap();
     for phase in phases {
-        assert!(run(&format!("check-{phase}"), 0).status.success());
+        assert!(run(&format!("check-{phase}"), 0, false).status.success());
     }
     assert_eq!(
         fs::read_to_string(&trace)
@@ -239,7 +246,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
 
     for fail_at in 1..=expected.len() {
         fs::write(&trace, "").unwrap();
-        assert_eq!(run("check", fail_at).status.code(), Some(42));
+        assert_eq!(run("check", fail_at, false).status.code(), Some(42));
         assert_eq!(
             fs::read_to_string(&trace)
                 .unwrap()
@@ -248,4 +255,8 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
             expected[..fail_at]
         );
     }
+
+    fs::write(&trace, "").unwrap();
+    assert_eq!(run("check", 0, true).status.code(), Some(78));
+    assert!(fs::read_to_string(&trace).unwrap().is_empty());
 }

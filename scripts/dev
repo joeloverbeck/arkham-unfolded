@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+
+exec systemd-run --user --scope --quiet --expand-environment=no \
+  --property=MemoryHigh=12G \
+  --property=MemoryMax=16G \
+  --property=MemorySwapMax=1G \
+  --property=CPUQuota=600% \
+  --property=CPUWeight=20 \
+  -- flock --exclusive --close --timeout 30 --conflict-exit-code 75 . "$@"

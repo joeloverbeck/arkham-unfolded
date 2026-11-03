@@ -1,0 +1,13 @@
+{
+  "rust-analyzer.cargo.features": ["tabletop"],
+  "rust-analyzer.cargo.buildScripts.invocationStrategy": "once",
+  "rust-analyzer.cargo.buildScripts.overrideCommand": [
+    "./scripts/dev", "cargo", "check", "--locked", "--workspace",
+    "--all-targets", "--features", "tabletop", "--message-format=json"
+  ],
+  "rust-analyzer.check.invocationStrategy": "once",
+  "rust-analyzer.check.overrideCommand": [
+    "./scripts/dev", "cargo", "check", "--locked", "--workspace",
+    "--all-targets", "--features", "tabletop", "--message-format=json"
+  ]
+}

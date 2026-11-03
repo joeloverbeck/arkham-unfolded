@@ -1,4 +1,4 @@
-//! Tony and Party's locked file-replacement lifecycle. Adapters decide record
+//! Locked file-replacement lifecycle. Adapters decide record
 //! compatibility and replacement policy; this module owns filesystem sequencing.
 
 use std::{
@@ -50,7 +50,7 @@ pub(crate) fn replace<E: From<std::io::Error>>(
     error: fn(String) -> E,
     admit: impl FnOnce(Option<&[u8]>) -> Result<Replacement, E>,
     validate_recovery: impl FnOnce(&Path) -> Result<(), E>,
-) -> Result<(), E> {
+) -> Result<Option<PathBuf>, E> {
     check_size(bytes, limit, error)?;
     let parent = path
         .parent()
@@ -80,7 +80,7 @@ pub(crate) fn replace<E: From<std::io::Error>>(
     };
     let replacement = admit(existing.as_deref())?;
     if matches!(replacement, Replacement::Unchanged) {
-        return Ok(());
+        return Ok(None);
     }
     let previous = previous_path(path);
     if existing.is_some() && previous.try_exists()? {
@@ -91,6 +91,7 @@ pub(crate) fn replace<E: From<std::io::Error>>(
     let mut next = tempfile::NamedTempFile::new_in(parent)?;
     next.write_all(bytes)?;
     next.as_file().sync_all()?;
+    let mut archived_path = None;
     if let Some(existing) = existing {
         let mut backup = tempfile::NamedTempFile::new_in(parent)?;
         backup.write_all(&existing)?;
@@ -106,12 +107,13 @@ pub(crate) fn replace<E: From<std::io::Error>>(
                 .tempfile_in(parent)?;
             archive.write_all(&existing)?;
             archive.as_file().sync_all()?;
-            archive.keep().map_err(|cause| E::from(cause.error))?;
+            let (_, path) = archive.keep().map_err(|cause| E::from(cause.error))?;
+            archived_path = Some(path);
         }
         backup
             .persist(&previous)
             .map_err(|cause| E::from(cause.error))?;
     }
     next.persist(path).map_err(|cause| E::from(cause.error))?;
-    Ok(())
+    Ok(archived_path)
 }
