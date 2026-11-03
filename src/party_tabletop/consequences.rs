@@ -6,6 +6,7 @@
 //! clues, inside this module. Neither completion path changes rules or saves.
 use super::*;
 use crate::tabletop_counters::{self as counters, CounterKind, CounterVisual};
+pub(super) use crate::tabletop_tokens::ReturningToken;
 use crate::{
     TokenFace, TokenStatus,
     tabletop_tokens::{self, TokenVisual},
@@ -144,17 +145,14 @@ impl View {
                 commands.entity(entity).insert((
                     Scene,
                     Pickable::IGNORE,
-                    ReturningToken {
-                        start: at,
-                        destination: if token.face == TokenFace::Curse
-                            && token.status == TokenStatus::Resolved
-                        {
+                    ReturningToken::new(
+                        at,
+                        if token.face == TokenFace::Curse && token.status == TokenStatus::Resolved {
                             scene::curse_pool_at()
                         } else {
                             layout::test_bag()
                         },
-                        elapsed: 0.,
-                    },
+                    ),
                 ));
                 commands.entity(label).despawn();
                 continue;
@@ -175,13 +173,6 @@ impl View {
     }
 }
 
-#[derive(Component)]
-pub(super) struct ReturningToken {
-    start: Vec3,
-    pub(super) destination: Vec3,
-    elapsed: f32,
-}
-
 pub(super) fn advance_returning(
     mut commands: Commands,
     time: Res<PresentationTime>,
@@ -189,17 +180,7 @@ pub(super) fn advance_returning(
     mut returning: Query<(Entity, &mut Transform, &mut ReturningToken)>,
 ) {
     for (entity, mut transform, mut transfer) in &mut returning {
-        transfer.elapsed += time.delta_secs();
-        let fraction = if table.reduced_motion {
-            1.
-        } else {
-            (transfer.elapsed / 0.6).min(1.)
-        };
-        let eased = fraction * fraction * (3. - 2. * fraction);
-        transform.translation = transfer.start.lerp(transfer.destination, eased)
-            + Vec3::Y * (std::f32::consts::PI * fraction).sin() * 0.5;
-        transform.scale = Vec3::splat(1. - fraction * 0.9);
-        if fraction >= 1. {
+        if transfer.advance(&mut transform, time.delta_secs(), table.reduced_motion) {
             commands.entity(entity).despawn();
         }
     }

@@ -5,13 +5,13 @@ under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). It uses 
 actual three selected starting lists, rather than the prepared Study experiment's
 scripted hands. **Completing mulligans now begins ordinary scenario play.** The
 first full round and all following mythos draws have driver-level evidence.
-The earlier native pointer route through setup, one action and replay passed with
-readable substitutes. Artwork-enabled checks now verify card menus,
-investigator inspection, setup completion, a first action through Patrice's card
-menu, and replay back to the live table. The retest also verifies the repaired
-offscreen labels and all three mulligan owner labels. Physical keyboard checks,
-Act/Agenda inspection, a complete native playthrough and owner acceptance remain
-outstanding.
+The owner rejected the earlier interface because it departed from the accepted
+Party presentation. The correction shares Party's production screen, portrait
+rail with **TURN**, inspection and story-reading panels, physical cards, captions,
+investigator counters, counted decks, chaos bag, Reveal control and motion paths.
+The earlier native checks below concern the superseded presentation. A native
+comparison of this correction, a complete native playthrough and owner acceptance
+remain outstanding.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and
@@ -51,17 +51,36 @@ Click an investigator card to open its contextual menu and choose the lead.
 Click each opening-hand card to select or undo its mulligan; confirm the hand
 using the table-wide control. During play, cards, piles, locations and revealed
 tokens offer their legal actions through the same shared menu renderer as Party.
-Clicking a component with no available action opens inspection directly; otherwise
-choose **Inspect** for enlarged artwork and effective rules. The encounter deck
+Clicking a component with only one inspection target opens it directly; piles
+retain a contextual chooser for their individual cards. Otherwise choose
+**Inspect** for enlarged artwork and effective rules. The encounter deck
 inspection lists its starting quantities without revealing shuffled order.
 Act and Agenda inspection also includes their previously revealed reverse sides.
 Replay limits those images and texts to the moment being viewed.
 
-Camera controls use the existing Overview, Scenario and investigator views.
-Save, Reopen, History and Replay operate on the full session; replay permits
+The portrait rail and Scenario, Test and Overview buttons retain Party's camera
+controls. The **TURN** badge follows the actual actor, not camera focus.
+**Menu** at the upper right contains Save, Reopen, History, Replay, reduced motion
+and artwork settings. Save, Reopen, History and Replay operate on the full session; replay permits
 inspection but no live choices. Menus use Tab/Shift+Tab and Enter/Space; Esc
 closes them. Camera keys are suspended while a contextual menu captures input.
 Headless tests exercise the actual menu controls and save/replay protections.
+
+Two full-scenario additions are prepared for owner review. Several unengaged
+enemies occupy a small local pile beside their room; clicking the room or any
+enemy offers every enemy's inspections and legal actions. Engaged enemies use
+the investigator's threat area. An exhausted enemy in a narrow room pile is
+identified in text instead of rotating into the neighboring location.
+
+Newly revealed Act/Agenda reverses use Party's blocking reading layout.
+**Continue** acknowledges the reading and resumes presentation; the transition's
+rules effects have already been saved. Closing and restarting while that remains
+the latest decision offers the reading again without applying its effects again.
+Replay reveals only the displayed prefix and keeps its own navigation. This
+differs from Party's separately committed `continue-act` step and is a proposed
+Gathering presentation choice, not recorded owner acceptance.
+
+The following native evidence is historical and does not verify the correction:
 The [artwork-enabled setup evidence](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6590517420)
 and [action/replay retest with independent audit](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6590847507)
 record the exercised routes and their limits. The retest resumed a copy of the

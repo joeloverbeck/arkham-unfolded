@@ -197,9 +197,9 @@ fn public_continuations_keep_choices_routed_after_zone_and_window_changes() {
                 .find(|choice| choice.id != "undo")
                 .unwrap_or_else(|| {
                     if view.choices[0].id.starts_with("tokens:") {
-                        &view.choices[step % view.choices.len()]
+                        view.choices[step % view.choices.len()].clone()
                     } else {
-                        &view.choices[0]
+                        view.choices[0].clone()
                     }
                 });
             match session.choose(view.revision, &selected.id) {
@@ -357,9 +357,8 @@ fn activate_source_choice(session: Session, source: Source, id: &str) -> Session
     let path = directory.path().join("source-choice.json");
     let before = session.observe();
     let label = feedback::menu::label(
-        &before
-            .choices
-            .iter()
+        &source_choices(&before, &source)
+            .into_iter()
             .find(|choice| choice.id == id)
             .unwrap()
             .label,
@@ -367,12 +366,8 @@ fn activate_source_choice(session: Session, source: Source, id: &str) -> Session
     let mut expected = session.clone();
     choose(&mut expected, id);
     let mut app = super::super::tests::host(path.clone());
-    {
-        let mut table = app.world_mut().resource_mut::<Table>();
-        table.session = session;
-        table.epoch += 1;
-        table.dirty = true;
-    }
+    // Match native startup's reconstruction of reading and presentation state.
+    app.insert_resource(Table::new(session, path.clone()));
     app.update();
     super::super::tests::click_source(&mut app, source);
     assert_eq!(app.world().resource::<Table>().session.observe(), before);
@@ -648,4 +643,379 @@ fn replay_card_selection_only_inspects_and_never_opens_gameplay_choices() {
     assert!(!table.context.is_open());
     assert_eq!(table.session.observe().revision, 0);
     assert!(!path.exists());
+}
+
+#[test]
+fn replay_backpack_menu_inspects_each_public_card_without_offering_gameplay() {
+    use crate::gathering::{BackpackFixture, HostileFixture};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("pile-inspection.json");
+    let session = Session::with_hostile_fixture(HostileFixture::Backpack(BackpackFixture::Chill));
+    let before = session.recording();
+    let view = session.observe_for_play();
+    let pack = &view.play.as_ref().unwrap().backpacks[0];
+    let source = Source::Backpack(pack.asset);
+    let expected = pack.cards.clone();
+    assert!(expected.len() > 1);
+    let mut app = super::super::tests::host(path.clone());
+    let image = app
+        .world_mut()
+        .resource_mut::<Assets<Image>>()
+        .add(Image::default());
+    app.insert_resource(art::Art::with_images_for_test([(
+        "card-04107",
+        image.clone(),
+    )]));
+    {
+        let mut table = app.world_mut().resource_mut::<Table>();
+        table.session = session;
+        table.replay = Some(Replay::new(before.clone()).unwrap());
+        table.epoch += 1;
+        table.dirty = true;
+    }
+    app.update();
+    super::super::tests::click_source(&mut app, source);
+    let world = app.world_mut();
+    let menu = world
+        .query_filtered::<Entity, With<Menu>>()
+        .single(world)
+        .expect("A public multi-card pile opens an inspection menu in replay");
+    let labels = world
+        .get::<Children>(menu)
+        .unwrap()
+        .iter()
+        .filter(|entity| world.get::<Button>(*entity).is_some())
+        .filter_map(|entity| {
+            world
+                .get::<AccessibleLabel>(entity)
+                .map(|label| (entity, label.0.clone()))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        labels
+            .iter()
+            .all(|(_, label)| label.starts_with("Inspect ") || label == "Dismiss"),
+        "Replay pile menus contain inspection and dismissal only: {labels:?}"
+    );
+    for card in &expected {
+        assert!(
+            labels.iter().any(|(_, label)| label.contains(&card.title)),
+            "Missing {}",
+            card.title
+        );
+    }
+    let card = expected.iter().find(|card| card.code == "04107").unwrap();
+    let row = labels
+        .iter()
+        .find(|(_, label)| label.contains(&card.title))
+        .unwrap()
+        .0;
+    world.trigger(Activate { entity: row });
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<Table>()
+            .inspection
+            .as_ref()
+            .map(|(_, code)| code.as_str()),
+        Some("04107")
+    );
+    let world = app.world_mut();
+    assert!(
+        world
+            .query::<&ImageNode>()
+            .iter(world)
+            .any(|node| node.image == image)
+    );
+    assert_eq!(app.world().resource::<Table>().session.recording(), before);
+    assert!(!path.exists());
+}
+
+#[test]
+fn bag_and_token_read_only_inspection_uses_the_standard_reference() {
+    let mut session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::JacquelineCancellation);
+    for _ in 0..4 {
+        let view = session.observe_for_play();
+        if view.choices.iter().any(|choice| choice.id == "test:reveal") {
+            break;
+        }
+        choose(
+            &mut session,
+            if view
+                .choices
+                .iter()
+                .any(|choice| choice.id == "commit:confirm")
+            {
+                "commit:confirm"
+            } else {
+                "window:pass"
+            },
+        );
+    }
+    choose(&mut session, "tokens:jacqueline");
+    choose(&mut session, "test:reveal");
+    let view = session.observe_for_play();
+    for source in [Source::Bag, Source::Token(0)] {
+        let mut context = Context::default();
+        let effect = context.select(
+            &view,
+            Selection {
+                source,
+                at: Vec3::ZERO,
+                title: "Chaos bag".into(),
+                inspect_code: "chaos-bag".into(),
+            },
+            false,
+        );
+        assert!(matches!(effect, Some(SelectionEffect::Inspect(_, code)) if code == "01104"));
+    }
+}
+
+#[test]
+fn room_and_exposed_enemy_open_the_whole_public_enemy_group_once() {
+    let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringHunters);
+    let view = session.observe_for_play();
+    let enemies = &view.play.as_ref().unwrap().scenario.enemies;
+    let exposed = enemies
+        .iter()
+        .rev()
+        .find(|enemy| enemy.engaged.is_none() && enemy.location == "01112")
+        .unwrap();
+    for source in [
+        Source::Location("01112".into()),
+        Source::Card(exposed.card.id),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = super::super::tests::host(directory.path().join("enemy-group.json"));
+        {
+            let mut table = app.world_mut().resource_mut::<Table>();
+            table.session = session.clone();
+            table.epoch += 1;
+            table.dirty = true;
+        }
+        app.update();
+        super::super::tests::click_source(&mut app, source.clone());
+        let world = app.world_mut();
+        let menu = world
+            .query_filtered::<Entity, With<Menu>>()
+            .single(world)
+            .unwrap();
+        let labels = world
+            .get::<Children>(menu)
+            .unwrap()
+            .iter()
+            .filter_map(|row| {
+                world
+                    .get::<AccessibleLabel>(row)
+                    .map(|label| label.0.clone())
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            labels.iter().any(
+                |label| label.starts_with("Inspect Swarm of Rats · 1 of 2\n")
+                    && label.contains("Damage ")
+                    && label.contains("Doom ")
+                    && label.contains("Bounties ")
+            ),
+            "{labels:?}"
+        );
+        assert!(
+            labels.iter().any(
+                |label| label.starts_with("Inspect Swarm of Rats · 2 of 2\n")
+                    && label.contains("Damage ")
+                    && label.contains("Doom ")
+                    && label.contains("Bounties ")
+            ),
+            "{labels:?}"
+        );
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.starts_with("Inspect Ghoul Priest\n")),
+            "{labels:?}"
+        );
+        let choices = source_choices(&view, &source);
+        assert!(
+            !choices.is_empty(),
+            "The enemy-phase fixture offers a real Hunter choice"
+        );
+        let ids = choices
+            .iter()
+            .map(|choice| choice.id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            ids.len(),
+            choices.len(),
+            "The original clicked enemy is not listed twice"
+        );
+        for choice in choices {
+            assert_eq!(
+                labels
+                    .iter()
+                    .filter(|label| **label == feedback::menu::label(&choice.label))
+                    .count(),
+                1
+            );
+        }
+        assert_eq!(
+            app.world().resource::<Table>().session.recording(),
+            session.recording()
+        );
+    }
+}
+
+#[test]
+fn displayed_choices_remove_copy_annotations_without_changing_recorded_choices() {
+    let mut view = Session::with_seed(19).observe_for_play();
+    // This annotation shape is emitted by spell_events::choices. The global
+    // control path must preserve the same display rule as contextual actions.
+    view.choices = vec![Choice {
+        id: "window:pass".into(),
+        label: "Pass; attack Ghoul Minion (copy 312) for 2 damage".into(),
+        cancel_faces: vec![],
+    }];
+    let recorded = view.choices.clone();
+    let shown = global_choices(&view);
+    assert_eq!(shown[0].label, "Pass; attack Ghoul Minion for 2 damage");
+    assert_eq!(shown[0].id, recorded[0].id);
+    assert_eq!(shown[0].cancel_faces, recorded[0].cancel_faces);
+    assert_eq!(view.choices, recorded);
+}
+
+#[test]
+fn enemy_inspection_keeps_each_public_physical_state_without_showing_its_id() {
+    let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringHunters);
+    let view = session.observe_for_play();
+    let expected = view
+        .play
+        .as_ref()
+        .unwrap()
+        .scenario
+        .enemies
+        .iter()
+        .find(|enemy| enemy.engaged.is_none() && enemy.location == "01112")
+        .unwrap()
+        .clone();
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = super::super::tests::host(directory.path().join("enemy-inspection.json"));
+    app.insert_resource(Table::new(
+        session.clone(),
+        directory.path().join("enemy-inspection.json"),
+    ));
+    let image = app
+        .world_mut()
+        .resource_mut::<Assets<Image>>()
+        .add(Image::default());
+    let role: &'static str = Box::leak(format!("card-{}", expected.card.code).into_boxed_str());
+    app.insert_resource(art::Art::with_images_for_test([(role, image.clone())]));
+    app.update();
+    super::super::tests::click_source(&mut app, Source::Location("01112".into()));
+    let key = format!("enemy:{}", expected.card.id);
+    let table = app.world().resource::<Table>();
+    let generation = table.context.generation();
+    let epoch = table.epoch;
+    let revision = table.view().revision;
+    let selection = table.context.selected.as_ref().unwrap();
+    let targets = inspections(&table.view(), selection);
+    let target = targets.iter().find(|target| target.code == key).unwrap();
+    assert!(
+        target
+            .details
+            .as_ref()
+            .unwrap()
+            .contains(&format!("Damage {}", expected.damage))
+    );
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::ContextInspect(
+            generation,
+            epoch,
+            revision,
+            expected.card.title.clone(),
+            key.clone(),
+        ));
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<Table>()
+            .inspection
+            .as_ref()
+            .unwrap()
+            .1,
+        key
+    );
+    let world = app.world_mut();
+    assert!(
+        world
+            .query::<&ImageNode>()
+            .iter(world)
+            .any(|node| node.image == image)
+    );
+    let text = world
+        .query::<&Text>()
+        .iter(world)
+        .map(|text| text.0.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for detail in [
+        format!("Damage {}", expected.damage),
+        format!("Doom {}", expected.doom),
+        format!("Bounties {}", expected.bounties),
+    ] {
+        assert!(text.contains(&detail), "{text}");
+    }
+    assert!(!text.contains(&key));
+    assert_eq!(
+        app.world().resource::<Table>().session.recording(),
+        session.recording()
+    );
+}
+
+#[test]
+fn actual_end_turn_and_bounty_history_use_public_names_instead_of_physical_ids() {
+    use crate::gathering::{HostileFixture, PeterFixture};
+    let mut forced =
+        Session::with_hostile_fixture(HostileFixture::Peter(PeterFixture::ForcedBeforeReaction));
+    choose(&mut forced, "turn:end");
+    let view = forced.observe_for_play();
+    let raw = view
+        .choices
+        .iter()
+        .find(|choice| choice.id.starts_with("turn-end:"))
+        .unwrap();
+    let id = raw
+        .id
+        .strip_prefix("turn-end:")
+        .unwrap()
+        .parse::<u16>()
+        .unwrap();
+    let shown = source_choices(&view, &Source::Card(id))
+        .into_iter()
+        .find(|choice| choice.id == raw.id)
+        .unwrap();
+    assert!(shown.label.contains("Frozen in Fear"));
+    assert!(!shown.label.contains(&id.to_string()));
+    assert!(raw.label.contains(&id.to_string()));
+    assert!(display_history(&view, &raw.label).contains("Frozen in Fear"));
+
+    let mut bounty = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
+    choose(&mut bounty, "round-end:advance-act");
+    for who in 0..3 {
+        for _ in 0..3 {
+            choose(&mut bounty, &format!("act:contribute:{who}"));
+        }
+    }
+    choose(&mut bounty, "bounty:400:1");
+    let view = bounty.observe_for_play();
+    let raw = view
+        .history
+        .iter()
+        .find(|line| line.contains("bounties from Bounty Contracts to enemy 400"))
+        .unwrap();
+    let shown = display_history(&view, raw);
+    assert!(shown.contains("Ghoul Priest"));
+    assert!(!shown.contains("400"));
+    assert!(raw.contains("400"));
 }

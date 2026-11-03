@@ -57,9 +57,56 @@ impl StoryCard {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Faces {
     known: BTreeSet<StoryCard>,
+}
+
+/// Reading acknowledges a displayed public reverse; it never advances rules.
+/// Reopening a record at the revealing decision deliberately offers that last
+/// transition again, without reapplying any of its already-saved effects.
+#[derive(Default)]
+pub(super) struct Reading {
+    known: Faces,
+    pending: std::collections::VecDeque<StoryCard>,
+}
+
+impl Reading {
+    pub(super) fn for_record(record: &Recording) -> Self {
+        let before = record
+            .moments
+            .len()
+            .checked_sub(2)
+            .and_then(|index| record.moments.get(index))
+            .or_else(|| record.moments.first());
+        Self {
+            known: before.map_or_else(Faces::default, |view| Faces::for_view(record, view, None)),
+            pending: Default::default(),
+        }
+    }
+
+    pub(super) fn synchronize(&mut self, faces: &Faces) {
+        self.pending.retain(|card| faces.known.contains(card));
+        self.pending
+            .extend(faces.known.difference(&self.known.known).copied());
+        self.known = faces.clone();
+    }
+
+    pub(super) fn current(&self) -> Option<StoryCard> {
+        self.pending.front().copied()
+    }
+    pub(super) fn advance(&mut self) {
+        self.pending.pop_front();
+    }
+    pub(super) fn dismiss_for_navigation(&mut self) {
+        self.pending.clear();
+    }
+    pub(super) fn at(faces: Faces) -> Self {
+        Self {
+            known: faces,
+            pending: Default::default(),
+        }
+    }
 }
 
 impl Faces {

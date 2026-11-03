@@ -14,7 +14,7 @@ pub(super) struct CardMotion {
 }
 
 #[derive(Component)]
-pub(super) struct CardLabel(pub Entity);
+pub(super) struct CardLabel(pub Entity, pub Vec3);
 
 #[derive(Default)]
 pub(super) struct Origins {
@@ -75,7 +75,7 @@ impl Origins {
             for (slot, enemy) in play.scenario.enemies.iter().enumerate() {
                 result
                     .positions
-                    .insert(enemy.card.id, play::enemy_position(slot));
+                    .insert(enemy.card.id, play::enemy_position(play, slot));
             }
             for card in &play.pending.resolving_cards {
                 result.positions.insert(card.id, play::resolving_position());
@@ -111,6 +111,13 @@ pub(super) fn animate(
 ) {
     let paused = table.modal() || (table.is_presenting() && table.presentation_paused);
     for (entity, card, mut transform, motion) in &mut cards {
+        if table.reduced_motion {
+            if let Some(motion) = motion {
+                transform.translation = motion.end;
+                commands.entity(entity).remove::<CardMotion>();
+            }
+            continue;
+        }
         if let Some(mut motion) = motion {
             if !paused {
                 motion.elapsed = (motion.elapsed + time.delta_secs()).min(0.35);

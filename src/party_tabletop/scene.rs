@@ -1,5 +1,6 @@
 use super::*;
-use crate::tabletop_counters::{self as counters, ActionRow, CounterKind, CounterVisual};
+use crate::tabletop_counters::{self as counters, CounterKind, CounterVisual};
+use crate::tabletop_pieces as pieces;
 
 pub(super) fn discard_at(who: Investigator) -> Vec3 {
     layout::investigator_discard(who.index())
@@ -11,20 +12,9 @@ pub(super) fn label(
     at: Vec3,
     heading: bool,
 ) -> Entity {
-    commands
-        .spawn((
-            art.text(text, if heading { 18. } else { 13. }, PAPER),
-            TextLayout::justify(Justify::Center),
-            Node {
-                position_type: PositionType::Absolute,
-                width: px(190.),
-                ..default()
-            },
-            Pickable::IGNORE,
-            WorldLabel(at, heading),
-            Scene,
-        ))
-        .id()
+    let entity = pieces::label(commands, text, at, heading, &art.symbol_font);
+    commands.entity(entity).insert(Scene);
+    entity
 }
 #[allow(clippy::too_many_arguments)]
 fn card(
@@ -37,41 +27,23 @@ fn card(
     source: Source,
     revision: u64,
 ) {
-    let image = art.image(CARDS[index].role);
     let at = transform.translation;
-    let entity = commands
-        .spawn((
-            Name::new(CARDS[index].title),
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: if image.is_some() {
-                    Color::WHITE
-                } else {
-                    Color::srgb(0.34, 0.31, 0.23)
-                },
-                base_color_texture: image,
-                unlit: true,
-                ..default()
-            })),
-            transform,
-            Scene,
-            CardSource(source),
-        ))
+    let entity = pieces::card(
+        commands,
+        meshes,
+        materials,
+        art.image(CARDS[index].role),
+        transform,
+        CARDS[index].title,
+    );
+    commands
+        .entity(entity)
+        .insert((Scene, CardSource(source)))
         .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
             if event.button == bevy::picking::pointer::PointerButton::Primary {
                 queue.0.push(Action::Select(revision, source, at));
             }
-        })
-        .id();
-    feedback::attach_card_feedback(
-        commands,
-        meshes,
-        materials,
-        entity,
-        CARD_WIDTH,
-        CARD_LENGTH,
-        0.,
-    );
+        });
 }
 #[allow(clippy::too_many_arguments)]
 fn face(
@@ -113,36 +85,22 @@ fn deck(
     source: Source,
     revision: u64,
 ) {
-    let height = (count.max(1) as f32) * 0.0065;
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(CARD_WIDTH, height, CARD_LENGTH))),
-        MeshMaterial3d(materials.add(PAPER)),
-        Transform::from_translation(at + Vec3::Y * height / 2.),
-        Scene,
-        Pickable::IGNORE,
-    ));
-    let image = art.image("card-back/player");
-    commands
-        .spawn((
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: if image.is_some() {
-                    Color::WHITE
-                } else {
-                    Color::srgb(0.12, 0.19, 0.30)
-                },
-                base_color_texture: image,
-                unlit: true,
-                ..default()
-            })),
-            Transform::from_translation(at + Vec3::Y * (height + 0.002)),
-            Scene,
-        ))
-        .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
+    let deck = pieces::deck(
+        commands,
+        meshes,
+        materials,
+        art.image("card-back/player"),
+        count,
+        at,
+    );
+    commands.entity(deck.body).insert(Scene);
+    commands.entity(deck.top).insert(Scene).observe(
+        move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
             if event.button == bevy::picking::pointer::PointerButton::Primary {
                 queue.0.push(Action::Select(revision, source, at));
             }
-        });
+        },
+    );
 }
 #[allow(clippy::too_many_arguments)]
 pub(super) fn synchronize(
@@ -339,105 +297,31 @@ pub(super) fn synchronize(
             None,
             revision,
         );
-        for (kind, amount, role, at) in [
-            (
-                CounterKind::Resource,
-                investigator.resources,
-                "token/resource",
-                layout::investigator_resource(index),
-            ),
-            (
-                CounterKind::Clue,
-                investigator.clues,
-                "token/clue",
-                layout::investigator_clue(index),
-            ),
-        ] {
-            if let Some((token, caption)) = counters::spawn_count(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                CounterVisual {
-                    kind,
-                    amount,
-                    image: art.image(role),
-                    at,
-                    scale: 0.85,
-                },
-            ) {
-                commands.entity(token).insert(Scene);
-                commands.entity(caption).insert(Scene);
-            }
-        }
-        let class = layout::investigator_class(index);
-        let class_name = class.asset_name();
-        for entity in counters::spawn_actions(
+        let counters = pieces::investigator_counters(
             &mut commands,
             &mut meshes,
             &mut materials,
-            ActionRow {
-                investigator: index,
-                remaining: investigator.ordinary_actions,
-                turn_ended: investigator.turn_finished,
-                additional: (who == Investigator::Tony).then_some(view.tony_bonus_action),
-                additional_eligible: false,
-                class,
-                icon: art.image(&format!("class/{class_name}/icon")),
-                background: art.image(&format!("class/{class_name}/background")),
+            pieces::InvestigatorCounters {
+                index,
+                resources: investigator.resources,
+                clues: investigator.clues,
+                damage: investigator.damage,
+                health: investigator.health,
+                horror: investigator.horror,
+                sanity: investigator.sanity,
+                actions: Some(pieces::ActionState {
+                    remaining: investigator.ordinary_actions,
+                    allowance: 3,
+                    spent: 3_u8.saturating_sub(investigator.ordinary_actions),
+                    turn_ended: investigator.turn_finished,
+                    additional: (who == Investigator::Tony).then_some(view.tony_bonus_action),
+                    additional_eligible: false,
+                }),
             },
-        ) {
+            |role| art.image(role),
+        );
+        for entity in counters.entities {
             commands.entity(entity).insert(Scene);
-        }
-        for (amount, capacity, horror, role, title) in [
-            (
-                investigator.damage,
-                investigator.health,
-                false,
-                "token/damage",
-                "Damage",
-            ),
-            (
-                investigator.horror,
-                investigator.sanity,
-                true,
-                "token/horror",
-                "Horror",
-            ),
-        ] {
-            let at = layout::investigator_harm(index, horror);
-            let image = art.image(role);
-            let caption = layout::investigator_harm_caption(index, horror, image.is_none());
-            let text = if image.is_some() {
-                format!("{amount}/{capacity}")
-            } else {
-                format!("{title} {amount}/{capacity}")
-            };
-            let entity = crate::tabletop_harm_tokens::spawn(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                image,
-                at,
-                horror,
-            );
-            commands.entity(entity).insert(Scene);
-            commands.spawn((
-                Text::new(text),
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
-                },
-                TextColor(PAPER),
-                TextLayout::justify(Justify::Center),
-                Node {
-                    position_type: PositionType::Absolute,
-                    width: px(80.0),
-                    ..default()
-                },
-                WorldLabel(caption, false),
-                Pickable::IGNORE,
-                Scene,
-            ));
         }
         if who == Investigator::Tony {
             face(
@@ -594,39 +478,23 @@ pub(super) fn synchronize(
     }
     presentation.spawn_tokens(&mut commands, &mut meshes, &mut materials, &art);
     let bag_at = layout::test_bag();
-    commands
-        .spawn((
-            Mesh3d(meshes.add(Cylinder::new(0.75, 0.55))),
-            MeshMaterial3d(materials.add(Color::srgb(0.22, 0.14, 0.12))),
-            Transform::from_translation(bag_at),
-            Scene,
-        ))
-        .observe(move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
+    let chaos = pieces::chaos_area(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        view.bag_count,
+        Some(view.curses_in_pool),
+        &art.symbol_font,
+    );
+    for entity in chaos.entities {
+        commands.entity(entity).insert(Scene);
+    }
+    commands.entity(chaos.bag).observe(
+        move |event: On<PointerClick>, mut queue: ResMut<Actions>| {
             if event.button == bevy::picking::pointer::PointerButton::Primary {
                 queue.0.push(Action::Select(revision, Source::Bag, bag_at));
             }
-        });
-    label(
-        &mut commands,
-        &art,
-        format!("Chaos bag\n{} tokens", view.bag_count),
-        bag_at + Vec3::Z * 0.9,
-        false,
-    );
-    let pool_at = curse_pool_at();
-    commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(0.6, 0.12))),
-        MeshMaterial3d(materials.add(Color::srgb(0.25, 0.16, 0.32))),
-        Transform::from_translation(pool_at),
-        Pickable::IGNORE,
-        Scene,
-    ));
-    label(
-        &mut commands,
-        &art,
-        format!("Curse pool\n{} tokens", view.curses_in_pool),
-        pool_at + Vec3::Z * 0.9,
-        false,
+        },
     );
     label(
         &mut commands,

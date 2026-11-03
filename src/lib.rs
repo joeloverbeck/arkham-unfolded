@@ -35,6 +35,8 @@ mod tabletop_layout;
 #[cfg(feature = "tabletop")]
 mod tabletop_pacing;
 #[cfg(feature = "tabletop")]
+mod tabletop_pieces;
+#[cfg(feature = "tabletop")]
 mod tabletop_reveal;
 #[cfg(feature = "tabletop")]
 mod tabletop_skill_text;
@@ -44,6 +46,8 @@ mod tabletop_standee_checks;
 mod tabletop_standees;
 #[cfg(feature = "tabletop")]
 mod tabletop_tokens;
+#[cfg(feature = "tabletop")]
+mod tabletop_ui;
 pub mod tony;
 #[cfg(feature = "tabletop")]
 pub mod tony_tabletop;

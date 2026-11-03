@@ -152,6 +152,28 @@ pub struct PlayerView {
     pub resigned: bool,
     pub physical_trauma: u8,
     pub mental_trauma: u8,
+    /// Absent in recordings made before the public counter projection existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<PlayerPresentation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlayerPresentation {
+    pub health: u8,
+    pub sanity: u8,
+    pub turn_finished: bool,
+    /// The ordinary three-action allowance, excluding separately granted actions.
+    pub ordinary_action_allowance: u8,
+    pub ordinary_actions_spent: u8,
+    pub tony_bonus: Option<TonyBonusPresentation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TonyBonusPresentation {
+    pub available: bool,
+    pub used: bool,
+    /// At least one currently offered action can spend this restricted action.
+    pub eligible: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -391,6 +413,25 @@ pub struct TestView {
     pub total: Option<i32>,
     pub would_succeed: Option<bool>,
     pub failure_margin: Option<i32>,
+    /// Current legal commitment toggles, not printed-icon guesses. None means an
+    /// older recording did not capture this projection; Some([]) means no offer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commitment: Option<Vec<CommitmentPresentation>>,
+    /// Whether ST.6 has fixed this result. Old recordings leave this unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<bool>,
+    /// The actual investigated location, never inferred from the test's skill or
+    /// the investigator's current position. Older recordings omit this fact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub investigation_location: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommitmentPresentation {
+    pub card_id: u16,
+    pub owner: Investigator,
+    pub selected: bool,
+    pub contribution: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -423,12 +464,40 @@ pub struct PlayObservation {
     pub encounter_discard: Vec<CardView>,
     pub scenario: ScenarioState,
     pub bag_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curse_pool: Option<u8>,
     pub round: u16,
     pub actor: Option<Investigator>,
     pub actions_remaining: [u8; 3],
     pub encounter_deck_count: usize,
     pub tokens: Option<super::tokens::TokenResolution>,
     pub premonition: Option<super::tokens::SealedPremonition>,
+}
+
+impl PlayObservation {
+    /// Match only omission of additive presentation fields in old recordings.
+    /// Supplied values and every pre-existing field still compare exactly.
+    pub(super) fn match_recorded_projection_presence(&mut self, recorded: &Self) {
+        if recorded.curse_pool.is_none() {
+            self.curse_pool = None;
+        }
+        for (expected, recorded) in self.players.iter_mut().zip(&recorded.players) {
+            if recorded.presentation.is_none() {
+                expected.presentation = None;
+            }
+        }
+        if let (Some(expected), Some(recorded)) = (&mut self.test, &recorded.test) {
+            if recorded.commitment.is_none() {
+                expected.commitment = None;
+            }
+            if recorded.resolved.is_none() {
+                expected.resolved = None;
+            }
+            if recorded.investigation_location.is_none() {
+                expected.investigation_location = None;
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -849,6 +918,10 @@ impl Game {
     }
 
     pub(super) fn observe(&self) -> PlayObservation {
+        let choices = self.choices();
+        let tony_eligible = choices
+            .iter()
+            .any(|choice| choice.id.starts_with("action:tony:"));
         PlayObservation {
             pending: super::presentation::observe(self),
             searched_encounter: super::encounter_search::visible_cards(self),
@@ -894,6 +967,23 @@ impl Game {
                     resigned: p.resigned,
                     physical_trauma: p.physical_trauma,
                     mental_trauma: p.mental_trauma,
+                    presentation: Some(PlayerPresentation {
+                        health: p.health,
+                        sanity: p.sanity,
+                        turn_finished: p.turn_finished,
+                        ordinary_action_allowance: 3,
+                        ordinary_actions_spent: 3_u8.saturating_sub(p.ordinary_actions),
+                        tony_bonus: (p.investigator == Investigator::Tony).then_some(
+                            TonyBonusPresentation {
+                                available: !p.restricted_tony_action_used
+                                    && !p.turn_finished
+                                    && !p.defeated
+                                    && !p.resigned,
+                                used: p.restricted_tony_action_used,
+                                eligible: tony_eligible,
+                            },
+                        ),
+                    }),
                 })
                 .collect(),
             pending_revelation: self.frames.iter().find_map(|frame| match frame {
@@ -919,6 +1009,32 @@ impl Game {
                     total: result.map(|r| r.0),
                     would_succeed: result.map(|r| r.1),
                     failure_margin: result.map(|r| r.2),
+                    commitment: Some(
+                        self.players
+                            .iter()
+                            .flat_map(|owner| {
+                                owner
+                                    .hand
+                                    .iter()
+                                    .filter(|card| {
+                                        choices.iter().any(|choice| {
+                                            choice.id == format!("commit:{}", card.id)
+                                        })
+                                    })
+                                    .map(|card| CommitmentPresentation {
+                                        card_id: card.id,
+                                        owner: owner.investigator,
+                                        selected: test.selected.contains(&card.id),
+                                        contribution: self.commit_icons(test, card),
+                                    })
+                            })
+                            .collect(),
+                    ),
+                    resolved: Some(test.final_result.is_some()),
+                    investigation_location: match &test.operation {
+                        TestOperation::Investigate { location, .. } => Some(location.clone()),
+                        _ => None,
+                    },
                 }
             }),
             completed_tests: self.completed_tests.clone(),
@@ -928,6 +1044,7 @@ impl Game {
             encounter_discard: self.encounter_discard.clone(),
             scenario: self.scenario.clone(),
             bag_count: self.bag.len(),
+            curse_pool: Some(super::tokens::curse_pool(self)),
             round: self.round,
             phase: self.phase,
             ethereal: self.ethereal.clone(),

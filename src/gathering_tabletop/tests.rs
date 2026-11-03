@@ -299,7 +299,7 @@ fn ordinary_setup_tab_navigation_survives_graphics_admission() {
 }
 
 #[test]
-fn production_world_labels_hide_outside_each_viewport_edge_and_keep_visible_edge_padding() {
+fn production_world_labels_follow_party_projection_without_pinning_to_viewport_edges() {
     for scale in [1., 2.] {
         let directory = tempfile::tempdir().unwrap();
         let mut app = host(directory.path().join("projected-labels.json"));
@@ -317,10 +317,10 @@ fn production_world_labels_hide_outside_each_viewport_edge_and_keep_visible_edge
             })
             .expect("The production renderer supplies Tony's heading");
         for (point, visible) in [
-            (Vec2::new(-20., 500.), false),
-            (Vec2::new(1620., 500.), false),
-            (Vec2::new(800., -20.), false),
-            (Vec2::new(800., 1020.), false),
+            (Vec2::new(-20., 500.), true),
+            (Vec2::new(1620., 500.), true),
+            (Vec2::new(800., -20.), true),
+            (Vec2::new(800., 1020.), true),
             (Vec2::new(1., 1.), true),
             (Vec2::new(1599., 999.), true),
             (Vec2::new(800., 500.), true),
@@ -357,8 +357,8 @@ fn production_world_labels_hide_outside_each_viewport_edge_and_keep_visible_edge
                 else {
                     panic!("World label placement uses measured logical pixels")
                 };
-                assert!(left >= 8. && left + width <= size.x - 8.);
-                assert!(top >= 72. && top < size.y - 100.);
+                assert!((left - (point.x - width / 2.)).abs() < 0.01);
+                assert!((top - point.y).abs() < 0.01);
             }
         }
     }
@@ -412,18 +412,19 @@ fn mulligan_prompt_names_each_typed_owner_without_changing_the_camera() {
 }
 
 #[test]
-fn artwork_hover_labels_require_both_a_hovered_card_and_a_visible_anchor() {
-    use bevy::{
-        ecs::system::RunSystemOnce,
-        picking::{backend::HitData, hover::HoverMap, pointer::PointerId},
-    };
+fn artwork_card_captions_use_party_positions_without_hover_or_copy_ids() {
+    use bevy::ecs::system::RunSystemOnce;
     let directory = tempfile::tempdir().unwrap();
-    let mut app = host(directory.path().join("hover-label.json"));
+    let mut app = host(directory.path().join("card-caption.json"));
+    activate_choice(&mut app, "lead:tony");
+    let view = app.world().resource::<Table>().view();
+    let held = view.investigators[0].hand[0].clone();
     let image = app
         .world_mut()
         .resource_mut::<Assets<Image>>()
         .add(Image::default());
-    app.insert_resource(art::Art::with_images_for_test([("card-06003", image)]));
+    let role: &'static str = Box::leak(format!("card-{}", held.code).into_boxed_str());
+    app.insert_resource(art::Art::with_images_for_test([(role, image)]));
     app.world_mut().resource_mut::<Table>().dirty = true;
     app.world_mut()
         .resource_mut::<Actions>()
@@ -444,41 +445,31 @@ fn artwork_hover_labels_require_both_a_hovered_card_and_a_visible_anchor() {
         .find_map(|(entity, label)| {
             world
                 .get::<ContextTarget>(label.0)
-                .is_some_and(|target| {
-                    target.source == controls::Source::Investigator(Investigator::Tony)
-                })
+                .is_some_and(|target| target.source == controls::Source::Card(held.id))
                 .then_some((entity, label.0))
         })
         .unwrap();
-    assert!(world.get::<HoverLabel>(label).is_some());
-    assert_eq!(*world.get::<Visibility>(label).unwrap(), Visibility::Hidden);
-    let (camera_entity, camera, transform) = world
-        .query_filtered::<(Entity, &Camera, &GlobalTransform), With<MainCamera>>()
-        .single(world)
-        .unwrap();
-    let outside = camera
-        .viewport_to_world(transform, Vec2::new(-20., 500.))
-        .unwrap()
-        .get_point(10.);
-    // A synthetic picking result exercises the same production label projection
-    // against the actual rendered card and its artwork-only label.
-    world
-        .resource_mut::<HoverMap>()
-        .entry(PointerId::Mouse)
-        .or_default()
-        .insert(card, HitData::new(camera_entity, 1., None, None));
     world.run_system_once(world_labels).unwrap();
     assert_eq!(
         *world.get::<Visibility>(label).unwrap(),
         Visibility::Inherited
     );
-    world.get_mut::<Transform>(card).unwrap().translation = outside - Vec3::Y * 0.1;
-    world.run_system_once(world_labels).unwrap();
-    assert_eq!(
-        *world.get::<Visibility>(label).unwrap(),
-        Visibility::Hidden,
-        "Hover cannot pin an offscreen card's label to the viewport edge"
+    assert_eq!(world.get::<Text>(label).unwrap().0, held.title);
+    assert_eq!(world.get::<Node>(label).unwrap().width, px(190.));
+    assert!(
+        world
+            .get::<BackgroundColor>(label)
+            .is_none_or(|background| background.0.alpha() == 0.)
     );
+    let anchor = world.get::<Transform>(card).unwrap().translation + Vec3::Z * 1.1;
+    assert_eq!(world.get::<WorldLabel>(label).unwrap().0, anchor);
+    let (camera, transform) = world
+        .query_filtered::<(&Camera, &GlobalTransform), With<MainCamera>>()
+        .single(world)
+        .unwrap();
+    let point = camera.world_to_viewport(transform, anchor).unwrap();
+    assert_eq!(world.get::<Node>(label).unwrap().left, px(point.x - 95.));
+    assert_eq!(world.get::<Node>(label).unwrap().top, px(point.y));
 }
 
 fn assert_pointer_lead_choice(raw_window_events: bool, continuing_health_observations: bool) {
@@ -674,6 +665,47 @@ fn replay_cannot_choose_or_overwrite_the_live_save() {
     assert_eq!(std::fs::read(path).unwrap(), before);
 }
 
+#[test]
+fn party_inspection_contract_blocks_queued_background_actions() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("modal.json");
+    let mut app = host(path.clone());
+    let before = app.world().resource::<Table>().session.clone();
+    let camera = app.world().resource::<Orbit>().pose();
+    app.world_mut().resource_mut::<Actions>().0.extend([
+        Action::Inspect("Tony Morgan".into(), "06003".into()),
+        Action::Save,
+        Action::Replay,
+        Action::Focus(Area::Scenario),
+    ]);
+    app.update();
+    let table = app.world().resource::<Table>();
+    assert!(
+        table.inspection.is_some(),
+        "Inspection remains the blocking dialog"
+    );
+    assert!(
+        table.replay.is_none(),
+        "Background replay cannot replace inspection"
+    );
+    assert_eq!(table.session, before);
+    assert_eq!(app.world().resource::<Orbit>().pose(), camera);
+    assert!(!path.exists(), "Background Save is blocked by inspection");
+}
+
+#[test]
+fn party_utilities_stay_in_menu_instead_of_the_live_decision_panel() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host(dir.path().join("utilities.json"));
+    assert!(button_with_label(&mut app, "Menu").is_some());
+    for utility in ["History", "Save", "Reopen", "Replay", "Choose asset folder"] {
+        assert!(
+            button_with_label(&mut app, utility).is_none(),
+            "{utility} belongs in Menu"
+        );
+    }
+}
+
 fn rendered_text(app: &mut App) -> String {
     let world = app.world_mut();
     let mut query = world.query::<&Text>();
@@ -706,11 +738,13 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
     )));
     assert!(text.contains(&format!("Act {}", play.act)));
     for enemy in &play.scenario.enemies {
-        assert!(text.contains(&format!("{}  /  copy {}", enemy.card.title, enemy.card.id)));
+        assert!(text.contains(&enemy.card.title));
+        assert!(!text.contains(&format!("copy {}", enemy.card.id)));
     }
     for player in &play.players {
         for asset in &player.assets {
-            assert!(text.contains(&format!("{}  /  copy {}", asset.card.title, asset.card.id)));
+            assert!(text.contains(&asset.card.title));
+            assert!(!text.contains(&format!("copy {}", asset.card.id)));
         }
     }
     assert!(inspection_text(&view, "01112").unwrap().contains("Hallway"));
@@ -729,7 +763,7 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
     let mut room_position = |name: &str| {
         let (_, label) = labels
             .iter(world)
-            .find(|(text, _)| text.0.starts_with(&format!("{name}  /")))
+            .find(|(text, _)| text.0.starts_with(name))
             .unwrap();
         world.get::<Transform>(label.0).unwrap().translation
     };
@@ -837,6 +871,7 @@ fn unrevealed_room_mesh_and_inspection_never_use_revealed_art_as_a_fallback() {
             .get::<Children>(room)
             .into_iter()
             .flat_map(|children| children.iter())
+            .chain(std::iter::once(room))
             .filter_map(|child| world.get::<MeshMaterial3d<StandardMaterial>>(child))
             .filter_map(|material| {
                 world
@@ -906,24 +941,17 @@ fn ordinary_act_and_agenda_inspect_landscape_without_rotating_the_book_face_twic
             ),
             "The book root already rotates the original portrait image into a landscape page"
         );
-        let face = world
-            .get::<Children>(root)
-            .unwrap()
-            .iter()
-            .find(|child| {
-                world
-                    .get::<MeshMaterial3d<StandardMaterial>>(*child)
-                    .and_then(|material| {
-                        world
-                            .resource::<Assets<StandardMaterial>>()
-                            .get(&material.0)
-                    })
-                    .is_some_and(|material| material.base_color_texture.as_ref() == Some(&image))
-            })
-            .expect("The original scenario face is bound to the book page");
+        let face = root;
+        let material = world.get::<MeshMaterial3d<StandardMaterial>>(face).unwrap();
         assert_eq!(
-            world.get::<Transform>(face).unwrap().rotation,
-            Quat::IDENTITY
+            world
+                .resource::<Assets<StandardMaterial>>()
+                .get(&material.0)
+                .unwrap()
+                .base_color_texture
+                .as_ref(),
+            Some(&image),
+            "The Party plane carries the original face on the book root"
         );
         let mesh = world.get::<Mesh3d>(face).unwrap();
         let bounds = world
@@ -1070,6 +1098,9 @@ fn replay_story_inspection_reveals_only_the_displayed_reverse_and_keeps_missing_
                 let mut table = app.world_mut().resource_mut::<Table>();
                 table.session = session.clone();
                 table.replay = Some(replay);
+                // This inspection test seeks directly to an already displayed
+                // prefix. The reading-checkpoint test covers entering it.
+                table.reading = story::Reading::at(table.story_faces(&table.view()));
                 table.dirty = true;
             }
             app.update();
@@ -1210,10 +1241,9 @@ fn live_runtime_choice_keeps_manual_camera_and_replay_follows_with_manual_overri
     assert_eq!(app.world().resource::<Orbit>().pose(), pose);
     let view = app.world().resource::<Table>().view();
     let test = view.play.as_ref().unwrap().test.as_ref().unwrap();
-    assert!(rendered_text(&mut app).contains(&format!(
-        "Printed base {}  /  Difficulty {}",
-        test.base_skill, test.difficulty
-    )));
+    let text = rendered_text(&mut app);
+    assert!(text.contains(&format!("base Combat {}", test.base_skill)));
+    assert!(text.contains(&format!("difficulty {}", test.difficulty)));
     assert_eq!(
         continuity::load_session(&path).unwrap().observe_for_play(),
         view
@@ -1525,7 +1555,11 @@ fn committed_physical_card_moves_from_hand_and_inspection_preserves_its_position
     activate_choice(&mut app, &format!("commit:{promise}"));
     activate_choice(&mut app, "commit:confirm");
     finish_presentation(&mut app);
-    assert!(rendered_text(&mut app).contains("Cards +4  /  Other bonuses +0  /  Chaos pending"));
+    let summary = rendered_text(&mut app);
+    assert!(
+        summary.contains("cards +4") && summary.contains("chaos pending"),
+        "{summary}"
+    );
     assert_eq!(physical_position(&mut app, promise), origin);
     let end = layout::test_commitment(1, 0);
     assert_ne!(origin, end);
@@ -1556,4 +1590,92 @@ fn committed_physical_card_moves_from_hand_and_inspection_preserves_its_position
     app.update();
     assert!(physical_position(&mut app, promise).abs_diff_eq(end, 0.001));
     assert_eq!(std::fs::read(path).unwrap(), before);
+}
+
+#[test]
+fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects() {
+    use crate::gathering::HostileFixture;
+    use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier};
+    let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
+    let choose = |session: &mut Session, id: &str| {
+        let revision = session.observe().revision;
+        session.choose(revision, id).unwrap();
+    };
+    choose(&mut session, "round-end:advance-act");
+    for investigator in 0..3 {
+        for count in 0..3 {
+            if investigator == 2 && count == 2 {
+                break;
+            }
+            choose(&mut session, &format!("act:contribute:{investigator}"));
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("story-reading.json");
+    let mut app = host(path.clone());
+    app.insert_resource(Table::new(session, path.clone()));
+    app.update();
+    assert!(app.world().resource::<Table>().reading.current().is_none());
+    activate_choice(&mut app, "act:contribute:2");
+    for _ in 0..30 {
+        if app.world().resource::<Table>().reading.current().is_some() {
+            break;
+        }
+        app.world_mut()
+            .resource_mut::<Actions>()
+            .0
+            .push(Action::PresentationNext);
+        app.update();
+    }
+    assert_eq!(
+        app.world().resource::<Table>().reading.current(),
+        Some(story::StoryCard::ActTwo)
+    );
+    let saved = std::fs::read(&path).unwrap();
+    let record = app.world().resource::<Table>().session.recording();
+    assert_eq!(
+        app.world_mut()
+            .query::<&ModalDialog>()
+            .iter(app.world())
+            .count(),
+        1
+    );
+    assert_eq!(
+        app.world_mut()
+            .query::<&ModalDialogBarrier>()
+            .iter(app.world())
+            .count(),
+        1
+    );
+    let pose = app.world().resource::<Orbit>().pose();
+    app.world_mut().resource_mut::<Actions>().0.extend([
+        Action::Close,
+        Action::Focus(Area::Investigator(2)),
+        Action::PresentationFinish,
+    ]);
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(std::time::Duration::from_secs(20));
+    app.update();
+    assert_eq!(
+        app.world().resource::<Table>().reading.current(),
+        Some(story::StoryCard::ActTwo)
+    );
+    assert_eq!(app.world().resource::<Orbit>().pose(), pose);
+    let continue_button = button_with_label(&mut app, "Continue").unwrap();
+    app.world_mut().trigger(Activate {
+        entity: continue_button,
+    });
+    app.update();
+    assert!(app.world().resource::<Table>().reading.current().is_none());
+    assert_eq!(app.world().resource::<Table>().session.recording(), record);
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
+    let resumed = continuity::load_session(&path).unwrap();
+    app.insert_resource(Table::new(resumed, path.clone()));
+    app.update();
+    assert_eq!(
+        app.world().resource::<Table>().reading.current(),
+        Some(story::StoryCard::ActTwo)
+    );
+    assert_eq!(std::fs::read(path).unwrap(), saved);
 }

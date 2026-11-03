@@ -95,11 +95,10 @@ impl Context {
         }
         self.dismiss();
         self.pending = false;
-        if !live || source_choices(view, &selection.source).is_empty() {
-            return Some(SelectionEffect::Inspect(
-                selection.title,
-                selection.inspect_code,
-            ));
+        let targets = inspections(view, &selection);
+        if targets.len() == 1 && (!live || source_choices(view, &selection.source).is_empty()) {
+            let target = targets.into_iter().next().expect("One inspection target");
+            return Some(SelectionEffect::Inspect(target.title, target.code));
         }
         self.selected = Some(selection);
         self.open = true;
@@ -120,6 +119,139 @@ impl Context {
     pub fn generation(&self) -> u64 {
         self.generation
     }
+}
+
+struct Inspection {
+    title: String,
+    code: String,
+    details: Option<String>,
+}
+
+/// Public pile members supply inspection faces; no deck contents or private
+/// continuation frames participate in this projection.
+fn inspections(view: &Observation, selection: &Selection) -> Vec<Inspection> {
+    if matches!(selection.source, Source::Bag | Source::Token(_)) {
+        return vec![Inspection {
+            title: "The Gathering · Standard reference".into(),
+            code: "01104".into(),
+            details: None,
+        }];
+    }
+    let mut cards: Vec<&crate::gathering::CardView> = vec![];
+    if let Some(play) = &view.play {
+        match &selection.source {
+            Source::Discard(who) | Source::Removed(who) => {
+                if let Some(player) = play
+                    .players
+                    .iter()
+                    .find(|player| player.investigator == *who)
+                {
+                    cards.extend(if matches!(selection.source, Source::Discard(_)) {
+                        player.discard.iter().rev()
+                    } else {
+                        player.removed.iter().rev()
+                    });
+                }
+            }
+            Source::EncounterDiscard => cards.extend(play.encounter_discard.iter().rev()),
+            Source::Victory => cards.extend(play.scenario.victory.iter().rev()),
+            Source::ScenarioRemoved => cards.extend(play.scenario.removed.iter().rev()),
+            Source::SearchPlayer => cards.extend(&play.searched_player),
+            Source::SearchEncounter => cards.extend(&play.searched_encounter),
+            Source::Resolving => {
+                cards.extend(&play.pending.resolving_cards);
+                if let Some(revelation) = &play.pending_revelation {
+                    cards.push(&revelation.card);
+                }
+            }
+            Source::PendingDiscard => {
+                if let Some(discard) = &play.pending.discard {
+                    cards.extend(&discard.ordered);
+                    cards.extend(&discard.remaining);
+                }
+            }
+            Source::Backpack(id) => {
+                if let Some(asset) = play
+                    .players
+                    .iter()
+                    .flat_map(|player| &player.assets)
+                    .find(|asset| asset.card.id == *id)
+                {
+                    cards.push(&asset.card);
+                }
+                if let Some(pack) = play.backpacks.iter().find(|pack| pack.asset == *id) {
+                    cards.extend(&pack.cards);
+                }
+            }
+            Source::Card(id) => {
+                if let Some(enemy) = play
+                    .scenario
+                    .enemies
+                    .iter()
+                    .find(|enemy| enemy.card.id == *id && enemy.engaged.is_some())
+                {
+                    cards.push(&enemy.card);
+                }
+            }
+            _ => {}
+        }
+    }
+    cards.extend(unengaged_enemies(view, &selection.source));
+    let mut identities = std::collections::BTreeSet::new();
+    let mut targets = cards
+        .into_iter()
+        .filter(|card| identities.insert(card.id))
+        .map(|card| {
+            let key = format!("enemy:{}", card.id);
+            let details = play::enemy_inspection(view, &key).map(|(_, details)| details);
+            Inspection {
+                title: card.title.clone(),
+                code: if details.is_some() {
+                    key
+                } else {
+                    card.code.clone()
+                },
+                details,
+            }
+        })
+        .collect::<Vec<_>>();
+    if targets.is_empty() || matches!(selection.source, Source::Location(_)) {
+        targets.insert(
+            0,
+            Inspection {
+                title: selection.title.clone(),
+                code: selection.inspect_code.clone(),
+                details: None,
+            },
+        );
+    }
+    targets
+}
+
+/// A room and any exposed member of its unengaged pile reach the same enemies.
+fn unengaged_enemies<'a>(
+    view: &'a Observation,
+    source: &Source,
+) -> Vec<&'a crate::gathering::CardView> {
+    let Some(play) = &view.play else {
+        return vec![];
+    };
+    let room = match source {
+        Source::Location(code) => Some(code.as_str()),
+        Source::Card(id) => play
+            .scenario
+            .enemies
+            .iter()
+            .find(|enemy| enemy.card.id == *id && enemy.engaged.is_none())
+            .map(|enemy| enemy.location.as_str()),
+        _ => None,
+    };
+    play.scenario
+        .enemies
+        .iter()
+        .filter(|enemy| enemy.engaged.is_none() && Some(enemy.location.as_str()) == room)
+        .map(|enemy| &enemy.card)
+        .collect()
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -268,9 +400,13 @@ fn route(view: &Observation, id: &str) -> Route {
             sources.push(Source::Location((*location).into()));
             sources
         }
-        ["tokens", "prophecy" | "olive" | "katarina", _, card] => cards(card),
+        ["tokens", "prophecy" | "olive" | "katarina", _, card] => {
+            let mut sources = cards(card);
+            sources.push(Source::Bag);
+            sources
+        }
         ["tokens", "jacqueline", rest @ ..] => {
-            let mut sources = vec![Source::Investigator(Investigator::Jacqueline)];
+            let mut sources = vec![Source::Investigator(Investigator::Jacqueline), Source::Bag];
             if let [.., "arbiter", asset] = rest {
                 sources.extend(cards(asset));
             }
@@ -422,10 +558,9 @@ pub(super) fn exists(view: &Observation, source: &Source) -> bool {
             .play
             .as_ref()
             .is_some_and(|p| !p.searched_encounter.is_empty()),
-        Source::Resolving => view
-            .play
-            .as_ref()
-            .is_some_and(|p| !p.pending.resolving_cards.is_empty()),
+        Source::Resolving => view.play.as_ref().is_some_and(|p| {
+            !p.pending.resolving_cards.is_empty() || p.pending_revelation.is_some()
+        }),
         Source::PendingDiscard => view
             .play
             .as_ref()
@@ -514,27 +649,177 @@ fn card_sources(view: &Observation, id: u16) -> Vec<Source> {
     sources
 }
 
-pub(super) fn source_choices<'a>(view: &'a Observation, source: &Source) -> Vec<&'a Choice> {
+pub(super) fn source_choices(view: &Observation, source: &Source) -> Vec<Choice> {
+    let enemies = unengaged_enemies(view, source);
     view.choices
         .iter()
-        .filter(|choice| {
-            matches!(route(view, &choice.id), Route::Sources(sources) if sources.contains(source))
+        .filter_map(|choice| {
+            let Route::Sources(sources) = route(view, &choice.id) else {
+                return None;
+            };
+            let enemy = enemies
+                .iter()
+                .find(|enemy| sources.contains(&Source::Card(enemy.id)));
+            if !sources.contains(source) && enemy.is_none() {
+                return None;
+            }
+            let mut displayed = display_choice(view, choice);
+            if let Some(enemy) = enemy {
+                let copies = enemies
+                    .iter()
+                    .filter(|other| other.title == enemy.title)
+                    .collect::<Vec<_>>();
+                if copies.len() > 1 {
+                    let ordinal = copies
+                        .iter()
+                        .position(|other| other.id == enemy.id)
+                        .expect("The target is in its public group")
+                        + 1;
+                    displayed.label = format!(
+                        "{} · {ordinal} of {}: {}",
+                        enemy.title,
+                        copies.len(),
+                        displayed.label
+                    );
+                }
+            }
+            Some(displayed)
         })
         .collect()
 }
 
-pub(super) fn global_choices(view: &Observation) -> Vec<&Choice> {
+pub(super) fn global_choices(view: &Observation) -> Vec<Choice> {
     view.choices
         .iter()
         .filter(|choice| route(view, &choice.id) == Route::Global)
+        .map(|choice| display_choice(view, choice))
         .collect()
 }
 
-pub(super) fn pending_choices(view: &Observation) -> Vec<&Choice> {
+pub(super) fn pending_choices(view: &Observation) -> Vec<Choice> {
     view.choices
         .iter()
         .filter(|choice| route(view, &choice.id) == Route::Pending)
+        .map(|choice| display_choice(view, choice))
         .collect()
+}
+
+// Spell-event choices retain canonical physical identities in their IDs and
+// recordings. Their existing "(copy N)" annotations are unnecessary on screen.
+fn display_choice(view: &Observation, choice: &Choice) -> Choice {
+    let mut shown = choice.clone();
+    if let Some(id) = choice
+        .id
+        .strip_prefix("opportunity:")
+        .and_then(|id| id.parse::<u16>().ok())
+    {
+        shown.label = public_title(view, id).map_or_else(
+            || "Resolve this enemy's attack of opportunity".into(),
+            |title| format!("Resolve {title}'s attack of opportunity"),
+        );
+        return shown;
+    }
+    if let Some(id) = choice
+        .id
+        .strip_prefix("turn-end:")
+        .and_then(|id| id.parse::<u16>().ok())
+    {
+        shown.label = public_title(view, id).map_or_else(
+            || "Resolve this end-of-turn effect".into(),
+            |title| format!("Resolve {title}'s end-of-turn effect"),
+        );
+        return shown;
+    }
+    shown.label = display_history(view, &choice.label);
+    shown
+}
+
+fn public_title(view: &Observation, id: u16) -> Option<&str> {
+    for player in &view.investigators {
+        if let Some(card) = player
+            .hand
+            .iter()
+            .chain(&player.permanents)
+            .find(|card| card.id == id)
+        {
+            return Some(&card.title);
+        }
+    }
+    let play = view.play.as_ref()?;
+    for player in &play.players {
+        if let Some(card) = player
+            .hand
+            .iter()
+            .chain(&player.threats)
+            .chain(&player.discard)
+            .chain(&player.removed)
+            .chain(player.assets.iter().map(|asset| &asset.card))
+            .find(|card| card.id == id)
+        {
+            return Some(&card.title);
+        }
+    }
+    play.scenario
+        .enemies
+        .iter()
+        .map(|enemy| &enemy.card)
+        .chain(&play.encounter_discard)
+        .chain(&play.scenario.victory)
+        .chain(&play.scenario.removed)
+        .chain(&play.pending.resolving_cards)
+        .find(|card| card.id == id)
+        .map(|card| card.title.as_str())
+}
+
+/// Historical records keep their original audit text. The player-facing view
+/// replaces physical identities only in the known generated annotations.
+pub(super) fn display_history(view: &Observation, original: &str) -> String {
+    let mut remaining = original;
+    let mut label = String::new();
+    while let Some(start) = remaining.find(" (copy ") {
+        label.push_str(&remaining[..start]);
+        let annotation = &remaining[start + 7..];
+        let Some(end) = annotation.find(')') else {
+            label.push_str(&remaining[start..]);
+            remaining = "";
+            break;
+        };
+        if annotation[..end].is_empty()
+            || !annotation[..end].bytes().all(|byte| byte.is_ascii_digit())
+        {
+            label.push_str(&remaining[start..start + 8 + end]);
+        }
+        remaining = &annotation[end + 1..];
+    }
+    label.push_str(remaining);
+    for (marker, fallback, suffix) in [
+        ("enemy ", "the enemy", ""),
+        ("end-of-turn effect ", "the card", "'s end-of-turn effect"),
+    ] {
+        let mut remaining = label.as_str();
+        let mut result = String::new();
+        while let Some(start) = remaining.find(marker) {
+            result.push_str(&remaining[..start]);
+            let tail = &remaining[start + marker.len()..];
+            let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+            if digits == 0 {
+                result.push_str(marker);
+                remaining = tail;
+                continue;
+            }
+            let title = tail[..digits]
+                .parse::<u16>()
+                .ok()
+                .and_then(|id| public_title(view, id))
+                .unwrap_or(fallback);
+            result.push_str(title);
+            result.push_str(suffix);
+            remaining = &tail[digits..];
+        }
+        result.push_str(remaining);
+        label = result;
+    }
+    label
 }
 
 #[derive(Component)]
@@ -610,7 +895,7 @@ pub(super) fn render(
     for menu in &menus {
         commands.entity(menu).despawn();
     }
-    if !table.context.open || blocked || table.is_presenting() {
+    if !table.context.open || blocked {
         return;
     }
     let (title, anchor, choices) = if table.context.pending {
@@ -639,7 +924,10 @@ pub(super) fn render(
             PAPER,
         ));
     }
-    for choice in choices {
+    for choice in choices
+        .into_iter()
+        .filter(|_| table.replay.is_none() && !table.is_presenting())
+    {
         content.push(Item::Action(
             feedback::menu::label(&choice.label),
             Action::ContextChoice(
@@ -651,21 +939,47 @@ pub(super) fn render(
         ));
     }
     if let Some(selection) = &table.context.selected {
-        content.push(Item::Action(
-            "Inspect".into(),
-            Action::ContextInspect(
-                table.context.generation(),
-                table.epoch,
-                view.revision,
-                selection.title.clone(),
-                selection.inspect_code.clone(),
-            ),
-        ));
+        let targets = inspections(view, selection);
+        for (index, target) in targets.iter().enumerate() {
+            let label = if matches!(selection.source, Source::Bag | Source::Token(_)) {
+                "Inspect scenario reference".into()
+            } else if targets.len() == 1 {
+                "Inspect".into()
+            } else {
+                let count = targets
+                    .iter()
+                    .filter(|other| other.title == target.title)
+                    .count();
+                if count > 1 {
+                    let ordinal = targets[..=index]
+                        .iter()
+                        .filter(|other| other.title == target.title)
+                        .count();
+                    format!("Inspect {} · {ordinal} of {count}", target.title)
+                } else {
+                    format!("Inspect {}", target.title)
+                }
+            };
+            let label = target
+                .details
+                .as_ref()
+                .map_or(label.clone(), |details| format!("{label}\n{details}"));
+            content.push(Item::Action(
+                label,
+                Action::ContextInspect(
+                    table.context.generation(),
+                    table.epoch,
+                    view.revision,
+                    target.title.clone(),
+                    target.code.clone(),
+                ),
+            ));
+        }
     }
     content.push(Item::Action("Dismiss".into(), Action::DismissContext));
     let menu = feedback::menu::spawn(
         &mut commands,
-        feedback::menu::panel(anchor, size, 86., (size.y * 0.24).min(220.) + 20.),
+        feedback::menu::panel(anchor, size, 110., (size.y * 0.29).min(250.) + 20.),
         (BackgroundColor(INK), GlobalZIndex(50), Menu),
         MenuText {
             symbol_font: art.symbol_font(),

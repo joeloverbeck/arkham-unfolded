@@ -26,7 +26,7 @@ fn investigator_code(investigator: Investigator) -> &'static str {
 fn pile_text(title: &str, cards: &[CardView]) -> String {
     let mut lines = vec![format!("{title} · {} cards", cards.len())];
     for card in cards {
-        lines.push(format!("\n{} · copy {}", card.title, card.id));
+        lines.push(format!("\n{}", card.title));
         if let Some(rules) = crate::gathering::inspection::card(&card.code)
             .or_else(|| crate::gathering::inspection::scenario_card(&card.code, true))
         {
@@ -92,7 +92,7 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
             "{}\n\n{}\nThese cards are attached face down, not in hand or in play. Only the controller may inspect them.",
             crate::gathering::inspection::card("04037")?,
             pile_text(
-                &format!("{} · Backpack copy {id}", attached.owner.name()),
+                &format!("{} · Backpack", attached.owner.name()),
                 &attached.cards
             )
         ));
@@ -229,29 +229,36 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
         .flatten()
 }
 
-pub(super) fn player_status(play: &PlayObservation, index: usize) -> String {
-    let player = &play.players[index];
-    let state = if player.defeated {
-        " · Defeated"
-    } else if player.resigned {
-        " · Resigned"
-    } else {
-        ""
-    };
-    format!(
-        "{}{} · {}\nResources {} · Clues {} · Actions {} · Deck {}\nDamage {} · Horror {} · Trauma {}/{}",
-        player.investigator.name(),
-        state,
-        location_name(&player.location),
-        player.resources,
-        player.clues,
-        play.actions_remaining[index],
-        player.deck_count,
-        player.damage,
-        player.horror,
-        player.physical_trauma,
-        player.mental_trauma
-    )
+/// An inspection target retains the physical enemy identity privately so two
+/// identical cards can show their different public counters and readiness.
+pub(super) fn enemy_inspection(view: &Observation, key: &str) -> Option<(String, String)> {
+    let id = key.strip_prefix("enemy:")?.parse::<u16>().ok()?;
+    let enemy = view
+        .play
+        .as_ref()?
+        .scenario
+        .enemies
+        .iter()
+        .find(|enemy| enemy.card.id == id)?;
+    let engagement = enemy.engaged.map_or_else(
+        || "Unengaged".into(),
+        |who| format!("Engaged with {}", who.name()),
+    );
+    Some((
+        enemy.card.code.clone(),
+        format!(
+            "{} · Damage {} · Doom {} · Bounties {}\n{engagement} · {}",
+            if enemy.exhausted {
+                "Exhausted"
+            } else {
+                "Ready"
+            },
+            enemy.damage,
+            enemy.doom,
+            enemy.bounties,
+            location_name(&enemy.location),
+        ),
+    ))
 }
 
 pub(super) fn focus(view: &Observation) -> Area {
@@ -289,42 +296,11 @@ pub(super) fn status(view: &Observation) -> Option<String> {
         "Round {} · {phase} · Turn: {actor} · Decision: {owner}",
         play.round
     )];
-    if let Some(test) = &play.test {
-        lines.push(format!(
-            "{} · {:?} test · Printed base {} · Difficulty {}",
-            test.tester.name(),
-            test.skill,
-            test.base_skill,
-            test.difficulty
-        ));
-        let chaos = if test.modifiers.automatic_failure {
-            "automatic failure".into()
-        } else {
-            test.modifiers
-                .chaos
-                .map_or_else(|| "pending".into(), |value| format!("{value:+}"))
-        };
-        lines.push(format!(
-            "Cards {:+} · Other bonuses {:+} · Chaos {chaos}",
-            test.modifiers.cards, test.modifiers.other
-        ));
-        if let (Some(total), Some(success)) = (test.total, test.would_succeed) {
-            lines.push(format!(
-                "Total {total} · {}",
-                if success {
-                    "Would succeed"
-                } else {
-                    "Would fail"
-                }
-            ));
-        }
-    }
     if let Some(pending) = &play.pending_revelation {
         lines.push(format!(
-            "{} drew {} · copy {}{}",
+            "{} drew {}{}",
             pending.drawn_by.name(),
             pending.card.title,
-            pending.card.id,
             if pending.cancelled {
                 " · Cancelled"
             } else {
@@ -344,7 +320,7 @@ pub(super) fn status(view: &Observation) -> Option<String> {
         for allocation in &harm.allocations {
             let target = allocation.asset.as_ref().map_or_else(
                 || harm.investigator.name().to_string(),
-                |asset| format!("{} · copy {}", asset.title, asset.id),
+                |asset| asset.title.clone(),
             );
             lines.push(format!(
                 "Assigned to {target}: {} damage, {} horror (not yet applied)",
@@ -356,7 +332,7 @@ pub(super) fn status(view: &Observation) -> Option<String> {
         let selected = discard
             .ordered
             .iter()
-            .map(|card| format!("{} · copy {}", card.title, card.id))
+            .map(|card| card.title.clone())
             .collect::<Vec<_>>()
             .join(" → ");
         lines.push(format!(
@@ -450,23 +426,7 @@ impl Painter<'_, '_, '_> {
     }
 
     fn selectable(&mut self, entity: Entity, selection: controls::Selection) {
-        self.context
-            .bind(self.commands, entity, selection.source.clone());
-        self.commands.entity(entity).remove::<Pickable>().observe(
-            move |event: On<PointerClick>,
-                  targets: Query<&ContextTarget>,
-                  mut queue: ResMut<Actions>| {
-                if event.button == bevy::picking::pointer::PointerButton::Primary
-                    && let Ok(target) = targets.get(entity)
-                {
-                    queue.0.push(Action::Select(
-                        target.epoch,
-                        target.revision,
-                        selection.clone(),
-                    ));
-                }
-            },
-        );
+        super::scene::bind_source(self.commands, self.context, entity, selection);
     }
 
     fn count(
@@ -490,14 +450,11 @@ impl Painter<'_, '_, '_> {
                 amount,
                 image: self.context.art.image(role),
                 at,
-                scale: 0.85,
+                scale: 1.0,
             },
         ) {
             self.commands.entity(token).insert(ScenePiece);
-            self.commands
-                .entity(label)
-                .remove::<crate::tabletop_counters::CounterLabel>()
-                .insert((ScenePiece, WorldLabel(at + Vec3::Y * 0.2, false)));
+            self.commands.entity(label).insert(ScenePiece);
             let inspect_code = match &source {
                 Source::Investigator(who) => investigator_code(*who).into(),
                 Source::Location(code) => code.clone(),
@@ -516,31 +473,13 @@ impl Painter<'_, '_, '_> {
     }
 
     fn caption(&mut self, at: Vec3, value: String) {
-        self.commands.spawn((
-            ScenePiece,
-            WorldLabel(at + Vec3::new(0., 0., 1.25), false),
-            self.context.art.text(value, 12., PAPER),
-            Node {
-                position_type: PositionType::Absolute,
-                width: px(160),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ));
-    }
-
-    fn label(&mut self, at: Vec3, value: String) {
-        self.commands.spawn((
-            ScenePiece,
-            WorldLabel(at, true),
-            self.context.art.text(value, 15., PAPER),
-            Node {
-                position_type: PositionType::Absolute,
-                width: px(400),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ));
+        super::scene::label(
+            self.commands,
+            self.context,
+            value,
+            at + Vec3::Z * 1.1,
+            false,
+        );
     }
 
     fn token(
@@ -569,7 +508,7 @@ impl Painter<'_, '_, '_> {
                     .art
                     .image(crate::tabletop_tokens::image_role(face)),
                 transform: Transform::from_translation(at),
-                label_offset: Vec3::Y * 0.2,
+                label_offset: Vec3::Z * 0.55,
             },
         );
         self.commands.entity(disk).insert(ScenePiece);
@@ -597,12 +536,7 @@ impl Painter<'_, '_, '_> {
         }
         self.commands
             .entity(label)
-            .remove::<crate::tabletop_tokens::TokenLabel>()
-            .insert((
-                ScenePiece,
-                WorldLabel(at + Vec3::Y * 0.2, false),
-                Text::new(crate::tabletop::readable_text(title)),
-            ));
+            .insert((ScenePiece, Text::new(crate::tabletop::readable_text(title))));
     }
 }
 
@@ -621,20 +555,6 @@ pub(super) fn render(
         context,
     };
     for (index, player) in play.players.iter().enumerate() {
-        for (at, kind, amount) in [
-            (
-                layout::investigator_resource(index),
-                crate::tabletop_counters::CounterKind::Resource,
-                player.resources,
-            ),
-            (
-                layout::investigator_clue(index),
-                crate::tabletop_counters::CounterKind::Clue,
-                player.clues,
-            ),
-        ] {
-            paint.count(at, kind, amount, Source::Investigator(player.investigator));
-        }
         for (slot, asset) in player.assets.iter().enumerate() {
             let attached = play
                 .backpacks
@@ -646,19 +566,7 @@ pub(super) fn render(
             );
             let entity = paint.card(
                 layout::investigator_asset(index, slot),
-                &format!(
-                    "{} · copy {}\n{} · Uses {}\nDamage {} · Horror {}{}",
-                    asset.card.title,
-                    asset.card.id,
-                    if asset.ready { "Ready" } else { "Exhausted" },
-                    asset.uses,
-                    asset.damage,
-                    asset.horror,
-                    attached.map_or(String::new(), |attached| format!(
-                        "\n{} face-down attachments",
-                        attached.cards.len()
-                    ))
-                ),
+                &asset.card.title,
                 &inspection,
                 PAPER,
                 attached.map_or(Source::Card(asset.card.id), |_| {
@@ -669,25 +577,59 @@ pub(super) fn render(
                 .commands
                 .entity(entity)
                 .insert(motion::PhysicalCard(asset.card.id));
-            paint.caption(
-                layout::investigator_asset(index, slot),
-                format!(
-                    "{} · Uses {}\nDamage {} · Horror {}{}",
-                    if asset.ready { "Ready" } else { "Exhausted" },
-                    asset.uses,
-                    asset.damage,
-                    asset.horror,
-                    attached.map_or(String::new(), |attached| format!(
-                        "\n{} attached",
-                        attached.cards.len()
-                    )),
-                ),
-            );
+            if !asset.ready {
+                paint.commands.entity(entity).insert(
+                    Transform::from_translation(layout::investigator_asset(index, slot))
+                        .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)),
+                );
+            }
+            let mut details = Vec::new();
+            if asset.card.code == "06010" {
+                details.push(format!("{} bounties", asset.uses));
+            } else if asset.uses > 0 {
+                details.push(format!("Uses {}", asset.uses));
+            }
+            if asset.damage > 0 {
+                details.push(format!("Damage {}", asset.damage));
+            }
+            if asset.horror > 0 {
+                details.push(format!("Horror {}", asset.horror));
+            }
+            if let Some(attached) = attached.filter(|attached| !attached.cards.is_empty()) {
+                details.push(format!("{} attached", attached.cards.len()));
+            }
+            if !details.is_empty() {
+                // Continue the card's one caption instead of placing a second
+                // overlapping status caption over the settled Party layout.
+                paint.commands.queue(move |world: &mut World| {
+                    let mut labels = world.query::<(&motion::CardLabel, &mut Text)>();
+                    for (owner, mut text) in labels.iter_mut(world) {
+                        if owner.0 == entity {
+                            text.0.push_str(&format!("\n{}", details.join(" · ")));
+                        }
+                    }
+                });
+            }
+            if asset.card.code == "04109" {
+                let first = !player.assets[..slot]
+                    .iter()
+                    .any(|asset| asset.card.code == "04109");
+                let count = player
+                    .assets
+                    .iter()
+                    .filter(|asset| asset.card.code == "04109")
+                    .count();
+                super::scene::replace_caption(
+                    paint.commands,
+                    entity,
+                    first.then(|| format!("Arcane Research ×{count}")),
+                );
+            }
         }
         for (slot, threat) in player.threats.iter().enumerate() {
             let entity = paint.card(
                 layout::investigator_threat(index, slot),
-                &format!("{} · copy {}", threat.title, threat.id),
+                &threat.title,
                 &threat.code,
                 PAPER,
                 Source::Card(threat.id),
@@ -697,28 +639,43 @@ pub(super) fn render(
                 .entity(entity)
                 .insert(motion::PhysicalCard(threat.id));
         }
-        paint.card(
-            layout::investigator_discard(index),
-            &format!("Discard · {} cards", player.discard.len()),
-            &format!("discard:{}", player.investigator.id()),
-            MUTED,
-            Source::Discard(player.investigator),
-        );
-        paint.card(
+        if let Some(top) = player.discard.last() {
+            let entity = paint.card(
+                layout::investigator_discard(index),
+                &format!("{} cards\n{}", player.discard.len(), top.title),
+                &format!("discard:{}", player.investigator.id()),
+                PAPER,
+                Source::Discard(player.investigator),
+            );
+            paint
+                .commands
+                .entity(entity)
+                .insert(motion::PhysicalCard(top.id));
+        } else {
+            paint.caption(layout::investigator_discard(index), "0 cards".into());
+        }
+        super::scene::deck(
+            paint.commands,
+            paint.meshes,
+            paint.materials,
+            context,
             layout::investigator_deck(index),
-            &format!("Deck · {} cards", player.deck_count),
-            "hidden-player-deck",
-            MUTED,
+            player.deck_count,
             Source::Deck(player.investigator),
+            false,
         );
-        if !player.removed.is_empty() {
-            paint.card(
+        if let Some(top) = player.removed.last() {
+            let entity = paint.card(
                 layout::investigator_discard(index) + Vec3::new(0., 0., 3.),
                 &format!("Removed · {} cards", player.removed.len()),
                 &format!("removed:{}", player.investigator.id()),
                 MUTED,
                 Source::Removed(player.investigator),
             );
+            paint
+                .commands
+                .entity(entity)
+                .insert(motion::PhysicalCard(top.id));
         }
     }
     for (side, code, label, source) in [
@@ -738,7 +695,6 @@ pub(super) fn render(
         let pose = layout::scenario_book_card_transform(side, Vec2::new(1.35, 1.89));
         let entity = paint.card(pose.translation, &label, &code, PAPER, source);
         paint.commands.entity(entity).insert(pose);
-        paint.caption(pose.translation, label);
     }
     paint.card(
         layout::SCENARIO_REFERENCE,
@@ -747,42 +703,79 @@ pub(super) fn render(
         PAPER,
         Source::ScenarioReference,
     );
-    paint.card(
-        layout::test_bag(),
-        &format!("Chaos bag · {} tokens", play.bag_count),
-        "chaos-bag",
-        MUTED,
-        Source::Bag,
+    let bag_at = layout::test_bag();
+    let chaos = crate::tabletop_pieces::chaos_area(
+        paint.commands,
+        paint.meshes,
+        paint.materials,
+        play.bag_count,
+        play.curse_pool,
+        context.art.symbol_font(),
     );
-    paint.card(
+    for entity in chaos.entities {
+        paint.commands.entity(entity).insert(ScenePiece);
+    }
+    paint.selectable(
+        chaos.bag,
+        controls::Selection {
+            source: Source::Bag,
+            at: bag_at,
+            title: "Chaos bag".into(),
+            inspect_code: "chaos-bag".into(),
+        },
+    );
+    super::scene::deck(
+        paint.commands,
+        paint.meshes,
+        paint.materials,
+        context,
         layout::ENCOUNTER_DECK,
-        &format!("Encounter deck · {} cards", play.encounter_deck_count),
-        "encounter-deck",
-        MUTED,
+        play.encounter_deck_count,
         Source::EncounterDeck,
+        true,
     );
-    paint.card(
-        layout::ENCOUNTER_DISCARD,
-        &format!("Encounter discard · {} cards", play.encounter_discard.len()),
-        "encounter-discard",
-        MUTED,
-        Source::EncounterDiscard,
-    );
-    paint.card(
-        layout::VICTORY_DISPLAY,
-        &format!("Victory display · {} cards", play.scenario.victory.len()),
-        "victory",
-        MUTED,
-        Source::Victory,
-    );
-    if !play.scenario.removed.is_empty() {
-        paint.card(
+    if let Some(top) = play.encounter_discard.last() {
+        let entity = paint.card(
+            layout::ENCOUNTER_DISCARD,
+            &format!("{} cards\n{}", play.encounter_discard.len(), top.title),
+            "encounter-discard",
+            PAPER,
+            Source::EncounterDiscard,
+        );
+        paint
+            .commands
+            .entity(entity)
+            .insert(motion::PhysicalCard(top.id));
+    } else {
+        paint.caption(layout::ENCOUNTER_DISCARD, "0 cards".into());
+    }
+    if let Some(top) = play.scenario.victory.last() {
+        let entity = paint.card(
+            layout::VICTORY_DISPLAY,
+            &format!("Victory display · {} cards", play.scenario.victory.len()),
+            "victory",
+            PAPER,
+            Source::Victory,
+        );
+        paint
+            .commands
+            .entity(entity)
+            .insert(motion::PhysicalCard(top.id));
+    } else {
+        paint.caption(layout::VICTORY_DISPLAY, "0 cards".into());
+    }
+    if let Some(top) = play.scenario.removed.last() {
+        let entity = paint.card(
             layout::VICTORY_DISPLAY + Vec3::new(0., 0., 3.),
             &format!("Scenario removed · {} cards", play.scenario.removed.len()),
             "scenario-removed",
             MUTED,
             Source::ScenarioRemoved,
         );
+        paint
+            .commands
+            .entity(entity)
+            .insert(motion::PhysicalCard(top.id));
     }
     let map = crate::tabletop_gathering_map::GatheringMap::new(
         play.scenario
@@ -797,19 +790,14 @@ pub(super) fn render(
     }
     for room in &play.scenario.locations {
         let at = map.position(&room.code);
-        let title = format!(
-            "{} · {}\n{} clues",
-            location_name(&room.code),
-            if crate::tabletop_gathering_map::GatheringMap::entry_blocked(&room.code, room.revealed)
-            {
-                "Entry blocked"
-            } else if room.revealed {
-                "Revealed"
-            } else {
-                "Unrevealed"
-            },
-            room.clues
-        );
+        let title = if crate::tabletop_gathering_map::GatheringMap::entry_blocked(
+            &room.code,
+            room.revealed,
+        ) {
+            format!("{}\nEntry blocked", location_name(&room.code))
+        } else {
+            location_name(&room.code).to_owned()
+        };
         paint.card(
             at,
             &title,
@@ -872,7 +860,7 @@ pub(super) fn render(
         if let Some(fog) = &room.fog {
             paint.card(
                 at + Vec3::new(0., 0., -2.5),
-                &format!("{} · copy {}", fog.title, fog.id),
+                &fog.title,
                 &fog.code,
                 PAPER,
                 Source::Card(fog.id),
@@ -880,12 +868,18 @@ pub(super) fn render(
         }
     }
     for (slot, enemy) in play.scenario.enemies.iter().enumerate() {
+        let group: Vec<_> = play
+            .scenario
+            .enemies
+            .iter()
+            .filter(|other| other.engaged.is_none() && other.location == enemy.location)
+            .collect();
+        let grouped = enemy.engaged.is_none() && group.len() > 1;
         let entity = paint.card(
-            enemy_position(slot),
+            enemy_position(play, slot),
             &format!(
-                "{} · copy {}\n{} · {}\nDamage {} · Doom {} · Bounties {}\n{}",
+                "{}\n{} · {}\nDamage {} · Doom {} · Bounties {}\n{}",
                 enemy.card.title,
-                enemy.card.id,
                 location_name(&enemy.location),
                 if enemy.exhausted {
                     "Exhausted"
@@ -908,20 +902,28 @@ pub(super) fn render(
             .commands
             .entity(entity)
             .insert(motion::PhysicalCard(enemy.card.id));
-        paint.caption(
-            enemy_position(slot),
-            format!(
-                "{} · Damage {}\nDoom {} · Bounties {}",
-                if enemy.exhausted {
-                    "Exhausted"
-                } else {
-                    "Ready"
-                },
-                enemy.damage,
-                enemy.doom,
-                enemy.bounties,
-            ),
-        );
+        if enemy.exhausted && enemy.engaged.is_some() {
+            paint.commands.entity(entity).insert(
+                Transform::from_translation(enemy_position(play, slot))
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)),
+            );
+        }
+        if grouped {
+            let top = group.last().unwrap().card.id == enemy.card.id;
+            let count = group.len();
+            let title = enemy.card.title.clone();
+            let exhausted = enemy.exhausted;
+            super::scene::replace_caption(
+                paint.commands,
+                entity,
+                top.then(|| {
+                    format!(
+                        "{title}\n{count} enemies{}",
+                        if exhausted { " · Top exhausted" } else { "" }
+                    )
+                }),
+            );
+        }
     }
     if play.scenario.lita_in_play
         && !play
@@ -959,20 +961,10 @@ pub(super) fn render(
         .collect();
     let public_count = resolving_offset + resolving_cards.len();
     if let Some(test) = &play.test {
-        paint.label(
-            layout::test_heading(),
-            format!(
-                "{} · {:?}\nPrinted base {} · Difficulty {}",
-                test.tester.name(),
-                test.skill,
-                test.base_skill,
-                test.difficulty
-            ),
-        );
         if let Some(source) = &test.source_card {
             paint.card(
                 layout::test_source(),
-                &format!("{} · copy {}", source.title, source.id),
+                &source.title,
                 &source.code,
                 PAPER,
                 Source::Card(source.id),
@@ -982,9 +974,8 @@ pub(super) fn render(
             let entity = paint.card(
                 layout::test_commitment(public_count, slot),
                 &format!(
-                    "{} · copy {}\n{}",
+                    "{}\n{}'s commitment",
                     committed.card.title,
-                    committed.card.id,
                     committed.owner.name()
                 ),
                 &committed.card.code,
@@ -1001,9 +992,8 @@ pub(super) fn render(
         paint.card(
             layout::test_source(),
             &format!(
-                "{} · copy {}\nDrawn by {}",
+                "{}\nDrawn by {}",
                 pending.card.title,
-                pending.card.id,
                 pending.drawn_by.name()
             ),
             &pending.card.code,
@@ -1023,7 +1013,7 @@ pub(super) fn render(
     for (slot, searched) in play.searched_encounter.iter().enumerate() {
         paint.card(
             layout::test_commitment(public_count, committed_count + slot),
-            &format!("Search · {} · copy {}", searched.title, searched.id),
+            &searched.title,
             &searched.code,
             PAPER,
             Source::Card(searched.id),
@@ -1043,7 +1033,7 @@ pub(super) fn render(
         for (slot, searched) in play.searched_player.iter().enumerate() {
             paint.card(
                 layout::test_commitment(public_count, player_search_offset + slot),
-                &format!("Search · {} · copy {}", searched.title, searched.id),
+                &searched.title,
                 &searched.code,
                 PAPER,
                 Source::Card(searched.id),
@@ -1061,7 +1051,7 @@ pub(super) fn render(
         for (slot, resolving) in resolving_cards.iter().enumerate() {
             paint.card(
                 layout::test_commitment(public_count, resolving_offset + slot),
-                &format!("Resolving · {} · copy {}", resolving.title, resolving.id),
+                &resolving.title,
                 &resolving.code,
                 PAPER,
                 Source::Card(resolving.id),
@@ -1101,7 +1091,11 @@ pub(super) fn render(
             paint.token(
                 layout::test_token(false, slot),
                 *token,
-                ShownTokenState::Resolved,
+                if test.resolved == Some(true) {
+                    ShownTokenState::Resolved
+                } else {
+                    ShownTokenState::Revealed
+                },
                 slot + 1,
                 true,
             );
@@ -1130,8 +1124,7 @@ pub(super) fn render(
         paint.card(
             layout::test_bag() + Vec3::new(0., 0., 2.5),
             &format!(
-                "Premonition · copy {}\n{} · Sealed\n{}",
-                sealed.card.id,
+                "Premonition\n{} · Sealed\n{}",
                 sealed.controller.name(),
                 sealed
                     .faces
@@ -1147,15 +1140,87 @@ pub(super) fn render(
     }
 }
 
-pub(super) fn enemy_position(slot: usize) -> Vec3 {
-    layout::SCENARIO_MAP_CENTER
-        + Vec3::new(
-            -6.5 + (slot % 6) as f32 * 2.6,
-            0.,
-            7.5 + (slot / 6) as f32 * 3.,
-        )
+pub(super) fn enemy_position(play: &PlayObservation, slot: usize) -> Vec3 {
+    let enemy = &play.scenario.enemies[slot];
+    if let Some(owner) = enemy.engaged {
+        let prior = play.scenario.enemies[..slot]
+            .iter()
+            .filter(|other| other.engaged == Some(owner))
+            .count();
+        return layout::investigator_threat(
+            owner.index(),
+            play.players[owner.index()].threats.len() + prior,
+        );
+    }
+    let map = crate::tabletop_gathering_map::GatheringMap::new(
+        play.scenario
+            .locations
+            .iter()
+            .map(|room| (room.code.as_str(), room.revealed)),
+        Vec2::new(1.35, 1.89),
+    )
+    .expect("The selected Gathering locations fit their shared scenario surface");
+    let group = play
+        .scenario
+        .enemies
+        .iter()
+        .filter(|other| other.engaged.is_none() && other.location == enemy.location)
+        .collect::<Vec<_>>();
+    let ordinal = group
+        .iter()
+        .position(|other| other.card.id == enemy.card.id)
+        .unwrap();
+    local_enemy_position(map.position(&enemy.location), ordinal, group.len())
+}
+
+fn local_enemy_position(location: Vec3, ordinal: usize, count: usize) -> Vec3 {
+    let step = if count > 1 {
+        (1. / (count - 1) as f32).min(0.25)
+    } else {
+        0.
+    };
+    location + Vec3::new(3.2, ordinal as f32 * 0.015, ordinal as f32 * step)
 }
 
 pub(super) fn resolving_position() -> Vec3 {
     layout::test_source() + Vec3::new(2.5, 0., 0.)
+}
+
+#[cfg(test)]
+mod presentation_tests {
+    use super::*;
+
+    #[test]
+    fn local_enemy_fans_clear_every_room_standee_reservation() {
+        let rooms = ["01112", "01113", "01114", "01115"];
+        let map = crate::tabletop_gathering_map::GatheringMap::new(
+            rooms.map(|code| (code, true)),
+            Vec2::new(1.35, 1.89),
+        )
+        .unwrap();
+        for room in rooms {
+            for count in [1, 2, 3, 8, 16] {
+                for ordinal in 0..count {
+                    let at = local_enemy_position(map.position(room), ordinal, count).xz();
+                    let card = Rect::from_center_size(at, Vec2::new(1.35, 1.89));
+                    for other in rooms {
+                        let center = map.position(other).xz();
+                        // Independent fixed oracle for the shared1.35×1.89
+                        // location face plus reserved standees and captions.
+                        let reserved = Rect::from_corners(
+                            center + Vec2::new(-2.3, -1.145),
+                            center + Vec2::new(2.3, 2.945),
+                        );
+                        assert!(
+                            card.max.x < reserved.min.x
+                                || card.min.x > reserved.max.x
+                                || card.max.y < reserved.min.y
+                                || card.min.y > reserved.max.y,
+                            "{room} enemy {ordinal}/{count} overlaps {other}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

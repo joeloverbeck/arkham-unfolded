@@ -12,24 +12,25 @@ use crate::{
     tabletop_health::{RenderHealth, TabletopHealthPlugin, exit_result},
     tabletop_layout::{self as layout, Area},
     tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin},
+    tabletop_pieces::WorldLabel,
 };
 use bevy::{
     input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
-    input_focus::{
-        AutoFocus, InputFocus,
-        tab_navigation::{TabGroup, TabIndex},
-    },
-    picking::hover::Hovered,
+    input_focus::{AutoFocus, InputFocus, tab_navigation::TabGroup},
     prelude::*,
     ui_widgets::{Activate, Button},
 };
 use std::path::PathBuf;
 
 mod art;
+mod consequences;
 mod controls;
 mod motion;
 mod play;
+mod reveal;
+mod scene;
 mod story;
+mod ui;
 
 const INK: Color = Color::srgb(0.035, 0.055, 0.065);
 const PAPER: Color = Color::srgb(0.91, 0.89, 0.81);
@@ -38,12 +39,17 @@ const GOLD: Color = Color::srgb(0.86, 0.69, 0.37);
 
 #[derive(Clone)]
 enum Action {
+    ContinueStory,
+    Reveal(crate::tabletop_reveal::Request),
     Choose(u64, u64, String),
     Select(u64, u64, controls::Selection),
     ContextChoice(u64, u64, u64, String),
     ContextInspect(u64, u64, u64, String, String),
     DismissContext,
     PendingChoices,
+    Utilities,
+    Dismiss,
+    Motion,
     AssetFolder,
     Inspect(String, String),
     Save,
@@ -72,6 +78,9 @@ struct Table {
     notice: String,
     inspection: Option<(String, String)>,
     history_open: bool,
+    menu_open: bool,
+    reduced_motion: bool,
+    reading: story::Reading,
     epoch: u64,
     dirty: bool,
     live_follow: bool,
@@ -87,6 +96,7 @@ struct Table {
 
 impl Table {
     fn new(session: Session, save_path: PathBuf) -> Self {
+        let reading = story::Reading::for_record(&session.recording());
         Self {
             session,
             replay: None,
@@ -94,6 +104,9 @@ impl Table {
             notice: "Each decision saves before it takes effect.".into(),
             inspection: None,
             history_open: false,
+            menu_open: false,
+            reduced_motion: false,
+            reading,
             epoch: 0,
             dirty: true,
             live_follow: false,
@@ -132,7 +145,7 @@ impl Table {
     }
 
     fn modal(&self) -> bool {
-        self.inspection.is_some() || self.history_open
+        self.reading.current().is_some() || self.inspection.is_some() || self.history_open
     }
 
     fn story_faces(&self, view: &Observation) -> story::Faces {
@@ -160,10 +173,6 @@ struct ScenePiece;
 #[derive(Component)]
 struct Panel;
 #[derive(Component)]
-struct WorldLabel(Vec3, bool);
-#[derive(Component)]
-struct HoverLabel;
-#[derive(Component)]
 struct ScrollablePanel {
     inspection: bool,
 }
@@ -180,6 +189,7 @@ struct CardRender<'a> {
     view: &'a Observation,
     epoch: u64,
     story: &'a story::Faces,
+    consequences: &'a consequences::State,
 }
 
 impl CardRender<'_> {
@@ -192,6 +202,9 @@ impl CardRender<'_> {
     }
 
     fn image(&self, code: &str) -> Option<Handle<Image>> {
+        if let Some((code, _)) = play::enemy_inspection(self.view, code) {
+            return self.art.card(&code, false);
+        }
         if self.story.is_reverse(code) {
             return self.art.card(code, true);
         }
@@ -229,6 +242,28 @@ impl CardRender<'_> {
                     .last()
                     .and_then(|card| self.art.card(&card.code, false));
             }
+            if let Some(who) = code.strip_prefix("removed:") {
+                return play
+                    .players
+                    .iter()
+                    .find(|player| player.investigator.id() == who)
+                    .and_then(|player| player.removed.last())
+                    .and_then(|card| self.art.card(&card.code, false));
+            }
+            let public_top = match code {
+                "victory" => play.scenario.victory.last(),
+                "scenario-removed" => play.scenario.removed.last(),
+                "searched-player" => play.searched_player.last(),
+                "searched-encounter" => play.searched_encounter.last(),
+                "resolving-cards" => play.pending.resolving_cards.last(),
+                "pending-discard" => play.pending.discard.as_ref().and_then(|discard| {
+                    discard.ordered.last().or_else(|| discard.remaining.last())
+                }),
+                _ => None,
+            };
+            if let Some(card) = public_top {
+                return self.art.card(&card.code, false);
+            }
         }
         match code {
             "hidden-player-deck" => self.art.image("card-back/player"),
@@ -239,6 +274,12 @@ impl CardRender<'_> {
     }
 
     fn rules(&self, code: &str) -> Option<String> {
+        if let Some((code, details)) = play::enemy_inspection(self.view, code) {
+            return Some(format!(
+                "{details}\n\n{}",
+                inspection_text(self.view, &code).unwrap_or_default()
+            ));
+        }
         if self.story.is_reverse(code) {
             crate::gathering::inspection::scenario_card_reverse(code)
         } else {
@@ -351,14 +392,20 @@ pub fn run() -> Result<(), String> {
 fn install(app: &mut App) {
     controls::install(app);
     app.init_resource::<Actions>()
+        .init_resource::<consequences::State>()
         .init_resource::<art::Art>()
         .add_plugins(feedback::FeedbackPlugin)
+        .add_plugins(crate::tabletop_counters::CounterPlugin)
+        .add_plugins(crate::tabletop_reveal::RevealPlugin)
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
                 poll_settings,
                 handle_actions,
+                consequences::advance,
+                reveal::sync,
+                crate::tabletop_reveal::render,
                 advance_presentation,
                 keyboard_panel_scroll,
                 camera_controls,
@@ -367,6 +414,7 @@ fn install(app: &mut App) {
                 contextual_feedback,
                 motion::animate,
                 world_labels,
+                crate::tabletop_tokens::position_labels,
             )
                 .chain(),
         )
@@ -380,6 +428,7 @@ fn poll_settings(mut settings: Option<ResMut<AssetSettings>>, mut table: ResMut<
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_actions(
     health: Res<RenderHealth>,
     mut actions: ResMut<Actions>,
@@ -388,6 +437,8 @@ fn handle_actions(
     keys: Res<ButtonInput<KeyCode>>,
     mut feedback: ResMut<FeedbackSettings>,
     mut settings: Option<ResMut<AssetSettings>>,
+    mut shortcut: ResMut<crate::tabletop_reveal::Shortcut>,
+    mut consequences: ResMut<consequences::State>,
 ) {
     let revision = table
         .last_rendered
@@ -405,8 +456,27 @@ fn handle_actions(
     if keys.just_pressed(KeyCode::Escape) {
         actions.0.push(Action::Close);
     }
+    actions
+        .0
+        .extend(shortcut.drain().into_iter().map(Action::Reveal));
     for action in actions.0.drain(..) {
+        let mut reveal_focus = false;
         let action = match action {
+            Action::Reveal(request) => {
+                reveal::refresh(&table, settings.as_deref(), &health, &mut shortcut);
+                match shortcut.admit(request) {
+                    Some(crate::tabletop_reveal::Accepted::Choice(revision, id)) => {
+                        reveal_focus = true;
+                        Action::Choose(table.epoch, revision, id.into())
+                    }
+                    Some(_) => {
+                        table.context.dismiss();
+                        table.dirty = true;
+                        continue;
+                    }
+                    None => continue,
+                }
+            }
             Action::ContextChoice(generation, epoch, revision, id)
                 if table.context.accepts(generation) =>
             {
@@ -423,6 +493,30 @@ fn handle_actions(
             Action::ContextInspect(..) => continue,
             action => action,
         };
+        // The same dispatch boundary as Party: a dialog captures actions that
+        // were already queued before its barrier appeared on screen.
+        let reading = table.reading.current().is_some();
+        let permitted_in_modal = if reading {
+            matches!(action, Action::ContinueStory)
+                || (table.replay.is_some()
+                    && matches!(action, Action::Next | Action::Back | Action::Live))
+        } else {
+            matches!(action, Action::Close)
+        };
+        if table.modal() && !permitted_in_modal {
+            continue;
+        }
+        if consequences.active()
+            && matches!(
+                action,
+                Action::Choose(..) | Action::PresentationNext | Action::PresentationFinish
+            )
+        {
+            continue;
+        }
+        if !reveal_focus {
+            shortcut.dismiss();
+        }
         if (!health.allows_play()
             || health.just_became_ready()
             || settings.as_ref().is_some_and(|settings| settings.is_busy()))
@@ -434,6 +528,24 @@ fn handle_actions(
             continue;
         }
         match action {
+            Action::ContinueStory => {
+                table.reading.advance();
+                table.dirty = true;
+            }
+            Action::Utilities => {
+                table.menu_open = !table.menu_open;
+                table.context.dismiss();
+                table.dirty = true;
+            }
+            Action::Dismiss => {
+                table.menu_open = false;
+                table.context.dismiss();
+                table.dirty = true;
+            }
+            Action::Motion => {
+                table.reduced_motion = !table.reduced_motion;
+                table.dirty = true;
+            }
             Action::Choose(epoch, revision, id)
                 if epoch == table.epoch
                     && table.replay.is_none()
@@ -454,6 +566,9 @@ fn handle_actions(
                             orbit.update_follow_target(Some(layout::focus(play::focus(
                                 &table.view(),
                             ))));
+                            if reveal_focus {
+                                orbit.focus(layout::focus(Area::Test));
+                            }
                             "Decision saved.".into()
                         }
                         Err(error) => format!("Decision not committed: {error}"),
@@ -474,7 +589,10 @@ fn handle_actions(
                     table.dirty = true;
                 }
             }
-            Action::Select(..) | Action::ContextChoice(..) | Action::ContextInspect(..) => {}
+            Action::Select(..)
+            | Action::ContextChoice(..)
+            | Action::ContextInspect(..)
+            | Action::Reveal(..) => {}
             Action::DismissContext => table.context.dismiss(),
             Action::PendingChoices
                 if table.replay.is_none() && !table.modal() && !table.is_presenting() =>
@@ -527,6 +645,7 @@ fn handle_actions(
                 table.epoch += 1;
                 table.inspection = None;
                 table.history_open = false;
+                table.menu_open = false;
                 table.dirty = true;
             }
             Action::Inspect(title, code) => {
@@ -553,9 +672,11 @@ fn handle_actions(
             Action::Reopen if table.replay.is_none() => {
                 match continuity::load_session(&table.save_path) {
                     Ok(session) if !session.is_verification_fixture() => {
+                        consequences.clear();
                         table.context.reset();
                         table.epoch += 1;
                         if session != table.session {
+                            table.reading = story::Reading::for_record(&session.recording());
                             table.presentation.clear();
                             table.presentation_index = 0;
                             table.presentation_clock = 0.;
@@ -575,12 +696,14 @@ fn handle_actions(
                 table.dirty = true;
             }
             Action::Replay => {
+                consequences.clear();
                 match Replay::new(table.session.recording()) {
                     Ok(replay) => {
                         table.context.reset();
                         table.live_follow = orbit.is_following();
                         table.epoch += 1;
                         table.replay = Some(replay);
+                        table.reading = story::Reading::at(table.story_faces(&table.view()));
                         table.inspection = None;
                         table.history_open = false;
                         orbit.set_following(true);
@@ -591,6 +714,8 @@ fn handle_actions(
                 table.dirty = true;
             }
             Action::Next => {
+                consequences.clear();
+                table.reading.dismiss_for_navigation();
                 if let Some(replay) = &mut table.replay {
                     replay.next();
                     table.dirty = true;
@@ -599,6 +724,8 @@ fn handle_actions(
                 }
             }
             Action::Back => {
+                consequences.clear();
+                table.reading.dismiss_for_navigation();
                 if let Some(replay) = &mut table.replay {
                     replay.back();
                     table.dirty = true;
@@ -607,9 +734,12 @@ fn handle_actions(
                 }
             }
             Action::Live => {
+                consequences.clear();
                 table.context.reset();
                 table.epoch += 1;
                 table.replay = None;
+                let faces = table.story_faces(&table.view());
+                table.reading = story::Reading::at(faces);
                 table.inspection = None;
                 table.history_open = false;
                 table.dirty = true;
@@ -621,6 +751,7 @@ fn handle_actions(
     }
     feedback.blocked =
         table.modal() || settings.as_ref().is_some_and(|settings| settings.is_busy());
+    feedback.reduced_motion = table.reduced_motion;
 }
 
 fn setup(
@@ -639,32 +770,6 @@ fn setup(
     commands.spawn((Camera3d::default(), Transform::default(), MainCamera));
 }
 
-fn text(value: impl Into<String>, size: f32, color: Color) -> impl Bundle {
-    crate::tabletop_harm_text::ui(value, size, color, &None)
-}
-
-fn button(parent: &mut ChildSpawnerCommands, label: &str, action: Action) -> Entity {
-    parent
-        .spawn((
-            Button,
-            Hovered::default(),
-            TabIndex(0),
-            AccessibleLabel::new(label),
-            feedback::context_button(),
-            Node {
-                min_height: px(32),
-                padding: UiRect::all(px(8)),
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.12, 0.19, 0.21)),
-        ))
-        .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| queue.0.push(action.clone()))
-        .with_children(|p| {
-            p.spawn(text(label, 15., PAPER));
-        })
-        .id()
-}
-
 #[allow(clippy::too_many_arguments)]
 fn card(
     commands: &mut Commands,
@@ -675,20 +780,33 @@ fn card(
     title: &str,
     code: &str,
     selected: bool,
-    color: Color,
+    _color: Color,
 ) -> Entity {
+    let landscape = matches!(code, "06003" | "06005" | "60401");
+    let transform = Transform::from_translation(at).with_rotation(if landscape {
+        Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
+    } else {
+        Quat::IDENTITY
+    });
+    let entity = crate::tabletop_pieces::card(
+        commands,
+        meshes,
+        materials,
+        context.image(code),
+        transform,
+        title,
+    );
     let title = title.to_owned();
     let code = code.to_owned();
-    let image = context.image(&code);
-    let has_art = image.is_some();
-    let landscape = matches!(code.as_str(), "06003" | "06005" | "60401");
-    let (width, length) = if landscape { (2.6, 1.85) } else { (1.35, 1.89) };
-    let entity = commands
-        .spawn((
+    commands
+        .entity(entity)
+        .insert((
             ScenePiece,
-            Mesh3d(meshes.add(Cuboid::new(width, 0.08, length))),
-            MeshMaterial3d(materials.add(color)),
-            Transform::from_translation(at),
+            CardFeedback {
+                pending_choice: selected,
+                symbol_font: context.art.symbol_font().clone(),
+                ..default()
+            },
         ))
         .observe({
             let title = title.clone();
@@ -697,7 +815,7 @@ fn card(
                   targets: Query<&ContextTarget>,
                   mut queue: ResMut<Actions>| {
                 if event.button == bevy::picking::pointer::PointerButton::Primary {
-                    queue.0.push(if let Ok(target) = targets.get(event.entity) {
+                    queue.0.push(if let Ok(target) = targets.get(entity) {
                         Action::Select(
                             target.epoch,
                             target.revision,
@@ -713,104 +831,26 @@ fn card(
                     });
                 }
             }
-        })
-        .id();
-    if let Some(image) = image {
-        let (face_width, face_length, rotation) = if landscape {
-            (
-                length,
-                width,
-                Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
-            )
-        } else {
-            (width, length, Quat::IDENTITY)
-        };
-        commands.entity(entity).with_children(|parent| {
-            parent.spawn((
-                Mesh3d(meshes.add(Plane3d::default().mesh().size(face_width, face_length))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color_texture: Some(image),
-                    unlit: true,
-                    ..default()
-                })),
-                Transform::from_xyz(0., 0.045, 0.).with_rotation(rotation),
-                Pickable::IGNORE,
-            ));
         });
-    }
-    feedback::attach_card_feedback(commands, meshes, materials, entity, width, length, 0.04);
-    commands.entity(entity).insert(CardFeedback {
-        pending_choice: selected,
-        symbol_font: context.art.symbol_font().clone(),
-        ..default()
-    });
-    let label = commands
-        .spawn((
-            ScenePiece,
-            WorldLabel(at + Vec3::Y * 0.1, false),
-            motion::CardLabel(entity),
-            context.art.text(title, 13., INK),
-            Node {
-                position_type: PositionType::Absolute,
-                width: px(130),
-                padding: UiRect::all(px(3)),
-                ..default()
-            },
-            BackgroundColor(PAPER),
-            Pickable::IGNORE,
-        ))
-        .id();
-    if has_art {
-        commands.entity(label).insert(HoverLabel);
+    // Party names investigators in the area heading; ordinary card captions sit
+    // below the face and move with it without exposing physical copy IDs.
+    if !landscape {
+        let offset = story::StoryCard::from_code(&code).map_or(Vec3::Z * 1.1, |card| {
+            Vec3::new(
+                match card.side() {
+                    layout::ScenarioBookSide::Agenda => -2.25,
+                    layout::ScenarioBookSide::Act => 2.25,
+                },
+                0.25,
+                0.,
+            )
+        });
+        let label = scene::label(commands, context, title, at + offset, false);
+        commands
+            .entity(label)
+            .insert(motion::CardLabel(entity, offset));
     }
     entity
-}
-
-fn inspection_image(
-    parent: &mut ChildSpawnerCommands,
-    image: Handle<Image>,
-    code: &str,
-    available_width: f32,
-) {
-    let landscape = matches!(
-        code,
-        "06003" | "06005" | "60401" | "01105" | "01106" | "01107" | "01108" | "01109" | "01110"
-    );
-    let width = available_width
-        .max(160.)
-        .min(if landscape { 760. } else { 430. });
-    let height = width * if landscape { 5. / 7. } else { 7. / 5. };
-    parent
-        .spawn(Node {
-            width: px(width),
-            height: px(height),
-            flex_shrink: 0.,
-            align_self: AlignSelf::Center,
-            ..default()
-        })
-        .with_children(|frame| {
-            frame.spawn((
-                ImageNode::new(image),
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: percent(50),
-                    top: percent(50),
-                    width: px(if landscape { height } else { width }),
-                    height: px(if landscape { width } else { height }),
-                    ..default()
-                },
-                UiTransform {
-                    translation: Val2::percent(-50, -50),
-                    rotation: if landscape {
-                        Rot2::degrees(-90.)
-                    } else {
-                        Rot2::IDENTITY
-                    },
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ));
-        });
 }
 
 fn inspection_text(view: &Observation, code: &str) -> Option<String> {
@@ -855,7 +895,11 @@ fn render(
     mut table: ResMut<Table>,
     health: Res<RenderHealth>,
     art: Res<art::Art>,
+    images: Res<Assets<Image>>,
+    mut previous_ui: Local<(Vec2, [bool; 3])>,
+    mut consequences: ResMut<consequences::State>,
     old: Query<PriorRenderedCard<'_>, RenderedContent>,
+    shortcut: Res<crate::tabletop_reveal::Shortcut>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     orbit: Res<Orbit>,
@@ -870,12 +914,20 @@ fn render(
         .is_none_or(|(allowed, status)| {
             *allowed != health.allows_play() || status != health.status()
         });
-    if !table.dirty && !health_changed {
+    let size = Vec2::new(window.width(), window.height());
+    let ui_state = (
+        size,
+        ui::portraits(&art, &images).map(|portrait| portrait.is_some()),
+    );
+    let ui_changed = *previous_ui != ui_state;
+    *previous_ui = ui_state;
+    if !table.dirty && !health_changed && !ui_changed {
         return;
     }
     table.last_rendered_health = Some((health.allows_play(), health.status().to_owned()));
     table.dirty = false;
     if !table.context.is_open()
+        && !shortcut.is_open()
         && let Some(focus) = focus.as_mut()
     {
         focus.clear();
@@ -889,438 +941,39 @@ fn render(
     }
     table.motion_origins = origins;
     let view = table.view();
+    consequences.prepare(
+        table.last_rendered.as_ref(),
+        &view,
+        table.replay.is_none(),
+        table.reduced_motion,
+    );
     table.last_rendered = Some(view.clone());
     let story = table.story_faces(&view);
+    if view.revision == 0 {
+        table.reading = story::Reading::at(story.clone());
+    } else {
+        table.reading.synchronize(&story);
+    }
     let context = CardRender {
         art: &art,
         view: &view,
         epoch: table.epoch,
         story: &story,
+        consequences: &consequences,
     };
-    for (index, investigator) in view.investigators.iter().enumerate() {
-        for (slot, hand) in investigator.hand.iter().enumerate() {
-            let entity = card(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                &context,
-                layout::hand_position(index, investigator.hand.len(), slot),
-                &format!("{} · copy {}", hand.title, hand.id),
-                &hand.code,
-                investigator.selected_mulligan.contains(&hand.id)
-                    || view
-                        .play
-                        .as_ref()
-                        .and_then(|play| play.test.as_ref())
-                        .is_some_and(|test| test.selected.contains(&hand.id)),
-                PAPER,
-            );
-            commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(hand.id));
-            context.bind(&mut commands, entity, controls::Source::Card(hand.id));
-        }
-        for (slot, permanent) in investigator
-            .permanents
-            .iter()
-            .enumerate()
-            .filter(|_| view.play.is_none())
-        {
-            let entity = card(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                &context,
-                layout::investigator_asset(index, slot),
-                &permanent.title,
-                &permanent.code,
-                false,
-                PAPER,
-            );
-            commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(permanent.id));
-            context.bind(&mut commands, entity, controls::Source::Card(permanent.id));
-        }
-        let entity = card(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            &context,
-            layout::investigator_card(index),
-            investigator.investigator.name(),
-            match investigator.investigator {
-                Investigator::Tony => "06003",
-                Investigator::Patrice => "06005",
-                Investigator::Jacqueline => "60401",
-            },
-            false,
-            layout::investigator_color(index),
-        );
-        context.bind(
-            &mut commands,
-            entity,
-            controls::Source::Investigator(investigator.investigator),
-        );
-        commands.spawn((
-            ScenePiece,
-            WorldLabel(layout::investigator_heading(index), true),
-            art.text(
-                view.play.as_ref().map_or_else(
-                    || {
-                        format!(
-                            "{}\nResources {} · Deck {} · Damage {} · Horror {}",
-                            investigator.investigator.name(),
-                            investigator.resources,
-                            investigator.deck_count,
-                            investigator.damage,
-                            investigator.horror
-                        )
-                    },
-                    |play| play::player_status(play, index),
-                ),
-                15.,
-                PAPER,
-            ),
-            Node {
-                position_type: PositionType::Absolute,
-                width: px(260),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ));
-    }
-    if view.play.is_some() {
-        play::render(&mut commands, &mut meshes, &mut materials, &context);
-    } else if let Some(scenario) = &view.scenario {
-        for (side, codes, label) in [
-            (
-                layout::ScenarioBookSide::Agenda,
-                &scenario.agenda,
-                "Agenda 1",
-            ),
-            (layout::ScenarioBookSide::Act, &scenario.act, "Act 1"),
-        ] {
-            if let Some(code) = codes.first() {
-                let pose = layout::scenario_book_card_transform(side, Vec2::new(1.35, 1.89));
-                let entity = card(
-                    &mut commands,
-                    &mut meshes,
-                    &mut materials,
-                    &context,
-                    pose.translation,
-                    label,
-                    code,
-                    false,
-                    PAPER,
-                );
-                commands.entity(entity).insert(pose);
-                context.bind(
-                    &mut commands,
-                    entity,
-                    match side {
-                        layout::ScenarioBookSide::Agenda => controls::Source::Agenda,
-                        layout::ScenarioBookSide::Act => controls::Source::Act,
-                    },
-                );
-            }
-        }
-        let reference = card(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            &context,
-            layout::SCENARIO_REFERENCE,
-            "The Gathering · Standard",
-            &scenario.reference,
-            false,
-            PAPER,
-        );
-        context.bind(
-            &mut commands,
-            reference,
-            controls::Source::ScenarioReference,
-        );
-        let study = card(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            &context,
-            layout::SCENARIO_MAP_CENTER,
-            &format!("Study · {} clues", scenario.study_clues),
-            "01111",
-            false,
-            PAPER,
-        );
-        context.bind(
-            &mut commands,
-            study,
-            controls::Source::Location("01111".into()),
-        );
-        let encounter = card(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            &context,
-            layout::ENCOUNTER_DECK,
-            &format!("Encounter deck · {} cards", scenario.encounter_deck_count),
-            "encounter-deck",
-            false,
-            MUTED,
-        );
-        context.bind(&mut commands, encounter, controls::Source::EncounterDeck);
-    }
-    commands
-        .spawn((
-            Panel,
-            Node {
-                position_type: PositionType::Absolute,
-                top: px(10),
-                left: px(12),
-                right: px(12),
-                padding: UiRect::all(px(10)),
-                flex_direction: FlexDirection::Row,
-                column_gap: px(12),
-                ..default()
-            },
-            BackgroundColor(INK),
-            TabGroup::new(0),
-        ))
-        .with_children(|p| {
-            p.spawn(text(
-                if view.play.is_some() {
-                    "The Gathering · Standard"
-                } else {
-                    "The Gathering · Standard · Setup"
-                },
-                22.,
-                GOLD,
-            ));
-            for (label, area) in [
-                ("Overview", Area::Overview),
-                ("Scenario", Area::Scenario),
-                ("Test", Area::Test),
-                ("Tony", Area::Investigator(0)),
-                ("Patrice", Area::Investigator(1)),
-                ("Jacqueline", Area::Investigator(2)),
-            ] {
-                let entity = button(p, label, Action::Focus(area));
-                if area == Area::Overview
-                    && !table.modal()
-                    && !table.context.is_open()
-                    && controls::global_choices(&view).is_empty()
-                {
-                    p.commands().entity(entity).insert(AutoFocus);
-                }
-            }
-            button(
-                p,
-                if orbit.is_following() {
-                    "Automatic camera: on"
-                } else {
-                    "Automatic camera: off"
-                },
-                Action::Follow,
-            );
-        });
-    commands
-        .spawn((
-            Panel,
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(12),
-                right: px(12),
-                bottom: px(12),
-                max_height: percent(34),
-                padding: UiRect::all(px(12)),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(6),
-                overflow: Overflow::scroll_y(),
-                ..default()
-            },
-            BackgroundColor(INK),
-            TabGroup::new(1),
-        ))
-        .insert((
-            ScrollPosition::default(),
-            ScrollablePanel { inspection: false },
-        ))
-        .observe(scroll_panel)
-        .with_children(|p| {
-            p.spawn(text(art.status(), 12., MUTED));
-            if !health.allows_play() {
-                p.spawn(text(health.status(), 20., GOLD));
-                button(p, "Choose asset folder", Action::AssetFolder);
-                return;
-            }
-            if let Some(replay) = &table.replay {
-                p.spawn(text(
-                    format!(
-                        "Recorded replay · {} / {}",
-                        replay.index() + 1,
-                        replay.len()
-                    ),
-                    18.,
-                    GOLD,
-                ));
-            }
-            if view.play.is_none()
-                && let Some(owner) = view.decision_owner
-            {
-                p.spawn(text(format!("{}'s decision", owner.name()), 16., GOLD));
-            }
-            p.spawn(text(&view.prompt, 18., PAPER));
-            if table.replay.is_none() && !table.is_presenting() && !view.choices.is_empty() {
-                p.spawn(text(
-                    "Click a card or table component for its available actions.",
-                    13.,
-                    MUTED,
-                ));
-            }
-            if table.is_presenting() {
-                p.spawn(text(
-                    format!(
-                        "Event {} of {} · The decision is saved",
-                        table.presentation_index + 1,
-                        table.presentation.len()
-                    ),
-                    14.,
-                    MUTED,
-                ));
-            }
-            if let Some(status) = play::status(&view) {
-                p.spawn(text(status, 16., GOLD));
-            }
-            p.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                flex_wrap: FlexWrap::Wrap,
-                column_gap: px(8),
-                row_gap: px(5),
-                ..default()
-            })
-            .with_children(|row| {
-                if let Some(replay) = &table.replay {
-                    if replay.index() > 0 {
-                        button(row, "Previous moment", Action::Back);
-                    }
-                    if replay.index() + 1 < replay.len() {
-                        button(row, "Next moment", Action::Next);
-                    }
-                    button(row, "Return to live table", Action::Live);
-                } else if table.is_presenting() && !table.modal() {
-                    button(row, "Next event", Action::PresentationNext);
-                    button(
-                        row,
-                        if table.presentation_paused {
-                            "Resume presentation"
-                        } else {
-                            "Pause presentation"
-                        },
-                        Action::PresentationPause,
-                    );
-                    button(row, "Show pending choice", Action::PresentationFinish);
-                } else if !table.modal() {
-                    for (index, choice) in controls::global_choices(&view).into_iter().enumerate() {
-                        let entity = button(
-                            row,
-                            &choice.label,
-                            Action::Choose(table.epoch, view.revision, choice.id.clone()),
-                        );
-                        if index == 0 {
-                            row.commands().entity(entity).insert(AutoFocus);
-                        }
-                    }
-                    if !controls::pending_choices(&view).is_empty() {
-                        button(row, "Pending decision", Action::PendingChoices);
-                    }
-                }
-            });
-            p.spawn(text(&table.notice, 12., MUTED));
-            p.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                column_gap: px(8),
-                ..default()
-            })
-            .with_children(|row| {
-                button(row, "History", Action::History);
-                button(row, "Choose asset folder", Action::AssetFolder);
-                if table.replay.is_none() {
-                    button(row, "Save", Action::Save);
-                    button(row, "Reopen", Action::Reopen);
-                    button(row, "Replay", Action::Replay);
-                }
-            });
-        });
-    if table.modal() {
-        commands
-            .spawn((
-                Panel,
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: percent(12),
-                    right: percent(12),
-                    top: percent(10),
-                    bottom: percent(18),
-                    padding: UiRect::all(px(20)),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: px(12),
-                    overflow: Overflow::scroll_y(),
-                    ..default()
-                },
-                BackgroundColor(INK),
-                ScrollPosition::default(),
-                ScrollablePanel { inspection: true },
-                TabGroup::modal(),
-            ))
-            .observe(scroll_panel)
-            .with_children(|p| {
-                let close = button(p, "Close", Action::Close);
-                p.commands().entity(close).insert(AutoFocus);
-                if let Some((title, code)) = &table.inspection {
-                    p.spawn(text(title, 24., GOLD));
-                    if let Some(image) = context.image(code) {
-                        inspection_image(p, image, code, window.width() * 0.76 - 40.);
-                    }
-                    if code.len() == 5 && code.bytes().all(|byte| byte.is_ascii_digit()) {
-                        p.spawn(text(format!("Card {code}"), 14., MUTED));
-                    }
-                    if let Some(rules) = context.rules(code) {
-                        p.spawn(art.text(rules, 17., PAPER));
-                    }
-                    if let Some(current) = story::StoryCard::from_code(code) {
-                        for previous in story
-                            .known_reverses(current.side())
-                            .filter(|card| *card != current)
-                        {
-                            p.spawn(text(
-                                format!("Previously revealed · {}", previous.title()),
-                                22.,
-                                GOLD,
-                            ));
-                            if let Some(image) = art.card(previous.code(), true) {
-                                inspection_image(
-                                    p,
-                                    image,
-                                    previous.code(),
-                                    window.width() * 0.76 - 40.,
-                                );
-                            }
-                            if let Some(rules) =
-                                crate::gathering::inspection::scenario_card_reverse(previous.code())
-                            {
-                                p.spawn(art.text(rules, 17., PAPER));
-                            }
-                        }
-                    }
-                } else {
-                    p.spawn(text("Action history", 22., GOLD));
-                    for line in &view.history {
-                        p.spawn(text(line, 15., PAPER));
-                    }
-                }
-                button(p, "Close", Action::Close);
-            });
-    }
+    scene::render(&mut commands, &mut meshes, &mut materials, &context);
+    ui::render(
+        &mut commands,
+        &table,
+        &view,
+        &art,
+        &images,
+        &orbit,
+        &health,
+        size,
+        &context,
+        shortcut.is_open(),
+    );
 }
 
 fn scroll_panel(event: On<PointerScroll>, mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>) {
@@ -1372,8 +1025,14 @@ fn advance_presentation(
     health: Res<RenderHealth>,
     mut table: ResMut<Table>,
     mut orbit: ResMut<Orbit>,
+    consequences: Res<consequences::State>,
 ) {
-    if !health.allows_play() || table.modal() || table.presentation_paused || !table.is_presenting()
+    if !health.allows_play()
+        || consequences.active()
+        || table.modal()
+        || table.context.is_open()
+        || table.presentation_paused
+        || !table.is_presenting()
     {
         return;
     }
@@ -1405,6 +1064,7 @@ fn camera_controls(
     hover: Option<Res<bevy::picking::hover::HoverMap>>,
     ui_nodes: Query<(), With<Node>>,
     settings: Option<Res<AssetSettings>>,
+    shortcut: Res<crate::tabletop_reveal::Shortcut>,
 ) {
     let blocked = table.modal() || settings.as_ref().is_some_and(|settings| settings.is_busy());
     let over_ui = hover
@@ -1421,14 +1081,15 @@ fn camera_controls(
             pointer_blocked: blocked,
             over_ui,
             keyboard: blocked
+                || shortcut.is_open()
                 || table.context.captures_keyboard()
                 || focus
                     .as_ref()
                     .and_then(|f| f.get())
                     .is_some_and(|entity| focusable.contains(entity)),
-            wheel: blocked || table.context.is_open() || over_ui,
+            wheel: blocked || table.context.is_open() || shortcut.is_open() || over_ui,
         },
-        reduced_motion: false,
+        reduced_motion: table.reduced_motion,
     });
     **camera = step.transform;
     if step.manual_navigation && table.context.is_open() {
@@ -1450,44 +1111,38 @@ fn world_labels(
     mut labels: Query<(
         &WorldLabel,
         Option<&motion::CardLabel>,
-        Option<&HoverLabel>,
         &ComputedNode,
+        Has<layout::TestAreaHeading>,
         &mut Node,
         &mut Visibility,
     )>,
     cards: Query<&Transform>,
-    hover: Option<Res<bevy::picking::hover::HoverMap>>,
 ) {
-    let hovered = hover
-        .as_ref()
-        .and_then(|map| map.get(&bevy::picking::pointer::PointerId::Mouse));
-    for (label, card, hover_only, computed, mut node, mut visibility) in &mut labels {
-        let anchor = card
-            .and_then(|card| cards.get(card.0).ok())
-            .map_or(label.0, |transform| transform.translation + Vec3::Y * 0.1);
-        let hidden = hover_only.is_some()
-            && !card.is_some_and(|card| hovered.is_some_and(|hits| hits.contains_key(&card.0)));
-        if hidden || (orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1) {
+    for (label, card, computed, test_heading, mut node, mut visibility) in &mut labels {
+        if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
             *visibility = Visibility::Hidden;
-        } else if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor) {
-            let viewport = camera
-                .0
-                .logical_viewport_size()
-                .unwrap_or(Vec2::new(1280., 720.));
-            if !Rect::from_corners(Vec2::ZERO, viewport).contains(point) {
-                *visibility = Visibility::Hidden;
-                continue;
-            }
-            let width = if let Val::Px(width) = node.width {
-                width
-            } else {
-                130.
+            continue;
+        }
+        let anchor = card
+            .and_then(|card| {
+                cards
+                    .get(card.0)
+                    .ok()
+                    .map(|transform| transform.translation + card.1)
+            })
+            .unwrap_or(label.0);
+        let point = if test_heading {
+            layout::test_heading_screen_position(camera.0, camera.1, computed)
+        } else {
+            camera.0.world_to_viewport(camera.1, anchor).ok()
+        };
+        if let Some(point) = point {
+            let width = match node.width {
+                Val::Px(width) => width,
+                _ => 190.,
             };
-            node.left = px((point.x - width / 2.).clamp(8., (viewport.x - width - 8.).max(8.)));
-            node.top = px(point.y.clamp(
-                72.,
-                (viewport.y - computed.size().y * computed.inverse_scale_factor - 100.).max(72.),
-            ));
+            node.left = px(point.x - width / 2.);
+            node.top = px(point.y);
             *visibility = Visibility::Inherited;
         } else {
             *visibility = Visibility::Hidden;
@@ -1496,8 +1151,37 @@ fn world_labels(
 }
 
 fn contextual_feedback(table: Res<Table>, mut cards: Query<(&ContextTarget, &mut CardFeedback)>) {
+    let view = table.view();
+    let test = view.play.as_ref().and_then(|play| play.test.as_ref());
     for (target, mut feedback) in &mut cards {
         feedback.menu_source = table.context.is_menu_source(&target.source);
+        feedback.commitment = None;
+        if table.replay.is_none()
+            && !table.modal()
+            && !table.is_presenting()
+            && let controls::Source::Card(id) = target.source
+            && let Some(test) = test
+            && let Some(contribution) = test
+                .commitment
+                .as_ref()
+                .and_then(|cards| cards.iter().find(|card| card.card_id == id))
+            && let Ok(bonus) = u8::try_from(contribution.contribution)
+        {
+            feedback.pending_choice = contribution.selected;
+            feedback.commitment = Some(feedback::Contribution {
+                bonus,
+                skill: match test.skill {
+                    crate::gathering::Skill::Willpower => {
+                        crate::tabletop::symbols::Skill::Willpower
+                    }
+                    crate::gathering::Skill::Intellect => {
+                        crate::tabletop::symbols::Skill::Intellect
+                    }
+                    crate::gathering::Skill::Combat => crate::tabletop::symbols::Skill::Combat,
+                    crate::gathering::Skill::Agility => crate::tabletop::symbols::Skill::Agility,
+                },
+            });
+        }
     }
 }
 
@@ -1506,6 +1190,7 @@ fn request_redraw(
     health: Res<RenderHealth>,
     table: Res<Table>,
     moving: Query<(), With<motion::CardMotion>>,
+    consequences: Res<consequences::State>,
     mut redraw: ResMut<Redraw>,
 ) {
     if (!moving.is_empty()
@@ -1513,6 +1198,9 @@ fn request_redraw(
         && !(table.is_presenting() && table.presentation_paused))
         || orbit.is_moving()
         || health.is_checking()
+        || (consequences.active()
+            && !table.modal()
+            && !(table.is_presenting() && table.presentation_paused))
         || (table.is_presenting() && !table.presentation_paused && !table.modal())
     {
         redraw.request();

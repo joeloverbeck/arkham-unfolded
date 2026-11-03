@@ -19,14 +19,10 @@ use crate::{
 };
 use bevy::{
     input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
-    input_focus::{
-        InputFocus,
-        tab_navigation::{TabGroup, TabIndex},
-    },
-    picking::hover::Hovered,
+    input_focus::InputFocus,
     prelude::*,
     render::view::screenshot::{Capturing, Screenshot},
-    ui_widgets::{Activate, Button, ModalDialog, ModalDialogBarrier, RequestClose},
+    ui_widgets::{Activate, Button, RequestClose},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -231,8 +227,7 @@ struct Panel;
 struct Scene;
 #[derive(Component)]
 struct MainCamera;
-#[derive(Component)]
-struct WorldLabel(Vec3, bool);
+use crate::tabletop_pieces::WorldLabel;
 #[derive(Component)]
 struct CardSource(Source);
 #[derive(Component)]

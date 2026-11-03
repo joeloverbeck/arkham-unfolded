@@ -53,7 +53,10 @@ mod test_cards;
 pub use test_boosts::BoostFixture;
 pub use test_cards::TestCardFixture;
 
-pub use runtime::{HostileFixture, Phase, PlayObservation};
+pub use runtime::{
+    CommitmentPresentation, HostileFixture, Phase, PlayObservation, PlayerPresentation, Skill,
+    TestView, TonyBonusPresentation,
+};
 
 pub use crate::party::Investigator;
 use crate::{APP_VERSION, Choice, RuleError, TokenFace};
@@ -130,6 +133,26 @@ pub struct InvestigatorView {
     pub selected_mulligan: Vec<u16>,
     pub mulligan_complete: bool,
     pub location: Option<String>,
+}
+
+impl InvestigatorView {
+    /// Printed capacity from the pinned investigator definition, including setup.
+    pub fn health(&self) -> u8 {
+        self.definition().health.expect("Investigator health")
+    }
+
+    pub fn sanity(&self) -> u8 {
+        self.definition().sanity.expect("Investigator sanity")
+    }
+
+    fn definition(&self) -> &'static cards::CardDefinition {
+        let code = match self.investigator {
+            Investigator::Tony => "06003",
+            Investigator::Patrice => "06005",
+            Investigator::Jacqueline => "60401",
+        };
+        cards::definition(code).expect("Selected investigator definition")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -744,6 +767,12 @@ impl Session {
         for decision in &self.decisions {
             reconstructed.choose(reconstructed.revision, decision)?;
         }
+        match_recorded_projection_presence(
+            &mut reconstructed.moments,
+            &mut reconstructed.presentation_moments,
+            &self.moments,
+            &self.presentation_moments,
+        );
         if &reconstructed != self {
             return Err(RuleError(
                 "Gathering setup does not match its recorded decisions and pinned inputs.".into(),
@@ -800,6 +829,12 @@ pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
     for decision in &recording.decisions {
         reconstructed.choose(reconstructed.revision, decision)?;
     }
+    match_recorded_projection_presence(
+        &mut reconstructed.moments,
+        &mut reconstructed.presentation_moments,
+        &recording.moments,
+        &recording.presentation_moments,
+    );
     if reconstructed.moments != recording.moments
         || reconstructed.presentation_moments != recording.presentation_moments
     {
@@ -808,4 +843,22 @@ pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
         ));
     }
     Ok(())
+}
+
+fn match_recorded_projection_presence(
+    expected: &mut [Observation],
+    expected_presentation: &mut [PresentationMoment],
+    recorded: &[Observation],
+    recorded_presentation: &[PresentationMoment],
+) {
+    for (expected, recorded) in expected.iter_mut().zip(recorded) {
+        if let (Some(expected), Some(recorded)) = (&mut expected.play, &recorded.play) {
+            expected.match_recorded_projection_presence(recorded);
+        }
+    }
+    for (expected, recorded) in expected_presentation.iter_mut().zip(recorded_presentation) {
+        expected
+            .play
+            .match_recorded_projection_presence(&recorded.play);
+    }
 }

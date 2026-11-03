@@ -793,6 +793,15 @@ pub(super) enum TokenStep {
 /// Ten physical curse tokens exist. Held and sealed tokens are unavailable for
 /// adding, including a resolved curse awaiting ST8 cleanup.
 pub(super) fn add_curse(game: &mut Game) -> bool {
+    if curse_pool(game) == 0 {
+        return false;
+    }
+    game.bag.push(TokenFace::Curse);
+    true
+}
+
+/// The same physical custody count used to admit adding a curse to the bag.
+pub(super) fn curse_pool(game: &Game) -> u8 {
     let count_faces = |faces: &[TokenFace]| {
         faces
             .iter()
@@ -817,11 +826,7 @@ pub(super) fn add_curse(game: &mut Game) -> bool {
             + count_faces(&test.ignored_tokens)
             + count_faces(&test.cancelled_tokens);
     }
-    if held >= 10 {
-        return false;
-    }
-    game.bag.push(TokenFace::Curse);
-    true
+    10_usize.saturating_sub(held) as u8
 }
 
 fn sealed_curses(node: &RevealNode) -> usize {
