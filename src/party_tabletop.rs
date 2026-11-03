@@ -841,18 +841,23 @@ fn world_labels(
         &WorldLabel,
         &ComputedNode,
         Has<layout::TestAreaHeading>,
+        Has<layout::ScenarioAreaHeading>,
         Has<crate::tabletop_pieces::CardCaption>,
         &mut Node,
         &mut Visibility,
     )>,
 ) {
-    for (label, computed, test_heading, card_caption, mut node, mut visibility) in &mut labels {
+    for (label, computed, test_heading, scenario_heading, card_caption, mut node, mut visibility) in
+        &mut labels
+    {
         if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
             *visibility = Visibility::Hidden;
             continue;
         }
         let point = if test_heading {
             layout::test_heading_screen_position(camera.0, camera.1, computed)
+        } else if scenario_heading {
+            layout::scenario_heading_screen_position(camera.0, camera.1, computed)
         } else {
             camera.0.world_to_viewport(camera.1, label.0).ok()
         };

@@ -65,9 +65,6 @@ enum Action {
     Close,
     Focus(Area),
     Follow,
-    PresentationNext,
-    PresentationPause,
-    PresentationFinish,
 }
 
 #[derive(Resource, Default)]
@@ -91,7 +88,6 @@ struct Table {
     presentation: Vec<PresentationMoment>,
     presentation_index: usize,
     presentation_clock: f32,
-    presentation_paused: bool,
     last_rendered: Option<Observation>,
     last_rendered_health: Option<(bool, String)>,
     motion_origins: motion::Origins,
@@ -99,6 +95,23 @@ struct Table {
 }
 
 impl Table {
+    fn open(save_path: PathBuf) -> Result<Self, String> {
+        let session = if save_path.exists() {
+            continuity::load_session(&save_path).map_err(|error| error.to_string())?
+        } else {
+            let session = Session::new().map_err(|error| error.to_string())?;
+            continuity::save_session(&save_path, &session).map_err(|error| error.to_string())?;
+            session
+        };
+        if session.is_verification_fixture() {
+            return Err(
+                "This is a privileged verification fixture, not an ordinary Gathering setup."
+                    .into(),
+            );
+        }
+        Ok(Self::new(session, save_path))
+    }
+
     fn new(session: Session, save_path: PathBuf) -> Self {
         let reading = story::Reading::for_record(&session.recording());
         Self {
@@ -118,7 +131,6 @@ impl Table {
             presentation: vec![],
             presentation_index: 0,
             presentation_clock: 0.,
-            presentation_paused: false,
             last_rendered: None,
             last_rendered_health: None,
             motion_origins: motion::Origins::default(),
@@ -154,6 +166,10 @@ impl Table {
             || self.inspection.is_some()
             || self.history_open
             || self.restart_confirmation
+    }
+
+    fn presentation_blocked(&self) -> bool {
+        self.modal() || self.menu_open || self.context.is_open()
     }
 
     fn story_faces(&self, view: &Observation) -> story::Faces {
@@ -258,8 +274,14 @@ impl CardRender<'_> {
                     .and_then(|player| player.removed.last())
                     .and_then(|card| self.art.card(&card.code, false));
             }
+            if code == "victory" {
+                return play
+                    .scenario
+                    .victory_display()
+                    .last()
+                    .and_then(|card| self.art.card(card.code, false));
+            }
             let public_top = match code {
-                "victory" => play.scenario.victory.last(),
                 "scenario-removed" => play.scenario.removed.last(),
                 "searched-player" => play.searched_player.last(),
                 "searched-encounter" => play.searched_encounter.last(),
@@ -377,19 +399,7 @@ pub fn run() -> Result<(), String> {
     };
     let mut app = App::new();
     options.configure_diagnostics(&mut app);
-    let save = options.save;
-    let session = if save.exists() {
-        continuity::load_session(&save).map_err(|error| error.to_string())?
-    } else {
-        let session = Session::new().map_err(|error| error.to_string())?;
-        continuity::save_session(&save, &session).map_err(|error| error.to_string())?;
-        session
-    };
-    if session.is_verification_fixture() {
-        return Err(
-            "This is a privileged verification fixture, not an ordinary Gathering setup.".into(),
-        );
-    }
+    let mut table = Table::open(options.save)?;
     let prepared = art::Prepared::new(options.art_root)?;
     eprintln!(
         "Experiment: The Gathering (--experiment gathering)\nArtwork root: {}\n{}",
@@ -398,7 +408,6 @@ pub fn run() -> Result<(), String> {
             .map_or_else(|| "disabled".into(), |path| path.display().to_string()),
         prepared.status()
     );
-    let mut table = Table::new(session, save);
     if let Some(warning) = options.config.warning() {
         table.notice = format!("Asset settings: {warning}");
     }
@@ -548,12 +557,7 @@ fn handle_actions(
         if table.modal() && !permitted_in_modal {
             continue;
         }
-        if consequences.active()
-            && matches!(
-                action,
-                Action::Choose(..) | Action::PresentationNext | Action::PresentationFinish
-            )
-        {
+        if consequences.active() && matches!(action, Action::Choose(..)) {
             continue;
         }
         if !reveal_focus {
@@ -603,7 +607,6 @@ fn handle_actions(
                                 table.session.presentation_after(revision).to_vec();
                             table.presentation_index = 0;
                             table.presentation_clock = 0.;
-                            table.presentation_paused = false;
                             table.epoch += 1;
                             orbit.update_follow_target(Some(layout::focus(play::focus(
                                 &table.view(),
@@ -654,9 +657,6 @@ fn handle_actions(
             Action::Focus(area) => {
                 table.context.dismiss();
                 orbit.focus(layout::focus(area));
-                if table.is_presenting() {
-                    table.presentation_paused = true;
-                }
                 table.dirty = true;
             }
             Action::Follow => {
@@ -666,22 +666,6 @@ fn handle_actions(
                 orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
                 table.dirty = true;
             }
-            Action::PresentationNext if !table.modal() => {
-                table.next_presentation();
-                orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
-            }
-            Action::PresentationPause if table.is_presenting() => {
-                table.presentation_paused = !table.presentation_paused;
-                table.dirty = true;
-            }
-            Action::PresentationFinish if !table.modal() && table.is_presenting() => {
-                table.presentation_index = table.presentation.len();
-                table.presentation_clock = 0.;
-                table.epoch += 1;
-                table.dirty = true;
-                orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
-            }
-            Action::PresentationNext | Action::PresentationPause | Action::PresentationFinish => {}
             Action::Close => {
                 table.context.reset();
                 table.epoch += 1;
@@ -921,18 +905,28 @@ fn card(
     // Party names investigators in the area heading; ordinary card captions sit
     // below the face and move with it without exposing physical copy IDs.
     if !landscape {
-        let offset = story::StoryCard::from_code(&code).map_or(Vec3::Z * 1.1, |card| {
+        let book_side = story::StoryCard::from_code(&code).map(|card| card.side());
+        let offset = book_side.map_or(Vec3::Z * 1.1, |side| {
+            let edge = crate::tabletop_pieces::CARD_LENGTH / 2. + 0.4;
             Vec3::new(
-                match card.side() {
-                    layout::ScenarioBookSide::Agenda => -2.25,
-                    layout::ScenarioBookSide::Act => 2.25,
+                match side {
+                    layout::ScenarioBookSide::Agenda => -edge,
+                    layout::ScenarioBookSide::Act => edge,
                 },
                 0.25,
                 0.,
             )
         });
         let label = scene::label(commands, context, title, at + offset, false);
-        if story::StoryCard::from_code(&code).is_none() {
+        if let Some(side) = book_side {
+            commands.entity(label).insert((
+                side,
+                TextLayout::justify(match side {
+                    layout::ScenarioBookSide::Agenda => Justify::Right,
+                    layout::ScenarioBookSide::Act => Justify::Left,
+                }),
+            ));
+        } else {
             commands
                 .entity(label)
                 .insert(crate::tabletop_pieces::CardCaption);
@@ -951,7 +945,14 @@ fn inspection_text(view: &Observation, code: &str) -> Option<String> {
     if let Some(text) = crate::gathering::inspection::card(code) {
         return Some(text);
     }
-    let scenario = view.scenario.as_ref()?;
+    let scenario = view.scenario_for_display();
+    if code == "chaos-bag" {
+        return Some(format!(
+            "Standard chaos bag · {} tokens\nCurse pool · 10 tokens\n\n{}",
+            view.standard_bag.len(),
+            crate::gathering::inspection::scenario_card("01104", false)?
+        ));
+    }
     if code == "encounter-deck" {
         let cards = scenario
             .encounter_inventory
@@ -1117,24 +1118,36 @@ fn advance_presentation(
     mut table: ResMut<Table>,
     mut orbit: ResMut<Orbit>,
     consequences: Res<consequences::State>,
+    moving: Query<(), With<motion::CardMotion>>,
 ) {
     if !health.allows_play()
         || consequences.active()
-        || table.modal()
-        || table.context.is_open()
-        || table.presentation_paused
+        || table.presentation_blocked()
         || !table.is_presenting()
     {
         return;
     }
+    let view = table.view();
+    // A long frame must not skip an event before it has reached the real scene.
+    if table.last_rendered.as_ref() != Some(&view) {
+        return;
+    }
     table.presentation_clock += time.delta_secs();
-    let duration = table
-        .presentation
-        .get(table.presentation_index)
-        .map_or(2., |moment| {
-            (1. + moment.caption.chars().count() as f32 / 40.).clamp(2., 6.)
-        });
-    if table.presentation_clock >= duration {
+    let play = view
+        .play
+        .as_ref()
+        .expect("A presentation moment has play state");
+    let duration = if play
+        .test
+        .as_ref()
+        .is_some_and(|test| !test.revealed.is_empty())
+        || play.pending.harm.is_some()
+    {
+        1.0
+    } else {
+        motion::CARD_DURATION
+    };
+    if table.presentation_clock >= duration && moving.is_empty() {
         table.next_presentation();
         orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
     }
@@ -1195,10 +1208,6 @@ fn camera_controls(
     if step.stopped_following {
         table.dirty = true;
     }
-    if step.manual_navigation && table.is_presenting() && !table.presentation_paused {
-        table.presentation_paused = true;
-        table.dirty = true;
-    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -1210,13 +1219,25 @@ fn world_labels(
         Option<&motion::CardLabel>,
         &ComputedNode,
         Has<layout::TestAreaHeading>,
+        Has<layout::ScenarioAreaHeading>,
         Has<crate::tabletop_pieces::CardCaption>,
+        Option<&layout::ScenarioBookSide>,
         &mut Node,
         &mut Visibility,
     )>,
     cards: Query<&Transform>,
 ) {
-    for (label, card, computed, test_heading, card_caption, mut node, mut visibility) in &mut labels
+    for (
+        label,
+        card,
+        computed,
+        test_heading,
+        scenario_heading,
+        card_caption,
+        book_side,
+        mut node,
+        mut visibility,
+    ) in &mut labels
     {
         if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
             *visibility = Visibility::Hidden;
@@ -1232,6 +1253,8 @@ fn world_labels(
             .unwrap_or(label.0);
         let point = if test_heading {
             layout::test_heading_screen_position(camera.0, camera.1, computed)
+        } else if scenario_heading {
+            layout::scenario_heading_screen_position(camera.0, camera.1, computed)
         } else {
             camera.0.world_to_viewport(camera.1, anchor).ok()
         };
@@ -1246,7 +1269,11 @@ fn world_labels(
                 Val::Px(width) => width,
                 _ => 190.,
             };
-            node.left = px(point.x - width / 2.);
+            node.left = px(match book_side {
+                Some(layout::ScenarioBookSide::Agenda) => point.x - width,
+                Some(layout::ScenarioBookSide::Act) => point.x,
+                None => point.x - width / 2.,
+            });
             node.top = px(point.y);
             *visibility = Visibility::Inherited;
         } else {
@@ -1298,15 +1325,11 @@ fn request_redraw(
     consequences: Res<consequences::State>,
     mut redraw: ResMut<Redraw>,
 ) {
-    if (!moving.is_empty()
-        && !table.modal()
-        && !(table.is_presenting() && table.presentation_paused))
+    if (!moving.is_empty() && !table.presentation_blocked())
         || orbit.is_moving()
         || health.is_checking()
-        || (consequences.active()
-            && !table.modal()
-            && !(table.is_presenting() && table.presentation_paused))
-        || (table.is_presenting() && !table.presentation_paused && !table.modal())
+        || (consequences.active() && !table.presentation_blocked())
+        || (table.is_presenting() && !table.presentation_blocked())
     {
         redraw.request();
     }

@@ -28,6 +28,10 @@ _Avoid_: Ordinary action when referring to a restricted allowance
 The shared playing surface for the location map, investigator standees and scenario components, including the act, agenda, encounter deck, encounter discard pile and victory display.
 _Avoid_: Player area, map area when referring to all shared components
 
+**Map area**:
+The part of the scenario area containing locations, their connections and the investigator standees at those locations. It is a tabletop arrangement, not an additional rules-defined game zone.
+_Avoid_: Scenario area when referring only to the map
+
 **Investigator area**:
 An individual investigator's personal playing surface, distinct from the shared scenario area. One human player can control several investigators, each with their own area.
 _Avoid_: Player table when referring to an investigator's area
@@ -39,6 +43,10 @@ _Avoid_: Threat area, investigator area
 **Encounter discard pile**:
 The shared, ordered, face-up pile of discarded cards owned by the encounter deck. Its contents are public information and out of play; card abilities and rules can specify a different destination.
 _Avoid_: Victory display, investigator discard pile
+
+**Victory display**:
+The shared out-of-play area holding cards collected for their victory points during a scenario or its resolution. The victory points of its current contents are distinct from the total experience awarded by a scenario resolution.
+_Avoid_: Encounter discard pile, earned experience
 
 **Investigator discard pile**:
 An investigator's ordered, face-up pile of discarded cards they own, including discarded weaknesses. Its contents are public information and out of play.

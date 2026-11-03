@@ -232,9 +232,7 @@ pub(super) fn advance(
     if table.reduced_motion || table.replay.is_some() {
         state.clear();
     }
-    let paused = !health.allows_play()
-        || table.modal()
-        || (table.is_presenting() && table.presentation_paused);
+    let paused = !health.allows_play() || table.presentation_blocked();
     for departure in std::mem::take(&mut state.departures) {
         let (root, label) = tokens::spawn(
             &mut commands,

@@ -87,7 +87,7 @@ fn panning_after_playing_azure_flame_preserves_keyboard_navigation() {
     let before = app.world().resource::<Orbit>().pose();
     keyboard(&mut app, KeyCode::KeyW, Key::Character("w".into()), true);
     assert!(app.world().resource::<Orbit>().pose().target.z < before.target.z);
-    assert!(button_with_label(&mut app, "Resume presentation").is_some());
+    assert!(button_with_label(&mut app, "Resume presentation").is_none());
 
     let initial_focus = focused_label(&app);
     keyboard(&mut app, KeyCode::Tab, Key::Tab, true);
@@ -99,15 +99,30 @@ fn panning_after_playing_azure_flame_preserves_keyboard_navigation() {
     keyboard(&mut app, KeyCode::Tab, Key::Tab, false);
     for _ in 0..5 {
         let before = app.world().resource::<Orbit>().pose();
+        let view = app.world().resource::<Table>().view();
+        let selected = focused_label(&app);
         app.update();
         assert!(app.world().resource::<Orbit>().pose().target.z < before.target.z);
-        assert_eq!(
-            focused_label(&app),
-            selected,
-            "panning must not steal keyboard focus"
-        );
+        if app.world().resource::<Table>().view() == view {
+            assert_eq!(
+                focused_label(&app),
+                selected,
+                "panning must not steal keyboard focus"
+            );
+        }
+    }
+    for _ in 0..10 {
+        app.update();
     }
     keyboard(&mut app, KeyCode::KeyW, Key::Character("w".into()), false);
+    assert!(
+        !app.world().resource::<Table>().is_presenting(),
+        "ordinary card placement must finish automatically even after camera navigation"
+    );
+    assert_eq!(app.world().resource::<Table>().view(), live);
+    for label in ["Next event", "Pause presentation", "Show pending choice"] {
+        assert!(button_with_label(&mut app, label).is_none());
+    }
     assert_eq!(
         app.world().resource::<Table>().session.observe_for_play(),
         live

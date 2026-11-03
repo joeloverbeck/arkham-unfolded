@@ -1730,11 +1730,15 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
     // This projection-only harness supplies its camera below and has no text/UI
     // layout plugins. Supply the measured rectangle as another projection input;
     // production obtains this size from Bevy's UI layout.
+    type AreaHeadings = Or<(
+        With<tabletop_layout::TestAreaHeading>,
+        With<tabletop_layout::ScenarioAreaHeading>,
+    )>;
     app.add_systems(
         Update,
-        (|mut headings: Query<&mut ComputedNode, With<tabletop_layout::TestAreaHeading>>| {
+        (|mut headings: Query<&mut ComputedNode, AreaHeadings>| {
             for mut heading in &mut headings {
-                heading.size = Vec2::new(148.0, 20.0);
+                heading.size = Vec2::new(200.0, 20.0);
                 heading.inverse_scale_factor = 1.0;
             }
         })

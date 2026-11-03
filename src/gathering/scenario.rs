@@ -139,7 +139,65 @@ pub struct ScenarioState {
     pub outcome: Option<ResolutionRecord>,
 }
 
+/// A visible pile member, including a location collected at scenario end.
+/// This is derived from the displayed observation, never serialized into saves.
+#[cfg(feature = "tabletop")]
+pub(crate) struct VictoryDisplayCard<'a> {
+    pub code: &'a str,
+    pub title: &'a str,
+    pub physical_id: Option<u16>,
+    pub points: u8,
+}
+
+impl LocationState {
+    fn awards_victory(&self) -> bool {
+        self.revealed && self.clues == 0 && matches!(self.code.as_str(), ATTIC | CELLAR)
+    }
+}
+
 impl ScenarioState {
+    #[cfg(feature = "tabletop")]
+    pub(crate) fn location_in_victory_display(&self, code: &str) -> bool {
+        self.outcome.is_some()
+            && self
+                .locations
+                .iter()
+                .any(|room| room.code == code && room.awards_victory())
+    }
+
+    /// Earlier recordings retain eligible locations in their terminal map state.
+    /// Project their scenario-end transfer without rewriting those records or XP.
+    #[cfg(feature = "tabletop")]
+    pub(crate) fn victory_display(&self) -> Vec<VictoryDisplayCard<'_>> {
+        self.victory
+            .iter()
+            .map(|card| VictoryDisplayCard {
+                code: &card.code,
+                title: &card.title,
+                physical_id: Some(card.id),
+                points: enemy_definition(&card.code).map_or(
+                    u8::from(matches!(card.code.as_str(), ATTIC | CELLAR)),
+                    |enemy| enemy.victory,
+                ),
+            })
+            .chain(
+                self.locations
+                    .iter()
+                    .filter(|room| {
+                        self.outcome.is_some()
+                            && room.awards_victory()
+                            && !self.victory.iter().any(|card| card.code == room.code)
+                    })
+                    .map(|room| VictoryDisplayCard {
+                        code: &room.code,
+                        title: content::title(&room.code).expect("Gathering victory location"),
+                        physical_id: None,
+                        points: 1,
+                    }),
+            )
+            .collect()
+    }
+
     pub(super) fn new() -> Self {
         Self {
             locations: vec![LocationState {
@@ -282,11 +340,7 @@ impl ScenarioState {
         let locations = self
             .locations
             .iter()
-            .filter(|location| {
-                location.revealed
-                    && location.clues == 0
-                    && matches!(location.code.as_str(), ATTIC | CELLAR)
-            })
+            .filter(|location| location.awards_victory())
             .count() as u8;
         enemies + locations
     }

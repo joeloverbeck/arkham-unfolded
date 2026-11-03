@@ -41,7 +41,7 @@ pub(crate) fn viewport<C: Component>(app: &mut App, size: Vec2, scale: f32) {
     *target = RenderTarget::Window(WindowRef::Entity(window_entity));
 }
 
-fn rendered_text_bounds(world: &World, entity: Entity, scale: f32) -> Rect {
+pub(crate) fn rendered_text_bounds(world: &World, entity: Entity, scale: f32) -> Rect {
     let computed = world.get::<ComputedNode>(entity).unwrap();
     let layout = world.get::<TextLayoutInfo>(entity).unwrap();
     let transform = world.get::<UiGlobalTransform>(entity).unwrap();
@@ -240,6 +240,11 @@ pub(crate) fn assert_chaos_captions(
         }
         rect
     });
+    assert!(
+        (rectangles[0].min.y - rectangles[1].min.y).abs() < 0.5
+            && (rectangles[0].max.y - rectangles[1].max.y).abs() < 0.5,
+        "Curse pool and Chaos bag captions must share a row: {rectangles:?}"
+    );
     for (index, left) in rectangles.iter().enumerate() {
         for right in &rectangles[index + 1..] {
             assert!(
@@ -413,6 +418,27 @@ pub(crate) fn assert_heading<C: Component>(app: &mut App, camera_marker: C, scal
         assert!(
             rectangle.min.x >= 0.0 && rectangle.max.x <= 1600.0,
             "{area:?} at {scale}x: the complete heading stays inside the viewport",
+        );
+        let test_gap = test_edge.y - rectangle.max.y;
+        let scenario_edge = camera
+            .world_to_viewport(
+                &GlobalTransform::from(transform),
+                Vec3::new(0.0, 0.0, -21.0),
+            )
+            .unwrap();
+        let (computed, transform, visible) = world
+            .query_filtered::<(&ComputedNode, &UiGlobalTransform, &InheritedVisibility),
+                With<super::ScenarioAreaHeading>>().single(world)
+            .expect("the production scene marks its Scenario heading");
+        assert!(
+            visible.get(),
+            "Scenario heading must remain visible at {area:?}"
+        );
+        let bottom = transform.transform_point2(computed.size() / 2.0).y / scale;
+        assert!(
+            ((scenario_edge.y - bottom) - test_gap).abs() <= 1.0,
+            "{area:?} at {scale}x: Scenario and Test heading gaps must match: {} vs {test_gap}",
+            scenario_edge.y - bottom
         );
     }
 }

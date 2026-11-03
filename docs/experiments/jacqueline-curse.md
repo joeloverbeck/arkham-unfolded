@@ -116,6 +116,8 @@ Finish source reading, tool discovery, builds, headless checks and route plannin
 ```text
 Candidate: commit; executable/hash; completed check records.
 Run: exact launch/resume command; isolated save/settings/art paths; run manifest.
+Prepared saves: input identity/revision; production-startup check/result;
+  expected visible screen, pending modal/Continue state and available action.
 Authority: accepted journey, total allowance and stop conditions.
 Capabilities: helper revision; supported actions needed by this route and limits.
 Human route, when the owner operates the game:
@@ -132,6 +134,8 @@ Recovery: app PID/start identity and window; supervisor and helper tool session 
 ```
 
 Copy the selected JSON examples from the interaction procedure below into the route, including capture and stop, so resumption needs no source lookup. Resolve target coordinates from an inspected client capture; examples are not preapproved click locations. Fill runtime identities as they become available and record the absolute deadline when the interval starts. Preparation grants no desktop access: launch, focus, consent and interaction stay inside the allowance actually authorized, including startup when that is part of the accepted interval. Keep the app's owner-review lifetime separate from the short control interval.
+
+Before scheduling a capture from a prepared save, load it through the production startup path in the headless UI host and check the expected visible controls and blocking dialogs, alongside the game state. A save containing expanded locations may reopen on an Act story panel; location membership alone does not establish capture readiness. Preserve that reading barrier and prepare an ordinary later decision when the route requires an unobscured map. Record the result in the handoff above. Gathering's `gathering_tabletop::tests::review_saves` checks the seed-89 initial, Hard Knocks and expanded-map inputs, including the obstructing story transition; its retained result is in the [current verification status](gathering-setup.md#presentation-correction-verification). These checks do not establish GPU rendering or native readability.
 
 When the owner supplies physical input, present the complete human route, expected results, capture pauses and stopping conditions before starting the timer or opening the game. Once the agreed interval begins, announce the absolute close deadline and let the owner follow that route without switching back to chat for routine instructions or intermediate answers. Request one combined report after the window closes, including anything untested. Interrupt during the run only for a planned capture pause, a failure, a stop condition or a necessary deadline reminder. The existing allowance and cleanup reserve still apply; delivering instructions late does not extend them.
 

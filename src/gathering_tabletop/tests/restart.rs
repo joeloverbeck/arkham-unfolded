@@ -32,6 +32,7 @@ fn menu_restart_preserves_the_old_attempt_and_reopens_the_new_setup() {
     assert_eq!(view.lead, None);
     assert!(view.choices.iter().any(|choice| choice.id == "lead:tony"));
     assert_eq!(app.world().resource::<Table>().view(), view);
+    assert_initial_table(&mut app);
     assert!(app.world().resource::<Table>().reduced_motion);
     assert!(app.world().resource::<FeedbackSettings>().reduced_motion);
     assert_eq!(view.source, old.observe_for_play().source);
@@ -55,6 +56,7 @@ fn menu_restart_preserves_the_old_attempt_and_reopens_the_new_setup() {
     activate_button(&mut app, "Menu");
     activate_button(&mut app, "Reopen saved attempt");
     assert_eq!(app.world().resource::<Table>().session, new);
+    assert_initial_table(&mut app);
 }
 
 #[test]

@@ -518,6 +518,110 @@ On 2026-11-01, Joel reported, "I've run the experiment, and it all looks good to
 
 Publication covers the verified implementation from `d4fd8ca39f3aa4ebbc5329aa5c18775b273c621a`, its focused tests, the declarative Jacqueline asset selection and the supporting design, research and player documentation, with this acceptance record. No executable change follows the owner review. The PR records the exact commit and file set; #77 owns the acceptance and closeout. `AUTH-1`–`AUTH-3` and `PUB-1` were reread for this publication. Existing personal saves, settings, source artwork and prepared asset collections retain custody.
 
+## Gathering setup visibility and automatic live presentation
+
+On 2026-11-03, against `9cd5d8c7282a8fba43fc428372a2594776fe99a3`,
+Joel requested the following Gathering corrections under
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). During the
+`grill-with-docs` interview he accepted automatic live consequences with manual
+event stepping confined to Replay, and a compact inspectable victory pile. He
+also requested that its caption show the sum of the victory points it contains.
+This records the settled design, subsequently activated below. The local
+implementation and verification boundary is described in the
+[Gathering guide](../experiments/gathering-setup.md#implemented-boundary).
+
+- **Initial table:** show the fixed initial Scenario and Test arrangement from
+  the first setup screen, on both a fresh start and restart: Study with its
+  initial clues and investigator standees, the initial Agenda/Act faces,
+  face-down encounter deck, empty pile footprints, scenario reference, chaos
+  bag and curse pool. Lead selection and mulligans remain the available setup
+  decisions; no ordinary game action becomes available early. Preserve the
+  authoritative setup sequence, random-number consumption and recorded outcomes.
+  Do not expose shuffled order, later card faces or set-aside contents through
+  this early presentation.
+- **Permanent captions:** each physical Arcane Research card has its own
+  `Arcane Research` caption in setup and play. Remove the first-copy aggregate
+  caption and the blank second caption, retaining distinct identities and effects.
+- **Live consequences:** ordinary effects and their animations finish
+  automatically, returning to the next genuine choice without Next event,
+  Pause/Resume presentation or Show pending choice controls. Camera navigation
+  and focus changes do not pause that progress. Avoid the generic caption-length
+  wait after a routine action such as playing Hard Knocks; use Party's automatic
+  consequence behavior as the comparison. Preserve readable draws, harm, token
+  results and cleanup, every legal reaction and other genuine choice, and explicit
+  Continue for newly revealed Act/Agenda story text. Inspection and blocking
+  dialogs may temporarily suspend presentation; closing them must not leave a
+  persistent pause. Manual event stepping remains available in Replay.
+- **Test alignment:** align the curse pool and chaos bag on the same row, with
+  corresponding aligned captions and readable clearance from Committed cards.
+  Retain that clearance when replacing the recent shared backward pool offset.
+- **Scenario layout:** match the Scenario heading's visible gap from its upper
+  table edge to Test's heading spacing in the normal focus views. Put encounter
+  deck and encounter discard together at upper left, deck on the left; put the
+  victory display at upper right. Give each a persistently labelled footprint
+  using the investigator deck/discard style. Move the joined upright Agenda/Act
+  pair closer to the far edge, retaining Agenda left, Act right and separate
+  inspection. Delimit one flexible Map region with the same restrained shading,
+  thin boundary and label as Assets and Hand; preserve location connections,
+  standee clearance and the later Gathering map. Keep other scenario piles clear
+  of this arrangement. Reuse the existing shared geometry and drawing paths;
+  older experiments continue to expose only their supported contents.
+- **Victory pile:** use a compact face-up pile with card count, summed Victory
+  points and inspection of every contained card. For example,
+  `Victory display · 2 cards · 3 VP`; empty is
+  `Victory display · 0 cards · 0 VP`. Both numbers describe the contents of the
+  displayed live or replay moment. Do not include cards still on the map or
+  resolution bonuses, and do not call this total earned experience. Victory
+  locations remain on the map during play and enter the display only when the
+  scenario-end rules require it. The display is separate from encounter discard
+  and its reshuffle lifecycle.
+
+The [official Rules Reference](https://images-cdn.fantasyflightgames.com/filer_public/50/be/50bed4be-034c-4ed5-9ce6-8509ce8d3352/ahc60_rules_reference_eng-compressed.pdf),
+p27, places scenario setup after mulligans. For this selected Gathering party,
+lead and mulligan choices do not change the fixed initial table arrangement;
+early display is a presentation decision, not a rules-order change. Page 21
+defines the victory display and the scenario-end transfer of eligible locations.
+The face-up pile arrangement is the selected interface, not a prescribed physical
+ordering rule.
+
+Source inspection found that Gathering delays scenario assembly until the last
+mulligan, groups the permanent captions, and pauses its live event queue after
+camera navigation. Party instead automatically finishes specific physical
+consequences. Recent shared pool-spacing changes explain the difference from the
+older Party alignment. The current `victory_experience` calculation includes
+qualifying locations still on the map, so it cannot directly supply a caption
+defined as the sum of the victory pile's contents. These are source findings,
+not new native verification or owner acceptance of a repaired implementation.
+
+Verification must exercise fresh start and restart before lead selection and
+during mulligans; separate permanent captions; automatic return to a real choice
+after card play while navigating; retained reactions and story reading; and
+empty/populated victory counts and point totals in live play, reopening and
+Replay. Production tests must let live presentation finish naturally rather
+than dispatching a presentation-finish shortcut. Native visual review must cover
+the early table, aligned Test captions and Scenario layout with both initial and
+expanded maps. Rules, random outcomes and historical records remain preserved.
+
+This interview accepts the design and its documentation. It does not renew the
+exhausted implementation/native allowances in #89 or authorize publication or
+issue closure. GitHub remains the work-control and implementation-activation
+surface. Consulted: `AUTH-1`–`AUTH-3`, `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`,
+`EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`, `REP-1`–`REP-3`, `AGENT-5`,
+`OPS-1`–`OPS-7` and `GOV-1`–`GOV-3`.
+
+### Gathering correction implementation activation
+
+Joel subsequently instructed "Proceed with the changes." This activates the
+bounded local implementation of the preceding design from `9cd5d8c`, including
+the accepted documentation. The result is one inspectable candidate correcting
+the reported setup, pacing and layout problems so ordinary Gathering play can
+continue without presentation acknowledgments. Use the agreed production scene,
+input, continuity and replay seams; retain the Party comparison. The default
+`OPS-4` two-active-hour return checkpoint and earlier scope/non-convergence stops
+apply. Publication, issue closure, further scenario work and owner acceptance
+remain separate. `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`, `AGENT-5` and
+`OPS-1`–`OPS-7` were refreshed for this activation.
+
 ## First implementation and verification boundary
 
 Joel selected applying this presentation to the existing Tony and Jacqueline experiments. Tony's prepared turn is the main playable path; Jacqueline's existing Patrice-commitment/token-cancellation sequence is the required cross-investigator case. Show all three investigator surfaces but populate them only with the state supplied by each experiment. Display supported scenario components; label unsupported encounter/victory collections as reserved rather than inventing contents or zero counts. A separately populated full-play mockup is not the selected first delivery.
