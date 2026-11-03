@@ -7,7 +7,7 @@ use crate::{
         continuity::{self, Replay},
     },
     tabletop::asset_settings::AssetSettings,
-    tabletop_camera::{CameraMode, Capture, FrameInput, Orbit},
+    tabletop_camera::{CameraMode, Capture, FrameInput, Orbit, parse_initial_view},
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
     tabletop_health::{RenderHealth, TabletopHealthPlugin, exit_result},
     tabletop_layout::{self as layout, Area},
@@ -23,6 +23,7 @@ use bevy::{
 use std::path::PathBuf;
 
 mod art;
+mod capture;
 mod consequences;
 mod controls;
 mod motion;
@@ -292,6 +293,9 @@ struct Options {
     save: PathBuf,
     art_root: Option<PathBuf>,
     config: AssetConfig,
+    screenshot: Option<PathBuf>,
+    quit_after_screenshot: bool,
+    initial_view: Option<Area>,
 }
 
 impl Options {
@@ -302,6 +306,9 @@ impl Options {
         let mut save = PathBuf::from("local/gathering/setup.session.json");
         let mut root = None;
         let mut no_art = false;
+        let mut screenshot = None;
+        let mut quit_after_screenshot = false;
+        let mut initial_view = None;
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--experiment" => {
@@ -314,20 +321,45 @@ impl Options {
                     root = Some(PathBuf::from(args.next().ok_or("--art-root needs a path")?))
                 }
                 "--no-art" => no_art = true,
+                "--screenshot" => {
+                    screenshot = Some(args.next().ok_or("--screenshot needs a path")?.into())
+                }
+                "--quit-after-screenshot" => quit_after_screenshot = true,
+                "--initial-view" => {
+                    initial_view = Some(parse_initial_view(
+                        &args.next().ok_or("--initial-view needs a view")?,
+                    )?)
+                }
                 "--help" | "-h" => {
                     println!(
-                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--no-art\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden."
+                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged."
                     );
                     return Ok(None);
                 }
                 _ => return Err(format!("Unknown Gathering option: {arg}")),
             }
         }
+        if quit_after_screenshot && screenshot.is_none() {
+            return Err("--quit-after-screenshot requires --screenshot PATH".into());
+        }
         Ok(Some(Self {
             save,
             art_root: (!no_art).then(|| root.unwrap_or_else(|| config.root().to_path_buf())),
             config,
+            screenshot,
+            quit_after_screenshot,
+            initial_view,
         }))
+    }
+
+    fn configure_diagnostics(&self, app: &mut App) {
+        app.insert_resource(
+            Orbit::new(CameraMode::Jacqueline).with_initial_view(self.initial_view),
+        )
+        .insert_resource(capture::State::new(
+            self.screenshot.clone(),
+            self.quit_after_screenshot,
+        ));
     }
 }
 
@@ -336,6 +368,8 @@ pub fn run() -> Result<(), String> {
     else {
         return Ok(());
     };
+    let mut app = App::new();
+    options.configure_diagnostics(&mut app);
     let save = options.save;
     let session = if save.exists() {
         continuity::load_session(&save).map_err(|error| error.to_string())?
@@ -361,10 +395,8 @@ pub fn run() -> Result<(), String> {
     if let Some(warning) = options.config.warning() {
         table.notice = format!("Asset settings: {warning}");
     }
-    let mut app = App::new();
     app.insert_resource(ClearColor(INK))
         .insert_resource(table)
-        .insert_resource(Orbit::new(CameraMode::Jacqueline))
         .insert_resource(AssetSettings::new_gathering(options.config))
         .add_plugins(
             DefaultPlugins
@@ -390,6 +422,7 @@ pub fn run() -> Result<(), String> {
 
 /// The same registration is used by the native app and headless input tests.
 fn install(app: &mut App) {
+    capture::install(app);
     controls::install(app);
     app.init_resource::<Actions>()
         .init_resource::<consequences::State>()
