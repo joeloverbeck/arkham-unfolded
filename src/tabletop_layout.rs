@@ -222,8 +222,8 @@ pub(crate) fn test_bag() -> Vec3 {
 }
 
 pub(crate) fn test_curse_pool() -> Vec3 {
-    // Separate the two upright captions in both Scenario and Test focus.
-    test_bag() - Vec3::X * 4.
+    // Clear both the bag caption and the commitment heading in either focus.
+    test_bag() - Vec3::new(4., 0., 0.8)
 }
 
 pub(crate) fn test_source() -> Vec3 {

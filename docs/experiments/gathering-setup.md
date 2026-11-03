@@ -19,8 +19,12 @@ replay/return route. It exposed crowding between the Curse-pool and Chaos-bag
 captions in the scenario view. The shared Test-area renderer now leaves more
 space between the pool and bag while retaining the same fonts and two-line
 labels. Both renderers and their token-return animations share the pool position.
-This follow-up still needs native verification; detailed scenario/deck
-checks, a complete native playthrough and owner acceptance remain outstanding.
+The next native check confirmed those two captions were separate, encounter
+inventory scrolling and Agenda inspection. It exposed a collision between the
+pool count and the commitment heading in Scenario focus. The pool now sits
+slightly farther from the commitment area, and both production renderers test
+all three captions together. This final spacing needs native confirmation;
+Act inspection, a complete native playthrough and owner acceptance remain outstanding.
 Earlier native checks below concern the superseded presentation.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the

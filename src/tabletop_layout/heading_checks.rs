@@ -216,7 +216,12 @@ pub(crate) fn assert_chaos_captions(
     area: Area,
 ) {
     let world = app.world_mut();
-    let captions = ["Curse pool\n10 tokens", "Chaos bag\n16 tokens"].map(|expected| {
+    let captions = [
+        "Curse pool\n10 tokens",
+        "Chaos bag\n16 tokens",
+        "Committed cards",
+    ]
+    .map(|expected| {
         world
             .query_filtered::<(Entity, &Text), With<crate::tabletop_pieces::WorldLabel>>()
             .iter(world)
@@ -235,13 +240,17 @@ pub(crate) fn assert_chaos_captions(
         }
         rect
     });
-    assert!(
-        rectangles[0].max.x + 0.5 <= rectangles[1].min.x
-            || rectangles[1].max.x + 0.5 <= rectangles[0].min.x
-            || rectangles[0].max.y + 0.5 <= rectangles[1].min.y
-            || rectangles[1].max.y + 0.5 <= rectangles[0].min.y,
-        "Curse pool and Chaos bag captions must not overlap at {area:?}, {size:?}, {scale}x: {rectangles:?}"
-    );
+    for (index, left) in rectangles.iter().enumerate() {
+        for right in &rectangles[index + 1..] {
+            assert!(
+                left.max.x + 0.5 <= right.min.x
+                    || right.max.x + 0.5 <= left.min.x
+                    || left.max.y + 0.5 <= right.min.y
+                    || right.max.y + 0.5 <= left.min.y,
+                "Curse pool, Chaos bag and Committed cards captions must not overlap at {area:?}, {size:?}, {scale}x: {left:?}, {right:?}"
+            );
+        }
+    }
 }
 
 pub(crate) fn assert_sideways_caption_wrapping(app: &mut App, captions: &[Entity]) {
