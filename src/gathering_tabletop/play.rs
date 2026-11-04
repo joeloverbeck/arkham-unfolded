@@ -4,7 +4,7 @@ use super::controls::Source;
 use super::*;
 use crate::gathering::{CardView, Phase, PlayObservation};
 
-fn location_name(code: &str) -> &str {
+pub(super) fn location_name(code: &str) -> &str {
     match code {
         "01111" => "Study",
         "01112" => "Hallway",

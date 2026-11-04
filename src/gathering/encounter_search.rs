@@ -23,6 +23,7 @@ pub enum SearchFixture {
     HuntTargets,
     HuntNoMatch,
     TonyEvents,
+    SmallFavorDefeat,
     GetOverHereFrozen,
 }
 
@@ -715,9 +716,21 @@ pub(super) fn configure_fixture(game: &mut Game, fixture: SearchFixture) -> Resu
     }
     if matches!(
         fixture,
-        SearchFixture::TonyEvents | SearchFixture::GetOverHereFrozen
+        SearchFixture::TonyEvents
+            | SearchFixture::SmallFavorDefeat
+            | SearchFixture::GetOverHereFrozen
     ) {
-        return configure_event_fixture(game, fixture == SearchFixture::GetOverHereFrozen);
+        configure_event_fixture(game, fixture == SearchFixture::GetOverHereFrozen)?;
+        if fixture == SearchFixture::SmallFavorDefeat {
+            let tony = &mut game.players[Investigator::Tony.index()];
+            let index = tony
+                .deck
+                .iter()
+                .position(|card| card.code == "02225")
+                .expect("Selected If it bleeds event");
+            tony.hand.push(tony.deck.remove(index));
+        }
+        return Ok(());
     }
     let tony = &mut game.players[Investigator::Tony.index()];
     tony.resources = 4;

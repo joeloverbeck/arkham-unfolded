@@ -155,6 +155,7 @@ pub(super) fn show(commands: &mut Commands, art: &Art, index: usize, viewport: V
                                             top: percent(50),
                                             width: px(image_size.x),
                                             height: px(image_size.y),
+                                            border_radius: BorderRadius::all(px(image_size.min_element() * crate::tabletop_pieces::card_shape::CORNER_FRACTION)),
                                             ..default()
                                         },
                                         UiTransform {

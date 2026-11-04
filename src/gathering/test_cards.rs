@@ -438,37 +438,10 @@ pub(super) fn base_skill(game: &Game, who: Investigator, skill: Skill) -> i32 {
 }
 
 pub(super) fn skill_modifier(game: &Game, test: &SkillTest) -> i32 {
-    let player = &game.players[test.tester.index()];
-    let printed = player
-        .assets
+    super::test_report::static_bonuses(game, test)
         .iter()
-        .filter(|asset| {
-            matches!(
-                (asset.card.code.as_str(), test.skill),
-                ("60411", Skill::Willpower) | ("02033", Skill::Agility)
-            )
-        })
-        .count() as i32;
-    let lita = i32::from(
-        test.skill == Skill::Combat
-            && super::scenario::lita_controller(game)
-                .is_some_and(|owner| game.players[owner.index()].location == player.location),
-    );
-    let added_will = if test
-        .source_card
-        .as_ref()
-        .is_some_and(|card| matches!(card.code.as_str(), "06117" | "06201" | "06164"))
-    {
-        base_skill(game, test.tester, Skill::Willpower)
-            + player
-                .assets
-                .iter()
-                .filter(|asset| asset.card.code == "60411")
-                .count() as i32
-    } else {
-        0
-    };
-    printed + lita + added_will
+        .map(|row| row.amount)
+        .sum()
 }
 
 pub(super) fn result_effects(game: &Game, test: &SkillTest) -> Vec<TestResultEffect> {

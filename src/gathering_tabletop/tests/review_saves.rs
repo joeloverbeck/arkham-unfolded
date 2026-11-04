@@ -38,6 +38,48 @@ fn assert_visible_button(app: &mut App, label: &str) {
     );
 }
 
+#[test]
+fn quick_thinking_review_saves_open_on_reveal_then_the_untimed_result() {
+    // Reproduce the owner's ordinary recorded prefix used for the native review.
+    let mut session = Session::with_seed(17_952_077_857_827_163_552);
+    for id in [
+        "lead:patrice",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "turn:tony",
+        "action:ordinary:play:23",
+        "action:ordinary:investigate",
+        "commit:6",
+        "commit:106",
+        "commit:confirm",
+    ] {
+        session.choose(session.observe().revision, id).unwrap();
+    }
+    assert_eq!(session.observe().revision, 10);
+    let (_before_directory, mut before) = open_review_save(&session);
+    assert!(!before.world().resource::<Table>().modal());
+    assert_visible_button(&mut before, "Reveal chaos token");
+
+    session.choose(10, "test:reveal").unwrap();
+    let (_after_directory, mut after) = open_review_save(&session);
+    let table = after.world().resource::<Table>();
+    let result = table.results.current().expect("Saved result needs reading");
+    assert_eq!((result.total, result.difficulty), (7, 2));
+    assert!(result.breakdown.is_some());
+    assert_visible_button(&mut after, "Continue");
+    let button = button_with_label(&mut after, "Continue").unwrap();
+    after.world_mut().trigger(Activate { entity: button });
+    after.update();
+    assert_visible_button(&mut after, "Take Tony's extra action (Quick Thinking)");
+    assert_visible_button(&mut after, "Decline Quick Thinking");
+    assert!(button_with_label(&mut after, "Continue").is_none());
+    assert_eq!(
+        after.world().resource::<Table>().session.recording(),
+        session.recording()
+    );
+}
+
 fn tony_turn() -> Session {
     let mut session = Session::with_seed(89);
     for id in [

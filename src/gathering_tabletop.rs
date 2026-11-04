@@ -28,6 +28,7 @@ mod consequences;
 mod controls;
 mod motion;
 mod play;
+mod results;
 mod reveal;
 mod scene;
 mod story;
@@ -41,6 +42,8 @@ const GOLD: Color = Color::srgb(0.86, 0.69, 0.37);
 #[derive(Clone)]
 enum Action {
     ContinueStory,
+    ContinueResult(u64),
+    ResultChoice(u64, u64, String),
     Reveal(crate::tabletop_reveal::Request),
     Choose(u64, u64, String),
     Select(u64, u64, controls::Selection),
@@ -82,6 +85,7 @@ struct Table {
     restart_confirmation: bool,
     reduced_motion: bool,
     reading: story::Reading,
+    results: results::Reading,
     epoch: u64,
     dirty: bool,
     live_follow: bool,
@@ -114,6 +118,7 @@ impl Table {
 
     fn new(session: Session, save_path: PathBuf) -> Self {
         let reading = story::Reading::for_record(&session.recording());
+        let results = results::Reading::for_record(&session.recording());
         Self {
             session,
             replay: None,
@@ -125,6 +130,7 @@ impl Table {
             restart_confirmation: false,
             reduced_motion: false,
             reading,
+            results,
             epoch: 0,
             dirty: true,
             live_follow: false,
@@ -162,14 +168,30 @@ impl Table {
     }
 
     fn modal(&self) -> bool {
-        self.reading.current().is_some()
+        self.results.current().is_some()
+            || self.result_opportunities()
+            || self.reading.current().is_some()
             || self.inspection.is_some()
             || self.history_open
             || self.restart_confirmation
     }
 
+    fn result_opportunities(&self) -> bool {
+        self.replay.is_none() && !self.is_presenting() && results::opportunities(&self.view())
+    }
+
     fn presentation_blocked(&self) -> bool {
         self.modal() || self.menu_open || self.context.is_open()
+    }
+
+    fn motion_blocked(&self) -> bool {
+        self.results.current().is_some()
+            || self.reading.current().is_some()
+            || self.inspection.is_some()
+            || self.history_open
+            || self.restart_confirmation
+            || self.menu_open
+            || self.context.is_open()
     }
 
     fn story_faces(&self, view: &Observation) -> story::Faces {
@@ -545,10 +567,19 @@ fn handle_actions(
         // The same dispatch boundary as Party: a dialog captures actions that
         // were already queued before its barrier appeared on screen.
         let reading = table.reading.current().is_some();
-        let permitted_in_modal = if reading {
+        let result_choice = matches!(action, Action::ResultChoice(..))
+            && table.results.current().is_none()
+            && table.result_opportunities();
+        let permitted_in_modal = if table.results.current().is_some() {
+            matches!(action, Action::ContinueResult(_))
+                || (table.replay.is_some()
+                    && matches!(action, Action::Next | Action::Back | Action::Live))
+        } else if reading {
             matches!(action, Action::ContinueStory)
                 || (table.replay.is_some()
                     && matches!(action, Action::Next | Action::Back | Action::Live))
+        } else if table.result_opportunities() {
+            result_choice
         } else if table.restart_confirmation {
             matches!(action, Action::Close | Action::ConfirmRestart(_))
         } else {
@@ -557,7 +588,8 @@ fn handle_actions(
         if table.modal() && !permitted_in_modal {
             continue;
         }
-        if consequences.active() && matches!(action, Action::Choose(..)) {
+        if consequences.active() && matches!(action, Action::Choose(..) | Action::ResultChoice(..))
+        {
             continue;
         }
         if !reveal_focus {
@@ -574,6 +606,12 @@ fn handle_actions(
             continue;
         }
         match action {
+            Action::ContinueResult(epoch) if epoch == table.epoch => {
+                table.results.advance();
+                table.epoch += 1;
+                table.dirty = true;
+            }
+            Action::ContinueResult(_) => {}
             Action::ContinueStory => {
                 table.reading.advance();
                 table.dirty = true;
@@ -592,16 +630,20 @@ fn handle_actions(
                 table.reduced_motion = !table.reduced_motion;
                 table.dirty = true;
             }
-            Action::Choose(epoch, revision, id)
+            Action::Choose(epoch, revision, id) | Action::ResultChoice(epoch, revision, id)
                 if epoch == table.epoch
                     && table.replay.is_none()
-                    && !table.modal()
+                    && (!table.modal() || result_choice)
                     && !table.is_presenting() =>
             {
                 let path = table.save_path.clone();
                 table.notice =
                     match continuity::commit_choice(&path, &mut table.session, revision, &id) {
                         Ok(()) => {
+                            if id == "undo" {
+                                table.results =
+                                    results::Reading::at(Some(&table.session.observe_for_play()));
+                            }
                             table.context.reset();
                             table.presentation =
                                 table.session.presentation_after(revision).to_vec();
@@ -620,7 +662,7 @@ fn handle_actions(
                     };
                 table.dirty = true;
             }
-            Action::Choose(_, _, _) => {}
+            Action::Choose(_, _, _) | Action::ResultChoice(_, _, _) => {}
             Action::Select(epoch, revision, selection)
                 if epoch == table.epoch && revision == table.view().revision && !table.modal() =>
             {
@@ -704,6 +746,7 @@ fn handle_actions(
                         table.epoch += 1;
                         if session != table.session {
                             table.reading = story::Reading::for_record(&session.recording());
+                            table.results = results::Reading::for_record(&session.recording());
                             table.presentation.clear();
                             table.presentation_index = 0;
                             table.presentation_clock = 0.;
@@ -774,6 +817,7 @@ fn handle_actions(
                         table.epoch += 1;
                         table.replay = Some(replay);
                         table.reading = story::Reading::at(table.story_faces(&table.view()));
+                        table.results = results::Reading::at(Some(&table.view()));
                         table.inspection = None;
                         table.history_open = false;
                         orbit.set_following(true);
@@ -786,6 +830,7 @@ fn handle_actions(
             Action::Next => {
                 consequences.clear();
                 table.reading.dismiss_for_navigation();
+                table.results = results::Reading::at(Some(&table.view()));
                 if let Some(replay) = &mut table.replay {
                     replay.next();
                     table.dirty = true;
@@ -802,6 +847,7 @@ fn handle_actions(
                     orbit.set_following(true);
                     orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
                 }
+                table.results = results::Reading::at(Some(&table.view()));
             }
             Action::Live => {
                 consequences.clear();
@@ -810,6 +856,7 @@ fn handle_actions(
                 table.replay = None;
                 let faces = table.story_faces(&table.view());
                 table.reading = story::Reading::at(faces);
+                table.results = results::Reading::at(Some(&table.view()));
                 table.inspection = None;
                 table.history_open = false;
                 table.dirty = true;
@@ -1033,6 +1080,7 @@ fn render(
     }
     table.motion_origins = origins;
     let view = table.view();
+    table.results.synchronize(&view);
     consequences.prepare(
         table.last_rendered.as_ref(),
         &view,
@@ -1325,10 +1373,10 @@ fn request_redraw(
     consequences: Res<consequences::State>,
     mut redraw: ResMut<Redraw>,
 ) {
-    if (!moving.is_empty() && !table.presentation_blocked())
+    if (!moving.is_empty() && !table.motion_blocked())
         || orbit.is_moving()
         || health.is_checking()
-        || (consequences.active() && !table.presentation_blocked())
+        || (consequences.active() && !table.motion_blocked())
         || (table.is_presenting() && !table.presentation_blocked())
     {
         redraw.request();

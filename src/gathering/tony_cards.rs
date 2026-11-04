@@ -250,6 +250,12 @@ pub(super) fn activate_fight(
     // The selected retry interpretation resets this consumed temporary bonus;
     // only printed weapon modifiers remain in the originating operation.
     game.test.as_mut().expect("Activated weapon test").bonus += chamber_bonus;
+    if chamber_bonus != 0 {
+        game.test
+            .as_mut()
+            .expect("Activated weapon test")
+            .record_bonus("One in the Chamber", actor, chamber_bonus);
+    }
     super::tony_effects::consume_attack_bonus(game, asset_id);
     let player = &mut game.players[actor.index()];
     let index = player

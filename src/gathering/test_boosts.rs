@@ -56,6 +56,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
         .iter_mut()
         .find(|asset| asset.card.id == id)
         .expect("Offered controlled asset");
+    let previous_bonus = test.bonus;
     match asset.card.code.as_str() {
         "01049" => {
             player.resources -= 1;
@@ -73,6 +74,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
         }
         _ => unreachable!("Offered boost card"),
     }
+    test.record_bonus(&asset.card.title, test.tester, test.bonus - previous_bonus);
     game.history.push(format!(
         "{} pays {}'s ability costs for this skill test only. [{}]",
         test.tester.name(),

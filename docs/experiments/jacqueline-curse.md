@@ -111,6 +111,28 @@ For slow startup, rendering or camera movement, begin with the [native-performan
 
 ### Prepare a compact native handoff
 
+Prepare the route's saves and their production-startup UI checks before freezing
+the candidate for final code review. Include completed check-record paths in the
+review packet, including the real-asset check when the route depends on supplied
+artwork or fonts. This keeps fixture corrections inside the reviewed candidate.
+For Gathering, replace the collection path below and use fresh output directories:
+
+```sh
+scripts/tools record-check --output-dir /tmp/gathering-review-startup -- \
+  scripts/dev cargo test --locked --features tabletop --lib \
+  gathering_tabletop::tests::review_saves &&
+scripts/tools record-check --output-dir /tmp/gathering-review-assets -- \
+  env ARKHAM_GATHERING_TEST_ASSETS=/absolute/path/to/prepared-collection \
+  scripts/dev cargo test --locked --features tabletop --lib \
+  gathering_tabletop::art::tests::real_collection_loads_every_verified_image_and_symbol_font \
+  -- --ignored --exact
+```
+
+Require each `run.json` to be `finished` with `exit_code: 0`; retain `check.log`
+with it. The real-asset test is optional for source-only checks and requires a
+complete external collection; CI remains independent of private artwork. Carry
+forward successful records when later changes do not invalidate their evidence.
+
 Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. After a long implementation phase, prepare the following compact handoff in the issue's [current handoff](../agents/issue-tracker.md#current-handoff). Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from this handoff and the procedure below without reconstructing the implementation transcript.
 
 ```text

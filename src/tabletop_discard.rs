@@ -41,13 +41,10 @@ pub(crate) fn spawn_card(
     let entity = commands
         .spawn((
             Name::new(format!("Encounter discard {}", card.id)),
-            Mesh3d(
-                meshes.add(
-                    Plane3d::default()
-                        .mesh()
-                        .size(appearance.size.x, appearance.size.y),
-                ),
-            ),
+            Mesh3d(meshes.add(crate::tabletop_pieces::card_shape::face(
+                appearance.size.x,
+                appearance.size.y,
+            ))),
             MeshMaterial3d(face),
             Transform::from_translation(
                 ENCOUNTER_DISCARD_AT + Vec3::Y * index as f32 * appearance.thickness,
@@ -55,7 +52,7 @@ pub(crate) fn spawn_card(
         ))
         .with_children(|parent| {
             parent.spawn((
-                Mesh3d(meshes.add(Cuboid::new(
+                Mesh3d(meshes.add(crate::tabletop_pieces::card_shape::body(
                     appearance.size.x,
                     appearance.thickness,
                     appearance.size.y,

@@ -76,6 +76,10 @@ _Avoid_: Skill subtotal including commitments
 The contribution of resolved chaos tokens to a test's skill value. It is one kind of skill modifier; committed icons and applicable card abilities can also modify the skill value.
 _Avoid_: Modifier when referring exclusively to chaos tokens
 
+**Skill test result**:
+The determined success or failure of a test, together with its final skill value, difficulty and applicable margin after modifiers and special rules are applied. It is distinct from a provisional outcome and from the consequences of that result.
+_Avoid_: Token modifier, result consequences when referring only to the determined outcome
+
 **Held chaos token**:
 A physical chaos token drawn from the bag and not yet returned to its rules-defined destination. Resolving or canceling its effects does not itself return it; a historical record of its face does not mean the token is still held.
 _Avoid_: Resolved token when referring to its current location

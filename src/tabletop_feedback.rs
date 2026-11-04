@@ -144,6 +144,18 @@ pub(crate) fn attach_card_feedback(
             ))
             .id();
         commands.entity(card).add_child(marker);
+        if matches!(kind, Mark::Hover) {
+            let segment = commands
+                .spawn((
+                    Mesh3d(meshes.add(crate::tabletop_pieces::card_shape::outline(width, length))),
+                    MeshMaterial3d(material.clone()),
+                    Transform::from_translation(Vec3::Y * 0.018),
+                    Pickable::IGNORE,
+                ))
+                .id();
+            commands.entity(marker).add_child(segment);
+            continue;
+        }
         for (position, scale) in segments(kind, width, length) {
             let segment = commands
                 .spawn((
@@ -163,14 +175,8 @@ fn segments(kind: Mark, width: f32, length: f32) -> Vec<(Vec3, Vec3)> {
     let x = width * 0.5 + 0.045;
     let z = length * 0.5 + 0.045;
     let y = 0.018;
-    let thin = 0.025;
     match kind {
-        Mark::Hover => vec![
-            (Vec3::new(0.0, y, -z), Vec3::new(2.0 * x, thin, thin)),
-            (Vec3::new(0.0, y, z), Vec3::new(2.0 * x, thin, thin)),
-            (Vec3::new(-x, y, 0.0), Vec3::new(thin, thin, 2.0 * z)),
-            (Vec3::new(x, y, 0.0), Vec3::new(thin, thin, 2.0 * z)),
-        ],
+        Mark::Hover => vec![], // The continuous rounded outline has its own mesh.
         Mark::MenuSource => vec![(
             Vec3::new(0.0, y, z + 0.09),
             Vec3::new(width * 0.42, 0.035, 0.055),
@@ -473,7 +479,14 @@ mod tests {
         assert_eq!(opacity(&mut app, Mark::Hover), 0.0);
         assert_eq!(opacity(&mut app, Mark::MenuSource), 1.0);
         assert_eq!(opacity(&mut app, Mark::PendingChoice), 1.0);
-        assert_eq!(segments(Mark::Hover, 2.0, 2.8).len(), 4);
+        let world = app.world_mut();
+        let (_, children) = world
+            .query::<(&CardMark, &Children)>()
+            .iter(world)
+            .find(|(mark, _)| mark.kind == Mark::Hover)
+            .unwrap();
+        assert_eq!(children.len(), 1);
+        assert!(world.get::<Mesh3d>(children[0]).is_some());
         assert_eq!(segments(Mark::MenuSource, 2.0, 2.8).len(), 1);
         assert_eq!(segments(Mark::PendingChoice, 2.0, 2.8).len(), 8);
     }

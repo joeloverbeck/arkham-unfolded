@@ -7,9 +7,9 @@ scenario play.** The first full round and all following mythos draws have
 driver-level evidence. The corrected interface shares Party's production screen,
 portrait rail with **TURN**, inspection and story-reading panels, physical cards,
 captions, investigator counters, counted decks, chaos bag, Reveal control and
-motion paths. The [current verification status](#presentation-correction-verification)
-below distinguishes completed checks from the remaining native playthrough and
-owner acceptance.
+motion paths. The [skill test feedback verification](#skill-test-feedback-verification)
+and [earlier presentation verification](#presentation-correction-verification)
+distinguish completed checks from the remaining native playthrough and owner acceptance.
 
 Joel accepted the [setup visibility, automatic live presentation and Scenario
 layout refinement](../adr/0002-persistent-table-areas.md#gathering-setup-visibility-and-automatic-live-presentation)
@@ -39,6 +39,72 @@ FAQ 2.5 and Grimoire 1.1; the existing original-content precedence remains appli
 This dated check is not a guarantee about a future campaign's latest version.
 The original deck revisions and explicit weakness selections are
 visible in the observation. Original ArkhamDB snapshots remain unchanged.
+
+## Skill test feedback verification
+
+The 2026-11-04 correction is local on `fix/gathering-test-feedback`, based on
+`8852b2937e748c5260111ee573ec7ab24419eccf`. It implements the accepted
+[result-reading and six-defect scope](../adr/0002-persistent-table-areas.md#gathering-presentation-and-skill-test-feedback).
+
+| Evidence | Result |
+| --- | --- |
+| Full repository check | `/tmp/gathering-feedback-check-v4/run.json` is `finished`, exit 0. Coverage includes direct optional effects, stale input, defeat and committed-card cleanup, saved explanations, old pending tests, focus bounds, symbol notation and card geometry. |
+| Production code review | Both standards and specification reviews found no remaining issues in `/tmp/gathering-feedback-review-v4/candidate`; `manifest.sha256` binds the tracked diff and four new files. This includes the prepared-save startup regression described below. |
+| Prepared artwork and font | The ignored `real_collection_loads_every_verified_image_and_symbol_font` test passed separately with the actual prepared collection. This verifies loading, not native appearance. |
+| Native executable | `/tmp/gathering-feedback-native-build/run.json` is `finished`, exit 0. Executable SHA256: `2344b9ed76a4da9253440f2f1c87e88b8c4822ea608a9761ad3dd2d12ac9ff85`. |
+| Prepared-save startup | `/tmp/gathering-feedback-startup-check/run.json` is `finished`, exit 0. The ordinary revision-10 save opens with **Reveal chaos token** and no blocking modal. Revision 11 opens on Tony's 7-versus-2 result with **Continue**, followed by direct Quick Thinking use and decline controls. The test uses the native startup loader and production headless UI host. |
+| Targeted native check | The authorized ten-minute interval exercised result reading, Quick Thinking use and decline, fresh-process result recovery, replay entry/return, Restart label and confirmation, and Hard Knocks inspection. Observations and limits are recorded below. |
+| Remaining evidence | Long-result scrolling, native narrow-window layouts, enlarged comparisons of the other reference cards, physical keyboard input and complete scenario play were not exercised. Owner acceptance remains separate. |
+
+The prepared ordinary saves reproduce the original recorded decision prefix
+through current player choices; they are not verification fixtures. They are
+available under `/tmp/gathering-feedback-native/`:
+
+- `quick-thinking-before-reveal.json`, revision 10, SHA256
+  `95d7d3af6c67023cc7e87051989e4aa16437696e4c6dd5c8c470ea25b5e28eb9`.
+- `quick-thinking-result.json`, revision 11, SHA256
+  `2e0d0f758c8a25d156978e6bb85cf66e29c5ebb591f51a272ab4cfcbc75578ff`.
+
+The production driver successfully reopened the latter, entered replay, advanced,
+and returned to live revision 11 (`driver-readback.jsonl` in the same directory).
+The original `local/gathering/session.json` remains byte-identical, SHA256
+`3914b8c1337a3291528d75f097d520b3c7b0cc911277587d232163c46c9b8175`.
+
+### Native feedback check, 2026-11-04
+
+Joel authorized the prepared ten-minute desktop check. The interval ran from
+13:12:10 UTC with a fixed 13:22:10 deadline, including startup, consent and cleanup.
+Both apps and portal grants were confirmed closed by 13:21:53. The two runs used
+isolated copies of the prepared ordinary saves, the executable identified above,
+and the actual 140/140 prepared asset collection. Client captures were 3200×2000
+at the desktop's 2× window scale. No source correction was needed during the check.
+
+Evidence is retained under
+`/home/joeloverbeck/.cache/agent-tmp/gathering-feedback-native-20261104/`:
+
+| Observed path | Evidence and result |
+| --- | --- |
+| Reveal and read | `live-run/interaction/resolved-result.png` and `result-still-visible.png` show the same result about 22 seconds apart: base Intellect 3, Tony's Quick Thinking +1, Patrice's Unexpected Courage +2, token +1, total 7 against 2, succeeded by 5. Token artwork, owner names, arithmetic and Continue were readable. The panel remained until Continue. |
+| Use Quick Thinking | `quick-thinking-choice.png` shows direct use and decline controls. `granted-menu.png` and `granted-action-complete.png` show the granted resource action. The saved revision 13 records `tony:quick-thinking:tony` then `granted:resource`; Tony goes from 2 to 3 resources while retaining one ordinary action. |
+| Card shape and symbols | `hard-knocks-inspection.png` shows the enlarged rounded artwork; `hard-knocks-symbols.png` shows font glyphs for free-triggered abilities, Combat and Agility without brackets. Wheel input scrolls the inspection body while Close stays visible. Tony's table also displays the rounded card treatment on the other public faces and backs; only Hard Knocks received the enlarged corner comparison. |
+| Restart controls | `restart-menu-label.png` shows the supported trailing dots. `restart-confirmation.png` and `restart-hover.png` show the full Cancel focus outline and Restart hover highlight, with bottom clearance. Cancel returns to the unchanged live table (`restart-canceled.png`). |
+| Fresh process and decline | `result-run/interaction/initial.png` restores the saved result and Continue. `result-run/interaction/reopened-choice.png` and `result-run/interaction/explicit-decline.png` show explicit decline followed by ordinary play. Saved revision 12 records `after-test:pass`, with 2 resources and one ordinary action. |
+| Replay round trip | `result-run/interaction/replay-open.png` shows recorded setup, and `result-run/interaction/returned-live.png` restores the live state after decline. The interval did not navigate replay through the result itself or exercise the separate Reopen menu command. |
+
+All unqualified capture names in the table belong to `live-run/interaction/`.
+The result body fitted this window, so the successful inspection scrolling does
+not establish overflow behavior of the result panel. Encounter tests, multiple-token
+reports, Action glyph appearance and other consumers retain automated evidence
+only. These observations do not establish full-scenario or owner acceptance.
+
+Each run retains `run.json`, `app.log`, its isolated `session.json`, and portal
+`interaction/events.jsonl`. Both portal helpers acknowledged stop and
+`session-closed`, exiting 0: first at 13:19:21.593 UTC, second at 13:21:49.847 UTC.
+The launchers were then deliberately interrupted for cleanup (tool exit 130);
+their manifests accurately retain `interrupted-or-failed` and child `returncode`
+−15. Process inspection confirmed both app PIDs absent before the deadline.
+The original personal save hash remained unchanged after cleanup. The compact
+route and runtime identities are retained in `/tmp/gathering-feedback-native/route.md`.
 
 ## Presentation correction verification
 
@@ -238,12 +304,44 @@ and artwork settings. Save, Reopen, History and Replay operate on the full sessi
 inspection but no live choices. Menus use Tab/Shift+Tab and Enter/Space; Esc
 closes them. Unmodified WASD pans even with an ordinary button focused, dismissing
 an open card-action list without choosing. Blocking Inspect, history, Menu, story,
-restart confirmation and folder-selection dialogs suspend camera input; closing
+test results, restart confirmation and folder-selection dialogs suspend camera input; closing
 them restores WASD without clicking the table.
+
+### Read a skill test result
+
+Every completed skill test, including an encounter test, pauses at an untimed
+result panel. It shows the outcome and difficulty, base skill, each committed
+card and owner, ability and paid bonuses, and the individual chaos-token values.
+Canceled and ignored tokens are shown separately. The full detail is available
+immediately and scrolls while the outcome and controls remain visible.
+**Continue** acknowledges the result; it does not roll again or apply effects.
+
+Optional result effects appear directly with use and decline controls. For
+example, a qualifying Quick Thinking offers **Take Tony's extra action
+(Quick Thinking)** and **Decline Quick Thinking**. When several effects remain,
+**Decline all listed effects** explicitly closes that opportunity window.
+A provisional result, such as one that Lucky! can still change, is labeled as
+provisional. Token cancellation retains its existing timing and controls.
+
+**Menu → History** includes the recorded test breakdowns. Reopening at a newly
+completed test offers its reading panel again without repeating saved effects.
+Replay displays recorded results and keeps its navigation controls. Older
+records keep their known totals but label missing detail as unavailable; a test
+already in progress in an older save finishes without a partial explanation.
+Tests begun after resuming capture full detail.
+
+The same correction uses a supported Restart label, clearance around confirmation
+button focus outlines, rounded physical cards and inspection images, and the
+prepared font for recognized bracketed card-text symbols. The original artwork
+and absent-font English remain intact. The accepted design and scope are in
+[ADR 0002](../adr/0002-persistent-table-areas.md#gathering-presentation-and-skill-test-feedback).
+The [targeted native check](#native-feedback-check-2026-11-04) covers the exercised
+reading, choice and inspection paths. Its remaining checks and complete player
+journey are distinct from owner acceptance.
 
 ### Restart and recover an attempt
 
-Choose **Menu → Restart The Gathering…** in the live table, then **Restart** to
+Choose **Menu → Restart The Gathering...** in the live table, then **Restart** to
 return to lead selection, opening hands and mulligans with fresh shuffles. The
 selected investigators, decks, weaknesses and pinned rules stay the same, as do
 artwork and motion preferences. Cancel is initially focused; Enter activates
@@ -414,8 +512,9 @@ projections for locations, enemies, assets, threats, commitments, pending costs
 and token custody. Live consequences advance after their visible motion, retaining
 brief holds for revealed tokens and pending harm. Each moment is rendered before
 advancement; routine captions do not impose a reading-length delay or require
-acknowledgment. Genuine rules decisions and newly revealed story text remain
-explicit. Inspection and blocking dialogs suspend playback and card movement only
+acknowledgment. Completed skill tests wait at the result panel described above;
+genuine rules decisions and newly revealed story text remain explicit.
+Inspection and blocking dialogs suspend playback and card movement only
 while open. Camera navigation does not pause playback. Follow is optional in live
 play and resumes on replay navigation after a manual override.
 

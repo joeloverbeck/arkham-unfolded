@@ -10,6 +10,23 @@ fn activate_button(app: &mut App, label: &str) {
 }
 
 #[test]
+fn restart_buttons_keep_their_complete_focus_outline_in_a_small_window() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host(directory.path().join("outlines.json"));
+    let size = Vec2::new(960., 540.);
+    let scale = 1.25;
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+    activate_button(&mut app, "Menu");
+    activate_button(&mut app, "Restart The Gathering...");
+    for _ in 0..4 {
+        app.update();
+    }
+    for label in ["Cancel", "Restart"] {
+        assert_unclipped_button(&mut app, label, size, scale);
+    }
+}
+
+#[test]
 fn menu_restart_preserves_the_old_attempt_and_reopens_the_new_setup() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("restart.json");
@@ -20,7 +37,7 @@ fn menu_restart_preserves_the_old_attempt_and_reopens_the_new_setup() {
     let old_bytes = std::fs::read(&path).unwrap();
     activate_button(&mut app, "Menu");
     activate_button(&mut app, "Motion: animated");
-    activate_button(&mut app, "Restart The Gathering…");
+    activate_button(&mut app, "Restart The Gathering...");
     let cancel = button_with_label(&mut app, "Cancel").unwrap();
     assert_eq!(app.world().resource::<InputFocus>().get(), Some(cancel));
     assert_eq!(std::fs::read(&path).unwrap(), old_bytes);
@@ -70,7 +87,7 @@ fn restart_confirmation_captures_input_and_cancel_or_escape_preserves_the_attemp
         let old = continuity::load_session(&path).unwrap();
         let bytes = std::fs::read(&path).unwrap();
         activate_button(&mut app, "Menu");
-        activate_button(&mut app, "Restart The Gathering…");
+        activate_button(&mut app, "Restart The Gathering...");
         app.world_mut()
             .resource_mut::<PresentationTime>()
             .advance_by(Duration::from_millis(100));
@@ -110,7 +127,7 @@ fn a_failed_restart_preserves_live_state_and_reports_the_refusal_inside_confirma
     finish_presentation(&mut app);
     let old = app.world().resource::<Table>().session.clone();
     activate_button(&mut app, "Menu");
-    activate_button(&mut app, "Restart The Gathering…");
+    activate_button(&mut app, "Restart The Gathering...");
     let mut newer = old.clone();
     let revision = newer.observe_for_play().revision;
     continuity::commit_choice(&path, &mut newer, revision, "confirm-mulligan").unwrap();
@@ -153,11 +170,11 @@ fn restart_rejects_old_confirmations_and_choices_and_commits_only_once() {
     let bytes = std::fs::read(&path).unwrap();
     let choice_epoch = app.world().resource::<Table>().epoch;
     activate_button(&mut app, "Menu");
-    activate_button(&mut app, "Restart The Gathering…");
+    activate_button(&mut app, "Restart The Gathering...");
     let old_confirmation = app.world().resource::<Table>().epoch;
     activate_button(&mut app, "Cancel");
     activate_button(&mut app, "Menu");
-    activate_button(&mut app, "Restart The Gathering…");
+    activate_button(&mut app, "Restart The Gathering...");
     app.world_mut().resource_mut::<Actions>().0.extend([
         Action::ConfirmRestart(old_confirmation),
         Action::Choose(choice_epoch, 0, "lead:tony".into()),
@@ -205,7 +222,7 @@ fn restart_is_unavailable_in_replay_and_refuses_unready_graphics() {
     let bytes = std::fs::read(&path).unwrap();
     activate_button(&mut app, "Menu");
     activate_button(&mut app, "Open recorded replay");
-    assert!(button_with_label(&mut app, "Restart The Gathering…").is_none());
+    assert!(button_with_label(&mut app, "Restart The Gathering...").is_none());
     let epoch = app.world().resource::<Table>().epoch;
     app.world_mut()
         .resource_mut::<Actions>()
@@ -221,7 +238,7 @@ fn restart_is_unavailable_in_replay_and_refuses_unready_graphics() {
         .0
         .push(Action::Live);
     app.update();
-    activate_button(&mut app, "Restart The Gathering…");
+    activate_button(&mut app, "Restart The Gathering...");
     for health in [
         RenderHealth::default(),
         RenderHealth::failed_for_test(),

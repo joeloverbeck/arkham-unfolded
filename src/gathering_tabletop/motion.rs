@@ -111,7 +111,7 @@ pub(super) fn animate(
         Option<&mut CardMotion>,
     )>,
 ) {
-    let paused = table.presentation_blocked();
+    let paused = table.motion_blocked();
     for (entity, card, mut transform, motion) in &mut cards {
         if table.reduced_motion {
             if let Some(motion) = motion {

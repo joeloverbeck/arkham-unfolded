@@ -754,6 +754,21 @@ fn jacqueline_cancels_the_autofail_and_resolves_both_remaining_numbers() {
     let result = play.completed_tests.last().unwrap();
     assert!(result.success);
     assert_eq!(result.total, 4);
+    let report = result.breakdown.as_ref().unwrap();
+    assert_eq!(
+        report
+            .tokens
+            .iter()
+            .map(|token| (token.face, token.amount))
+            .collect::<Vec<_>>(),
+        [(TokenFace::Zero, 0), (TokenFace::MinusOne, -1)]
+    );
+    assert_eq!(report.canceled, [TokenFace::AutoFail]);
+    assert!(report.ignored.is_empty());
+    assert!(
+        report.outcome_reason.is_none(),
+        "A canceled auto-fail must not label the final result automatic failure"
+    );
     assert_eq!(play.bag_count, 16);
 }
 

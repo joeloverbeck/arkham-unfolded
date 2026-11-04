@@ -977,6 +977,7 @@ pub(crate) fn readable_text(value: String) -> String {
         .replace('—', " - ")
         .replace('→', ">")
         .replace('←', "<")
+        .replace('…', "...")
 }
 
 enum Run<'a> {

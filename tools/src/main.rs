@@ -7,6 +7,7 @@ mod portal;
 mod process;
 mod profile;
 mod reader;
+mod review;
 mod tracked;
 
 use clap::{Parser, Subcommand};
@@ -29,6 +30,8 @@ enum Command {
     ReadContextBatch(reader::BatchArgs),
     /// Search literal text within a bounded source scope and output budget.
     SearchContext(reader::SearchArgs),
+    /// Capture selected working-tree files and their base in a fresh review snapshot.
+    ReviewSnapshot(review::Args),
     /// Reject generated files in Git's index, including force-added paths.
     CheckTrackedFiles,
     /// Select the repository's pinned Rust override for the CI cache key.
@@ -64,6 +67,7 @@ fn main() -> ExitCode {
         Command::ReadContext(args) => write_context_page(reader::page(args)),
         Command::ReadContextBatch(args) => write_context_page(reader::batch(args)),
         Command::SearchContext(args) => write_context_page(reader::search(args)),
+        Command::ReviewSnapshot(args) => review::run(args),
         Command::CheckTrackedFiles => tracked::check().map_err(anyhow::Error::msg),
         Command::PrepareCiToolchain => ci::prepare_toolchain().map_err(anyhow::Error::msg),
         Command::Native { command } => native::run(command),

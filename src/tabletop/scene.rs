@@ -485,7 +485,7 @@ fn synchronize(
             ..default()
         });
         commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(1.85, 0.07, 2.60))),
+            Mesh3d(meshes.add(crate::tabletop_pieces::card_shape::body(1.85, 0.07, 2.60))),
             MeshMaterial3d(materials.add(Color::srgb(0.14, 0.12, 0.10))),
             Transform::from_translation(position - Vec3::Y * 0.045).with_rotation(rotation),
             Pickable::IGNORE,
@@ -493,7 +493,7 @@ fn synchronize(
         ));
         let card_entity = commands
             .spawn((
-                Mesh3d(meshes.add(Plane3d::default().mesh().size(1.80, 2.52))),
+                Mesh3d(meshes.add(crate::tabletop_pieces::card_shape::face(1.80, 2.52))),
                 MeshMaterial3d(material),
                 Transform::from_translation(position).with_rotation(rotation),
                 TransientScene,
