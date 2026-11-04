@@ -1,18 +1,12 @@
 //! The local prepared Study escape attempt selected in GitHub #55.
 //! Governing inputs are bound by issue #55 at 7083162; this is not a campaign engine.
 
-use crate::{APP_VERSION, Choice, RuleError, TokenFace, TokenStatus, VisibleToken};
+use crate::{Choice, RuleError, TokenFace, TokenStatus, VisibleToken};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 
 pub mod continuity;
 pub const SOURCE_REVISION: &str = "7083162:issue-55-study-escape-v2-act-reveal";
-const LEGACY_SOURCE_REVISION: &str = "7083162:issue-55-study-escape-v1";
-
-fn supported_source_revision(revision: &str) -> bool {
-    matches!(revision, SOURCE_REVISION | LEGACY_SOURCE_REVISION)
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Investigator {
@@ -145,7 +139,7 @@ impl Observation {
     }
 
     /// Tokens physically held outside the bag during the current test. `tokens`
-    /// also retains completed-test evidence in existing saves and recordings.
+    /// also retains the most recent completed test for its result explanation.
     pub fn held_tokens(&self) -> &[VisibleToken] {
         if self.test.as_ref().is_some_and(|test| test.result.is_none()) {
             &self.tokens
@@ -153,13 +147,6 @@ impl Observation {
             &[]
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Recording {
-    pub source_revision: String,
-    pub app_version: String,
-    pub moments: Vec<Observation>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,14 +182,17 @@ fn reversible_decision(state: &State) -> bool {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Session {
     revision: u64,
     seed: u64,
     fixed_draws: Option<Vec<TokenFace>>,
     state: State,
     history: Vec<String>,
-    moments: Vec<Observation>,
+    #[serde(skip)]
+    baseline: crate::saved_state::Baseline,
     undo: Vec<State>,
+    result_just_settled: bool,
 }
 
 fn card(id: u16, owner: Investigator, code: &str) -> CardView {
@@ -301,7 +291,7 @@ impl Session {
                 }
             })
             .collect();
-        let mut game = Self {
+        Self {
             revision: 0,
             seed,
             fixed_draws: draws.clone(),
@@ -330,11 +320,10 @@ impl Session {
             history: vec![
                 "Prepared Study escape attempt: choose the investigator whose turn begins.".into(),
             ],
-            moments: vec![],
+            baseline: Default::default(),
             undo: vec![],
-        };
-        game.moments.push(game.observe());
-        game
+            result_just_settled: false,
+        }
     }
     pub fn observe(&self) -> Observation {
         let prompt = match self.state.stage {
@@ -403,16 +392,6 @@ impl Session {
             tony_bonus_action: true,
             jacqueline_arcane_research: 2,
         }
-    }
-    /// Current player choices may omit obsolete mechanical undo stops from an
-    /// older save. The stored observation and replay remain exactly as recorded.
-    pub fn observe_for_play(&self) -> Observation {
-        let mut view = self.observe();
-        view.can_undo = self.undo.iter().any(reversible_decision);
-        if !view.can_undo {
-            view.choices.retain(|choice| choice.id != "undo");
-        }
-        view
     }
 
     fn choices(&self) -> Vec<Choice> {
@@ -621,7 +600,7 @@ impl Session {
             ));
         }
         let choice = self
-            .observe_for_play()
+            .observe()
             .choices
             .into_iter()
             .find(|choice| choice.id == id)
@@ -629,20 +608,13 @@ impl Session {
         let mut candidate = self.clone();
         candidate.history.push(choice.label);
         if id == "undo" {
-            let index = candidate
-                .undo
-                .iter()
-                .rposition(reversible_decision)
-                .expect("Offered undo");
-            candidate.state = candidate.undo[index].clone();
-            candidate.undo.truncate(index);
+            candidate.state = candidate.undo.pop().expect("Offered undo");
             candidate.history.push("Undo restores the prior decision, costs and randomness. Earlier history remains recorded.".into());
         } else {
             let previous = candidate.state.clone();
             let reversible = reversible_decision(&previous);
             candidate.apply(id)?;
-            // Result is retained for old saves, but new decisions include all
-            // mandatory result/cleanup work before the next genuine choice.
+            // Complete mandatory result cleanup within the same player decision.
             if candidate.state.stage == Stage::Result {
                 candidate.apply("finish-test")?;
             }
@@ -655,11 +627,17 @@ impl Session {
                 candidate.undo.push(previous);
             }
         }
-        // Preserve old observations on load; retire their purely mechanical
-        // undo stops only inside the next successfully saved decision.
-        candidate.undo.retain(reversible_decision);
         candidate.revision += 1;
-        candidate.moments.push(candidate.observe());
+        candidate.result_just_settled = self
+            .state
+            .test
+            .as_ref()
+            .is_some_and(|test| test.result.is_none())
+            && candidate
+                .state
+                .test
+                .as_ref()
+                .is_some_and(|test| test.result.is_some());
         *self = candidate;
         Ok(())
     }
@@ -1051,19 +1029,10 @@ impl Session {
         }
         "That choice is not legal at this decision. Observe the currently offered choices.".into()
     }
-    pub fn recording(&self) -> Recording {
-        Recording {
-            source_revision: SOURCE_REVISION.into(),
-            app_version: APP_VERSION.into(),
-            moments: self.moments.clone(),
-        }
+    pub fn result_just_settled(&self) -> bool {
+        self.result_just_settled
     }
-    pub fn is_continuation_of(&self, previous: &Self) -> bool {
-        self.seed == previous.seed
-            && self.fixed_draws == previous.fixed_draws
-            && self.revision > previous.revision
-            && self.moments.starts_with(&previous.moments)
-    }
+
     pub fn same_run(&self, other: &Self) -> bool {
         self.seed == other.seed && self.fixed_draws == other.fixed_draws
     }
@@ -1072,21 +1041,24 @@ impl Session {
     }
     pub fn validate(&self) -> Result<(), RuleError> {
         self.validate_state(&self.state)?;
+        if self.result_just_settled
+            && self
+                .state
+                .test
+                .as_ref()
+                .is_none_or(|test| test.result.is_none())
+        {
+            return Err(RuleError(
+                "A settled result requires a completed test.".into(),
+            ));
+        }
         for prior in &self.undo {
             self.validate_state(prior)?;
-            if prior.hidden_epoch != self.state.hidden_epoch {
+            if !reversible_decision(prior) || prior.hidden_epoch != self.state.hidden_epoch {
                 return Err(RuleError(
                     "An undo snapshot crosses revealed hidden information.".into(),
                 ));
             }
-        }
-        validate_recording(&self.recording())?;
-        if self.revision.checked_add(1) != Some(self.moments.len() as u64)
-            || self.moments.last() != Some(&self.observe())
-        {
-            return Err(RuleError(
-                "The party save differs from its recorded continuation.".into(),
-            ));
         }
         Ok(())
     }
@@ -1094,7 +1066,8 @@ impl Session {
         let invalid = || {
             RuleError("Invalid prepared party state; original record bytes are unchanged.".into())
         };
-        if state.investigators.len() != 3
+        if state.stage == Stage::Result
+            || state.investigators.len() != 3
             || state.decks.len() != 3
             || state.study_clues > 6
             || state.curses_in_pool > 10
@@ -1290,43 +1263,4 @@ impl Session {
         }
         Ok(())
     }
-}
-
-pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
-    if !supported_source_revision(&recording.source_revision)
-        || recording.app_version != APP_VERSION
-        || recording.moments.is_empty()
-        || recording.moments.iter().enumerate().any(|(i, moment)| {
-            moment.revision != i as u64
-                || (recording.source_revision == LEGACY_SOURCE_REVISION
-                    && moment.stage == Stage::ActReveal)
-                || moment.investigators.len() != 3
-                || moment.tokens.len() > 17
-                || moment.study_clues > 6
-                || moment.bag_count > 17
-                || moment.curses_in_pool > 10
-                || moment
-                    .investigators
-                    .iter()
-                    .enumerate()
-                    .any(|(index, investigator)| {
-                        investigator.investigator.index() != index
-                            || investigator.ordinary_actions > 3
-                            || investigator.resources > 3
-                            || investigator.clues > 3
-                            || investigator.hand.len() > 4
-                    })
-                || moment.choices.iter().enumerate().any(|(index, choice)| {
-                    choice.id.is_empty()
-                        || moment.choices[..index]
-                            .iter()
-                            .any(|other| other.id == choice.id)
-                })
-        })
-    {
-        return Err(RuleError(
-            "The party recording is incompatible or invalid.".into(),
-        ));
-    }
-    Ok(())
 }

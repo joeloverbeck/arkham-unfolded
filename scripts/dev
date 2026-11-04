@@ -3,10 +3,14 @@ set -euo pipefail
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
+# FD 3 carries child stdout across flock's diagnostic redirection, then closes.
+# Both shells exec immediately; systemd and flock still own limits and locking.
 exec systemd-run --user --scope --quiet --expand-environment=no \
   --property=MemoryHigh=12G \
   --property=MemoryMax=16G \
   --property=MemorySwapMax=1G \
   --property=CPUQuota=600% \
   --property=CPUWeight=20 \
-  -- flock --exclusive --close --timeout 30 --conflict-exit-code 75 . "$@"
+  -- bash -c 'exec -- "$@" 3>&1 1>&2' -- \
+  flock --verbose --exclusive --close --timeout 30 --conflict-exit-code 75 . \
+  bash -c 'exec -- "$@" 1>&3 3>&-' -- "$@"

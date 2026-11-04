@@ -105,5 +105,5 @@ The externally owned Arkham Horror LCG resource collection from which material i
 _Avoid_: Installed assets, prepared asset collection
 
 **Prepared asset collection**:
-The self-contained selection of presentation assets supplied for Arkham Unfolded's supported content. It is separate from the source archive and from personal saves, replays and settings.
+The self-contained selection of presentation assets supplied for Arkham Unfolded's supported content. It is separate from the source archive and from personal saves and settings.
 _Avoid_: Source archive, cache

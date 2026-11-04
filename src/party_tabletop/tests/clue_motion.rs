@@ -93,10 +93,6 @@ fn committed_first_subsequent_and_last_clues_move_once_through_the_installed_sce
             0
         );
         act(&mut app, Action::Reopen);
-        act(&mut app, Action::Replay);
-        act(&mut app, Action::Next);
-        act(&mut app, Action::Back);
-        act(&mut app, Action::Live);
         assert_eq!(
             clues_at(&mut app, layout::investigator_clue(investigator.index())),
             previous + 1

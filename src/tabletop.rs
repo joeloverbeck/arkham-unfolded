@@ -1,5 +1,5 @@
 //! The replaceable tabletop for the single, explicitly scripted rules experiment.
-//! Every displayed decision and replay moment comes from the shared rules interface.
+//! Every displayed decision comes from the shared rules interface.
 
 use crate::tabletop_camera::{
     CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
@@ -10,7 +10,7 @@ use crate::{
     Fixture, Observation, Session, Stage, TokenFace, TokenStatus,
     asset_config::AssetConfig,
     assets::{self, CollectionReport},
-    continuity::{self, Replay},
+    continuity,
     explanation::explain_result,
 };
 use bevy::{
@@ -22,7 +22,6 @@ use bevy::{
     ui::Pressed,
     ui_widgets::{Activate, Button, ModalDialog, ModalDialogBarrier, RequestClose},
 };
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 pub(crate) mod asset_settings;
@@ -92,7 +91,6 @@ const CARDS: [Card; 4] = [
 struct Tabletop {
     session: Session,
     fixture: Fixture,
-    replay: Option<Replay>,
     save_path: PathBuf,
     notice: String,
     inspect: Option<usize>,
@@ -104,9 +102,7 @@ struct Tabletop {
 
 impl Tabletop {
     fn view(&self) -> Observation {
-        self.replay
-            .as_ref()
-            .map_or_else(|| self.session.observe(), |r| r.current().clone())
+        self.session.observe()
     }
 }
 
@@ -135,15 +131,10 @@ enum Action {
     SourceLess(u64, u64, String),
     Save,
     Reopen,
-    Replay,
-    Back,
-    Next,
-    Live,
     New,
     Inspect(usize),
     CloseInspect,
     History,
-    Follow,
     ShowResult,
     DismissResult,
     AssetFolder,
@@ -319,7 +310,6 @@ pub fn run() -> Result<(), String> {
             fixture: session.fixture.clone(),
             result_open: result_opens_automatically(&session.observe()),
             session,
-            replay: None,
             save_path,
             notice,
             inspect: None,
@@ -597,42 +587,27 @@ fn handle_actions(
         {
             continue;
         }
-        if matches!(
-            action,
-            Action::Reopen
-                | Action::Replay
-                | Action::Back
-                | Action::Next
-                | Action::Live
-                | Action::New
-        ) && let Some(context) = context.as_mut()
+        if matches!(action, Action::Reopen | Action::New)
+            && let Some(context) = context.as_mut()
         {
             context.invalidate();
         }
         if let Action::SourceLess(generation, revision, ref id) = action {
             let view = table.view();
-            let Some(choice) = context.as_ref().and_then(|context| {
-                context.offered_source_less(
-                    &view,
-                    table.replay.as_ref().map(Replay::index),
-                    generation,
-                    id,
-                )
-            }) else {
+            let Some(choice) = context
+                .as_ref()
+                .and_then(|context| context.offered_source_less(&view, generation, id))
+            else {
                 continue;
             };
             action = Action::Choose(revision, choice.id.clone());
         }
         if let Action::ContextChoose(generation, revision, ref id) = action {
             let view = table.view();
-            let Some(choice) = context.as_ref().and_then(|context| {
-                context.offered_choice(
-                    &view,
-                    table.replay.as_ref().map(Replay::index),
-                    generation,
-                    id,
-                )
-            }) else {
+            let Some(choice) = context
+                .as_ref()
+                .and_then(|context| context.offered_choice(&view, generation, id))
+            else {
                 continue;
             };
             action = Action::Choose(revision, choice.id.clone());
@@ -640,14 +615,9 @@ fn handle_actions(
         match action {
             Action::Select(source, anchor) => {
                 let view = table.view();
-                let inspect_only = context::inspection_only(&view, table.replay.is_some(), source);
+                let inspect_only = context::inspection_only(&view, source);
                 if let Some(context) = context.as_mut() {
-                    context.select(
-                        &view,
-                        table.replay.as_ref().map(Replay::index),
-                        source,
-                        anchor,
-                    );
+                    context.select(&view, source, anchor);
                     if inspect_only.is_some() {
                         context.close_menu();
                     }
@@ -662,12 +632,7 @@ fn handle_actions(
             }
             Action::PrepareCancellation(generation, id) => {
                 if let Some(context) = context.as_mut() {
-                    context.prepare_cancellation(
-                        &table.view(),
-                        table.replay.as_ref().map(Replay::index),
-                        generation,
-                        &id,
-                    );
+                    context.prepare_cancellation(&table.view(), generation, &id);
                 }
             }
             Action::Utilities => {
@@ -696,7 +661,7 @@ fn handle_actions(
                     focus.clear();
                 }
             }
-            Action::Choose(revision, id) if table.replay.is_none() => {
+            Action::Choose(revision, id) => {
                 if let Some(focus) = input_focus.as_mut() {
                     focus.clear();
                 }
@@ -724,7 +689,7 @@ fn handle_actions(
                     table.fixture = session.fixture.clone();
                     table.result_open = result_opens_automatically(&session.observe());
                     table.session = session;
-                    table.replay = None;
+
                     orbit.set_following(false);
                     table.notice = "Saved session reopened. The pending choice and revealed tokens are preserved.".into();
                 }
@@ -733,59 +698,12 @@ fn handle_actions(
                         format!("Could not reopen; the current session is unchanged: {e}")
                 }
             },
-            Action::Replay => {
-                let recording = table.session.recording();
-                let digest = format!(
-                    "{:x}",
-                    Sha256::digest(serde_json::to_vec(&recording).expect("recordings serialize"))
-                );
-                let stem = table
-                    .save_path
-                    .file_stem()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("experiment");
-                let path = table
-                    .save_path
-                    .with_file_name(format!("{stem}.replay-{}.json", &digest[..16]));
-                match continuity::save_recording(&path, &recording)
-                    .and_then(|()| continuity::load_recording(&path))
-                    .and_then(Replay::new)
-                {
-                    Ok(replay) => {
-                        table.replay = Some(replay);
-                        table.result_open = false;
-                        orbit.set_following(true);
-                        table.notice = "Replay reopened from its saved record. Next advances one moment and pauses.".into();
-                    }
-                    Err(e) => table.notice = format!("Could not reopen the replay: {e}"),
-                }
-            }
-            Action::Back => {
-                if let Some(replay) = &mut table.replay
-                    && replay.back()
-                {
-                    table.result_open = result_opens_automatically(replay.current());
-                }
-            }
-            Action::Next => {
-                if let Some(replay) = &mut table.replay
-                    && replay.next()
-                {
-                    table.result_open = result_opens_automatically(replay.current());
-                }
-            }
-            Action::Live => {
-                table.replay = None;
-                table.result_open = result_opens_automatically(&table.session.observe());
-                orbit.set_following(false);
-                table.notice = "Returned to the live session; replay made no changes to it.".into();
-            }
             Action::New => {
                 let session = Session::new(table.fixture.clone());
-                match continuity::restart_session(&table.save_path, &session) {
+                match continuity::restart_session(&table.save_path, &table.session, &session) {
                     Ok(()) => {
                         table.session = session;
-                        table.replay = None;
+
                         table.result_open = false;
                         orbit.set_following(false);
                         table.notice =
@@ -815,12 +733,7 @@ fn handle_actions(
                 table.history = !table.history;
                 table.inspect = None;
             }
-            Action::Follow => {
-                if table.replay.is_some() {
-                    let following = !orbit.is_following();
-                    orbit.set_following(following);
-                }
-            }
+
             Action::ShowResult => table.result_open = table.view().stage == Stage::Finished,
             Action::DismissResult => table.result_open = false,
             Action::AssetFolder => {
@@ -829,17 +742,11 @@ fn handle_actions(
                     table.notice = "Choose a prepared asset folder in the file dialog. The current game stays unchanged.".into();
                 }
             }
-            Action::Choose(_, _)
-            | Action::ContextChoose(_, _, _)
-            | Action::SourceLess(_, _, _)
-            | Action::Reveal(_) => {}
+            Action::ContextChoose(_, _, _) | Action::SourceLess(_, _, _) | Action::Reveal(_) => {}
         }
         if let Some(context) = context.as_mut() {
-            context.synchronize(&table.view(), table.replay.as_ref().map(Replay::index));
+            context.synchronize(&table.view());
         }
-        let framing = (orbit.is_following() && table.replay.is_some())
-            .then(|| tabletop_layout::focus(Area::Test));
-        orbit.update_follow_target(framing);
         table.dirty = true;
     }
 }
@@ -853,8 +760,7 @@ fn refresh_reveal(
     shortcut.sync(
         view.revision,
         &view.choices,
-        table.replay.is_none()
-            && table.inspect.is_none()
+        table.inspect.is_none()
             && !table.history
             && !table.result_open
             && !settings.is_some_and(AssetSettings::is_busy),
@@ -1124,7 +1030,6 @@ fn button(
 fn rebuild_panel(
     mut commands: Commands,
     mut table: ResMut<Tabletop>,
-    orbit: Res<Orbit>,
     art: Res<Art>,
     panels: Query<Entity, With<Panel>>,
     windows: Query<&Window>,
@@ -1164,7 +1069,7 @@ fn rebuild_panel(
         flex_direction: FlexDirection::Column, row_gap: px(5), ..default()
     }, BackgroundColor(Color::srgba(0.035, 0.055, 0.065, 0.94)), Panel))
     .with_children(|parent| {
-        let mode = table.replay.as_ref().map_or("LIVE DECISION".into(), |r| format!("REPLAY / MOMENT {} / {}", r.index() + 1, r.len()));
+        let mode = "LIVE DECISION";
         parent.spawn(art.text(format!("{mode} / Decision: {} / Test: Jacqueline", context::actor(&view)), 15.0, GOLD));
         skill_summary(parent, &art, &view, 16.0, PAPER);
         parent.spawn(art.text(&view.prompt, 16.0, PAPER));
@@ -1181,14 +1086,10 @@ fn rebuild_panel(
                 let mut control = |label: &str, action: Action, primary| {
                     row.spawn(Node { width: px(210), ..default() }).with_children(|slot| { button(slot, &art, label, action, primary); });
                 };
-                if table.replay.is_none() {
+                {
                     for choice in view.choices.iter().filter(|choice| context::source_less(&choice.id)) {
                         control(&choice.label, Action::SourceLess(generation, view.revision, choice.id.clone()), choice.id != "end");
                     }
-                } else if let Some(replay) = &table.replay {
-                    if replay.index() + 1 < replay.len() { control("Next moment", Action::Next, true); }
-                    if replay.index() > 0 { control("Previous moment", Action::Back, false); }
-                    control("Return to live session", Action::Live, false);
                 }
                 if view.stage == Stage::Finished { control("Show test result", Action::ShowResult, true); }
                 if view.stage == Stage::Ended { control("Start another example", Action::New, false); }
@@ -1269,22 +1170,9 @@ fn rebuild_panel(
                     Action::History,
                     false,
                 );
-                if table.replay.is_none() {
+                {
                     button(parent, &art, "Save live session", Action::Save, false);
                     button(parent, &art, "Reopen saved session", Action::Reopen, false);
-                    button(parent, &art, "Open recorded replay", Action::Replay, false);
-                } else {
-                    button(
-                        parent,
-                        &art,
-                        if orbit.is_following() {
-                            "Camera following: on"
-                        } else {
-                            "Resume camera following"
-                        },
-                        Action::Follow,
-                        false,
-                    );
                 }
                 if matches!(view.stage, Stage::Finished | Stage::Ended) {
                     button(parent, &art, "Start another example", Action::New, false);
@@ -1363,23 +1251,8 @@ fn rebuild_panel(
             .observe(scroll_panel)
             .with_children(|parent| {
                 parent.spawn(art.text("What happened — and why", 22.0, GOLD));
-                for item in view
-                    .history
-                    .iter()
-                    .rev()
-                    .take(7)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                {
+                for item in &view.history {
                     parent.spawn(art.text(item, 15.0, PAPER));
-                }
-                if view.history.len() > 7 {
-                    parent.spawn(art.text(
-                        "Earlier entries are available by stepping back in the recorded replay.",
-                        12.0,
-                        MUTED,
-                    ));
                 }
                 button(parent, &art, "Close history", Action::History, false);
             });
@@ -1743,7 +1616,6 @@ mod harm_text_tests {
         app.insert_resource(Tabletop {
             fixture: Fixture::curse(),
             session,
-            replay: None,
             save_path: PathBuf::from("unused-harm-text-test.json"),
             notice: String::new(),
             inspect: None,

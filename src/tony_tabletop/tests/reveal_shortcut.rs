@@ -80,7 +80,7 @@ fn failed_shortcut_save_retains_state_randomness_and_camera_then_can_retry() {
 }
 
 #[test]
-fn queued_shortcut_does_not_cross_inspection_replay_or_a_changed_decision() {
+fn queued_shortcut_does_not_cross_inspection_or_a_changed_decision() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = presentation_app(dir.path().join("reveal.session.json"));
     choose(&mut app, "evade");
@@ -90,11 +90,6 @@ fn queued_shortcut_does_not_cross_inspection_replay_or_a_changed_decision() {
     act(&mut app, Action::Inspect(0));
     assert_eq!(app.world().resource::<Table>().session.observe(), before);
     act(&mut app, Action::Close);
-    let entity = reveal_button(&mut app);
-    app.world_mut().trigger(Activate { entity });
-    act(&mut app, Action::Replay);
-    assert_eq!(app.world().resource::<Table>().session.observe(), before);
-    act(&mut app, Action::Live);
     let entity = reveal_button(&mut app);
     app.world_mut().trigger(Activate { entity });
     choose(&mut app, "undo");

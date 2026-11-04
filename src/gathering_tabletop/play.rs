@@ -791,7 +791,7 @@ pub(super) fn render(
         PAPER,
         Source::ScenarioReference,
     );
-    paint.chaos_area(play.bag_count, play.curse_pool);
+    paint.chaos_area(play.bag_count, Some(play.curse_pool));
     super::scene::deck(
         paint.commands,
         paint.meshes,
@@ -1172,7 +1172,7 @@ pub(super) fn render(
             paint.token(
                 layout::test_token(false, slot),
                 *token,
-                if test.resolved == Some(true) {
+                if test.resolved {
                     ShownTokenState::Resolved
                 } else {
                     ShownTokenState::Revealed

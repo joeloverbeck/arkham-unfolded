@@ -176,9 +176,7 @@ mod tests {
     fn long_action_rows_wrap_without_overlapping_inspect_at_viewport_edges() {
         for (size, adapter) in [UVec2::new(1600, 1000), UVec2::new(420, 320)]
             .into_iter()
-            .flat_map(|size| {
-                ["tony", "party", "jacqueline", "replay"].map(|adapter| (size, adapter))
-            })
+            .flat_map(|size| ["tony", "party", "jacqueline"].map(|adapter| (size, adapter)))
         {
             let mut app = crate::tabletop_layout::heading_checks::app();
             app.init_resource::<Assets<StandardMaterial>>()
@@ -225,13 +223,6 @@ mod tests {
                     Item::Text("Promise of Power".into(), 17., gold),
                     Item::Text(hint.into(), 14., muted),
                     Item::Action(label("Commit Promise of Power (+4 willpower; add a curse)"), ()),
-                    Item::Action("Dismiss".into(), ()),
-                ]),
-                "replay" => (12., 12., 16., vec![
-                    Item::Text("Promise of Power".into(), 17., gold),
-                    Item::Text(hint.into(), 14., muted),
-                    Item::Text("Recorded view / inspection only".into(), 14., muted),
-                    Item::Text("No available game action".into(), 14., muted),
                     Item::Action("Dismiss".into(), ()),
                 ]),
                 _ => unreachable!(),
@@ -303,7 +294,7 @@ mod tests {
                     "{adapter}: glyphs overflow"
                 );
             }
-            if adapter != "replay" {
+            {
                 let action_text = world.get::<Children>(rows[0]).unwrap()[0];
                 assert!(
                     rect(world, action_text).height() > 32.,

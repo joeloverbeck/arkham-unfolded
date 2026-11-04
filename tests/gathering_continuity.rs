@@ -1,13 +1,10 @@
 use arkham_unfolded_experiment::gathering::{
     Session,
-    continuity::{
-        Replay, commit_choice, load_recording, load_session, previous_path, save_recording,
-        save_session,
-    },
+    continuity::{commit_choice, load_session, previous_path, save_session},
 };
 
 fn first_choice(game: &Session) -> (u64, String) {
-    let view = game.observe_for_play();
+    let view = game.observe();
     (view.revision, view.choices[0].id.clone())
 }
 
@@ -15,7 +12,7 @@ fn first_choice(game: &Session) -> (u64, String) {
 fn incompatible_source_is_identified_before_decoding_a_session_or_recording_payload() {
     use sha2::{Digest, Sha256};
     let directory = tempfile::tempdir().unwrap();
-    for (source, reader) in [
+    for (source, _reader) in [
         (
             "c35be2c:issue-89-gathering-setup-v1",
             "7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3",
@@ -50,23 +47,10 @@ fn incompatible_source_is_identified_before_decoding_a_session_or_recording_payl
             let path = directory.path().join(format!("{kind}.json"));
             let original = serde_json::to_vec_pretty(&envelope).unwrap();
             std::fs::write(&path, &original).unwrap();
-            let error = if kind == "gathering-session" {
-                load_session(&path).unwrap_err().to_string()
-            } else {
-                load_recording(&path).unwrap_err().to_string()
-            };
-            assert!(error.contains(source), "{error}");
-            assert!(error.contains(reader), "{error}");
-            assert!(
-                error.contains("docs/experiments/gathering-setup.md"),
-                "{error}"
-            );
+            let error = load_session(&path).unwrap_err().to_string();
+            assert!(error.contains("unsupported"), "{error}");
             assert!(!error.contains("Invalid record"), "{error}");
-            if kind == "gathering-session" {
-                assert!(save_session(&path, &Session::with_seed(89)).is_err());
-            } else {
-                assert!(save_recording(&path, &Session::with_seed(89).recording()).is_err());
-            }
+            assert!(save_session(&path, &Session::with_seed(89)).is_err());
             assert_eq!(std::fs::read(path).unwrap(), original);
         }
     }
@@ -104,7 +88,7 @@ fn stale_and_divergent_setup_decisions_cannot_replace_saved_progress() {
     let initial = Session::with_seed(89);
     save_session(&path, &initial).unwrap();
     let mut committed = initial.clone();
-    let view = committed.observe_for_play();
+    let view = committed.observe();
     commit_choice(&path, &mut committed, view.revision, &view.choices[0].id).unwrap();
     let bytes = std::fs::read(&path).unwrap();
     assert!(save_session(&path, &initial).is_err());
@@ -123,34 +107,6 @@ fn stale_and_divergent_setup_decisions_cannot_replace_saved_progress() {
 }
 
 #[test]
-fn gathering_records_remain_separate_and_replay_does_not_repeat_setup() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("gathering.json");
-    let recording_path = directory.path().join("gathering.recording.json");
-    let mut game = Session::with_seed(89);
-    let initial = game.observe_for_play();
-    let (revision, id) = first_choice(&game);
-    commit_choice(&path, &mut game, revision, &id).unwrap();
-    let current = game.observe_for_play();
-    save_recording(&recording_path, &game.recording()).unwrap();
-    let original = std::fs::read(&recording_path).unwrap();
-    let mut replay = Replay::new(load_recording(&recording_path).unwrap()).unwrap();
-    assert_eq!(replay.current(), &initial);
-    assert!(replay.next());
-    assert_eq!(replay.current(), &current);
-    assert!(!replay.next());
-    assert!(replay.back());
-    assert_eq!(replay.current(), &initial);
-    assert_eq!(load_session(&path).unwrap().observe_for_play(), current);
-
-    assert!(arkham_unfolded_experiment::party::continuity::load_session(&path).is_err());
-    assert!(load_recording(&path).is_err());
-    assert!(load_session(&recording_path).is_err());
-    assert!(save_recording(&recording_path, &Session::with_seed(90).recording()).is_err());
-    assert_eq!(std::fs::read(&recording_path).unwrap(), original);
-}
-
-#[test]
 fn same_total_encounter_substitution_is_refused_even_with_a_matching_checksum() {
     use sha2::{Digest, Sha256};
 
@@ -163,7 +119,7 @@ fn same_total_encounter_substitution_is_refused_even_with_a_matching_checksum() 
         "confirm-mulligan",
         "confirm-mulligan",
     ] {
-        game.choose(game.observe_for_play().revision, id).unwrap();
+        game.choose(game.observe().revision, id).unwrap();
     }
     save_session(&path, &game).unwrap();
     let mut envelope: serde_json::Value =

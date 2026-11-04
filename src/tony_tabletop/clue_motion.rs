@@ -20,11 +20,7 @@ pub(super) fn synchronize(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rendered: Local<Option<(u64, u8)>>,
 ) {
-    let transfer = table
-        .replay
-        .is_none()
-        .then(|| table.presentation.clue())
-        .flatten();
+    let transfer = table.presentation.clue();
     let key = transfer.map(|clue| (table.view().revision, clue.amount));
     if *rendered == key {
         return;

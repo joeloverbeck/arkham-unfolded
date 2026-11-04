@@ -112,8 +112,7 @@ pub(super) fn synchronize(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut consequences: consequences::Presentation,
 ) {
-    let Some(presentation) =
-        consequences.prepare_view(table.view(), table.replay.is_none(), table.reduced_motion)
+    let Some(presentation) = consequences.prepare_view(table.view(), true, table.reduced_motion)
     else {
         return;
     };

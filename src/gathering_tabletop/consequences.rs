@@ -67,11 +67,7 @@ impl State {
             return;
         };
         let Some(before) = before else {
-            if let Some(test) = after_play
-                .test
-                .as_ref()
-                .filter(|test| test.resolved == Some(true))
-            {
+            if let Some(test) = after_play.test.as_ref().filter(|test| test.resolved) {
                 self.pending_test = Some((test.clone(), after_play.completed_tests.len()));
             }
             return;
@@ -79,11 +75,7 @@ impl State {
         let Some(before_play) = before.play.as_ref() else {
             return;
         };
-        if let Some(test) = before_play
-            .test
-            .as_ref()
-            .filter(|test| test.resolved == Some(true))
-        {
+        if let Some(test) = before_play.test.as_ref().filter(|test| test.resolved) {
             self.pending_test = Some((test.clone(), before_play.completed_tests.len()));
         }
         if self.clue.is_none() {
@@ -129,11 +121,7 @@ impl State {
                 });
             }
         }
-        if let Some(test) = after_play
-            .test
-            .as_ref()
-            .filter(|test| test.resolved == Some(true))
-        {
+        if let Some(test) = after_play.test.as_ref().filter(|test| test.resolved) {
             self.pending_test = Some((test.clone(), after_play.completed_tests.len()));
         }
     }
@@ -143,13 +131,13 @@ fn discovery(before: &Observation, after: &Observation) -> Option<Clue> {
     let (before, after) = (before.play.as_ref()?, after.play.as_ref()?);
     let prior = before.test.as_ref()?;
     let location = prior.investigation_location.as_deref()?;
-    if prior.resolved != Some(true) || prior.would_succeed != Some(true) {
+    if !prior.resolved || prior.would_succeed != Some(true) {
         return None;
     }
     if let Some(next) = &after.test {
         if next.investigation_location.as_deref() != Some(location)
             || prior.tester != next.tester
-            || next.resolved != Some(true)
+            || !next.resolved
             || next.would_succeed != Some(true)
             || prior.revealed != next.revealed
             || prior.committed != next.committed
@@ -229,7 +217,7 @@ pub(super) fn advance(
     mut returning: Query<(Entity, &mut Transform, &mut tokens::ReturningToken), With<Owned>>,
     mut moving: Query<(Entity, &MovingClue, &mut Transform), Without<tokens::ReturningToken>>,
 ) {
-    if table.reduced_motion || table.replay.is_some() {
+    if table.reduced_motion || false {
         state.clear();
     }
     let paused = !health.allows_play() || table.motion_blocked();
@@ -314,7 +302,7 @@ mod tests {
     use crate::gathering::{HostileFixture, TestCardFixture, TokenFixture};
 
     fn step(session: &mut Session, views: &mut Vec<Observation>, id: &str) {
-        let revision = session.observe_for_play().revision;
+        let revision = session.observe().revision;
         session
             .choose(revision, id)
             .unwrap_or_else(|error| panic!("{id}: {error:?}"));
@@ -324,13 +312,13 @@ mod tests {
                 .iter()
                 .map(|moment| session.observe_presentation(moment)),
         );
-        views.push(session.observe_for_play());
+        views.push(session.observe());
     }
 
     fn investigation() -> (Session, Vec<Observation>) {
         let mut session =
             Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesOlive));
-        let mut views = vec![session.observe_for_play()];
+        let mut views = vec![session.observe()];
         let assets = &views[0].play.as_ref().unwrap().players[2].assets;
         let eyes = assets
             .iter()
@@ -429,7 +417,7 @@ mod tests {
                         && transform.translation == layout::investigator_clue(2)
                 )
         );
-        let before = world.resource::<Table>().session.recording();
+        let before = world.resource::<Table>().session.clone();
         world.insert_resource(RenderHealth::failed_for_test());
         world
             .resource_mut::<PresentationTime>()
@@ -476,7 +464,7 @@ mod tests {
                         && transform.translation == layout::investigator_clue(2)
                 )
         );
-        assert_eq!(world.resource::<Table>().session.recording(), before);
+        assert_eq!(world.resource::<Table>().session.clone(), before);
         assert!(
             !path.exists(),
             "visual arrival does not save a rules transition"
@@ -487,7 +475,7 @@ mod tests {
     fn actual_test_cleanup_returns_tokens_only_after_recorded_completion() {
         let mut session =
             Session::with_hostile_fixture(HostileFixture::TestCards(TestCardFixture::PromiseCurse));
-        let mut views = vec![session.observe_for_play()];
+        let mut views = vec![session.observe()];
         let promise = views[0].play.as_ref().unwrap().players[1]
             .hand
             .iter()
@@ -502,7 +490,7 @@ mod tests {
             step(&mut session, &mut views, &id);
         }
         for _ in 0..8 {
-            let view = session.observe_for_play();
+            let view = session.observe();
             if view.choices.iter().any(|choice| choice.id == "test:reveal") {
                 break;
             }

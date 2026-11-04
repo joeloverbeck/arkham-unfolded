@@ -116,7 +116,7 @@ pub(super) fn render(
     mut commands: Commands,
     mut table: ResMut<Table>,
     art: Res<Art>,
-    orbit: Res<Orbit>,
+
     panels: Query<Entity, With<Panel>>,
     window: Single<&Window>,
     images: Res<Assets<Image>>,
@@ -150,11 +150,7 @@ pub(super) fn render(
             20.,
             GOLD,
         ));
-        let prefix = if table.replay.is_some() {
-            "Recorded · "
-        } else {
-            ""
-        };
+        let prefix = { "" };
         p.spawn(art.text(format!("{prefix}{}", turn_heading(&view)), 18., PAPER));
         p.spawn(
             art.text(
@@ -204,14 +200,7 @@ pub(super) fn render(
         p.spawn(art.text("WASD: pan\nRight drag: orbit\nWheel: zoom\nHome: overview\n\nFocus does not select who acts.",11.,MUTED));
     });
     screen::decision_panel(&mut commands, Panel, size, |p| {
-        p.spawn(art.text(
-            table.replay.as_ref().map_or_else(
-                || "LIVE DECISION".into(),
-                |r| format!("RECORDED REPLAY · MOMENT {} / {}", r.index() + 1, r.len()),
-            ),
-            12.,
-            GOLD,
-        ));
+        p.spawn(art.text("LIVE DECISION", 12., GOLD));
         p.spawn(art.text(&view.prompt, 18., PAPER));
         if let Some(endpoint) = view.endpoint {
             let explanation = match endpoint {
@@ -242,15 +231,7 @@ pub(super) fn render(
                 });
             };
             if table.act_reveal() {
-                // The reading dialog owns its continuation and replay controls.
-            } else if let Some(replay) = &table.replay {
-                if replay.index() > 0 {
-                    control("Previous moment", Action::Back);
-                }
-                if replay.index() + 1 < replay.len() {
-                    control("Next moment", Action::Next);
-                }
-                control("Return to live attempt", Action::Live);
+                // The reading dialog owns its continuation control.
             } else {
                 for choice in &view.choices {
                     if choice.id == "commit:none" || !controls::has_source(&choice.id) {
@@ -274,7 +255,7 @@ pub(super) fn render(
         if let Some(summary) = table.context.pending_summary(&view) {
             p.spawn(art.text(summary, 13., GOLD));
         }
-        if table.replay.is_none() && view.endpoint.is_none() && !table.act_reveal() {
+        if view.endpoint.is_none() && !table.act_reveal() {
             let hint = if view.actor.is_none() {
                 "Select an investigator card, then choose their turn. Portrait buttons only move the camera."
             } else if view.choices.iter().any(|c| c.id.starts_with("commit:")) {
@@ -315,21 +296,9 @@ pub(super) fn render(
                 },
                 Action::Motion,
             );
-            if table.replay.is_none() {
+            {
                 button(&art, p, "Save live attempt", Action::Save);
                 button(&art, p, "Reopen saved attempt", Action::Reopen);
-                button(&art, p, "Open recorded replay", Action::Replay);
-            } else {
-                button(
-                    &art,
-                    p,
-                    if orbit.is_following() {
-                        "Camera following: on"
-                    } else {
-                        "Resume camera following"
-                    },
-                    Action::Follow,
-                );
             }
             p.spawn(art.text(&art.status, 12., MUTED));
             button(&art, p, "Choose asset folder", Action::AssetFolder);
@@ -374,15 +343,7 @@ fn advancement(
         art.image(card.role).is_some(),
         "Act advances · The Door on the Floor",
         |panel| {
-            panel.spawn(art.text(
-                if table.replay.is_some() {
-                    "Act advances · Recorded moment"
-                } else {
-                    "Act advances"
-                },
-                16.,
-                MUTED,
-            ));
+            panel.spawn(art.text("Act advances", 16., MUTED));
             panel.spawn(art.text(card.title, 27., GOLD));
         },
         |body, width| card_image(body, art, card, width),
@@ -406,15 +367,7 @@ fn advancement(
                             first_control.get_or_insert(entity);
                         });
                 };
-                if let Some(replay) = &table.replay {
-                    if replay.index() > 0 {
-                        control("Previous moment", Action::Back);
-                    }
-                    if replay.index() + 1 < replay.len() {
-                        control("Next moment", Action::Next);
-                    }
-                    control("Return to live attempt", Action::Live);
-                } else {
+                {
                     control(
                         "Continue",
                         Action::Choose(view.revision, "continue-act".into()),
@@ -423,7 +376,7 @@ fn advancement(
             });
         },
     );
-    first_control.expect("Act reading always has Continue or replay navigation")
+    first_control.expect("Act reading always has Continue")
 }
 
 fn inspection(commands: &mut Commands, table: &Table, view: &Observation, art: &Art, size: Vec2) {
@@ -455,7 +408,7 @@ fn inspection(commands: &mut Commands, table: &Table, view: &Observation, art: &
                         ..default()
                     },
                 ));
-                if table.replay.is_none() {
+                {
                     for held in view
                         .investigators
                         .iter()

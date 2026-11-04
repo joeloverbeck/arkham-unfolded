@@ -41,29 +41,5 @@ fn test_summary_keeps_base_and_commitment_separate_and_recovers_recorded_auto_fa
                 .iter()
                 .any(|text| text.contains(&expected))
         );
-        act(&mut app, Action::Replay);
-        while app
-            .world()
-            .resource::<Table>()
-            .replay
-            .as_ref()
-            .unwrap()
-            .index()
-            + 1
-            < app
-                .world()
-                .resource::<Table>()
-                .replay
-                .as_ref()
-                .unwrap()
-                .len()
-        {
-            act(&mut app, Action::Next);
-        }
-        assert!(
-            visible_text(&mut app)
-                .iter()
-                .any(|text| text.contains(&expected))
-        );
     }
 }

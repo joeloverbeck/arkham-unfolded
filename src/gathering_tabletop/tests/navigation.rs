@@ -70,7 +70,7 @@ fn panning_after_playing_azure_flame_preserves_keyboard_navigation() {
         .id;
     activate_choice(&mut app, &format!("action:ordinary:play:{flame}"));
     let saved = std::fs::read(&path).unwrap();
-    let live = continuity::load_session(&path).unwrap().observe_for_play();
+    let live = continuity::load_session(&path).unwrap().observe();
     let patrice = &live.play.as_ref().unwrap().players[1];
     assert_eq!(patrice.resources, 2);
     assert!(
@@ -123,10 +123,7 @@ fn panning_after_playing_azure_flame_preserves_keyboard_navigation() {
     for label in ["Next event", "Pause presentation", "Show pending choice"] {
         assert!(button_with_label(&mut app, label).is_none());
     }
-    assert_eq!(
-        app.world().resource::<Table>().session.observe_for_play(),
-        live
-    );
+    assert_eq!(app.world().resource::<Table>().session.observe(), live);
     assert_eq!(std::fs::read(&path).unwrap(), saved);
 }
 

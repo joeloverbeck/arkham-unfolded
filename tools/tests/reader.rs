@@ -10,6 +10,34 @@ fn read(path: &std::path::Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
+fn line_windows_stop_at_eof_without_weakening_explicit_ranges() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("short.txt");
+    fs::write(&path, "first\nsecond\nthird\n").unwrap();
+    let output = read(&path, &["--start", "2", "--lines", "100"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("SELECTED 2..3 of 3 lines"));
+    assert!(text.contains("     2 | second\n     3 | third\n"));
+    assert!(text.ends_with("\nEND\n"));
+
+    for args in [
+        vec!["--start", "2", "--end", "100"],
+        vec!["--lines", "2", "--end", "3"],
+        vec!["--lines", "0"],
+        vec!["--start", "4", "--lines", "2"],
+    ] {
+        let invalid = read(&path, &args);
+        assert_eq!(invalid.status.code(), Some(2));
+        assert!(invalid.stdout.is_empty());
+    }
+}
+
+#[test]
 fn help_identifies_the_batch_file_and_both_byte_limits() {
     for command in ["read-context", "read-context-batch", "search-context"] {
         let result = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
@@ -25,6 +53,10 @@ fn help_identifies_the_batch_file_and_both_byte_limits() {
             assert!(help.contains("<REQUESTS_FILE>"), "{help}");
             assert!(help.contains("Path to a JSON file containing"), "{help}");
             assert!(help.contains("{path, start?, end?}"), "{help}");
+            assert!(help.contains("{path, start?, lines?}"), "{help}");
+        }
+        if command == "read-context" {
+            assert!(help.contains("--lines <LINES>"), "{help}");
         }
         if command == "search-context" {
             assert!(help.contains("--find <FIND>"), "{help}");
@@ -46,48 +78,51 @@ fn continuations_cover_selected_unicode_lines_once_within_the_complete_byte_limi
         .collect();
     let source = lines.concat();
     fs::write(&path, &source).unwrap();
-    let mut args = "--start 3 --end 79 --max-bytes 512".to_owned();
-    let mut observed = Vec::new();
-    let mut pages = 0;
-    loop {
-        let output = read(&path, &args.split_whitespace().collect::<Vec<_>>());
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
+    for selection in ["--start 3 --end 79", "--start 3 --lines 77"] {
+        let mut args = format!("{selection} --max-bytes 512");
+        let mut observed = Vec::new();
+        let mut pages = 0;
+        loop {
+            let output = read(&path, &args.split_whitespace().collect::<Vec<_>>());
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(output.stdout.len() <= 512);
+            let text = String::from_utf8(output.stdout).unwrap();
+            for row in text.lines() {
+                if let Some((number, content)) = row.split_once(" | ") {
+                    observed.push((
+                        number.trim().parse::<usize>().unwrap(),
+                        format!("{content}\n"),
+                    ));
+                }
+            }
+            pages += 1;
+            assert!(pages <= 80, "continuation did not advance");
+            match text.lines().find_map(|line| line.strip_prefix("NEXT ")) {
+                Some(next) => args = next.to_owned(),
+                None => {
+                    assert!(text.ends_with("\nEND\n"));
+                    break;
+                }
+            }
+        }
+        assert!(pages > 1);
+        assert_eq!(
+            observed,
+            lines
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(n, line)| (n + 1, line))
+                .skip(2)
+                .take(77)
+                .collect::<Vec<_>>()
         );
-        assert!(output.stdout.len() <= 512);
-        let text = String::from_utf8(output.stdout).unwrap();
-        for row in text.lines() {
-            if let Some((number, content)) = row.split_once(" | ") {
-                observed.push((
-                    number.trim().parse::<usize>().unwrap(),
-                    format!("{content}\n"),
-                ));
-            }
-        }
-        pages += 1;
-        assert!(pages <= 80, "continuation did not advance");
-        match text.lines().find_map(|line| line.strip_prefix("NEXT ")) {
-            Some(next) => args = next.to_owned(),
-            None => {
-                assert!(text.ends_with("\nEND\n"));
-                break;
-            }
-        }
+        assert_eq!(fs::read_to_string(&path).unwrap(), source);
     }
-    assert!(pages > 1);
-    assert_eq!(
-        observed,
-        lines
-            .into_iter()
-            .enumerate()
-            .map(|(n, line)| (n + 1, line))
-            .skip(2)
-            .take(77)
-            .collect::<Vec<_>>()
-    );
-    assert_eq!(fs::read_to_string(path).unwrap(), source);
 }
 
 #[test]
@@ -95,7 +130,8 @@ fn changed_source_refuses_continuation_without_emitting_content() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("source.txt");
     fs::write(&path, "original\n".repeat(100)).unwrap();
-    let first = String::from_utf8(read(&path, &["--max-bytes", "512"]).stdout).unwrap();
+    let first =
+        String::from_utf8(read(&path, &["--lines", "50", "--max-bytes", "512"]).stdout).unwrap();
     let continuation = first
         .lines()
         .find_map(|line| line.strip_prefix("NEXT "))
@@ -192,7 +228,7 @@ fn batch_continuations_share_one_budget_and_deliver_each_selected_line_once() {
         &requests,
         serde_json::to_vec(&serde_json::json!([
             {"path":first,"start":3,"end":40},
-            {"path":second,"start":2,"end":25}
+            {"path":second,"start":2,"lines":100}
         ]))
         .unwrap(),
     )
@@ -223,7 +259,7 @@ fn batch_continuations_share_one_budget_and_deliver_each_selected_line_once() {
             assert!(page > 1, "the fixture must exercise continuation");
             let expected: Vec<_> = (3..=40)
                 .map(|n| (n, "first café".to_owned()))
-                .chain((2..=25).map(|n| (n, "second 漢字".to_owned())))
+                .chain((2..=30).map(|n| (n, "second 漢字".to_owned())))
                 .collect();
             assert_eq!(observed, expected);
             return;
@@ -240,8 +276,10 @@ fn batch_continuation_binds_even_unread_sources_and_the_request_list() {
     let requests = directory.path().join("requests.json");
     fs::write(&first, "first\n".repeat(100)).unwrap();
     fs::write(&second, "second\n").unwrap();
-    let manifest =
-        serde_json::to_vec(&serde_json::json!([{ "path": first }, { "path": second }])).unwrap();
+    let manifest = serde_json::to_vec(
+        &serde_json::json!([{ "path": first, "lines":80 }, { "path": second, "lines":100 }]),
+    )
+    .unwrap();
     fs::write(&requests, &manifest).unwrap();
     let first_page = batch(&requests, &["--max-bytes", "512"]);
     assert!(first_page.status.success());
@@ -261,9 +299,14 @@ fn batch_continuation_binds_even_unread_sources_and_the_request_list() {
         )
         .unwrap();
         if change_manifest {
-            let mut modified = manifest.clone();
-            modified.push(b' ');
-            fs::write(&requests, modified).unwrap();
+            fs::write(
+                &requests,
+                serde_json::to_vec(&serde_json::json!([
+                    { "path": first, "lines":50 }, { "path": second, "lines":100 }
+                ]))
+                .unwrap(),
+            )
+            .unwrap();
         }
         let result = batch(&requests, &next.split_whitespace().collect::<Vec<_>>());
         assert_eq!(result.status.code(), Some(2));
@@ -279,8 +322,10 @@ fn batch_validates_all_excerpts_before_output_and_preserves_empty_and_crlf_sourc
     let second = directory.path().join("second.txt");
     let requests = directory.path().join("requests.json");
     fs::write(&first, "").unwrap();
-    let manifest =
-        serde_json::to_vec(&serde_json::json!([{ "path": first }, { "path": second }])).unwrap();
+    let manifest = serde_json::to_vec(
+        &serde_json::json!([{ "path": first, "lines":100 }, { "path": second }]),
+    )
+    .unwrap();
     fs::write(&requests, &manifest).unwrap();
     let missing = batch(&requests, &[]);
     assert_eq!(missing.status.code(), Some(2));
@@ -298,6 +343,9 @@ fn batch_validates_all_excerpts_before_output_and_preserves_empty_and_crlf_sourc
         serde_json::json!([]),
         serde_json::json!([{ "path":second, "start":0 }]),
         serde_json::json!([{ "path":second, "end":3 }]),
+        serde_json::json!([{ "path":second, "lines":0 }]),
+        serde_json::json!([{ "path":second, "lines":1, "end":2 }]),
+        serde_json::json!([{ "path":second, "start":3, "lines":1 }]),
         serde_json::json!([{ "path":second, "strat":2 }]),
     ] {
         fs::write(&requests, serde_json::to_vec(&bad_manifest).unwrap()).unwrap();

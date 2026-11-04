@@ -12,6 +12,7 @@ pub mod party;
 #[cfg(feature = "tabletop")]
 pub mod party_tabletop;
 mod record_replacement;
+mod saved_state;
 #[cfg(feature = "tabletop")]
 mod tabletop_camera;
 #[cfg(feature = "tabletop")]
@@ -213,13 +214,7 @@ impl Fixture {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Recording {
-    pub source_revision: String,
-    pub app_version: String,
-    pub moments: Vec<Observation>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Session {
     revision: u64,
     stage: Stage,
@@ -236,7 +231,8 @@ pub struct Session {
     horror_dealt: u8,
     curses_in_pool: usize,
     history: Vec<String>,
-    moments: Vec<Observation>,
+    #[serde(skip)]
+    baseline: saved_state::Baseline,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -256,7 +252,7 @@ impl Session {
         } else {
             "Only Patrice holds Promise of Power; she can commit it only at Jacqueline's location."
         };
-        let mut session = Self {
+        Self {
             revision: 0,
             stage: if fixture.patrice_here {
                 Stage::Commit
@@ -281,24 +277,12 @@ impl Session {
             history: vec![format!(
                 "Scripted experiment: Jacqueline faces Rotting Remains (willpower 3). Two Arcane Research copies account for her 2 starting horror. {commitment_context}"
             )],
-            moments: vec![],
-        };
-        session.moments.push(session.observe());
-        session
+            baseline: Default::default(),
+        }
     }
 
     pub fn observe(&self) -> Observation {
-        self.observe_at_stage(self.decision_stage())
-    }
-
-    // Older saves can still contain an empty commitment boundary. Its recorded
-    // observation remains historical; only the pending live decision advances.
-    fn decision_stage(&self) -> Stage {
-        if self.stage == Stage::Commit && !self.fixture.patrice_here {
-            Stage::BeforeReveal
-        } else {
-            self.stage
-        }
+        self.observe_at_stage(self.stage)
     }
 
     fn observe_at_stage(&self, stage: Stage) -> Observation {
@@ -309,10 +293,8 @@ impl Session {
             }
             Stage::BeforeReveal => "Before revealing: will Jacqueline use her ability?",
             Stage::Cancellation => "Choose which revealed tokens to cancel.",
-            Stage::Finished if self.horror_dealt > 0 => {
-                "The test failed. Inspect the consequence or replay the record."
-            }
-            Stage::Finished => "The test succeeded. Inspect the consequence or replay the record.",
+            Stage::Finished if self.horror_dealt > 0 => "The test failed. Inspect the consequence.",
+            Stage::Finished => "The test succeeded. Inspect the consequence.",
             Stage::Ended => "You ended the experiment. Its record is preserved.",
         };
         Observation {
@@ -358,15 +340,6 @@ impl Session {
         }
     }
 
-    pub fn recording(&self) -> Recording {
-        Recording {
-            source_revision: SOURCE_REVISION.into(),
-            app_version: APP_VERSION.into(),
-            moments: self.moments.clone(),
-        }
-    }
-
-    /// Refused or stale decisions leave the session unchanged, including its record.
     pub fn choose(&mut self, revision: u64, id: &str) -> Result<(), RuleError> {
         if revision != self.revision {
             return Err(RuleError(
@@ -379,16 +352,14 @@ impl Session {
             .find(|c| c.id == id)
             .ok_or_else(|| RuleError("That choice is not legal at this decision.".into()))?;
         let mut candidate = self.clone();
-        candidate.stage = candidate.decision_stage();
         candidate.apply(&choice)?;
         candidate.revision += 1;
-        candidate.moments.push(candidate.observe());
         *self = candidate;
         Ok(())
     }
 
     fn choices(&self) -> Vec<Choice> {
-        self.choices_at_stage(self.decision_stage())
+        self.choices_at_stage(self.stage)
     }
 
     fn choices_at_stage(&self, stage: Stage) -> Vec<Choice> {

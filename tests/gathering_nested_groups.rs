@@ -2,16 +2,16 @@ use arkham_unfolded_experiment::{
     TokenFace,
     gathering::{
         HostileFixture, Session, TokenFixture,
-        continuity::{self, Replay},
+        continuity::{self},
     },
 };
 
 // Expectations are derived in issue-89-nested-tokens-followup.md, independently
 // of the resolution tree. Privileged fixtures supply cards and physical draws;
-// activation, declarations, choices, consequences, save and replay use Session.
+// activation, declarations, choices, consequences, save and reopening use Session.
 
 fn choose(session: &mut Session, id: &str) {
-    let before = session.observe_for_play();
+    let before = session.observe();
     assert!(
         before.choices.iter().any(|choice| choice.id == id),
         "Missing {id}: {:?}",
@@ -22,7 +22,7 @@ fn choose(session: &mut Session, id: &str) {
 
 fn reach_reveal(session: &mut Session) {
     for _ in 0..4 {
-        let before = session.observe_for_play();
+        let before = session.observe();
         if before
             .choices
             .iter()
@@ -44,7 +44,7 @@ fn reach_reveal(session: &mut Session) {
 }
 
 fn asset(session: &Session, code: &str) -> u16 {
-    session.observe_for_play().play.unwrap().players[2]
+    session.observe().play.unwrap().players[2]
         .assets
         .iter()
         .find(|asset| asset.card.code == code)
@@ -58,14 +58,12 @@ fn reopen(session: &Session) -> Session {
     let path = directory.path().join("pending-group.json");
     continuity::save_session(&path, session).unwrap();
     let reopened = continuity::load_session(&path).unwrap();
-    assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+    assert_eq!(reopened.observe(), session.observe());
     reopened
 }
 
-fn verify_replay(session: &Session) {
-    let mut replay = Replay::new(session.recording()).unwrap();
-    while replay.next() {}
-    assert_eq!(replay.current(), &session.observe_for_play());
+fn validate_live_state(session: &Session) {
+    session.validate().unwrap();
 }
 
 #[test]
@@ -93,7 +91,7 @@ fn eyes_preserves_only_the_protected_members_of_ignored_olive_groups() {
         choose(&mut session, "tokens:eyes:1");
         choose(&mut session, &format!("tokens:olive:0:{olive}"));
         choose(&mut session, "test:reveal");
-        let revealed = session.observe_for_play().play.unwrap();
+        let revealed = session.observe().play.unwrap();
         assert_eq!(
             revealed.tokens.unwrap().revealed,
             [
@@ -114,8 +112,8 @@ fn eyes_preserves_only_the_protected_members_of_ignored_olive_groups() {
                 choose(active, "tokens:confirm");
             }
         }
-        assert_eq!(resumed.observe_for_play(), session.observe_for_play());
-        let after = session.observe_for_play().play.unwrap();
+        assert_eq!(resumed.observe(), session.observe());
+        let after = session.observe().play.unwrap();
         let result = after.completed_tests.last().unwrap();
         assert_eq!(result.total, total);
         assert!(result.success);
@@ -145,7 +143,7 @@ fn eyes_preserves_only_the_protected_members_of_ignored_olive_groups() {
                 .unwrap()
                 .ready
         );
-        verify_replay(&resumed);
+        validate_live_state(&resumed);
     }
 }
 
@@ -158,13 +156,7 @@ fn jacqueline_olive_reveal() -> Session {
     choose(&mut session, &format!("tokens:olive:0:{olive}"));
     choose(&mut session, "test:reveal");
     assert_eq!(
-        session
-            .observe_for_play()
-            .play
-            .unwrap()
-            .tokens
-            .unwrap()
-            .revealed,
+        session.observe().play.unwrap().tokens.unwrap().revealed,
         [
             TokenFace::AutoFail,
             TokenFace::MinusOne,
@@ -182,13 +174,13 @@ fn jacqueline_cancels_a_surviving_numeric_olive_pair_as_one_non_autofail_positio
     choose(&mut session, "tokens:keep:1");
     choose(&mut session, "tokens:keep:2");
     choose(&mut session, "tokens:confirm");
-    let before = session.observe_for_play();
+    let before = session.observe();
     assert!(session.choose(before.revision, "tokens:cancel:1").is_err());
-    assert_eq!(session.observe_for_play(), before);
+    assert_eq!(session.observe(), before);
     choose(&mut session, "tokens:cancel-position:0");
     assert!(
         !session
-            .observe_for_play()
+            .observe()
             .choices
             .iter()
             .any(|choice| choice.id == "tokens:confirm"),
@@ -197,12 +189,12 @@ fn jacqueline_cancels_a_surviving_numeric_olive_pair_as_one_non_autofail_positio
     session = reopen(&session);
     choose(&mut session, "tokens:cancel-position:1");
     choose(&mut session, "tokens:confirm");
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     // Olive ignored AF; Jacqueline cancelled G=[-1,-2] and A=[0]; B=[+1] remains.
     assert_eq!(after.completed_tests.last().unwrap().total, 6);
     assert!(after.completed_tests.last().unwrap().success);
     assert_eq!(after.bag_count, 16);
-    verify_replay(&session);
+    validate_live_state(&session);
 }
 
 #[test]
@@ -212,21 +204,21 @@ fn jacqueline_can_cancel_a_mixed_autofail_olive_pair_as_one_autofail_position() 
     choose(&mut session, "tokens:keep:2");
     choose(&mut session, "tokens:confirm");
     choose(&mut session, "tokens:cancel-position:0");
-    let before = session.observe_for_play();
+    let before = session.observe();
     assert!(
         session
             .choose(before.revision, "tokens:cancel-position:1")
             .is_err()
     );
-    assert_eq!(session.observe_for_play(), before);
+    assert_eq!(session.observe(), before);
     session = reopen(&session);
     choose(&mut session, "tokens:confirm");
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     // G=[AF,-2] was one autofail position; A=[0] and B=[+1] both remain.
     assert_eq!(after.completed_tests.last().unwrap().total, 6);
     assert!(after.completed_tests.last().unwrap().success);
     assert_eq!(after.bag_count, 16);
-    verify_replay(&session);
+    validate_live_state(&session);
 }
 
 #[test]
@@ -251,7 +243,7 @@ fn prophecy_classifies_olive_by_its_surviving_symbols_before_choosing_a_position
         let mut session =
             Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::ProphecyOlive));
         let olive = asset(&session, "04197");
-        let prophecy = session.observe_for_play().play.unwrap().players[2]
+        let prophecy = session.observe().play.unwrap().players[2]
             .hand
             .iter()
             .find(|card| card.code == "04032")
@@ -261,11 +253,11 @@ fn prophecy_classifies_olive_by_its_surviving_symbols_before_choosing_a_position
         choose(&mut session, &format!("tokens:prophecy:0:{prophecy}"));
         choose(&mut session, &format!("tokens:olive:0.0:{olive}"));
         choose(&mut session, "test:reveal");
-        assert_eq!(session.observe_for_play().play.unwrap().bag_count, 9);
+        assert_eq!(session.observe().play.unwrap().bag_count, 9);
         choose(&mut session, &format!("tokens:keep:{}", kept[0]));
         choose(&mut session, &format!("tokens:keep:{}", kept[1]));
         choose(&mut session, "tokens:confirm");
-        let before = session.observe_for_play();
+        let before = session.observe();
         let positions: Vec<_> = before
             .choices
             .iter()
@@ -279,12 +271,12 @@ fn prophecy_classifies_olive_by_its_surviving_symbols_before_choosing_a_position
                     .choose(before.revision, "tokens:position:1")
                     .is_err()
             );
-            assert_eq!(session.observe_for_play(), before);
+            assert_eq!(session.observe(), before);
         }
         session = reopen(&session);
         choose(&mut session, &format!("tokens:position:{selected}"));
         choose(&mut session, "tokens:confirm");
-        let after = session.observe_for_play().play.unwrap();
+        let after = session.observe().play.unwrap();
         assert_eq!(after.completed_tests.last().unwrap().total, total);
         assert!(after.completed_tests.last().unwrap().success);
         assert_eq!(after.bag_count, 16);
@@ -295,7 +287,7 @@ fn prophecy_classifies_olive_by_its_surviving_symbols_before_choosing_a_position
                 .iter()
                 .any(|card| card.id == prophecy)
         );
-        verify_replay(&session);
+        validate_live_state(&session);
     }
 }
 
@@ -313,10 +305,10 @@ fn olive_first_jacqueline_cancels_within_the_five_token_request_before_olive_kee
     choose(&mut session, "tokens:keep:3");
     choose(&mut session, "tokens:keep:4");
     choose(&mut session, "tokens:confirm");
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     assert_eq!(after.completed_tests.last().unwrap().total, 6);
     assert_eq!(after.bag_count, 16);
-    verify_replay(&session);
+    validate_live_state(&session);
 }
 
 #[test]
@@ -344,7 +336,7 @@ fn eyes_only_offers_surviving_positions_after_jacqueline_cancels_nested_groups()
     choose(&mut session, "tokens:cancel-position:0");
     choose(&mut session, "tokens:cancel-position:1");
     choose(&mut session, "tokens:confirm");
-    let before = session.observe_for_play();
+    let before = session.observe();
     assert!(
         !before
             .choices
@@ -353,11 +345,11 @@ fn eyes_only_offers_surviving_positions_after_jacqueline_cancels_nested_groups()
     );
     choose(&mut session, "tokens:position:2");
     choose(&mut session, "tokens:confirm");
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     assert_eq!(after.completed_tests.last().unwrap().total, 5);
     assert_eq!(after.players[2].clues, 1);
     assert_eq!(after.bag_count, 16);
-    verify_replay(&session);
+    validate_live_state(&session);
 }
 
 #[test]
@@ -373,7 +365,7 @@ fn jacqueline_group_cancellation_preserves_a_protected_symbol_inside_the_group()
     choose(&mut session, "tokens:keep:0");
     choose(&mut session, "tokens:keep:1");
     choose(&mut session, "tokens:confirm");
-    let offered = session.observe_for_play();
+    let offered = session.observe();
     let cancel = offered
         .choices
         .iter()
@@ -388,7 +380,7 @@ fn jacqueline_group_cancellation_preserves_a_protected_symbol_inside_the_group()
     choose(&mut session, "tokens:cancel-position:0");
     choose(&mut session, "tokens:cancel-position:1");
     choose(&mut session, "tokens:confirm");
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     let result = after.completed_tests.last().unwrap();
     // G's skull survives; G's -1 and A's 0 are cancelled; B's +1 remains.
     assert_eq!(result.total, 6);
@@ -401,12 +393,12 @@ fn jacqueline_group_cancellation_preserves_a_protected_symbol_inside_the_group()
     );
     assert!(
         session
-            .observe_for_play()
+            .observe()
             .history
             .iter()
             .any(|entry| entry.contains("2 resolved, 1 ignored, 2 cancelled"))
     );
-    verify_replay(&session);
+    validate_live_state(&session);
 }
 
 #[test]
@@ -427,7 +419,7 @@ fn prophecy_uses_actual_survivors_when_another_symbol_exists_or_ignore_is_prohib
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::Tokens(fixture));
         let olive = asset(&session, "04197");
-        let prophecy = session.observe_for_play().play.unwrap().players[2]
+        let prophecy = session.observe().play.unwrap().players[2]
             .hand
             .iter()
             .find(|card| card.code == "04032")
@@ -440,7 +432,7 @@ fn prophecy_uses_actual_survivors_when_another_symbol_exists_or_ignore_is_prohib
         choose(&mut session, "tokens:keep:1");
         choose(&mut session, "tokens:keep:2");
         choose(&mut session, "tokens:confirm");
-        let before = session.observe_for_play();
+        let before = session.observe();
         let positions: Vec<_> = before
             .choices
             .iter()
@@ -453,9 +445,9 @@ fn prophecy_uses_actual_survivors_when_another_symbol_exists_or_ignore_is_prohib
         if fixture == TokenFixture::ProphecyOliveProtected {
             choose(&mut session, "harm:horror:investigator");
         }
-        let after = session.observe_for_play().play.unwrap();
+        let after = session.observe().play.unwrap();
         assert_eq!(after.completed_tests.last().unwrap().total, total);
         assert_eq!(after.bag_count, 16);
-        verify_replay(&session);
+        validate_live_state(&session);
     }
 }

@@ -43,7 +43,7 @@ pub(super) struct Context {
     pending: bool,
     open: bool,
     generation: u64,
-    stamp: Option<(u64, u64, Option<usize>)>,
+    stamp: Option<(u64, u64)>,
 }
 
 pub(super) enum SelectionEffect {
@@ -76,8 +76,8 @@ impl Context {
         self.stamp = None;
     }
 
-    pub fn sync(&mut self, epoch: u64, revision: u64, replay: Option<usize>) {
-        let stamp = Some((epoch, revision, replay));
+    pub fn sync(&mut self, epoch: u64, revision: u64) {
+        let stamp = Some((epoch, revision));
         if self.stamp != stamp {
             self.reset();
             self.stamp = stamp;
@@ -717,7 +717,7 @@ pub(super) fn pending_choices(view: &Observation) -> Vec<Choice> {
 }
 
 // Spell-event choices retain canonical physical identities in their IDs and
-// recordings. Their existing "(copy N)" annotations are unnecessary on screen.
+// observations. Their existing "(copy N)" annotations are unnecessary on screen.
 fn display_choice(view: &Observation, choice: &Choice) -> Choice {
     let mut shown = choice.clone();
     if let Some(id) = choice
@@ -936,10 +936,7 @@ pub(super) fn render(
             PAPER,
         ));
     }
-    for choice in choices
-        .into_iter()
-        .filter(|_| table.replay.is_none() && !table.is_presenting())
-    {
+    for choice in choices.into_iter().filter(|_| !table.is_presenting()) {
         content.push(Item::Action(
             feedback::menu::label(&choice.label),
             Action::ContextChoice(

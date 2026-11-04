@@ -1,9 +1,7 @@
 use arkham_unfolded_experiment::gathering::{HostileFixture, Session};
 
 fn choose(session: &mut Session, id: &str) {
-    session
-        .choose(session.observe_for_play().revision, id)
-        .unwrap();
+    session.choose(session.observe().revision, id).unwrap();
 }
 
 #[test]
@@ -79,7 +77,7 @@ fn committed_cards_wait_for_saved_owner_order_before_test_cleanup() {
         &[heart, courage]
     );
     reopened.validate().unwrap();
-    arkham_unfolded_experiment::gathering::validate_recording(&reopened.recording()).unwrap();
+    reopened.validate().unwrap();
 }
 
 #[test]
@@ -154,7 +152,7 @@ fn simultaneous_asset_defeat_waits_for_saved_discard_order_before_the_action_con
         [olive, robes]
     );
     reopened.validate().unwrap();
-    arkham_unfolded_experiment::gathering::validate_recording(&reopened.recording()).unwrap();
+    reopened.validate().unwrap();
 }
 
 #[test]
@@ -334,7 +332,7 @@ fn a_non_test_token_reveal_belongs_to_its_revealer_instead_of_the_lead() {
 #[test]
 fn cancellation_test_preserves_the_original_pending_encounter() {
     let mut session = Session::with_hostile_fixture(HostileFixture::PatriceCancellationVision);
-    let before = session.observe_for_play();
+    let before = session.observe();
     assert!(before.verification_fixture.is_some());
     let play = before.play.as_ref().unwrap();
     assert_eq!(play.pending_revelation.as_ref().unwrap().card.code, "01166");
@@ -345,7 +343,7 @@ fn cancellation_test_preserves_the_original_pending_encounter() {
         .find(|choice| choice.id.starts_with("test-of-will:"))
         .unwrap();
     choose(&mut session, &cancel.id);
-    let during = session.observe_for_play();
+    let during = session.observe();
     let play = during.play.as_ref().unwrap();
     assert_eq!(play.players[1].resources, 2);
     assert_eq!(play.pending_revelation.as_ref().unwrap().card.code, "01166");
@@ -610,9 +608,9 @@ fn declining_violin_keeps_an_ordinary_tie_successful_and_preserves_both_player_w
 }
 
 #[test]
-fn pending_lucky_reopens_and_replays_without_repeating_costs_draws_or_doom() {
+fn pending_lucky_reopens_without_repeating_costs_draws_or_doom() {
     use arkham_unfolded_experiment::gathering::continuity::{
-        Replay, commit_choice, load_session, save_session,
+        commit_choice, load_session, save_session,
     };
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("p1.session.json");
@@ -634,19 +632,9 @@ fn pending_lucky_reopens_and_replays_without_repeating_costs_draws_or_doom() {
     let play = result.play.as_ref().unwrap();
     assert_eq!(play.players[1].resources, 4);
     assert_eq!(play.agenda_doom, 1);
-    let mut replay = Replay::new(resumed.recording()).unwrap();
-    while replay.next() {}
-    assert_eq!(replay.current(), &result);
+
     assert_eq!(load_session(&path).unwrap().observe(), result);
-    for moment in resumed
-        .presentation_after(pending.observe().revision)
-        .iter()
-        .rev()
-    {
-        assert!(replay.back());
-        assert!(replay.current().choices.is_empty());
-        assert_eq!(replay.current(), &resumed.observe_presentation(moment));
+    for moment in resumed.presentation_after(pending.observe().revision) {
+        assert!(resumed.observe_presentation(moment).choices.is_empty());
     }
-    assert!(replay.back());
-    assert_eq!(replay.current(), &pending.observe());
 }

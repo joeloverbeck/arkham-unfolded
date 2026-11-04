@@ -12,7 +12,7 @@ The external archive contains `sources/reference-manifest.json`, identifying an 
 
 `catalog/cards.jsonl` provides card codes, language/category, pack, variant identity, face/back paths and provenance information. `sources/source-manifest.json` records archive release `v1.22.11` and hashed source saves. These are useful identity and asset-mapping evidence, not an executable rules specification. Archive completeness, English metadata coverage, actual image availability and implemented rules coverage remain distinct claims.
 
-The three starting ArkhamDB deck identities are recorded in [the play contract](play-contract.md). Imported deck contents and successors need stable snapshots for preparation, save/load and replay. Required source evidence must remain retrievable for the reproducibility and fidelity claims made; a moving website or a temporary research file alone is insufficient durable custody.
+The three starting ArkhamDB deck identities are recorded in [the play contract](play-contract.md). Imported deck contents and successors need stable snapshots for preparation and save/load. Required source evidence must remain retrievable for the reproducibility and fidelity claims made; a moving website or a temporary research file alone is insufficient durable custody.
 
 ## Presentation asset preparation
 
@@ -22,7 +22,7 @@ Keep the selected input/output identities, hashes and any transformation evidenc
 
 Prepare a fresh complete collection for the declared supported use, and verify it against the application's selected requirements before declaring success. An identical completed result may be reused; changed, partial or unknown destination contents must not be silently overwritten. Failure leaves the active collection intact, and selecting a replacement does not automatically delete earlier collections. Missing-art substitutes preserve playability, but they cannot stand in for successful preparation or complete supplied assets.
 
-The actual application must consume the prepared files after relocation with source-archive access unavailable, retaining the established visual meaning, missing-art behavior and save/replay continuity. Mechanical identity checks and native presentation evidence support their respective claims. The [architectural decision](../adr/0001-prepared-runtime-assets.md) records the reason for this boundary. Preparing assets for another Ubuntu user to try the same supported content does not expand implemented game behavior, the personal-use product scope or third-party publication rights.
+The actual application must consume the prepared files after relocation with source-archive access unavailable, retaining the established visual meaning, missing-art behavior and save/resume continuity. Mechanical identity checks and native presentation evidence support their respective claims. The [architectural decision](../adr/0001-prepared-runtime-assets.md) records the reason for this boundary. Preparing assets for another Ubuntu user to try the same supported content does not expand implemented game behavior, the personal-use product scope or third-party publication rights.
 
 ## Existing implementation as a secondary reference
 
@@ -48,7 +48,7 @@ Rules correctness needs expectations independently derived from governing source
 
 Agent playtesting must use the production rules and the observations and choices available to a player. Privileged state construction, deterministic randomness and inspection may support separate test fixtures without becoming player abilities. Exercise complete legal campaign progression and failures as well as favorable runs. Automated runs demonstrate the cases and invariants they actually check; an agent failing to find a defect is not proof of absence.
 
-Human inspection must exercise the actual tabletop path, including real decisions, understandable rule explanations, readability, camera control and animation pacing. Save/load must preserve a meaningful interrupted game state, and replay must reproduce recorded events through its intended presentation controls. Reproducibility, rules fidelity and enjoyable use require their own evidence; none substitutes for the others.
+Human inspection must exercise the actual tabletop path, including real decisions, understandable rule explanations, readability, camera control and animation pacing. Save/load must preserve a meaningful interrupted game state. Reproducibility, rules fidelity and enjoyable use require their own evidence; none substitutes for the others. [Replay retirement](../adr/0003-retire-replay.md) removes the playback acceptance requirement; its persistence replacement still needs actual save/resume evidence.
 
 The full delivery claim remains the complete first slice in [the mission](mission.md), with all accepted content and interactions supported. Known implementation deficits cannot be renamed exclusions while claiming that slice is delivered. Further development beyond the proposed assessment needs a bounded work item and evidence appropriate to its claim; the total completion effort remains unknown.
 

@@ -185,23 +185,25 @@ fn rendering_health_preserves_tony_records_and_drains_blocked_input() {
         act(&mut app, Action::Save);
         let saved = std::fs::read(&path).unwrap();
         choose(&mut app, "evade");
+        let active_bytes = std::fs::read(&path).unwrap();
         let before = app.world().resource::<Table>().session.clone();
         std::fs::write(&path, &saved).unwrap();
         let file_count = std::fs::read_dir(dir.path()).unwrap().count();
         app.insert_resource(health);
         choose(&mut app, "reveal");
-        for action in [Action::Save, Action::Reopen, Action::Replay, Action::New] {
+        for action in [Action::Save, Action::Reopen, Action::New] {
             act(&mut app, action);
         }
         let camera_before = app.world().resource::<Orbit>().pose();
         act(&mut app, Action::Focus(Area::Test));
         assert_ne!(app.world().resource::<Orbit>().pose(), camera_before);
         assert_eq!(app.world().resource::<Table>().session, before);
-        assert!(app.world().resource::<Table>().replay.is_none());
         assert_eq!(std::fs::read(&path).unwrap(), saved);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), file_count);
         assert!(app.world().resource::<Actions>().0.is_empty());
 
+        // Restore the exact baseline before the next authorized write.
+        std::fs::write(&path, &active_bytes).unwrap();
         app.insert_resource(RenderHealth::ready_for_test());
         app.update();
         assert_eq!(app.world().resource::<Table>().session, before);
@@ -582,53 +584,6 @@ fn a_failed_save_never_displays_landed_harm() {
 }
 
 #[test]
-fn replay_steps_a_combined_attack_and_returns_to_the_unchanged_live_choice() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("turn.json");
-    let mut app = presentation_app(path.clone());
-    choose(&mut app, "investigate");
-    let committed = app.world().resource::<Table>().session.clone();
-    let saved = std::fs::read(&path).unwrap();
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Next);
-    let texts = visible_text(&mut app);
-    assert!(texts.iter().any(|t| t == "+1 Damage"));
-    assert!(texts.iter().any(|t| t == "+1 Horror"));
-    let attack_index = app
-        .world()
-        .resource::<Table>()
-        .replay
-        .as_ref()
-        .unwrap()
-        .index();
-    advance(&mut app, 5.0);
-    assert_eq!(
-        app.world()
-            .resource::<Table>()
-            .replay
-            .as_ref()
-            .unwrap()
-            .index(),
-        attack_index
-    );
-    act(&mut app, Action::Next);
-    assert!(app.world().resource::<Table>().harm().is_none());
-    assert_eq!(app.world().resource::<Table>().view().stage, Stage::Commit);
-    act(&mut app, Action::Back);
-    assert!(visible_text(&mut app).iter().any(|t| t == "+1 Horror"));
-    act(&mut app, Action::Back);
-    assert_eq!(app.world().resource::<Table>().view().damage, 0);
-    act(&mut app, Action::Live);
-    assert!(
-        visible_text(&mut app)
-            .iter()
-            .any(|t| t == "Commit no cards")
-    );
-    assert_eq!(app.world().resource::<Table>().session, committed);
-    assert_eq!(std::fs::read(path).unwrap(), saved);
-}
-
-#[test]
 fn reduced_motion_keeps_both_amounts_and_still_settles_the_attack() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = presentation_app(directory.path().join("turn.json"));
@@ -779,11 +734,6 @@ fn book_cards_keep_their_pose_direct_inspection_and_reopened_state() {
     assert_eq!(pose(&mut app, "Card 01105"), agenda);
     assert_eq!(pose(&mut app, "Card 01108"), act_card);
     assert_eq!(app.world().resource::<Table>().session, before);
-    act(&mut app, Action::Replay);
-    assert_eq!(pose(&mut app, "Card 01105"), agenda);
-    assert_eq!(pose(&mut app, "Card 01108"), act_card);
-    act(&mut app, Action::Live);
-    assert_eq!(app.world().resource::<Table>().session, before);
 }
 
 #[test]
@@ -832,7 +782,7 @@ fn sole_inspection_opens_discarded_injury_and_idle_bag_but_preserves_choices() {
 }
 
 #[test]
-fn inspect_only_cards_open_directly_without_changing_live_or_replayed_choices() {
+fn inspect_only_cards_open_directly_without_changing_choices() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = presentation_app(directory.path().join("turn.json"));
     advance(&mut app, 0.0);
@@ -845,11 +795,6 @@ fn inspect_only_cards_open_directly_without_changing_live_or_replayed_choices() 
     act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
     assert!(app.world().resource::<Table>().context.is_open());
     assert_eq!(app.world().resource::<Table>().inspect, None);
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
-    assert_eq!(app.world().resource::<Table>().inspect, Some(2));
-    assert!(!app.world().resource::<Table>().context.is_open());
-    assert_eq!(app.world().resource::<Table>().session, before);
 }
 
 #[test]
@@ -920,7 +865,6 @@ fn scene_app_in(mut app: App) -> (App, Handle<Image>) {
     app.insert_resource(images);
     app.insert_resource(Table {
         session: Session::new().unwrap(),
-        replay: None,
         save_path: PathBuf::new(),
         notice: String::new(),
         inspect: None,
@@ -1012,7 +956,7 @@ fn deck_bounds_and_top(app: &mut App) -> (f32, Option<Handle<Image>>) {
 }
 
 #[test]
-fn deck_height_and_back_follow_draws_and_recorded_replay() {
+fn deck_height_and_back_follow_draws() {
     let (mut app, back) = scene_app();
     app.add_systems(Update, synchronize_scene);
     for (draws, expected_height) in [(0, 0.208), (1, 0.2015), (2, 0.195), (3, 0.1885)] {
@@ -1029,22 +973,10 @@ fn deck_height_and_back_follow_draws_and_recorded_replay() {
         );
         assert_eq!(image.as_ref(), Some(&back), "the draw pile stays face down");
     }
-    let recording = app.world().resource::<Table>().session.recording();
-    app.world_mut().resource_mut::<Table>().replay = Some(Replay::new(recording).unwrap());
-    app.update();
-    let (height, image) = deck_bounds_and_top(&mut app);
-    assert!(
-        (height - 0.208).abs() < 0.00001,
-        "replay starts with all 32 cards"
-    );
-    assert_eq!(image, Some(back));
-    app.world_mut().resource_mut::<Table>().replay = None;
-    app.update();
-    assert!((deck_bounds_and_top(&mut app).0 - 0.1885).abs() < 0.00001);
 }
 
 #[test]
-fn production_hands_remain_centered_as_cards_are_drawn_and_replayed() {
+fn production_hands_remain_centered_as_cards_are_drawn() {
     let (mut app, _) = scene_app();
     app.add_systems(Update, synchronize_scene);
     let center = layout::investigator_center(0, 3);
@@ -1077,14 +1009,6 @@ fn production_hands_remain_centered_as_cards_are_drawn_and_replayed() {
         app.update();
         check(&mut app, count);
     }
-    let recording = app.world().resource::<Table>().session.recording();
-    app.world_mut().resource_mut::<Table>().replay = Some(Replay::new(recording).unwrap());
-    app.update();
-    check(&mut app, 1);
-    app.world_mut().resource_mut::<Table>().replay = None;
-    app.update();
-    check(&mut app, 4);
-
     {
         let mut table = app.world_mut().resource_mut::<Table>();
         table.session = Session::new().unwrap();
@@ -1377,7 +1301,7 @@ fn keyboard_menu_inspection_preserves_staged_copies_until_explicit_confirmation(
 }
 
 #[test]
-fn dismissed_stale_and_replayed_component_choices_never_dispatch() {
+fn dismissed_and_stale_component_choices_never_dispatch() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = presentation_app(dir.path().join("turn.json"));
     act(&mut app, Action::Select(0, Source::Card(2), Vec3::ZERO));
@@ -1398,23 +1322,6 @@ fn dismissed_stale_and_replayed_component_choices_never_dispatch() {
     let current = app.world().resource::<Table>().session.clone();
     act(&mut app, Action::ContextChoice(epoch, 0, "fight".into()));
     assert_eq!(app.world().resource::<Table>().session, current);
-    act(&mut app, Action::Replay);
-    let revision = app.world().resource::<Table>().view().revision;
-    act(
-        &mut app,
-        Action::Select(revision, Source::Card(2), Vec3::ZERO),
-    );
-    let epoch = app.world().resource::<Table>().context.menu_epoch();
-    act(
-        &mut app,
-        Action::ContextChoice(epoch, revision, "fight".into()),
-    );
-    assert_eq!(
-        app.world().resource::<Table>().session,
-        current,
-        "replay remains inspection-only"
-    );
-    assert!(app.world().resource::<Table>().replay.is_some());
 }
 
 #[test]
@@ -1512,67 +1419,6 @@ fn camera_adapter_retains_tony_utilities_wheel_and_escape_frame_pan() {
         app.world_mut().run_system_once(camera_controls).unwrap();
         assert_eq!(app.world().resource::<Orbit>().pose(), panned);
     }
-}
-
-#[test]
-fn camera_adapter_selects_tony_replay_targets_and_reduced_motion() {
-    let dir = tempfile::tempdir().unwrap();
-    let (mut app, _) = orbit_mouse_app(dir.path().join("replay.json"));
-    choose(&mut app, "investigate");
-    act(&mut app, Action::Focus(Area::Overview));
-    act(&mut app, Action::Replay);
-    assert_eq!(
-        app.world().resource::<Orbit>().pose().distance,
-        layout::focus(Area::Investigator(0)).1
-    );
-    let start = app.world().resource::<Orbit>().pose().target;
-    advance(&mut app, 0.1);
-    let moving = app.world().resource::<Orbit>().pose();
-    let destination = layout::focus(Area::Investigator(0)).0;
-    assert!(moving.target.distance(destination) < start.distance(destination));
-    assert_ne!(
-        moving.target, destination,
-        "normal motion still converges gradually"
-    );
-    act(&mut app, Action::Follow);
-    advance(&mut app, 0.1);
-    assert!(!app.world().resource::<Orbit>().is_following());
-    assert!(app.world().resource::<Orbit>().pose().target.x < moving.target.x);
-    act(&mut app, Action::Follow);
-    act(&mut app, Action::Motion);
-    act(&mut app, Action::Next);
-    assert!(app.world().resource::<Table>().harm().is_some());
-    assert_eq!(
-        app.world().resource::<Orbit>().pose().target,
-        scene::investigator_at()
-    );
-    act(&mut app, Action::Next);
-    assert_eq!(
-        app.world().resource::<Orbit>().pose().target,
-        layout::focus(Area::Investigator(0)).0
-    );
-    act(&mut app, Action::Live);
-    choose(&mut app, "commit:none");
-    assert_eq!(app.world().resource::<Table>().view().stage, Stage::Reveal);
-    choose(&mut app, "reveal");
-    assert!(app.world().resource::<Table>().view().held_token.is_some());
-    act(&mut app, Action::Replay);
-    let last = app
-        .world()
-        .resource::<Table>()
-        .replay
-        .as_ref()
-        .unwrap()
-        .len()
-        - 1;
-    for _ in 0..last {
-        act(&mut app, Action::Next);
-    }
-    assert!(app.world().resource::<Table>().view().held_token.is_some());
-    assert_eq!(
-        app.world().resource::<Orbit>().pose().target,
-        layout::focus(Area::Test).0
-    );
 }
 
 fn orbit_button(app: &mut App, window: Entity, state: bevy::input::ButtonState) {

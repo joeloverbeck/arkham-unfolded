@@ -4,6 +4,12 @@ status: accepted
 
 # Persistent table areas with focused camera views
 
+On 2026-11-04, [ADR 0003](0003-retire-replay.md) superseded the replay and
+pre-removal-record compatibility obligations throughout this decision. The live
+presentation, supported save/resume, Undo, inspection and camera decisions remain
+in force. Dated implementation and verification records below remain historical
+evidence; the retirement decision does not claim its implementation is complete.
+
 ## Gathering card draws
 
 On 2026-11-04, against `c313ede262de3ed0e294028b4dae8291162ec452`, Joel

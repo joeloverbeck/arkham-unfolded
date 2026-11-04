@@ -356,14 +356,6 @@ fn inspect_only_cards_open_directly_while_available_choices_keep_the_menu() {
     assert_eq!(app.world().resource::<Tabletop>().view(), committed);
 
     act(&mut app, Action::Save);
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Select(Source::Card(1), Vec2::ZERO));
-    assert_eq!(app.world().resource::<Tabletop>().inspect, Some(1));
-    assert!(!app.world().resource::<Context>().menu_open());
-    assert_eq!(
-        app.world().resource::<Tabletop>().session.observe(),
-        committed
-    );
 }
 
 #[test]
@@ -397,10 +389,6 @@ fn scenario_reference_stays_in_test_and_opens_inspection_without_a_game_choice()
     act(&mut app, Action::CloseInspect);
     assert_eq!(app.world().resource::<Tabletop>().view(), before);
     act(&mut app, Action::Save);
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Select(Source::Card(3), Vec2::ZERO));
-    assert_eq!(app.world().resource::<Tabletop>().inspect, Some(3));
-    assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
 }
 
 #[test]
@@ -464,12 +452,6 @@ fn feedback_separates_menu_source_from_pending_cancellation_and_keeps_scene_enti
     act(&mut app, Action::Motion);
     assert!(app.world().resource::<FeedbackSettings>().reduced_motion);
     act(&mut app, Action::Save);
-    act(&mut app, Action::Replay);
-    assert!(
-        marks(&mut app)
-            .iter()
-            .all(|(_, _, source, pending)| !source && !pending)
-    );
 }
 
 #[test]
@@ -545,7 +527,7 @@ fn contextual_selection_inspection_and_cancellation_preserve_decision_until_conf
 }
 
 #[test]
-fn contextual_actions_cannot_cross_replay_or_reopen_boundaries() {
+fn contextual_actions_cannot_cross_reopen_boundaries() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = pending_app(dir.path().join("modes.json"));
     app.update();
@@ -553,24 +535,6 @@ fn contextual_actions_cannot_cross_replay_or_reopen_boundaries() {
     act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
     let generation = app.world().resource::<Context>().generation();
     let before = app.world().resource::<Tabletop>().session.observe();
-    act(
-        &mut app,
-        Action::PrepareCancellation(generation, "cancel-1-2".into()),
-    );
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
-    act(
-        &mut app,
-        Action::ContextChoose(generation, before.revision, "cancel-1-2".into()),
-    );
-    act(&mut app, Action::Live);
-    act(
-        &mut app,
-        Action::ContextChoose(generation, before.revision, "cancel-1-2".into()),
-    );
-    assert_eq!(app.world().resource::<Tabletop>().session.observe(), before);
-    act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
-    let generation = app.world().resource::<Context>().generation();
     act(
         &mut app,
         Action::PrepareCancellation(generation, "cancel-1-2".into()),
@@ -632,18 +596,8 @@ fn contextual_cancellation_survives_failed_commits_and_manual_save() {
 fn contextual_failed_and_no_op_transitions_expire_callbacks_before_attempting_the_operation() {
     let dir = tempfile::tempdir().unwrap();
     let blocked = dir.path().join("not-a-directory");
-    std::fs::write(&blocked, "blocks all session and replay writes").unwrap();
-    for (index, transition) in [
-        Action::Reopen,
-        Action::Replay,
-        Action::New,
-        Action::Back,
-        Action::Next,
-        Action::Live,
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    std::fs::write(&blocked, "blocks all session writes").unwrap();
+    for (index, transition) in [Action::Reopen, Action::New].into_iter().enumerate() {
         let mut app = pending_app(blocked.join("session.json"));
         act(&mut app, Action::Select(Source::Token(0), Vec2::ZERO));
         let old = app.world().resource::<Context>().generation();
@@ -933,7 +887,6 @@ fn app_for_session_in(mut app: App, session: Session, path: PathBuf) -> App {
     app.insert_resource(Tabletop {
         fixture: session.fixture.clone(),
         session,
-        replay: None,
         save_path: path,
         notice: String::new(),
         inspect: None,
@@ -995,23 +948,25 @@ fn rendering_health_preserves_jacqueline_records_and_drains_blocked_input() {
         let saved = std::fs::read(&path).unwrap();
         let mut app = app_for_session(initial, path.clone());
         act(&mut app, Action::Choose(0, "commit-promise".into()));
+        let active_bytes = std::fs::read(&path).unwrap();
         let before = app.world().resource::<Tabletop>().session.clone();
         std::fs::write(&path, &saved).unwrap();
         let file_count = std::fs::read_dir(dir.path()).unwrap().count();
         app.insert_resource(health);
         act(&mut app, Action::Choose(1, "use-jacqueline".into()));
-        for action in [Action::Save, Action::Reopen, Action::Replay, Action::New] {
+        for action in [Action::Save, Action::Reopen, Action::New] {
             act(&mut app, action);
         }
         let camera_before = app.world().resource::<Orbit>().pose();
         act(&mut app, Action::Focus(Area::Test));
         assert_ne!(app.world().resource::<Orbit>().pose(), camera_before);
         assert_eq!(app.world().resource::<Tabletop>().session, before);
-        assert!(app.world().resource::<Tabletop>().replay.is_none());
         assert_eq!(std::fs::read(&path).unwrap(), saved);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), file_count);
         assert!(app.world().resource::<Actions>().0.is_empty());
 
+        // Restore the exact baseline before the next authorized write.
+        std::fs::write(&path, &active_bytes).unwrap();
         app.insert_resource(RenderHealth::ready_for_test());
         app.update();
         assert_eq!(app.world().resource::<Tabletop>().session, before);
@@ -1048,7 +1003,7 @@ fn result_text(app: &mut App) -> Vec<String> {
 }
 
 #[test]
-fn result_dialog_preserves_recorded_explanations_in_live_reopened_and_replay_views() {
+fn result_dialog_preserves_explanations_in_live_and_reopened_views() {
     for (name, fixture, choices, expected, absent) in [
         (
             "early", Fixture::curse(),
@@ -1085,33 +1040,15 @@ fn result_dialog_preserves_recorded_explanations_in_live_reopened_and_replay_vie
         assert!(!original_text.iter().any(|text| text == absent));
         assert!(!original_text.iter().any(|text| text.contains("[RR ST.3; 60401]")));
 
-        // Open an independent baseline save through the actual Reopen action.
-        // Replay then exports/reloads its recording through the production path.
-        let legacy_path = dir.path().join("legacy.json");
-        std::fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/result-explanation/{name}.session.json")),
-            &legacy_path,
-        ).unwrap();
-        let legacy_bytes = std::fs::read(&legacy_path).unwrap();
         act(&mut app, Action::DismissResult);
-        app.world_mut().resource_mut::<Tabletop>().save_path = legacy_path.clone();
         act(&mut app, Action::Reopen);
         assert_eq!(app.world().resource::<Tabletop>().view(), live);
         assert_eq!(result_visible(&mut app), name == "autofail");
         act(&mut app, Action::ShowResult);
         assert_eq!(result_text(&mut app), original_text);
         act(&mut app, Action::DismissResult);
-        act(&mut app, Action::Replay);
-        for _ in choices {
-            act(&mut app, Action::Next);
-        }
-        assert!(app.world().resource::<Tabletop>().replay.is_some());
-        assert_eq!(app.world().resource::<Tabletop>().view(), live);
-        assert_eq!(result_visible(&mut app), name == "autofail");
-        act(&mut app, Action::ShowResult);
-        assert_eq!(result_text(&mut app), original_text);
+
         assert_eq!(std::fs::read(&path).unwrap(), saved);
-        assert_eq!(std::fs::read(&legacy_path).unwrap(), legacy_bytes);
     }
 }
 
@@ -1153,38 +1090,6 @@ fn curse_continuation_stays_visible_until_the_player_requests_the_result() {
     assert!(!result_visible(&mut app));
     assert_eq!(appearing_count(&mut app), 0);
     assert_eq!(std::fs::read(path).unwrap(), bytes);
-}
-
-#[test]
-fn replay_and_return_to_live_leave_the_curse_reveal_unobscured() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("live.json");
-    let mut app = pending_app(path.clone());
-    act(&mut app, Action::Choose(2, "cancel-1-2".into()));
-    let saved = std::fs::read(&path).unwrap();
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Next);
-    act(&mut app, Action::Next);
-    advance(&mut app, 1000);
-    app.world_mut()
-        .resource_mut::<Time>()
-        .advance_by(Duration::from_millis(20));
-    act(&mut app, Action::Next);
-    assert!(!result_visible(&mut app));
-    assert_eq!(appearing_count(&mut app), 1);
-    assert_eq!(app.world().resource::<Tabletop>().view().tokens.len(), 4);
-    act(&mut app, Action::ShowResult);
-    assert!(result_visible(&mut app));
-    act(&mut app, Action::DismissResult);
-    act(&mut app, Action::Back);
-    assert_eq!(app.world().resource::<Tabletop>().view().tokens.len(), 3);
-    act(&mut app, Action::Next);
-    assert!(!result_visible(&mut app));
-    act(&mut app, Action::Back);
-    act(&mut app, Action::Live);
-    assert!(!result_visible(&mut app));
-    assert_eq!(app.world().resource::<Tabletop>().view().tokens.len(), 4);
-    assert_eq!(std::fs::read(path).unwrap(), saved);
 }
 
 #[test]
@@ -1331,80 +1236,6 @@ fn failed_autosave_does_not_present_an_uncommitted_result() {
     assert_eq!(std::fs::read_to_string(path).unwrap(), "damaged save");
 }
 
-#[test]
-fn replay_without_a_resolved_curse_presents_results_without_mutating_live_save() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("live.json");
-    let mut app = pending_app(path.clone());
-    act(&mut app, Action::Choose(2, "cancel-0-1".into()));
-    let saved = std::fs::read(&path).unwrap();
-    act(&mut app, Action::DismissResult);
-    act(&mut app, Action::Replay);
-    assert!(!app.world().resource::<Tabletop>().result_open);
-    for _ in 0..3 {
-        act(&mut app, Action::Next);
-    }
-    assert!(app.world().resource::<Tabletop>().result_open);
-    act(&mut app, Action::DismissResult);
-    act(&mut app, Action::Next); // Already at the last moment: no new presentation.
-    assert!(!app.world().resource::<Tabletop>().result_open);
-    act(&mut app, Action::Back);
-    assert!(!app.world().resource::<Tabletop>().result_open);
-    act(&mut app, Action::Next);
-    assert!(app.world().resource::<Tabletop>().result_open);
-    assert_eq!(std::fs::read(path).unwrap(), saved);
-}
-
-#[test]
-fn replay_controls_and_reminder_follow_recorded_state_without_resetting_the_flip() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut app = pending_app(dir.path().join("live.json"));
-    act(&mut app, Action::Choose(2, "cancel-1-2".into()));
-    act(&mut app, Action::DismissResult);
-    let reminder = app
-        .world_mut()
-        .query_filtered::<Entity, With<ReminderPose>>()
-        .single(app.world())
-        .unwrap();
-    let has_text = |app: &mut App, needle: &str| {
-        let world = app.world_mut();
-        world
-            .query::<&Text>()
-            .iter(world)
-            .any(|text| text.0.contains(needle))
-    };
-    act(&mut app, Action::Replay);
-    assert!(has_text(&mut app, "Rotting Remains"));
-    assert!(has_text(&mut app, "Next moment"));
-    assert!(!has_text(&mut app, "Previous moment"));
-    assert!(has_text(&mut app, "READY"));
-    act(&mut app, Action::Next);
-    assert!(has_text(&mut app, "Committed"));
-    act(&mut app, Action::Next);
-    assert!(has_text(&mut app, "Used this round"));
-    assert_eq!(
-        app.world().get::<ReminderPose>(reminder).unwrap().target,
-        std::f32::consts::PI
-    );
-    app.world_mut()
-        .resource_mut::<Time>()
-        .advance_by(Duration::from_millis(20));
-    app.update();
-    let angle = app.world().get::<ReminderPose>(reminder).unwrap().angle;
-    assert!(angle > 0.0 && angle < std::f32::consts::PI);
-    app.world_mut()
-        .resource_mut::<Time>()
-        .advance_by(Duration::ZERO);
-    act(&mut app, Action::History); // An unrelated rebuild must not restart the physical flip.
-    assert_eq!(
-        app.world().get::<ReminderPose>(reminder).unwrap().angle,
-        angle
-    );
-    act(&mut app, Action::Next);
-    assert!(!has_text(&mut app, "Next moment"));
-    assert!(has_text(&mut app, "Previous moment"));
-}
-
 fn advance(app: &mut App, millis: u64) {
     app.world_mut()
         .resource_mut::<Time>()
@@ -1497,20 +1328,6 @@ fn panel_refreshes_preserve_scene_entities_and_in_flight_motion() {
     let moving = reminder_state(&mut app);
     assert_eq!(moving.0, reminder.0);
     assert!(moving.2 > reminder.2);
-
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Next);
-    act(&mut app, Action::Next);
-    app.world_mut()
-        .resource_mut::<Time>()
-        .advance_by(Duration::ZERO);
-    let before_follow = scene_snapshot(&mut app);
-    let reminder = reminder_state(&mut app);
-    assert!(app.world().resource::<Orbit>().is_following());
-    act(&mut app, Action::Follow);
-    assert!(!app.world().resource::<Orbit>().is_following());
-    assert_eq!(scene_snapshot(&mut app), before_follow);
-    assert_eq!(reminder_state(&mut app), reminder);
 }
 
 #[test]
@@ -1637,89 +1454,6 @@ fn appearing_count(app: &mut App) -> usize {
         .query_filtered::<Entity, With<Appearing>>()
         .iter(world)
         .count()
-}
-
-#[test]
-fn replay_back_next_and_live_compare_complete_observations_and_only_previous_tokens() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("live.json");
-    let mut app = pending_app(path.clone());
-    app.update();
-    act(&mut app, Action::Choose(2, "cancel-1-2".into()));
-    let saved = std::fs::read(&path).unwrap();
-    act(&mut app, Action::DismissResult);
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Next);
-    act(&mut app, Action::Next);
-    assert_eq!(appearing_count(&mut app), 3);
-    act(&mut app, Action::Next);
-    assert_eq!(appearing_count(&mut app), 1);
-    act(&mut app, Action::DismissResult);
-    act(&mut app, Action::Back);
-    assert_eq!(app.world().resource::<Tabletop>().view().tokens.len(), 3);
-    assert_eq!(
-        appearing_count(&mut app),
-        0,
-        "tokens held in the previous moment do not reveal again"
-    );
-    act(&mut app, Action::Back);
-    assert!(app.world().resource::<Tabletop>().view().tokens.is_empty());
-    act(&mut app, Action::Next);
-    assert_eq!(
-        appearing_count(&mut app),
-        3,
-        "returning from a token-free moment reveals again; there is no seen-token cache"
-    );
-    act(&mut app, Action::Live);
-    assert_eq!(
-        app.world().resource::<Tabletop>().view().stage,
-        Stage::Finished
-    );
-    assert_eq!(appearing_count(&mut app), 1);
-    assert_eq!(std::fs::read(&path).unwrap(), saved);
-    act(&mut app, Action::DismissResult);
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Next);
-    act(&mut app, Action::Next);
-
-    // Privileged setup: a distinct live session at the same revision as the replay.
-    let mut other = Session::new(Fixture::auto_fail());
-    other.choose(0, "commit-promise").unwrap();
-    other.choose(1, "use-jacqueline").unwrap();
-    let expected = other.observe();
-    assert_eq!(
-        expected.revision,
-        app.world().resource::<Tabletop>().view().revision
-    );
-    assert_ne!(expected, app.world().resource::<Tabletop>().view());
-    let previous = scene_snapshot(&mut app);
-    app.world_mut().resource_mut::<Tabletop>().session = other;
-    act(&mut app, Action::Live);
-    assert_eq!(app.world().resource::<Tabletop>().view(), expected);
-    assert_eq!(
-        appearing_count(&mut app),
-        2,
-        "same IDs with different faces are new; unchanged ID/face is retained"
-    );
-    for (entity, _, _) in previous {
-        assert!(app.world().get_entity(entity).is_err());
-    }
-
-    // Scene synchronization also runs when the panel has already consumed its refresh.
-    let mut other = Session::new(Fixture::curse());
-    other.choose(0, "commit-promise").unwrap();
-    other.choose(1, "use-jacqueline").unwrap();
-    assert!(!app.world().resource::<Tabletop>().dirty);
-    app.world_mut().resource_mut::<Tabletop>().session = other;
-    app.update();
-    assert_eq!(appearing_count(&mut app), 2);
-    let world = app.world_mut();
-    assert!(
-        world
-            .query_filtered::<&Text, Or<(With<WorldLabel>, With<tabletop_tokens::TokenLabel>)>>()
-            .iter(world)
-            .any(|text| text.0 == "#1  Curse\nRevealed")
-    );
 }
 
 #[test]
@@ -1903,6 +1637,47 @@ fn world_labels_are_projected_on_spawn_and_follow_the_camera_without_scene_repla
             }
         );
     }
+}
+
+#[test]
+fn history_panel_keeps_every_live_entry_available() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut session = Session::new(Fixture::curse());
+    for (revision, choice) in ["commit-promise", "use-jacqueline", "cancel-1-2"]
+        .into_iter()
+        .enumerate()
+    {
+        session.choose(revision as u64, choice).unwrap();
+    }
+    let before = session.observe();
+    assert!(before.history.len() > 7);
+    let mut app = app_for_session(session, directory.path().join("history.json"));
+    act(&mut app, Action::History);
+    let world = app.world_mut();
+    let panel = world
+        .query::<(&AccessibleLabel, &ChildOf)>()
+        .iter(world)
+        .find(|(text, _)| text.0 == "What happened — and why")
+        .unwrap()
+        .1
+        .parent();
+    let entries: Vec<_> = world
+        .get::<Children>(panel)
+        .unwrap()
+        .iter()
+        .filter_map(|entity| {
+            world
+                .get::<AccessibleLabel>(entity)
+                .map(|text| text.0.as_str())
+        })
+        .collect();
+    for entry in &before.history {
+        assert!(
+            entries.contains(&entry.as_str()),
+            "missing history: {entry}"
+        );
+    }
+    assert_eq!(app.world().resource::<Tabletop>().view(), before);
 }
 
 #[test]
@@ -2306,31 +2081,4 @@ fn camera_adapter_blocks_jacqueline_utilities_wheel_results_and_escape_frame_key
         .clear();
     app.world_mut().run_system_once(camera_controls).unwrap();
     assert!(app.world().resource::<Orbit>().pose().target.z < before.target.z);
-}
-
-#[test]
-fn camera_adapter_keeps_jacqueline_replay_framing_and_freezes_on_follow_off() {
-    let dir = tempfile::tempdir().unwrap();
-    let (mut app, _) = orbit_mouse_app();
-    app.world_mut().resource_mut::<Tabletop>().save_path = dir.path().join("replay.json");
-    act(&mut app, Action::Focus(Area::Overview));
-    let initial = app.world().resource::<Orbit>().pose();
-    act(&mut app, Action::Replay);
-    app.world_mut()
-        .resource_mut::<Time>()
-        .advance_by(Duration::from_millis(100));
-    app.update();
-    let moving = app.world().resource::<Orbit>().pose();
-    let (target, distance) = tabletop_layout::focus(Area::Test);
-    assert!(
-        (moving.distance - (initial.distance + (distance - initial.distance) * 0.4)).abs()
-            < 0.00001
-    );
-    assert!(moving.target.distance(initial.target.lerp(target, 0.4)) < 0.00001);
-    act(&mut app, Action::Follow);
-    assert!(!app.world().resource::<Orbit>().is_following());
-    app.update();
-    let stopped = app.world().resource::<Orbit>().pose();
-    assert_eq!(stopped.distance, moving.distance);
-    assert!(stopped.target.distance(moving.target) < 0.00001);
 }

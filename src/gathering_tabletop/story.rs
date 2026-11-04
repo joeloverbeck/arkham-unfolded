@@ -1,6 +1,6 @@
-//! Previously revealed story faces, derived only from the displayed public prefix.
+//! Previously revealed story faces, retained as explicit current knowledge.
 
-use crate::gathering::{Observation, PlayObservation, Recording, Resolution};
+use crate::gathering::Session;
 use crate::tabletop_layout::ScenarioBookSide;
 use std::collections::BTreeSet;
 
@@ -72,15 +72,22 @@ pub(super) struct Reading {
 }
 
 impl Reading {
-    pub(super) fn for_record(record: &Recording) -> Self {
-        let before = record
-            .moments
-            .len()
-            .checked_sub(2)
-            .and_then(|index| record.moments.get(index))
-            .or_else(|| record.moments.first());
+    pub(super) fn for_session(session: &Session) -> Self {
+        let state = session.live_state();
         Self {
-            known: before.map_or_else(Faces::default, |view| Faces::for_view(record, view, None)),
+            known: Faces::from_codes(
+                state
+                    .known_story
+                    .difference(&state.new_story)
+                    .map(String::as_str),
+            ),
+            pending: Default::default(),
+        }
+    }
+
+    pub(super) fn at(known: Faces) -> Self {
+        Self {
+            known,
             pending: Default::default(),
         }
     }
@@ -98,116 +105,12 @@ impl Reading {
     pub(super) fn advance(&mut self) {
         self.pending.pop_front();
     }
-    pub(super) fn dismiss_for_navigation(&mut self) {
-        self.pending.clear();
-    }
-    pub(super) fn at(faces: Faces) -> Self {
-        Self {
-            known: faces,
-            pending: Default::default(),
-        }
-    }
 }
 
 impl Faces {
-    pub(super) fn for_view(
-        recording: &Recording,
-        view: &Observation,
-        presentation_sequence: Option<u32>,
-    ) -> Self {
-        let mut result = Self::default();
-        for decision in recording.moments.iter().filter(|decision| {
-            decision.revision < view.revision
-                || (decision.revision == view.revision && presentation_sequence.is_none())
-        }) {
-            result.observe_decision(decision);
-        }
-        let mut previous: Option<(u64, &PlayObservation)> = None;
-        for moment in recording.presentation_moments.iter().filter(|moment| {
-            moment.revision < view.revision
-                || (moment.revision == view.revision
-                    && presentation_sequence.is_none_or(|sequence| moment.sequence <= sequence))
-        }) {
-            result.observe_play(&moment.play);
-            // Only advancement clears agenda doom between consecutive public
-            // snapshots inside one decision. A later revision may instead undo
-            // a choice; it must never manufacture knowledge of a reverse.
-            if let Some((revision, before)) = previous
-                && revision == moment.revision
-                && before.agenda == moment.play.agenda
-                && before.agenda_doom > 0
-                && moment.play.agenda_doom == 0
-            {
-                result.known.extend(match moment.play.agenda {
-                    1 => Some(StoryCard::AgendaOne),
-                    2 => Some(StoryCard::AgendaTwo),
-                    3 => Some(StoryCard::AgendaThree),
-                    _ => None,
-                });
-            }
-            previous = Some((moment.revision, &moment.play));
-        }
-        if presentation_sequence.is_none() {
-            result.observe_decision(view);
-        } else if let Some(play) = &view.play {
-            result.observe_play(play);
-        }
-        result
-    }
-
-    fn observe_decision(&mut self, view: &Observation) {
-        if let Some(play) = &view.play {
-            self.observe_play(play);
-            for choice in &view.choices {
-                self.known
-                    .extend(match (choice.id.as_str(), play.agenda, play.act) {
-                        ("agenda:lead-horror" | "agenda:random-discard", 1, _) => {
-                            Some(StoryCard::AgendaOne)
-                        }
-                        ("agenda:search", 2, _) => Some(StoryCard::AgendaTwo),
-                        ("resolution:burn" | "resolution:refuse", _, 3) => {
-                            Some(StoryCard::ActThree)
-                        }
-                        _ => None,
-                    });
-            }
-        }
-    }
-
-    fn observe_play(&mut self, play: &PlayObservation) {
-        match play.agenda {
-            2 => {
-                self.known.insert(StoryCard::AgendaOne);
-            }
-            3 => {
-                self.known
-                    .extend([StoryCard::AgendaOne, StoryCard::AgendaTwo]);
-            }
-            _ => {}
-        }
-        match play.act {
-            2 => {
-                self.known.insert(StoryCard::ActOne);
-            }
-            3 => {
-                self.known.extend([StoryCard::ActOne, StoryCard::ActTwo]);
-            }
-            _ => {}
-        }
-        if play.act == 3
-            && (play
-                .scenario
-                .victory
-                .iter()
-                .any(|card| card.code == "01116")
-                || play.scenario.outcome.as_ref().is_some_and(|outcome| {
-                    matches!(
-                        outcome.resolution,
-                        Resolution::BurnHouse | Resolution::RefuseToBurn
-                    )
-                }))
-        {
-            self.known.insert(StoryCard::ActThree);
+    pub(super) fn from_codes<'a>(codes: impl IntoIterator<Item = &'a str>) -> Self {
+        Self {
+            known: codes.into_iter().filter_map(StoryCard::from_code).collect(),
         }
     }
 

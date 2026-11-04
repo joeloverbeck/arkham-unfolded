@@ -2,10 +2,7 @@
 use crate::{
     asset_config::AssetConfig,
     assets,
-    party::{
-        Investigator, Observation, Session,
-        continuity::{self, Replay},
-    },
+    party::{Investigator, Observation, Session, continuity},
     tabletop::asset_settings::AssetSettings,
     tabletop_camera::{
         CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
@@ -24,7 +21,6 @@ use bevy::{
     render::view::screenshot::{Capturing, Screenshot},
     ui_widgets::{Activate, Button, RequestClose},
 };
-use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
@@ -103,22 +99,18 @@ impl Options {
 #[derive(Resource)]
 struct Table {
     session: Session,
-    replay: Option<Replay>,
     save_path: PathBuf,
     notice: String,
     inspect: Option<usize>,
     history: bool,
     dirty: bool,
     reduced_motion: bool,
-    resume_result: bool,
     context: Context,
 }
 impl Table {
     fn new(session: Session, save_path: PathBuf) -> Self {
         Self {
-            resume_result: session.observe().stage == crate::party::Stage::Result,
             session,
-            replay: None,
             save_path,
             notice: "Every committed decision is saved. Close and reopen at any choice.".into(),
             inspect: None,
@@ -129,42 +121,14 @@ impl Table {
         }
     }
     fn view(&self) -> Observation {
-        self.replay
-            .as_ref()
-            .map_or_else(|| self.session.observe_for_play(), |r| r.current().clone())
+        self.session.observe()
     }
     fn show_test_summary(&self, view: &Observation) -> bool {
         if test_window(view) {
             return true;
         }
-        // Keep the newly settled result visible, including after reopen or in
-        // replay. The last token now performs cleanup without a Result stop.
-        let previous_test_pending = if let Some(replay) = &self.replay {
-            replay
-                .index()
-                .checked_sub(1)
-                .and_then(|index| replay.recording().moments.get(index))
-                .is_some_and(|moment| {
-                    moment
-                        .test
-                        .as_ref()
-                        .is_some_and(|test| test.result.is_none())
-                })
-        } else {
-            let recording = self.session.recording();
-            recording
-                .moments
-                .len()
-                .checked_sub(2)
-                .and_then(|index| recording.moments.get(index))
-                .is_some_and(|moment| {
-                    moment
-                        .test
-                        .as_ref()
-                        .is_some_and(|test| test.result.is_none())
-                })
-        };
-        previous_test_pending && view.test.as_ref().is_some_and(|test| test.result.is_some())
+        self.session.result_just_settled()
+            && view.test.as_ref().is_some_and(|test| test.result.is_some())
     }
     fn modal(&self) -> bool {
         self.act_reveal() || self.inspect.is_some() || self.history
@@ -173,10 +137,7 @@ impl Table {
         self.view().stage == crate::party::Stage::ActReveal
     }
     fn invalidate(&mut self) {
-        self.context.sync(
-            self.view().revision,
-            self.replay.as_ref().map(Replay::index),
-        );
+        self.context.sync(self.view().revision);
         self.dirty = true;
     }
 }
@@ -211,12 +172,7 @@ enum Action {
     Motion,
     Save,
     Reopen,
-    Replay,
-    Next,
-    Back,
-    Live,
     New,
-    Follow,
     AssetFolder,
 }
 #[derive(Resource, Default)]
@@ -418,8 +374,8 @@ fn handle_actions(
     mut consequences: consequences::Presentation,
 ) {
     let revision = table.view().revision;
-    let replay_index = table.replay.as_ref().map(Replay::index);
-    table.context.sync(revision, replay_index);
+
+    table.context.sync(revision);
     if keys.just_pressed(KeyCode::Escape) {
         actions.0.push(if table.modal() {
             Action::Close
@@ -430,22 +386,6 @@ fn handle_actions(
     actions
         .0
         .extend(shortcut.drain().into_iter().map(Action::Reveal));
-    // Reading an old save is side-effect free. Its former administrative Result
-    // stop continues once after rendering admits play, through the same atomic
-    // save-before-install path as a click. Failed saves do not retry each frame.
-    if table.resume_result
-        && table.replay.is_none()
-        && health.allows_play()
-        && !health.just_became_ready()
-        && !settings.is_busy()
-        && !table.modal()
-    {
-        table.resume_result = false;
-        actions.0.insert(
-            0,
-            Action::Choose(table.view().revision, "finish-test".into()),
-        );
-    }
     for action in actions.0.drain(..) {
         if consequences.blocks(&action) {
             continue;
@@ -459,9 +399,8 @@ fn handle_actions(
         }
         let permitted_in_modal = if table.act_reveal() {
             match &action {
-                Action::Choose(_, id) => table.replay.is_none() && id == "continue-act",
-                Action::Next | Action::Back | Action::Live => table.replay.is_some(),
-                Action::Save | Action::Reopen | Action::Replay => table.replay.is_none(),
+                Action::Choose(_, id) => id == "continue-act",
+                Action::Save | Action::Reopen => true,
                 _ => false,
             }
         } else {
@@ -506,9 +445,9 @@ fn handle_actions(
             shortcut.dismiss();
         }
         match action {
-            Action::Choose(revision, id) if table.replay.is_none() => {
+            Action::Choose(revision, id) => {
                 let table = &mut *table;
-                let before = table.session.observe_for_play();
+                let before = table.session.observe();
                 table.notice = match continuity::commit_choice(
                     &table.save_path,
                     &mut table.session,
@@ -518,7 +457,7 @@ fn handle_actions(
                     Ok(()) => {
                         consequences.committed(
                             &before,
-                            &table.session.observe_for_play(),
+                            &table.session.observe(),
                             &id,
                             table.reduced_motion,
                         );
@@ -536,19 +475,15 @@ fn handle_actions(
             }
             Action::Select(revision, source, at) => {
                 let view = table.view();
-                let live = table.replay.is_none();
                 if let Some(controls::SelectionEffect::Inspect(index)) =
-                    table.context.select(&view, live, revision, source, at)
+                    table.context.select(&view, revision, source, at)
                 {
                     table.inspect = Some(index);
                 }
             }
             Action::Toggle(epoch, revision, id, cancel) => {
                 let view = table.view();
-                let live = table.replay.is_none();
-                table
-                    .context
-                    .toggle(&view, live, epoch, revision, id, cancel);
+                table.context.toggle(&view, epoch, revision, id, cancel);
             }
             Action::Inspect(index) => {
                 let view = table.view();
@@ -572,96 +507,36 @@ fn handle_actions(
                 table.context.toggle_utilities();
             }
             Action::Motion => table.reduced_motion = !table.reduced_motion,
-            Action::Save if table.replay.is_none() => {
+            Action::Save => {
                 table.notice = match continuity::save_session(&table.save_path, &table.session) {
                     Ok(()) => "Live attempt saved.".into(),
                     Err(e) => format!("Save failed; live play is unchanged: {e}"),
                 }
             }
-            Action::Reopen if table.replay.is_none() => {
-                match continuity::load_session(&table.save_path) {
-                    Ok(session) => {
-                        table.resume_result =
-                            session.observe().stage == crate::party::Stage::Result;
-                        table.session = session;
-                        consequences.replaced_view();
-                        table.context.reset();
-                        table.notice = "Reopened the exact saved decision and randomness.".into();
-                    }
-                    Err(e) => table.notice = format!("Reopen failed; live play is unchanged: {e}"),
+            Action::Reopen => match continuity::load_session(&table.save_path) {
+                Ok(session) => {
+                    table.session = session;
+                    consequences.replaced_view();
+                    table.context.reset();
+                    table.notice = "Reopened the exact saved decision and randomness.".into();
                 }
-            }
-            Action::Replay if table.replay.is_none() => {
-                let record = table.session.recording();
-                let digest = format!(
-                    "{:x}",
-                    Sha256::digest(serde_json::to_vec(&record).expect("recordings serialize"))
-                );
-                let stem = table
-                    .save_path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("party");
-                let path = table
-                    .save_path
-                    .with_file_name(format!("{stem}.replay-{}.json", &digest[..16]));
-                match continuity::save_recording(&path, &record)
-                    .and_then(|()| continuity::load_recording(&path))
-                    .and_then(Replay::new)
-                {
-                    Ok(replay) => {
-                        consequences.replaced_view();
-                        table.replay = Some(replay);
-                        orbit.set_following(true);
-                        table.notice = "Stored replay; each moment pauses for narration.".into();
-                    }
-                    Err(e) => table.notice = format!("Could not open recorded replay: {e}"),
-                }
-            }
-            Action::Next => {
-                consequences.replaced_view();
-                if let Some(r) = &mut table.replay {
-                    r.next();
-                }
-            }
-            Action::Back => {
-                consequences.replaced_view();
-                if let Some(r) = &mut table.replay {
-                    r.back();
-                }
-            }
-            Action::Live => {
-                consequences.replaced_view();
-                table.replay = None;
-                orbit.set_following(false);
-                table.context.reset();
-                table.notice = "Returned to unchanged live play.".into();
-            }
-            Action::Follow if table.replay.is_some() => {
-                let following = !orbit.is_following();
-                orbit.set_following(following);
-            }
-            Action::New if table.replay.is_none() && table.view().endpoint.is_some() => {
-                match Session::new() {
-                    Ok(session) => match continuity::restart_session(
-                        &table.save_path,
-                        &table.session,
-                        &session,
-                    ) {
+                Err(e) => table.notice = format!("Reopen failed; live play is unchanged: {e}"),
+            },
+            Action::New if table.view().endpoint.is_some() => match Session::new() {
+                Ok(session) => {
+                    match continuity::restart_session(&table.save_path, &table.session, &session) {
                         Ok(()) => {
                             table.session = session;
                             consequences.replaced_view();
                             table.context.reset();
                             orbit.set_following(false);
-                            table.notice =
-                                "New attempt; the previous session and recording are preserved."
-                                    .into();
+                            table.notice = "New attempt; the previous save is archived.".into();
                         }
                         Err(e) => table.notice = format!("Could not start another attempt: {e}"),
-                    },
-                    Err(e) => table.notice = e.to_string(),
+                    }
                 }
-            }
+                Err(e) => table.notice = e.to_string(),
+            },
             Action::AssetFolder => {
                 settings.choose();
                 table.notice =
@@ -672,11 +547,7 @@ fn handle_actions(
         if let Some(focus) = focus.as_mut() {
             focus.clear();
         }
-        if let Some(replay) = &table.replay
-            && orbit.is_following()
-        {
-            orbit.update_follow_target(Some(replay_framing(replay)));
-        }
+
         table.invalidate();
     }
 }
@@ -695,38 +566,12 @@ fn test_window(view: &Observation) -> bool {
     )
 }
 
-fn replay_framing(replay: &Replay) -> (Vec3, f32) {
-    use crate::party::Stage;
-    let view = replay.current();
-    let previous = replay
-        .index()
-        .checked_sub(1)
-        .and_then(|index| replay.recording().moments.get(index));
-    if matches!(view.stage, Stage::Closing | Stage::ActReveal | Stage::Ended) {
-        return layout::focus(Area::Scenario);
-    }
-    if view.stage == Stage::AfterTest || previous.is_some_and(|view| view.stage == Stage::AfterTest)
-    {
-        return (scene::discard_at(Investigator::Patrice).with_y(0.), 12.);
-    }
-    if test_window(view)
-        || (view.test.as_ref().is_some_and(|test| test.result.is_some())
-            && previous
-                .is_some_and(|view| view.test.as_ref().is_some_and(|test| test.result.is_none())))
-    {
-        return layout::focus(Area::Test);
-    }
-    layout::focus(
-        view.actor
-            .map_or(Area::Scenario, |who| Area::Investigator(who.index())),
-    )
-}
 fn refresh_reveal(table: &Table, settings: &AssetSettings, shortcut: &mut reveal::Shortcut) {
     let view = table.view();
     shortcut.sync(
         view.revision,
         &view.choices,
-        table.replay.is_none() && !table.modal() && !settings.is_busy(),
+        !table.modal() && !settings.is_busy(),
         table.reduced_motion,
     );
 }
@@ -776,9 +621,7 @@ fn synchronize_feedback(
     for (source, mut mark) in &mut cards {
         mark.menu_source = table.context.is_menu_source(source.0);
         mark.pending_choice = table.context.is_pending(source.0);
-        mark.commitment = table
-            .context
-            .contribution(&view, table.replay.is_none(), source.0);
+        mark.commitment = table.context.contribution(&view, source.0);
         mark.symbol_font = art.as_ref().and_then(|art| art.symbol_font.clone());
     }
 }

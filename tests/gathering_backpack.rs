@@ -296,8 +296,7 @@ fn crypt_chill_discards_the_host_and_attachments_simultaneously_in_chosen_order(
             .iter()
             .any(|card| card.code == "01167")
     );
-    let record = session.recording();
-    continuity::Replay::new(record).unwrap();
+    session.validate().unwrap();
 }
 
 #[test]

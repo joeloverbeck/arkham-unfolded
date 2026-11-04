@@ -34,19 +34,26 @@ fn driver(directory: &Path, args: &[&str], input: &str) -> Vec<Value> {
 }
 
 #[test]
-fn legacy_defeat_continuation_is_atomic_and_retains_its_historical_prefix() {
-    use tony::continuity::{
-        Replay, commit_choice, load_recording, load_session, save_recording, save_session,
-    };
+fn defeat_continuation_is_atomic_and_retains_action_history() {
+    use tony::continuity::{commit_choice, load_session, save_session};
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("legacy.json");
-    let bytes = include_bytes!("fixtures/encounter-discard/before-defeat.session.json");
-    std::fs::write(&path, bytes).unwrap();
-    let mut game = load_session(&path).unwrap();
+    let mut game = tony::Session::with_draws(vec![TokenFace::Zero; 2]);
+    for id in [
+        "fight",
+        "commit:none",
+        "reveal",
+        "resolve",
+        "fight",
+        "commit:none",
+        "reveal",
+    ] {
+        game.choose(game.observe().revision, id).unwrap();
+    }
+    tony::continuity::save_session(&path, &game).unwrap();
     let prior = game.clone();
-    let historical = game.recording();
+    let historical = game.observe().history;
     save_session(&path, &game).unwrap();
-    assert_eq!(std::fs::read(&path).unwrap(), bytes);
     let blocked = directory.path().join("blocked");
     std::fs::create_dir(&blocked).unwrap();
     assert!(commit_choice(&blocked, &mut game, prior.observe().revision, "resolve").is_err());
@@ -54,76 +61,27 @@ fn legacy_defeat_continuation_is_atomic_and_retains_its_historical_prefix() {
     assert!(game.observe().encounter_discard().is_empty());
     commit_choice(&path, &mut game, prior.observe().revision, "resolve").unwrap();
     assert_eq!(game.observe().encounter_discard()[0].code, "01160");
-    assert!(game.recording().moments.starts_with(&historical.moments));
+    assert!(game.observe().history.starts_with(&historical));
     assert_eq!(load_session(&path).unwrap(), game);
-    let recorded = game.recording();
-    let record_path = directory.path().join("recording.json");
-    save_recording(&record_path, &recorded).unwrap();
-    let mut replay = Replay::new(load_recording(&record_path).unwrap()).unwrap();
-    while replay.next() {}
-    assert_eq!(
-        replay.current().encounter_discard(),
-        game.observe().encounter_discard()
-    );
-    assert!(replay.back());
-    assert!(
-        replay.current().encounter_discard().is_empty(),
-        "replay retains the final damage stage before transfer"
-    );
-    assert_eq!(replay.recording(), &recorded);
 }
 
 #[test]
-fn fresh_process_and_replay_expose_discards_without_changing_legacy_observations() {
+fn fresh_process_exposes_the_saved_encounter_discard() {
     let directory = tempfile::tempdir().unwrap();
-    for (name, bytes, args, expected) in [
-        (
-            "tony.json",
-            include_bytes!("fixtures/encounter-discard/after-defeat.session.json").as_slice(),
-            vec!["--experiment", "tony"],
-            "01160",
-        ),
-        (
-            "jacqueline.json",
-            include_bytes!("fixtures/result-explanation/late.session.json").as_slice(),
-            vec![],
-            "01163",
-        ),
-    ] {
-        let path = directory.path().join(name);
-        std::fs::write(&path, bytes).unwrap();
-        let original: Value = serde_json::from_slice(bytes).unwrap();
-        let mut args = args;
-        args.extend(["--load", path.to_str().unwrap()]);
-        let live = driver(
-            directory.path(),
-            &args,
-            "{\"op\":\"observe\"}\n{\"op\":\"save\"}\n{\"op\":\"quit\"}\n",
-        );
-        assert_eq!(live[0]["encounter_discard"][0]["code"], expected);
-        assert_eq!(
-            live[0]["observation"],
-            *original["payload"]["moments"]
-                .as_array()
-                .unwrap()
-                .last()
-                .unwrap()
-        );
-        assert_eq!(std::fs::read(&path).unwrap(), bytes);
-        let replay = driver(
-            directory.path(),
-            &args,
-            "{\"op\":\"replay\"}\n{\"op\":\"next\"}\n{\"op\":\"back\"}\n{\"op\":\"live\"}\n{\"op\":\"quit\"}\n",
-        );
-        assert_eq!(replay[1]["encounter_discard"], serde_json::json!([]));
-        assert_eq!(replay[3]["encounter_discard"], serde_json::json!([]));
-        assert_eq!(replay[4]["encounter_discard"][0]["code"], expected);
-        assert_eq!(std::fs::read(&path).unwrap(), bytes);
-    }
-
     let path = directory.path().join("continued-tony.json");
-    let bytes = include_bytes!("fixtures/encounter-discard/before-defeat.session.json");
-    std::fs::write(&path, bytes).unwrap();
+    let mut game = tony::Session::with_draws(vec![TokenFace::Zero; 2]);
+    for id in [
+        "fight",
+        "commit:none",
+        "reveal",
+        "resolve",
+        "fight",
+        "commit:none",
+        "reveal",
+    ] {
+        game.choose(game.observe().revision, id).unwrap();
+    }
+    tony::continuity::save_session(&path, &game).unwrap();
     let args = ["--experiment", "tony", "--load", path.to_str().unwrap()];
     let continued = driver(
         directory.path(),

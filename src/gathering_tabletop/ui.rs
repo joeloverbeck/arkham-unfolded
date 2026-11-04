@@ -52,11 +52,7 @@ fn investigator_summary(view: &Observation) -> String {
                     player.resources,
                     player.clues,
                     play.actions_remaining[player.investigator.index()],
-                    if player
-                        .presentation
-                        .as_ref()
-                        .is_some_and(|state| state.turn_finished)
-                    {
+                    if player.presentation.turn_finished {
                         " (turn ended)"
                     } else {
                         ""
@@ -104,14 +100,11 @@ fn test_summary(play: &crate::gathering::PlayObservation) -> Option<String> {
         base: test.base_skill,
         card_bonus: test.modifiers.cards,
         chaos: test.modifiers.chaos,
-        chaos_pending: test.resolved != Some(true)
-            && (play.tokens.is_some() || test.modifiers.chaos.is_none()),
+        chaos_pending: !test.resolved && (play.tokens.is_some() || test.modifiers.chaos.is_none()),
         automatic_failure: test.modifiers.automatic_failure,
         total: test.total,
         difficulty: test.difficulty,
-        result: (test.resolved == Some(true))
-            .then_some(test.would_succeed)
-            .flatten(),
+        result: (test.resolved).then_some(test.would_succeed).flatten(),
     }
     .label_with_pending(preview);
     let mut label = format!("{} · {summary}", test.tester.name());
@@ -129,7 +122,6 @@ fn selected_commitments(view: &Observation) -> Option<String> {
     let test = play.test.as_ref()?;
     let selected = test
         .commitment
-        .as_ref()?
         .iter()
         .filter(|card| card.selected)
         .filter_map(|selected| {
@@ -201,11 +193,7 @@ pub(super) fn render(
             20.,
             GOLD,
         ));
-        let prefix = if table.replay.is_some() {
-            "Recorded · "
-        } else {
-            ""
-        };
+        let prefix = { "" };
         p.spawn(art.text(format!("{prefix}{}", turn_heading(view)), 18., PAPER));
         p.spawn(art.text(investigator_summary(view), 13., PAPER));
     });
@@ -265,20 +253,7 @@ pub(super) fn render(
                 button(art, p, "Choose asset folder", Action::AssetFolder);
                 return;
             }
-            p.spawn(art.text(
-                table.replay.as_ref().map_or_else(
-                    || "LIVE DECISION".into(),
-                    |replay| {
-                        format!(
-                            "RECORDED REPLAY · MOMENT {} / {}",
-                            replay.index() + 1,
-                            replay.len()
-                        )
-                    },
-                ),
-                12.,
-                GOLD,
-            ));
+            p.spawn(art.text("LIVE DECISION", 12., GOLD));
             if view.play.is_none()
                 && let Some(owner) = view.decision_owner
             {
@@ -302,15 +277,7 @@ pub(super) fn render(
                 p.spawn(art.text(summary, 15., GOLD));
             }
             screen::controls(p, |row| {
-                if let Some(replay) = &table.replay {
-                    if replay.index() > 0 {
-                        control(art, row, "Previous moment", Action::Back);
-                    }
-                    if replay.index() + 1 < replay.len() {
-                        control(art, row, "Next moment", Action::Next);
-                    }
-                    control(art, row, "Return to live table", Action::Live);
-                } else if !table.is_presenting() && !table.modal() {
+                if !table.is_presenting() && !table.modal() {
                     for (index, choice) in controls::global_choices(view).into_iter().enumerate() {
                         let entity = control(
                             art,
@@ -334,11 +301,7 @@ pub(super) fn render(
             if let Some(selected) = selected_commitments(view) {
                 p.spawn(art.text(selected, 13., GOLD));
             }
-            if view.play.is_none()
-                && table.replay.is_none()
-                && !table.is_presenting()
-                && !view.choices.is_empty()
-            {
+            if view.play.is_none() && !table.is_presenting() && !view.choices.is_empty() {
                 p.spawn(art.text("Click a card or table component for its available actions. Portrait buttons only move the camera.", 12., MUTED));
             }
             if !table.notice.is_empty() {
@@ -360,7 +323,7 @@ pub(super) fn render(
                 },
                 Action::Motion,
             );
-            if table.replay.is_none() {
+            {
                 button(art, p, "Save live attempt", Action::Save);
                 button(art, p, "Reopen saved attempt", Action::Reopen);
                 button(
@@ -369,7 +332,6 @@ pub(super) fn render(
                     "Restart The Gathering...",
                     Action::Restart(table.epoch),
                 );
-                button(art, p, "Open recorded replay", Action::Replay);
             }
             button(
                 art,
@@ -391,7 +353,7 @@ pub(super) fn render(
     } else if table.restart_confirmation {
         restart_confirmation(commands, table, art, size);
     } else if let Some(card) = table.reading.current() {
-        story_reading(commands, table, art, size, card);
+        story_reading(commands, art, size, card);
     } else if table.result_opportunities() {
         results::render(commands, table, view, art, size);
     } else if table.modal() {
@@ -431,13 +393,7 @@ fn restart_confirmation(commands: &mut Commands, table: &Table, art: &art::Art, 
         .observe(|_: On<RequestClose>, mut actions: ResMut<Actions>| actions.0.push(Action::Close));
 }
 
-fn story_reading(
-    commands: &mut Commands,
-    table: &Table,
-    art: &art::Art,
-    size: Vec2,
-    card: story::StoryCard,
-) {
+fn story_reading(commands: &mut Commands, art: &art::Art, size: Vec2, card: story::StoryCard) {
     let kind = match card.side() {
         layout::ScenarioBookSide::Agenda => "Agenda advances",
         layout::ScenarioBookSide::Act => "Act advances",
@@ -450,15 +406,7 @@ fn story_reading(
         art.card(card.code(), true).is_some(),
         card.title(),
         |panel| {
-            panel.spawn(art.text(
-                if table.replay.is_some() {
-                    format!("{kind} · Recorded moment")
-                } else {
-                    kind.into()
-                },
-                16.,
-                MUTED,
-            ));
+            panel.spawn(art.text(kind, 16., MUTED));
             panel.spawn(art.text(card.title(), 27., GOLD));
         },
         |body, width| {
@@ -473,20 +421,7 @@ fn story_reading(
         },
         |panel| {
             screen::controls(panel, |row| {
-                let first = if let Some(replay) = &table.replay {
-                    let first = if replay.index() > 0 {
-                        Some(control(art, row, "Previous moment", Action::Back))
-                    } else {
-                        None
-                    };
-                    if replay.index() + 1 < replay.len() {
-                        control(art, row, "Next moment", Action::Next);
-                    }
-                    let live = control(art, row, "Return to live table", Action::Live);
-                    first.unwrap_or(live)
-                } else {
-                    control(art, row, "Continue", Action::ContinueStory)
-                };
+                let first = { control(art, row, "Continue", Action::ContinueStory) };
                 row.commands().entity(first).insert(AutoFocus);
             });
         },
@@ -645,7 +580,7 @@ mod tests {
     fn production_screen_keeps_party_portrait_navigation_and_utility_menu() {
         let directory = tempfile::tempdir().unwrap();
         let mut app = super::super::tests::host(directory.path().join("screen.json"));
-        let before = app.world().resource::<Table>().session.recording();
+        let before = app.world().resource::<Table>().session.clone();
         let portrait = button_named(&mut app, "Focus Tony Morgan");
         let rail = app.world().get::<ChildOf>(portrait).unwrap().parent();
         let rail_node = app.world().get::<Node>(rail).unwrap();
@@ -661,7 +596,7 @@ mod tests {
         );
         app.world_mut().trigger(Activate { entity: portrait });
         app.update();
-        assert_eq!(app.world().resource::<Table>().session.recording(), before);
+        assert_eq!(app.world().resource::<Table>().session.clone(), before);
 
         let menu = button_named(&mut app, "Menu");
         let menu_root = app.world().get::<ChildOf>(menu).unwrap().parent();
@@ -677,7 +612,6 @@ mod tests {
             "Motion: animated",
             "Save live attempt",
             "Reopen saved attempt",
-            "Open recorded replay",
             "Choose asset folder",
             "Close menu",
         ] {
@@ -687,7 +621,7 @@ mod tests {
         app.world_mut().trigger(Activate { entity: close });
         app.update();
         assert!(!app.world().resource::<Table>().menu_open);
-        assert_eq!(app.world().resource::<Table>().session.recording(), before);
+        assert_eq!(app.world().resource::<Table>().session.clone(), before);
     }
 
     #[test]
@@ -723,21 +657,12 @@ mod tests {
             dialog,
             "Close is a sibling of the scrolling body, so long rules cannot scroll it away"
         );
-        let revision = app
-            .world()
-            .resource::<Table>()
-            .session
-            .observe_for_play()
-            .revision;
+        let revision = app.world().resource::<Table>().session.observe().revision;
         app.world_mut().trigger(Activate { entity: close });
         app.update();
         assert!(!app.world().resource::<Table>().modal());
         assert_eq!(
-            app.world()
-                .resource::<Table>()
-                .session
-                .observe_for_play()
-                .revision,
+            app.world().resource::<Table>().session.observe().revision,
             revision
         );
     }
@@ -784,11 +709,11 @@ mod tests {
                 .count(),
             1
         );
-        let before = app.world().resource::<Table>().session.recording();
+        let before = app.world().resource::<Table>().session.clone();
         let patrice = button_named(&mut app, "Focus Patrice Hathaway");
         app.world_mut().trigger(Activate { entity: patrice });
         app.update();
         button_named(&mut app, "Focus Tony Morgan · current turn");
-        assert_eq!(app.world().resource::<Table>().session.recording(), before);
+        assert_eq!(app.world().resource::<Table>().session.clone(), before);
     }
 }

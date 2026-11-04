@@ -41,17 +41,6 @@ fn undo_restores_known_action_costs_but_keeps_a_monotonic_auditable_record() {
             .choose(paid.revision, "action:ordinary:resource")
             .is_err()
     );
-    let recording = session.recording();
-    assert_eq!(recording.moments.len(), 3);
-    assert_eq!(recording.moments[1], paid);
-    assert_eq!(recording.moments[2], restored);
-    let mut concealed = recording.clone();
-    concealed.moments.remove(1);
-    assert!(
-        continuity::Replay::new(concealed).is_err(),
-        "Removing the original choice cannot conceal the undone outcome"
-    );
-    continuity::Replay::new(recording).unwrap();
     session.validate().unwrap();
 }
 
@@ -210,7 +199,7 @@ fn fixture_token_reveal_is_a_barrier_and_known_selection_undo_cannot_cross_it() 
 }
 
 #[test]
-fn undo_commits_reopen_atomically_and_replay_keeps_the_original_choice() {
+fn undo_commits_reopen_atomically() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("live.json");
     let unusable = dir.path().join("directory");
@@ -236,19 +225,6 @@ fn undo_commits_reopen_atomically_and_replay_keeps_the_original_choice() {
         continuity::save_session(&path, &paid).is_err(),
         "Undo remains a later audited continuation, not permission to overwrite history"
     );
-    let recording_path = dir.path().join("recording.json");
-    continuity::save_recording(&recording_path, &session.recording()).unwrap();
-    let mut replay =
-        continuity::Replay::new(continuity::load_recording(&recording_path).unwrap()).unwrap();
-    assert!(replay.next());
-    assert_eq!(replay.current(), &paid.observe());
-    assert!(replay.next());
-    assert!(replay.current().choices.is_empty());
-    assert_eq!(replay.current().play, session.observe().play);
-    assert!(replay.current().prompt.contains("Undo restores"));
-    assert!(replay.next());
-    assert_eq!(replay.current(), &session.observe());
-    assert!(!replay.next());
 }
 
 #[test]
@@ -263,11 +239,9 @@ fn repeated_safe_undo_cycles_use_normalized_actions_and_keep_all_evidence() {
     }
     assert_eq!(session.observe().revision, 128);
     assert_eq!(session.observe().play, initial);
-    assert_eq!(session.recording().moments.len(), 129);
     session.validate().unwrap();
-    continuity::Replay::new(session.recording()).unwrap();
     eprintln!(
-        "64 safe Undo cycles plus Session/Recording validation: {:?}",
+        "64 safe Undo cycles plus Session validation: {:?}",
         started.elapsed()
     );
 }
@@ -287,7 +261,6 @@ fn repeated_undo_and_a_rechosen_action_restore_the_correct_live_prefix() {
     assert_eq!(session.observe().play, first);
     choose(&mut session, "undo");
     assert_eq!(session.observe().play, initial);
-    assert_eq!(session.recording().moments.len(), 7);
     assert!(!can_undo(&session));
     session.validate().unwrap();
 }

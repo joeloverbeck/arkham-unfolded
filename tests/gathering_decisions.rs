@@ -1,19 +1,17 @@
 use arkham_unfolded_experiment::gathering::{Investigator, Session, Stage};
 
 fn choose(session: &mut Session, id: &str) {
-    session
-        .choose(session.observe_for_play().revision, id)
-        .unwrap();
+    session.choose(session.observe().revision, id).unwrap();
 }
 
 #[test]
 fn real_opening_hands_follow_lead_selection_and_preserve_fresh_campaign_inputs() {
     let mut session = Session::with_seed(89);
-    let initial = session.observe_for_play();
+    let initial = session.observe();
     assert_eq!(initial.stage, Stage::ChooseLead);
     assert!(initial.investigators.iter().all(|i| i.hand.is_empty()));
     choose(&mut session, "lead:jacqueline");
-    let view = session.observe_for_play();
+    let view = session.observe();
     assert_eq!(view.stage, Stage::Mulligan);
     assert_eq!(view.lead, Some(Investigator::Jacqueline));
     assert_eq!(view.decision_owner, Some(Investigator::Jacqueline));
@@ -245,7 +243,7 @@ fn scenario_assembly_matches_the_independent_publisher_inventory_in_each_destina
 fn source_bindings_and_observations_reveal_no_seed_or_hidden_draw_order() {
     let mut session = Session::with_seed(89);
     choose(&mut session, "lead:patrice");
-    let view = session.observe_for_play();
+    let view = session.observe();
     assert_eq!(view.source.taboo_id, 10);
     assert_eq!(
         view.source
@@ -288,30 +286,24 @@ fn source_bindings_and_observations_reveal_no_seed_or_hidden_draw_order() {
 }
 
 #[test]
-fn replay_and_export_refuse_observations_that_differ_from_recorded_setup_decisions() {
-    use arkham_unfolded_experiment::gathering::continuity::{Replay, save_recording};
+fn save_validation_refuses_states_that_differ_from_recorded_setup_decisions() {
+    use arkham_unfolded_experiment::gathering::continuity::save_session;
     let mut session = Session::with_seed(89);
     choose(&mut session, "lead:tony");
     for _ in 0..3 {
         choose(&mut session, "confirm-mulligan");
     }
-    let mut wrong_resources = session.recording();
-    wrong_resources.moments[1].investigators[0].resources = 255;
-    let mut wrong_scenario = session.recording();
-    wrong_scenario
-        .moments
-        .last_mut()
-        .unwrap()
-        .scenario
-        .as_mut()
-        .unwrap()
-        .study_clues = 99;
+    let mut wrong_resources = serde_json::to_value(&session).unwrap();
+    wrong_resources["investigators"][0]["resources"] = 255.into();
+    let mut wrong_scenario = serde_json::to_value(&session).unwrap();
+    wrong_scenario["scenario"]["study_clues"] = 99.into();
     let directory = tempfile::tempdir().unwrap();
-    for recording in [wrong_resources, wrong_scenario] {
-        assert!(Replay::new(recording.clone()).is_err());
+    for state in [wrong_resources, wrong_scenario] {
+        let forged: Session = serde_json::from_value(state).unwrap();
+        assert!(forged.validate().is_err());
         let path = directory.path().join("invalid.recording.json");
-        assert!(save_recording(&path, &recording).is_err());
+        assert!(save_session(&path, &forged).is_err());
         assert!(!path.exists());
     }
-    assert!(Replay::new(session.recording()).is_ok());
+    session.validate().unwrap();
 }

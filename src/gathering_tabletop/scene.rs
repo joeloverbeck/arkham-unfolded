@@ -164,7 +164,7 @@ pub(super) fn render(
         );
         context.bind(commands, entity, controls::Source::Investigator(who));
         let player = view.play.as_ref().map(|play| &play.players[index]);
-        let projection = player.and_then(|player| player.presentation.as_ref());
+        let projection = player.map(|player| &player.presentation);
         let panel = pieces::InvestigatorCounters {
             index,
             resources: player.map_or(investigator.resources, |player| player.resources),

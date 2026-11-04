@@ -15,7 +15,6 @@ fn app_in(mut app: App, path: PathBuf, used: bool) -> App {
     app.insert_resource(Tabletop {
         session,
         fixture,
-        replay: None,
         save_path: path,
         notice: String::new(),
         inspect: None,

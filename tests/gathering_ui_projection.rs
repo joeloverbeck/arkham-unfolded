@@ -90,88 +90,6 @@ fn commitment_cues_follow_legal_additions_and_keep_selected_cards_removable() {
     );
 }
 
-fn omit_new_projection(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::Object(object) => {
-            for key in [
-                "breakdown",
-                "final_breakdown",
-                "bonus_sources",
-                "token_contributions",
-                "capture_breakdown",
-            ] {
-                object.remove(key);
-            }
-            if object.contains_key("actions_remaining") {
-                object.remove("curse_pool");
-            }
-            if object.contains_key("assets") && object.contains_key("deck_count") {
-                object.remove("presentation");
-            }
-            if object.contains_key("base_skill") && object.contains_key("committed") {
-                object.remove("commitment");
-                object.remove("resolved");
-                object.remove("investigation_location");
-            }
-            for value in object.values_mut() {
-                omit_new_projection(value);
-            }
-        }
-        serde_json::Value::Array(values) => {
-            for value in values {
-                omit_new_projection(value);
-            }
-        }
-        _ => {}
-    }
-}
-
-#[test]
-fn an_older_pending_paid_test_resumes_without_fabricating_its_missing_explanation() {
-    let mut session = Session::with_hostile_fixture(HostileFixture::Boosts(
-        arkham_unfolded_experiment::gathering::BoostFixture::HardKnocks,
-    ));
-    let asset = session.observe().play.unwrap().players[0]
-        .assets
-        .iter()
-        .find(|asset| asset.card.code == "01049")
-        .unwrap()
-        .card
-        .id;
-    choose(&mut session, "action:ordinary:fight:400");
-    choose(&mut session, &format!("boost:{asset}"));
-    let mut old = serde_json::to_value(&session).unwrap();
-    omit_new_projection(&mut old);
-    let mut old: Session = serde_json::from_value(old).unwrap();
-    old.validate().unwrap();
-    choose(&mut old, &format!("boost:{asset}"));
-    for _ in 0..12 {
-        let view = old.observe();
-        if view.play.as_ref().unwrap().test.is_none() {
-            break;
-        }
-        let id = [
-            "window:pass",
-            "commit:confirm",
-            "test:reveal",
-            "lucky:decline",
-            "success:pass",
-        ]
-        .into_iter()
-        .find(|id| view.choices.iter().any(|choice| choice.id == *id))
-        .unwrap();
-        choose(&mut old, id);
-    }
-    old.validate()
-        .expect("Resuming missing presentation data must preserve deterministic save validation");
-    let play = old.observe().play.unwrap();
-    assert_eq!(play.completed_tests[0].total, 5);
-    assert!(
-        play.completed_tests[0].breakdown.is_none(),
-        "An already-started legacy test keeps its explanation unknown"
-    );
-}
-
 #[test]
 fn discovery_motion_uses_the_actual_investigation_operation_and_rejects_forgery() {
     let mut session = prepared();
@@ -187,82 +105,11 @@ fn discovery_motion_uses_the_actual_investigation_operation_and_rejects_forgery(
             .as_deref(),
         Some("01111")
     );
-    let mut record = serde_json::to_value(session.recording()).unwrap();
-    record["moments"]
-        .as_array_mut()
-        .unwrap()
-        .last_mut()
-        .unwrap()["play"]["test"]["investigation_location"] = "01112".into();
-    assert!(continuity::Replay::new(serde_json::from_value(record).unwrap()).is_err());
-    let mut old = serde_json::to_value(session).unwrap();
-    omit_new_projection(&mut old);
-    let old: Session = serde_json::from_value(old).unwrap();
-    old.validate().unwrap();
-    continuity::Replay::new(old.recording()).unwrap();
-}
 
-#[test]
-fn old_recorded_views_remain_unknown_while_live_resume_projects_authoritative_state() {
-    let current = prepared();
-    let mut old_json = serde_json::to_value(&current).unwrap();
-    omit_new_projection(&mut old_json);
-    let mut old: Session = serde_json::from_value(old_json.clone()).unwrap();
-    old.validate().unwrap();
-    assert_eq!(
-        serde_json::to_value(&old).unwrap(),
-        old_json,
-        "Validation does not rewrite old records"
-    );
-    let mut replay = continuity::Replay::new(old.recording()).unwrap();
-    while replay.next() {}
-    assert!(
-        serde_json::to_value(replay.current()).unwrap()["play"]["players"][0]
-            .get("presentation")
-            .is_none()
-    );
-    assert_eq!(
-        old.observe().play.unwrap().players[0]
-            .presentation
-            .as_ref()
-            .unwrap()
-            .health,
-        9
-    );
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("old-session.json");
-    continuity::save_session(&path, &old).unwrap();
-    let revision = old.observe().revision;
-    continuity::commit_choice(&path, &mut old, revision, "turn:patrice").unwrap();
-    assert_eq!(continuity::load_session(&path).unwrap(), old);
-    continuity::Replay::new(old.recording()).unwrap();
-
-    // Optional independent old-producer evidence: pass a genuine pre-change
-    // session to this focused check. It is only read; continuation uses a copy.
-    if let Some(prior) = std::env::var_os("ARKHAM_GATHERING_PRIOR_SESSION") {
-        let bytes = std::fs::read(&prior).unwrap();
-        let mut legacy = continuity::load_session(&prior).unwrap();
-        continuity::Replay::new(legacy.recording()).unwrap();
-        let copy = directory.path().join("prior-native-copy.json");
-        continuity::save_session(&copy, &legacy).unwrap();
-        let view = legacy.observe();
-        let choice = view
-            .choices
-            .iter()
-            .find(|choice| choice.id == "action:ordinary:resource")
-            .unwrap();
-        continuity::commit_choice(&copy, &mut legacy, view.revision, &choice.id).unwrap();
-        assert_eq!(continuity::load_session(copy).unwrap(), legacy);
-        assert_eq!(std::fs::read(prior).unwrap(), bytes);
-    }
-}
-
-#[test]
-fn recorded_counter_tampering_is_rejected() {
-    let mut value = serde_json::to_value(prepared().recording()).unwrap();
-    value["moments"].as_array_mut().unwrap().last_mut().unwrap()["play"]["players"][0]["presentation"]
-        ["health"] = 99.into();
-    let recording = serde_json::from_value(value).unwrap();
-    assert!(continuity::Replay::new(recording).is_err());
+    let mut state = serde_json::to_value(&session).unwrap();
+    state["runtime"]["test"]["operation"]["Investigate"]["location"] = "01112".into();
+    let forged: Session = serde_json::from_value(state).unwrap();
+    assert!(forged.validate().is_err());
 }
 
 #[test]
@@ -278,12 +125,12 @@ fn setup_capacities_and_tonys_restricted_action_are_authoritative() {
     );
     let mut session = Session::with_hostile_fixture(HostileFixture::GatheringPriestDefeat);
     let before = session.observe().play.unwrap();
-    let counters = before.players[0].presentation.as_ref().unwrap();
+    let counters = &before.players[0].presentation;
     let bonus = counters.tony_bonus.as_ref().unwrap();
     assert!(bonus.available && bonus.eligible && !bonus.used);
     choose(&mut session, "action:tony:fight:400");
     let after = session.observe().play.unwrap();
-    let counters = after.players[0].presentation.as_ref().unwrap();
+    let counters = &after.players[0].presentation;
     let bonus = counters.tony_bonus.as_ref().unwrap();
     assert!(!bonus.available && !bonus.eligible && bonus.used);
     assert_eq!(after.actions_remaining[0], 3);
@@ -324,12 +171,7 @@ fn conditional_icons_use_effective_contribution_instead_of_printed_wild_icons() 
         }
         let view = session.observe();
         let test = view.play.unwrap().test.unwrap();
-        let cue = test
-            .commitment
-            .as_ref()
-            .unwrap()
-            .iter()
-            .find(|cue| cue.card_id == initiative);
+        let cue = test.commitment.iter().find(|cue| cue.card_id == initiative);
         assert_eq!(
             cue.map(|cue| cue.contribution),
             if completed == 3 {
@@ -342,7 +184,7 @@ fn conditional_icons_use_effective_contribution_instead_of_printed_wild_icons() 
 }
 
 #[test]
-fn frozen_test_result_is_distinct_from_preview_and_old_test_tapes_still_replay() {
+fn frozen_test_result_is_distinct_from_preview() {
     let mut session = Session::with_hostile_fixture(HostileFixture::SelectedWitness(
         SelectedWitness::GraspingHands,
     ));
@@ -362,23 +204,22 @@ fn frozen_test_result_is_distinct_from_preview_and_old_test_tapes_still_replay()
         }
     }
     let before = session.observe();
-    assert_eq!(
-        before
+    assert!(
+        !before
             .play
             .as_ref()
             .unwrap()
             .test
             .as_ref()
             .unwrap()
-            .resolved,
-        Some(false)
+            .resolved
     );
     choose(&mut session, "test:reveal");
     let result = session
         .presentation_after(before.revision)
         .iter()
         .filter_map(|moment| moment.play.test.as_ref())
-        .find(|test| test.resolved == Some(true))
+        .find(|test| test.resolved)
         .unwrap();
     assert_eq!(
         (
@@ -404,22 +245,4 @@ fn frozen_test_result_is_distinct_from_preview_and_old_test_tapes_still_replay()
             .total,
         1
     );
-    let mut old = serde_json::to_value(&session).unwrap();
-    omit_new_projection(&mut old);
-    let old: Session = serde_json::from_value(old).unwrap();
-    old.validate().unwrap();
-    let mut replay = continuity::Replay::new(old.recording()).unwrap();
-    loop {
-        if let Some(test) = replay
-            .current()
-            .play
-            .as_ref()
-            .and_then(|play| play.test.as_ref())
-        {
-            assert!(test.commitment.is_none() && test.resolved.is_none());
-        }
-        if !replay.next() {
-            break;
-        }
-    }
 }

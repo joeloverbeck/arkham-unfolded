@@ -1,7 +1,7 @@
 //! The visual sidecar must describe real draws without changing saved rules.
 use arkham_unfolded_experiment::gathering::{
     DrawCue, DrawFixture, DrawSource, HostileFixture, Investigator, SearchFixture, Session,
-    continuity::{self, Replay},
+    continuity::{self},
 };
 
 fn choose(session: &mut Session, id: &str) -> Vec<DrawCue> {
@@ -42,17 +42,6 @@ fn opening_mulligan_and_action_cues_survive_record_roundtrip_without_persisting_
     assert_eq!(action[0].batch.cards.len(), 1);
     assert!(action[0].sequence.is_some());
     session.validate().unwrap();
-    let serialized = serde_json::to_vec(&session.recording()).unwrap();
-    let mut replay = Replay::new(serde_json::from_slice(&serialized).unwrap()).unwrap();
-    let mut replayed = Vec::new();
-    loop {
-        replayed.extend(replay.current_draws().cloned());
-        if !replay.next() {
-            break;
-        }
-    }
-    assert_eq!(replayed, [opening, replacement, action].concat());
-    assert_eq!(serde_json::to_vec(replay.recording()).unwrap(), serialized);
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("session.json");
     continuity::save_session(&path, &session).unwrap();
@@ -101,7 +90,7 @@ fn interrupted_draw_stays_hidden_until_completion_and_weakness_order_remains_a_c
             .collect::<Vec<_>>(),
         ["60403", "02039"]
     );
-    assert_eq!(session.observe_for_play().choices.len(), 2);
+    assert_eq!(session.observe().choices.len(), 2);
     session.validate().unwrap();
 }
 

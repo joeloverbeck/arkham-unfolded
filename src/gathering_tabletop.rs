@@ -2,10 +2,7 @@
 
 use crate::{
     asset_config::AssetConfig,
-    gathering::{
-        Investigator, Observation, PresentationMoment, Session,
-        continuity::{self, Replay},
-    },
+    gathering::{Investigator, Observation, PresentationMoment, Session, continuity},
     tabletop::asset_settings::AssetSettings,
     tabletop_camera::{CameraMode, Capture, FrameInput, Orbit, parse_initial_view},
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
@@ -61,10 +58,6 @@ enum Action {
     Reopen,
     Restart(u64),
     ConfirmRestart(u64),
-    Replay,
-    Next,
-    Back,
-    Live,
     History,
     Close,
     Focus(Area),
@@ -77,7 +70,6 @@ struct Actions(Vec<Action>);
 #[derive(Resource)]
 struct Table {
     session: Session,
-    replay: Option<Replay>,
     save_path: PathBuf,
     notice: String,
     inspection: Option<(String, String)>,
@@ -89,7 +81,6 @@ struct Table {
     results: results::Reading,
     epoch: u64,
     dirty: bool,
-    live_follow: bool,
     presentation: Vec<PresentationMoment>,
     presentation_index: usize,
     presentation_clock: f32,
@@ -120,11 +111,10 @@ impl Table {
     }
 
     fn new(session: Session, save_path: PathBuf) -> Self {
-        let reading = story::Reading::for_record(&session.recording());
-        let results = results::Reading::for_record(&session.recording());
+        let reading = story::Reading::for_session(&session);
+        let results = results::Reading::for_session(&session);
         Self {
             session,
-            replay: None,
             save_path,
             notice: String::new(),
             inspection: None,
@@ -136,7 +126,6 @@ impl Table {
             results,
             epoch: 0,
             dirty: true,
-            live_follow: false,
             presentation: vec![],
             presentation_index: 0,
             presentation_clock: 0.,
@@ -157,18 +146,14 @@ impl Table {
     }
 
     fn base_view(&self) -> Observation {
-        if let Some(replay) = &self.replay {
-            return replay.current().clone();
-        }
         self.presentation.get(self.presentation_index).map_or_else(
-            || self.session.observe_for_play(),
+            || self.session.observe(),
             |moment| self.session.observe_presentation(moment),
         )
     }
 
     fn is_presenting(&self) -> bool {
-        self.replay.is_none()
-            && (self.draws.active() || self.presentation_index < self.presentation.len())
+        self.draws.active() || self.presentation_index < self.presentation.len()
     }
 
     fn start_draws(&mut self, before: &Observation) {
@@ -177,12 +162,7 @@ impl Table {
             return;
         }
         let target = self.base_view();
-        let batches = if let Some(replay) = &self.replay {
-            replay
-                .current_draws()
-                .map(|cue| cue.batch.clone())
-                .collect::<Vec<_>>()
-        } else {
+        let batches = {
             let sequence = self
                 .presentation
                 .get(self.presentation_index)
@@ -217,7 +197,7 @@ impl Table {
     }
 
     fn result_opportunities(&self) -> bool {
-        self.replay.is_none() && !self.is_presenting() && results::opportunities(&self.view())
+        !self.is_presenting() && results::opportunities(&self.view())
     }
 
     fn presentation_blocked(&self) -> bool {
@@ -234,20 +214,17 @@ impl Table {
             || self.context.is_open()
     }
 
-    fn story_faces(&self, view: &Observation) -> story::Faces {
-        if let Some(replay) = &self.replay {
-            story::Faces::for_view(
-                replay.recording(),
-                view,
-                replay.current_presentation_sequence(),
-            )
+    fn story_faces(&self, _view: &Observation) -> story::Faces {
+        if let Some(moment) = self.presentation.get(self.presentation_index) {
+            story::Faces::from_codes(moment.revealed_story.iter().map(String::as_str))
         } else {
-            let sequence = self
-                .presentation
-                .get(self.presentation_index)
-                .filter(|_| self.is_presenting())
-                .map(|moment| moment.sequence);
-            story::Faces::for_view(&self.session.recording(), view, sequence)
+            story::Faces::from_codes(
+                self.session
+                    .live_state()
+                    .known_story
+                    .iter()
+                    .map(String::as_str),
+            )
         }
     }
 }
@@ -557,8 +534,8 @@ fn handle_actions(
         .as_ref()
         .map_or_else(|| table.view().revision, |view| view.revision);
     let epoch = table.epoch;
-    let replay_index = table.replay.as_ref().map(Replay::index);
-    table.context.sync(epoch, revision, replay_index);
+
+    table.context.sync(epoch, revision);
     if !health.allows_play()
         || health.just_became_ready()
         || settings.as_ref().is_some_and(|settings| settings.is_busy())
@@ -613,12 +590,8 @@ fn handle_actions(
             && table.result_opportunities();
         let permitted_in_modal = if table.results.current().is_some() {
             matches!(action, Action::ContinueResult(_))
-                || (table.replay.is_some()
-                    && matches!(action, Action::Next | Action::Back | Action::Live))
         } else if reading {
             matches!(action, Action::ContinueStory)
-                || (table.replay.is_some()
-                    && matches!(action, Action::Next | Action::Back | Action::Live))
         } else if table.result_opportunities() {
             result_choice
         } else if table.restart_confirmation {
@@ -676,7 +649,6 @@ fn handle_actions(
             }
             Action::Choose(epoch, revision, id) | Action::ResultChoice(epoch, revision, id)
                 if epoch == table.epoch
-                    && table.replay.is_none()
                     && (!table.modal() || result_choice)
                     && !table.is_presenting() =>
             {
@@ -690,8 +662,7 @@ fn handle_actions(
                 ) {
                     Ok(draws) => {
                         if id == "undo" {
-                            table.results =
-                                results::Reading::at(Some(&table.session.observe_for_play()));
+                            table.results = results::Reading::at(Some(&table.session.observe()));
                         }
                         table.context.reset();
                         table.presentation = table.session.presentation_after(revision).to_vec();
@@ -715,7 +686,7 @@ fn handle_actions(
                 if epoch == table.epoch && revision == table.view().revision && !table.modal() =>
             {
                 let view = table.view();
-                let live = table.replay.is_none() && !table.is_presenting();
+                let live = !table.is_presenting();
                 if let Some(effect) = table.context.select(&view, selection, live) {
                     if let controls::SelectionEffect::Inspect(title, code) = effect {
                         table.inspection = Some((title, code));
@@ -729,9 +700,7 @@ fn handle_actions(
             | Action::ContextInspect(..)
             | Action::Reveal(..) => {}
             Action::DismissContext => table.context.dismiss(),
-            Action::PendingChoices
-                if table.replay.is_none() && !table.modal() && !table.is_presenting() =>
-            {
+            Action::PendingChoices if !table.modal() && !table.is_presenting() => {
                 table.context.open_pending();
             }
             Action::PendingChoices => {}
@@ -779,22 +748,22 @@ fn handle_actions(
                 table.inspection = None;
                 table.dirty = true;
             }
-            Action::Save if table.replay.is_none() => {
+            Action::Save => {
                 table.notice = match continuity::save_session(&table.save_path, &table.session) {
                     Ok(()) => "Saved the live decision.".into(),
                     Err(error) => format!("Save failed: {error}"),
                 };
                 table.dirty = true;
             }
-            Action::Reopen if table.replay.is_none() => {
+            Action::Reopen => {
                 match continuity::load_session(&table.save_path) {
                     Ok(session) if !session.is_verification_fixture() => {
                         consequences.clear();
                         table.context.reset();
                         table.epoch += 1;
                         if session != table.session {
-                            table.reading = story::Reading::for_record(&session.recording());
-                            table.results = results::Reading::for_record(&session.recording());
+                            table.reading = story::Reading::for_session(&session);
+                            table.results = results::Reading::for_session(&session);
                             table.presentation.clear();
                             table.presentation_index = 0;
                             table.presentation_clock = 0.;
@@ -815,9 +784,7 @@ fn handle_actions(
                 }
                 table.dirty = true;
             }
-            Action::Restart(epoch)
-                if epoch == table.epoch && table.menu_open && table.replay.is_none() =>
-            {
+            Action::Restart(epoch) if epoch == table.epoch && table.menu_open => {
                 table.context.reset();
                 table.epoch += 1;
                 table.menu_open = false;
@@ -825,9 +792,7 @@ fn handle_actions(
                 table.notice.clear();
                 table.dirty = true;
             }
-            Action::ConfirmRestart(epoch)
-                if epoch == table.epoch && table.restart_confirmation && table.replay.is_none() =>
-            {
+            Action::ConfirmRestart(epoch) if epoch == table.epoch && table.restart_confirmation => {
                 let result =
                     Session::new()
                         .map_err(|error| error.to_string())
@@ -858,69 +823,6 @@ fn handle_actions(
                 }
             }
             Action::Restart(_) | Action::ConfirmRestart(_) => {}
-            Action::Replay => {
-                consequences.clear();
-                match Replay::new(table.session.recording()) {
-                    Ok(replay) => {
-                        table.draws.clear();
-                        table.context.reset();
-                        table.live_follow = orbit.is_following();
-                        table.epoch += 1;
-                        table.replay = Some(replay);
-                        table.reading = story::Reading::at(table.story_faces(&table.view()));
-                        table.results = results::Reading::at(Some(&table.view()));
-                        table.inspection = None;
-                        table.history_open = false;
-                        orbit.set_following(true);
-                        orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
-                    }
-                    Err(error) => table.notice = format!("Replay unavailable: {error}"),
-                }
-                table.dirty = true;
-            }
-            Action::Next => {
-                let before = table.view();
-                table.draws.clear();
-                consequences.clear();
-                table.reading.dismiss_for_navigation();
-                table.results = results::Reading::at(Some(&table.view()));
-                if let Some(replay) = &mut table.replay {
-                    if replay.next() {
-                        table.start_draws(&before);
-                    }
-                    table.dirty = true;
-                    orbit.set_following(true);
-                    orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
-                }
-            }
-            Action::Back => {
-                table.draws.clear();
-                consequences.clear();
-                table.reading.dismiss_for_navigation();
-                if let Some(replay) = &mut table.replay {
-                    replay.back();
-                    table.dirty = true;
-                    orbit.set_following(true);
-                    orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
-                }
-                table.results = results::Reading::at(Some(&table.view()));
-            }
-            Action::Live => {
-                table.draws.clear();
-                consequences.clear();
-                table.context.reset();
-                table.epoch += 1;
-                table.replay = None;
-                let faces = table.story_faces(&table.view());
-                table.reading = story::Reading::at(faces);
-                table.results = results::Reading::at(Some(&table.view()));
-                table.inspection = None;
-                table.history_open = false;
-                table.dirty = true;
-                orbit.set_following(table.live_follow);
-                orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
-            }
-            Action::Reopen | Action::Save => {}
         }
     }
     feedback.blocked =
@@ -1144,7 +1046,7 @@ fn render(
     consequences.prepare(
         table.last_rendered.as_ref(),
         &view,
-        table.replay.is_none(),
+        true,
         table.reduced_motion,
     );
     table.last_rendered = Some(view.clone());
@@ -1416,15 +1318,11 @@ fn contextual_feedback(table: Res<Table>, mut cards: Query<(&ContextTarget, &mut
     for (target, mut feedback) in &mut cards {
         feedback.menu_source = table.context.is_menu_source(&target.source);
         feedback.commitment = None;
-        if table.replay.is_none()
-            && !table.modal()
+        if !table.modal()
             && !table.is_presenting()
             && let controls::Source::Card(id) = target.source
             && let Some(test) = test
-            && let Some(contribution) = test
-                .commitment
-                .as_ref()
-                .and_then(|cards| cards.iter().find(|card| card.card_id == id))
+            && let Some(contribution) = test.commitment.iter().find(|card| card.card_id == id)
             && let Ok(bonus) = u8::try_from(contribution.contribution)
         {
             feedback.pending_choice = contribution.selected;

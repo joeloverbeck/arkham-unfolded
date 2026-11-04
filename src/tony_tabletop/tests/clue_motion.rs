@@ -202,7 +202,7 @@ fn tablet_clue_and_end_turn_injury_keep_their_consequence_order() {
 }
 
 #[test]
-fn reduced_motion_places_clues_immediately_and_reopen_replay_do_not_reanimate() {
+fn reduced_motion_places_clues_immediately_and_reopen_does_not_reanimate() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("turn.json");
     let mut app = app_with_draws(path.clone(), vec![TokenFace::Zero]);
@@ -219,13 +219,8 @@ fn reduced_motion_places_clues_immediately_and_reopen_replay_do_not_reanimate() 
     act(&mut app, Action::Motion);
     let live = app.world().resource::<Table>().session.clone();
     let saved = std::fs::read(&path).unwrap();
-    for action in [
-        Action::Reopen,
-        Action::Replay,
-        Action::Next,
-        Action::Back,
-        Action::Live,
-    ] {
+    {
+        let action = Action::Reopen;
         act(&mut app, action);
         assert!(
             app.world()

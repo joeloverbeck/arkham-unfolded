@@ -2,7 +2,7 @@ use arkham_unfolded_experiment::gathering::{DrawFixture, HostileFixture, Session
 
 fn choose(session: &mut Session, id: &str) {
     session
-        .choose(session.observe_for_play().revision, id)
+        .choose(session.observe().revision, id)
         .unwrap_or_else(|error| panic!("{id}: {error:?}"));
 }
 
@@ -10,11 +10,11 @@ fn choose(session: &mut Session, id: &str) {
 fn watcher_interrupts_the_batch_before_reshuffle_and_take_heart_rewards_wait() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Draws(DrawFixture::PatriceExhaustion));
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let hand_count = before.players[1].hand.len();
     assert_eq!(before.players[1].deck_count, 1);
     choose(&mut session, "result:0");
-    let interrupted = session.observe_for_play();
+    let interrupted = session.observe();
     let patrice = &interrupted.play.as_ref().unwrap().players[1];
     assert_eq!(
         patrice.hand.len(),
@@ -46,14 +46,14 @@ fn watcher_interrupts_the_batch_before_reshuffle_and_take_heart_rewards_wait() {
     }
     assert!(
         session
-            .observe_for_play()
+            .observe()
             .choices
             .iter()
             .any(|choice| choice.id.starts_with("deny:") && choice.id.ends_with(":damage")),
         "Watcher is an enemy attack, so Patrice's actual Deny is a genuine optional prevention after assignment"
     );
     choose(&mut session, "harm:confirm");
-    let after_draw = session.observe_for_play();
+    let after_draw = session.observe();
     let patrice = &after_draw.play.as_ref().unwrap().players[1];
     assert_eq!(
         patrice.damage, 3,
@@ -72,7 +72,7 @@ fn watcher_interrupts_the_batch_before_reshuffle_and_take_heart_rewards_wait() {
             .any(|choice| choice.id == "harm:horror:investigator")
     );
     choose(&mut session, "harm:horror:investigator");
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     let patrice = &after.players[1];
     assert_eq!(
         (patrice.damage, patrice.horror, patrice.resources),
@@ -91,7 +91,7 @@ fn watcher_interrupts_the_batch_before_reshuffle_and_take_heart_rewards_wait() {
 fn denying_watchers_attack_finishes_the_event_before_the_interrupted_draw_resets() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Draws(DrawFixture::PatriceExhaustion));
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let deny = before.players[1]
         .hand
         .iter()
@@ -103,7 +103,7 @@ fn denying_watchers_attack_finishes_the_event_before_the_interrupted_draw_resets
         choose(&mut session, "harm:damage:investigator");
     }
     choose(&mut session, &format!("deny:{deny}:damage"));
-    let resumed = session.observe_for_play();
+    let resumed = session.observe();
     let player = &resumed.play.as_ref().unwrap().players[1];
     assert_eq!(player.damage, 0);
     assert_eq!(
@@ -127,7 +127,7 @@ fn denying_watchers_attack_finishes_the_event_before_the_interrupted_draw_resets
         "Player-deck exhaustion is not an encounter effect or enemy attack"
     );
     choose(&mut session, "harm:horror:investigator");
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     assert_eq!(
         (
             after.players[1].damage,
@@ -148,9 +148,9 @@ fn an_ordinary_draw_uses_the_actual_post_mulligan_deck_and_one_action() {
         choose(&mut session, "confirm-mulligan");
     }
     choose(&mut session, "turn:tony");
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     choose(&mut session, "action:ordinary:draw");
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     assert_eq!(
         after.players[0].hand.len(),
         before.players[0].hand.len() + 1
@@ -177,9 +177,9 @@ fn an_ordinary_draw_uses_the_actual_post_mulligan_deck_and_one_action() {
 fn simultaneous_weaknesses_offer_an_order_and_finish_before_the_testers_reward() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Draws(DrawFixture::JacquelineWeaknessOrder));
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     choose(&mut session, "result:0");
-    let pending = session.observe_for_play();
+    let pending = session.observe();
     assert_eq!(pending.play.as_ref().unwrap().players[2].resources, 3);
     assert_eq!(
         pending.choices.len(),
@@ -200,7 +200,7 @@ fn simultaneous_weaknesses_offer_an_order_and_finish_before_the_testers_reward()
         .id
         .clone();
     choose(&mut session, &dark);
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     let jacqueline = &after.players[2];
     assert!(jacqueline.threats.iter().any(|card| card.code == "60403"));
     assert!(jacqueline.threats.iter().any(|card| card.code == "02039"));
@@ -222,10 +222,6 @@ fn simultaneous_weaknesses_offer_an_order_and_finish_before_the_testers_reward()
     );
     assert_eq!(after.players[1].resources, before.players[1].resources);
     let original = session.clone();
-    assert!(
-        session
-            .choose(session.observe_for_play().revision, &dark)
-            .is_err()
-    );
+    assert!(session.choose(session.observe().revision, &dark).is_err());
     assert_eq!(session, original);
 }

@@ -1,7 +1,7 @@
 use arkham_unfolded_experiment::gathering::{HostileFixture, Session, continuity};
 
 fn choose(session: &mut Session, id: &str) {
-    let view = session.observe_for_play();
+    let view = session.observe();
     assert!(
         view.choices.iter().any(|choice| choice.id == id),
         "Missing {id}: {:?}",
@@ -14,7 +14,7 @@ fn choose(session: &mut Session, id: &str) {
 fn modifiers_remain_frozen_when_result_damage_defeats_the_static_bonus_asset() {
     let mut session = Session::with_hostile_fixture(HostileFixture::TestModifierFreeze);
     choose(&mut session, "revelation:resolve");
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let peter = before.players[1]
         .assets
         .iter()
@@ -48,7 +48,7 @@ fn modifiers_remain_frozen_when_result_damage_defeats_the_static_bonus_asset() {
         choose(&mut session, &format!("commit:{}", card.id));
     }
     choose(&mut session, "commit:confirm");
-    let pending = session.observe_for_play().play.unwrap().test.unwrap();
+    let pending = session.observe().play.unwrap().test.unwrap();
     assert_eq!(
         (
             pending.modifiers.cards,
@@ -59,7 +59,7 @@ fn modifiers_remain_frozen_when_result_damage_defeats_the_static_bonus_asset() {
     );
     choose(&mut session, "window:pass");
     choose(&mut session, "test:reveal");
-    let revealed = session.observe_for_play().play.unwrap().test.unwrap();
+    let revealed = session.observe().play.unwrap().test.unwrap();
     assert_eq!(
         (
             revealed.modifiers.cards,
@@ -71,7 +71,7 @@ fn modifiers_remain_frozen_when_result_damage_defeats_the_static_bonus_asset() {
     assert!(!revealed.modifiers.automatic_failure);
     assert_eq!(revealed.total, Some(1));
     choose(&mut session, "lucky:decline");
-    let results = session.observe_for_play();
+    let results = session.observe();
     let before_damage_revision = results.revision;
     let damage = results
         .choices
@@ -82,7 +82,7 @@ fn modifiers_remain_frozen_when_result_damage_defeats_the_static_bonus_asset() {
         .clone();
     choose(&mut session, &damage);
     choose(&mut session, &format!("harm:damage:{peter}"));
-    let after = session.observe_for_play();
+    let after = session.observe();
     let play = after.play.as_ref().unwrap();
     assert!(
         !play.players[1]
@@ -115,7 +115,7 @@ fn modifiers_remain_frozen_when_result_damage_defeats_the_static_bonus_asset() {
         frozen.breakdown, revealed.breakdown,
         "Named contributions remain frozen after Peter leaves play"
     );
-    let detail = frozen.breakdown.as_ref().unwrap();
+    let detail = &frozen.breakdown;
     assert_eq!(detail.cards.iter().map(|row| row.amount).sum::<i32>(), 2);
     assert!(
         detail
@@ -132,22 +132,23 @@ fn modifiers_remain_frozen_when_result_damage_defeats_the_static_bonus_asset() {
     let path = directory.path().join("frozen-modifiers.json");
     continuity::save_session(&path, &session).unwrap();
     let reopened = continuity::load_session(&path).unwrap();
-    assert_eq!(reopened.observe_for_play(), after);
-    assert_eq!(
-        reopened.presentation_after(before_damage_revision),
-        session.presentation_after(before_damage_revision)
+    assert_eq!(reopened.observe(), after);
+    assert!(
+        reopened
+            .presentation_after(before_damage_revision)
+            .is_empty()
     );
 }
 
 #[test]
 fn automatic_failure_is_explicit_and_unresolved_chaos_is_not_shown_as_zero() {
     let mut session = Session::with_hostile_fixture(HostileFixture::JacquelineProtectedTokens);
-    let pending = session.observe_for_play().play.unwrap().test.unwrap();
+    let pending = session.observe().play.unwrap().test.unwrap();
     assert_eq!(pending.base_skill, 5);
     assert_eq!(pending.modifiers.chaos, None);
     assert!(!pending.modifiers.automatic_failure);
     for _ in 0..4 {
-        let choices = session.observe_for_play().choices;
+        let choices = session.observe().choices;
         if choices.iter().any(|choice| choice.id == "test:reveal") {
             break;
         }
@@ -162,7 +163,7 @@ fn automatic_failure_is_explicit_and_unresolved_chaos_is_not_shown_as_zero() {
     }
     choose(&mut session, "tokens:jacqueline");
     choose(&mut session, "test:reveal");
-    let resolved = session.observe_for_play().play.unwrap().test.unwrap();
+    let resolved = session.observe().play.unwrap().test.unwrap();
     assert_eq!(
         (
             resolved.modifiers.cards,

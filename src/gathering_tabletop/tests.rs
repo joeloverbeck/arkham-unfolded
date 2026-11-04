@@ -57,8 +57,8 @@ fn initial_table_remains_visible_through_mulligans_and_reopening() {
         expected.choose(expected.observe().revision, id).unwrap();
         assert_initial_table(&mut app);
         assert_eq!(
-            app.world().resource::<Table>().session.recording(),
-            expected.recording()
+            app.world().resource::<Table>().session.clone(),
+            expected.clone()
         );
     }
     app.world_mut()
@@ -68,8 +68,8 @@ fn initial_table_remains_visible_through_mulligans_and_reopening() {
     app.update();
     assert_initial_table(&mut app);
     assert_eq!(
-        app.world().resource::<Table>().session.recording(),
-        expected.recording()
+        app.world().resource::<Table>().session.clone(),
+        expected.clone()
     );
 }
 
@@ -473,7 +473,7 @@ fn contextual_keyboard_activation_commits_the_selected_investigator() {
     assert_eq!(app.world().resource::<InputFocus>().get(), Some(lead));
     keyboard(&mut app, KeyCode::Enter, Key::Enter, true);
     keyboard(&mut app, KeyCode::Enter, Key::Enter, false);
-    let saved = continuity::load_session(path).unwrap().observe_for_play();
+    let saved = continuity::load_session(path).unwrap().observe();
     assert_eq!(saved.revision, 1);
     assert_eq!(saved.lead, Some(Investigator::Patrice));
     finish_presentation(&mut app);
@@ -529,11 +529,8 @@ fn native_choice_persists_before_showing_real_opening_hands() {
     assert!(button_with_label(&mut app, "Choose Patrice Hathaway as lead investigator").is_none());
     app.world_mut().trigger(Activate { entity });
     app.update();
-    let saved = continuity::load_session(path).unwrap().observe_for_play();
-    assert_eq!(
-        saved,
-        app.world().resource::<Table>().session.observe_for_play()
-    );
+    let saved = continuity::load_session(path).unwrap().observe();
+    assert_eq!(saved, app.world().resource::<Table>().session.observe());
     assert_eq!(saved.stage, crate::gathering::Stage::Mulligan);
     assert!(saved.investigators.iter().all(|p| p.hand.len() == 5));
     assert!(app.world().resource::<Table>().draws.active());
@@ -1006,11 +1003,8 @@ fn assert_pointer_lead_choice(raw_window_events: bool, continuing_health_observa
             );
             assert!(hit_button, "production picking must hit the lead button");
             assert_eq!(view.stage, crate::gathering::Stage::Mulligan);
-            let saved = continuity::load_session(&path).unwrap().observe_for_play();
-            assert_eq!(
-                saved,
-                app.world().resource::<Table>().session.observe_for_play()
-            );
+            let saved = continuity::load_session(&path).unwrap().observe();
+            assert_eq!(saved, app.world().resource::<Table>().session.observe());
             finish_presentation(&mut app);
             assert_eq!(saved, app.world().resource::<Table>().view());
         }
@@ -1055,25 +1049,6 @@ fn failed_native_save_preserves_the_live_decision_and_existing_bytes() {
 }
 
 #[test]
-fn replay_cannot_choose_or_overwrite_the_live_save() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("gathering.json");
-    let mut app = host(path.clone());
-    continuity::save_session(&path, &app.world().resource::<Table>().session).unwrap();
-    let before = std::fs::read(&path).unwrap();
-    app.world_mut().resource_mut::<Actions>().0.extend([
-        Action::Replay,
-        Action::Choose(0, 0, "lead:tony".into()),
-        Action::Save,
-    ]);
-    app.update();
-    let table = app.world().resource::<Table>();
-    assert!(table.replay.is_some());
-    assert_eq!(table.session.observe_for_play().revision, 0);
-    assert_eq!(std::fs::read(path).unwrap(), before);
-}
-
-#[test]
 fn party_inspection_contract_blocks_queued_background_actions() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("modal.json");
@@ -1083,7 +1058,6 @@ fn party_inspection_contract_blocks_queued_background_actions() {
     app.world_mut().resource_mut::<Actions>().0.extend([
         Action::Inspect("Tony Morgan".into(), "06003".into()),
         Action::Save,
-        Action::Replay,
         Action::Focus(Area::Scenario),
     ]);
     app.update();
@@ -1092,10 +1066,7 @@ fn party_inspection_contract_blocks_queued_background_actions() {
         table.inspection.is_some(),
         "Inspection remains the blocking dialog"
     );
-    assert!(
-        table.replay.is_none(),
-        "Background replay cannot replace inspection"
-    );
+    assert!(table.inspection.is_some());
     assert_eq!(table.session, before);
     assert_eq!(app.world().resource::<Orbit>().pose(), camera);
     assert!(!path.exists(), "Background Save is blocked by inspection");
@@ -1131,7 +1102,7 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
     // A fixture exercises the production adapter without weakening native entry guards.
     let session =
         Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringPriestDefeat);
-    let view = session.observe_for_play();
+    let view = session.observe();
     let play = view.play.as_ref().unwrap();
     {
         let mut table = app.world_mut().resource_mut::<Table>();
@@ -1210,7 +1181,7 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
 #[test]
 fn unrevealed_room_inspection_preserves_the_observed_face() {
     let view = Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd)
-        .observe_for_play();
+        .observe();
     let room = view
         .play
         .as_ref()
@@ -1439,147 +1410,6 @@ fn a_pickable_standee_mesh_bubbles_to_its_investigator_menu() {
     assert_eq!(app.world().resource::<Table>().view(), before);
 }
 
-#[test]
-fn replay_story_inspection_reveals_only_the_displayed_reverse_and_keeps_missing_art_readable() {
-    let mut session =
-        Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
-    let choose = |session: &mut Session, id: &str| {
-        session
-            .choose(session.observe_for_play().revision, id)
-            .unwrap();
-    };
-    choose(&mut session, "round-end:advance-act");
-    for investigator in 0..3 {
-        for _ in 0..3 {
-            choose(&mut session, &format!("act:contribute:{investigator}"));
-        }
-    }
-    choose(&mut session, "bounty:400:0");
-    choose(&mut session, "round-end:ghoul-doom");
-    choose(&mut session, "mythos:begin");
-    let final_revision = session.observe_for_play().revision;
-    for revealed in [false, true] {
-        for reverse_art_present in [false, true] {
-            // The entire future recording is present in both cases. Only the
-            // displayed presentation prefix may determine which face is public.
-            let mut replay = Replay::new(session.recording()).unwrap();
-            loop {
-                let view = replay.current();
-                if view.revision == final_revision
-                    && replay.current_presentation_sequence().is_some()
-                    && view
-                        .play
-                        .as_ref()
-                        .is_some_and(|play| play.agenda == 3 && (play.agenda_doom == 0) == revealed)
-                {
-                    break;
-                }
-                assert!(
-                    replay.next(),
-                    "The real advancement must include both doom faces"
-                );
-            }
-            let directory = tempfile::tempdir().unwrap();
-            let path = directory.path().join("story-replay.json");
-            continuity::save_session(&path, &session).unwrap();
-            let saved = std::fs::read(&path).unwrap();
-            let mut app = host(path.clone());
-            let (front, back, previous_act, future_act) = {
-                let mut images = app.world_mut().resource_mut::<Assets<Image>>();
-                (
-                    images.add(Image::default()),
-                    images.add(Image::default()),
-                    images.add(Image::default()),
-                    images.add(Image::default()),
-                )
-            };
-            let mut handles = vec![
-                ("card-01107", front.clone()),
-                ("card-01109-back", previous_act.clone()),
-                ("card-01110-back", future_act.clone()),
-            ];
-            if reverse_art_present {
-                handles.push(("card-01107-back", back.clone()));
-            }
-            app.insert_resource(art::Art::with_images_for_test(handles));
-            {
-                let mut table = app.world_mut().resource_mut::<Table>();
-                table.session = session.clone();
-                table.replay = Some(replay);
-                // This inspection test seeks directly to an already displayed
-                // prefix. The reading-checkpoint test covers entering it.
-                table.reading = story::Reading::at(table.story_faces(&table.view()));
-                table.dirty = true;
-            }
-            app.update();
-            let world = app.world_mut();
-            let scene_images: Vec<_> = world
-                .query::<&MeshMaterial3d<StandardMaterial>>()
-                .iter(world)
-                .filter_map(|material| {
-                    world
-                        .resource::<Assets<StandardMaterial>>()
-                        .get(&material.0)
-                })
-                .filter_map(|material| material.base_color_texture.clone())
-                .collect();
-            assert_eq!(scene_images.contains(&front), !revealed);
-            assert_eq!(
-                scene_images.contains(&back),
-                revealed && reverse_art_present
-            );
-            assert!(!scene_images.contains(&future_act));
-
-            click_source(&mut app, controls::Source::Agenda);
-            let world = app.world_mut();
-            let inspected_images: Vec<_> = world
-                .query::<&ImageNode>()
-                .iter(world)
-                .map(|image| image.image.clone())
-                .collect();
-            assert_eq!(inspected_images.contains(&front), !revealed);
-            assert_eq!(
-                inspected_images.contains(&back),
-                revealed && reverse_art_present
-            );
-            let text = rendered_text(&mut app);
-            assert_eq!(
-                text.contains("Each investigator that has not resigned is defeated"),
-                revealed,
-                "Reverse rules must use the same public prefix, even when the reverse image is missing"
-            );
-            app.world_mut()
-                .resource_mut::<Actions>()
-                .0
-                .push(Action::Close);
-            app.update();
-            click_source(&mut app, controls::Source::Act);
-            let world = app.world_mut();
-            assert!(
-                world
-                    .query::<&ImageNode>()
-                    .iter(world)
-                    .any(|image| image.image == previous_act),
-                "The current Act inspector retains an already revealed previous reverse"
-            );
-            assert!(
-                !world
-                    .query::<&ImageNode>()
-                    .iter(world)
-                    .any(|image| image.image == future_act)
-            );
-            assert!(
-                rendered_text(&mut app).contains("Spawn the set-aside Ghoul Priest in the Hallway")
-            );
-            assert!(
-                !rendered_text(&mut app).contains("This hell-pit is my home!"),
-                "A defeat ending cannot reveal Act3's successful-ending choices"
-            );
-            assert_eq!(std::fs::read(path).unwrap(), saved);
-        }
-    }
-}
-
 fn choice_source(app: &mut App, id: &str) -> Option<controls::Source> {
     let view = app.world().resource::<Table>().view();
     let world = app.world_mut();
@@ -1639,7 +1469,7 @@ pub(super) fn finish_presentation(app: &mut App) {
 }
 
 #[test]
-fn live_runtime_choice_keeps_manual_camera_and_replay_follows_with_manual_override() {
+fn live_runtime_choice_keeps_manual_camera() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("runtime.json");
     let mut app = host(path.clone());
@@ -1660,51 +1490,7 @@ fn live_runtime_choice_keeps_manual_camera_and_replay_follows_with_manual_overri
     let text = rendered_text(&mut app);
     assert!(text.contains(&format!("base Combat {}", test.base_skill)));
     assert!(text.contains(&format!("difficulty {}", test.difficulty)));
-    assert_eq!(
-        continuity::load_session(&path).unwrap().observe_for_play(),
-        view
-    );
-    let bytes = std::fs::read(&path).unwrap();
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .extend([Action::Replay, Action::Next]);
-    app.update();
-    assert!(app.world().resource::<Orbit>().is_following());
-    assert_eq!(
-        play::focus(&app.world().resource::<Table>().view()),
-        Area::Test
-    );
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .push(Action::Focus(Area::Overview));
-    app.update();
-    assert!(!app.world().resource::<Orbit>().is_following());
-    assert_eq!(
-        app.world().resource::<Orbit>().pose().target,
-        layout::focus(Area::Overview).0
-    );
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .push(Action::Back);
-    app.update();
-    assert!(app.world().resource::<Orbit>().is_following());
-    assert_eq!(
-        std::fs::read(&path).unwrap(),
-        bytes,
-        "Camera/replay navigation cannot rewrite the match"
-    );
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .push(Action::Live);
-    app.update();
-    assert!(
-        !app.world().resource::<Orbit>().is_following(),
-        "Return preserves the live manual setting"
-    );
+    assert_eq!(continuity::load_session(&path).unwrap().observe(), view);
 }
 
 #[test]
@@ -1854,10 +1640,7 @@ fn simultaneous_weaknesses_remain_inspectable_at_their_order_decision() {
                 .contains(title)
         );
     }
-    assert_eq!(
-        continuity::load_session(path).unwrap().observe_for_play(),
-        view
-    );
+    assert_eq!(continuity::load_session(path).unwrap().observe(), view);
 }
 
 #[test]
@@ -1888,7 +1671,7 @@ fn native_automatic_reveal_is_presented_after_commit_and_cannot_accept_rules_inp
         activate_choice(&mut app, id);
     }
     activate_choice(&mut app, "test:reveal");
-    let final_view = continuity::load_session(&path).unwrap().observe_for_play();
+    let final_view = continuity::load_session(&path).unwrap().observe();
     assert_eq!(final_view.play.as_ref().unwrap().players[0].damage, 2);
     assert_eq!(final_view.play.as_ref().unwrap().bag_count, 16);
     let saved = std::fs::read(&path).unwrap();
@@ -1927,7 +1710,7 @@ fn native_automatic_reveal_is_presented_after_commit_and_cannot_accept_rules_inp
         .push(Action::Close);
     app.update();
     assert_eq!(
-        app.world().resource::<Table>().session.observe_for_play(),
+        app.world().resource::<Table>().session.observe(),
         final_view
     );
     finish_presentation(&mut app);
@@ -2051,7 +1834,7 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
         Some(story::StoryCard::ActTwo)
     );
     let saved = std::fs::read(&path).unwrap();
-    let record = app.world().resource::<Table>().session.recording();
+    let record = app.world().resource::<Table>().session.clone();
     assert_eq!(
         app.world_mut()
             .query::<&ModalDialog>()
@@ -2086,7 +1869,7 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
     });
     app.update();
     assert!(app.world().resource::<Table>().reading.current().is_none());
-    assert_eq!(app.world().resource::<Table>().session.recording(), record);
+    assert_eq!(app.world().resource::<Table>().session.clone(), record);
     assert_eq!(std::fs::read(&path).unwrap(), saved);
     let resumed = continuity::load_session(&path).unwrap();
     app.insert_resource(Table::new(resumed, path.clone()));

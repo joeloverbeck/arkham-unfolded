@@ -3,7 +3,7 @@ use arkham_unfolded_experiment::gathering::{
 };
 
 fn choose(session: &mut Session, id: &str) {
-    let view = session.observe_for_play();
+    let view = session.observe();
     assert!(
         view.choices.iter().any(|choice| choice.id == id),
         "Missing {id}: {:?}",
@@ -14,7 +14,7 @@ fn choose(session: &mut Session, id: &str) {
 
 fn finish_test(session: &mut Session) {
     for _ in 0..12 {
-        let view = session.observe_for_play();
+        let view = session.observe();
         if view.play.as_ref().unwrap().completed_tests.len() == 1
             && !view.choices.iter().any(|choice| {
                 matches!(
@@ -46,7 +46,7 @@ fn finish_test(session: &mut Session) {
 fn read_the_signs_adds_current_willpower_and_keeps_the_paid_event_until_test_cleanup() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::SpellEvents(SpellEventFixture::ReadSigns));
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let event = before.players[2]
         .hand
         .iter()
@@ -64,7 +64,7 @@ fn read_the_signs_adds_current_willpower_and_keeps_the_paid_event_until_test_cle
         &mut session,
         &format!("action:ordinary:play:tony:{event}:06117:robes:{robes}"),
     );
-    let paid = session.observe_for_play().play.unwrap();
+    let paid = session.observe().play.unwrap();
     assert_eq!(paid.players[2].resources, before.players[2].resources - 1);
     assert_eq!(paid.actions_remaining[2], 2);
     assert!(!paid.players[2].hand.iter().any(|card| card.id == event));
@@ -75,8 +75,8 @@ fn read_the_signs_adds_current_willpower_and_keeps_the_paid_event_until_test_cle
     let mut reopened = continuity::load_session(&path).unwrap();
     finish_test(&mut session);
     finish_test(&mut reopened);
-    assert_eq!(session.observe_for_play(), reopened.observe_for_play());
-    let after = session.observe_for_play().play.unwrap();
+    assert_eq!(session.observe(), reopened.observe());
+    let after = session.observe().play.unwrap();
     assert_eq!(
         after.completed_tests.last().unwrap().total,
         9,
@@ -95,7 +95,7 @@ fn spectral_razor_engages_before_fighting_and_distinguishes_elite_damage_and_han
         SpellEventFixture::RazorWatcher,
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::SpellEvents(case));
-        let before = session.observe_for_play().play.unwrap();
+        let before = session.observe().play.unwrap();
         let owner = if case == SpellEventFixture::RazorWatcher {
             1
         } else {
@@ -122,7 +122,7 @@ fn spectral_razor_engages_before_fighting_and_distinguishes_elite_damage_and_han
             &mut session,
             &format!("action:ordinary:play:tony:{card}:06201:{enemy}:{suffix}"),
         );
-        let paid = session.observe_for_play().play.unwrap();
+        let paid = session.observe().play.unwrap();
         assert_eq!(
             paid.players[owner].resources,
             before.players[owner].resources - 2
@@ -138,7 +138,7 @@ fn spectral_razor_engages_before_fighting_and_distinguishes_elite_damage_and_han
             );
         }
         finish_test(&mut session);
-        let after = session.observe_for_play().play.unwrap();
+        let after = session.observe().play.unwrap();
         assert_eq!(
             after.completed_tests.last().unwrap().total,
             if owner == 1 { 6 } else { 8 }
@@ -165,7 +165,7 @@ fn uncage_plays_read_the_signs_from_zero_resources_and_finishes_both_owned_event
     let mut session = Session::with_hostile_fixture(HostileFixture::SpellEvents(
         SpellEventFixture::UncageReadSigns,
     ));
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let event = before.players[2]
         .hand
         .iter()
@@ -183,18 +183,15 @@ fn uncage_plays_read_the_signs_from_zero_resources_and_finishes_both_owned_event
         &format!("action:ordinary:play:tony:{uncage}:03033"),
     );
     choose(&mut session, &format!("uncage:event:{event}:06117"));
-    assert_eq!(
-        session.observe_for_play().play.unwrap().players[2].resources,
-        0
-    );
+    assert_eq!(session.observe().play.unwrap().players[2].resources, 0);
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("uncage-read-signs.json");
     continuity::save_session(&path, &session).unwrap();
     let mut reopened = continuity::load_session(&path).unwrap();
     finish_test(&mut session);
     finish_test(&mut reopened);
-    assert_eq!(session.observe_for_play(), reopened.observe_for_play());
-    let after = session.observe_for_play().play.unwrap();
+    assert_eq!(session.observe(), reopened.observe());
+    let after = session.observe().play.unwrap();
     assert_eq!(after.actions_remaining[2], 2);
     assert_eq!(after.players[2].resources, 0);
     assert_eq!(after.players[2].clues, before.players[2].clues + 2);
@@ -225,7 +222,7 @@ fn read_signs_pays_before_opportunity_and_resumes_without_repayment() {
     let mut session = Session::with_hostile_fixture(HostileFixture::SpellEvents(
         SpellEventFixture::ReadSignsOpportunity,
     ));
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let event = before.players[2]
         .hand
         .iter()
@@ -236,7 +233,7 @@ fn read_signs_pays_before_opportunity_and_resumes_without_repayment() {
         &mut session,
         &format!("action:ordinary:play:tony:{event}:06117"),
     );
-    let paid = session.observe_for_play();
+    let paid = session.observe();
     assert_eq!(
         paid.play.as_ref().unwrap().players[2].resources,
         before.players[2].resources - 2
@@ -261,7 +258,7 @@ fn read_signs_pays_before_opportunity_and_resumes_without_repayment() {
     choose(&mut session, &attack);
     choose(&mut session, "harm:damage:investigator");
     finish_test(&mut session);
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     assert_eq!(after.players[2].resources, before.players[2].resources - 2);
     assert_eq!(after.players[2].damage, before.players[2].damage + 1);
     assert_eq!(after.players[2].horror, before.players[2].horror + 1);
@@ -277,7 +274,7 @@ fn uncage_preserves_frozen_additional_action_costs_and_marks_the_first_qualifyin
         SpellEventFixture::UncageRazorShort,
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::SpellEvents(case));
-        let before = session.observe_for_play();
+        let before = session.observe();
         let player = &before.play.as_ref().unwrap().players[2];
         let uncage = player
             .hand
@@ -308,7 +305,7 @@ fn uncage_preserves_frozen_additional_action_costs_and_marks_the_first_qualifyin
             &format!("uncage:event:{razor}:06201:400:engage"),
         );
         assert_eq!(
-            session.observe_for_play().play.unwrap().actions_remaining[2],
+            session.observe().play.unwrap().actions_remaining[2],
             if case == SpellEventFixture::UncageRazorStacked {
                 0
             } else {
@@ -322,8 +319,8 @@ fn uncage_preserves_frozen_additional_action_costs_and_marks_the_first_qualifyin
         let mut reopened = continuity::load_session(&path).unwrap();
         finish_test(&mut session);
         finish_test(&mut reopened);
-        assert_eq!(session.observe_for_play(), reopened.observe_for_play());
-        let after = session.observe_for_play().play.unwrap();
+        assert_eq!(session.observe(), reopened.observe());
+        let after = session.observe().play.unwrap();
         assert_eq!(after.players[2].resources, player.resources);
         if case == SpellEventFixture::UncageRazorFrozen {
             let second = after.players[2]
@@ -337,7 +334,7 @@ fn uncage_preserves_frozen_additional_action_costs_and_marks_the_first_qualifyin
                 &format!("action:ordinary:play:tony:{second}:06201:400:stay"),
             );
             assert_eq!(
-                session.observe_for_play().play.unwrap().actions_remaining[2],
+                session.observe().play.unwrap().actions_remaining[2],
                 0,
                 "The second Fight does not pay Frozen again"
             );
@@ -350,7 +347,7 @@ fn uncage_preserves_frozen_additional_action_costs_and_marks_the_first_qualifyin
 fn razor_labels_identify_enemy_copies_and_the_hidden_hand_target() {
     let session =
         Session::with_hostile_fixture(HostileFixture::SpellEvents(SpellEventFixture::RazorTargets));
-    let view = session.observe_for_play();
+    let view = session.observe();
     let labels: Vec<_> = view
         .choices
         .iter()

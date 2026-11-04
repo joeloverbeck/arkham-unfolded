@@ -16,29 +16,15 @@ pub(super) fn advance_presentation(
     settings: Res<AssetSettings>,
 ) {
     let paused = table.modal() || settings.is_busy();
-    if !paused
-        && table.replay.is_none()
-        && table.reduced_motion
-        && table.presentation.clue().is_some()
-    {
+    if !paused && table.reduced_motion && table.presentation.clue().is_some() {
         table.presentation.finish_live_stage();
         table.dirty = true;
         return;
     }
-    let playback = table
-        .replay
-        .as_ref()
-        .map_or(Playback::Live, |replay| Playback::Replay {
-            harm_visible: replay.harm().is_some(),
-        });
-    if table.presentation.tick(time.delta_secs(), paused, playback) {
+    if table.presentation.tick(time.delta_secs(), paused) {
         table.dirty = true;
         // A preceding harm stage may just have revealed the clue transfer.
-        if !paused
-            && table.replay.is_none()
-            && table.reduced_motion
-            && table.presentation.clue().is_some()
-        {
+        if !paused && table.reduced_motion && table.presentation.clue().is_some() {
             table.presentation.finish_live_stage();
         }
     }
