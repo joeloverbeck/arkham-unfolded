@@ -93,6 +93,15 @@ fn commitment_cues_follow_legal_additions_and_keep_selected_cards_removable() {
 fn omit_new_projection(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(object) => {
+            for key in [
+                "breakdown",
+                "final_breakdown",
+                "bonus_sources",
+                "token_contributions",
+                "capture_breakdown",
+            ] {
+                object.remove(key);
+            }
             if object.contains_key("actions_remaining") {
                 object.remove("curse_pool");
             }
@@ -115,6 +124,52 @@ fn omit_new_projection(value: &mut serde_json::Value) {
         }
         _ => {}
     }
+}
+
+#[test]
+fn an_older_pending_paid_test_resumes_without_fabricating_its_missing_explanation() {
+    let mut session = Session::with_hostile_fixture(HostileFixture::Boosts(
+        arkham_unfolded_experiment::gathering::BoostFixture::HardKnocks,
+    ));
+    let asset = session.observe().play.unwrap().players[0]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "01049")
+        .unwrap()
+        .card
+        .id;
+    choose(&mut session, "action:ordinary:fight:400");
+    choose(&mut session, &format!("boost:{asset}"));
+    let mut old = serde_json::to_value(&session).unwrap();
+    omit_new_projection(&mut old);
+    let mut old: Session = serde_json::from_value(old).unwrap();
+    old.validate().unwrap();
+    choose(&mut old, &format!("boost:{asset}"));
+    for _ in 0..12 {
+        let view = old.observe();
+        if view.play.as_ref().unwrap().test.is_none() {
+            break;
+        }
+        let id = [
+            "window:pass",
+            "commit:confirm",
+            "test:reveal",
+            "lucky:decline",
+            "success:pass",
+        ]
+        .into_iter()
+        .find(|id| view.choices.iter().any(|choice| choice.id == *id))
+        .unwrap();
+        choose(&mut old, id);
+    }
+    old.validate()
+        .expect("Resuming missing presentation data must preserve deterministic save validation");
+    let play = old.observe().play.unwrap();
+    assert_eq!(play.completed_tests[0].total, 5);
+    assert!(
+        play.completed_tests[0].breakdown.is_none(),
+        "An already-started legacy test keeps its explanation unknown"
+    );
 }
 
 #[test]

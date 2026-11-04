@@ -50,12 +50,14 @@ mod tony_effects;
 pub use tony_effects::TonyEffectFixture;
 mod test_boosts;
 mod test_cards;
+mod test_report;
 pub use test_boosts::BoostFixture;
 pub use test_cards::TestCardFixture;
+pub use test_report::{Contribution, TestBreakdown, TokenContribution};
 
 pub use runtime::{
     CommitmentPresentation, HostileFixture, Phase, PlayObservation, PlayerPresentation, Skill,
-    TestView, TonyBonusPresentation,
+    TestResult, TestView, TonyBonusPresentation,
 };
 
 pub use crate::party::Investigator;
@@ -797,6 +799,9 @@ impl Session {
             &self.moments,
             &self.presentation_moments,
         );
+        if let (Some(expected), Some(recorded)) = (&mut reconstructed.runtime, &self.runtime) {
+            test_report::match_runtime(expected, recorded);
+        }
         if &reconstructed != self {
             return Err(RuleError(
                 "Gathering setup does not match its recorded decisions and pinned inputs.".into(),

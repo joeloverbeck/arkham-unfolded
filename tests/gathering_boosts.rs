@@ -80,6 +80,15 @@ fn hard_knocks_pays_each_repeatable_boost_in_the_actual_test_window() {
     reveal(&mut session);
     let after = session.observe().play.unwrap();
     assert_eq!(after.completed_tests[0].total, 5);
+    let report = after.completed_tests[0].breakdown.as_ref().unwrap();
+    assert_eq!(
+        report
+            .bonuses
+            .iter()
+            .map(|row| (row.label.as_str(), row.amount))
+            .collect::<Vec<_>>(),
+        [("Hard Knocks", 1), ("Hard Knocks", 1)]
+    );
     assert!(after.completed_tests[0].success);
     assert_eq!(after.scenario.enemies[0].damage, 1);
     assert!(
@@ -120,6 +129,13 @@ fn sour_mash_exhausts_and_spends_one_supply_for_a_treachery_test() {
     reveal(&mut session);
     let after = session.observe().play.unwrap();
     assert_eq!(after.completed_tests[0].total, 3);
+    let report = after.completed_tests[0].breakdown.as_ref().unwrap();
+    assert!(
+        report
+            .bonuses
+            .iter()
+            .any(|row| row.label == "Tennessee Sour Mash" && row.amount == 2)
+    );
     assert!(after.completed_tests[0].success);
     assert_eq!(after.players[0].horror, initial.players[0].horror);
 }

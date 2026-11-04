@@ -2,6 +2,7 @@ use super::*;
 
 mod navigation;
 mod restart;
+mod results;
 mod review_saves;
 mod victory;
 
@@ -106,6 +107,37 @@ fn host_with_table(table: Table, raw_window_events: bool) -> App {
     install(&mut app);
     app.update();
     app
+}
+
+fn assert_unclipped_button(app: &mut App, label: &str, size: Vec2, scale: f32) {
+    let button = button_with_label(app, label).unwrap();
+    let world = app.world();
+    let node = world.get::<ComputedNode>(button).unwrap();
+    assert!(node.size().min_element() > 0.);
+    let transform = world.get::<UiGlobalTransform>(button).unwrap();
+    let min = transform.transform_point2(-node.size() / 2.) / scale - Vec2::splat(4.);
+    let max = transform.transform_point2(node.size() / 2.) / scale + Vec2::splat(4.);
+    assert!(
+        min.cmpge(Vec2::ZERO).all() && max.cmple(size).all(),
+        "{label}'s full focus outline must stay in the viewport: {min:?}..{max:?}"
+    );
+    let mut ancestor = button;
+    while let Some(parent) = world.get::<ChildOf>(ancestor) {
+        ancestor = parent.parent();
+        if world
+            .get::<Node>(ancestor)
+            .is_some_and(|node| node.overflow.y == OverflowAxis::Scroll)
+        {
+            let clip = world.get::<ComputedNode>(ancestor).unwrap();
+            let transform = world.get::<UiGlobalTransform>(ancestor).unwrap();
+            let top = transform.transform_point2(-clip.size() / 2.).y / scale;
+            let bottom = transform.transform_point2(clip.size() / 2.).y / scale;
+            assert!(
+                min.y >= top - 0.1 && max.y <= bottom + 0.1,
+                "{label}'s outline {min:?}..{max:?} is clipped by {top}..{bottom}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -1883,6 +1915,11 @@ fn native_automatic_reveal_is_presented_after_commit_and_cannot_accept_rules_inp
         app.world().resource::<Table>().session.observe_for_play(),
         final_view
     );
+    finish_presentation(&mut app);
+    let result = button_with_label(&mut app, "Continue")
+        .expect("Encounter tests also wait for acknowledgment");
+    app.world_mut().trigger(Activate { entity: result });
+    app.update();
     finish_presentation(&mut app);
     assert_eq!(app.world().resource::<Table>().view(), final_view);
     assert_eq!(std::fs::read(path).unwrap(), saved);

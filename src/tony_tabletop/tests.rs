@@ -488,7 +488,8 @@ fn harm_symbols_reach_warnings_counts_stages_card_text_and_history() {
                 assert!(
                     spans
                         .iter()
-                        .any(|(text, tint)| text.0.contains(glyph) && tint.0 == color)
+                        .any(|(text, tint)| text.0.contains(glyph) && tint.0 == color),
+                    "Missing {glyph} for {label_contains}: {spans:?}"
                 );
             }
         }

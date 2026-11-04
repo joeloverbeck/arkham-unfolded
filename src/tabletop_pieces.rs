@@ -5,6 +5,7 @@ use crate::{
     tabletop_counters as counters, tabletop_feedback as feedback, tabletop_layout as layout,
 };
 use bevy::prelude::*;
+pub(crate) mod card_shape;
 
 pub(crate) const CARD_WIDTH: f32 = 1.35;
 pub(crate) const CARD_LENGTH: f32 = 1.89;
@@ -71,7 +72,7 @@ pub(crate) fn card(
     let entity = commands
         .spawn((
             Name::new(title.into()),
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
+            Mesh3d(meshes.add(card_shape::face(CARD_WIDTH, CARD_LENGTH))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: if image.is_some() {
                     Color::WHITE
@@ -167,7 +168,7 @@ pub(crate) fn deck(
     let height = count.max(1) as f32 * 0.0065;
     let body = commands
         .spawn((
-            Mesh3d(meshes.add(Cuboid::new(CARD_WIDTH, height, CARD_LENGTH))),
+            Mesh3d(meshes.add(card_shape::body(CARD_WIDTH, height, CARD_LENGTH))),
             MeshMaterial3d(materials.add(PAPER)),
             Transform::from_translation(at + Vec3::Y * height / 2.),
             Pickable::IGNORE,
@@ -175,7 +176,7 @@ pub(crate) fn deck(
         .id();
     let top = commands
         .spawn((
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
+            Mesh3d(meshes.add(card_shape::face(CARD_WIDTH, CARD_LENGTH))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: if image.is_some() {
                     Color::WHITE

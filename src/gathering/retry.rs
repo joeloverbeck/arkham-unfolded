@@ -132,6 +132,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
         let test = game.test.as_mut().expect("Retried test");
         test.source_card = state.test.source_card;
         test.bonus = 2;
+        test.record_bonus("Live and Learn", owner, 2);
         test.is_retry = true;
         game.history.push("Live and Learn retries the completed test with +2. Previous consequences remain; commitments, token results and test-limited boosts start afresh, with no second action or charge payment. [04200; P2/P4/P5]".into());
     } else if id.starts_with("tony:") {

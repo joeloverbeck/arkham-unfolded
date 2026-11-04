@@ -622,6 +622,88 @@ apply. Publication, issue closure, further scenario work and owner acceptance
 remain separate. `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`, `AGENT-5` and
 `OPS-1`–`OPS-7` were refreshed for this activation.
 
+## Gathering presentation and skill test feedback
+
+During the 2026-11-04 `grill-with-docs` interview against
+`8852b2937e748c5260111ee573ec7ab24419eccf`, Joel accepted three refinements under
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89):
+
+- Every completed skill test, including encounter tests, presents an untimed
+  result modal with the revealed tokens, skill arithmetic, difficulty and
+  success/failure margin. It waits for **Continue**. This deliberately adds one
+  acknowledgment per test; a longer automatic delay was rejected because it
+  could still disappear before the result had been read. This refines Gathering's
+  automatic live presentation above: ordinary consequences still advance
+  automatically, while test results join story text as explicit reading stops.
+- Optional effects that become available during test resolution, such as Quick
+  Thinking, appear directly in the test flow with
+  explicit use-or-decline choices. They do not require discovering an investigator
+  context menu. A generic Continue must not silently decline an available effect.
+- The full breakdown is visible by default: base skill, each committed card and
+  owner, each ability or paid bonus, resolved-token contributions, final total,
+  difficulty and margin. Canceled and ignored tokens are separate. Long details
+  scroll while the outcome and controls remain visible.
+
+The same request selects four visual corrections: render the Restart label with
+supported characters; give the confirmation buttons clearance for their full
+focus outlines; round physical card fronts, backs, piles and inspection images
+consistently with the supplied artwork; and render recognized card-text symbol
+notation using the prepared font without its surrounding brackets. Preserve
+ordinary action words such as **Fight**, readable absent-font names and original
+artwork. Hard Knocks, Tennessee Sour Mash and Quick Thinking supply the corner
+references; removing arbitrary black image pixels would damage legitimate art.
+Shared rendering changes must cover their existing consumers consistently.
+
+Source inspection found an unsupported U+2026 ellipsis in the Restart label, a
+scroll-clipping boundary around the final confirmation controls, rectangular
+card meshes and inspection images, and explicit conversion of ability tokens
+to bracketed English. Revealed test tokens currently advance after one second.
+The retained revision-20 local session contains a matching Quick Thinking case:
+Tony succeeds at Investigate with 7 against 2, the optional action is offered in
+his investigator context, and the next recorded choice is the globally visible
+"Finish after-test opportunities." This establishes that the opportunity was
+offered and skipped, not that the player understood the skip. The source record
+SHA256 is `3914b8c1337a3291528d75f097d520b3c7b0cc911277587d232163c46c9b8175`;
+its private bytes remain outside Git. These are source and record findings,
+not a native reproduction or proof that every Quick Thinking interaction works.
+
+The [skill test result](../../GLOSSARY.md) is determined before its consequences
+are applied. The [Rules Reference, ST.5–8](https://images-cdn.fantasyflightgames.com/filer_public/c4/b0/c4b0d66c-d79e-411b-bdb5-b5d8c457d4bc/ahc01_rules_reference_web.pdf)
+governs that distinction. A reading acknowledgment is presentation control; it
+must not reroll, repeat committed effects or create a new rules opportunity.
+Pending token choices and result-changing effects retain their actual timing.
+
+Joel then instructed "Proceed as you recommend," accepting full detail and
+activating the bounded local correction on `fix/gathering-test-feedback`.
+Implementation began at 11:40 UTC on 2026-11-04. The default two-active-hour
+return boundary and scope/non-convergence stops apply. The next result is one
+inspectable candidate covering these six reported problems, verified through
+the existing player-choice, save/reopen/replay and production UI seams.
+This does not establish native evidence or owner acceptance of that candidate.
+Publication and a fresh desktop interval remain separate. The issue and its
+[current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060)
+remain the work-control authority; no new ADR or work queue is introduced.
+Joel subsequently authorized the ten-minute desktop check, including launch and
+cleanup, from 13:12:10 to 13:22:10 UTC. Its isolated native observations and
+untested paths are recorded in the
+[Gathering verification guide](../experiments/gathering-setup.md#native-feedback-check-2026-11-04).
+Cleanup completed before the deadline; this does not authorize publication or
+establish owner acceptance.
+Joel subsequently accepted the session retrospective's three local follow-ups:
+cover Small Favor's non-test defeat through the production UI after an
+acknowledged test; finish prepared-save and asset evidence before final review;
+and replace manual review-snapshot copying with a Rust command in the existing
+tools package. The current Gathering candidate is the real consumer. This
+bounded enabling work returns to the Gathering handoff after focused tests, a
+full check and an inspectable snapshot; it adds no desktop interval or publication
+authority. The default `OPS-4` limits apply. The follow-up consulted the `PURP`,
+`WORK`, `EVID`, `SEM`, `REP`, `BOUND`, `INT`, `AGENT`, `OPS` and `GOV` rules listed
+below; existing manual snapshots remain comparison evidence.
+Consulted for this decision: `AUTH-2`–`AUTH-3`, `PURP-1`–`PURP-6`,
+`WORK-1`–`WORK-6`, `EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`, `REP-1`–`REP-3`,
+`BOUND-1`–`BOUND-5`, `INT-1`–`INT-4`, `AGENT-1`–`AGENT-5`,
+`OPS-1`–`OPS-7` and `GOV-1`–`GOV-3`.
+
 ## First implementation and verification boundary
 
 Joel selected applying this presentation to the existing Tony and Jacqueline experiments. Tony's prepared turn is the main playable path; Jacqueline's existing Patrice-commitment/token-cancellation sequence is the required cross-investigator case. Show all three investigator surfaces but populate them only with the state supplied by each experiment. Display supported scenario components; label unsupported encounter/victory collections as reserved rather than inventing contents or zero counts. A separately populated full-play mockup is not the selected first delivery.

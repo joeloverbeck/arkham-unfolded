@@ -152,7 +152,7 @@ fn selected_commitments(view: &Observation) -> Option<String> {
         .then(|| format!("Selected: {}. Select again to remove.", selected.join(", ")))
 }
 
-fn button(
+pub(super) fn button(
     art: &art::Art,
     parent: &mut ChildSpawnerCommands,
     label: &str,
@@ -165,7 +165,7 @@ fn button(
     entity
 }
 
-fn control(
+pub(super) fn control(
     art: &art::Art,
     parent: &mut ChildSpawnerCommands,
     label: &str,
@@ -366,7 +366,7 @@ pub(super) fn render(
                 button(
                     art,
                     p,
-                    "Restart The Gathering…",
+                    "Restart The Gathering...",
                     Action::Restart(table.epoch),
                 );
                 button(art, p, "Open recorded replay", Action::Replay);
@@ -386,10 +386,14 @@ pub(super) fn render(
             button(art, p, "Close menu", Action::Dismiss);
         });
     }
-    if table.restart_confirmation {
+    if table.results.current().is_some() {
+        results::render(commands, table, view, art, size);
+    } else if table.restart_confirmation {
         restart_confirmation(commands, table, art, size);
     } else if let Some(card) = table.reading.current() {
         story_reading(commands, table, art, size, card);
+    } else if table.result_opportunities() {
+        results::render(commands, table, view, art, size);
     } else if table.modal() {
         inspection(commands, table, view, art, size, context);
     }
@@ -563,6 +567,23 @@ fn inspection(
                     }
                 }
             } else {
+                if let Some(play) = &view.play {
+                    for (index, report) in play.completed_tests.iter().enumerate().rev() {
+                        body.spawn(art.text(
+                            format!(
+                                "Test {} · {} · {} · {} vs {}",
+                                index + 1,
+                                report.tester.name(),
+                                report.source,
+                                report.total,
+                                report.difficulty
+                            ),
+                            22.,
+                            GOLD,
+                        ));
+                        results::details(body, art, report);
+                    }
+                }
                 for line in &view.history {
                     body.spawn((
                         art.text(controls::display_history(view, line), 18., PAPER),

@@ -282,6 +282,9 @@ pub(crate) fn card_image(
                     top: percent(50),
                     width: px(if landscape { height } else { width }),
                     height: px(if landscape { width } else { height }),
+                    border_radius: BorderRadius::all(px(
+                        width.min(height) * crate::tabletop_pieces::card_shape::CORNER_FRACTION
+                    )),
                     ..default()
                 },
                 UiTransform {
@@ -351,6 +354,7 @@ pub(crate) fn inspection(
                             Node {
                                 max_height: px((height - 150.).max(100.)),
                                 overflow: Overflow::scroll_y(),
+                                padding: UiRect::all(px(6)),
                                 flex_direction: FlexDirection::Column,
                                 align_items: AlignItems::Center,
                                 row_gap: px(16),
@@ -366,7 +370,10 @@ pub(crate) fn inspection(
         .id()
 }
 
-fn scroll_panel(event: On<PointerScroll>, mut panels: Query<(&mut ScrollPosition, &ComputedNode)>) {
+pub(crate) fn scroll_panel(
+    event: On<PointerScroll>,
+    mut panels: Query<(&mut ScrollPosition, &ComputedNode)>,
+) {
     if let Ok((mut scroll, node)) = panels.get_mut(event.entity) {
         let delta = event.y
             * if event.unit == MouseScrollUnit::Line {
@@ -434,6 +441,7 @@ pub(crate) fn story_reading(
                                 flex_grow: 1.,
                                 min_height: px(0),
                                 overflow: Overflow::scroll_y(),
+                                padding: UiRect::all(px(6)),
                                 flex_direction: if columns {
                                     FlexDirection::Row
                                 } else {

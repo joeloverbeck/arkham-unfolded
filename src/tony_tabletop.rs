@@ -939,7 +939,10 @@ fn card_mesh(
     let entity = commands
         .spawn((
             Name::new(format!("Card {}", card.code)),
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
+            Mesh3d(meshes.add(crate::tabletop_pieces::card_shape::face(
+                CARD_WIDTH,
+                CARD_LENGTH,
+            ))),
             MeshMaterial3d(material),
             transform,
             Scene,
@@ -976,7 +979,11 @@ fn deck_mesh(
     }
     // Sit on the tabletop. Shared geometry/materials keep the individual edges cheap.
     let base = scene::deck_at();
-    let card = meshes.add(Cuboid::new(CARD_WIDTH, CARD_THICKNESS, CARD_LENGTH));
+    let card = meshes.add(crate::tabletop_pieces::card_shape::body(
+        CARD_WIDTH,
+        CARD_THICKNESS,
+        CARD_LENGTH,
+    ));
     let edges = [Color::srgb(0.76, 0.73, 0.65), Color::srgb(0.57, 0.55, 0.49)].map(|color| {
         materials.add(StandardMaterial {
             base_color: color,
@@ -997,7 +1004,10 @@ fn deck_mesh(
     let image = art.image("card-back/player");
     commands
         .spawn((
-            Mesh3d(meshes.add(Plane3d::default().mesh().size(CARD_WIDTH, CARD_LENGTH))),
+            Mesh3d(meshes.add(crate::tabletop_pieces::card_shape::face(
+                CARD_WIDTH,
+                CARD_LENGTH,
+            ))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: if image.is_some() {
                     Color::WHITE
@@ -1309,11 +1319,7 @@ fn inspection(
                         .with_children(|body| {
                             if let Some(card) = card {
                                 if let Some(image) = art.image(&format!("card/{}", card.code)) {
-                                    let w = (width - 55.0).min(if card.landscape { 760.0 } else { 430.0 });
-                                    let h = w * if card.landscape { 5.0 / 7.0 } else { 7.0 / 5.0 };
-                                    body.spawn(Node { width: px(w), height: px(h), flex_shrink: 0.0, ..default() }).with_children(|frame| {
-                                        frame.spawn((ImageNode::new(image), Node { position_type: PositionType::Absolute, left: percent(50), top: percent(50), width: px(if card.landscape { h } else { w }), height: px(if card.landscape { w } else { h }), ..default() }, UiTransform { translation: Val2::percent(-50, -50), rotation: if card.landscape { Rot2::degrees(-90.0) } else { Rot2::IDENTITY }, ..default() }, Pickable::IGNORE));
-                                    });
+                                    crate::tabletop_ui::card_image(body, image, card.landscape, width - 55.0);
                                 }
                                 body.spawn((art.text(card.kind, 18.0, GOLD), Node { width: percent(100), ..default() }));
                                 body.spawn((art.text(card.text, 20.0, PAPER), Node { width: percent(100), ..default() }));

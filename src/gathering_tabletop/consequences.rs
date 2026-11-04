@@ -232,7 +232,7 @@ pub(super) fn advance(
     if table.reduced_motion || table.replay.is_some() {
         state.clear();
     }
-    let paused = !health.allows_play() || table.presentation_blocked();
+    let paused = !health.allows_play() || table.motion_blocked();
     for departure in std::mem::take(&mut state.departures) {
         let (root, label) = tokens::spawn(
             &mut commands,
@@ -445,6 +445,15 @@ mod tests {
             0.
         );
         app.insert_resource(RenderHealth::ready_for_test());
+        app.world_mut()
+            .resource_mut::<PresentationTime>()
+            .advance_by(std::time::Duration::ZERO);
+        let epoch = app.world().resource::<Table>().epoch;
+        app.world_mut()
+            .resource_mut::<super::super::Actions>()
+            .0
+            .push(super::super::Action::ContinueResult(epoch));
+        app.update();
         app.world_mut()
             .resource_mut::<PresentationTime>()
             .advance_by(std::time::Duration::from_millis(400));

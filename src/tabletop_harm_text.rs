@@ -35,9 +35,47 @@ enum Run {
     Words(String),
     Icon(HarmIcon),
     Skill(Skill),
+    Glyph(&'static str),
 }
 
 fn runs(value: &str) -> Vec<Run> {
+    let mut result = Vec::new();
+    let mut start = 0;
+    let mut cursor = 0;
+    while let Some(open) = value[cursor..].find('[').map(|offset| cursor + offset) {
+        let Some(close) = value[open..].find(']').map(|offset| open + offset) else {
+            break;
+        };
+        let name = value[open + 1..close].to_ascii_lowercase();
+        let icon = match name.as_str() {
+            "damage" => Some(Run::Icon(HarmIcon::Damage)),
+            "horror" => Some(Run::Icon(HarmIcon::Horror)),
+            "action" => Some(Run::Glyph("t")),
+            "fast" | "free triggered ability" => Some(Run::Glyph("v")),
+            "reaction" => Some(Run::Glyph("u")),
+            "wild" => Some(Run::Glyph("j")),
+            "skull" => Some(Run::Glyph("m")),
+            "cultist" => Some(Run::Glyph("n")),
+            "tablet" => Some(Run::Glyph("o")),
+            "elder_thing" | "elder thing" => Some(Run::Glyph("p")),
+            "auto_fail" | "auto-fail" => Some(Run::Glyph("q")),
+            "elder_sign" | "elder sign" => Some(Run::Glyph("k")),
+            "curse" => Some(Run::Glyph("y")),
+            "survivor" => Some(Run::Glyph("e")),
+            _ => Skill::named(&name).map(Run::Skill),
+        };
+        if let Some(icon) = icon {
+            result.extend(word_runs(&value[start..open]));
+            result.push(icon);
+            start = close + 1;
+        }
+        cursor = close + 1;
+    }
+    result.extend(word_runs(&value[start..]));
+    result
+}
+
+fn word_runs(value: &str) -> Vec<Run> {
     let mut result = Vec::new();
     let mut words_start = 0;
     let mut cursor = 0;
@@ -132,6 +170,15 @@ pub(crate) fn spans(
                 },
                 TextColor(color),
             ),
+            Run::Glyph(glyph) => (
+                TextSpan::new(format!("\u{2060}{glyph}\u{2060}")),
+                TextFont {
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(size * 1.25),
+                    ..default()
+                },
+                TextColor(color),
+            ),
         })
         .collect()
 }
@@ -139,6 +186,20 @@ pub(crate) fn spans(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn card_ability_notation_becomes_glyphs_without_brackets_or_rewriting_fight() {
+        let label = "[Free triggered ability] [Action]: Fight. [Reaction] +1 [Combat], [Intellect], [Wild]. [Skull] [Elder Sign] [Auto-fail]. [unknown]";
+        let spans = spans(label, 20., Color::WHITE, &Handle::default());
+        let visible: String = spans
+            .iter()
+            .map(|(span, _, _)| span.0.replace('\u{2060}', ""))
+            .collect();
+        assert_eq!(visible, "v t: Fight. u +1 h, g, j. m k q. [unknown]");
+        let mut world = World::new();
+        let entity = world.spawn(ui(label, 20., Color::WHITE, &None)).id();
+        assert_eq!(world.get::<Text>(entity).unwrap().0, label);
+    }
 
     #[test]
     fn skill_names_use_all_four_glyphs_in_stats_and_prose_without_changing_wild_icons() {
@@ -197,7 +258,7 @@ mod tests {
         let visible: String = spans.iter().map(|(span, _, _)| span.0.as_str()).collect();
         assert_eq!(
             visible,
-            "undamaged horrors damage_dealt horror2 [\u{2060}Q\u{2060}]"
+            "undamaged horrors damage_dealt horror2 \u{2060}Q\u{2060}"
         );
     }
 

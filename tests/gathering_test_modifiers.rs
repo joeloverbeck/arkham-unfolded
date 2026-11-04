@@ -24,6 +24,12 @@ fn modifiers_remain_frozen_when_result_damage_defeats_the_static_bonus_asset() {
         .id;
     let test = before.test.unwrap();
     assert_eq!(test.base_skill, 2);
+    let report = serde_json::to_value(&test).unwrap();
+    assert_eq!(
+        report["breakdown"]["bonuses"][0]["label"],
+        "Peter Sylvestre"
+    );
+    assert_eq!(report["breakdown"]["bonuses"][0]["amount"], 1);
     assert_eq!(
         (
             test.modifiers.cards,
@@ -105,6 +111,19 @@ fn modifiers_remain_frozen_when_result_damage_defeats_the_static_bonus_asset() {
         );
     let frozen = damage_moment.play.test.as_ref().unwrap();
     assert_eq!(frozen.total, Some(1));
+    assert_eq!(
+        frozen.breakdown, revealed.breakdown,
+        "Named contributions remain frozen after Peter leaves play"
+    );
+    let detail = frozen.breakdown.as_ref().unwrap();
+    assert_eq!(detail.cards.iter().map(|row| row.amount).sum::<i32>(), 2);
+    assert!(
+        detail
+            .cards
+            .iter()
+            .all(|row| row.owner == arkham_unfolded_experiment::gathering::Investigator::Patrice)
+    );
+    assert_eq!(detail.tokens.iter().map(|row| row.amount).sum::<i32>(), -4);
     assert_eq!(
         frozen.modifiers, revealed.modifiers,
         "ST7 asset loss must not rewrite ST6 arithmetic"

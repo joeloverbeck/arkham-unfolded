@@ -25,6 +25,24 @@ Select the candidate mode from the request or handoff:
 
 Record the base and head identities, diff command, and commit list (`git log <fixed-point>..HEAD --oneline`). Keep unrelated pre-existing edits outside the selected candidate and name those exclusions. Capture the selected diff and in-scope new files in a temporary snapshot without staging or modifying the checkout; preserve file modes and symlink targets where relevant. Both reviewers receive that same snapshot and its content identity. Use the checkout for context, not as a moving replacement for the captured candidate. If reviewed files change, refresh the affected review before relying on it.
 
+For working-tree review, capture explicit repository-relative file paths with the
+Rust helper; include every in-scope new or deleted file:
+
+```sh
+scripts/tools review-snapshot --base FIXED_POINT --output-dir /tmp/review-v1 -- \
+  path/to/changed.rs path/to/new.rs path/to/deleted.rs
+```
+
+The helper captures whole working files, including staged and unstaged edits,
+over the merge-base; unselected files retain their base contents. It creates
+`base/`, `candidate/`, `changes.patch` and `manifest.json` in a fresh directory
+outside the checkout. The manifest records revisions, selected paths, file modes
+and SHA-256 identities; the command prints its digest. Treat this capture as
+immutable review input. Supply `--previous /tmp/review-v1` with a fresh output
+directory for a refresh: it verifies the previous candidate and patch against
+their manifest and reports the changed paths. Invalid inputs and failed captures
+exit nonzero without publishing a snapshot. Use `--help` for supported inputs.
+
 Confirm the fixed point resolves and the complete selected candidate is non-empty before spawning reviewers. A new-file-only candidate is valid even when `git diff` is empty.
 
 ### 2. Identify the spec source

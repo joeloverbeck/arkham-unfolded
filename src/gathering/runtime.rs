@@ -359,6 +359,15 @@ pub struct CommittedCard {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct SkillTest {
+    /// Legacy tests already in progress cannot acquire a partial explanation.
+    #[serde(default)]
+    pub capture_breakdown: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bonus_sources: Vec<super::Contribution>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub token_contributions: Vec<super::TokenContribution>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_breakdown: Option<Box<super::TestBreakdown>>,
     pub boosts: super::test_boosts::BoostState,
     pub tony: super::tony_effects::TonyTestState,
     pub spell_drawback_triggered: bool,
@@ -399,6 +408,8 @@ pub struct TestModifiers {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub breakdown: Option<super::TestBreakdown>,
     pub source_card: Option<CardView>,
     pub ignored_tokens: Vec<TokenFace>,
     pub cancelled_tokens: Vec<TokenFace>,
@@ -436,6 +447,8 @@ pub struct CommitmentPresentation {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub breakdown: Option<super::TestBreakdown>,
     pub tester: Investigator,
     pub source: String,
     pub total: i32,
@@ -487,6 +500,9 @@ impl PlayObservation {
             }
         }
         if let (Some(expected), Some(recorded)) = (&mut self.test, &recorded.test) {
+            if recorded.breakdown.is_none() {
+                expected.breakdown = None;
+            }
             if recorded.commitment.is_none() {
                 expected.commitment = None;
             }
@@ -495,6 +511,15 @@ impl PlayObservation {
             }
             if recorded.investigation_location.is_none() {
                 expected.investigation_location = None;
+            }
+        }
+        for (expected, recorded) in self
+            .completed_tests
+            .iter_mut()
+            .zip(&recorded.completed_tests)
+        {
+            if recorded.breakdown.is_none() {
+                expected.breakdown = None;
             }
         }
     }
@@ -993,6 +1018,9 @@ impl Game {
             test: self.test.as_ref().map(|test| {
                 let result = (!test.revealed.is_empty()).then(|| self.result(test));
                 TestView {
+                    breakdown: (test.capture_breakdown
+                        && (test.final_result.is_none() || test.final_breakdown.is_some()))
+                    .then(|| super::test_report::breakdown(self, test)),
                     source_card: test.source_card.clone(),
                     ignored_tokens: test.ignored_tokens.clone(),
                     cancelled_tokens: test.cancelled_tokens.clone(),
@@ -1721,6 +1749,12 @@ impl Game {
             let test = self.test.as_mut().expect("Reveal test");
             test.revealed.push(token);
             test.modifier += modifier;
+            if test.capture_breakdown {
+                test.token_contributions.push(super::TokenContribution {
+                    face: token,
+                    amount: modifier,
+                });
+            }
             if !self.result(self.test.as_ref().expect("Test")).1 && !self.lucky_choices().is_empty()
             {
                 self.test.as_mut().expect("Test").window = Window::WouldFail;
@@ -1741,6 +1775,7 @@ impl Game {
                     .expect("Offered Lucky"),
             );
             player.resources -= 1;
+            test.record_bonus(&card.title, test.tester, 2);
             player.discard.push(card);
             test.bonus += 2;
             self.history.push("Pay 1 resource for Lucky!: add +2 to the skill value at the would-fail window. Recheck success; this does not alter the difficulty or erase Vision. [01080]".into());
@@ -1785,6 +1820,10 @@ impl Game {
             _ => None,
         };
         self.test = Some(SkillTest {
+            capture_breakdown: true,
+            bonus_sources: vec![],
+            token_contributions: vec![],
+            final_breakdown: None,
             boosts: Default::default(),
             tony: Default::default(),
             spell_drawback_triggered: false,
@@ -1871,11 +1910,21 @@ impl Game {
                 eyes_match,
                 symbols_applied,
             } => {
-                let mut modifier = 0;
-                for token in &resolved {
-                    modifier += self.token_modifier(*token)?;
-                }
+                let contributions = resolved
+                    .iter()
+                    .map(|face| {
+                        self.token_modifier(*face)
+                            .map(|amount| super::TokenContribution {
+                                face: *face,
+                                amount,
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let modifier = contributions.iter().map(|row| row.amount).sum();
                 let test = self.test.as_mut().expect("Token skill-test consumer");
+                if test.capture_breakdown {
+                    test.token_contributions = contributions;
+                }
                 test.revealed = resolved;
                 test.ignored_tokens = ignored;
                 test.cancelled_tokens = cancelled;
@@ -3166,7 +3215,7 @@ impl Game {
             .collect()
     }
 
-    fn commit_icons(&self, test: &SkillTest, card: &CardView) -> i32 {
+    pub(super) fn commit_icons(&self, test: &SkillTest, card: &CardView) -> i32 {
         let definition = cards::definition(&card.code).expect("Commitment metadata");
         let base = i32::from(definition.icons[test.skill.index()] + definition.icons[4]);
         if card.code == "04150" {
@@ -3303,7 +3352,11 @@ impl Game {
             // ST6 fixes the contribution even if a completed reveal retained
             // no physical tokens; an established zero is no longer pending.
             modifiers.chaos = Some(test.modifier);
+            let breakdown = test
+                .capture_breakdown
+                .then(|| super::test_report::breakdown(self, test));
             let test = self.test.as_mut().expect("Completing test");
+            test.final_breakdown = breakdown.map(Box::new);
             test.final_result = Some((total, success, failure_margin));
             test.final_modifiers = Some(modifiers);
         }
@@ -3495,6 +3548,7 @@ impl Game {
             TestOperation::Evade { .. } => "Evade",
         };
         self.completed_tests.push(TestResult {
+            breakdown: test.final_breakdown.as_deref().cloned(),
             tester: test.tester,
             source: source.into(),
             total,
