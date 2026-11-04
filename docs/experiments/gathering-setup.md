@@ -40,6 +40,92 @@ This dated check is not a guarantee about a future campaign's latest version.
 The original deck revisions and explicit weakness selections are
 visible in the observation. Original ArkhamDB snapshots remain unchanged.
 
+## Card-draw review preparation
+
+The [current #89 handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060)
+owns the candidate, completed checks and remaining native observations. Prepare
+the route before a desktop interval. These commands create no windows or grants:
+
+```sh
+scripts/tools record-check --output-dir /tmp/gathering-draw-review-preflight -- \
+  scripts/dev cargo test --locked --features tabletop --lib \
+  gathering_tabletop::tests::review_saves &&
+scripts/tools record-check --output-dir /tmp/gathering-draw-review-prepare -- \
+  scripts/dev cargo run --locked --example gathering_draw_review -- \
+  /tmp/gathering-draw-review-saves
+```
+
+Use fresh output directories. The example refuses an existing destination and
+round-trips every emitted save through the ordinary loader. Its seed-89 builder
+uses legal recorded choices and is shared with the production-startup UI tests;
+it does not edit decks or create privileged fixtures. Its output lists each save's
+revision, first choice and label. Headless checks establish visible controls,
+manual camera preservation, draw-anchor clearance at 1600×1000 and 3200×2000,
+and endpoint reopening; native readability and motion still require inspection.
+
+| Save | First action | Initial view | Observation |
+| --- | --- | --- | --- |
+| `opening.json` | Choose Tony as lead | `tony` | First five arrivals from deck into Tony's hand; the other hands need their own framing. |
+| `mulligan.json` | Confirm the two marked replacements | `tony` | Aside pile, replacements and rejected-card return. |
+| `action.json` | Draw using Tony's deck menu | `tony` | One ordinary draw and one action spent. |
+| `upkeep.json` | The emitted upkeep draw choice | `tony` | One upkeep draw, then the remaining ordinary phase choices and Patrice's refill. |
+| `encounter.json` | Draw the encounter card normally, declining On the Hunt | `overview` | Encounter deck → Test → actual destination or pending test/choice. |
+
+After authorization, use the existing `native launch` command with
+`--experiment gathering --load /tmp/gathering-draw-review-saves/encounter.json
+--initial-view overview`, the accepted binary/art root and a fresh output
+directory. The launcher copies the input save; autosaves remain isolated. Inspect
+the actual client framing before the trigger. In particular, Overview obscures
+opening-hand destinations behind the decision panel; use the investigator view
+for those clips. For an encounter leaving Test, reframe its destination as needed
+and report any unobserved segment rather than treating an endpoint as full motion.
+
+For a fresh ten-minute interval prioritizing the unobserved paths, fill absolute
+times in the compact handoff before launch:
+
+| Elapsed cutoff | Route checkpoint |
+| --- | --- |
+| 0:00–2:30 | Launch encounter save, consent/calibrate, inspect framing and record one encounter. |
+| 2:30–5:00 | Close that app/helper, launch upkeep save and record upkeep/refill as reachable. Any new helper keeps the original deadline. |
+| 5:00 | Stop optional gameplay; begin Replay → Next → Back → Live. Next/Back restore the existing follow-camera policy, so reframe **after** navigation. Use the opening save for a complete opening clip, not a late replay reframe. |
+| 7:00 | Close and reopen the run-local saved endpoint in a fresh process. |
+| 8:30 | Stop optional recording; preserve results and begin closure. |
+| 9:30 | Admit no further input; close the portal and app and verify terminal status before 10:00. |
+
+These are cutoffs, not permission to extend a step. If startup, consent or a real
+decision consumes the budget, skip optional work and report what was not tested.
+The helper's fifteen-second command allowance plus fifteen-second cleanup reserve
+remains controlling. Use the [single-click capture option](jacqueline-curse.md#launch-capture-and-interact)
+for still observations; keep short window recordings for motion. Never switch
+targets without re-verifying process/window identity. No interval is active merely
+because these saves and instructions exist.
+
+## Native card-draw check, 2026-11-04
+
+The authorized interval ran 16:14:18–16:24:18 UTC against local draw candidate v2
+above `c313ede262de3ed0e294028b4dae8291162ec452`. Executable SHA256:
+`6df9f4bd6e49244e2ebbe6ad65df3fccbacaf019f47e99bf79ce7d6012fcdc32`.
+Observed: two-card mulligan replacements and return, On the Hunt drawn into Tony's
+hand, Internal Injury reaching his threat area, and Replay Next/Back. Opening
+reached five cards per investigator, but Overview obscured hand destinations.
+Tony's framing omitted the weakness's intermediate Test reveal. Replay Next
+restored following and moved to Scenario, as at the baseline.
+
+Two temporary mulligan captions overlapped. The subsequent v4 correction keeps
+one pile caption and removes return captions; its production regression passes.
+The corrected appearance, encounter/upkeep motion, inspection during flight,
+Return to live and fresh-process reopening were not checked natively. These
+observations do not establish owner acceptance of pacing or complete scenario play.
+
+The portal closed at 16:23:49.896 UTC after refusing the final Live click before
+input. The launcher was deliberately interrupted (exit 130; child returncode -15);
+cleanup finished by 16:24:03. All five encoders exited 0. Videos, captures, the
+isolated revision-9 save and numbered events remain under
+`~/.cache/agent-tmp/arkham-draw-native-20261104/run/`; their hashes are retained in
+`/tmp/gathering-draw-native-artifacts.sha256`. Personal saves matched their retained
+hashes. The dated full record is `/tmp/gathering-draw-native-evidence-2026-11-04.md`.
+Current status belongs in the [handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060).
+
 ## Skill test feedback verification
 
 The 2026-11-04 correction is local on `fix/gathering-test-feedback`, based on

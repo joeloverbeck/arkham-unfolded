@@ -115,6 +115,7 @@ Prepare the route's saves and their production-startup UI checks before freezing
 the candidate for final code review. Include completed check-record paths in the
 review packet, including the real-asset check when the route depends on supplied
 artwork or fonts. This keeps fixture corrections inside the reviewed candidate.
+For Gathering draws, use the [draw checkpoints and timed route](gathering-setup.md#card-draw-review-preparation), whose builder is shared with the production-startup checks.
 For Gathering, replace the collection path below and use fresh output directories:
 
 ```sh
@@ -255,6 +256,22 @@ For example, send these lines separately at steps 1 and 2, after replacing `X` a
 {"action":"click","focus":true,"x":X,"y":Y}
 {"action":"capture","focus":true,"name":"after-result.png"}
 ```
+
+For one click followed by its inspected result, the same request can capture the
+verified client after a bounded delay:
+
+```text
+{"action":"click","focus":true,"x":X,"y":Y,"capture_after":{"name":"after-result.png","delay_ms":250}}
+```
+
+`delay_ms` defaults to zero and permits at most 12000 ms. The filename is validated
+before focus or input. A successful `clicked` result includes the nested `capture`
+result and path. If capture or its delay fails after delivery, `refused` includes
+`input.status: clicked` and `capture.status: failed`. Capture again or inspect the
+retained evidence; never repeat that click to repair a screenshot failure. Input,
+delay and capture share the original command deadline and cleanup reserve. A
+capture is a sampled frame, not proof that an animation has finished; use the
+route's expected state and short recording to judge completion.
 
 For an orbit check, choose a start and end on exposed table space in the inspected capture, then send a bounded right-drag. For example, after checking that these client coordinates are appropriate:
 

@@ -26,6 +26,7 @@ mod art;
 mod capture;
 mod consequences;
 mod controls;
+mod draws;
 mod motion;
 mod play;
 mod results;
@@ -92,6 +93,8 @@ struct Table {
     presentation: Vec<PresentationMoment>,
     presentation_index: usize,
     presentation_clock: f32,
+    draw_cues: Vec<crate::gathering::DrawCue>,
+    draws: draws::Playback,
     last_rendered: Option<Observation>,
     last_rendered_health: Option<(bool, String)>,
     motion_origins: motion::Origins,
@@ -137,6 +140,8 @@ impl Table {
             presentation: vec![],
             presentation_index: 0,
             presentation_clock: 0.,
+            draw_cues: vec![],
+            draws: draws::Playback::default(),
             last_rendered: None,
             last_rendered_health: None,
             motion_origins: motion::Origins::default(),
@@ -145,6 +150,13 @@ impl Table {
     }
 
     fn view(&self) -> Observation {
+        self.draws
+            .view()
+            .cloned()
+            .unwrap_or_else(|| self.base_view())
+    }
+
+    fn base_view(&self) -> Observation {
         if let Some(replay) = &self.replay {
             return replay.current().clone();
         }
@@ -155,13 +167,41 @@ impl Table {
     }
 
     fn is_presenting(&self) -> bool {
-        self.replay.is_none() && self.presentation_index < self.presentation.len()
+        self.replay.is_none()
+            && (self.draws.active() || self.presentation_index < self.presentation.len())
+    }
+
+    fn start_draws(&mut self, before: &Observation) {
+        self.draws.clear();
+        if self.reduced_motion {
+            return;
+        }
+        let target = self.base_view();
+        let batches = if let Some(replay) = &self.replay {
+            replay
+                .current_draws()
+                .map(|cue| cue.batch.clone())
+                .collect::<Vec<_>>()
+        } else {
+            let sequence = self
+                .presentation
+                .get(self.presentation_index)
+                .map(|moment| moment.sequence);
+            self.draw_cues
+                .iter()
+                .filter(|cue| cue.revision == target.revision && cue.sequence == sequence)
+                .map(|cue| cue.batch.clone())
+                .collect::<Vec<_>>()
+        };
+        self.draws = draws::Playback::new(before, &target, &batches);
     }
 
     fn next_presentation(&mut self) {
         if self.is_presenting() {
+            let before = self.view();
             self.presentation_index += 1;
             self.presentation_clock = 0.;
+            self.start_draws(&before);
             self.epoch += 1;
             self.dirty = true;
         }
@@ -236,6 +276,7 @@ struct CardRender<'a> {
     epoch: u64,
     story: &'a story::Faces,
     consequences: &'a consequences::State,
+    drawing: bool,
 }
 
 impl CardRender<'_> {
@@ -628,6 +669,9 @@ fn handle_actions(
             }
             Action::Motion => {
                 table.reduced_motion = !table.reduced_motion;
+                if table.reduced_motion {
+                    table.draws.clear();
+                }
                 table.dirty = true;
             }
             Action::Choose(epoch, revision, id) | Action::ResultChoice(epoch, revision, id)
@@ -637,29 +681,33 @@ fn handle_actions(
                     && !table.is_presenting() =>
             {
                 let path = table.save_path.clone();
-                table.notice =
-                    match continuity::commit_choice(&path, &mut table.session, revision, &id) {
-                        Ok(()) => {
-                            if id == "undo" {
-                                table.results =
-                                    results::Reading::at(Some(&table.session.observe_for_play()));
-                            }
-                            table.context.reset();
-                            table.presentation =
-                                table.session.presentation_after(revision).to_vec();
-                            table.presentation_index = 0;
-                            table.presentation_clock = 0.;
-                            table.epoch += 1;
-                            orbit.update_follow_target(Some(layout::focus(play::focus(
-                                &table.view(),
-                            ))));
-                            if reveal_focus {
-                                orbit.focus(layout::focus(Area::Test));
-                            }
-                            String::new()
+                let before = table.view();
+                table.notice = match continuity::commit_choice_with_draws(
+                    &path,
+                    &mut table.session,
+                    revision,
+                    &id,
+                ) {
+                    Ok(draws) => {
+                        if id == "undo" {
+                            table.results =
+                                results::Reading::at(Some(&table.session.observe_for_play()));
                         }
-                        Err(error) => format!("Decision not committed: {error}"),
-                    };
+                        table.context.reset();
+                        table.presentation = table.session.presentation_after(revision).to_vec();
+                        table.presentation_index = 0;
+                        table.presentation_clock = 0.;
+                        table.draw_cues = draws;
+                        table.start_draws(&before);
+                        table.epoch += 1;
+                        orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
+                        if reveal_focus {
+                            orbit.focus(layout::focus(Area::Test));
+                        }
+                        String::new()
+                    }
+                    Err(error) => format!("Decision not committed: {error}"),
+                };
                 table.dirty = true;
             }
             Action::Choose(_, _, _) | Action::ResultChoice(_, _, _) => {}
@@ -750,6 +798,8 @@ fn handle_actions(
                             table.presentation.clear();
                             table.presentation_index = 0;
                             table.presentation_clock = 0.;
+                            table.draws.clear();
+                            table.draw_cues.clear();
                         }
                         table.session = session;
                         table.inspection = None;
@@ -812,6 +862,7 @@ fn handle_actions(
                 consequences.clear();
                 match Replay::new(table.session.recording()) {
                     Ok(replay) => {
+                        table.draws.clear();
                         table.context.reset();
                         table.live_follow = orbit.is_following();
                         table.epoch += 1;
@@ -828,17 +879,22 @@ fn handle_actions(
                 table.dirty = true;
             }
             Action::Next => {
+                let before = table.view();
+                table.draws.clear();
                 consequences.clear();
                 table.reading.dismiss_for_navigation();
                 table.results = results::Reading::at(Some(&table.view()));
                 if let Some(replay) = &mut table.replay {
-                    replay.next();
+                    if replay.next() {
+                        table.start_draws(&before);
+                    }
                     table.dirty = true;
                     orbit.set_following(true);
                     orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
                 }
             }
             Action::Back => {
+                table.draws.clear();
                 consequences.clear();
                 table.reading.dismiss_for_navigation();
                 if let Some(replay) = &mut table.replay {
@@ -850,6 +906,7 @@ fn handle_actions(
                 table.results = results::Reading::at(Some(&table.view()));
             }
             Action::Live => {
+                table.draws.clear();
                 consequences.clear();
                 table.context.reset();
                 table.epoch += 1;
@@ -1079,6 +1136,9 @@ fn render(
         commands.entity(entity).despawn();
     }
     table.motion_origins = origins;
+    for transfer in table.draws.take_transfers() {
+        table.motion_origins.transfer(transfer);
+    }
     let view = table.view();
     table.results.synchronize(&view);
     consequences.prepare(
@@ -1100,8 +1160,12 @@ fn render(
         epoch: table.epoch,
         story: &story,
         consequences: &consequences,
+        drawing: table.draws.active(),
     };
     scene::render(&mut commands, &mut meshes, &mut materials, &context);
+    table
+        .draws
+        .render(&mut commands, &mut meshes, &mut materials, &context);
     ui::render(
         &mut commands,
         &table,
@@ -1171,13 +1235,21 @@ fn advance_presentation(
     if !health.allows_play()
         || consequences.active()
         || table.presentation_blocked()
-        || !table.is_presenting()
+        || (!table.is_presenting() && !table.draws.active())
     {
         return;
     }
     let view = table.view();
     // A long frame must not skip an event before it has reached the real scene.
     if table.last_rendered.as_ref() != Some(&view) {
+        return;
+    }
+    if table.draws.active() {
+        if table.draws.advance(time.delta_secs(), !moving.is_empty()) {
+            table.epoch += 1;
+            table.dirty = true;
+            table.presentation_clock = 0.;
+        }
         return;
     }
     table.presentation_clock += time.delta_secs();
@@ -1291,6 +1363,14 @@ fn world_labels(
             *visibility = Visibility::Hidden;
             continue;
         }
+        if card.is_some_and(|label| {
+            cards
+                .get(label.0)
+                .is_ok_and(|transform| (transform.rotation * Vec3::Y).y < 0.)
+        }) {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
         let anchor = card
             .and_then(|card| {
                 cards
@@ -1377,7 +1457,7 @@ fn request_redraw(
         || orbit.is_moving()
         || health.is_checking()
         || (consequences.active() && !table.motion_blocked())
-        || (table.is_presenting() && !table.presentation_blocked())
+        || ((table.is_presenting() || table.draws.active()) && !table.presentation_blocked())
     {
         redraw.request();
     }

@@ -35,6 +35,7 @@ pub struct Replay {
     positions: Vec<ReplayPosition>,
     index: usize,
     projected: Option<Observation>,
+    draws: Vec<super::moments::DrawCue>,
 }
 
 enum ReplayPosition {
@@ -44,7 +45,8 @@ enum ReplayPosition {
 
 impl Replay {
     pub fn new(recording: Recording) -> Result<Self, ContinuityError> {
-        validate_recording(&recording)?;
+        let draws = super::recording_draws(&recording)
+            .map_err(|error| ContinuityError(error.to_string()))?;
         let mut positions =
             Vec::with_capacity(recording.moments.len() + recording.presentation_moments.len());
         let mut presentation = 0;
@@ -64,6 +66,7 @@ impl Replay {
             positions,
             index: 0,
             projected: None,
+            draws,
         })
     }
 
@@ -79,6 +82,13 @@ impl Replay {
 
     pub fn recording(&self) -> &Recording {
         &self.recording
+    }
+
+    pub fn current_draws(&self) -> impl Iterator<Item = &super::moments::DrawCue> {
+        self.draws.iter().filter(|cue| {
+            cue.revision == self.current().revision
+                && cue.sequence == self.current_presentation_sequence()
+        })
     }
 
     /// The displayed transient's cutoff within its decision revision.
@@ -274,13 +284,22 @@ pub fn commit_choice(
     revision: u64,
     id: &str,
 ) -> Result<(), ContinuityError> {
+    commit_choice_with_draws(path, session, revision, id).map(|_| ())
+}
+
+pub fn commit_choice_with_draws(
+    path: impl AsRef<Path>,
+    session: &mut Session,
+    revision: u64,
+    id: &str,
+) -> Result<Vec<super::moments::DrawCue>, ContinuityError> {
     let mut candidate = session.clone();
-    candidate
-        .choose(revision, id)
+    let draws = candidate
+        .choose_with_draws(revision, id)
         .map_err(|error| ContinuityError(error.to_string()))?;
     save_session(path, &candidate)?;
     *session = candidate;
-    Ok(())
+    Ok(draws)
 }
 
 pub fn load_session(path: impl AsRef<Path>) -> Result<Session, ContinuityError> {

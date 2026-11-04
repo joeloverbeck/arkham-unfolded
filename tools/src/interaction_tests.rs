@@ -3,6 +3,9 @@ use anyhow::ensure;
 use serde_json::json;
 use std::{cell::RefCell, fs, rc::Rc};
 
+#[path = "interaction_tests/click_capture.rs"]
+mod click_capture;
+
 fn run_session(
     desktop: &mut dyn Desktop,
     portal: &mut dyn Portal,
@@ -48,6 +51,8 @@ struct State {
     elapsed: Duration,
     start_delay: Duration,
     focus_delay: Duration,
+    capture_error: bool,
+    capture_delay: Duration,
 }
 
 fn state() -> Rc<RefCell<State>> {
@@ -78,6 +83,8 @@ fn state() -> Rc<RefCell<State>> {
         elapsed: Duration::ZERO,
         start_delay: Duration::ZERO,
         focus_delay: Duration::ZERO,
+        capture_error: false,
+        capture_delay: Duration::ZERO,
     }))
 }
 struct Screen(Rc<RefCell<State>>);
@@ -110,6 +117,12 @@ impl Desktop for Screen {
     }
     fn capture(&mut self, path: &Path) -> Result<Value> {
         self.verify()?;
+        if path.file_name().unwrap() != "initial.png" {
+            let mut state = self.0.borrow_mut();
+            ensure!(!state.capture_error, "capture failed after input");
+            let delay = state.capture_delay;
+            state.elapsed += delay;
+        }
         fs::write(path, "test boundary image")?;
         Ok(json!({"path":path}))
     }

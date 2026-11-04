@@ -4,6 +4,45 @@ status: accepted
 
 # Persistent table areas with focused camera views
 
+## Gathering card draws
+
+On 2026-11-04, against `c313ede262de3ed0e294028b4dae8291162ec452`, Joel
+accepted the following draw choreography under
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89) and instructed
+"Proceed as you recommend." The selected effect is the visible handling of
+individual physical cards by an unseen person, during ordinary Gathering play.
+
+Each drawn card slides free of its actual deck, lifts into a shallow arc with
+restrained tilt, turns face-up during travel and settles into its destination.
+Existing hand cards make room. Finish one card before starting the next; target
+3–4 seconds for five cards. Opening hands are dealt one investigator at a time
+in lead order. This applies to opening hands, mulligan replacements, action
+draws, upkeep including Patrice's refill, card-effect draws and encounter draws.
+
+Mulliganed cards visibly leave the hand for a temporary set-aside pile, remain
+there while replacements are dealt, then return to the investigator deck.
+Every encounter draw first reveals in the existing Test area, including enemies,
+then travels to its actual destination. Pending tests and choices keep the card
+at its resolving position. Ordinary consequences still progress automatically;
+existing inspection, result/story reading stops, manual camera control and
+reduced-motion behavior remain applicable.
+
+Individual visual movements do not split simultaneous rules effects, expose
+hidden deck order, choose weakness-resolution order, consume randomness or
+repeat committed effects. Search placement is distinct from a top-deck draw.
+The implementation must retain save/reopen and historical replay compatibility.
+Source inspection found that existing motion has no origin for hidden cards;
+actual draw sites can supply transient presentation information without changing
+the authoritative observation tapes. Timing and trajectory remain reversible
+presentation choices, judged through native use rather than headless tests alone.
+
+This is one local product increment returning to the #89 handoff. The default
+`OPS-4` two-active-hour return and scope/non-convergence limits apply. Publication,
+a new desktop interval and owner experience acceptance remain separate. Consulted:
+`AUTH-1`–`AUTH-3`, `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`, `EVID-1`–`EVID-10`,
+`SEM-1`–`SEM-2`, `REP-1`–`REP-3`, `BOUND-1`–`BOUND-5`, `INT-1`–`INT-4`,
+`AGENT-1`–`AGENT-5`, `OPS-1`–`OPS-7` and `GOV-1`–`GOV-3`.
+
 Joel selected this presentation direction and the first implementation scope on 2026-10-29 during the `grill-with-docs` interview related to [#22](https://github.com/joeloverbeck/arkham-unfolded/issues/22), against the implementation at `4254f50d228399379cfeccf6917d5cf5fa7a0cfb`. This records the agreed design for the implementation handoff. #22 continues to own its existing prepared-turn work and separate gameplay acceptance; selecting this design does not close that issue or establish native usability.
 
 ## Decision
