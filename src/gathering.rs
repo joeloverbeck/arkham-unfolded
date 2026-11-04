@@ -26,7 +26,7 @@ pub mod inspection;
 mod moments;
 mod peter;
 mod phases;
-pub use moments::PresentationMoment;
+pub use moments::{DrawBatch, DrawCue, DrawSource, PresentationMoment};
 pub use peter::PeterFixture;
 mod player_cards;
 mod presentation;
@@ -533,6 +533,15 @@ impl Session {
     }
 
     pub fn choose(&mut self, revision: u64, id: &str) -> Result<(), RuleError> {
+        self.choose_with_draws(revision, id).map(|_| ())
+    }
+
+    /// Return visual cues only for this successfully installed decision.
+    pub fn choose_with_draws(
+        &mut self,
+        revision: u64,
+        id: &str,
+    ) -> Result<Vec<moments::DrawCue>, RuleError> {
         if revision != self.revision {
             return Err(RuleError(
                 "This choice is stale. Observe the current decision.".into(),
@@ -547,19 +556,28 @@ impl Session {
                 RuleError("That choice is not available at the current decision.".into())
             })?;
         let mut candidate = self.clone();
+        let mut setup_draws = Vec::new();
+        let mut draws = Vec::new();
         if id == "undo" {
             candidate.restore_previous_position()?;
             if let Some(game) = &mut candidate.runtime {
                 game.capture_presentation("Undo restores the previous position. The earlier choices remain in the recording.");
             }
         } else {
-            candidate.apply(id)?;
+            candidate.apply(id, &mut setup_draws)?;
             candidate.active_decisions.push(self.decisions.len());
             if candidate.crossed_undo_boundary(self) {
                 candidate.undo_floor = candidate.active_decisions.len();
             }
         }
         candidate.revision += 1;
+        for batch in setup_draws {
+            draws.push(moments::DrawCue {
+                revision: candidate.revision,
+                sequence: candidate.runtime.as_ref().map(|_| 0),
+                batch,
+            });
+        }
         if self.runtime.is_none()
             && let Some(game) = &mut candidate.runtime
         {
@@ -570,11 +588,19 @@ impl Session {
                 .into_iter()
                 .enumerate()
             {
+                let sequence = u32::try_from(sequence).map_err(|_| {
+                    RuleError("Too many presentation steps in one decision.".into())
+                })?;
+                if let Some(batch) = snapshot.draw {
+                    draws.push(moments::DrawCue {
+                        revision: candidate.revision,
+                        sequence: Some(sequence),
+                        batch,
+                    });
+                }
                 candidate.presentation_moments.push(PresentationMoment {
                     revision: candidate.revision,
-                    sequence: u32::try_from(sequence).map_err(|_| {
-                        RuleError("Too many presentation steps in one decision.".into())
-                    })?,
+                    sequence,
                     caption: snapshot.caption,
                     play: snapshot.play,
                 });
@@ -584,7 +610,7 @@ impl Session {
         candidate.history.push(choice.label);
         candidate.moments.push(candidate.observe());
         *self = candidate;
-        Ok(())
+        Ok(draws)
     }
 
     fn crossed_undo_boundary(&self, prior: &Self) -> bool {
@@ -627,7 +653,7 @@ impl Session {
         Ok(())
     }
 
-    fn apply(&mut self, id: &str) -> Result<(), RuleError> {
+    fn apply(&mut self, id: &str, draws: &mut Vec<moments::DrawBatch>) -> Result<(), RuleError> {
         if let Some(game) = &mut self.runtime {
             game.choose(id)?;
             self.history.append(&mut game.history);
@@ -639,7 +665,14 @@ impl Session {
                 let index = (self.lead.expect("Offered lead").index() + offset) % 3;
                 self.shuffle_deck(index);
                 self.investigators[index].resources = 5;
-                self.draw_opening(index, 5)?;
+                let cards = self.draw_opening(index, 5)?;
+                draws.push(moments::DrawBatch {
+                    source: moments::DrawSource::Investigator(
+                        self.investigators[index].investigator,
+                    ),
+                    cards,
+                    returned: vec![],
+                });
             }
             self.stage = Stage::Mulligan;
             self.history.push("Draw five opening cards each. Set aside and replace weaknesses without resolving revelation; they stay outside each deck until all opening hands and mulligans are complete. [RR p27, setup step 8]".into());
@@ -661,7 +694,16 @@ impl Session {
                 .into_iter()
                 .partition(|card| selected.contains(&card.id));
             self.investigators[index].hand = kept;
-            self.draw_opening(index, removed.len())?;
+            let cards = self.draw_opening(index, removed.len())?;
+            if !cards.is_empty() {
+                draws.push(moments::DrawBatch {
+                    source: moments::DrawSource::Investigator(
+                        self.investigators[index].investigator,
+                    ),
+                    cards,
+                    returned: removed.clone(),
+                });
+            }
             // Mulliganed cards stay out until replacement draws have finished.
             if !removed.is_empty() {
                 self.decks[index].extend(removed);
@@ -696,7 +738,8 @@ impl Session {
         Ok(())
     }
 
-    fn draw_opening(&mut self, index: usize, count: usize) -> Result<(), RuleError> {
+    fn draw_opening(&mut self, index: usize, count: usize) -> Result<Vec<CardView>, RuleError> {
+        let mut drawn = Vec::with_capacity(count);
         for _ in 0..count {
             loop {
                 let card = self.decks[index].pop().ok_or_else(|| {
@@ -705,13 +748,14 @@ impl Session {
                 if card.weakness {
                     self.excluded_weaknesses[index].push(card);
                 } else {
+                    drawn.push(card.clone());
                     self.investigators[index].hand.push(card);
                     break;
                 }
             }
         }
         self.investigators[index].deck_count = self.decks[index].len();
-        Ok(())
+        Ok(drawn)
     }
 
     fn random_index(&mut self, upper: usize) -> usize {
@@ -846,6 +890,10 @@ impl Session {
 }
 
 pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
+    recording_draws(recording).map(|_| ())
+}
+
+fn recording_draws(recording: &Recording) -> Result<Vec<moments::DrawCue>, RuleError> {
     if recording.source_revision != SOURCE_REVISION
         || recording.app_version != APP_VERSION
         || recording.moments.is_empty()
@@ -855,8 +903,9 @@ pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
         ));
     }
     let mut reconstructed = Session::from_origin(recording.seed, recording.verification_fixture)?;
+    let mut draws = Vec::new();
     for decision in &recording.decisions {
-        reconstructed.choose(reconstructed.revision, decision)?;
+        draws.extend(reconstructed.choose_with_draws(reconstructed.revision, decision)?);
     }
     match_recorded_projection_presence(
         &mut reconstructed.moments,
@@ -871,7 +920,7 @@ pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
             "Gathering recording does not match its recorded decisions and pinned inputs.".into(),
         ));
     }
-    Ok(())
+    Ok(draws)
 }
 
 fn match_recorded_projection_presence(

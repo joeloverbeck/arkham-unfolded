@@ -128,6 +128,7 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
         }
     }
     if !draw.collected {
+        let drawn = draw.drawn.clone();
         for card in draw.drawn.drain(..) {
             if card.weakness {
                 draw.revelations.push(card);
@@ -148,6 +149,16 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
             ),
             play,
         );
+        if !drawn.is_empty() {
+            game.presentation
+                .last_mut()
+                .expect("Captured completed draw")
+                .draw = Some(super::moments::DrawBatch {
+                source: super::moments::DrawSource::Investigator(draw.investigator),
+                cards: drawn,
+                returned: vec![],
+            });
+        }
     }
     if draw.revelations.len() > 1 {
         game.frames.push(Frame::Draw(draw));

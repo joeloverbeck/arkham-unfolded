@@ -1,5 +1,6 @@
 use super::*;
 
+mod draws;
 mod navigation;
 mod restart;
 mod results;
@@ -475,6 +476,7 @@ fn contextual_keyboard_activation_commits_the_selected_investigator() {
     let saved = continuity::load_session(path).unwrap().observe_for_play();
     assert_eq!(saved.revision, 1);
     assert_eq!(saved.lead, Some(Investigator::Patrice));
+    finish_presentation(&mut app);
     assert_eq!(saved, app.world().resource::<Table>().view());
 }
 
@@ -528,9 +530,15 @@ fn native_choice_persists_before_showing_real_opening_hands() {
     app.world_mut().trigger(Activate { entity });
     app.update();
     let saved = continuity::load_session(path).unwrap().observe_for_play();
-    assert_eq!(saved, app.world().resource::<Table>().view());
+    assert_eq!(
+        saved,
+        app.world().resource::<Table>().session.observe_for_play()
+    );
     assert_eq!(saved.stage, crate::gathering::Stage::Mulligan);
     assert!(saved.investigators.iter().all(|p| p.hand.len() == 5));
+    assert!(app.world().resource::<Table>().draws.active());
+    finish_presentation(&mut app);
+    assert_eq!(saved, app.world().resource::<Table>().view());
 }
 
 #[test]
@@ -662,6 +670,7 @@ fn mulligan_prompt_names_each_typed_owner_without_changing_the_camera() {
         Investigator::Jacqueline,
         Investigator::Tony,
     ] {
+        finish_presentation(&mut app);
         let view = app.world().resource::<Table>().view();
         assert_eq!(view.stage, crate::gathering::Stage::Mulligan);
         assert_eq!(view.decision_owner, Some(owner));
@@ -697,6 +706,7 @@ fn artwork_card_captions_use_party_positions_without_hover_or_copy_ids() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = host(directory.path().join("card-caption.json"));
     activate_choice(&mut app, "lead:tony");
+    finish_presentation(&mut app);
     let view = app.world().resource::<Table>().view();
     let held = view.investigators[0].hand[0].clone();
     let image = app
@@ -996,10 +1006,13 @@ fn assert_pointer_lead_choice(raw_window_events: bool, continuing_health_observa
             );
             assert!(hit_button, "production picking must hit the lead button");
             assert_eq!(view.stage, crate::gathering::Stage::Mulligan);
+            let saved = continuity::load_session(&path).unwrap().observe_for_play();
             assert_eq!(
-                continuity::load_session(&path).unwrap().observe_for_play(),
-                view
+                saved,
+                app.world().resource::<Table>().session.observe_for_play()
             );
+            finish_presentation(&mut app);
+            assert_eq!(saved, app.world().resource::<Table>().view());
         }
     }
 }
@@ -1567,25 +1580,27 @@ fn replay_story_inspection_reveals_only_the_displayed_reverse_and_keeps_missing_
     }
 }
 
+fn choice_source(app: &mut App, id: &str) -> Option<controls::Source> {
+    let view = app.world().resource::<Table>().view();
+    let world = app.world_mut();
+    world
+        .query::<&ContextTarget>()
+        .iter(world)
+        .find_map(|target| {
+            controls::source_choices(&view, &target.source)
+                .iter()
+                .any(|choice| choice.id == id)
+                .then(|| target.source.clone())
+        })
+}
+
 fn activate_choice(app: &mut App, id: &str) {
     finish_presentation(app);
     let view = app.world().resource::<Table>().view();
     let choice = view.choices.iter().find(|choice| choice.id == id).unwrap();
     let label = ui::choice_label(choice).to_owned();
     if button_with_label(app, &label).is_none() {
-        let source = {
-            let world = app.world_mut();
-            world
-                .query::<&ContextTarget>()
-                .iter(world)
-                .find_map(|target| {
-                    controls::source_choices(&view, &target.source)
-                        .iter()
-                        .any(|choice| choice.id == id)
-                        .then(|| target.source.clone())
-                })
-        };
-        if let Some(source) = source {
+        if let Some(source) = choice_source(app, id) {
             click_source(app, source);
         } else {
             let pending = button_with_label(app, "Pending decision").expect(

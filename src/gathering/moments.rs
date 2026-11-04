@@ -1,5 +1,5 @@
 //! Captured public states between accepted decisions. They never execute rules.
-use super::{Observation, PlayObservation, Stage};
+use super::{CardView, Investigator, Observation, PlayObservation, Stage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,6 +14,31 @@ pub struct PresentationMoment {
 pub(super) struct StepSnapshot {
     pub caption: String,
     pub play: PlayObservation,
+    pub draw: Option<DrawBatch>,
+}
+
+/// Transient rendering information from an actual draw operation. This never
+/// enters saved rules state or the historical observation tapes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DrawBatch {
+    pub source: DrawSource,
+    pub cards: Vec<CardView>,
+    pub returned: Vec<CardView>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DrawSource {
+    Investigator(Investigator),
+    Encounter,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DrawCue {
+    pub revision: u64,
+    /// None denotes the committed setup observation; Some denotes an existing
+    /// intermediate play snapshot. The recorded snapshot itself is unchanged.
+    pub sequence: Option<u32>,
+    pub batch: DrawBatch,
 }
 
 pub(super) fn project(

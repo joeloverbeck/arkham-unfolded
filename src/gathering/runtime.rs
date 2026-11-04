@@ -938,8 +938,11 @@ impl Game {
         {
             return;
         }
-        self.presentation
-            .push(super::moments::StepSnapshot { caption, play });
+        self.presentation.push(super::moments::StepSnapshot {
+            caption,
+            play,
+            draw: None,
+        });
     }
 
     pub(super) fn observe(&self) -> PlayObservation {

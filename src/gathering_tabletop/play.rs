@@ -907,13 +907,17 @@ pub(super) fn render(
             paint.standee(at, slot, index, player.investigator);
         }
         if let Some(fog) = &room.fog {
-            paint.card(
+            let entity = paint.card(
                 at + Vec3::new(0., 0., -2.5),
                 &fog.title,
                 &fog.code,
                 PAPER,
                 Source::Card(fog.id),
             );
+            paint
+                .commands
+                .entity(entity)
+                .insert(motion::PhysicalCard(fog.id));
         }
     }
     for (slot, enemy) in play.scenario.enemies.iter().enumerate() {
@@ -1013,7 +1017,12 @@ pub(super) fn render(
         .collect();
     let public_count = resolving_offset + resolving_cards.len();
     if let Some(test) = &play.test {
-        if let Some(source) = &test.source_card {
+        if let Some(source) = &test.source_card
+            && !play
+                .pending_revelation
+                .as_ref()
+                .is_some_and(|pending| pending.card.id == source.id)
+        {
             paint.card(
                 layout::test_source(),
                 &source.title,
@@ -1041,7 +1050,7 @@ pub(super) fn render(
         }
     }
     if let Some(pending) = &play.pending_revelation {
-        paint.card(
+        let entity = paint.card(
             layout::test_source(),
             &format!(
                 "{}\nDrawn by {}",
@@ -1052,6 +1061,10 @@ pub(super) fn render(
             PAPER,
             Source::Card(pending.card.id),
         );
+        paint
+            .commands
+            .entity(entity)
+            .insert(motion::PhysicalCard(pending.card.id));
     }
     if !play.searched_encounter.is_empty() {
         paint.card(
@@ -1093,21 +1106,37 @@ pub(super) fn render(
         }
     }
     if !play.pending.resolving_cards.is_empty() {
-        paint.card(
-            resolving_position(),
-            &format!("Resolving cards · {}", play.pending.resolving_cards.len()),
-            "resolving-cards",
-            PAPER,
-            Source::Resolving,
-        );
-        for (slot, resolving) in resolving_cards.iter().enumerate() {
+        // A summary face would duplicate the card while its physical copy is
+        // still travelling from the deck. Retain the count without that face.
+        if paint.context.drawing {
+            scene::label(
+                paint.commands,
+                paint.context,
+                format!("Resolving cards · {}", play.pending.resolving_cards.len()),
+                resolving_position(),
+                false,
+            );
+        } else {
             paint.card(
+                resolving_position(),
+                &format!("Resolving cards · {}", play.pending.resolving_cards.len()),
+                "resolving-cards",
+                PAPER,
+                Source::Resolving,
+            );
+        }
+        for (slot, resolving) in resolving_cards.iter().enumerate() {
+            let entity = paint.card(
                 layout::test_commitment(public_count, resolving_offset + slot),
                 &resolving.title,
                 &resolving.code,
                 PAPER,
                 Source::Card(resolving.id),
             );
+            paint
+                .commands
+                .entity(entity)
+                .insert(motion::PhysicalCard(resolving.id));
         }
     }
     if play.pending.discard.is_some() {

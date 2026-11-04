@@ -545,6 +545,7 @@ fn hunt_choices(game: &Game, owner: Investigator) -> Vec<Choice> {
 fn draw_encounter(game: &mut Game, owner: Investigator) {
     scenario::rebuild_empty_encounter(game);
     if let Some(card) = game.encounter_deck.pop() {
+        let drawn = card.clone();
         game.frames.push(Frame::Revelation(PendingRevelation {
             card,
             drawn_by: owner,
@@ -555,6 +556,14 @@ fn draw_encounter(game: &mut Game, owner: Investigator) {
             "{} draws an encounter card. Its revelation has not resolved.",
             owner.name()
         ));
+        game.presentation
+            .last_mut()
+            .expect("Captured encounter draw")
+            .draw = Some(super::moments::DrawBatch {
+            source: super::moments::DrawSource::Encounter,
+            cards: vec![drawn],
+            returned: vec![],
+        });
     }
 }
 

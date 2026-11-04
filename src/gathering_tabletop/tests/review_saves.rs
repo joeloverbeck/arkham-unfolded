@@ -1,5 +1,155 @@
 use super::*;
 
+#[path = "../../../tests/support/gathering_draw_review.rs"]
+mod draw_review;
+
+#[test]
+fn draw_review_checkpoints_open_on_visible_triggers_and_preserve_manual_framing() {
+    let checkpoints = draw_review::checkpoints().unwrap();
+    assert_eq!(
+        checkpoints
+            .iter()
+            .map(|point| point.name)
+            .collect::<Vec<_>>(),
+        ["opening", "mulligan", "action", "upkeep", "encounter"]
+    );
+    for point in checkpoints {
+        let (_directory, mut app) = open_review_save(&point.session);
+        let area = parse_initial_view(point.initial_view).unwrap();
+        app.world_mut()
+            .insert_resource(Orbit::new(CameraMode::Jacqueline).with_initial_view(Some(area)));
+        app.update();
+        let pose = app.world().resource::<Orbit>().pose();
+        let table = app.world().resource::<Table>();
+        assert!(
+            !table.modal(),
+            "{} opens without a blocking dialog",
+            point.name
+        );
+        assert!(
+            !table.is_presenting(),
+            "{} opens before its draw",
+            point.name
+        );
+        let view = table.view();
+        let choice = view
+            .choices
+            .iter()
+            .find(|choice| choice.id == point.trigger)
+            .unwrap();
+        if let Some(source) = choice_source(&mut app, &point.trigger) {
+            click_source(&mut app, source);
+        }
+        for _ in 0..3 {
+            app.update();
+        }
+        assert_visible_button(&mut app, ui::choice_label(choice));
+        activate_choice(&mut app, &point.trigger);
+        assert!(
+            app.world().resource::<Table>().is_presenting(),
+            "{} starts its draw",
+            point.name
+        );
+        assert_eq!(app.world().resource::<Orbit>().pose(), pose);
+        finish_presentation(&mut app);
+        assert_eq!(app.world().resource::<Orbit>().pose(), pose);
+        for size in [Vec2::new(1600., 1000.), Vec2::new(3200., 2000.)] {
+            crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
+            for _ in 0..3 {
+                app.update();
+            }
+            let anchors = if point.name == "encounter" {
+                vec![layout::ENCOUNTER_DECK, layout::test_source()]
+            } else {
+                let view = app.world().resource::<Table>().view();
+                let count = view.investigators[0].hand.len();
+                let mut anchors = vec![layout::investigator_deck(0)];
+                anchors.extend((0..count).map(|slot| layout::hand_position(0, count, slot)));
+                anchors
+            };
+            assert_draw_anchors_unobscured(&mut app, &anchors, size, point.name);
+        }
+        let committed = app.world().resource::<Table>().session.clone();
+        let (_reopened_directory, reopened) = open_review_save(&committed);
+        assert!(
+            !reopened.world().resource::<Table>().is_presenting(),
+            "Reopening shows the saved endpoint"
+        );
+    }
+}
+
+fn assert_draw_anchors_unobscured(app: &mut App, anchors: &[Vec3], size: Vec2, name: &str) {
+    let world = app.world_mut();
+    let panels = world
+        .query::<(&ScrollablePanel, &ComputedNode, &UiGlobalTransform)>()
+        .iter(world)
+        .filter(|(panel, _, _)| !panel.inspection)
+        .map(|(_, node, transform)| {
+            Rect::from_corners(
+                transform.transform_point2(-node.size() / 2.),
+                transform.transform_point2(node.size() / 2.),
+            )
+        })
+        .collect::<Vec<_>>();
+    let (camera, transform) = world
+        .query_filtered::<(&Camera, &GlobalTransform), With<MainCamera>>()
+        .single(world)
+        .unwrap();
+    for anchor in anchors {
+        let point = camera.world_to_viewport(transform, *anchor).unwrap();
+        assert!(
+            point.cmpge(Vec2::splat(24.)).all() && point.cmple(size - Vec2::splat(24.)).all(),
+            "{name} draw anchor must remain in frame at {size:?}: {point:?}"
+        );
+        assert!(
+            !panels.iter().any(|panel| panel.contains(point)),
+            "{name} draw anchor is behind the decision panel at {size:?}: {point:?}"
+        );
+    }
+}
+
+#[test]
+fn draw_review_replay_next_requires_reframing_after_navigation() {
+    let point = draw_review::checkpoints()
+        .unwrap()
+        .into_iter()
+        .find(|point| point.name == "mulligan")
+        .unwrap();
+    let (directory, mut app) = open_review_save(&point.session);
+    let before = std::fs::read(directory.path().join("review.json")).unwrap();
+    for action in [
+        Action::Replay,
+        Action::Focus(Area::Investigator(0)),
+        Action::Next,
+    ] {
+        app.world_mut().resource_mut::<Actions>().0.push(action);
+        app.update();
+    }
+    assert!(
+        app.world().resource::<Orbit>().is_following(),
+        "Next restores the existing replay follow policy"
+    );
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Focus(Area::Investigator(0)));
+    app.update();
+    assert!(!app.world().resource::<Orbit>().is_following());
+    assert_eq!(
+        app.world().resource::<Orbit>().pose().target,
+        layout::focus(Area::Investigator(0)).0
+    );
+    for action in [Action::Back, Action::Live] {
+        app.world_mut().resource_mut::<Actions>().0.push(action);
+        app.update();
+    }
+    assert!(app.world().resource::<Table>().replay.is_none());
+    assert_eq!(
+        std::fs::read(directory.path().join("review.json")).unwrap(),
+        before
+    );
+}
+
 // Reproduce the ordinary seed-89 saves used in the 2026-11-03 native review.
 // Load through native startup before installing the production scene and UI.
 fn open_review_save(session: &Session) -> (tempfile::TempDir, App) {

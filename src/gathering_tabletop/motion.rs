@@ -13,6 +13,9 @@ pub(super) struct CardMotion {
     start: Vec3,
     end: Vec3,
     elapsed: f32,
+    transfer: Option<draws::Transfer>,
+    rotation: Quat,
+    scale: Vec3,
 }
 
 #[derive(Component)]
@@ -22,6 +25,7 @@ pub(super) struct CardLabel(pub Entity, pub Vec3);
 pub(super) struct Origins {
     positions: BTreeMap<u16, Vec3>,
     continuing: BTreeMap<u16, CardMotion>,
+    transfers: BTreeMap<u16, draws::Transfer>,
 }
 
 impl Origins {
@@ -44,6 +48,24 @@ impl Origins {
             }
         }
         if let Some(play) = &view.play {
+            if let Some(pending) = &play.pending_revelation {
+                result
+                    .positions
+                    .insert(pending.card.id, layout::test_source());
+                result.transfers.insert(
+                    pending.card.id,
+                    draws::Transfer {
+                        id: pending.card.id,
+                        start: None,
+                        source: if pending.card.weakness {
+                            crate::gathering::DrawSource::Investigator(pending.drawn_by)
+                        } else {
+                            crate::gathering::DrawSource::Encounter
+                        },
+                        turn: draws::Turn::FaceUp,
+                    },
+                );
+            }
             for (index, player) in play.players.iter().enumerate() {
                 for (slot, asset) in player.assets.iter().enumerate() {
                     result
@@ -98,12 +120,107 @@ impl Origins {
             self.continuing.insert(id, *motion);
         }
     }
+
+    pub(super) fn transfer(&mut self, transfer: draws::Transfer) {
+        self.transfers.insert(transfer.id, transfer);
+    }
+}
+
+impl CardMotion {
+    fn duration(&self) -> f32 {
+        if self.transfer.is_some() {
+            draws::DURATION
+        } else {
+            CARD_DURATION
+        }
+    }
+
+    fn transform(&self) -> Transform {
+        let t = (self.elapsed / self.duration()).clamp(0., 1.);
+        let smooth = |v: f32| {
+            let v = v.clamp(0., 1.);
+            v * v * (3. - 2. * v)
+        };
+        let Some(transfer) = self.transfer else {
+            return Transform::from_translation(self.start.lerp(self.end, smooth(t)))
+                .with_rotation(self.rotation)
+                .with_scale(self.scale);
+        };
+        let extracted = self.start + Vec3::X * 0.22;
+        let carry = smooth((t - 0.12) / 0.88);
+        let lift = (std::f32::consts::PI * smooth(t)).sin();
+        let height = (0.45 + self.start.distance(self.end) * 0.035).min(1.2);
+        let at = self
+            .start
+            .lerp(extracted, smooth(t / 0.12))
+            .lerp(self.end, carry)
+            + Vec3::Y * height * lift;
+        let flip = smooth((t - 0.2) / 0.58);
+        // Cards lie in XZ. Turn around the long axis so both faces keep their top edge.
+        let angle = match transfer.turn {
+            draws::Turn::Up => -std::f32::consts::PI * (1. - flip),
+            draws::Turn::Down => std::f32::consts::PI * flip,
+            draws::Turn::FaceUp => 0.,
+        };
+        Transform::from_translation(at)
+            .with_rotation(
+                Quat::from_rotation_y(0.10 * lift)
+                    * Quat::from_rotation_z(0.07 * lift)
+                    * Quat::from_rotation_z(angle)
+                    * self.rotation,
+            )
+            .with_scale(self.scale)
+    }
+}
+
+fn attach_back(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    art: &art::Art,
+    parent: Entity,
+    source: crate::gathering::DrawSource,
+) {
+    use crate::tabletop_pieces::{CARD_LENGTH, CARD_WIDTH, card_shape};
+    let image = art.image(match source {
+        crate::gathering::DrawSource::Investigator(_) => "card-back/player",
+        crate::gathering::DrawSource::Encounter => "card-back/encounter",
+    });
+    commands.spawn((
+        Name::new("Drawn card back"),
+        Mesh3d(meshes.add(card_shape::face(CARD_WIDTH, CARD_LENGTH))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: if image.is_some() {
+                Color::WHITE
+            } else {
+                Color::srgb(0.12, 0.19, 0.30)
+            },
+            base_color_texture: image,
+            unlit: true,
+            ..default()
+        })),
+        Transform::from_xyz(0., -0.007, 0.)
+            .with_rotation(Quat::from_rotation_z(std::f32::consts::PI)),
+        Pickable::IGNORE,
+        ChildOf(parent),
+    ));
+    commands.spawn((
+        Name::new("Drawn card edge"),
+        Mesh3d(meshes.add(card_shape::body(CARD_WIDTH, 0.005, CARD_LENGTH))),
+        MeshMaterial3d(materials.add(PAPER)),
+        Transform::from_xyz(0., -0.0035, 0.),
+        Pickable::IGNORE,
+        ChildOf(parent),
+    ));
 }
 
 pub(super) fn animate(
     mut commands: Commands,
     table: Res<Table>,
     time: Res<PresentationTime>,
+    art: Res<art::Art>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut cards: Query<(
         Entity,
         Ref<PhysicalCard>,
@@ -116,23 +233,23 @@ pub(super) fn animate(
         if table.reduced_motion {
             if let Some(motion) = motion {
                 transform.translation = motion.end;
+                transform.rotation = motion.rotation;
                 commands.entity(entity).remove::<CardMotion>();
             }
             continue;
         }
         if let Some(mut motion) = motion {
             if !paused {
-                motion.elapsed = (motion.elapsed + time.delta_secs()).min(CARD_DURATION);
+                motion.elapsed = (motion.elapsed + time.delta_secs()).min(motion.duration());
             }
-            let fraction = motion.elapsed / CARD_DURATION;
-            // Smooth endpoints keep a stopped inspection stable.
-            let blend = fraction * fraction * (3. - 2. * fraction);
-            transform.translation = motion.start.lerp(motion.end, blend);
-            if fraction >= 1. {
+            *transform = motion.transform();
+            if motion.elapsed >= motion.duration() {
                 commands.entity(entity).remove::<CardMotion>();
             }
         } else if card.is_added() {
             let end = transform.translation;
+            let rotation = transform.rotation;
+            let scale = transform.scale;
             let motion = table
                 .motion_origins
                 .continuing
@@ -140,23 +257,44 @@ pub(super) fn animate(
                 .filter(|motion| motion.end.abs_diff_eq(end, 0.001))
                 .copied()
                 .or_else(|| {
-                    table
-                        .motion_origins
-                        .positions
-                        .get(&card.0)
+                    let transfer = table.motion_origins.transfers.get(&card.0).copied();
+                    let start = transfer
+                        .and_then(|transfer| transfer.start)
+                        .or_else(|| table.motion_origins.positions.get(&card.0).copied());
+                    start
                         .filter(|start| !start.abs_diff_eq(end, 0.001))
                         .map(|start| CardMotion {
-                            start: *start,
+                            start,
                             end,
                             elapsed: 0.,
+                            transfer,
+                            rotation,
+                            scale,
                         })
                 });
             if let Some(motion) = motion {
-                let fraction = motion.elapsed / CARD_DURATION;
-                transform.translation = motion
-                    .start
-                    .lerp(motion.end, fraction * fraction * (3. - 2. * fraction));
+                *transform = motion.transform();
+                if let Some(transfer) = motion.transfer {
+                    attach_back(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        &art,
+                        entity,
+                        transfer.source,
+                    );
+                }
                 commands.entity(entity).insert(motion);
+            } else if let Some(source) = table.draws.returning(card.0) {
+                transform.rotation = Quat::from_rotation_z(std::f32::consts::PI) * rotation;
+                attach_back(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    &art,
+                    entity,
+                    source,
+                );
             }
         }
     }

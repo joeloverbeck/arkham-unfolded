@@ -112,12 +112,21 @@ pub fn run_session(
             emit(json!({"status":"command-started", "request":index + 1,
                 "timeout_seconds":timing.command_timeout.as_secs_f64(),
                 "session_remaining_ms":timing.deadline.saturating_duration_since(started).as_millis()}))?;
+            let mut delivered_click = None;
             let event = (|| -> Result<Option<Value>> {
                 let request: Request = serde_json::from_str(&line)?;
                 if matches!(request.action, Action::Stop) {
                     return Ok(None);
                 }
                 timing.admit()?;
+                controller.check_deadline()?;
+                if let Action::Click {
+                    capture_after: Some(after),
+                    ..
+                } = &request.action
+                {
+                    after.validate(directory)?;
+                }
                 controller.check_deadline()?;
                 if request.focus && !matches!(request.action, Action::Focus) {
                     controller.desktop.focus()?;
@@ -131,9 +140,20 @@ pub fn run_session(
                         json!({"status":"focused"})
                     }
                     Action::Calibrate => controller.calibrate()?,
-                    Action::Click { x, y } => {
+                    Action::Click {
+                        x,
+                        y,
+                        capture_after,
+                    } => {
                         controller.click([x, y])?;
-                        json!({"status":"clicked", "client":[x, y]})
+                        let mut event = json!({"status":"clicked", "client":[x, y]});
+                        if let Some(after) = capture_after {
+                            // Keep input success even when waiting or capture fails. Never retry it.
+                            delivered_click = Some(event.clone());
+                            controller.pause(Duration::from_millis(after.delay_ms))?;
+                            event["capture"] = capture(controller.desktop, directory, &after.name)?;
+                        }
+                        event
                     }
                     Action::Wheel { x, y, steps } => {
                         controller.wheel([x, y], steps)?;
@@ -169,7 +189,13 @@ pub fn run_session(
                 }
                 Ok(Some(event)) => respond(event)?,
                 Err(error) => {
-                    respond(json!({"status":"refused", "reason":format!("{error:#}")}))?;
+                    let mut failure = json!({"status":"refused", "reason":format!("{error:#}")});
+                    if let Some(input) = delivered_click {
+                        failure["input"] = input;
+                        failure["capture"] =
+                            json!({"status":"failed", "reason":format!("{error:#}")});
+                    }
+                    respond(failure)?;
                     if error.is::<ReleaseFailed>()
                         || error.is::<CommandTimedOut>()
                         || error.is::<SessionTimeExhausted>()
@@ -239,6 +265,8 @@ enum Action {
     Click {
         x: f64,
         y: f64,
+        #[serde(default)]
+        capture_after: Option<CaptureAfterClick>,
     },
     Wheel {
         x: f64,
@@ -253,6 +281,25 @@ enum Action {
         #[serde(default = "drag_duration")]
         duration_seconds: f64,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CaptureAfterClick {
+    name: String,
+    #[serde(default)]
+    delay_ms: u64,
+}
+
+impl CaptureAfterClick {
+    fn validate(&self, directory: &Path) -> Result<()> {
+        ensure!(
+            self.delay_ms <= 12_000,
+            "Capture delay must be at most 12000 ms"
+        );
+        capture_path(directory, &self.name)?;
+        Ok(())
+    }
 }
 
 fn drag_duration() -> f64 {

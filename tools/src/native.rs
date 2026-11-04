@@ -78,7 +78,7 @@ pub struct Capture {
 #[derive(Args)]
 #[command(
     after_long_help = r#"JSON actions (one per line; wait for each terminal result):
-  click: x, y
+  click: x, y; optional capture_after: {name, delay_ms} (delay defaults to 0; max 12000)
   wheel: x, y, steps (signed vertical steps, -10..=-1 or 1..=10)
   right-drag: x, y, dx, dy, duration_seconds (default 0.6; range 0.2..=2)
   capture: name (fresh .png filename)
@@ -91,8 +91,12 @@ Add "focus":true to reacquire focus before a guarded operation.
 Example after verifying the target coordinates:
   {"action":"wheel","focus":true,"x":400,"y":300,"steps":1}
   {"action":"capture","focus":true,"name":"after-wheel.png"}
+  {"action":"click","focus":true,"x":400,"y":300,"capture_after":{"name":"after-click.png","delay_ms":250}}
   {"action":"stop"}
 
+A click with capture returns clicked with a nested capture result. A capture
+failure returns refused with input.status=clicked: inspect or capture again,
+never retry that click. The delay and capture share the original command budget.
 Help opens no desktop session. Actual input requires the accepted control
 interval and pointer-only portal consent. Each command needs 15 seconds before
 the final 15-second cleanup reserve. Acknowledgements never renew that budget."#
