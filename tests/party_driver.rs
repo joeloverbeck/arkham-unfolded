@@ -120,7 +120,7 @@ fn fresh_process_reopens_cancellation_and_keeps_the_unrevealed_continuation() {
 }
 
 #[test]
-fn driver_replay_refuses_choices_and_save_and_returns_to_unchanged_live_state() {
+fn retired_driver_commands_are_refused_without_changing_the_live_state() {
     let directory = tempfile::tempdir().unwrap();
     let result = run(
         directory.path(),
@@ -137,7 +137,10 @@ fn driver_replay_refuses_choices_and_save_and_returns_to_unchanged_live_state() 
         ],
     );
     assert_eq!(result[6]["ok"], false);
-    assert_eq!(result[7]["ok"], false);
+    assert_eq!(result[7]["ok"], true);
+    for index in [2, 3, 4, 5, 8] {
+        assert_eq!(result[index]["ok"], false);
+    }
     assert_eq!(result[8]["observation"], result[1]["observation"]);
     let saved = arkham_unfolded_experiment::party::continuity::load_session(
         directory.path().join("attempt.json"),
@@ -147,11 +150,8 @@ fn driver_replay_refuses_choices_and_save_and_returns_to_unchanged_live_state() 
         serde_json::to_value(saved.observe()).unwrap(),
         result[1]["observation"]
     );
-    let recording = arkham_unfolded_experiment::party::continuity::load_recording(
-        directory.path().join("original.recording.json"),
-    )
-    .unwrap();
-    assert_eq!(recording, saved.recording());
+
+    assert!(!directory.path().join("original.recording.json").exists());
 }
 
 fn choices(game: &mut arkham_unfolded_experiment::party::Session, ids: &[&str]) {

@@ -2,7 +2,7 @@
 //! The issue binds original card faces, RR pp3–5,9,11–13,17,20–26 and
 //! FAQ2.5 §1.10. This is deliberately not a general action/card engine.
 
-use crate::{APP_VERSION, Choice, InvestigatorView, RuleError, TokenFace};
+use crate::{Choice, InvestigatorView, RuleError, TokenFace};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 
@@ -64,6 +64,7 @@ pub struct TestView {
     pub difficulty: i32,
     pub modifier: Option<i32>,
     pub success: Option<bool>,
+    pub resolved_token: Option<TokenFace>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,56 +97,7 @@ pub struct Observation {
     pub investigators: Vec<InvestigatorView>,
     pub jacqueline_used: bool,
     pub jacqueline_arcane_research: u8,
-    /// None identifies an older observation without source-level harm facts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub harm: Option<Vec<Harm>>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Recording {
-    pub source_revision: String,
-    pub app_version: String,
-    pub moments: Vec<Observation>,
-}
-
-pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
-    if recording.source_revision != SOURCE_REVISION || recording.app_version != APP_VERSION {
-        return Err(RuleError(
-            "This turn recording requires a different compatible application/source version."
-                .into(),
-        ));
-    }
-    if recording.moments.is_empty()
-        || !harm::valid_recording(&recording.moments)
-        || recording.moments.iter().enumerate().any(|(i, m)| {
-            m.revision != i as u64
-                || m.health != 9
-                || m.sanity != 5
-                || m.clues > 3
-                || m.study_clues != 6 - m.clues
-                || m.damage > 8
-                || m.horror > 3
-                || m.ordinary_actions > 3
-                || !(5..=9).contains(&m.resources)
-                || !(5..=9).contains(&m.contracts_bounties)
-                || m.bag_count.checked_add(usize::from(m.held_token.is_some())) != Some(16)
-                || (m.stage == Stage::Resolve) != m.held_token.is_some()
-                || m.held_token == Some(TokenFace::Curse)
-                || m.investigators.len() != 3
-                || !m.jacqueline_used
-                || m.jacqueline_arcane_research != 2
-                || m.hand.len() > 4
-                || m.committed.len() > 2
-                || m.discard.len() > 3
-                || !(29..=32).contains(&m.deck_count)
-                || m.choices.iter().enumerate().any(|(i, c)| {
-                    c.id.is_empty() || m.choices[..i].iter().any(|earlier| earlier.id == c.id)
-                })
-        })
-    {
-        return Err(RuleError("The recorded turn sequence is invalid.".into()));
-    }
-    Ok(())
+    pub harm: Vec<Harm>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,16 +125,17 @@ struct State {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Session {
     revision: u64,
     seed: u64,
     fixed_draws: Option<Vec<TokenFace>>,
     state: State,
     history: Vec<String>,
-    moments: Vec<Observation>,
+    #[serde(skip)]
+    baseline: crate::saved_state::Baseline,
     undo: Vec<Undo>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    harm: Option<Vec<Harm>>,
+    harm: Vec<Harm>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -259,7 +212,7 @@ impl Session {
     }
 
     fn from_seed(seed: u64, fixed_draws: Option<Vec<TokenFace>>) -> Self {
-        let mut game = Self {
+        Self {
             revision: 0, seed, fixed_draws: fixed_draws.clone(),
             state: State {
                 stage: Stage::Action, ordinary_actions: 3, bonus_action: true, damage: 0,
@@ -270,19 +223,14 @@ impl Session {
                 random: seed, draws: fixed_draws, draw_cursor: 0,
             },
             history: vec!["Prepared position: Tony's turn in the Study, The Gathering on Standard. Three ordinary actions and one additional Fight/Engage action against an enemy with a bounty. Stop after Tony's end-of-turn effects; companions do not take turns.".into()],
-            moments: vec![],
+            baseline: Default::default(),
             undo: vec![],
-            harm: Some(vec![]),
-        };
-        game.moments.push(game.observe());
-        game
+            harm: vec![],
+        }
     }
 
     pub fn observe(&self) -> Observation {
-        self.observation_at(self.live_stage())
-    }
-
-    fn observation_at(&self, stage: Stage) -> Observation {
+        let stage = self.state.stage;
         let s = &self.state;
         Observation {
             revision: self.revision,
@@ -295,7 +243,7 @@ impl Session {
                 Stage::Ended => "Tony's turn is over. No next investigator or phase has begun.",
             }
             .into(),
-            choices: self.choices_at(stage),
+            choices: self.choices(),
             ordinary_actions: s.ordinary_actions,
             bonus_action: s.bonus_action,
             damage: s.damage,
@@ -357,16 +305,8 @@ impl Session {
             .filter(move |card| matching_test && card.code == "03263")
     }
 
-    fn live_stage(&self) -> Stage {
-        if self.state.stage == Stage::Commit && self.committable_cards().next().is_none() {
-            Stage::Reveal
-        } else {
-            self.state.stage
-        }
-    }
-
     fn advance_empty_commitment(&mut self) {
-        if self.state.stage != self.live_stage() {
+        if self.state.stage == Stage::Commit && self.committable_cards().next().is_none() {
             self.state.stage = Stage::Reveal;
             self.history.push(
                 "No investigator has a legal card commitment; continue before revealing.".into(),
@@ -375,10 +315,7 @@ impl Session {
     }
 
     fn choices(&self) -> Vec<Choice> {
-        self.choices_at(self.live_stage())
-    }
-
-    fn choices_at(&self, stage: Stage) -> Vec<Choice> {
+        let stage = self.state.stage;
         let s = &self.state;
         let mut choices = Vec::new();
         let mut add = |id: &str, label: &str| {
@@ -451,21 +388,13 @@ impl Session {
             ));
         }
         let mut next = self.clone();
-        next.harm = Some(vec![]);
+        next.harm.clear();
         if id == "undo" {
-            let mut undo = next
+            let undo = next
                 .undo
                 .pop()
                 .expect("Offered undo has a preceding choice");
             next.state = undo.state.clone();
-            // Old saves may include an explicit "commit:none" decision where
-            // no commitment was possible. Undo past that redundant snapshot to
-            // restore the originating action, without rewriting the old record.
-            while next.state.stage != next.live_stage() && !next.undo.is_empty() {
-                undo = next.undo.pop().expect("Checked preceding choice");
-                next.state = undo.state.clone();
-            }
-            next.advance_empty_commitment();
             next.history.push(format!("Undid '{}': restored its actions, cards and consequences. Earlier entries remain as recorded history.", undo.label));
         } else {
             let previous = next.state.clone();
@@ -475,7 +404,6 @@ impl Session {
                 .find(|c| c.id == id)
                 .expect("Offered choice")
                 .label;
-            next.advance_empty_commitment();
             next.apply(id)?;
             next.advance_empty_commitment();
             if matches!(id, "reveal" | "draw") {
@@ -487,8 +415,10 @@ impl Session {
                 });
             }
         }
+        if !harm::valid_events(&self.observe(), &next.observe(), &next.harm) {
+            return Err(RuleError("The harm transition is inconsistent.".into()));
+        }
         next.revision += 1;
-        next.moments.push(next.observe());
         *self = next;
         Ok(())
     }
@@ -503,6 +433,7 @@ impl Session {
                     difficulty: 2,
                     modifier: None,
                     success: None,
+                    resolved_token: None,
                 });
                 self.state.stage = Stage::Commit;
             }
@@ -518,6 +449,7 @@ impl Session {
                     difficulty: 2,
                     modifier: None,
                     success: None,
+                    resolved_token: None,
                 });
                 self.state.stage = Stage::Commit;
             }
@@ -532,6 +464,7 @@ impl Session {
                     difficulty: 2,
                     modifier: None,
                     success: None,
+                    resolved_token: None,
                 });
                 self.state.stage = Stage::Commit;
             }
@@ -655,7 +588,7 @@ impl Session {
                 match face {
                     TokenFace::Tablet if self.state.ghoul.alive => {
                         self.state.damage += 1;
-                        self.harm.get_or_insert_default().push(Harm {
+                        self.harm.push(Harm {
                             source: HarmSource::Tablet,
                             recipient: HarmRecipient::Tony,
                             damage: 1,
@@ -679,12 +612,13 @@ impl Session {
                 let success = face != TokenFace::AutoFail && value >= test.difficulty;
                 test.modifier = Some(modifier);
                 test.success = Some(success);
+                test.resolved_token = Some(face);
                 if face == TokenFace::AutoFail {
                     self.history.push("Auto-fail: the test automatically fails; modified skill value is 0 (RR ST.6).".into());
                 }
                 if face == TokenFace::Cultist && !success {
                     self.state.horror += 1;
-                    self.harm.get_or_insert_default().push(Harm {
+                    self.harm.push(Harm {
                         source: HarmSource::Cultist,
                         recipient: HarmRecipient::Tony,
                         damage: 0,
@@ -705,7 +639,7 @@ impl Session {
                     match test.kind {
                         TestKind::Fight => {
                             self.state.ghoul.damage += 1;
-                            self.harm.get_or_insert_default().push(Harm {
+                            self.harm.push(Harm {
                                 source: HarmSource::BasicFight,
                                 recipient: HarmRecipient::Ghoul,
                                 damage: 1,
@@ -771,7 +705,7 @@ impl Session {
         self.state.stage = Stage::Ended;
         if self.state.injury {
             self.state.damage += 1;
-            self.harm.get_or_insert_default().push(Harm {
+            self.harm.push(Harm {
                 source: HarmSource::InternalInjury,
                 recipient: HarmRecipient::Tony,
                 damage: 1,
@@ -788,26 +722,13 @@ impl Session {
         if let Some(harm) = harm::opportunity_attack(&self.state.ghoul, choice) {
             self.state.damage += harm.damage;
             self.state.horror += harm.horror;
-            self.harm.get_or_insert_default().push(harm);
+            self.harm.push(harm);
             self.history.push("Ghoul Minion makes one attack of opportunity: 1 damage and 1 horror. It remains ready (RR p5).".into());
-        }
-    }
-
-    pub fn recording(&self) -> Recording {
-        Recording {
-            source_revision: SOURCE_REVISION.into(),
-            app_version: APP_VERSION.into(),
-            moments: self.moments.clone(),
         }
     }
 
     pub fn same_run(&self, other: &Self) -> bool {
         self.seed == other.seed && self.fixed_draws == other.fixed_draws
-    }
-    pub fn is_continuation_of(&self, prior: &Self) -> bool {
-        self.same_run(prior)
-            && self.revision > prior.revision
-            && self.moments.starts_with(&prior.moments)
     }
     pub fn is_fresh(&self) -> bool {
         self == &Self::from_seed(self.seed, self.fixed_draws.clone())
@@ -824,18 +745,6 @@ impl Session {
                     "An undo snapshot crosses hidden information.".into(),
                 ));
             }
-        }
-        validate_recording(&self.recording())?;
-        if self.revision.checked_add(1) != Some(self.moments.len() as u64)
-            // Legacy empty commitment saves retain their exact recorded state.
-            // Only the live decision projects to Reveal; loading never edits the
-            // saved bytes or historical observations. The next choice appends a
-            // normal continuation through the same save-before-install path.
-            || self.moments.last() != Some(&self.observation_at(self.state.stage))
-        {
-            return Err(RuleError(
-                "The saved turn differs from its recorded continuation.".into(),
-            ));
         }
         Ok(())
     }
@@ -912,7 +821,12 @@ impl Session {
             return Err(invalid());
         }
         let pending = matches!(state.stage, Stage::Commit | Stage::Reveal | Stage::Resolve);
-        if pending && state.test.is_none() {
+        if (pending && state.test.is_none())
+            || (state.stage == Stage::Commit
+                && (!state.test.as_ref().is_some_and(|test| {
+                    matches!(test.kind, TestKind::Fight | TestKind::Investigate)
+                }) || !state.hand.iter().any(|card| card.code == "03263")))
+        {
             return Err(invalid());
         }
         if !matches!(state.stage, Stage::Reveal | Stage::Resolve) && !state.committed.is_empty() {
@@ -928,6 +842,10 @@ impl Session {
                 || !(base..=base + 2).contains(&test.skill_value)
                 || pending != test.success.is_none()
                 || pending != test.modifier.is_none()
+                || pending != test.resolved_token.is_none()
+                || test
+                    .resolved_token
+                    .is_some_and(|face| !standard_bag().contains(&face))
                 || (pending && test.skill_value != base + state.committed.len() as i32)
                 || (test.kind == TestKind::Evade && test.skill_value != 2)
                 || (pending && test.kind != TestKind::Investigate && !state.ghoul.alive)

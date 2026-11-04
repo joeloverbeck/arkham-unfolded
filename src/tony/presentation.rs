@@ -12,8 +12,7 @@ pub struct PresentationStage {
 }
 
 /// Each recorded application is one stage, including combined damage/horror.
-/// The final stage is always the committed observation. Old observations without
-/// harm facts retain their aggregate presentation rather than inventing events.
+/// The final stage is always the committed observation.
 pub fn stages(before: &Observation, after: &Observation) -> Vec<PresentationStage> {
     let mut stages = Vec::new();
     let mut view = before.clone();
@@ -24,7 +23,7 @@ pub fn stages(before: &Observation, after: &Observation) -> Vec<PresentationStag
     view.bonus_action = after.bonus_action;
     view.choices.clear();
     view.can_undo = false;
-    for harm in after.harm.iter().flatten() {
+    for harm in &after.harm {
         match harm.source {
             HarmSource::BasicFight | HarmSource::Cultist => {
                 // These consequences follow the test outcome. Keep its token
@@ -56,7 +55,7 @@ pub fn stages(before: &Observation, after: &Observation) -> Vec<PresentationStag
             HarmRecipient::Ghoul => view.ghoul.damage += harm.damage,
         }
         view.prompt = format!("{} — {}", harm.source.label(), harm.recipient.label());
-        view.harm = Some(vec![*harm]);
+        view.harm = vec![*harm];
         // Preserve the prior explanation, without leaking a later draw/result.
         view.history.push(format!(
             "{}: {} receives {} damage and {} horror.",

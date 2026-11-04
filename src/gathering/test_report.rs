@@ -87,7 +87,7 @@ impl SkillTest {
         owner: Investigator,
         amount: i32,
     ) {
-        if self.capture_breakdown {
+        {
             self.bonus_sources
                 .push(Contribution::new(label, owner, amount));
         }
@@ -100,16 +100,10 @@ pub(super) fn breakdown(game: &Game, test: &SkillTest) -> TestBreakdown {
     }
     let mut bonuses = static_bonuses(game, test);
     bonuses.extend(test.bonus_sources.clone());
-    // Historical pending tests can have an aggregate without source detail.
-    // Preserve the known amount without inventing the missing provenance.
-    let unrecorded = test.bonus - test.bonus_sources.iter().map(|row| row.amount).sum::<i32>();
-    if unrecorded != 0 {
-        bonuses.push(Contribution::new(
-            "Earlier bonus (source not recorded)",
-            test.tester,
-            unrecorded,
-        ));
-    }
+    debug_assert_eq!(
+        test.bonus,
+        test.bonus_sources.iter().map(|row| row.amount).sum::<i32>()
+    );
     if let TestOperation::Fight {
         skill_bonus,
         weapon,
@@ -161,54 +155,5 @@ pub(super) fn breakdown(game: &Game, test: &SkillTest) -> TestBreakdown {
         ignored: test.ignored_tokens.clone(),
         canceled: test.cancelled_tokens.clone(),
         outcome_reason,
-    }
-}
-
-fn match_test(expected: &mut SkillTest, recorded: &SkillTest) {
-    if !recorded.capture_breakdown {
-        expected.capture_breakdown = false;
-        expected.bonus_sources.clear();
-        expected.token_contributions.clear();
-        expected.final_breakdown = None;
-    }
-}
-
-fn match_frames(expected: &mut [super::runtime::Frame], recorded: &[super::runtime::Frame]) {
-    use super::runtime::Frame;
-    for (expected, recorded) in expected.iter_mut().zip(recorded) {
-        match (expected, recorded) {
-            (Frame::TestCleanup(expected), Frame::TestCleanup(recorded)) => {
-                match_test(expected, recorded)
-            }
-            (Frame::AfterTest(expected), Frame::AfterTest(recorded)) => {
-                match_test(&mut expected.test, &recorded.test)
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Additive explanation fields are absent in historical records. Only their
-/// presence is normalized; recorded values, rules state and arithmetic still
-/// have to match deterministic reconstruction.
-pub(super) fn match_runtime(expected: &mut Game, recorded: &Game) {
-    if let (Some(expected), Some(recorded)) = (&mut expected.test, &recorded.test) {
-        match_test(expected, recorded);
-    }
-    match_frames(&mut expected.frames, &recorded.frames);
-    for (expected, recorded) in expected
-        .completed_tests
-        .iter_mut()
-        .zip(&recorded.completed_tests)
-    {
-        if recorded.breakdown.is_none() {
-            expected.breakdown = None;
-        }
-    }
-    if let (Some(expected), Some(recorded)) = (&mut expected.stopped, &recorded.stopped) {
-        if let (Some(expected), Some(recorded)) = (&mut expected.test, &recorded.test) {
-            match_test(expected, recorded);
-        }
-        match_frames(&mut expected.frames, &recorded.frames);
     }
 }

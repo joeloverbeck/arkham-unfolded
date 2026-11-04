@@ -12,7 +12,7 @@ fn scenario_pile_captions_and_heading_clear_the_book_at_normal_focus() {
                 let session = Session::with_hostile_fixture(
                     crate::gathering::HostileFixture::GatheringPriestDefeat,
                 );
-                let mut play = session.observe_for_play().play.unwrap();
+                let mut play = session.observe().play.unwrap();
                 play.scenario.victory.push(crate::gathering::CardView {
                     id: 7000,
                     code: "01118".into(),
@@ -27,6 +27,7 @@ fn scenario_pile_captions_and_heading_clear_the_book_at_normal_focus() {
                 });
                 let mut table = Table::new(session, dir.path().join("layout.json"));
                 table.presentation = vec![PresentationMoment {
+                    revealed_story: vec![],
                     revision: 1,
                     sequence: 0,
                     caption: "Populated Scenario layout witness".into(),
@@ -136,7 +137,7 @@ fn victory_caption_tracks_the_displayed_moment_and_survives_reopen() {
         .choose(session.observe().revision, "action:ordinary:fight:400")
         .unwrap();
     for _ in 0..8 {
-        let view = session.observe_for_play();
+        let view = session.observe();
         if view.choices.iter().any(|c| c.id == "resolution:burn") {
             break;
         }
@@ -174,33 +175,6 @@ fn victory_caption_tracks_the_displayed_moment_and_survives_reopen() {
         .extend([Action::Save, Action::Reopen]);
     app.update();
     assert!(rendered_text(&mut app).contains("1 cards\n2 VP"));
-    let saved = std::fs::read(&path).unwrap();
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .push(Action::Replay);
-    app.update();
-    let mut saw_empty = false;
-    let mut saw_priest = false;
-    for _ in 0..40 {
-        let view = app.world().resource::<Table>().view();
-        let has_priest = !view.play.as_ref().unwrap().scenario.victory.is_empty();
-        let text = rendered_text(&mut app);
-        if has_priest {
-            saw_priest = true;
-            assert!(text.contains("1 cards\n2 VP"));
-        } else {
-            saw_empty = true;
-            assert!(text.contains("0 cards\n0 VP"));
-        }
-        app.world_mut()
-            .resource_mut::<Actions>()
-            .0
-            .push(Action::Next);
-        app.update();
-    }
-    assert!(saw_empty && saw_priest);
-    assert_eq!(std::fs::read(path).unwrap(), saved);
 }
 
 #[test]
@@ -209,9 +183,9 @@ fn only_eligible_locations_join_the_display_at_scenario_end() {
     let mut app = host(dir.path().join("locations.json"));
     let session =
         Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringPriestDefeat);
-    let mut play = session.observe_for_play().play.unwrap();
+    let mut play = session.observe().play.unwrap();
     // A public-state witness isolates the RR p21 collection boundary. The
-    // actual saved fight/replay path is covered by the test above.
+    // actual saved fight path is covered by the test above.
     play.scenario.victory.push(crate::gathering::CardView {
         id: 900,
         code: "01118".into(),
@@ -250,6 +224,7 @@ fn only_eligible_locations_join_the_display_at_scenario_end() {
         }
         let mut table = Table::new(session.clone(), dir.path().join("locations.json"));
         table.presentation = vec![PresentationMoment {
+            revealed_story: vec![],
             revision: 1,
             sequence: 0,
             caption: "Victory collection witness".into(),

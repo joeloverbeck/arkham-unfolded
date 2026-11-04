@@ -20,7 +20,7 @@ For these starting decks, the basic weaknesses are fixed: Tony has Internal Inju
 
 ArkhamDB remains the place to edit and upgrade decks. The game tracks earned, spent and unspent experience, including applicable discounts and card-specific effects. Between scenarios, Joel imports a successor deck; the program checks the transition, legality, costs and implementation support before the next scenario can begin. An unsupported chosen upgrade becomes work required before that preparation succeeds. Importing an arbitrary legal deck is not a promise that it is immediately playable.
 
-New campaigns use the latest taboo version available through the accepted update source. The chosen version is pinned for the entire campaign and its replay. Exact rules and taboo identities are visible during preparation. Updating available data does not silently change an active campaign.
+New campaigns use the latest taboo version available through the accepted update source. The chosen version is pinned for the entire campaign. Exact rules and taboo identities are visible during preparation. Updating available data does not silently change an active campaign.
 
 ## Decisions and tabletop interaction
 
@@ -30,25 +30,27 @@ The primary interaction is point and click: choose an action and any legal targe
 
 An on-demand action history explains costs, modifiers, timing, outcomes and the relevant rules evidence. Effective card inspection shows the full text in force and identifies changes. Original card art is preserved; printed level and adjusted experience cost are shown separately when they differ.
 
-Undo is available only before a choice reveals new hidden information. A replay is not permission to rewrite the recorded match or conceal a different outcome.
+Undo is available only before a choice reveals new hidden information. The action history must remain clear about choices and their reversal.
 
-## Recording and replay
+## Recording and replay retirement
 
-The complete match record preserves decisions, random outcomes and game-state progression, bound to the inputs and rules that governed the original play. Replaying a match reproduces its game events and outcomes rather than applying current rules or drawing new randomness.
+Joel may screen-record live play using external tools. Built-in video encoding, editing, upload and publication remain outside the product scope.
 
-Replay progresses through meaningful presentation moments. “Next” advances to the next moment and pauses, allowing Joel to narrate a recording. The replay camera automatically pans and zooms to relevant events, with manual override and the ability to go back. It need not reproduce the original camera movements or the time spent thinking. Continuous playback is optional deferred work. The recording boundary is a replay presentation that Joel can screen-record and narrate; built-in video encoding, editing, upload and publication are outside the first slice.
+On 2026-11-04, Joel accepted [complete replay retirement](../adr/0003-retire-replay.md): remove playback, recording export/read APIs and historical observation storage maintained for replay across all four modes. Live play, action history and continuity retain their own requirements. Persistence may be reworked as necessary rather than constrained by old record structures. The implementation and verification evidence is retained in the [removal report](../research/replay-removal.md#implementation-result).
 
 ## Save/load and offline use
 
-Save/load is required. Gameplay, saving, loading and replay work offline after the necessary data has been imported. Internet access is used for ArkhamDB and updates. Network multiplayer is outside the first release.
+Save/load is required. Gameplay, saving and loading work offline after the necessary data has been imported. Internet access is used for ArkhamDB and updates. Network multiplayer is outside the first release.
 
-Autosave each committed player-decision boundary and permit a manual save at a pending decision, including during a skill test. Loading restores the exact pending choice, state and randomness without rerolling or repeating committed effects. Presentation interrupted by saving must not alter rules state. Records identify the required game data and application/rules version. Updates must preserve original records and an explicit way to resume or replay them, through a compatible version or a verified migration. The compatibility approach needs assessment before implementation; this does not promise that every future build can directly open every historical format.
+Autosave each committed player-decision boundary and permit a manual save at a pending decision, including during a skill test. Loading restores the exact pending choice, state and randomness without rerolling or repeating committed effects. Presentation interrupted by saving must not alter rules state. Save records identify the required game data and application/rules version. Supported formats and source versions must be explicit; unsupported records are refused without changing their bytes.
+
+The replay-retirement change deliberately makes every save and standalone recording produced by pre-removal builds unsupported across all experiments and Gathering. No migration or maintained historical reader is required. This accepted break concerns existing records; it does not decide the compatibility policy for future formats. Personal files are not deleted or overwritten merely because support ends.
 
 ## Presentation assets and missing artwork
 
-The application reads presentation assets from a separately configured [prepared asset collection](../../GLOSSARY.md), outside the repository. The default uses the user's application-data directory. An in-app folder selection is checked, saved in per-user configuration and applied on restart; canceling or a failed configuration write preserves the previous setting. Temporary command-line overrides do not replace the saved preference. Personal saves, replays and settings remain separate from the portable collection.
+The application reads presentation assets from a separately configured [prepared asset collection](../../GLOSSARY.md), outside the repository. The default uses the user's application-data directory. An in-app folder selection is checked, saved in per-user configuration and applied on restart; canceling or a failed configuration write preserves the previous setting. Temporary command-line overrides do not replace the saved preference. Personal saves and settings remain separate from the portable collection.
 
-The source archive is an unchanged input to [asset preparation](sources-and-verification.md#presentation-asset-preparation). Ordinary play reads only the prepared collection and does not fall back to the archive. The collection must remain usable after relocation without the source archive. Moving or replacing presentation assets must not change rules behavior, recorded decisions or save/replay compatibility. Replay uses the selected presentation assets; exact historical artwork appearance is not a replay guarantee.
+The source archive is an unchanged input to [asset preparation](sources-and-verification.md#presentation-asset-preparation). Ordinary play reads only the prepared collection and does not fall back to the archive. The collection must remain usable after relocation without the source archive. Moving or replacing presentation assets must not change rules behavior, game decisions or supported-save continuity.
 
 Missing, unreadable or changed individual assets, or an absent collection, must leave the game playable using readable English substitutes for cards, tokens, symbols and other necessary components. The application reports whether the expected assets are complete or substitutes are in use. A playable scene with substitutes does not establish a complete asset collection. Image and font bytes remain outside Git.
 

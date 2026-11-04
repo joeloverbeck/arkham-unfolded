@@ -179,7 +179,7 @@ pub(super) fn act_revealed(view: &super::Observation) -> bool {
 }
 
 /// Artwork availability is not permission to disclose a face. Always use the
-/// displayed observation, including its own point in a recorded replay.
+/// displayed observation, including the current transient presentation step.
 pub(super) fn inspectable(view: &super::Observation, index: usize) -> bool {
     let Some(card) = CARDS.get(index) else {
         return false;

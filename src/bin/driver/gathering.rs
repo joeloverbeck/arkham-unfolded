@@ -1,13 +1,13 @@
 use arkham_unfolded_experiment::gathering::Session;
 use arkham_unfolded_experiment::gathering::continuity::{
-    Replay, commit_choice, load_session, save_session,
+    commit_choice, load_session, save_session,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-const USAGE: &str = "arkham-driver --experiment gathering [--load PATH] [--save PATH]\nJSON lines: observe; choose with revision and id; save; reopen; replay; next; back; live; export with path; quit. An existing save reopens automatically. This implements real setup and mulligans only; scenario play is unavailable. Inputs use the pinned research baseline, not a current campaign update check. Random draws are session-owned and not player-selectable.";
+const USAGE: &str = "arkham-driver --experiment gathering [--load PATH] [--save PATH]\nJSON lines: observe; choose with revision and id; save; reopen; quit. An existing save reopens automatically. Inputs use the pinned research baseline, not a current campaign update check. Random draws are session-owned and not player-selectable.";
 
 struct Options {
     load: Option<PathBuf>,
@@ -48,11 +48,6 @@ enum Request {
     Choose { revision: u64, id: String },
     Save {},
     Reopen {},
-    Replay {},
-    Next {},
-    Back {},
-    Live {},
-    Export { path: PathBuf },
     Quit {},
 }
 
@@ -62,18 +57,13 @@ fn emit(output: &mut impl Write, value: &Value) -> Result<(), String> {
     output.flush().map_err(|error| error.to_string())
 }
 
-fn response(game: &Session, replay: Option<&Replay>, status: &str, error: Option<String>) -> Value {
-    let observation = replay.map_or_else(
-        || game.observe_for_play(),
-        |replay| replay.current().clone(),
-    );
+fn response(game: &Session, status: &str, error: Option<String>) -> Value {
+    let observation = game.observe();
     let mut response = json!({
-        "ok": error.is_none(), "mode": if replay.is_some() { "replay" } else { "live" }, "status": status,
+        "ok": error.is_none(), "mode": "live", "status": status,
         "observation": observation,
     });
-    if let Some(replay) = replay {
-        response["replay"] = json!({"index": replay.index(), "length": replay.len()});
-    }
+
     if let Some(error) = error {
         response["error"] = json!(error);
     }
@@ -100,8 +90,8 @@ pub fn run() -> Result<(), String> {
         );
     }
     save_session(&options.save, &game).map_err(|error| error.to_string())?;
-    let mut replay = None;
-    emit(&mut output, &response(&game, None, "ready", None))?;
+
+    emit(&mut output, &response(&game, "ready", None))?;
     for line in io::stdin().lock().lines() {
         let line = line.map_err(|error| error.to_string())?;
         let request = match serde_json::from_str::<Request>(&line) {
@@ -109,7 +99,7 @@ pub fn run() -> Result<(), String> {
             Err(error) => {
                 emit(
                     &mut output,
-                    &response(&game, replay.as_ref(), "refused", Some(error.to_string())),
+                    &response(&game, "refused", Some(error.to_string())),
                 )?;
                 continue;
             }
@@ -117,137 +107,44 @@ pub fn run() -> Result<(), String> {
         match request {
             Request::Observe {} => emit(
                 &mut output,
-                &response(&game, replay.as_ref(), "observed", None),
+                &response(&game, "observed", None),
             )?,
             Request::Choose { revision, id } => {
-                if replay.is_some() {
-                    emit(&mut output, &response(&game, replay.as_ref(), "refused", Some("Replay cannot change the match. Use live to return to the current decision.".into())))?;
-                    continue;
-                }
+
                 match commit_choice(&options.save, &mut game, revision, &id) {
-                    Ok(()) => emit(&mut output, &response(&game, None, "chosen", None))?,
+                    Ok(()) => emit(&mut output, &response(&game, "chosen", None))?,
                     Err(error) => emit(
                         &mut output,
-                        &response(&game, None, "refused", Some(error.to_string())),
+                        &response(&game, "refused", Some(error.to_string())),
                     )?,
                 }
             }
             Request::Save {} => {
-                if replay.is_some() {
-                    emit(&mut output, &response(&game, replay.as_ref(), "refused", Some("Replay cannot save a past moment. Use live to save the current decision.".into())))?;
-                    continue;
-                }
+
                 match save_session(&options.save, &game) {
-                    Ok(()) => emit(&mut output, &response(&game, None, "saved", None))?,
+                    Ok(()) => emit(&mut output, &response(&game, "saved", None))?,
                     Err(error) => emit(
                         &mut output,
-                        &response(&game, None, "refused", Some(error.to_string())),
+                        &response(&game, "refused", Some(error.to_string())),
                     )?,
                 }
             }
             Request::Reopen {} => {
-                if replay.is_some() {
-                    emit(
-                        &mut output,
-                        &response(
-                            &game,
-                            replay.as_ref(),
-                            "refused",
-                            Some("Return to live before reopening the saved decision.".into()),
-                        ),
-                    )?;
-                    continue;
-                }
+
                 match load_session(&options.save) {
                     Ok(saved) if !saved.is_verification_fixture() => {
                         game = saved;
-                        emit(&mut output, &response(&game, None, "reopened", None))?;
+                        emit(&mut output, &response(&game, "reopened", None))?;
                     }
-                    Ok(_) => emit(&mut output, &response(&game, None, "refused", Some("A privileged verification fixture cannot replace the live player setup.".into())))?,
+                    Ok(_) => emit(&mut output, &response(&game, "refused", Some("A privileged verification fixture cannot replace the live player setup.".into())))?,
                     Err(error) => emit(
                         &mut output,
-                        &response(&game, None, "refused", Some(error.to_string())),
+                        &response(&game, "refused", Some(error.to_string())),
                     )?,
                 }
             }
-            Request::Replay {} => match Replay::new(game.recording()) {
-                Ok(record) => {
-                    replay = Some(record);
-                    emit(
-                        &mut output,
-                        &response(&game, replay.as_ref(), "replay", None),
-                    )?;
-                }
-                Err(error) => emit(
-                    &mut output,
-                    &response(&game, replay.as_ref(), "refused", Some(error.to_string())),
-                )?,
-            },
-            Request::Next {} | Request::Back {} => {
-                if let Some(cursor) = &mut replay {
-                    let moved = if matches!(request, Request::Next {}) {
-                        cursor.next()
-                    } else {
-                        cursor.back()
-                    };
-                    emit(
-                        &mut output,
-                        &response(
-                            &game,
-                            replay.as_ref(),
-                            if moved { "replay" } else { "boundary" },
-                            None,
-                        ),
-                    )?;
-                } else {
-                    emit(
-                        &mut output,
-                        &response(
-                            &game,
-                            None,
-                            "refused",
-                            Some("Start replay before navigating its moments.".into()),
-                        ),
-                    )?;
-                }
-            }
-            Request::Live {} => {
-                replay = None;
-                emit(&mut output, &response(&game, None, "live", None))?;
-            }
-            Request::Export { path } => {
-                if replay.is_some() {
-                    emit(
-                        &mut output,
-                        &response(
-                            &game,
-                            replay.as_ref(),
-                            "refused",
-                            Some("Return to live before exporting the complete recording.".into()),
-                        ),
-                    )?;
-                    continue;
-                }
-                let result = arkham_unfolded_experiment::gathering::continuity::save_recording(
-                    path,
-                    &game.recording(),
-                );
-                emit(
-                    &mut output,
-                    &response(
-                        &game,
-                        None,
-                        if result.is_ok() {
-                            "exported"
-                        } else {
-                            "refused"
-                        },
-                        result.err().map(|e| e.to_string()),
-                    ),
-                )?;
-            }
             Request::Quit {} => {
-                emit(&mut output, &response(&game, replay.as_ref(), "bye", None))?;
+                emit(&mut output, &response(&game, "bye", None))?;
                 break;
             }
         }

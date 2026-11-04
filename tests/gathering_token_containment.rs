@@ -2,12 +2,12 @@ use arkham_unfolded_experiment::{
     TokenFace,
     gathering::{
         HostileFixture, Investigator, Session, TokenFixture,
-        continuity::{self, Replay},
+        continuity::{self},
     },
 };
 
 fn choose(session: &mut Session, id: &str) {
-    let observation = session.observe_for_play();
+    let observation = session.observe();
     assert!(
         observation.choices.iter().any(|choice| choice.id == id),
         "Missing {id}: {:?}",
@@ -21,7 +21,7 @@ fn sealed_premonition_voice_pays_once_then_resumes_after_opportunity() {
     let mut session = Session::with_hostile_fixture(HostileFixture::Tokens(
         TokenFixture::PremonitionVoiceOpportunity,
     ));
-    let first = session.observe_for_play();
+    let first = session.observe();
     let premonition = first
         .choices
         .iter()
@@ -31,7 +31,7 @@ fn sealed_premonition_voice_pays_once_then_resumes_after_opportunity() {
         .clone();
     choose(&mut session, &premonition);
     choose(&mut session, "test:reveal");
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let voice = before.players[2]
         .hand
         .iter()
@@ -51,7 +51,7 @@ fn sealed_premonition_voice_pays_once_then_resumes_after_opportunity() {
                 && !enemy.exhausted)
     );
     choose(&mut session, &format!("action:ordinary:play:spell:{voice}"));
-    let paid = session.observe_for_play();
+    let paid = session.observe();
     let play = paid.play.as_ref().unwrap();
     assert_eq!(play.actions_remaining[2], 2);
     assert_eq!(
@@ -73,7 +73,7 @@ fn sealed_premonition_voice_pays_once_then_resumes_after_opportunity() {
     for current in [&mut session, &mut reopened] {
         choose(current, &attack);
         for _ in 0..5 {
-            let pending = current.observe_for_play();
+            let pending = current.observe();
             if pending
                 .choices
                 .iter()
@@ -96,8 +96,8 @@ fn sealed_premonition_voice_pays_once_then_resumes_after_opportunity() {
         choose(current, "test:reveal");
         current.validate().unwrap();
     }
-    assert_eq!(session.observe_for_play(), reopened.observe_for_play());
-    let after = session.observe_for_play().play.unwrap();
+    assert_eq!(session.observe(), reopened.observe());
+    let after = session.observe().play.unwrap();
     assert_eq!(after.actions_remaining[2], 2);
     assert!(after.players[2].damage > before.players[2].damage);
     assert_eq!(
@@ -114,9 +114,8 @@ fn sealed_premonition_voice_pays_once_then_resumes_after_opportunity() {
     );
     assert!(after.premonition.is_none());
     assert_eq!(after.bag_count, 16);
-    let recording = session.recording();
+    let recording = session.presentation_after(0);
     let batch = recording
-        .presentation_moments
         .iter()
         .find(|moment| {
             moment.play.tokens.as_ref().is_some_and(|tokens| {
@@ -125,7 +124,4 @@ fn sealed_premonition_voice_pays_once_then_resumes_after_opportunity() {
         })
         .expect("One sealed token plus two fresh tokens");
     assert_eq!(batch.play.bag_count, 13);
-    let mut replay = Replay::new(session.recording()).unwrap();
-    while replay.next() {}
-    assert_eq!(replay.current(), &session.observe_for_play());
 }

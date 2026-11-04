@@ -17,7 +17,7 @@ fn investigator_menu_keeps_lead_selection_explicit_and_uses_the_public_choice() 
     assert!(pending_choices(&view).is_empty());
 
     let mut context = Context::default();
-    context.sync(0, view.revision, None);
+    context.sync(0, view.revision);
     assert!(matches!(
         context.select(
             &view,
@@ -578,8 +578,9 @@ fn health_denial_invalidates_old_menu_actions_after_recovery() {
 }
 
 #[test]
-fn same_revision_reopen_and_replay_invalidate_contextual_callbacks() {
-    for transition in [Action::Reopen, Action::Replay] {
+fn same_revision_reopen_invalidates_contextual_callbacks() {
+    {
+        let transition = Action::Reopen;
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("context.json");
         let mut app = super::super::tests::host(path.clone());
@@ -623,120 +624,11 @@ fn failed_contextual_save_preserves_the_open_choice_and_generation() {
 }
 
 #[test]
-fn replay_card_selection_only_inspects_and_never_opens_gameplay_choices() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("context.json");
-    let mut app = super::super::tests::host(path.clone());
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .push(Action::Replay);
-    app.update();
-    select_tony(&mut app);
-    let table = app.world().resource::<Table>();
-    assert!(
-        table
-            .inspection
-            .as_ref()
-            .is_some_and(|(_, code)| code == "06003")
-    );
-    assert!(!table.context.is_open());
-    assert_eq!(table.session.observe().revision, 0);
-    assert!(!path.exists());
-}
-
-#[test]
-fn replay_backpack_menu_inspects_each_public_card_without_offering_gameplay() {
-    use crate::gathering::{BackpackFixture, HostileFixture};
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("pile-inspection.json");
-    let session = Session::with_hostile_fixture(HostileFixture::Backpack(BackpackFixture::Chill));
-    let before = session.recording();
-    let view = session.observe_for_play();
-    let pack = &view.play.as_ref().unwrap().backpacks[0];
-    let source = Source::Backpack(pack.asset);
-    let expected = pack.cards.clone();
-    assert!(expected.len() > 1);
-    let mut app = super::super::tests::host(path.clone());
-    let image = app
-        .world_mut()
-        .resource_mut::<Assets<Image>>()
-        .add(Image::default());
-    app.insert_resource(art::Art::with_images_for_test([(
-        "card-04107",
-        image.clone(),
-    )]));
-    {
-        let mut table = app.world_mut().resource_mut::<Table>();
-        table.session = session;
-        table.replay = Some(Replay::new(before.clone()).unwrap());
-        table.epoch += 1;
-        table.dirty = true;
-    }
-    app.update();
-    super::super::tests::click_source(&mut app, source);
-    let world = app.world_mut();
-    let menu = world
-        .query_filtered::<Entity, With<Menu>>()
-        .single(world)
-        .expect("A public multi-card pile opens an inspection menu in replay");
-    let labels = world
-        .get::<Children>(menu)
-        .unwrap()
-        .iter()
-        .filter(|entity| world.get::<Button>(*entity).is_some())
-        .filter_map(|entity| {
-            world
-                .get::<AccessibleLabel>(entity)
-                .map(|label| (entity, label.0.clone()))
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        labels
-            .iter()
-            .all(|(_, label)| label.starts_with("Inspect ") || label == "Dismiss"),
-        "Replay pile menus contain inspection and dismissal only: {labels:?}"
-    );
-    for card in &expected {
-        assert!(
-            labels.iter().any(|(_, label)| label.contains(&card.title)),
-            "Missing {}",
-            card.title
-        );
-    }
-    let card = expected.iter().find(|card| card.code == "04107").unwrap();
-    let row = labels
-        .iter()
-        .find(|(_, label)| label.contains(&card.title))
-        .unwrap()
-        .0;
-    world.trigger(Activate { entity: row });
-    app.update();
-    assert_eq!(
-        app.world()
-            .resource::<Table>()
-            .inspection
-            .as_ref()
-            .map(|(_, code)| code.as_str()),
-        Some("04107")
-    );
-    let world = app.world_mut();
-    assert!(
-        world
-            .query::<&ImageNode>()
-            .iter(world)
-            .any(|node| node.image == image)
-    );
-    assert_eq!(app.world().resource::<Table>().session.recording(), before);
-    assert!(!path.exists());
-}
-
-#[test]
 fn bag_and_token_read_only_inspection_uses_the_standard_reference() {
     let mut session =
         Session::with_hostile_fixture(crate::gathering::HostileFixture::JacquelineCancellation);
     for _ in 0..4 {
-        let view = session.observe_for_play();
+        let view = session.observe();
         if view.choices.iter().any(|choice| choice.id == "test:reveal") {
             break;
         }
@@ -755,7 +647,7 @@ fn bag_and_token_read_only_inspection_uses_the_standard_reference() {
     }
     choose(&mut session, "tokens:jacqueline");
     choose(&mut session, "test:reveal");
-    let view = session.observe_for_play();
+    let view = session.observe();
     for source in [Source::Bag, Source::Token(0)] {
         let mut context = Context::default();
         let effect = context.select(
@@ -775,7 +667,7 @@ fn bag_and_token_read_only_inspection_uses_the_standard_reference() {
 #[test]
 fn room_and_exposed_enemy_open_the_whole_public_enemy_group_once() {
     let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringHunters);
-    let view = session.observe_for_play();
+    let view = session.observe();
     let enemies = &view.play.as_ref().unwrap().scenario.enemies;
     let exposed = enemies
         .iter()
@@ -859,15 +751,15 @@ fn room_and_exposed_enemy_open_the_whole_public_enemy_group_once() {
             );
         }
         assert_eq!(
-            app.world().resource::<Table>().session.recording(),
-            session.recording()
+            app.world().resource::<Table>().session.clone(),
+            session.clone()
         );
     }
 }
 
 #[test]
 fn displayed_choices_remove_copy_annotations_without_changing_recorded_choices() {
-    let mut view = Session::with_seed(19).observe_for_play();
+    let mut view = Session::with_seed(19).observe();
     // This annotation shape is emitted by spell_events::choices. The global
     // control path must preserve the same display rule as contextual actions.
     view.choices = vec![Choice {
@@ -886,7 +778,7 @@ fn displayed_choices_remove_copy_annotations_without_changing_recorded_choices()
 #[test]
 fn enemy_inspection_keeps_each_public_physical_state_without_showing_its_id() {
     let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringHunters);
-    let view = session.observe_for_play();
+    let view = session.observe();
     let expected = view
         .play
         .as_ref()
@@ -968,8 +860,8 @@ fn enemy_inspection_keeps_each_public_physical_state_without_showing_its_id() {
     }
     assert!(!text.contains(&key));
     assert_eq!(
-        app.world().resource::<Table>().session.recording(),
-        session.recording()
+        app.world().resource::<Table>().session.clone(),
+        session.clone()
     );
 }
 
@@ -979,7 +871,7 @@ fn actual_end_turn_and_bounty_history_use_public_names_instead_of_physical_ids()
     let mut forced =
         Session::with_hostile_fixture(HostileFixture::Peter(PeterFixture::ForcedBeforeReaction));
     choose(&mut forced, "turn:end");
-    let view = forced.observe_for_play();
+    let view = forced.observe();
     let raw = view
         .choices
         .iter()
@@ -1008,7 +900,7 @@ fn actual_end_turn_and_bounty_history_use_public_names_instead_of_physical_ids()
         }
     }
     choose(&mut bounty, "bounty:400:1");
-    let view = bounty.observe_for_play();
+    let view = bounty.observe();
     let raw = view
         .history
         .iter()

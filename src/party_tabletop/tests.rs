@@ -18,75 +18,6 @@ fn native_image_roles_include_all_counter_recipe_assets() {
 }
 
 #[test]
-fn legacy_result_continues_after_render_admission_without_a_finish_click() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("legacy.json");
-    let original = include_bytes!("../../tests/fixtures/party-result-ef6daf2.session.json");
-    std::fs::write(&path, original).unwrap();
-    let (mut app, _) =
-        selection_lifecycle::production_app(path.clone(), RenderHealth::ready_for_test());
-    app.insert_resource(Table::new(
-        continuity::load_session(&path).unwrap(),
-        path.clone(),
-    ));
-    app.insert_resource(RenderHealth::default());
-    app.update();
-    assert_eq!(std::fs::read(&path).unwrap(), original);
-    assert_eq!(
-        app.world().resource::<Table>().view().stage,
-        crate::party::Stage::Result
-    );
-    app.insert_resource(RenderHealth::ready_for_test());
-    app.update();
-    let view = continuity::load_session(&path).unwrap().observe();
-    assert_eq!(view.stage, crate::party::Stage::Action);
-    assert_eq!(view.bag_count, 16);
-    assert!(!view.can_undo);
-    assert_eq!(view, app.world().resource::<Table>().view());
-}
-
-#[test]
-fn legacy_automatic_resume_preserves_failure_and_replay_without_retrying_each_frame() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("legacy.json");
-    let original = include_bytes!("../../tests/fixtures/party-result-ef6daf2.session.json");
-    std::fs::write(&path, original).unwrap();
-    let legacy = continuity::load_session(&path).unwrap();
-    let unusable = directory.path().join("directory");
-    std::fs::create_dir(&unusable).unwrap();
-    let (mut app, _) =
-        selection_lifecycle::production_app(path.clone(), RenderHealth::ready_for_test());
-    app.insert_resource(Table::new(legacy.clone(), unusable));
-    app.update();
-    assert_eq!(app.world().resource::<Table>().session, legacy);
-    assert!(
-        app.world()
-            .resource::<Table>()
-            .notice
-            .contains("not committed")
-    );
-    app.world_mut().resource_mut::<Table>().save_path = path.clone();
-    app.update();
-    assert_eq!(
-        std::fs::read(&path).unwrap(),
-        original,
-        "save failure must not become an unattended retry loop"
-    );
-    let mut table = Table::new(legacy.clone(), path.clone());
-    let mut replay = Replay::new(legacy.recording()).unwrap();
-    while replay.next() {}
-    table.replay = Some(replay);
-    app.insert_resource(table);
-    app.update();
-    assert_eq!(
-        app.world().resource::<Table>().view().stage,
-        crate::party::Stage::Result
-    );
-    assert_eq!(std::fs::read(&path).unwrap(), original);
-    assert_eq!(app.world().resource::<Table>().session, legacy);
-}
-
-#[test]
 fn installed_token_return_clears_physical_tokens_and_sends_resolved_curse_to_pool() {
     let directory = tempfile::tempdir().unwrap();
     for reduced_motion in [false, true] {
@@ -432,9 +363,7 @@ fn rendering_check_blocks_party_decisions_without_creating_a_record() {
     let before = app.world().resource::<Table>().session.clone();
     choose(&mut app, "select:jacqueline");
     act(&mut app, Action::Save);
-    act(&mut app, Action::Replay);
     assert_eq!(app.world().resource::<Table>().session, before);
-    assert!(app.world().resource::<Table>().replay.is_none());
     assert!(!path.exists());
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
 
@@ -459,24 +388,26 @@ fn rendering_health_preserves_party_records_and_drains_blocked_input() {
         act(&mut app, Action::Save);
         let saved = std::fs::read(&path).unwrap();
         choose(&mut app, "select:jacqueline");
+        let active_bytes = std::fs::read(&path).unwrap();
         let before = app.world().resource::<Table>().session.clone();
         // A different valid save makes a blocked Reopen observable too.
         std::fs::write(&path, &saved).unwrap();
         let file_count = std::fs::read_dir(dir.path()).unwrap().count();
         app.insert_resource(health);
         choose(&mut app, "investigate");
-        for action in [Action::Save, Action::Reopen, Action::Replay, Action::New] {
+        for action in [Action::Save, Action::Reopen, Action::New] {
             act(&mut app, action);
         }
         let camera_before = app.world().resource::<Orbit>().pose();
         act(&mut app, Action::Focus(Area::Test));
         assert_ne!(app.world().resource::<Orbit>().pose(), camera_before);
         assert_eq!(app.world().resource::<Table>().session, before);
-        assert!(app.world().resource::<Table>().replay.is_none());
         assert_eq!(std::fs::read(&path).unwrap(), saved);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), file_count);
         assert!(app.world().resource::<Actions>().0.is_empty());
 
+        // Restore the exact baseline before the next authorized write.
+        std::fs::write(&path, &active_bytes).unwrap();
         app.insert_resource(RenderHealth::ready_for_test());
         app.update();
         assert_eq!(app.world().resource::<Table>().session, before);
@@ -487,38 +418,6 @@ fn rendering_health_preserves_party_records_and_drains_blocked_input() {
             app.world().resource::<Table>().session
         );
     }
-}
-
-#[test]
-fn rendering_failure_blocks_party_replay_navigation_and_return_to_live() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("party.json");
-    let mut app = app(path.clone());
-    choose(&mut app, "select:jacqueline");
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Next);
-    let index = app
-        .world()
-        .resource::<Table>()
-        .replay
-        .as_ref()
-        .unwrap()
-        .index();
-    let saved = std::fs::read(&path).unwrap();
-    app.insert_resource(RenderHealth::failed_for_test());
-    for action in [Action::Back, Action::Next, Action::Live] {
-        act(&mut app, action);
-        assert_eq!(
-            app.world()
-                .resource::<Table>()
-                .replay
-                .as_ref()
-                .unwrap()
-                .index(),
-            index
-        );
-    }
-    assert_eq!(std::fs::read(path).unwrap(), saved);
 }
 
 #[test]
@@ -610,7 +509,7 @@ fn native_choice_saves_before_install_and_camera_focus_never_selects_actor() {
     assert_eq!(continuity::load_session(&path).unwrap().observe(), after);
 }
 #[test]
-fn failed_native_choice_and_replay_preserve_live_session_and_camera() {
+fn failed_native_choice_preserves_live_session_and_camera() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("party.json");
     let mut app = app(path.clone());
@@ -627,17 +526,6 @@ fn failed_native_choice_and_replay_preserve_live_session_and_camera() {
             .notice
             .contains("not committed")
     );
-    app.world_mut().resource_mut::<Table>().save_path = path.clone();
-    act(&mut app, Action::Replay);
-    let bytes = std::fs::read(&path).unwrap();
-    assert!(app.world().resource::<Table>().replay.is_some());
-    choose(&mut app, "investigate");
-    act(&mut app, Action::Save);
-    act(&mut app, Action::Next);
-    act(&mut app, Action::Back);
-    act(&mut app, Action::Live);
-    assert_eq!(app.world().resource::<Table>().session, before);
-    assert_eq!(std::fs::read(&path).unwrap(), bytes);
 }
 #[test]
 fn inspection_preserves_selected_commitments_and_revision_change_invalidates_them() {
@@ -888,7 +776,7 @@ fn production_hand_recenters_after_draw_and_restores_after_reopen() {
 }
 
 #[test]
-fn production_tokens_move_sections_only_after_cancellation_and_replay_preserves_it() {
+fn production_tokens_move_sections_only_after_cancellation() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = render_app(dir.path().join("token-layout.json"));
     app.world_mut().resource_mut::<Table>().session = Session::with_draws(vec![
@@ -925,28 +813,6 @@ fn production_tokens_move_sections_only_after_cancellation_and_replay_preserves_
     let after = positions(&mut app);
     assert!(after[&0].x > layout::TEST_CENTER.x && after[&1].x > layout::TEST_CENTER.x);
     assert!(after[&2].x < layout::TEST_CENTER.x);
-    let live = app.world().resource::<Table>().session.clone();
-    act(&mut app, Action::Replay);
-    while app
-        .world()
-        .resource::<Table>()
-        .replay
-        .as_ref()
-        .unwrap()
-        .index()
-        + 1
-        < app
-            .world()
-            .resource::<Table>()
-            .replay
-            .as_ref()
-            .unwrap()
-            .len()
-    {
-        act(&mut app, Action::Next);
-    }
-    assert_eq!(positions(&mut app), after);
-    assert_eq!(app.world().resource::<Table>().session, live);
 }
 
 fn completed_attempt(advance: Option<bool>) -> Session {
@@ -1033,136 +899,6 @@ fn substitutes_name_the_book_assets_and_each_honest_endpoint() {
     }
 }
 
-fn settle_camera(app: &mut App) -> Vec3 {
-    let keys = ButtonInput::default();
-    let buttons = ButtonInput::default();
-    let window = Window::default();
-    let mut orbit = app.world_mut().resource_mut::<Orbit>();
-    orbit.step(FrameInput {
-        keys: &keys,
-        buttons: &buttons,
-        window: &window,
-        scroll_y: 0.,
-        dt: 1.,
-        capture: CameraCapture::default(),
-        reduced_motion: true,
-    });
-    orbit.pose().target
-}
-
-#[test]
-fn replay_follows_current_actions_after_tests_and_preserves_manual_override() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut app = app(dir.path().join("party.json"));
-    for id in [
-        "select:tony",
-        "investigate",
-        "commit:none",
-        "reveal",
-        "resolve:0",
-        "draw",
-        "resource",
-        "end-turn",
-        "select:patrice",
-    ] {
-        choose(&mut app, id);
-    }
-    act(&mut app, Action::Replay);
-    for _ in 0..4 {
-        act(&mut app, Action::Next);
-    }
-    assert_eq!(
-        settle_camera(&mut app),
-        layout::focus(Area::Test).0,
-        "actual revealed test focuses Test"
-    );
-    for _ in 0..2 {
-        act(&mut app, Action::Next);
-    }
-    assert_eq!(
-        app.world()
-            .resource::<Table>()
-            .view()
-            .investigator(Investigator::Tony)
-            .hand
-            .len(),
-        2
-    );
-    assert_eq!(
-        settle_camera(&mut app),
-        layout::focus(Area::Investigator(0)).0,
-        "draw after test focuses Tony"
-    );
-    act(&mut app, Action::Next);
-    assert_eq!(
-        settle_camera(&mut app),
-        layout::focus(Area::Investigator(0)).0,
-        "resource after test focuses Tony"
-    );
-    act(&mut app, Action::Next);
-    act(&mut app, Action::Next);
-    assert_eq!(
-        settle_camera(&mut app),
-        layout::focus(Area::Investigator(1)).0,
-        "new actor focuses Patrice"
-    );
-    act(&mut app, Action::Focus(Area::Scenario));
-    act(&mut app, Action::Back);
-    assert_eq!(
-        settle_camera(&mut app),
-        layout::focus(Area::Scenario).0,
-        "manual override survives navigation"
-    );
-}
-
-#[test]
-fn replay_focuses_patrice_discard_for_the_after_test_shuffle() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut app = app(dir.path().join("shuffle.json"));
-    app.world_mut().resource_mut::<Table>().session = Session::with_draws(vec![
-        crate::TokenFace::Zero,
-        crate::TokenFace::ElderSign,
-        crate::TokenFace::MinusFour,
-        crate::TokenFace::AutoFail,
-    ]);
-    for id in [
-        "select:tony",
-        "investigate",
-        "commit:100",
-        "reveal",
-        "resolve:0",
-        "end-turn",
-        "select:patrice",
-        "draw",
-        "resource",
-        "investigate",
-        "commit:none",
-        "use-jacqueline",
-        "cancel:2",
-        "resolve:0",
-        "resolve:1",
-        "lucky:101",
-        "shuffle:retain:100",
-    ] {
-        choose(&mut app, id);
-    }
-    act(&mut app, Action::Replay);
-    while app.world().resource::<Table>().view().stage != crate::party::Stage::AfterTest {
-        let replay = app.world().resource::<Table>().replay.as_ref().unwrap();
-        assert!(replay.index() + 1 < replay.len());
-        act(&mut app, Action::Next);
-    }
-    let mut discard = layout::investigator_discard(Investigator::Patrice.index());
-    discard.y = 0.;
-    assert_eq!(settle_camera(&mut app), discard);
-    act(&mut app, Action::Next);
-    assert_eq!(
-        settle_camera(&mut app),
-        discard,
-        "the recorded shuffle result stays at its affected discard"
-    );
-}
-
 #[test]
 fn discard_substitute_names_the_top_card() {
     let dir = tempfile::tempdir().unwrap();
@@ -1189,7 +925,7 @@ fn discard_substitute_names_the_top_card() {
 }
 
 #[test]
-fn settled_result_text_survives_reopen_and_replay_until_the_next_action() {
+fn settled_result_text_survives_reopen_until_the_next_action() {
     for (token, total, outcome) in [
         (crate::TokenFace::Zero, 3, "Success"),
         (crate::TokenFace::MinusTwo, 1, "Failure"),
@@ -1218,22 +954,6 @@ fn settled_result_text_survives_reopen_and_replay_until_the_next_action() {
         act(&mut app, Action::Reopen);
         assert_result(&mut app);
         choose(&mut app, "resource");
-        assert!(!visible_text(&mut app).join("\n").contains(&expected));
-        act(&mut app, Action::Replay);
-        while app
-            .world()
-            .resource::<Table>()
-            .view()
-            .test
-            .as_ref()
-            .is_none_or(|test| test.result.is_none())
-        {
-            let replay = app.world().resource::<Table>().replay.as_ref().unwrap();
-            assert!(replay.index() + 1 < replay.len());
-            act(&mut app, Action::Next);
-        }
-        assert_result(&mut app);
-        act(&mut app, Action::Next);
         assert!(!visible_text(&mut app).join("\n").contains(&expected));
     }
 }

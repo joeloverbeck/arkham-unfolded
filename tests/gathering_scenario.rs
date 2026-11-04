@@ -5,7 +5,7 @@
 use arkham_unfolded_experiment::gathering::{HostileFixture, Investigator, Resolution, Session};
 
 fn choose(session: &mut Session, id: &str) {
-    let observation = session.observe_for_play();
+    let observation = session.observe();
     assert!(
         observation.choices.iter().any(|choice| choice.id == id),
         "Expected {id}; choices were {:?}",
@@ -138,7 +138,7 @@ fn declined_act_two_makes_next_mythos_resolution_three_instead() {
 
 #[test]
 fn partial_group_payment_reopens_without_charging_twice() {
-    use arkham_unfolded_experiment::gathering::continuity::{Replay, load_session, save_session};
+    use arkham_unfolded_experiment::gathering::continuity::{load_session, save_session};
     let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
     choose(&mut session, "round-end:advance-act");
     for _ in 0..3 {
@@ -180,9 +180,6 @@ fn partial_group_payment_reopens_without_charging_twice() {
             .count(),
         1
     );
-    let mut replay = Replay::new(reopened.recording()).unwrap();
-    while replay.next() {}
-    assert_eq!(replay.current(), &result);
 }
 
 fn defeat_priest_with_basic_fight(session: &mut Session) {

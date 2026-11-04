@@ -6,7 +6,6 @@ fn lifetime_app(path: PathBuf) -> App {
     let mut app = App::new();
     app.insert_resource(Table {
         session: Session::with_draws(vec![TokenFace::Zero]),
-        replay: None,
         save_path: path.clone(),
         notice: String::new(),
         inspect: None,
@@ -215,87 +214,4 @@ fn reopen_discards_harm_only_after_loading_succeeds_and_save_does_not_consume_it
     assert!(!app.world().resource::<Table>().presenting());
     assert_eq!(app.world().resource::<Table>().view(), committed.observe());
     assert_eq!(std::fs::read(&path).unwrap(), saved);
-}
-
-#[test]
-fn replay_animates_without_timed_or_manual_advance_and_resets_at_both_endpoints() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("turn.json");
-    let mut app = lifetime_app(path.clone());
-    choose(&mut app, "investigate");
-    advance(&mut app, 0.25);
-    let saved = std::fs::read(&path).unwrap();
-    act(&mut app, Action::Replay);
-    assert_eq!(progress(&app), 0.0);
-    act(&mut app, Action::Back);
-    assert_eq!(
-        app.world()
-            .resource::<Table>()
-            .replay
-            .as_ref()
-            .unwrap()
-            .index(),
-        0
-    );
-    assert_eq!(progress(&app), 0.0);
-    act(&mut app, Action::Next);
-    advance(&mut app, 0.25);
-    assert_eq!(progress(&app), 0.5);
-    act(&mut app, Action::FinishAnimation);
-    assert_eq!(progress(&app), 0.5);
-    advance(&mut app, 5.0);
-    assert_eq!(progress(&app), 1.0);
-    assert_eq!(
-        app.world()
-            .resource::<Table>()
-            .replay
-            .as_ref()
-            .unwrap()
-            .index(),
-        1
-    );
-    act(&mut app, Action::Next);
-    assert_eq!(progress(&app), 0.0);
-    advance(&mut app, 5.0);
-    act(&mut app, Action::Next);
-    assert_eq!(
-        app.world()
-            .resource::<Table>()
-            .replay
-            .as_ref()
-            .unwrap()
-            .index(),
-        2
-    );
-    assert_eq!(progress(&app), 0.0);
-    act(&mut app, Action::Back);
-    assert_eq!(progress(&app), 0.0);
-    assert!(app.world().resource::<Table>().harm().is_some());
-    act(&mut app, Action::Live);
-    assert!(!app.world().resource::<Table>().presenting());
-    assert_eq!(app.world().resource::<Table>().view().stage, Stage::Commit);
-    assert_eq!(std::fs::read(path).unwrap(), saved);
-}
-
-#[test]
-fn failed_replay_opening_retains_the_current_live_stage() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut app = lifetime_app(directory.path().join("turn.json"));
-    choose(&mut app, "investigate");
-    advance(&mut app, 0.25);
-    let staged = app.world().resource::<Table>().view();
-    let obstacle = directory.path().join("not-a-directory");
-    std::fs::write(&obstacle, "preserve me").unwrap();
-    app.world_mut().resource_mut::<Table>().save_path = obstacle.join("turn.json");
-    act(&mut app, Action::Replay);
-    assert!(
-        app.world()
-            .resource::<Table>()
-            .notice
-            .contains("Could not open recorded replay")
-    );
-    assert!(app.world().resource::<Table>().replay.is_none());
-    assert_eq!(app.world().resource::<Table>().view(), staged);
-    assert_eq!(progress(&app), 0.5);
-    assert_eq!(std::fs::read_to_string(obstacle).unwrap(), "preserve me");
 }

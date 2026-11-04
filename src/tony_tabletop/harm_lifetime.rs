@@ -1,5 +1,4 @@
-//! Lifetime of already committed live consequences and the harm animation shared with replay.
-//! Replay retains its own sequence and navigation; this owner never advances it.
+//! Lifetime of already committed live consequences and their harm animation.
 
 use crate::tony::{
     HarmSource, Observation, Stage, TestKind,
@@ -20,11 +19,6 @@ pub(super) struct ClueTransfer {
 struct LiveStage {
     presentation: PresentationStage,
     clue: Option<ClueTransfer>,
-}
-
-pub(super) enum Playback {
-    Live,
-    Replay { harm_visible: bool },
 }
 
 #[derive(Default)]
@@ -58,7 +52,7 @@ impl HarmPresentation {
                 }
                 view.history = previous.history.clone();
                 view.prompt = format!("Tony discovers {} clue from the Study.", transfer.amount);
-                view.harm = None;
+                view.harm.clear();
                 view.choices.clear();
                 view.can_undo = false;
                 self.live.push_back(LiveStage {
@@ -97,14 +91,9 @@ impl HarmPresentation {
         (self.elapsed / MOTION_SECONDS).clamp(0.0, 1.0)
     }
 
-    /// Successful reopen, replay opening, return to live, or new turn.
+    /// Successful reopen or new turn.
     pub fn discard_staging(&mut self) {
         self.live.clear();
-        self.elapsed = 0.0;
-    }
-
-    /// Every replay navigation attempt restarts motion, including at endpoints.
-    pub fn replay_navigated(&mut self) {
         self.elapsed = 0.0;
     }
 
@@ -116,11 +105,8 @@ impl HarmPresentation {
 
     /// Returns whether the displayed live stage changed and needs a redraw.
     /// Each call completes at most one stage and discards excess elapsed time.
-    pub fn tick(&mut self, seconds: f32, paused: bool, playback: Playback) -> bool {
-        let visible = match playback {
-            Playback::Live => self.has_pending(),
-            Playback::Replay { harm_visible } => harm_visible,
-        };
+    pub fn tick(&mut self, seconds: f32, paused: bool) -> bool {
+        let visible = self.has_pending();
         if paused || !visible {
             return false;
         }
@@ -130,7 +116,7 @@ impl HarmPresentation {
         } else {
             STAGE_SECONDS
         };
-        if matches!(playback, Playback::Live) && self.elapsed >= duration {
+        if self.elapsed >= duration {
             self.finish_live_stage();
             return true;
         }
@@ -141,7 +127,7 @@ impl HarmPresentation {
 fn discovered_clue(before: &Observation, after: &Observation) -> Option<ClueTransfer> {
     // Resolve is the sole supported discovery event in this finite experiment.
     // Count changes verify the quantity; they do not identify an arbitrary
-    // transfer source or manufacture provenance for loaded/replayed records.
+    // transfer source or manufacture provenance for loaded saves.
     if before.stage != Stage::Resolve
         || !before
             .test
@@ -180,7 +166,7 @@ mod tests {
         assert_eq!((stage.view.damage, stage.view.horror), (1, 1));
         assert!(stage.view.choices.is_empty());
         assert!(presentation.has_pending());
-        assert!(!presentation.tick(0.25, false, Playback::Live));
+        assert!(!presentation.tick(0.25, false));
         assert_eq!(presentation.animation_progress(), 0.5);
 
         presentation.committed_choice(&before, &after);
@@ -190,7 +176,7 @@ mod tests {
         assert!(presentation.current_stage().is_none());
 
         presentation.committed_choice(&before, &after);
-        presentation.tick(0.25, false, Playback::Live);
+        presentation.tick(0.25, false);
         presentation.committed_choice(&before, &before);
         assert!(!presentation.has_pending());
         assert_eq!(presentation.animation_progress(), 0.0);
@@ -200,42 +186,16 @@ mod tests {
     fn paused_and_idle_ticks_do_not_spend_the_stage_duration() {
         let (before, after) = investigation();
         let mut presentation = HarmPresentation::default();
-        assert!(!presentation.tick(5.0, false, Playback::Live));
+        assert!(!presentation.tick(5.0, false));
         assert_eq!(presentation.animation_progress(), 0.0);
         presentation.committed_choice(&before, &after);
-        assert!(!presentation.tick(0.25, false, Playback::Live));
-        assert!(!presentation.tick(5.0, true, Playback::Live));
+        assert!(!presentation.tick(0.25, false));
+        assert!(!presentation.tick(5.0, true));
         assert_eq!(presentation.animation_progress(), 0.5);
-        assert!(!presentation.tick(0.25, false, Playback::Live));
+        assert!(!presentation.tick(0.25, false));
         assert_eq!(presentation.animation_progress(), 1.0);
         assert!(presentation.has_pending());
-        assert!(presentation.tick(0.71, false, Playback::Live));
-        assert!(!presentation.has_pending());
-        assert_eq!(presentation.animation_progress(), 0.0);
-    }
-
-    #[test]
-    fn replay_motion_settles_and_restarts_without_consuming_live_stages() {
-        let (before, after) = investigation();
-        let mut presentation = HarmPresentation::default();
-        presentation.committed_choice(&before, &after);
-        assert!(!presentation.tick(0.25, false, Playback::Replay { harm_visible: true }));
-        assert_eq!(presentation.animation_progress(), 0.5);
-        assert!(!presentation.tick(
-            5.0,
-            false,
-            Playback::Replay {
-                harm_visible: false
-            }
-        ));
-        assert_eq!(presentation.animation_progress(), 0.5);
-        assert!(!presentation.tick(5.0, false, Playback::Replay { harm_visible: true }));
-        assert_eq!(presentation.animation_progress(), 1.0);
-        assert!(presentation.has_pending());
-        presentation.replay_navigated();
-        assert_eq!(presentation.animation_progress(), 0.0);
-        assert!(presentation.has_pending());
-        presentation.discard_staging();
+        assert!(presentation.tick(0.71, false));
         assert!(!presentation.has_pending());
         assert_eq!(presentation.animation_progress(), 0.0);
     }

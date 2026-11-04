@@ -165,7 +165,7 @@ impl ScenarioState {
                 .any(|room| room.code == code && room.awards_victory())
     }
 
-    /// Earlier recordings retain eligible locations in their terminal map state.
+    /// Eligible locations remain in the terminal map state for resolution accounting.
     /// Project their scenario-end transfer without rewriting those records or XP.
     #[cfg(feature = "tabletop")]
     pub(crate) fn victory_display(&self) -> Vec<VictoryDisplayCard<'_>> {

@@ -152,9 +152,7 @@ pub struct PlayerView {
     pub resigned: bool,
     pub physical_trauma: u8,
     pub mental_trauma: u8,
-    /// Absent in recordings made before the public counter projection existed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presentation: Option<PlayerPresentation>,
+    pub presentation: PlayerPresentation,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -358,15 +356,10 @@ pub struct CommittedCard {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct SkillTest {
-    /// Legacy tests already in progress cannot acquire a partial explanation.
-    #[serde(default)]
-    pub capture_breakdown: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bonus_sources: Vec<super::Contribution>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub token_contributions: Vec<super::TokenContribution>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_breakdown: Option<Box<super::TestBreakdown>>,
     pub boosts: super::test_boosts::BoostState,
     pub tony: super::tony_effects::TonyTestState,
@@ -408,8 +401,7 @@ pub struct TestModifiers {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestView {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub breakdown: Option<super::TestBreakdown>,
+    pub breakdown: super::TestBreakdown,
     pub source_card: Option<CardView>,
     pub ignored_tokens: Vec<TokenFace>,
     pub cancelled_tokens: Vec<TokenFace>,
@@ -424,16 +416,11 @@ pub struct TestView {
     pub total: Option<i32>,
     pub would_succeed: Option<bool>,
     pub failure_margin: Option<i32>,
-    /// Current legal commitment toggles, not printed-icon guesses. None means an
-    /// older recording did not capture this projection; Some([]) means no offer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub commitment: Option<Vec<CommitmentPresentation>>,
-    /// Whether ST.6 has fixed this result. Old recordings leave this unknown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved: Option<bool>,
-    /// The actual investigated location, never inferred from the test's skill or
-    /// the investigator's current position. Older recordings omit this fact.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Current legal commitment toggles, derived from offered choices.
+    pub commitment: Vec<CommitmentPresentation>,
+    /// Whether ST.6 has fixed this result.
+    pub resolved: bool,
+    /// The location named by an investigation operation.
     pub investigation_location: Option<String>,
 }
 
@@ -447,8 +434,7 @@ pub struct CommitmentPresentation {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestResult {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub breakdown: Option<super::TestBreakdown>,
+    pub breakdown: super::TestBreakdown,
     pub tester: Investigator,
     pub source: String,
     pub total: i32,
@@ -477,52 +463,13 @@ pub struct PlayObservation {
     pub encounter_discard: Vec<CardView>,
     pub scenario: ScenarioState,
     pub bag_count: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curse_pool: Option<u8>,
+    pub curse_pool: u8,
     pub round: u16,
     pub actor: Option<Investigator>,
     pub actions_remaining: [u8; 3],
     pub encounter_deck_count: usize,
     pub tokens: Option<super::tokens::TokenResolution>,
     pub premonition: Option<super::tokens::SealedPremonition>,
-}
-
-impl PlayObservation {
-    /// Match only omission of additive presentation fields in old recordings.
-    /// Supplied values and every pre-existing field still compare exactly.
-    pub(super) fn match_recorded_projection_presence(&mut self, recorded: &Self) {
-        if recorded.curse_pool.is_none() {
-            self.curse_pool = None;
-        }
-        for (expected, recorded) in self.players.iter_mut().zip(&recorded.players) {
-            if recorded.presentation.is_none() {
-                expected.presentation = None;
-            }
-        }
-        if let (Some(expected), Some(recorded)) = (&mut self.test, &recorded.test) {
-            if recorded.breakdown.is_none() {
-                expected.breakdown = None;
-            }
-            if recorded.commitment.is_none() {
-                expected.commitment = None;
-            }
-            if recorded.resolved.is_none() {
-                expected.resolved = None;
-            }
-            if recorded.investigation_location.is_none() {
-                expected.investigation_location = None;
-            }
-        }
-        for (expected, recorded) in self
-            .completed_tests
-            .iter_mut()
-            .zip(&recorded.completed_tests)
-        {
-            if recorded.breakdown.is_none() {
-                expected.breakdown = None;
-            }
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -995,7 +942,7 @@ impl Game {
                     resigned: p.resigned,
                     physical_trauma: p.physical_trauma,
                     mental_trauma: p.mental_trauma,
-                    presentation: Some(PlayerPresentation {
+                    presentation: PlayerPresentation {
                         health: p.health,
                         sanity: p.sanity,
                         turn_finished: p.turn_finished,
@@ -1011,7 +958,7 @@ impl Game {
                                 eligible: tony_eligible,
                             },
                         ),
-                    }),
+                    },
                 })
                 .collect(),
             pending_revelation: self.frames.iter().find_map(|frame| match frame {
@@ -1021,9 +968,7 @@ impl Game {
             test: self.test.as_ref().map(|test| {
                 let result = (!test.revealed.is_empty()).then(|| self.result(test));
                 TestView {
-                    breakdown: (test.capture_breakdown
-                        && (test.final_result.is_none() || test.final_breakdown.is_some()))
-                    .then(|| super::test_report::breakdown(self, test)),
+                    breakdown: super::test_report::breakdown(self, test),
                     source_card: test.source_card.clone(),
                     ignored_tokens: test.ignored_tokens.clone(),
                     cancelled_tokens: test.cancelled_tokens.clone(),
@@ -1040,28 +985,27 @@ impl Game {
                     total: result.map(|r| r.0),
                     would_succeed: result.map(|r| r.1),
                     failure_margin: result.map(|r| r.2),
-                    commitment: Some(
-                        self.players
-                            .iter()
-                            .flat_map(|owner| {
-                                owner
-                                    .hand
-                                    .iter()
-                                    .filter(|card| {
-                                        choices.iter().any(|choice| {
-                                            choice.id == format!("commit:{}", card.id)
-                                        })
-                                    })
-                                    .map(|card| CommitmentPresentation {
-                                        card_id: card.id,
-                                        owner: owner.investigator,
-                                        selected: test.selected.contains(&card.id),
-                                        contribution: self.commit_icons(test, card),
-                                    })
-                            })
-                            .collect(),
-                    ),
-                    resolved: Some(test.final_result.is_some()),
+                    commitment: self
+                        .players
+                        .iter()
+                        .flat_map(|owner| {
+                            owner
+                                .hand
+                                .iter()
+                                .filter(|card| {
+                                    choices
+                                        .iter()
+                                        .any(|choice| choice.id == format!("commit:{}", card.id))
+                                })
+                                .map(|card| CommitmentPresentation {
+                                    card_id: card.id,
+                                    owner: owner.investigator,
+                                    selected: test.selected.contains(&card.id),
+                                    contribution: self.commit_icons(test, card),
+                                })
+                        })
+                        .collect(),
+                    resolved: test.final_result.is_some(),
                     investigation_location: match &test.operation {
                         TestOperation::Investigate { location, .. } => Some(location.clone()),
                         _ => None,
@@ -1075,7 +1019,7 @@ impl Game {
             encounter_discard: self.encounter_discard.clone(),
             scenario: self.scenario.clone(),
             bag_count: self.bag.len(),
-            curse_pool: Some(super::tokens::curse_pool(self)),
+            curse_pool: super::tokens::curse_pool(self),
             round: self.round,
             phase: self.phase,
             ethereal: self.ethereal.clone(),
@@ -1752,7 +1696,7 @@ impl Game {
             let test = self.test.as_mut().expect("Reveal test");
             test.revealed.push(token);
             test.modifier += modifier;
-            if test.capture_breakdown {
+            {
                 test.token_contributions.push(super::TokenContribution {
                     face: token,
                     amount: modifier,
@@ -1823,7 +1767,6 @@ impl Game {
             _ => None,
         };
         self.test = Some(SkillTest {
-            capture_breakdown: true,
             bonus_sources: vec![],
             token_contributions: vec![],
             final_breakdown: None,
@@ -1925,7 +1868,7 @@ impl Game {
                     .collect::<Result<Vec<_>, _>>()?;
                 let modifier = contributions.iter().map(|row| row.amount).sum();
                 let test = self.test.as_mut().expect("Token skill-test consumer");
-                if test.capture_breakdown {
+                {
                     test.token_contributions = contributions;
                 }
                 test.revealed = resolved;
@@ -3355,11 +3298,9 @@ impl Game {
             // ST6 fixes the contribution even if a completed reveal retained
             // no physical tokens; an established zero is no longer pending.
             modifiers.chaos = Some(test.modifier);
-            let breakdown = test
-                .capture_breakdown
-                .then(|| super::test_report::breakdown(self, test));
+            let breakdown = super::test_report::breakdown(self, test);
             let test = self.test.as_mut().expect("Completing test");
-            test.final_breakdown = breakdown.map(Box::new);
+            test.final_breakdown = Some(Box::new(breakdown));
             test.final_result = Some((total, success, failure_margin));
             test.final_modifiers = Some(modifiers);
         }
@@ -3551,7 +3492,11 @@ impl Game {
             TestOperation::Evade { .. } => "Evade",
         };
         self.completed_tests.push(TestResult {
-            breakdown: test.final_breakdown.as_deref().cloned(),
+            breakdown: test
+                .final_breakdown
+                .as_deref()
+                .expect("ST6 fixed the result")
+                .clone(),
             tester: test.tester,
             source: source.into(),
             total,

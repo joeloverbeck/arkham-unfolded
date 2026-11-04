@@ -44,7 +44,7 @@ fn menu_restart_preserves_the_old_attempt_and_reopens_the_new_setup() {
     activate_button(&mut app, "Restart");
 
     let new = continuity::load_session(&path).unwrap();
-    let view = new.observe_for_play();
+    let view = new.observe();
     assert_eq!(view.revision, 0);
     assert_eq!(view.lead, None);
     assert!(view.choices.iter().any(|choice| choice.id == "lead:tony"));
@@ -52,7 +52,7 @@ fn menu_restart_preserves_the_old_attempt_and_reopens_the_new_setup() {
     assert_initial_table(&mut app);
     assert!(app.world().resource::<Table>().reduced_motion);
     assert!(app.world().resource::<FeedbackSettings>().reduced_motion);
-    assert_eq!(view.source, old.observe_for_play().source);
+    assert_eq!(view.source, old.observe().source);
     assert!(!new.same_run(&old));
     let archives: Vec<_> = std::fs::read_dir(directory.path())
         .unwrap()
@@ -68,7 +68,7 @@ fn menu_restart_preserves_the_old_attempt_and_reopens_the_new_setup() {
     assert_eq!(std::fs::read(&archives[0]).unwrap(), old_bytes);
     let recovered = continuity::load_session(&archives[0]).unwrap();
     assert_eq!(recovered, old);
-    assert_eq!(recovered.recording(), old.recording());
+    assert_eq!(recovered, old);
     assert!(rendered_text(&mut app).contains(archives[0].to_str().unwrap()));
     activate_button(&mut app, "Menu");
     activate_button(&mut app, "Reopen saved attempt");
@@ -129,7 +129,7 @@ fn a_failed_restart_preserves_live_state_and_reports_the_refusal_inside_confirma
     activate_button(&mut app, "Menu");
     activate_button(&mut app, "Restart The Gathering...");
     let mut newer = old.clone();
-    let revision = newer.observe_for_play().revision;
+    let revision = newer.observe().revision;
     continuity::commit_choice(&path, &mut newer, revision, "confirm-mulligan").unwrap();
     let bytes = std::fs::read(&path).unwrap();
     activate_button(&mut app, "Restart");
@@ -166,7 +166,7 @@ fn restart_rejects_old_confirmations_and_choices_and_commits_only_once() {
     let path = directory.path().join("queued.json");
     let mut app = host(path.clone());
     let old = app.world().resource::<Table>().session.clone();
-    continuity::save_session(&path, &old).unwrap();
+    continuity::save_session(&path, &app.world().resource::<Table>().session).unwrap();
     let bytes = std::fs::read(&path).unwrap();
     let choice_epoch = app.world().resource::<Table>().epoch;
     activate_button(&mut app, "Menu");
@@ -178,13 +178,11 @@ fn restart_rejects_old_confirmations_and_choices_and_commits_only_once() {
     app.world_mut().resource_mut::<Actions>().0.extend([
         Action::ConfirmRestart(old_confirmation),
         Action::Choose(choice_epoch, 0, "lead:tony".into()),
-        Action::Replay,
     ]);
     app.update();
     // Observe refusal before a later valid confirmation can hide a stale action.
     assert_eq!(app.world().resource::<Table>().session, old);
     assert!(app.world().resource::<Table>().restart_confirmation);
-    assert!(app.world().resource::<Table>().replay.is_none());
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
 
     let epoch = app.world().resource::<Table>().epoch;
@@ -213,31 +211,14 @@ fn restart_rejects_old_confirmations_and_choices_and_commits_only_once() {
 }
 
 #[test]
-fn restart_is_unavailable_in_replay_and_refuses_unready_graphics() {
+fn restart_refuses_unready_graphics() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("admission.json");
     let mut app = host(path.clone());
     let old = app.world().resource::<Table>().session.clone();
-    continuity::save_session(&path, &old).unwrap();
+    continuity::save_session(&path, &app.world().resource::<Table>().session).unwrap();
     let bytes = std::fs::read(&path).unwrap();
     activate_button(&mut app, "Menu");
-    activate_button(&mut app, "Open recorded replay");
-    assert!(button_with_label(&mut app, "Restart The Gathering...").is_none());
-    let epoch = app.world().resource::<Table>().epoch;
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .extend([Action::Restart(epoch), Action::ConfirmRestart(epoch)]);
-    app.update();
-    assert!(app.world().resource::<Table>().replay.is_some());
-    assert!(!app.world().resource::<Table>().restart_confirmation);
-    assert_eq!(std::fs::read(&path).unwrap(), bytes);
-
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .push(Action::Live);
-    app.update();
     activate_button(&mut app, "Restart The Gathering...");
     for health in [
         RenderHealth::default(),

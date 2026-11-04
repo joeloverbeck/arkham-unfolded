@@ -304,7 +304,7 @@ fn each_mode_preserves_startup_home_focus_and_camera_transform() {
 }
 
 #[test]
-fn diagnostic_initial_views_apply_once_without_replacing_home_or_replay_following() {
+fn diagnostic_initial_views_apply_once_without_replacing_home_or_live_following() {
     for mode in [CameraMode::Jacqueline, CameraMode::Tony] {
         let normal = Orbit::new(mode).pose();
         assert_eq!(Orbit::new(mode).with_initial_view(None).pose(), normal);
@@ -336,12 +336,12 @@ fn diagnostic_initial_views_apply_once_without_replacing_home_or_replay_followin
             );
 
             orbit.set_following(true);
-            let replay_target = Vec3::new(3.0, 0.0, 7.0);
-            orbit.update_follow_target(Some((replay_target, 15.0)));
+            let follow_target = Vec3::new(3.0, 0.0, 7.0);
+            orbit.update_follow_target(Some((follow_target, 15.0)));
             input.reduced_motion = true;
             input.dt = 1.0;
             input.step(&mut orbit);
-            assert_eq!(orbit.pose().target, replay_target);
+            assert_eq!(orbit.pose().target, follow_target);
             assert!(orbit.is_following());
 
             input.keys.press(KeyCode::Home);
@@ -360,7 +360,7 @@ fn diagnostic_initial_views_apply_once_without_replacing_home_or_replay_followin
 }
 
 #[test]
-fn replay_motion_and_follow_off_keep_the_modes_distinct() {
+fn follow_motion_and_follow_off_keep_the_modes_distinct() {
     for mode in [CameraMode::Jacqueline, CameraMode::Tony] {
         let mut orbit = Orbit::new(mode);
         let mut input = Inputs::default();

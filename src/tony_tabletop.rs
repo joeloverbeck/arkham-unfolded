@@ -1,4 +1,4 @@
-//! Native presentation of the bounded Tony turn. Rules and replay come from the player seam.
+//! Native presentation of the bounded Tony turn. Rules come from the player seam.
 
 use crate::tabletop_camera::{
     CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
@@ -12,10 +12,7 @@ use crate::{
     assets,
     tabletop::asset_settings::AssetSettings,
     tabletop_layout::{self as layout, Area},
-    tony::{
-        Harm, Observation, Session, Stage,
-        continuity::{self, Replay},
-    },
+    tony::{Harm, Observation, Session, Stage, continuity},
 };
 use bevy::{
     input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
@@ -29,7 +26,6 @@ use bevy::{
     ui::Pressed,
     ui_widgets::{Activate, Button, ModalDialog, ModalDialogBarrier, RequestClose},
 };
-use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::PathBuf};
 
 mod clue_motion;
@@ -41,7 +37,7 @@ mod scene;
 use crate::tabletop_reveal as reveal;
 use controls::{Context, Source};
 use harm::{advance_presentation, animate_harm, harm_amounts, harm_scene};
-use harm_lifetime::{HarmPresentation, Playback};
+use harm_lifetime::HarmPresentation;
 use scene::synchronize_scene;
 
 const CARD_WIDTH: f32 = 1.35;
@@ -200,7 +196,6 @@ impl Options {
 #[derive(Resource)]
 struct Table {
     session: Session,
-    replay: Option<Replay>,
     save_path: PathBuf,
     notice: String,
     inspect: Option<usize>,
@@ -212,29 +207,23 @@ struct Table {
 }
 impl Table {
     fn view(&self) -> Observation {
-        if let Some(replay) = &self.replay {
-            replay.current().clone()
-        } else if let Some(stage) = self.presentation.current_stage() {
+        if let Some(stage) = self.presentation.current_stage() {
             stage.view.clone()
         } else {
             self.session.observe()
         }
     }
     fn harm(&self) -> Option<Harm> {
-        if let Some(replay) = &self.replay {
-            replay.harm().copied()
-        } else {
-            self.presentation.current_stage().and_then(|s| s.harm)
-        }
+        self.presentation.current_stage().and_then(|s| s.harm)
     }
     fn presenting(&self) -> bool {
-        self.replay.is_none() && self.presentation.has_pending()
+        self.presentation.has_pending()
     }
     fn modal(&self) -> bool {
         self.inspect.is_some() || self.history
     }
 
-    fn test_summary(&self, view: &Observation, test: &crate::tony::TestView) -> String {
+    fn test_summary(&self, _view: &Observation, test: &crate::tony::TestView) -> String {
         use crate::tabletop::symbols::Skill;
         // These are the three skills represented by this fixed Tony position.
         let (skill, base) = match test.kind {
@@ -242,22 +231,7 @@ impl Table {
             crate::tony::TestKind::Evade => (Skill::Agility, 2),
             crate::tony::TestKind::Investigate => (Skill::Intellect, 3),
         };
-        // Old observations retain the numerical modifier but not the resolved
-        // token. Recover only already-observed facts from the same recording.
-        let live_recording;
-        let moments = if let Some(replay) = &self.replay {
-            &replay.recording().moments
-        } else {
-            live_recording = self.session.recording();
-            &live_recording.moments
-        };
-        let resolved_token = test.success.and_then(|_| {
-            moments
-                .iter()
-                .rev()
-                .filter(|moment| moment.revision < view.revision)
-                .find_map(|moment| moment.held_token)
-        });
+        let resolved_token = test.resolved_token;
         let automatic_failure = resolved_token == Some(TokenFace::AutoFail);
         let total = if automatic_failure {
             Some(0)
@@ -303,15 +277,10 @@ enum Action {
     Reveal(reveal::Request),
     Save,
     Reopen,
-    Replay,
-    Back,
-    Next,
-    Live,
     New,
     Inspect(usize),
     Close,
     History,
-    Follow,
     AssetFolder,
     FinishAnimation,
     Motion,
@@ -396,7 +365,6 @@ pub fn run() -> Result<(), String> {
     app.insert_resource(ClearColor(INK))
         .insert_resource(Table {
             session,
-            replay: None,
             save_path,
             notice,
             inspect: None,
@@ -544,8 +512,8 @@ fn handle_actions(
     mut shortcut: Option<ResMut<reveal::Shortcut>>,
 ) {
     let view = table.view();
-    let replay = table.replay.as_ref().map(Replay::index);
-    table.context.sync(view.revision, replay);
+
+    table.context.sync(view.revision);
     if keys.just_pressed(KeyCode::Escape) && table.modal() {
         queue.0.push(Action::Close);
     } else if keys.just_pressed(KeyCode::Escape) {
@@ -609,7 +577,7 @@ fn handle_actions(
             shortcut.dismiss();
         }
         match action {
-            Action::Choose(revision, id) if table.replay.is_none() && !table.presenting() => {
+            Action::Choose(revision, id) if !table.presenting() => {
                 let table = &mut *table;
                 let before = table.session.observe();
                 table.notice = match continuity::commit_choice(
@@ -633,74 +601,21 @@ fn handle_actions(
                     Err(e) => format!("Decision not committed: {e}"),
                 };
             }
-            Action::Save if table.replay.is_none() => {
+            Action::Save => {
                 table.notice = match continuity::save_session(&table.save_path, &table.session) {
                     Ok(()) => "Live turn saved.".into(),
                     Err(e) => format!("Save failed; the live turn is unchanged: {e}"),
                 }
             }
-            Action::Reopen if table.replay.is_none() => {
-                match continuity::load_session(&table.save_path) {
-                    Ok(session) => {
-                        table.session = session;
-                        table.presentation.discard_staging();
-                        table.notice = "Reopened the exact saved choice and randomness.".into();
-                    }
-                    Err(e) => {
-                        table.notice = format!("Reopen failed; the live turn is unchanged: {e}")
-                    }
+            Action::Reopen => match continuity::load_session(&table.save_path) {
+                Ok(session) => {
+                    table.session = session;
+                    table.presentation.discard_staging();
+                    table.notice = "Reopened the exact saved choice and randomness.".into();
                 }
-            }
-            Action::Replay => {
-                let record = table.session.recording();
-                let digest = format!(
-                    "{:x}",
-                    Sha256::digest(serde_json::to_vec(&record).expect("recordings serialize"))
-                );
-                let stem = table
-                    .save_path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("tony");
-                let path = table
-                    .save_path
-                    .with_file_name(format!("{stem}.replay-{}.json", &digest[..16]));
-                match continuity::save_recording(&path, &record)
-                    .and_then(|()| continuity::load_recording(&path))
-                    .and_then(Replay::new)
-                {
-                    Ok(replay) => {
-                        table.replay = Some(replay);
-                        table.presentation.discard_staging();
-                        orbit.set_following(true);
-                        table.notice = "Recorded replay. Each step pauses for narration.".into();
-                    }
-                    Err(e) => table.notice = format!("Could not open recorded replay: {e}"),
-                }
-            }
-            Action::Back => {
-                if let Some(r) = &mut table.replay {
-                    r.back();
-                    table.presentation.replay_navigated();
-                }
-            }
-            Action::Next => {
-                if let Some(r) = &mut table.replay {
-                    r.next();
-                    table.presentation.replay_navigated();
-                }
-            }
-            Action::Live => {
-                table.replay = None;
-                table.presentation.discard_staging();
-                orbit.set_following(false);
-                table.notice = "Returned to the unchanged live turn.".into();
-            }
-            Action::New
-                if table.replay.is_none()
-                    && !table.presenting()
-                    && table.session.observe().stage == Stage::Ended =>
-            {
+                Err(e) => table.notice = format!("Reopen failed; the live turn is unchanged: {e}"),
+            },
+            Action::New if !table.presenting() && table.session.observe().stage == Stage::Ended => {
                 match Session::new() {
                     Ok(session) => match continuity::restart_session(
                         &table.save_path,
@@ -721,7 +636,7 @@ fn handle_actions(
             }
             Action::Select(revision, source, at) => {
                 let view = table.view();
-                let gameplay = table.replay.is_none() && !table.presenting();
+                let gameplay = !table.presenting();
                 if let Some(effect) = table.context.select(&view, gameplay, revision, source, at) {
                     if let controls::SelectionEffect::Inspect(index) = effect {
                         table.inspect = Some(index);
@@ -733,7 +648,7 @@ fn handle_actions(
             }
             Action::ToggleCommit(epoch, revision, id) => {
                 let view = table.view();
-                let gameplay = table.replay.is_none() && !table.presenting();
+                let gameplay = !table.presenting();
                 table
                     .context
                     .toggle_commitment(&view, gameplay, epoch, revision, id);
@@ -765,14 +680,11 @@ fn handle_actions(
                 table.context.dismiss();
                 table.history = true;
             }
-            Action::FinishAnimation if table.replay.is_none() => {
+            Action::FinishAnimation => {
                 table.presentation.finish_live_stage();
             }
             Action::Motion => table.reduced_motion = !table.reduced_motion,
-            Action::Follow if table.replay.is_some() => {
-                let following = !orbit.is_following();
-                orbit.set_following(following);
-            }
+
             Action::AssetFolder => {
                 settings.choose();
                 table.notice =
@@ -780,19 +692,10 @@ fn handle_actions(
             }
             _ => {}
         }
-        if orbit.is_following() && table.replay.is_some() {
-            let target = if let Some(hit) = table.harm() {
-                (harm::recipient_position(hit.recipient, &table.view()), 16.0)
-            } else if table.view().held_token.is_some() {
-                layout::focus(Area::Test)
-            } else {
-                layout::focus(Area::Investigator(0))
-            };
-            orbit.update_follow_target(Some(target));
-        }
+
         let view = table.view();
-        let replay = table.replay.as_ref().map(Replay::index);
-        table.context.sync(view.revision, replay);
+
+        table.context.sync(view.revision);
         table.dirty = true;
     }
 }
@@ -802,7 +705,7 @@ fn refresh_reveal(table: &Table, settings: &AssetSettings, shortcut: &mut reveal
     shortcut.sync(
         view.revision,
         &view.choices,
-        table.replay.is_none() && !table.presenting() && !table.modal() && !settings.is_busy(),
+        !table.presenting() && !table.modal() && !settings.is_busy(),
         table.reduced_motion,
     );
 }
@@ -902,11 +805,9 @@ fn synchronize_feedback(
     for (source, mut marks) in &mut cards {
         marks.menu_source = table.context.is_menu_source(source.0);
         marks.pending_choice = table.context.is_pending(source.0);
-        marks.commitment = table.context.contribution(
-            &view,
-            table.replay.is_none() && !table.presenting(),
-            source.0,
-        );
+        marks.commitment = table
+            .context
+            .contribution(&view, !table.presenting(), source.0);
         marks.symbol_font = art.as_ref().and_then(|art| art.symbol_font.clone());
     }
 }
@@ -1050,7 +951,6 @@ fn rebuild_panel(
     mut commands: Commands,
     mut table: ResMut<Table>,
     art: Res<Art>,
-    orbit: Res<Orbit>,
     panels: Query<Entity, With<Panel>>,
     window: Single<&Window>,
     mut last_size: Local<Vec2>,
@@ -1182,8 +1082,7 @@ fn rebuild_panel(
         max_height: px((size.y * 0.29).min(250.0)), padding: UiRect::all(px(12)), flex_direction: FlexDirection::Column,
         row_gap: px(5), overflow: Overflow::scroll_y(), ..default() }, BackgroundColor(INK), Panel))
         .observe(scroll_panel).with_children(|p| {
-            p.spawn(art.text(table.replay.as_ref().map_or_else(|| "TONY · LIVE DECISION".into(),
-                |r| format!("REPLAY · MOMENT {} / {}", r.index() + 1, r.len())), 12.0, GOLD));
+            p.spawn(art.text("TONY · LIVE DECISION", 12.0, GOLD));
             p.spawn(art.text(&view.prompt, 18.0, PAPER));
             if let Some(test) = &view.test {
                 p.spawn(art.text(table.test_summary(&view, test), 15.0, GOLD));
@@ -1197,11 +1096,7 @@ fn rebuild_panel(
                     let mut control = |label: &str, action: Action, primary| {
                         row.spawn(Node { width: px(230), ..default() }).with_children(|p| { button(&art, p, label, action, primary); });
                     };
-                    if let Some(replay) = &table.replay {
-                        if replay.index() > 0 { control("← Previous moment", Action::Back, false); }
-                        if replay.index() + 1 < replay.len() { control("Next moment →", Action::Next, true); }
-                        control("Return to live turn", Action::Live, false);
-                    } else if table.presenting() { control("Finish animation", Action::FinishAnimation, false); }
+                    if table.presenting() { control("Finish animation", Action::FinishAnimation, false); }
                     else {
                         for choice in &view.choices {
                             if matches!(choice.id.as_str(), "end_turn" | "undo" | "commit:none") {
@@ -1217,7 +1112,7 @@ fn rebuild_panel(
             if let Some(summary) = table.context.pending_summary() {
                 p.spawn(art.text(summary, 13.0, GOLD));
             }
-            if table.replay.is_none() && !table.presenting() {
+            if !table.presenting() {
                 let hint = match view.stage {
                     Stage::Action => "Select a component: Ghoul for Fight/Evade, Study for Investigate, Tony for Resource, deck for Draw.",
                     Stage::Commit => "Select cards in Tony's hand, then Commit selected; or commit no cards.",
@@ -1268,22 +1163,9 @@ fn rebuild_panel(
                     Action::Motion,
                     false,
                 );
-                if table.replay.is_none() {
+                {
                     button(&art, p, "Save live turn", Action::Save, false);
                     button(&art, p, "Reopen saved turn", Action::Reopen, false);
-                    button(&art, p, "Open recorded replay", Action::Replay, false);
-                } else {
-                    button(
-                        &art,
-                        p,
-                        if orbit.is_following() {
-                            "Camera following: on"
-                        } else {
-                            "Resume camera following"
-                        },
-                        Action::Follow,
-                        false,
-                    );
                 }
                 p.spawn(art.text(&art.status, 12.0, MUTED));
                 button(&art, p, "Choose asset folder", Action::AssetFolder, false);
@@ -1472,13 +1354,8 @@ fn request_redraw(
     capture: Res<Capture>,
     screenshots: Query<(), With<Screenshot>>,
 ) {
-    let harm_running = !table.modal()
-        && !settings.is_busy()
-        && if table.replay.is_some() {
-            table.harm().is_some() && table.presentation.animation_progress() < 1.0
-        } else {
-            table.presentation.has_pending()
-        };
+    let harm_running =
+        !table.modal() && !settings.is_busy() && { table.presentation.has_pending() };
     if orbit.is_moving()
         || harm_running
         || appearing.iter().any(|t| t.scale != Vec3::ONE)

@@ -1,7 +1,7 @@
 //! Reading a recorded result never runs a rules decision. Optional effects use
 //! the ordinary revision-bound choices, after the result has been acknowledged.
 use super::*;
-use crate::gathering::{Recording, TestResult, TestView};
+use crate::gathering::{Session, TestResult, TestView};
 use crate::tabletop_ui as screen;
 
 #[derive(Default)]
@@ -13,42 +13,19 @@ pub(super) struct Reading {
 }
 
 impl Reading {
-    pub(super) fn for_record(record: &Recording) -> Self {
-        let before = record
-            .moments
-            .len()
-            .checked_sub(2)
-            .and_then(|index| record.moments.get(index));
-        let mut reading = Self::at(before);
-        if let Some(play) = record.moments.last().and_then(|view| view.play.as_ref())
+    pub(super) fn for_session(session: &Session) -> Self {
+        let mut reading = Self {
+            acknowledged: session.live_state().completed_before,
+            ..default()
+        };
+        if let Some(play) = session.observe().play
             && play.test.is_none()
-            && let Some(discard) = &play.pending.discard
+            && play.pending.discard.is_some()
+            && let Some(report) = session.pending_test_view().as_ref().and_then(result)
         {
-            // ST8 can hold the test outside TestView while its owner orders
-            // committed cards. Recover only the matching public, frozen test.
-            let test = record
-                .presentation_moments
-                .iter()
-                .rev()
-                .filter(|moment| moment.play.completed_tests.len() == play.completed_tests.len())
-                .filter_map(|moment| moment.play.test.as_ref())
-                .find(|test| {
-                    test.resolved == Some(true)
-                        && discard
-                            .remaining
-                            .iter()
-                            .chain(&discard.ordered)
-                            .all(|card| {
-                                test.committed.iter().any(|commit| {
-                                    commit.owner == discard.owner && commit.card.id == card.id
-                                })
-                            })
-                });
-            if let Some(report) = test.and_then(result) {
-                reading.acknowledged = play.completed_tests.len();
-                reading.pending = Some(report);
-                reading.pending_from_test = true;
-            }
+            reading.acknowledged = play.completed_tests.len();
+            reading.pending = Some(report);
+            reading.pending_from_test = true;
         }
         reading
     }
@@ -91,7 +68,7 @@ impl Reading {
             self.pending = play
                 .test
                 .as_ref()
-                .filter(|test| test.resolved == Some(true))
+                .filter(|test| test.resolved)
                 .and_then(result);
             self.pending_from_test = self.pending.is_some();
         }
@@ -190,7 +167,7 @@ pub(super) fn render(
 ) {
     let pending = table.results.current();
     let current = view.play.as_ref().and_then(|play| play.test.as_ref());
-    let provisional = current.is_some_and(|test| test.resolved != Some(true));
+    let provisional = current.is_some_and(|test| !test.resolved);
     let report = pending
         .cloned()
         .or_else(|| current.and_then(result))
@@ -235,7 +212,7 @@ pub(super) fn render(
             }
         },
         |footer| {
-            if pending.is_none() && table.replay.is_none() {
+            if pending.is_none() {
                 footer.spawn(art.text(
                     "Use an available effect, or explicitly decline.",
                     18.,
@@ -276,15 +253,7 @@ pub(super) fn render(
                     });
             }
             screen::controls(footer, |row| {
-                let first = if let Some(replay) = &table.replay {
-                    if replay.index() > 0 {
-                        ui::control(art, row, "Previous moment", Action::Back);
-                    }
-                    if replay.index() + 1 < replay.len() {
-                        ui::control(art, row, "Next moment", Action::Next);
-                    }
-                    Some(ui::control(art, row, "Return to live table", Action::Live))
-                } else if pending.is_some() {
+                let first = if pending.is_some() {
                     Some(ui::control(
                         art,
                         row,
@@ -342,10 +311,7 @@ fn outcome(report: &TestResult) -> String {
 }
 
 pub(super) fn details(body: &mut ChildSpawnerCommands, art: &art::Art, report: &TestResult) {
-    let Some(detail) = &report.breakdown else {
-        body.spawn(art.text("This older recording contains the outcome, but did not record the detailed contributions.", 18., MUTED));
-        return;
-    };
+    let detail = &report.breakdown;
     body.spawn(art.text(
         format!("Base {:?}  {}", detail.skill, detail.base),
         21.,

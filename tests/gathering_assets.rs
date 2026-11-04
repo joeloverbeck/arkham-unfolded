@@ -2,7 +2,7 @@ use arkham_unfolded_experiment::gathering::{AssetFixture, HostileFixture, Sessio
 
 fn choose(session: &mut Session, id: &str) {
     session
-        .choose(session.observe_for_play().revision, id)
+        .choose(session.observe().revision, id)
         .unwrap_or_else(|error| panic!("{id}: {error}; choices: {:?}", session.observe().choices));
 }
 
@@ -745,7 +745,7 @@ fn dissonant_voices_blocks_asset_play_without_spending_its_costs() {
 fn playing_an_asset_from_the_actual_opening_pays_once_and_preserves_custody() {
     let mut session = completed_setup();
     choose(&mut session, "turn:tony");
-    let opening = session.observe_for_play().play.unwrap();
+    let opening = session.observe().play.unwrap();
     let hard_knocks = opening.players[0]
         .hand
         .iter()
@@ -754,7 +754,7 @@ fn playing_an_asset_from_the_actual_opening_pays_once_and_preserves_custody() {
         .clone();
     let id = format!("action:ordinary:play:{}", hard_knocks.id);
     choose(&mut session, &id);
-    let after = session.observe_for_play();
+    let after = session.observe();
     let tony = &after.play.as_ref().unwrap().players[0];
     assert_eq!(
         tony.resources, 3,
@@ -782,7 +782,7 @@ fn playing_an_asset_from_the_actual_opening_pays_once_and_preserves_custody() {
 fn a_full_ally_slot_requires_the_players_explicit_replacement_choice() {
     let mut session = completed_setup();
     choose(&mut session, "turn:jacqueline");
-    let opening = session.observe_for_play().play.unwrap();
+    let opening = session.observe().play.unwrap();
     let hand = &opening.players[2].hand;
     let olive = hand
         .iter()
@@ -795,7 +795,7 @@ fn a_full_ally_slot_requires_the_players_explicit_replacement_choice() {
         .unwrap()
         .clone();
     choose(&mut session, &format!("action:ordinary:play:{}", olive.id));
-    let after_olive = session.observe_for_play();
+    let after_olive = session.observe();
     let unqualified = format!("action:ordinary:play:{}", katarina.id);
     assert!(
         !after_olive
@@ -814,7 +814,7 @@ fn a_full_ally_slot_requires_the_players_explicit_replacement_choice() {
         &mut session,
         &format!("action:ordinary:play:{}:replace:{}", katarina.id, olive.id),
     );
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     let jacqueline = &after.players[2];
     assert_eq!(
         jacqueline.resources, 1,
@@ -844,7 +844,7 @@ fn two_arcane_assets_fit_and_receive_their_printed_charges() {
         choose(&mut session, "confirm-mulligan");
     }
     choose(&mut session, "turn:patrice");
-    let opening = session.observe_for_play().play.unwrap();
+    let opening = session.observe().play.unwrap();
     let hand = &opening.players[1].hand;
     let mists = hand
         .iter()
@@ -858,7 +858,7 @@ fn two_arcane_assets_fit_and_receive_their_printed_charges() {
         .clone();
     choose(&mut session, &format!("action:ordinary:play:{}", mists.id));
     choose(&mut session, &format!("action:ordinary:play:{}", flame.id));
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     let patrice = &after.players[1];
     assert_eq!(
         patrice.resources, 0,
@@ -886,7 +886,7 @@ fn two_arcane_assets_fit_and_receive_their_printed_charges() {
 #[test]
 fn asset_costs_and_limbo_precede_an_attack_of_opportunity() {
     let mut session = Session::with_hostile_fixture(HostileFixture::GatheringPriestDefeat);
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let mauser = before.players[0]
         .hand
         .iter()
@@ -894,7 +894,7 @@ fn asset_costs_and_limbo_precede_an_attack_of_opportunity() {
         .unwrap()
         .clone();
     choose(&mut session, &format!("action:ordinary:play:{}", mauser.id));
-    let pending = session.observe_for_play();
+    let pending = session.observe();
     let tony = &pending.play.as_ref().unwrap().players[0];
     assert_eq!(
         tony.resources, 1,
@@ -917,12 +917,12 @@ fn asset_costs_and_limbo_precede_an_attack_of_opportunity() {
     continuity::save_session(&path, &session).unwrap();
     session = continuity::load_session(&path).unwrap();
     assert_eq!(
-        session.observe_for_play(),
+        session.observe(),
         pending,
         "Reopening retains the paid card in limbo and the pending attack"
     );
     choose(&mut session, &attack);
-    let after = session.observe_for_play().play.unwrap();
+    let after = session.observe().play.unwrap();
     let tony = &after.players[0];
     assert_eq!(
         (tony.damage, tony.horror, tony.resources),

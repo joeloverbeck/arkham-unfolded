@@ -108,48 +108,6 @@ fn assert_draw_anchors_unobscured(app: &mut App, anchors: &[Vec3], size: Vec2, n
     }
 }
 
-#[test]
-fn draw_review_replay_next_requires_reframing_after_navigation() {
-    let point = draw_review::checkpoints()
-        .unwrap()
-        .into_iter()
-        .find(|point| point.name == "mulligan")
-        .unwrap();
-    let (directory, mut app) = open_review_save(&point.session);
-    let before = std::fs::read(directory.path().join("review.json")).unwrap();
-    for action in [
-        Action::Replay,
-        Action::Focus(Area::Investigator(0)),
-        Action::Next,
-    ] {
-        app.world_mut().resource_mut::<Actions>().0.push(action);
-        app.update();
-    }
-    assert!(
-        app.world().resource::<Orbit>().is_following(),
-        "Next restores the existing replay follow policy"
-    );
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .push(Action::Focus(Area::Investigator(0)));
-    app.update();
-    assert!(!app.world().resource::<Orbit>().is_following());
-    assert_eq!(
-        app.world().resource::<Orbit>().pose().target,
-        layout::focus(Area::Investigator(0)).0
-    );
-    for action in [Action::Back, Action::Live] {
-        app.world_mut().resource_mut::<Actions>().0.push(action);
-        app.update();
-    }
-    assert!(app.world().resource::<Table>().replay.is_none());
-    assert_eq!(
-        std::fs::read(directory.path().join("review.json")).unwrap(),
-        before
-    );
-}
-
 // Reproduce the ordinary seed-89 saves used in the 2026-11-03 native review.
 // Load through native startup before installing the production scene and UI.
 fn open_review_save(session: &Session) -> (tempfile::TempDir, App) {
@@ -163,8 +121,8 @@ fn open_review_save(session: &Session) -> (tempfile::TempDir, App) {
         app.update();
     }
     assert_eq!(
-        app.world().resource::<Table>().session.recording(),
-        session.recording()
+        app.world().resource::<Table>().session.clone(),
+        session.clone()
     );
     assert_eq!(std::fs::read(path).unwrap(), saved);
     (directory, app)
@@ -216,7 +174,23 @@ fn quick_thinking_review_saves_open_on_reveal_then_the_untimed_result() {
     let table = after.world().resource::<Table>();
     let result = table.results.current().expect("Saved result needs reading");
     assert_eq!((result.total, result.difficulty), (7, 2));
-    assert!(result.breakdown.is_some());
+    assert_eq!(
+        result.breakdown.base
+            + result
+                .breakdown
+                .cards
+                .iter()
+                .map(|row| row.amount)
+                .sum::<i32>()
+            + result
+                .breakdown
+                .bonuses
+                .iter()
+                .map(|row| row.amount)
+                .sum::<i32>()
+            + result.breakdown.token_total,
+        result.total
+    );
     assert_visible_button(&mut after, "Continue");
     let button = button_with_label(&mut after, "Continue").unwrap();
     after.world_mut().trigger(Activate { entity: button });
@@ -225,8 +199,8 @@ fn quick_thinking_review_saves_open_on_reveal_then_the_untimed_result() {
     assert_visible_button(&mut after, "Decline Quick Thinking");
     assert!(button_with_label(&mut after, "Continue").is_none());
     assert_eq!(
-        after.world().resource::<Table>().session.recording(),
-        session.recording()
+        after.world().resource::<Table>().session.clone(),
+        session.clone()
     );
 }
 
@@ -239,9 +213,7 @@ fn tony_turn() -> Session {
         "confirm-mulligan",
         "turn:tony",
     ] {
-        session
-            .choose(session.observe_for_play().revision, id)
-            .unwrap();
+        session.choose(session.observe().revision, id).unwrap();
     }
     session
 }
@@ -285,7 +257,7 @@ fn initial_and_hard_knocks_review_saves_open_on_the_expected_actions() {
 fn expanded_map_transition() -> Session {
     let mut session = tony_turn();
     for _ in 0..200 {
-        let view = session.observe_for_play();
+        let view = session.observe();
         if view.play.as_ref().unwrap().scenario.locations.len() > 1 {
             assert_eq!(
                 view.revision, 61,
@@ -344,7 +316,7 @@ fn expanded_map_review_requires_a_clear_screen_after_the_story_transition() {
     // The follow-up input is one legal decision later, not a forced dismissal or
     // a privileged fixture. Startup must now expose the map without a story panel.
     session
-        .choose(session.observe_for_play().revision, "turn:end")
+        .choose(session.observe().revision, "turn:end")
         .unwrap();
     let (_directory, mut ready) = open_review_save(&session);
     let table = ready.world().resource::<Table>();

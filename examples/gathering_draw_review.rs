@@ -23,8 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let path = output.join(format!("{}.json", checkpoint.name));
         save_session(&path, &checkpoint.session)?;
         let loaded = load_session(&path)?;
-        if loaded.recording() != checkpoint.session.recording() || loaded.is_verification_fixture()
-        {
+        if loaded.clone() != checkpoint.session.clone() || loaded.is_verification_fixture() {
             return Err(format!("Ordinary save round-trip failed: {}", path.display()).into());
         }
         let observed = loaded.observe();

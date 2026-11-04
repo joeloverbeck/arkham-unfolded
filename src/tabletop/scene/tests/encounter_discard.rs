@@ -4,11 +4,12 @@ use super::*;
 fn resolved_treachery_is_a_single_inspectable_encounter_discard_card() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("discard.json");
-    std::fs::write(
-        &path,
-        include_bytes!("../../../../tests/fixtures/result-explanation/late.session.json"),
-    )
-    .unwrap();
+    let mut session = crate::Session::new(crate::Fixture::curse());
+    for choice in ["commit-promise", "use-jacqueline", "cancel-1-2"] {
+        let revision = session.observe().revision;
+        session.choose(revision, choice).unwrap();
+    }
+    crate::continuity::save_session(&path, &session).unwrap();
     let session = crate::continuity::load_session(&path).unwrap();
     let mut app = app_for_session(session.clone(), path);
     app.init_resource::<Assets<Image>>();
@@ -53,37 +54,5 @@ fn resolved_treachery_is_a_single_inspectable_encounter_discard_card() {
     assert_eq!(app.world().resource::<Tabletop>().inspect, Some(0));
     assert_eq!(app.world().resource::<Tabletop>().session, session);
     act(&mut app, Action::CloseInspect);
-    act(&mut app, Action::Replay);
-    let world = app.world_mut();
-    assert!(
-        world
-            .query::<&Text>()
-            .iter(world)
-            .any(|text| text.0.starts_with("Encounter discard\nEmpty")
-                && text.0.ends_with("0 cards"))
-    );
-    while app
-        .world()
-        .resource::<Tabletop>()
-        .replay
-        .as_ref()
-        .unwrap()
-        .index()
-        + 1
-        < app
-            .world()
-            .resource::<Tabletop>()
-            .replay
-            .as_ref()
-            .unwrap()
-            .len()
-    {
-        act(&mut app, Action::Next);
-    }
-    act(
-        &mut app,
-        Action::Select(Source::Card(0), Vec2::new(200.0, 200.0)),
-    );
-    assert_eq!(app.world().resource::<Tabletop>().inspect, Some(0));
-    assert_eq!(app.world().resource::<Tabletop>().session, session);
+    assert_eq!(app.world().resource::<Tabletop>().inspect, None);
 }

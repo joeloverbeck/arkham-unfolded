@@ -22,8 +22,7 @@ pub(super) fn refresh(
         table.epoch,
         view.revision,
         &offered(&view),
-        table.replay.is_none()
-            && !table.modal()
+        true && !table.modal()
             && !table.menu_open
             && !table.is_presenting()
             && health.allows_play()
@@ -236,26 +235,10 @@ mod tests {
     }
 
     #[test]
-    fn replay_and_failed_health_remove_live_reveal_input() {
+    fn failed_health_removes_live_reveal_input() {
         let directory = tempfile::tempdir().unwrap();
         let session = ordinary_reveal();
         let mut app = host(session.clone(), directory.path().join("read-only.json"));
-        let mut replay = Replay::new(session.recording()).unwrap();
-        while replay.next() {}
-        {
-            let mut table = app.world_mut().resource_mut::<Table>();
-            table.replay = Some(replay);
-            table.epoch += 1;
-            table.dirty = true;
-        }
-        app.update();
-        assert!(button(&mut app, "Reveal chaos token").is_none());
-        {
-            let mut table = app.world_mut().resource_mut::<Table>();
-            table.replay = None;
-            table.epoch += 1;
-            table.dirty = true;
-        }
         app.insert_resource(RenderHealth::failed_for_test());
         app.update();
         assert!(button(&mut app, "Reveal chaos token").is_none());
@@ -287,7 +270,7 @@ mod tests {
         let table = app.world().resource::<Table>();
         assert_eq!(table.session.observe().revision, revision + 1);
         assert_eq!(continuity::load_session(&path).unwrap(), table.session);
-        let record = serde_json::to_value(table.session.recording()).unwrap();
+        let record = serde_json::to_value(&table.session).unwrap();
         assert_eq!(
             record["decisions"].as_array().unwrap().last().unwrap(),
             choices[selected].id.as_str()
@@ -329,7 +312,7 @@ mod tests {
             layout::focus(Area::Test).0
         );
         assert_eq!(
-            serde_json::to_value(after.recording()).unwrap()["decisions"]
+            serde_json::to_value(&after).unwrap()["decisions"]
                 .as_array()
                 .unwrap()
                 .last()

@@ -36,29 +36,16 @@ fn responses(output: &Output) -> Vec<Value> {
 
 #[test]
 fn empty_commitment_reopens_at_the_reaction_through_fresh_driver_processes() {
-    for legacy in [false, true] {
+    {
         let directory = tempfile::tempdir().unwrap();
-        let original = include_bytes!("fixtures/commitment/jacqueline-empty-v1.session.json");
-        if legacy {
-            std::fs::write(directory.path().join("session.json"), original).unwrap();
-        }
-        let args: &[&str] = if legacy {
-            &["--load", "session.json"]
-        } else {
-            &["--patrice-away", "--save", "session.json"]
-        };
+
+        let args: &[&str] = { &["--patrice-away", "--save", "session.json"] };
         let saved = responses(&run_driver(directory.path(), args, "{\"op\":\"save\"}\n"));
         let pending = &saved[1]["observation"];
         assert_eq!(pending["stage"], "before_reveal");
         assert_eq!(pending["revision"], 0);
         assert_eq!(pending["tokens"], serde_json::json!([]));
         assert_eq!(pending["choices"][0]["id"], "use-jacqueline");
-        if legacy {
-            assert_eq!(
-                std::fs::read(directory.path().join("session.json")).unwrap(),
-                original
-            );
-        }
 
         let reopened = responses(&run_driver(
             directory.path(),
@@ -107,7 +94,7 @@ fn a_committed_choice_resumes_through_a_second_driver_process() {
 }
 
 #[test]
-fn replay_navigation_cannot_change_the_live_match() {
+fn retired_navigation_commands_cannot_change_the_live_match() {
     let directory = tempfile::tempdir().unwrap();
     let output = run_driver(
         directory.path(),
@@ -125,20 +112,13 @@ fn replay_navigation_cannot_change_the_live_match() {
         ),
     );
     let output = responses(&output);
-    assert_eq!(output[4]["mode"], "replay");
-    assert_eq!(output[4]["observation"]["revision"], 0);
-    assert_eq!(output[5]["observation"]["revision"], 1);
-    assert_eq!(output[6]["ok"], false);
-    assert_eq!(output[6]["mode"], "replay");
-    assert_eq!(output[7]["ok"], false);
-    assert_eq!(output[7]["mode"], "replay");
-    assert_eq!(output[8]["observation"]["revision"], 0);
-    assert_eq!(output[9]["mode"], "live");
-    assert_eq!(output[9]["observation"]["stage"], "finished");
-    assert_eq!(output[9]["observation"]["revision"], 3);
-    assert_eq!(output[9]["observation"]["skill_value"], 9);
-    assert_eq!(output[9]["observation"]["horror_dealt"], 0);
-
+    for index in [4, 5, 6, 8, 9] {
+        assert_eq!(output[index]["ok"], false);
+    }
+    assert_eq!(output[7]["ok"], true);
+    for value in &output[4..] {
+        assert_eq!(value["observation"], output[3]["observation"]);
+    }
     let reopened = run_driver(directory.path(), &["--load", "session.json"], "");
     assert_eq!(
         responses(&reopened)[0]["observation"],

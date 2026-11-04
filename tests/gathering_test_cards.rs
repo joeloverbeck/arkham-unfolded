@@ -8,7 +8,7 @@ fn promise_uses_the_finite_curse_pool_and_resolved_curses_leave_at_cleanup() {
         TestCardFixture::PromiseSealedLimit,
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(case));
-        let initial = session.observe_for_play().play.unwrap();
+        let initial = session.observe().play.unwrap();
         let promise = initial.players[1]
             .hand
             .iter()
@@ -18,7 +18,7 @@ fn promise_uses_the_finite_curse_pool_and_resolved_curses_leave_at_cleanup() {
         choose(&mut session, "window:pass");
         choose(&mut session, &format!("commit:{promise}"));
         choose(&mut session, "commit:confirm");
-        let committed = session.observe_for_play().play.unwrap();
+        let committed = session.observe().play.unwrap();
         let added = case == TestCardFixture::PromiseCurse;
         assert_eq!(committed.bag_count, initial.bag_count + usize::from(added));
         assert_eq!(
@@ -30,7 +30,7 @@ fn promise_uses_the_finite_curse_pool_and_resolved_curses_leave_at_cleanup() {
         if case != TestCardFixture::PromiseAtLimit {
             assert!(
                 session
-                    .observe_for_play()
+                    .observe()
                     .choices
                     .iter()
                     .any(|choice| choice.id == "test:reveal"),
@@ -40,12 +40,12 @@ fn promise_uses_the_finite_curse_pool_and_resolved_curses_leave_at_cleanup() {
             let path = directory.path().join("curse-extra-reveal.json");
             continuity::save_session(&path, &session).unwrap();
             let mut reopened = continuity::load_session(&path).unwrap();
-            assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+            assert_eq!(reopened.observe(), session.observe());
             choose(&mut session, "test:reveal");
             choose(&mut reopened, "test:reveal");
-            assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+            assert_eq!(reopened.observe(), session.observe());
         }
-        let after = session.observe_for_play().play.unwrap();
+        let after = session.observe().play.unwrap();
         assert_eq!(
             after.completed_tests.last().unwrap().total,
             if case == TestCardFixture::PromiseAtLimit {
@@ -74,7 +74,7 @@ fn promise_uses_the_finite_curse_pool_and_resolved_curses_leave_at_cleanup() {
 }
 
 fn choose(session: &mut Session, id: &str) {
-    let view = session.observe_for_play();
+    let view = session.observe();
     assert!(
         view.choices.iter().any(|choice| choice.id == id),
         "Missing {id}: {:?}",
@@ -90,7 +90,7 @@ fn tony_elder_sign_adds_a_contract_bounty_only_when_its_effect_is_resolved() {
         TestCardFixture::TonyElderSignCancelled,
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(case));
-        let before = session.observe_for_play().play.unwrap();
+        let before = session.observe().play.unwrap();
         let bounties = before.players[0]
             .assets
             .iter()
@@ -108,7 +108,7 @@ fn tony_elder_sign_adds_a_contract_bounty_only_when_its_effect_is_resolved() {
             choose(&mut session, "tokens:cancel:2");
             choose(&mut session, "tokens:confirm");
         }
-        let after = session.observe_for_play().play.unwrap();
+        let after = session.observe().play.unwrap();
         assert_eq!(
             after.players[0]
                 .assets
@@ -135,7 +135,7 @@ fn look_what_i_found_uses_the_settled_failure_margin_before_st7() {
         TestCardFixture::LookFoundAutoFail,
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(case));
-        let initial = session.observe_for_play().play.unwrap();
+        let initial = session.observe().play.unwrap();
         let event = initial.players[1]
             .hand
             .iter()
@@ -145,7 +145,7 @@ fn look_what_i_found_uses_the_settled_failure_margin_before_st7() {
         reach_reveal(&mut session);
         choose(&mut session, "test:reveal");
         let decision = format!("test-card:found:{event}");
-        let pending = session.observe_for_play();
+        let pending = session.observe();
         if case == TestCardFixture::LookFoundTooFar {
             assert!(!pending.choices.iter().any(|choice| choice.id == decision));
             assert_eq!(
@@ -165,8 +165,8 @@ fn look_what_i_found_uses_the_settled_failure_margin_before_st7() {
         let mut reopened = continuity::load_session(&path).unwrap();
         choose(&mut session, &decision);
         choose(&mut reopened, &decision);
-        assert_eq!(session.observe_for_play(), reopened.observe_for_play());
-        let after = session.observe_for_play().play.unwrap();
+        assert_eq!(session.observe(), reopened.observe());
+        let after = session.observe().play.unwrap();
         assert_eq!(after.players[1].clues, initial.players[1].clues + 2);
         assert_eq!(after.players[1].resources, initial.players[1].resources - 2);
         assert!(after.players[1].discard.iter().any(|card| card.id == event));
@@ -194,7 +194,7 @@ fn resourceful_recovers_only_an_eligible_discard_at_st7_and_has_a_no_match_outco
         TestCardFixture::ResourcefulNoMatch,
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(case));
-        let before = session.observe_for_play().play.unwrap();
+        let before = session.observe().play.unwrap();
         let card = before.players[1]
             .hand
             .iter()
@@ -207,13 +207,13 @@ fn resourceful_recovers_only_an_eligible_discard_at_st7_and_has_a_no_match_outco
         reach_reveal(&mut session);
         choose(&mut session, "test:reveal");
         if let Some(result) =
-            session.observe_for_play().choices.iter().find(|choice| {
+            session.observe().choices.iter().find(|choice| {
                 choice.id.starts_with("result:") && choice.label.contains("Resourceful")
             })
         {
             choose(&mut session, &result.id);
         }
-        let pending = session.observe_for_play();
+        let pending = session.observe();
         let recovery: Vec<_> = pending
             .choices
             .iter()
@@ -239,9 +239,9 @@ fn resourceful_recovers_only_an_eligible_discard_at_st7_and_has_a_no_match_outco
             let mut reopened = continuity::load_session(&path).unwrap();
             choose(&mut session, &decision);
             choose(&mut reopened, &decision);
-            assert_eq!(session.observe_for_play(), reopened.observe_for_play());
+            assert_eq!(session.observe(), reopened.observe());
             assert!(
-                session.observe_for_play().play.unwrap().players[1]
+                session.observe().play.unwrap().players[1]
                     .hand
                     .iter()
                     .any(|entry| entry.code == "04200")
@@ -250,7 +250,7 @@ fn resourceful_recovers_only_an_eligible_discard_at_st7_and_has_a_no_match_outco
             assert!(recovery.is_empty());
         }
         assert!(
-            session.observe_for_play().play.unwrap().players[1]
+            session.observe().play.unwrap().players[1]
                 .discard
                 .iter()
                 .any(|entry| entry.id == card)
@@ -263,7 +263,7 @@ fn resourceful_recovers_only_an_eligible_discard_at_st7_and_has_a_no_match_outco
 fn a_cancelled_curse_returns_to_the_bag_without_an_additional_reveal() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::TestCards(TestCardFixture::PromiseCancelled));
-    let promise = session.observe_for_play().play.unwrap().players[1]
+    let promise = session.observe().play.unwrap().players[1]
         .hand
         .iter()
         .find(|card| card.code == "07032")
@@ -278,7 +278,7 @@ fn a_cancelled_curse_returns_to_the_bag_without_an_additional_reveal() {
     choose(&mut session, "tokens:cancel:0");
     choose(&mut session, "tokens:cancel:2");
     choose(&mut session, "tokens:confirm");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert_eq!(play.completed_tests.last().unwrap().total, 8);
     assert_eq!(
         play.bag_count, 17,
@@ -289,7 +289,7 @@ fn a_cancelled_curse_returns_to_the_bag_without_an_additional_reveal() {
 
 fn reach_reveal(session: &mut Session) {
     for _ in 0..4 {
-        let view = session.observe_for_play();
+        let view = session.observe();
         if view.choices.iter().any(|choice| choice.id == "test:reveal") {
             return;
         }
@@ -315,7 +315,7 @@ fn crystal_prediction_is_saved_before_reveal_and_only_the_exact_margin_draws() {
         let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(
             TestCardFixture::CrystalPrediction,
         ));
-        let before = session.observe_for_play().play.unwrap();
+        let before = session.observe().play.unwrap();
         let crystal = before.players[2]
             .assets
             .iter()
@@ -331,10 +331,10 @@ fn crystal_prediction_is_saved_before_reveal_and_only_the_exact_margin_draws() {
         let path = directory.path().join("prediction.json");
         continuity::save_session(&path, &session).unwrap();
         let mut reopened = continuity::load_session(&path).unwrap();
-        assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+        assert_eq!(reopened.observe(), session.observe());
         for game in [&mut session, &mut reopened] {
             choose(game, "test-card:number:confirm");
-            let named = game.observe_for_play().play.unwrap();
+            let named = game.observe().play.unwrap();
             assert!(
                 !named.players[2]
                     .assets
@@ -348,15 +348,15 @@ fn crystal_prediction_is_saved_before_reveal_and_only_the_exact_margin_draws() {
             reach_reveal(game);
             assert!(
                 !game
-                    .observe_for_play()
+                    .observe()
                     .choices
                     .iter()
                     .any(|choice| choice.id.starts_with("test-card:number:"))
             );
             choose(game, "test:reveal");
         }
-        assert_eq!(reopened.observe_for_play(), session.observe_for_play());
-        let play = session.observe_for_play().play.unwrap();
+        assert_eq!(reopened.observe(), session.observe());
+        let play = session.observe().play.unwrap();
         let result = play
             .completed_tests
             .last()
@@ -392,7 +392,7 @@ fn prescient_names_before_reveal_and_recovers_only_a_spell_after_cleanup() {
         (TestCardFixture::PrescientIgnoredOnly, false),
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(case));
-        let initial = session.observe_for_play().play.unwrap();
+        let initial = session.observe().play.unwrap();
         let prescient = initial.players[2]
             .hand
             .iter()
@@ -410,7 +410,7 @@ fn prescient_names_before_reveal_and_recovers_only_a_spell_after_cleanup() {
         choose(&mut session, "commit:confirm");
         assert!(
             !session
-                .observe_for_play()
+                .observe()
                 .choices
                 .iter()
                 .any(|choice| choice.id == "test:reveal")
@@ -419,7 +419,7 @@ fn prescient_names_before_reveal_and_recovers_only_a_spell_after_cleanup() {
         choose(&mut session, "window:pass");
         if case == TestCardFixture::PrescientIgnoredOnly {
             let olive = session
-                .observe_for_play()
+                .observe()
                 .choices
                 .iter()
                 .find(|choice| choice.id.starts_with("tokens:olive:"))
@@ -435,7 +435,7 @@ fn prescient_names_before_reveal_and_recovers_only_a_spell_after_cleanup() {
             choose(&mut session, "tokens:confirm");
             assert!(
                 !session
-                    .observe_for_play()
+                    .observe()
                     .choices
                     .iter()
                     .any(|choice| choice.id.starts_with("prescient:return:")),
@@ -443,7 +443,7 @@ fn prescient_names_before_reveal_and_recovers_only_a_spell_after_cleanup() {
             );
             continue;
         }
-        let after = session.observe_for_play();
+        let after = session.observe();
         let choices: Vec<_> = after
             .choices
             .iter()
@@ -466,7 +466,7 @@ fn prescient_names_before_reveal_and_recovers_only_a_spell_after_cleanup() {
         let path = directory.path().join("prescient-after-test.json");
         continuity::save_session(&path, &session).unwrap();
         let mut reopened = continuity::load_session(&path).unwrap();
-        assert_eq!(reopened.observe_for_play(), after);
+        assert_eq!(reopened.observe(), after);
         let id = if recover {
             format!("prescient:return:{prescient}:{voice}")
         } else {
@@ -474,9 +474,9 @@ fn prescient_names_before_reveal_and_recovers_only_a_spell_after_cleanup() {
         };
         choose(&mut session, &id);
         choose(&mut reopened, &id);
-        assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+        assert_eq!(reopened.observe(), session.observe());
         assert_eq!(
-            session.observe_for_play().play.unwrap().players[2]
+            session.observe().play.unwrap().players[2]
                 .hand
                 .iter()
                 .any(|card| card.id == voice),

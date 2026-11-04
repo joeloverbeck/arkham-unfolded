@@ -81,32 +81,7 @@ pub(super) fn opportunity_attack(ghoul: &GhoulView, choice: &str) -> Option<Harm
         })
 }
 
-/// Facts are optional only for the legacy prefix. Once captured, their known
-/// source amounts, causal order and counter changes must remain consistent.
-pub(super) fn valid_recording(moments: &[Observation]) -> bool {
-    let mut captured = false;
-    for (index, current) in moments.iter().enumerate() {
-        let Some(events) = &current.harm else {
-            if captured {
-                return false;
-            }
-            continue;
-        };
-        captured = true;
-        let Some(previous) = index.checked_sub(1).map(|i| &moments[i]) else {
-            if !events.is_empty() {
-                return false;
-            }
-            continue;
-        };
-        if !valid_events(previous, current, events) {
-            return false;
-        }
-    }
-    true
-}
-
-fn valid_events(before: &Observation, after: &Observation, events: &[Harm]) -> bool {
+pub(super) fn valid_events(before: &Observation, after: &Observation, events: &[Harm]) -> bool {
     let mut totals = [before.damage, before.horror, before.ghoul.damage].map(u16::from);
     let end = [after.damage, after.horror, after.ghoul.damage].map(u16::from);
     // Undo restores a prior state without representing healing or another hit.

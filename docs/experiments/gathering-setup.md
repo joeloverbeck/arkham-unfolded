@@ -1,5 +1,7 @@
 # Gathering candidate
 
+Replay has been retired in all four modes. Saves from before this change are unsupported and remain untouched; use `--save` with a new path to start an attempt. New-format saves retain exact continuation, action history and applicable Undo. There is no recording export or historical reader. [Decision and scope](../adr/0003-retire-replay.md). Dated evidence below describes its original builds; references to replay in those historical reports are superseded.
+
 This is the local implementation candidate for original Gathering
 under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). It uses the
 actual three selected starting lists. **Completing mulligans begins ordinary
@@ -22,13 +24,12 @@ retain their original order. Each physical Arcane Research has its own caption.
 
 Ordinary live consequences finish automatically, including while panning or
 changing focus. Inspection and blocking dialogs suspend them only while open;
-story reading still requires Continue. Manual event stepping belongs to Replay.
+story reading still requires Continue.
 The pool and bag share one row. Scenario has matched heading spacing, adjacent
 encounter piles at upper left, a victory pile at upper right, a book nearer the
 far edge, and a bounded Map region. The Victory display shows its card count and
 summed points, excluding resolution bonuses. Eligible locations join that displayed
-pile at scenario end; the adapter projects this from older terminal observations
-without rewriting their records or awards.
+pile at scenario end without changing their awards.
 
 The [research return](../research/issue-89-rules-investigation.md) supplies the
 source-derived behavior. This implementation pins that research baseline and
@@ -87,7 +88,7 @@ times in the compact handoff before launch:
 | --- | --- |
 | 0:00–2:30 | Launch encounter save, consent/calibrate, inspect framing and record one encounter. |
 | 2:30–5:00 | Close that app/helper, launch upkeep save and record upkeep/refill as reachable. Any new helper keeps the original deadline. |
-| 5:00 | Stop optional gameplay; begin Replay → Next → Back → Live. Next/Back restore the existing follow-camera policy, so reframe **after** navigation. Use the opening save for a complete opening clip, not a late replay reframe. |
+| 5:00 | Stop optional gameplay; inspect the saved result and action history. |
 | 7:00 | Close and reopen the run-local saved endpoint in a fresh process. |
 | 8:30 | Stop optional recording; preserve results and begin closure. |
 | 9:30 | Admit no further input; close the portal and app and verify terminal status before 10:00. |
@@ -360,8 +361,7 @@ Use a new file path to begin a separate setup. Repeating the command reopens tha
 file. The JSON driver works offline without artwork or the source archive. This
 is a developer-accessible player interface.
 
-Records from previous setup-v1, runtime-v2 and runtime-v3 checkpoints use the preserved readers described
-under [Record compatibility](#record-compatibility), rather than this build.
+All pre-removal records are unsupported; see [Record compatibility](#record-compatibility).
 
 The native table uses the same session and save file:
 
@@ -381,13 +381,11 @@ retain a contextual chooser for their individual cards. Otherwise choose
 **Inspect** for enlarged artwork and effective rules. The encounter deck
 inspection lists its starting quantities without revealing shuffled order.
 Act and Agenda inspection also includes their previously revealed reverse sides.
-Replay limits those images and texts to the moment being viewed.
 
 The portrait rail and Scenario, Test and Overview buttons retain Party's camera
 controls. The **TURN** badge follows the actual actor, not camera focus.
-**Menu** at the upper right contains Save, Reopen, Restart, History, Replay, reduced motion
-and artwork settings. Save, Reopen, History and Replay operate on the full session; replay permits
-inspection but no live choices. Menus use Tab/Shift+Tab and Enter/Space; Esc
+**Menu** at the upper right contains Save, Reopen, Restart, History, reduced motion
+and artwork settings. Menus use Tab/Shift+Tab and Enter/Space; Esc
 closes them. Unmodified WASD pans even with an ordinary button focused, dismissing
 an open card-action list without choosing. Blocking Inspect, history, Menu, story,
 test results, restart confirmation and folder-selection dialogs suspend camera input; closing
@@ -411,10 +409,7 @@ provisional. Token cancellation retains its existing timing and controls.
 
 **Menu → History** includes the recorded test breakdowns. Reopening at a newly
 completed test offers its reading panel again without repeating saved effects.
-Replay displays recorded results and keeps its navigation controls. Older
-records keep their known totals but label missing detail as unavailable; a test
-already in progress in an older save finishes without a partial explanation.
-Tests begun after resuming capture full detail.
+New saves always include complete result details.
 
 The same correction uses a supported Restart label, clearance around confirmation
 button focus outlines, rounded physical cards and inspection images, and the
@@ -431,7 +426,7 @@ Choose **Menu → Restart The Gathering...** in the live table, then **Restart**
 return to lead selection, opening hands and mulligans with fresh shuffles. The
 selected investigators, decks, weaknesses and pinned rules stay the same, as do
 artwork and motion preferences. Cancel is initially focused; Enter activates
-Cancel, and Escape also cancels. Return from replay to the live table first.
+Cancel, and Escape also cancels.
 
 Before the active save is replaced, its exact bytes are retained beside it as
 `<save filename>.archived-<unique suffix>.json`. The success notice and terminal
@@ -451,12 +446,11 @@ target/debug/arkham-tabletop \
   --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
 ```
 
-This preserves the archive while the recovered copy receives autosaves. **Open
-recorded replay** then shows the recovered attempt's history. Restart refuses a
+This preserves the archive while the recovered copy receives autosaves. **Menu → History** shows the recovered attempt's action history. Restart refuses a
 missing, stale, busy or invalid save/recovery file and reports the reason inside
 the confirmation. Cancel and resolve that reason before retrying; the current
 live attempt and active save are retained.
-Headless tests exercise the actual menu controls and save/replay protections.
+Headless tests exercise the actual menu controls and save and restart protections.
 
 For a static layout capture, use the [isolated native diagnostics](jacqueline-curse.md#launch-capture-and-interact)
 with `--experiment gathering --initial-view scenario --screenshot scenario.png --quit-after-screenshot`
@@ -543,17 +537,12 @@ Other requests:
 {"op":"observe"}
 {"op":"save"}
 {"op":"reopen"}
-{"op":"replay"}
-{"op":"next"}
-{"op":"back"}
-{"op":"live"}
 {"op":"quit"}
 ```
 
 Choices save before they change the live session. A refused choice or failed
 save leaves the live state and randomness unchanged. Reopening retains pending
-mulligan selections; replay shows recorded observations without drawing again.
-Replay does not accept live game choices. Records have their own Gathering kind
+mulligan selections without drawing again. Saves have their own Gathering kind
 and source revision, so existing experimental records are not reinterpreted.
 
 ## Implemented boundary
@@ -570,8 +559,7 @@ inventory is 40 physical cards: the other 14 have explicit destinations. Counts
 and public inventory summaries do not reveal hidden draw order.
 
 Ordinary setup initializes the runtime from the actual prepared hands, decks,
-locations and randomness. Its scenario introduction and advancement moments are
-recorded. The issue's
+locations and randomness. Its scenario introduction and advancement are shown live and retained in action history. The issue's
 [current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060)
 owns the exact implementation status and evidence.
 
@@ -587,29 +575,25 @@ They do not claim newly obtained official rulings for the exact combinations.
 The current runtime increment adds Backpack's searched attachments, Ethereal Form,
 Peter Sylvestre's end-of-turn healing and the documented Eyes of the Dreamer / Olive
 composition. Safe Undo is offered until a new hidden-information or randomness
-boundary; Undo remains in chronological history and replay. The original
+boundary; Undo remains in chronological history. The original
 encounter assembly is unchanged: independent inventory checks account for every
 physical copy and its setup destination, rather than trusting set names alone.
 
-Recorded presentation moments retain automatic token reveals, test results,
-draws, harm and scenario transitions before cleanup. Replay can inspect these
-moments without recomputing outcomes. The native adapter consumes the same public
+Transient presentation steps show automatic token reveals, test results, draws,
+harm and scenario transitions before cleanup. The native adapter consumes public
 projections for locations, enemies, assets, threats, commitments, pending costs
 and token custody. Live consequences advance after their visible motion, retaining
-brief holds for revealed tokens and pending harm. Each moment is rendered before
-advancement; routine captions do not impose a reading-length delay or require
-acknowledgment. Completed skill tests wait at the result panel described above;
-genuine rules decisions and newly revealed story text remain explicit.
-Inspection and blocking dialogs suspend playback and card movement only
-while open. Camera navigation does not pause playback. Follow is optional in live
-play and resumes on replay navigation after a manual override.
+brief holds for revealed tokens and pending harm. Completed skill tests wait at
+the result panel; genuine rules decisions and newly revealed story text remain
+explicit. Inspection and blocking dialogs suspend live animation while open.
+Camera navigation does not pause it; Follow remains optional.
 
-Each rules decision is saved before its presentation begins. Reopening that
-session in the same window preserves an unfinished presentation; a fresh process
-opens at the saved pending choice, with the intervening moments retained in
-Replay. The visual cursor is not a separately persisted game decision. Compact
-JSON keeps the measured 250-choice defeat recording below the existing 8 MiB
-limit. This is a measured path, not an upper bound for every possible game.
+Each rules decision is saved before its presentation begins. Reopening the same
+unchanged session in the same window preserves unfinished presentation. A fresh
+process opens at the saved pending choice, restoring result and story reading
+from explicit current facts. Animation queues and visual cursors are not saved.
+The measured 250-choice terminal path is below 256 KiB in the new format; this is
+a measured path, not an upper bound for every possible game.
 Headless production-system checks cover these adapter behaviors; physical input,
 readability, artwork and owner acceptance still require the actual window.
 
@@ -808,138 +792,6 @@ Consulted rules: `AUTH-1`–`AUTH-3`, `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`,
 
 ## Record compatibility
 
-New Gathering sessions and recordings identify
-`c35be2c:issue-89-gathering-runtime-v4`. This identifies the revised token-composition
-semantics; it does not claim a new rules or taboo update.
-The envelope format and other experiments' readers are unchanged.
+All saves and standalone recordings made before replay retirement are unsupported. This includes setup-v1 and runtime-v2/v3/v4 records. No migration or historical reader is maintained. The loader refuses them without changing the file; start a new attempt at a different `--save` path.
 
-Historical records remain readable and resumable with their preserved source:
-
-| Record source identity | Preserved reader commit |
-| --- | --- |
-| `c35be2c:issue-89-gathering-setup-v1` | `7b0113275a0ae1bdb57e7f24467e6d3ed6af68d3` |
-| `c35be2c:issue-89-gathering-runtime-v2` | `f431de9af84bedf20e0024370b9e6aaa8819a1ef` |
-| `c35be2c:issue-89-gathering-runtime-v3` | `46f4c54a018802d22889a238629bcea27871d259` |
-
-This applies to **ordinary setup records as well as verification fixtures**. The
-current ordinary path continues into gameplay; historical readers retain their
-original setup boundary. The current reader refuses their source identity before
-decoding the Session or Recording payload, names the required preserved reader,
-and leaves the original bytes unchanged. No personal-save migration is performed.
-Do not edit a record's version fields to bypass the check: runtime fields and
-the exact replayed decision history differ.
-
-From a repository clone containing the required commit, prepare its separate reader.
-The example selects runtime-v3; use the matching commit from the table for older sources:
-
-```sh
-gathering_reader_commit=46f4c54a018802d22889a238629bcea27871d259
-gathering_reader_dir=$(mktemp -d /tmp/arkham-gathering-reader.XXXXXX)
-git archive "$gathering_reader_commit" | tar -x -C "$gathering_reader_dir"
-cargo build --locked --manifest-path "$gathering_reader_dir/Cargo.toml" \
-  --target-dir "$gathering_reader_dir/target" --bin arkham-driver
-```
-
-Build dependencies must already be cached for an offline build; add `--offline`
-in that case. The separate target directory keeps the preserved reader's build
-artifacts apart from the current application. The source commit, rather than the
-temporary checkout, is the durable recovery point.
-
-Copy an ordinary session before resuming it, replacing the example original path:
-
-```sh
-gathering_resume_dir=$(mktemp -d /tmp/arkham-gathering-resume.XXXXXX)
-cp -- /absolute/path/original.session.json "$gathering_resume_dir/session.json"
-"$gathering_reader_dir/target/debug/arkham-driver" --experiment gathering \
-  --load "$gathering_resume_dir/session.json" --save "$gathering_resume_dir/session.json"
-```
-
-The driver prints the exact pending observation. Use its offered revision and
-choice ID to continue. For recorded replay, send `{"op":"replay"}`, then
-`{"op":"next"}` or `{"op":"back"}`; `{"op":"live"}` returns to the saved
-live state and `{"op":"quit"}` exits. A completed historical setup record stays at its
-original unavailable-gameplay boundary. It does not become a new playable run.
-
-For native ordinary setup resume, build and run the same preserved source with
-`--features tabletop --bin arkham-tabletop`, passing the copied save:
-
-```sh
-cargo run --locked --manifest-path "$gathering_reader_dir/Cargo.toml" \
-  --target-dir "$gathering_reader_dir/target" --features tabletop --bin arkham-tabletop -- \
-  --experiment gathering --save "$gathering_resume_dir/session.json" --no-art
-```
-
-The native Replay controls replay that session. Verification fixtures remain
-excluded from both ordinary launchers. For a standalone exported recording, or
-a developer's preserved verification session, the following temporary Rust
-example uses the same preserved continuity APIs. It does not create fixtures or
-make them ordinary player sessions. Create it only in the archived reader:
-
-```sh
-mkdir -p "$gathering_reader_dir/examples"
-cat > "$gathering_reader_dir/examples/preserved_record.rs" <<'RS'
-use arkham_unfolded_experiment::gathering::{Recording, continuity::{
-    Replay, load_recording, load_session, commit_choice,
-}};
-use std::{error::Error, io};
-fn replay(recording: Recording) -> Result<(), Box<dyn Error>> {
-    let mut replay = Replay::new(recording)?;
-    loop {
-        println!("{}", serde_json::to_string_pretty(replay.current())?);
-        eprintln!("next | back | quit");
-        let mut line = String::new();
-        if io::stdin().read_line(&mut line)? == 0 { break; }
-        match line.trim() {
-            "next" => { replay.next(); }, "back" => { replay.back(); },
-            "quit" => break, _ => eprintln!("Use next, back or quit."),
-        }
-    }
-    Ok(())
-}
-fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<_> = std::env::args().collect();
-    let (kind, path) = (args.get(1).ok_or("session|recording required")?,
-                        args.get(2).ok_or("copied record path required")?);
-    if kind == "recording" { return replay(load_recording(path)?); }
-    if kind != "session" { return Err("Use session or recording".into()); }
-    let mut session = load_session(path)?;
-    loop {
-        println!("{}", serde_json::to_string_pretty(&session.observe_for_play())?);
-        eprintln!("choose REVISION ID | replay | quit");
-        let mut line = String::new();
-        if io::stdin().read_line(&mut line)? == 0 { break; }
-        let parts: Vec<_> = line.split_whitespace().collect();
-        match parts.as_slice() {
-            ["choose", revision, id] => commit_choice(path, &mut session, revision.parse()?, id)?,
-            ["replay"] => replay(session.recording())?, ["quit"] => break,
-            _ => eprintln!("Use an offered revision/ID, replay or quit."),
-        }
-    }
-    Ok(())
-}
-RS
-cargo run --locked --manifest-path "$gathering_reader_dir/Cargo.toml" \
-  --target-dir "$gathering_reader_dir/target" --example preserved_record -- \
-  recording /absolute/path/original.recording.json
-```
-
-Use `session "$gathering_resume_dir/session.json"` instead of the final two
-arguments for a copied verification session. Original record files and the
-current application remain unchanged by this recovery procedure. Historical
-producer evidence covers pending and completed ordinary setup, pending runtime
-revelation and pending skill test: the preserved reader loaded/replayed all four
-and resumed each nonterminal case. The new reader rejects all eight original
-session/recording files with the explicit compatibility message. This establishes
-the preserved-reader route, not a migration or native visual acceptance.
-
-The runtime-v3 change repeats that compatibility probe against actual runtime-v2
-source at `f431de9`: eight historical session/recording files cover the same four
-positions. Its reader loaded and replayed all cases and resumed nonterminal
-sessions; the new reader refused both loading and replacement without changing
-any original bytes. These probes use temporary developer records, not personal
-saves.
-
-The runtime-v4 change repeats the same producer, load, replay and resume probe
-against actual runtime-v3 source at `46f4c54`. All eight historical files remain
-unchanged; the current reader refuses both loading and replacement and names that
-preserved reader. Ordinary historical setup still stops at its original gate.
+The new format (version 3) stores current rules/RNG state, action history, completed test explanations, explicit story knowledge and the compact decision journal used for validation and safe Undo. It stores neither historical observations nor live animation queues. Current-session archives and `.previous` recovery files use this same format. Mode, source, application and checksum checks precede loading; save replacement also checks the exact loaded/saved baseline under the file lock.

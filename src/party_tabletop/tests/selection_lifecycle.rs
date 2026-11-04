@@ -385,7 +385,7 @@ fn assert_hand_marks(app: &mut App, id: u16, source: bool, pending: bool) {
 }
 
 #[test]
-fn party_controls_preserve_staging_then_save_commitment_reveal_and_replay() {
+fn party_controls_preserve_staging_then_save_commitment_and_reveal() {
     use bevy::input::keyboard::Key;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("keyboard.json");
@@ -488,22 +488,6 @@ fn party_controls_preserve_staging_then_save_commitment_reveal_and_replay() {
     assert_eq!(revealed.tokens.len(), 1);
     assert!(!revealed.jacqueline_used);
     assert_eq!(continuity::load_session(&path).unwrap().observe(), revealed);
-
-    let live = app.world().resource::<Table>().session.clone();
-    let saved_reveal = std::fs::read(&path).unwrap();
-    activate(&mut app, "Menu");
-    activate(&mut app, "Open recorded replay");
-    let first = app.world().resource::<Table>().view();
-    activate(&mut app, "Next moment");
-    assert_ne!(app.world().resource::<Table>().view(), first);
-    activate(&mut app, "Previous moment");
-    assert_eq!(app.world().resource::<Table>().view(), first);
-    assert_eq!(app.world().resource::<Table>().session, live);
-    assert_eq!(std::fs::read(&path).unwrap(), saved_reveal);
-    activate(&mut app, "Return to live attempt");
-    assert_eq!(app.world().resource::<Table>().view(), revealed);
-    assert_eq!(app.world().resource::<Table>().session, live);
-    assert_eq!(std::fs::read(&path).unwrap(), saved_reveal);
 }
 
 #[test]
@@ -666,38 +650,5 @@ fn turn_indicator_stays_with_tony_while_jacqueline_helps_after_her_turn_ends() {
         assert_turn(&mut app, Some(Investigator::Tony));
         act(&mut app, Action::Reopen);
         assert_turn(&mut app, Some(Investigator::Tony));
-
-        act(&mut app, Action::Replay);
-        assert_turn(&mut app, None);
-        act(&mut app, Action::Next);
-        assert_turn(&mut app, Some(Investigator::Jacqueline));
-        assert!(
-            visible_text(&mut app).iter().any(|text| text
-                == &crate::tabletop::readable_text("Recorded · Jacqueline's turn".into()))
-        );
-        let moments = app
-            .world()
-            .resource::<Table>()
-            .replay
-            .as_ref()
-            .unwrap()
-            .len();
-        for _ in 0..moments {
-            if app.world().resource::<Table>().view().stage == crate::party::Stage::Cancellation {
-                break;
-            }
-            act(&mut app, Action::Next);
-        }
-        assert_eq!(
-            app.world().resource::<Table>().view().stage,
-            crate::party::Stage::Cancellation
-        );
-        assert_turn(&mut app, Some(Investigator::Tony));
-        assert!(
-            visible_text(&mut app).iter().any(
-                |text| text == &crate::tabletop::readable_text("Recorded · Tony's turn".into())
-            )
-        );
-        assert_eq!(app.world().resource::<Table>().session.observe(), live);
     }
 }

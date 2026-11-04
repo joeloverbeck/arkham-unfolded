@@ -56,7 +56,7 @@ impl Presentation<'_, '_> {
     }
 
     /// Reopen/restart success or explicit view navigation interrupts discovery.
-    /// Keep the last rendered observation: replay can itself cause token return.
+    /// Keep the last rendered observation to place each live token return.
     pub fn replaced_view(&mut self) {
         self.lifetimes.clue = None;
     }

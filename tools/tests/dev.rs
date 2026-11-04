@@ -84,6 +84,67 @@ fn overlapping_builds_wait_for_the_same_checkout_and_keep_the_command_exit_code(
 }
 
 #[test]
+fn lock_timeout_reports_contention_without_starting_the_command_or_polluting_stdout() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("scripts")).unwrap();
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    fs::copy(
+        repository.join("scripts/dev"),
+        root.path().join("scripts/dev"),
+    )
+    .unwrap();
+    let bin = root.path().join("bin");
+    fs::create_dir(&bin).unwrap();
+    symlink(support::fixture().join("child"), bin.join("systemd-run")).unwrap();
+    let path = std::env::join_paths(
+        std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let started = root.path().join("command-started");
+    let lock = fs::File::open(root.path()).unwrap();
+    lock.lock().unwrap();
+    let run = || {
+        Command::new(root.path().join("scripts/dev"))
+            .arg(support::fixture().join("child"))
+            .args(["--fixture-record-check", "75"])
+            .env("PATH", &path)
+            .env("LC_ALL", "C")
+            .env("ARKHAM_FIXTURE_STARTED", &started)
+            .output()
+            .unwrap()
+    };
+    let refused = run();
+    assert_eq!(refused.status.code(), Some(75));
+    assert!(!started.exists(), "timed-out command must not execute");
+    assert!(refused.stdout.is_empty());
+    let diagnostic = String::from_utf8(refused.stderr).unwrap();
+    assert!(
+        diagnostic.contains("flock: timeout while waiting to get lock"),
+        "{diagnostic}"
+    );
+
+    drop(lock);
+    let completed = run();
+    assert!(started.exists());
+    assert_eq!(
+        completed.status.code(),
+        Some(75),
+        "preserve the child's own exit code"
+    );
+    assert!(
+        String::from_utf8(completed.stdout)
+            .unwrap()
+            .starts_with("RECORD_CHECK_STDOUT\n")
+    );
+    let diagnostic = String::from_utf8(completed.stderr).unwrap();
+    assert!(diagnostic.contains("RECORD_CHECK_STDERR"));
+    assert!(
+        !diagnostic.contains("timeout"),
+        "a child exit of 75 is not lock contention"
+    );
+}
+
+#[test]
 fn editor_commands_use_the_protected_launcher_and_preserve_cargo_json() {
     let root = tempfile::tempdir().unwrap();
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();

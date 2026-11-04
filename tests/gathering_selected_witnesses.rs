@@ -6,7 +6,7 @@ use arkham_unfolded_experiment::gathering::{
 };
 
 fn choose(session: &mut Session, id: &str) {
-    let view = session.observe_for_play();
+    let view = session.observe();
     assert!(
         view.choices.iter().any(|choice| choice.id == id),
         "Missing {id}: {:?}",
@@ -17,7 +17,7 @@ fn choose(session: &mut Session, id: &str) {
 
 fn to_commit(session: &mut Session) {
     while session
-        .observe_for_play()
+        .observe()
         .choices
         .iter()
         .any(|choice| choice.id == "window:pass")
@@ -26,18 +26,18 @@ fn to_commit(session: &mut Session) {
     }
     assert!(
         session
-            .observe_for_play()
+            .observe()
             .choices
             .iter()
             .any(|choice| choice.id == "commit:confirm"),
         "Expected commitment: {:?}",
-        session.observe_for_play().choices
+        session.observe().choices
     );
 }
 
 fn reveal(session: &mut Session) {
     for _ in 0..8 {
-        let choices = session.observe_for_play().choices;
+        let choices = session.observe().choices;
         if choices.iter().any(|choice| choice.id == "window:pass") {
             choose(session, "window:pass");
         } else if choices.iter().any(|choice| choice.id == "commit:confirm") {
@@ -56,7 +56,7 @@ fn session(case: SelectedWitness) -> Session {
 #[test]
 fn original_guts_draws_one_for_its_owner_after_success_and_rejects_a_second_copy() {
     let mut game = session(SelectedWitness::Guts);
-    let before = game.observe_for_play().play.unwrap();
+    let before = game.observe().play.unwrap();
     let guts: Vec<_> = before.players[0]
         .hand
         .iter()
@@ -67,7 +67,7 @@ fn original_guts_draws_one_for_its_owner_after_success_and_rejects_a_second_copy
     choose(&mut game, "revelation:resolve");
     to_commit(&mut game);
     choose(&mut game, &format!("commit:{}", guts[0]));
-    let selected = game.observe_for_play();
+    let selected = game.observe();
     assert!(
         !selected
             .choices
@@ -78,9 +78,9 @@ fn original_guts_draws_one_for_its_owner_after_success_and_rejects_a_second_copy
         game.choose(selected.revision, &format!("commit:{}", guts[1]))
             .is_err()
     );
-    assert_eq!(game.observe_for_play(), selected);
+    assert_eq!(game.observe(), selected);
     reveal(&mut game);
-    let after = game.observe_for_play().play.unwrap();
+    let after = game.observe().play.unwrap();
     assert_eq!(
         after.completed_tests.last().unwrap().total,
         4,
@@ -119,7 +119,7 @@ fn guts_drawn_weakness_resolves_automatically_and_the_original_test_completes() 
     // Original Guts successful draw; RR p21 resolves a drawn encounter-type
     // weakness as if drawn from the encounter deck, before resuming ST7/ST8.
     let mut game = session(SelectedWitness::GutsWeakness);
-    let before = game.observe_for_play().play.unwrap();
+    let before = game.observe().play.unwrap();
     let original = before.pending_revelation.unwrap().card.id;
     let guts = before.players[0]
         .hand
@@ -131,7 +131,7 @@ fn guts_drawn_weakness_resolves_automatically_and_the_original_test_completes() 
     to_commit(&mut game);
     choose(&mut game, &format!("commit:{guts}"));
     reveal(&mut game);
-    let completed = game.observe_for_play();
+    let completed = game.observe();
     let play = completed.play.as_ref().unwrap();
     assert!(
         play.pending_revelation.is_none(),
@@ -150,8 +150,8 @@ fn guts_drawn_weakness_resolves_automatically_and_the_original_test_completes() 
     let path = dir.path().join("guts-weakness.json");
     continuity::save_session(&path, &game).unwrap();
     let reopened = continuity::load_session(&path).unwrap();
-    assert_eq!(reopened.observe_for_play(), completed);
-    let after = reopened.observe_for_play().play.unwrap();
+    assert_eq!(reopened.observe(), completed);
+    let after = reopened.observe().play.unwrap();
     assert!(
         after.players[0]
             .threats
@@ -172,16 +172,13 @@ fn guts_drawn_weakness_resolves_automatically_and_the_original_test_completes() 
     assert!(after.pending_revelation.is_none());
     assert!(after.test.is_none());
     assert_eq!(after.bag_count, 16);
-    let mut replay = continuity::Replay::new(reopened.recording()).unwrap();
-    while replay.next() {}
-    assert_eq!(replay.current(), &completed);
 }
 
 #[test]
 fn mauser_succeed_by_two_offers_both_rewards_and_preserves_the_paid_ammo_on_reopen() {
     for reward in ["ready", "resource"] {
         let mut game = session(SelectedWitness::Mauser);
-        let before = game.observe_for_play().play.unwrap();
+        let before = game.observe().play.unwrap();
         let weapon = before.players[0]
             .assets
             .iter()
@@ -195,7 +192,7 @@ fn mauser_succeed_by_two_offers_both_rewards_and_preserves_the_paid_ammo_on_reop
             &format!("action:ordinary:fight:{enemy}:weapon:{weapon}"),
         );
         reveal(&mut game);
-        let pending = game.observe_for_play();
+        let pending = game.observe();
         assert!(
             pending
                 .choices
@@ -227,9 +224,9 @@ fn mauser_succeed_by_two_offers_both_rewards_and_preserves_the_paid_ammo_on_reop
         let path = dir.path().join("mauser-reward.json");
         continuity::save_session(&path, &game).unwrap();
         let mut reopened = continuity::load_session(&path).unwrap();
-        assert_eq!(reopened.observe_for_play(), pending);
+        assert_eq!(reopened.observe(), pending);
         choose(&mut reopened, &format!("mauser:{weapon}:{reward}"));
-        let after = reopened.observe_for_play().play.unwrap();
+        let after = reopened.observe().play.unwrap();
         let mauser = after.players[0]
             .assets
             .iter()
@@ -245,7 +242,7 @@ fn mauser_succeed_by_two_offers_both_rewards_and_preserves_the_paid_ammo_on_reop
         assert_eq!(after.bag_count, 16);
     }
     let mut game = session(SelectedWitness::MauserNarrow);
-    let before = game.observe_for_play().play.unwrap();
+    let before = game.observe().play.unwrap();
     let weapon = before.players[0]
         .assets
         .iter()
@@ -259,7 +256,7 @@ fn mauser_succeed_by_two_offers_both_rewards_and_preserves_the_paid_ammo_on_reop
         &format!("action:ordinary:fight:{enemy}:weapon:{weapon}"),
     );
     reveal(&mut game);
-    let after = game.observe_for_play();
+    let after = game.observe();
     assert!(
         !after
             .choices
@@ -284,7 +281,7 @@ fn mauser_succeed_by_two_offers_both_rewards_and_preserves_the_paid_ammo_on_reop
 fn mists_finishes_evasion_then_moves_reveals_and_applies_the_original_room_entry() {
     for (destination, damage, horror) in [("01114", 1, 0), ("01113", 0, 1), ("decline", 0, 0)] {
         let mut game = session(SelectedWitness::Mists);
-        let before = game.observe_for_play().play.unwrap();
+        let before = game.observe().play.unwrap();
         let mists = before.players[1]
             .assets
             .iter()
@@ -305,7 +302,7 @@ fn mists_finishes_evasion_then_moves_reveals_and_applies_the_original_room_entry
             &format!("action:ordinary:evade:{evaded}:spell:{mists}"),
         );
         reveal(&mut game);
-        let pending = game.observe_for_play();
+        let pending = game.observe();
         assert!(
             !pending
                 .choices
@@ -329,9 +326,9 @@ fn mists_finishes_evasion_then_moves_reveals_and_applies_the_original_room_entry
         let path = dir.path().join("mists-move.json");
         continuity::save_session(&path, &game).unwrap();
         let mut reopened = continuity::load_session(&path).unwrap();
-        assert_eq!(reopened.observe_for_play(), pending);
+        assert_eq!(reopened.observe(), pending);
         choose(&mut reopened, &format!("spell-move:{destination}"));
-        let after = reopened.observe_for_play().play.unwrap();
+        let after = reopened.observe().play.unwrap();
         assert_eq!(
             after.players[1].location,
             if destination == "decline" {
@@ -384,7 +381,7 @@ fn mists_finishes_evasion_then_moves_reveals_and_applies_the_original_room_entry
 fn initiative_loses_icons_for_completed_actions_by_the_other_investigator_in_this_phase() {
     for completed in 0..=3 {
         let mut game = session(SelectedWitness::Initiative);
-        let initiative = game.observe_for_play().play.unwrap().players[0]
+        let initiative = game.observe().play.unwrap().players[0]
             .hand
             .iter()
             .find(|card| card.code == "04150")
@@ -393,14 +390,14 @@ fn initiative_loses_icons_for_completed_actions_by_the_other_investigator_in_thi
         if completed == 1 {
             choose(&mut game, "action:ordinary:investigate");
             while game
-                .observe_for_play()
+                .observe()
                 .choices
                 .iter()
                 .any(|choice| choice.id == "window:pass")
             {
                 choose(&mut game, "window:pass");
             }
-            let other_test = game.observe_for_play();
+            let other_test = game.observe();
             assert!(
                 !other_test
                     .choices
@@ -412,7 +409,7 @@ fn initiative_loses_icons_for_completed_actions_by_the_other_investigator_in_thi
                 game.choose(other_test.revision, &format!("commit:{initiative}"))
                     .is_err()
             );
-            assert_eq!(game.observe_for_play(), other_test);
+            assert_eq!(game.observe(), other_test);
             reveal(&mut game);
         } else {
             for _ in 0..completed {
@@ -423,7 +420,7 @@ fn initiative_loses_icons_for_completed_actions_by_the_other_investigator_in_thi
         choose(&mut game, "turn:tony");
         choose(&mut game, "action:ordinary:investigate");
         while game
-            .observe_for_play()
+            .observe()
             .choices
             .iter()
             .any(|choice| choice.id == "window:pass")
@@ -433,7 +430,7 @@ fn initiative_loses_icons_for_completed_actions_by_the_other_investigator_in_thi
         if completed < 3 {
             choose(&mut game, &format!("commit:{initiative}"));
         } else {
-            let no_icons = game.observe_for_play();
+            let no_icons = game.observe();
             assert!(
                 !no_icons
                     .choices
@@ -444,10 +441,10 @@ fn initiative_loses_icons_for_completed_actions_by_the_other_investigator_in_thi
                 game.choose(no_icons.revision, &format!("commit:{initiative}"))
                     .is_err()
             );
-            assert_eq!(game.observe_for_play(), no_icons);
+            assert_eq!(game.observe(), no_icons);
         }
         reveal(&mut game);
-        let after = game.observe_for_play().play.unwrap();
+        let after = game.observe().play.unwrap();
         assert_eq!(
             after.completed_tests.last().unwrap().total,
             6 - completed,
@@ -472,7 +469,7 @@ fn grasping_hands_uses_agility_and_only_failed_margin_becomes_damage() {
     ] {
         let mut game = session(case);
         let encounter = game
-            .observe_for_play()
+            .observe()
             .play
             .unwrap()
             .pending_revelation
@@ -480,11 +477,11 @@ fn grasping_hands_uses_agility_and_only_failed_margin_becomes_damage() {
             .card
             .id;
         choose(&mut game, "revelation:resolve");
-        let test = game.observe_for_play().play.unwrap().test.unwrap();
+        let test = game.observe().play.unwrap().test.unwrap();
         assert_eq!(serde_json::to_value(test.skill).unwrap(), "agility");
         assert_eq!(test.difficulty, 3);
         reveal(&mut game);
-        let after = game.observe_for_play().play.unwrap();
+        let after = game.observe().play.unwrap();
         assert_eq!(after.completed_tests.last().unwrap().total, total);
         assert_eq!(after.players[0].damage, damage);
         assert_eq!(after.players[0].horror, 0);
@@ -503,11 +500,11 @@ fn grasping_hands_uses_agility_and_only_failed_margin_becomes_damage() {
 #[test]
 fn fog_attaches_once_modifies_the_real_investigation_and_leaves_only_after_success() {
     let mut duplicate_game = session(SelectedWitness::ObscuringFogDuplicate);
-    let before = duplicate_game.observe_for_play().play.unwrap();
+    let before = duplicate_game.observe().play.unwrap();
     let existing = before.scenario.locations[0].fog.as_ref().unwrap().id;
     let duplicate = before.pending_revelation.unwrap().card.id;
     choose(&mut duplicate_game, "revelation:resolve");
-    let limited = duplicate_game.observe_for_play().play.unwrap();
+    let limited = duplicate_game.observe().play.unwrap();
     assert_eq!(
         limited.scenario.locations[0].fog.as_ref().unwrap().id,
         existing
@@ -521,7 +518,7 @@ fn fog_attaches_once_modifies_the_real_investigation_and_leaves_only_after_succe
     choose(&mut duplicate_game, "action:ordinary:investigate");
     assert_eq!(
         duplicate_game
-            .observe_for_play()
+            .observe()
             .play
             .unwrap()
             .test
@@ -536,7 +533,7 @@ fn fog_attaches_once_modifies_the_real_investigation_and_leaves_only_after_succe
     ] {
         let mut game = session(case);
         let original = game
-            .observe_for_play()
+            .observe()
             .play
             .unwrap()
             .pending_revelation
@@ -544,7 +541,7 @@ fn fog_attaches_once_modifies_the_real_investigation_and_leaves_only_after_succe
             .card
             .id;
         choose(&mut game, "revelation:resolve");
-        let attached = game.observe_for_play();
+        let attached = game.observe();
         assert_eq!(
             attached.play.as_ref().unwrap().scenario.locations[0]
                 .fog
@@ -557,20 +554,15 @@ fn fog_attaches_once_modifies_the_real_investigation_and_leaves_only_after_succe
         let path = dir.path().join("fog-attachment.json");
         continuity::save_session(&path, &game).unwrap();
         game = continuity::load_session(&path).unwrap();
-        assert_eq!(game.observe_for_play(), attached);
+        assert_eq!(game.observe(), attached);
         choose(&mut game, "action:ordinary:investigate");
         assert_eq!(
-            game.observe_for_play()
-                .play
-                .unwrap()
-                .test
-                .unwrap()
-                .difficulty,
+            game.observe().play.unwrap().test.unwrap().difficulty,
             4,
             "Study 2 + one Fog 2, never two attachments"
         );
         reveal(&mut game);
-        let failed = game.observe_for_play().play.unwrap();
+        let failed = game.observe().play.unwrap();
         assert_eq!(failed.completed_tests.last().unwrap().total, 3);
         assert_eq!(failed.players[0].clues, 0);
         assert_eq!(
@@ -579,7 +571,7 @@ fn fog_attaches_once_modifies_the_real_investigation_and_leaves_only_after_succe
         );
         choose(&mut game, "action:ordinary:investigate");
         reveal(&mut game);
-        let success = game.observe_for_play().play.unwrap();
+        let success = game.observe().play.unwrap();
         assert_eq!(success.completed_tests.last().unwrap().total, 4);
         assert_eq!(success.players[0].clues, u8::from(has_clues));
         assert!(success.scenario.locations[0].fog.is_none());
@@ -590,18 +582,10 @@ fn fog_attaches_once_modifies_the_real_investigation_and_leaves_only_after_succe
                 .any(|card| card.id == original)
         );
         choose(&mut game, "action:ordinary:investigate");
-        assert_eq!(
-            game.observe_for_play()
-                .play
-                .unwrap()
-                .test
-                .unwrap()
-                .difficulty,
-            2
-        );
+        assert_eq!(game.observe().play.unwrap().test.unwrap().difficulty, 2);
         reveal(&mut game);
         assert_eq!(
-            game.observe_for_play().play.unwrap().players[0].clues,
+            game.observe().play.unwrap().players[0].clues,
             if has_clues { 2 } else { 0 }
         );
     }

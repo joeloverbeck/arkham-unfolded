@@ -256,7 +256,7 @@ fn lita_and_if_it_bleeds_offer_direct_use_and_explicit_decline() {
             .unwrap();
             session.choose(view.revision, id).unwrap();
         }
-        let view = session.observe_for_play();
+        let view = session.observe();
         let use_effect = view
             .choices
             .iter()
@@ -305,7 +305,7 @@ fn mists_movement_is_offered_directly_after_reading_the_result() {
     session
         .choose(session.observe().revision, "test:reveal")
         .unwrap();
-    let view = session.observe_for_play();
+    let view = session.observe();
     let movement = view
         .choices
         .iter()
@@ -533,14 +533,14 @@ fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
     let table = app.world().resource::<Table>();
     assert!(table.results.current().is_some());
     let epoch = table.epoch;
-    let before = table.session.recording();
+    let before = table.session.clone();
     let revision = table.session.observe().revision;
     app.world_mut().resource_mut::<Actions>().0.extend([
         Action::Choose(epoch, revision, "after-test:pass".into()),
         Action::Close,
     ]);
     app.update();
-    assert_eq!(app.world().resource::<Table>().session.recording(), before);
+    assert_eq!(app.world().resource::<Table>().session.clone(), before);
     assert!(app.world().resource::<Table>().results.current().is_some());
     app.world_mut().resource_mut::<Actions>().0.extend([
         Action::ContinueResult(epoch),
@@ -554,7 +554,7 @@ fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
         "Cleanup must not repeat the acknowledged ST6 result"
     );
     assert!(button_with_label(&mut app, "Decline Quick Thinking").is_some());
-    assert_eq!(app.world().resource::<Table>().session.recording(), before);
+    assert_eq!(app.world().resource::<Table>().session.clone(), before);
 }
 
 #[test]
@@ -595,7 +595,7 @@ fn result_waits_for_continue_then_offers_quick_thinking_explicitly() {
     let path = directory.path().join("result.json");
     let session = quick_thinking_session();
     continuity::save_session(&path, &session).unwrap();
-    let before = session.recording();
+    let before = session.clone();
     let mut app = host_with_table(Table::new(session, path.clone()), false);
     let continue_button = button_with_label(&mut app, "Continue")
         .expect("Every completed test waits for an explicit acknowledgment");
@@ -604,7 +604,7 @@ fn result_waits_for_continue_then_offers_quick_thinking_explicitly() {
         .advance_by(std::time::Duration::from_secs(120));
     app.update();
     assert!(button_with_label(&mut app, "Continue").is_some());
-    assert_eq!(app.world().resource::<Table>().session.recording(), before);
+    assert_eq!(app.world().resource::<Table>().session.clone(), before);
     app.world_mut().trigger(Activate {
         entity: continue_button,
     });

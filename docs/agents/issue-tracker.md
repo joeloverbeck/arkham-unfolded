@@ -95,7 +95,9 @@ For selected sections of long files, locate headings or rule identifiers with `s
 scripts/tools read-context docs/principles/principles-for-repos.md --start 130 --end 173
 ```
 
-The reader prints verbatim source lines with number prefixes and caps the whole page at 6,000 UTF-8 bytes, including metadata. `NEXT` gives the exact arguments for the next page; rerun the same path with those arguments until `END`. The source hash rejects a continuation after the file changes. Preserve the required sections and their surrounding context; page boundaries do not reduce mandatory reading.
+For an exploratory window, use `--lines N` instead of `--end`: it selects up to N lines from `--start`, stopping at EOF. For example, `scripts/tools read-context src/saved_state.rs --start 120 --lines 80`. The count must be positive, the start must exist (or be 1 for an empty file), and `--lines` and `--end` are mutually exclusive.
+
+The reader prints verbatim source lines with number prefixes and caps the whole page at 6,000 UTF-8 bytes, including metadata. `NEXT` gives the exact arguments for the next page; replace the previous range options, including `--lines`, with those printed arguments and rerun the same path until `END`. A window continuation uses its resolved `--end` so later pages cannot extend the original window. The source hash rejects a continuation after the file changes. Preserve the required sections and their surrounding context; page boundaries do not reduce mandatory reading.
 
 Use the same reader on saved issue bodies (`gh api ... --jq .body > /tmp/issue-body.md`). `--max-bytes` accepts 512–12,000; a line that cannot fit is explicitly refused, never shortened or skipped. Budget the combined output of a batch against the outer tool limit as well. If the outer tool truncates a page, lower the byte limit and reread that page before continuing. The helper reads UTF-8 files only and never modifies them.
 
@@ -104,7 +106,7 @@ For several excerpts, put 1–32 requests in a JSON file and use one shared page
 ```json
 [
   {"path":"docs/principles/principles-for-repos.md","start":130,"end":173},
-  {"path":"docs/agents/issue-tracker.md","start":24,"end":44}
+  {"path":"docs/agents/issue-tracker.md","start":24,"lines":21}
 ]
 ```
 
@@ -112,7 +114,7 @@ For several excerpts, put 1–32 requests in a JSON file and use one shared page
 scripts/tools read-context-batch /tmp/context-requests.json --max-bytes 6000
 ```
 
-Paths are relative to the current working directory; omitted ranges select the entire file. The byte limit covers all excerpts and metadata together. Follow `NEXT` with the same request file and working directory until the final `END`; `END REQUEST` ends only that excerpt. The continuation hash binds the request file and every source, including files not yet printed. Invalid requests fail before any source output. Prefer this command to combining separately bounded pages in one tool response, and leave room for any other output in the outer tool call.
+Paths are relative to the current working directory; omitted ranges select the entire file. Each request can use either an inclusive `end` or a positive `lines` window, with the same EOF behavior as an individual read. The byte limit covers all excerpts and metadata together. Follow `NEXT` with the same request file and working directory until the final `END`; `END REQUEST` ends only that excerpt. The continuation hash binds the request file and every source, including files not yet printed. Invalid requests fail before any source output. Prefer this command to combining separately bounded pages in one tool response, and leave room for any other output in the outer tool call.
 
 ## Sub-issues and dependencies
 

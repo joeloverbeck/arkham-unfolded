@@ -166,10 +166,7 @@ fn opening_deal_is_serial_from_actual_decks_and_pauses_without_restarting() {
         }
     }
     assert_eq!(arrived, [vec![2; 5], vec![0; 5], vec![1; 5]].concat());
-    assert_eq!(
-        app.world().resource::<Table>().view(),
-        committed.observe_for_play()
-    );
+    assert_eq!(app.world().resource::<Table>().view(), committed.observe());
     assert_eq!(app.world().resource::<Orbit>().pose(), camera);
     assert_eq!(continuity::load_session(path).unwrap(), committed);
 }
@@ -220,7 +217,7 @@ fn mulligan_moves_rejected_cards_out_deals_replacements_then_returns_them() {
         .0
         .push(Action::Close);
     app.update();
-    let target = app.world().resource::<Table>().session.observe_for_play();
+    let target = app.world().resource::<Table>().session.observe();
     let replacement_ids: Vec<_> = target.investigators[0]
         .hand
         .iter()
@@ -351,7 +348,7 @@ fn an_asset_test_preview_never_shares_the_physical_cards_motion_identity() {
 }
 
 #[test]
-fn reduced_motion_and_replay_keep_committed_setup_without_redrawing_rules() {
+fn reduced_motion_and_reopen_keep_committed_setup_without_redrawing_rules() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("replay.json");
     let mut app = host(path.clone());
@@ -372,26 +369,6 @@ fn reduced_motion_and_replay_keep_committed_setup_without_redrawing_rules() {
             .sum::<usize>(),
         15
     );
-    app.world_mut().resource_mut::<Actions>().0.extend([
-        Action::Motion,
-        Action::Replay,
-        Action::Next,
-    ]);
-    tick(&mut app, 0.);
-    assert!(app.world().resource::<Table>().draws.active());
-    for _ in 0..160 {
-        tick(&mut app, 0.1);
-    }
-    assert!(!app.world().resource::<Table>().draws.active());
-    assert_eq!(
-        app.world().resource::<Table>().view().investigators,
-        target.investigators
-    );
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .extend([Action::Back, Action::Live]);
-    tick(&mut app, 0.);
     assert_eq!(std::fs::read(&path).unwrap(), saved);
     let fresh = Table::open(path).unwrap();
     assert!(!fresh.draws.active());

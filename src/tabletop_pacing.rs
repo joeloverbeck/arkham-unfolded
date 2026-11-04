@@ -1,4 +1,4 @@
-//! Redraw cadence for the two native tables. Rules and replay never use this clock.
+//! Redraw cadence for the two native tables. Rules never use this clock.
 
 use bevy::{
     app::Main,

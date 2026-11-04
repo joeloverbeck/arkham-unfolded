@@ -34,17 +34,10 @@ fn run(directory: &Path, args: &[&str], input: &str) -> Vec<Value> {
 }
 
 #[test]
-fn empty_commitment_driver_resumes_new_and_legacy_saves_at_the_reveal_choice() {
-    for legacy in [false, true] {
+fn empty_commitment_driver_resumes_at_the_reveal_choice() {
+    {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("pending.json");
-        if legacy {
-            std::fs::write(
-                &path,
-                include_bytes!("fixtures/tony-empty-commit/pending.session.json"),
-            )
-            .unwrap();
-        } else {
+        {
             let started = run(
                 directory.path(),
                 &["--save", "pending.json"],
@@ -148,7 +141,7 @@ fn fresh_process_reopens_a_pending_test_and_uses_the_saved_random_sequence() {
 }
 
 #[test]
-fn replay_cannot_save_or_choose_and_player_commands_do_not_expose_hidden_state() {
+fn retired_commands_are_refused_and_player_commands_do_not_expose_hidden_state() {
     let directory = tempfile::tempdir().unwrap();
     let responses = run(
         directory.path(),
@@ -167,20 +160,15 @@ fn replay_cannot_save_or_choose_and_player_commands_do_not_expose_hidden_state()
         ),
     );
     assert_eq!(responses[1]["ok"], true);
-    assert_eq!(responses[3]["observation"]["damage"], 1);
-    assert_eq!(responses[3]["observation"]["horror"], 1);
-    assert_eq!(responses[3]["observation"]["injury"], true);
-    assert_eq!(responses[3]["replay"]["harm"]["damage"], 1);
-    assert_eq!(responses[3]["replay"]["harm"]["horror"], 1);
-    assert_eq!(responses[4]["observation"], responses[0]["observation"]);
-    for index in [5, 6, 7, 9] {
+    for index in [2, 3, 4, 6, 7, 8, 9, 10] {
         assert_eq!(responses[index]["ok"], false);
     }
+    assert_eq!(responses[5]["ok"], true);
     assert!(!directory.path().join("past.json").exists());
     assert_eq!(responses[8]["observation"], responses[1]["observation"]);
     let reopened = run(directory.path(), &["--load", "turn.json"], "");
     assert_eq!(reopened[0]["observation"], responses[1]["observation"]);
-    assert_eq!(responses[10]["ok"], true);
+    assert!(!directory.path().join("record.json").exists());
     for response in &responses {
         let observation = response["observation"].as_object().unwrap();
         for hidden in ["seed", "random", "draws", "deck", "fixed_draws", "state"] {
@@ -190,7 +178,7 @@ fn replay_cannot_save_or_choose_and_player_commands_do_not_expose_hidden_state()
 }
 
 #[test]
-fn player_warnings_and_replay_show_one_attack_before_revealing_the_drawn_card() {
+fn player_warnings_show_one_attack_and_retired_commands_are_refused() {
     let directory = tempfile::tempdir().unwrap();
     let responses = run(
         directory.path(),
@@ -214,20 +202,13 @@ fn player_warnings_and_replay_show_one_attack_before_revealing_the_drawn_card() 
         assert_eq!(warning["attack"]["damage"], 1);
         assert_eq!(warning["attack"]["horror"], 1);
     }
-    assert_eq!(responses[2]["replay"]["length"], 3);
     assert_eq!(
-        responses[3]["observation"]["hand"]
+        responses[1]["observation"]["hand"]
             .as_array()
             .unwrap()
             .len(),
-        1
+        2
     );
-    assert_eq!(responses[3]["replay"]["harm"]["damage"], 1);
-    assert_eq!(responses[3]["replay"]["harm"]["horror"], 1);
-    assert_eq!(responses[4]["observation"], responses[1]["observation"]);
-    assert!(responses[4]["replay"]["harm"].is_null());
-    assert_eq!(responses[5]["observation"], responses[3]["observation"]);
-    assert_eq!(responses[6]["observation"], responses[1]["observation"]);
     let reopened = run(directory.path(), &["--load", "turn.json"], "");
     assert_eq!(reopened[0]["observation"], responses[1]["observation"]);
 }

@@ -1,8 +1,8 @@
 use super::*;
 
 fn toggle(context: &mut controls::Context, view: &Observation, id: u16) {
-    context.select(view, true, view.revision, Source::Hand(id), Vec3::ZERO);
-    context.toggle(view, true, context.menu_epoch(), view.revision, id, false);
+    context.select(view, view.revision, Source::Hand(id), Vec3::ZERO);
+    context.toggle(view, context.menu_epoch(), view.revision, id, false);
 }
 
 #[test]
@@ -21,8 +21,8 @@ fn supporter_additions_and_actions_follow_the_selected_set_without_replacing_it(
     }
     let view = session.observe();
     let mut context = controls::Context::default();
-    context.sync(view.revision, None);
-    let cue = |context: &controls::Context, id| context.contribution(&view, true, Source::Hand(id));
+    context.sync(view.revision);
+    let cue = |context: &controls::Context, id| context.contribution(&view, Source::Hand(id));
     assert_eq!(cue(&context, 0).unwrap().bonus, 1);
     assert_eq!(cue(&context, 3).unwrap().bonus, 1);
     assert!(
@@ -58,13 +58,7 @@ fn supporter_additions_and_actions_follow_the_selected_set_without_replacing_it(
     assert!(cue(&context, 3).is_some());
     toggle(&mut context, &view, 3);
     assert!(context.is_pending(Source::Hand(3)));
-    assert!(
-        context
-            .contribution(&view, false, Source::Hand(3))
-            .is_none(),
-        "replay offers no commitment"
-    );
-    context.sync(view.revision + 1, None);
+    context.sync(view.revision + 1);
     assert!(!context.is_pending(Source::Hand(3)));
 }
 
@@ -88,15 +82,6 @@ fn production_adapter_marks_only_live_commitment_cards_and_clears_after_confirma
     assert_eq!(bonuses.len(), 3);
     assert!(bonuses.contains(&(Source::Hand(100), 4, "intellect")));
     choose(&mut app, "commit:100");
-    let world = app.world_mut();
-    assert!(
-        world
-            .query::<&CardFeedback>()
-            .iter(world)
-            .all(|mark| mark.commitment.is_none())
-    );
-    act(&mut app, Action::Replay);
-    act(&mut app, Action::Back);
     let world = app.world_mut();
     assert!(
         world

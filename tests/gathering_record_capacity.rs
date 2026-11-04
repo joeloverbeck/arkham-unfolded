@@ -2,7 +2,7 @@
 //! This deliberately passive policy is not a gameplay or strategy oracle.
 use arkham_unfolded_experiment::gathering::{
     HostileFixture, Observation, Session,
-    continuity::{self, Replay},
+    continuity::{self},
 };
 
 fn next_choice(view: &Observation) -> String {
@@ -72,20 +72,17 @@ fn round_trip(session: &Session, path: &std::path::Path) {
         .expect("This actual Gathering continuation must fit the existing record bound");
     assert_eq!(continuity::load_session(path).unwrap(), *session);
     assert!(std::fs::metadata(path).unwrap().len() <= 8 * 1024 * 1024);
-    let recording = session.recording();
-    let record_path = path.with_extension(format!("{}.recording.json", session.observe().revision));
-    continuity::save_recording(&record_path, &recording).unwrap();
-    let mut replay = Replay::new(continuity::load_recording(&record_path).unwrap()).unwrap();
-    while replay.next() {}
-    assert_eq!(replay.current(), &session.observe());
-    assert_eq!(
-        replay.len(),
-        recording.moments.len() + recording.presentation_moments.len()
+
+    let bytes = std::fs::read(path).unwrap();
+    assert!(
+        bytes.len() < 256 * 1024,
+        "Current-state saves should stay small: {} bytes",
+        bytes.len()
     );
 }
 
 #[test]
-fn actual_setup_through_terminal_defeat_preserves_saves_and_replay_under_eight_mib() {
+fn actual_setup_through_terminal_defeat_keeps_compact_current_saves() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("gathering.session.json");
     let mut session = Session::with_hostile_fixture(HostileFixture::GatheringFromSetup);

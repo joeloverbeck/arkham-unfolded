@@ -80,7 +80,7 @@ fn hard_knocks_pays_each_repeatable_boost_in_the_actual_test_window() {
     reveal(&mut session);
     let after = session.observe().play.unwrap();
     assert_eq!(after.completed_tests[0].total, 5);
-    let report = after.completed_tests[0].breakdown.as_ref().unwrap();
+    let report = &after.completed_tests[0].breakdown;
     assert_eq!(
         report
             .bonuses
@@ -129,7 +129,7 @@ fn sour_mash_exhausts_and_spends_one_supply_for_a_treachery_test() {
     reveal(&mut session);
     let after = session.observe().play.unwrap();
     assert_eq!(after.completed_tests[0].total, 3);
-    let report = after.completed_tests[0].breakdown.as_ref().unwrap();
+    let report = &after.completed_tests[0].breakdown;
     assert!(
         report
             .bonuses

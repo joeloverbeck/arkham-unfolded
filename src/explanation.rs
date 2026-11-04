@@ -90,7 +90,7 @@ pub(crate) fn explain_result(view: &Observation) -> Option<ResultExplanation<'_>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::continuity::{self, Replay};
+    use crate::continuity::{self};
     use crate::{Fixture, Session};
 
     #[test]
@@ -109,11 +109,10 @@ mod tests {
 
     #[test]
     fn missing_or_unrecognized_history_does_not_invent_a_continuation() {
-        let session = continuity::load_session(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/result-explanation/early.session.json"
-        ))
-        .unwrap();
+        let mut session = Session::new(Fixture::curse());
+        for id in ["commit-promise", "use-jacqueline", "cancel-1-2"] {
+            session.choose(session.observe().revision, id).unwrap();
+        }
         let mut view = session.observe();
         for history in [
             vec![],
@@ -187,12 +186,6 @@ mod tests {
                         "The uncanceled auto-fail makes the test fail with a final skill value of 0. Numerical modifiers do not change that result."
                     )
                 );
-                let legacy = continuity::load_session(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/tests/fixtures/result-explanation/autofail.session.json"
-                ))
-                .unwrap();
-                assert_eq!(session, legacy);
             }
             if curse {
                 assert_eq!(
@@ -210,7 +203,7 @@ mod tests {
 
     #[test]
     fn recorded_continuations_preserve_the_two_reveal_groupings() {
-        for (name, choices, expected) in [
+        for (_name, choices, expected) in [
             (
                 "early",
                 ["commit-promise", "use-jacqueline", "cancel-1-2"].as_slice(),
@@ -222,10 +215,6 @@ mod tests {
                 "Revealed −1, 0, −2.",
             ),
         ] {
-            let legacy_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-                "tests/fixtures/result-explanation/{name}.session.json"
-            ));
-            let legacy = continuity::load_session(&legacy_path).unwrap();
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("live.json");
             let mut live = Session::new(Fixture::curse());
@@ -233,26 +222,8 @@ mod tests {
                 let revision = live.observe().revision;
                 continuity::commit_choice(&path, &mut live, revision, id).unwrap();
             }
-            assert_eq!(
-                live, legacy,
-                "all persisted state and moments stay unchanged"
-            );
-            assert_eq!(
-                std::fs::read(&path).unwrap(),
-                std::fs::read(&legacy_path).unwrap()
-            );
             let reopened = continuity::load_session(&path).unwrap();
-            let recording_path = dir.path().join("replay.json");
-            continuity::save_recording(&recording_path, &reopened.recording()).unwrap();
-            let mut replay =
-                Replay::new(continuity::load_recording(&recording_path).unwrap()).unwrap();
-            while replay.next() {}
-            for view in [
-                live.observe(),
-                legacy.observe(),
-                reopened.observe(),
-                replay.current().clone(),
-            ] {
+            for view in [live.observe(), reopened.observe()] {
                 let explanation = explain_result(&view).unwrap();
                 assert_eq!(explanation.continuation, [expected]);
                 assert_eq!(explanation.additional_horror, 0);

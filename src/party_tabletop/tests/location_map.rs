@@ -74,33 +74,4 @@ fn production_scene_draws_only_the_three_reciprocal_hallway_connections() {
         3,
         "reopen rebuilds without duplicate paths"
     );
-    let live = app.world().resource::<Table>().session.clone();
-    act(&mut app, Action::Replay);
-    assert!(
-        rendered_connections(&mut app).is_empty(),
-        "initial replay Study does not expose future rooms"
-    );
-    loop {
-        let table = app.world().resource::<Table>();
-        let replay = table.replay.as_ref().unwrap();
-        if replay.index() + 1 == replay.len() {
-            break;
-        }
-        act(&mut app, Action::Next);
-        let escaped = app.world().resource::<Table>().view().endpoint
-            == Some(crate::party::Endpoint::Escaped);
-        assert_eq!(
-            rendered_connections(&mut app).len(),
-            if escaped { 3 } else { 0 }
-        );
-    }
-    assert_eq!(rendered_connections(&mut app).len(), 3);
-    act(&mut app, Action::Back);
-    assert!(
-        rendered_connections(&mut app).is_empty(),
-        "Act reverse acknowledgement precedes the new map"
-    );
-    act(&mut app, Action::Live);
-    assert_eq!(rendered_connections(&mut app).len(), 3);
-    assert_eq!(app.world().resource::<Table>().session, live);
 }

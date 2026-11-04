@@ -29,7 +29,7 @@ pub(super) struct Context {
     epoch: u64,
     commitments: BTreeSet<u8>,
     utilities: bool,
-    stamp: Option<(u64, Option<usize>)>,
+    stamp: Option<u64>,
 }
 impl Context {
     pub fn commitments(&self) -> &BTreeSet<u8> {
@@ -103,8 +103,8 @@ impl Context {
         self.dismiss();
         index
     }
-    pub fn sync(&mut self, revision: u64, replay: Option<usize>) -> bool {
-        let stamp = Some((revision, replay));
+    pub fn sync(&mut self, revision: u64) -> bool {
+        let stamp = Some(revision);
         if self.stamp == stamp {
             return false;
         }
@@ -187,8 +187,8 @@ impl Context {
             )
         })
     }
-    fn invalidate(&mut self, view: &Observation, replay: Option<usize>) -> bool {
-        let mut changed = self.sync(view.revision, replay);
+    fn invalidate(&mut self, view: &Observation) -> bool {
+        let mut changed = self.sync(view.revision);
         if self
             .selected
             .is_some_and(|selection| !exists(view, selection.source))
@@ -203,8 +203,8 @@ impl Context {
 
 pub(super) fn invalidate(mut table: ResMut<Table>) {
     let view = table.view();
-    let replay = table.replay.as_ref().map(Replay::index);
-    if table.context.invalidate(&view, replay) {
+
+    if table.context.invalidate(&view) {
         table.dirty = true;
     }
 }
@@ -457,12 +457,7 @@ pub(super) fn draw_menu(
         return;
     };
     let view = table.view();
-    let entries = entries(
-        &table.context,
-        &view,
-        table.replay.is_none() && !table.presenting(),
-        selection.source,
-    );
+    let entries = entries(&table.context, &view, !table.presenting(), selection.source);
     let anchor = camera
         .single()
         .ok()

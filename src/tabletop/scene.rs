@@ -176,7 +176,7 @@ fn synchronize(
     mut rendered_view: Local<Option<Observation>>,
 ) {
     let view = table.view();
-    // Live/replay selections may share a revision while displaying different observations.
+    // Reopened selections may share a revision while displaying different observations.
     if rendered_view.as_ref() == Some(&view) {
         return;
     }

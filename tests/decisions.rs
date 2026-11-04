@@ -256,5 +256,4 @@ fn player_can_terminate_at_a_pending_cancellation_without_a_fabricated_outcome()
     assert_eq!(game.observe().stage, Stage::Ended);
     assert!(game.observe().choices.is_empty());
     assert_eq!(game.observe().horror_dealt, 0);
-    assert_eq!(game.recording().moments.last(), Some(&game.observe()));
 }

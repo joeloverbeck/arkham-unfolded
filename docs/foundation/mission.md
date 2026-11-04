@@ -28,11 +28,13 @@ The existing Python tools and tests are migration debt, not qualifying exception
 
 ## One product and its boundary
 
-The product takes prepared, revision-bound campaign and deck inputs plus player decisions; its rules authority produces game consequences, presentation, saved state and replay records. Joel consumes and accepts the playing experience. An invalid or unsupported preparation must fail visibly before play; missing artwork must remain playable through readable substitutes. Development, release, parking and abandonment belong to this one product.
+The product takes prepared, revision-bound campaign and deck inputs plus player decisions; its rules authority produces game consequences, presentation, saved state and action history. Joel consumes and accepts the playing experience. An invalid or unsupported preparation must fail visibly before play; missing artwork must remain playable through readable substitutes. Development, release, parking and abandonment belong to this one product.
 
-Deck import, rules execution, tabletop presentation, save/load, recording/replay and agent access are internal parts of that product. They do not authorize a general game engine, card editor, asset-management platform, autonomous rules interpreter, shared service or separate content-production pipeline. ArkhamDB remains the deck editor. The existing resource archive remains externally owned preparation input; the application consumes its own selected, portable presentation assets under the [source contract](sources-and-verification.md#presentation-asset-preparation).
+Deck import, rules execution, tabletop presentation, save/load and agent access are internal parts of that product. They do not authorize a general game engine, card editor, asset-management platform, autonomous rules interpreter, shared service or separate content-production pipeline. ArkhamDB remains the deck editor. The existing resource archive remains externally owned preparation input; the application consumes its own selected, portable presentation assets under the [source contract](sources-and-verification.md#presentation-asset-preparation).
 
-Human acceptance must inspect actual play, readability, pacing and control burden. Headless tests establish only the behavior they exercise. Agent playtesting must reach the same rules and player decisions as the human application; privileged fixtures are separate test facilities. Save/resume and replay must be inspected through their actual consumer paths.
+Human acceptance must inspect actual play, readability, pacing and control burden. Headless tests establish only the behavior they exercise. Agent playtesting must reach the same rules and player decisions as the human application; privileged fixtures are separate test facilities. Save/resume must be inspected through its actual consumer path.
+
+Joel accepted [complete replay retirement](../adr/0003-retire-replay.md) on 2026-11-04 because he will not use it. The replacement may redesign persistence and treats every pre-removal save and recording as unsupported. The [implementation report](../research/replay-removal.md#implementation-result) records the local removal and its evidence separately from owner acceptance.
 
 ## Proposed initial work and stopping boundary
 

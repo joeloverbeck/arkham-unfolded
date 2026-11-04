@@ -2,7 +2,7 @@ use arkham_unfolded_experiment::gathering::{
     HostileFixture, PlayerEventFixture, Session, continuity,
 };
 fn choose(session: &mut Session, id: &str) {
-    let view = session.observe_for_play();
+    let view = session.observe();
     assert!(
         view.choices.iter().any(|choice| choice.id == id),
         "Missing {id}: {:?}",
@@ -12,7 +12,7 @@ fn choose(session: &mut Session, id: &str) {
 }
 fn finish_test(session: &mut Session) {
     for _ in 0..12 {
-        let view = session.observe_for_play();
+        let view = session.observe();
         if view.play.as_ref().unwrap().completed_tests.len() == 1
             && !view.choices.iter().any(|choice| {
                 matches!(
@@ -56,7 +56,7 @@ fn winging_it_preserves_its_origin_through_the_test_and_shuffle_destination() {
         PlayerEventFixture::WingingFailure,
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::PlayerEvents(case));
-        let before = session.observe_for_play().play.unwrap();
+        let before = session.observe().play.unwrap();
         let from_discard = case != PlayerEventFixture::WingingHand;
         let event = if from_discard {
             &before.players[1].discard
@@ -74,7 +74,7 @@ fn winging_it_preserves_its_origin_through_the_test_and_shuffle_destination() {
                 if from_discard { "discard" } else { "hand" }
             ),
         );
-        let paid = session.observe_for_play().play.unwrap();
+        let paid = session.observe().play.unwrap();
         assert_eq!(paid.players[1].resources, before.players[1].resources - 1);
         assert!(
             !paid.players[1]
@@ -89,8 +89,8 @@ fn winging_it_preserves_its_origin_through_the_test_and_shuffle_destination() {
         let mut reopened = continuity::load_session(&path).unwrap();
         finish_test(&mut session);
         finish_test(&mut reopened);
-        assert_eq!(session.observe_for_play(), reopened.observe_for_play());
-        let after = session.observe_for_play().play.unwrap();
+        assert_eq!(session.observe(), reopened.observe());
+        let after = session.observe().play.unwrap();
         assert_eq!(after.completed_tests.last().unwrap().difficulty, 0);
         assert_eq!(
             after.players[1].clues,
@@ -123,7 +123,7 @@ fn scrounge_targets_printed_level_zero_and_rejects_no_level_as_zero() {
         PlayerEventFixture::ScroungeNoMatch,
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::PlayerEvents(case));
-        let before = session.observe_for_play();
+        let before = session.observe();
         let player = &before.play.as_ref().unwrap().players[1];
         let event = player
             .hand
@@ -140,7 +140,7 @@ fn scrounge_targets_printed_level_zero_and_rejects_no_level_as_zero() {
             continue;
         }
         choose(&mut session, &play);
-        let pending = session.observe_for_play();
+        let pending = session.observe();
         let targets: Vec<_> = pending
             .choices
             .iter()
@@ -154,8 +154,8 @@ fn scrounge_targets_printed_level_zero_and_rejects_no_level_as_zero() {
         let mut reopened = continuity::load_session(&path).unwrap();
         choose(&mut session, &decision);
         choose(&mut reopened, &decision);
-        assert_eq!(session.observe_for_play(), reopened.observe_for_play());
-        let after = session.observe_for_play().play.unwrap();
+        assert_eq!(session.observe(), reopened.observe());
+        let after = session.observe().play.unwrap();
         assert!(
             after.players[1]
                 .hand
@@ -175,7 +175,7 @@ fn old_keyring_reduces_shroud_and_spends_keys_only_on_success() {
         PlayerEventFixture::KeyringLast,
     ] {
         let mut session = Session::with_hostile_fixture(HostileFixture::PlayerEvents(case));
-        let before = session.observe_for_play().play.unwrap();
+        let before = session.observe().play.unwrap();
         let keyring = before.players[1]
             .assets
             .iter()
@@ -188,7 +188,7 @@ fn old_keyring_reduces_shroud_and_spends_keys_only_on_success() {
             &format!("action:ordinary:investigate:spell:{keyring}"),
         );
         assert_eq!(
-            session.observe_for_play().play.unwrap().players[1]
+            session.observe().play.unwrap().players[1]
                 .assets
                 .iter()
                 .find(|asset| asset.card.id == keyring)
@@ -212,7 +212,7 @@ fn old_keyring_reduces_shroud_and_spends_keys_only_on_success() {
             choose(&mut session, &format!("commit:{resourceful}"));
             choose(&mut session, "commit:confirm");
             if session
-                .observe_for_play()
+                .observe()
                 .choices
                 .iter()
                 .any(|choice| choice.id == "window:pass")
@@ -221,7 +221,7 @@ fn old_keyring_reduces_shroud_and_spends_keys_only_on_success() {
             }
             choose(&mut session, "test:reveal");
             let decision = session
-                .observe_for_play()
+                .observe()
                 .choices
                 .iter()
                 .find(|choice| {
@@ -231,12 +231,12 @@ fn old_keyring_reduces_shroud_and_spends_keys_only_on_success() {
                 .id
                 .clone();
             choose(&mut session, &decision);
-            if let Some(choice) = session.observe_for_play().choices.iter().find(|choice| {
+            if let Some(choice) = session.observe().choices.iter().find(|choice| {
                 choice.id.starts_with("result:") && choice.label.contains("Resourceful")
             }) {
                 choose(&mut session, &choice.id);
             }
-            let pending = session.observe_for_play();
+            let pending = session.observe();
             assert!(
                 !pending.play.as_ref().unwrap().players[1]
                     .assets
@@ -246,14 +246,14 @@ fn old_keyring_reduces_shroud_and_spends_keys_only_on_success() {
             let recover = format!("resourceful:{resourceful}:{keyring}");
             choose(&mut session, &recover);
             assert!(
-                session.observe_for_play().play.unwrap().players[1]
+                session.observe().play.unwrap().players[1]
                     .hand
                     .iter()
                     .any(|card| card.id == keyring)
             );
         } else {
             finish_test(&mut session);
-            let after = session.observe_for_play().play.unwrap();
+            let after = session.observe().play.unwrap();
             assert_eq!(after.completed_tests.last().unwrap().difficulty, 2);
             assert_eq!(
                 after.players[1]

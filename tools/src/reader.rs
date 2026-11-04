@@ -1,7 +1,7 @@
 use clap::Args as ClapArgs;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{fs, path::PathBuf};
+use std::{fs, num::NonZeroUsize, path::PathBuf};
 
 mod search;
 pub use search::{Args as SearchArgs, page as search};
@@ -15,6 +15,9 @@ pub struct Args {
     /// Inclusive last line (default: EOF).
     #[arg(long)]
     end: Option<usize>,
+    /// Read up to this many lines from --start, stopping at EOF.
+    #[arg(long, conflicts_with = "end")]
+    lines: Option<NonZeroUsize>,
     /// Complete output limit in bytes (512..=12000), including metadata.
     #[arg(long, default_value_t = 6000, value_parser = clap::value_parser!(u32).range(512..=12000))]
     max_bytes: u32,
@@ -32,17 +35,11 @@ pub fn page(args: Args) -> Result<String, String> {
     let text = std::str::from_utf8(&data).map_err(|e| format!("invalid UTF-8: {e}"))?;
     // Like rg -n: LF-delimited, preserving CRLF and a missing final newline.
     let lines: Vec<_> = text.split_inclusive('\n').collect();
+    let end = range_end(args.start, args.end, args.lines, lines.len())?;
     let mut output = format!("SHA256 {digest}\n");
-    if lines.is_empty() && args.start == 1 && args.end.is_none() {
+    if lines.is_empty() {
         output.push_str("EMPTY FILE\nEND\n");
         return Ok(output);
-    }
-    let end = args.end.unwrap_or(lines.len());
-    if args.start == 0 || args.start > end || end > lines.len() {
-        return Err(format!(
-            "select an inclusive range within 1..{}; omit --end to read through EOF",
-            lines.len()
-        ));
     }
     output.push_str(&format!(
         "SELECTED {}..{end} of {} lines\n",
@@ -81,9 +78,33 @@ pub fn page(args: Args) -> Result<String, String> {
     Ok(output)
 }
 
+fn range_end(
+    start: usize,
+    end: Option<usize>,
+    count: Option<NonZeroUsize>,
+    total: usize,
+) -> Result<usize, String> {
+    if end.is_some() && count.is_some() {
+        return Err("select either end or lines, not both".into());
+    }
+    if total == 0 && start == 1 && end.is_none() {
+        return Ok(0);
+    }
+    let end = count.map_or_else(
+        || end.unwrap_or(total),
+        |count| start.saturating_add(count.get() - 1).min(total),
+    );
+    if start == 0 || start > end || end > total {
+        return Err(format!(
+            "select an inclusive range within 1..{total}; use --lines for an EOF-safe window or omit --end to read through EOF"
+        ));
+    }
+    Ok(end)
+}
+
 #[derive(ClapArgs)]
 pub struct BatchArgs {
-    /// Path to a JSON file containing an array of {path, start?, end?}; paths are relative to the working directory.
+    /// Path to a JSON file containing an array of {path, start?, end?} or {path, start?, lines?}; paths are relative to the working directory.
     #[arg(value_name = "REQUESTS_FILE")]
     requests: PathBuf,
     /// Complete output limit in bytes (512..=12000), shared by all excerpts including metadata.
@@ -107,6 +128,7 @@ struct Excerpt {
     #[serde(default = "first_line")]
     start: usize,
     end: Option<usize>,
+    lines: Option<NonZeroUsize>,
 }
 
 fn first_line() -> usize {
@@ -140,15 +162,8 @@ pub fn batch(args: BatchArgs) -> Result<String, String> {
             digest.update(&data);
             let text = std::str::from_utf8(&data).map_err(|e| format!("invalid UTF-8: {e}"))?;
             let lines: Vec<_> = text.split_inclusive('\n').map(str::to_owned).collect();
-            let end = request.end.unwrap_or(lines.len());
-            let empty = lines.is_empty() && request.start == 1 && request.end.is_none();
-            if !empty && (request.start == 0 || request.start > end || end > lines.len()) {
-                return Err(format!(
-                    "{}: select an inclusive range within 1..{}",
-                    request.path.display(),
-                    lines.len()
-                ));
-            }
+            let end = range_end(request.start, request.end, request.lines, lines.len())
+                .map_err(|error| format!("{}: {error}", request.path.display()))?;
             Ok(Source {
                 label: serde_json::to_string(&request.path).map_err(|e| e.to_string())?,
                 lines,

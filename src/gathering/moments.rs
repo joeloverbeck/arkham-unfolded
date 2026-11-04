@@ -1,13 +1,13 @@
-//! Captured public states between accepted decisions. They never execute rules.
+//! Transient public steps within one accepted decision. They never execute rules.
 use super::{CardView, Investigator, Observation, PlayObservation, Stage};
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PresentationMoment {
     pub revision: u64,
     pub sequence: u32,
     pub caption: String,
     pub play: PlayObservation,
+    pub revealed_story: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -18,7 +18,7 @@ pub(super) struct StepSnapshot {
 }
 
 /// Transient rendering information from an actual draw operation. This never
-/// enters saved rules state or the historical observation tapes.
+/// enters saved rules state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DrawBatch {
     pub source: DrawSource,
@@ -42,16 +42,12 @@ pub struct DrawCue {
 }
 
 pub(super) fn project(
-    decisions: &[Observation],
-    tape: &[PresentationMoment],
+    before: &Observation,
+    current: &Observation,
+    steps: &[PresentationMoment],
     moment: &PresentationMoment,
 ) -> Observation {
-    let mut view = decisions
-        .iter()
-        .rev()
-        .find(|view| view.revision < moment.revision)
-        .unwrap_or_else(|| decisions.first().expect("A recording has its origin"))
-        .clone();
+    let mut view = before.clone();
     view.revision = moment.revision;
     view.stage = Stage::Playing;
     view.prompt = moment.caption.clone();
@@ -59,7 +55,8 @@ pub(super) fn project(
     view.decision_owner = None;
     view.lead = Some(moment.play.lead);
     view.history.extend(
-        tape.iter()
+        steps
+            .iter()
             .filter(|step| step.revision == moment.revision && step.sequence <= moment.sequence)
             .map(|step| step.caption.clone()),
     );
@@ -79,9 +76,7 @@ pub(super) fn project(
     // Preparation facts are public and fixed once the runtime exists. The
     // previous decision can be the last mulligan, before this summary existed.
     if view.scenario.is_none() {
-        view.scenario = decisions
-            .iter()
-            .find_map(|decision| decision.scenario.clone());
+        view.scenario = current.scenario.clone();
     }
     view.play = Some(moment.play.clone());
     view

@@ -58,7 +58,7 @@ fn run(directory: &Path, args: &[&str], requests: &[Value]) -> Vec<Value> {
 }
 
 #[test]
-fn fresh_process_reopens_pending_mulligan_and_replays_without_redrawing() {
+fn fresh_process_reopens_pending_mulligan_without_redrawing() {
     use arkham_unfolded_experiment::gathering::{Session, continuity::load_session};
 
     let directory = tempfile::tempdir().unwrap();
@@ -108,11 +108,13 @@ fn fresh_process_reopens_pending_mulligan_and_replays_without_redrawing() {
     assert_eq!(resumed[2]["ok"], true);
     assert_eq!(
         resumed[2]["observation"],
-        serde_json::to_value(expected.observe_for_play()).unwrap()
+        serde_json::to_value(expected.observe()).unwrap()
     );
-    assert_eq!(&resumed[5]["observation"], selected);
-    for refusal in &resumed[6..=8] {
-        assert_eq!(refusal["ok"], false);
+    for index in [3, 4, 5, 6, 9] {
+        assert_eq!(resumed[index]["ok"], false);
+    }
+    for index in [7, 8] {
+        assert_eq!(resumed[index]["ok"], true);
     }
     assert_eq!(resumed[9]["observation"], resumed[2]["observation"]);
     assert_eq!(
@@ -132,7 +134,7 @@ fn fresh_process_reopens_pending_mulligan_and_replays_without_redrawing() {
 }
 
 #[test]
-fn player_requests_cannot_control_randomness_or_modify_replay_records() {
+fn player_requests_cannot_control_randomness_or_export_recordings() {
     let directory = tempfile::tempdir().unwrap();
     let result = run(
         directory.path(),
@@ -149,18 +151,14 @@ fn player_requests_cannot_control_randomness_or_modify_replay_records() {
     assert_eq!(result[1]["ok"], false);
     assert_eq!(result[1]["observation"], result[0]["observation"]);
     assert_eq!(result[2]["ok"], true);
-    assert_eq!(result[3]["ok"], true);
+    for response in &result[3..=6] {
+        assert_eq!(response["ok"], false);
+    }
     assert_eq!(result[5]["ok"], false);
     assert!(!directory.path().join("forbidden.json").exists());
     assert_eq!(result[6]["observation"], result[2]["observation"]);
-    let recording = arkham_unfolded_experiment::gathering::continuity::load_recording(
-        directory.path().join("setup.recording.json"),
-    )
-    .unwrap();
-    assert_eq!(
-        serde_json::to_value(recording.moments.last().unwrap()).unwrap(),
-        result[2]["observation"]
-    );
+
+    assert!(!directory.path().join("setup.recording.json").exists());
 }
 
 #[test]
@@ -171,7 +169,7 @@ fn newly_started_setup_is_persisted_before_any_player_choice() {
     let first = run(directory.path(), &["--save", "setup.json"], &[]);
     let saved = load_session(directory.path().join("setup.json")).unwrap();
     assert_eq!(
-        serde_json::to_value(saved.observe_for_play()).unwrap(),
+        serde_json::to_value(saved.observe()).unwrap(),
         first[0]["observation"]
     );
     let second = run(directory.path(), &["--save", "setup.json"], &[]);
@@ -179,7 +177,7 @@ fn newly_started_setup_is_persisted_before_any_player_choice() {
 }
 
 #[test]
-fn ordinary_setup_round_and_mythos_resume_and_replay_through_fresh_player_processes() {
+fn ordinary_setup_round_and_mythos_resume_through_fresh_player_processes() {
     use arkham_unfolded_experiment::gathering::{Phase, Session, continuity};
 
     let directory = tempfile::tempdir().unwrap();
@@ -190,7 +188,7 @@ fn ordinary_setup_round_and_mythos_resume_and_replay_through_fresh_player_proces
     let mut requests = Vec::new();
     let mut encounter_draws = 0;
     for _ in 0..180 {
-        let view = expected.observe_for_play();
+        let view = expected.observe();
         if view
             .play
             .as_ref()
@@ -254,7 +252,7 @@ fn ordinary_setup_round_and_mythos_resume_and_replay_through_fresh_player_proces
         requests.push(json!({"op":"choose", "revision":view.revision, "id":id}));
         expected.choose(view.revision, &id).unwrap();
     }
-    let pending = expected.observe_for_play();
+    let pending = expected.observe();
     assert_eq!(encounter_draws, 3);
     assert_eq!(pending.play.as_ref().unwrap().round, 2);
     assert_eq!(pending.play.as_ref().unwrap().phase, Phase::Investigation);
@@ -280,17 +278,14 @@ fn ordinary_setup_round_and_mythos_resume_and_replay_through_fresh_player_proces
             json!({"op":"export", "path":"ordinary.recording.json"}),
         ],
     );
-    assert!(resumed.iter().all(|response| response["ok"] == true));
+    assert!(resumed[1..].iter().all(|response| response["ok"] == false));
     assert_eq!(
         resumed[0]["observation"],
         serde_json::to_value(&pending).unwrap()
     );
     assert_eq!(resumed[4]["observation"], resumed[0]["observation"]);
     assert_eq!(std::fs::read(&path).unwrap(), original);
-    assert_eq!(
-        continuity::load_recording(directory.path().join("ordinary.recording.json")).unwrap(),
-        expected.recording()
-    );
+    assert!(!directory.path().join("ordinary.recording.json").exists());
     let visible = serde_json::to_string(&first).unwrap();
     for secret in [
         "\"seed\"",

@@ -5,7 +5,7 @@ use arkham_unfolded_experiment::{
 
 #[test]
 fn pending_token_cancellation_reopens_with_the_same_physical_tokens() {
-    use arkham_unfolded_experiment::gathering::continuity::{self, Replay};
+    use arkham_unfolded_experiment::gathering::continuity::{self};
     let mut session = Session::with_hostile_fixture(HostileFixture::JacquelineCancellation);
     reach_reveal(&mut session);
     choose(&mut session, "tokens:jacqueline");
@@ -15,17 +15,14 @@ fn pending_token_cancellation_reopens_with_the_same_physical_tokens() {
     let path = dir.path().join("token-choice.json");
     continuity::save_session(&path, &session).unwrap();
     let mut reopened = continuity::load_session(&path).unwrap();
-    assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+    assert_eq!(reopened.observe(), session.observe());
     choose(&mut reopened, "tokens:confirm");
     choose(&mut session, "tokens:confirm");
-    assert_eq!(reopened.observe_for_play(), session.observe_for_play());
-    let mut replay = Replay::new(reopened.recording()).unwrap();
-    while replay.next() {}
-    assert_eq!(replay.current(), &session.observe_for_play());
+    assert_eq!(reopened.observe(), session.observe());
 }
 
 fn choose(session: &mut Session, id: &str) {
-    let view = session.observe_for_play();
+    let view = session.observe();
     assert!(
         view.choices.iter().any(|choice| choice.id == id),
         "Missing {id}: {:?}",
@@ -36,7 +33,7 @@ fn choose(session: &mut Session, id: &str) {
 
 fn reach_reveal(session: &mut Session) {
     for _ in 0..4 {
-        let choices = session.observe_for_play().choices;
+        let choices = session.observe().choices;
         if choices.iter().any(|choice| choice.id == "test:reveal") {
             return;
         }
@@ -54,7 +51,7 @@ fn eyes_can_ignore_the_whole_olive_group_before_olive_selects_any_tokens() {
     use arkham_unfolded_experiment::gathering::{TokenFixture, continuity};
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesOlive));
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     let eyes = play.players[2]
         .assets
         .iter()
@@ -79,7 +76,7 @@ fn eyes_can_ignore_the_whole_olive_group_before_olive_selects_any_tokens() {
     choose(&mut session, "tokens:eyes:1");
     choose(&mut session, &format!("tokens:olive:0:{olive}"));
     choose(&mut session, "test:reveal");
-    let outer = session.observe_for_play();
+    let outer = session.observe();
     let play = outer.play.as_ref().unwrap();
     assert_eq!(
         play.tokens.as_ref().unwrap().revealed,
@@ -100,7 +97,7 @@ fn eyes_can_ignore_the_whole_olive_group_before_olive_selects_any_tokens() {
     );
     assert!(session.choose(outer.revision, "tokens:keep:0").is_err());
     assert_eq!(
-        session.observe_for_play(),
+        session.observe(),
         outer,
         "A forged flattened choice cannot mutate the group or pay again"
     );
@@ -109,11 +106,11 @@ fn eyes_can_ignore_the_whole_olive_group_before_olive_selects_any_tokens() {
     let path = dir.path().join("eyes-outer.json");
     continuity::save_session(&path, &session).unwrap();
     let mut reopened = continuity::load_session(&path).unwrap();
-    assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+    assert_eq!(reopened.observe(), session.observe());
     choose(&mut session, "tokens:confirm");
     choose(&mut reopened, "tokens:confirm");
-    assert_eq!(reopened.observe_for_play(), session.observe_for_play());
-    let after = session.observe_for_play().play.unwrap();
+    assert_eq!(reopened.observe(), session.observe());
+    let after = session.observe().play.unwrap();
     assert_eq!(after.completed_tests.last().unwrap().total, 4);
     assert_eq!(
         after.players[2].clues, 2,
@@ -144,7 +141,7 @@ fn eyes_can_ignore_the_whole_olive_group_before_olive_selects_any_tokens() {
 fn eyes_chooses_olive_before_its_two_survivors_and_matches_only_the_retained_members() {
     use arkham_unfolded_experiment::gathering::{
         TokenFixture,
-        continuity::{self, Replay},
+        continuity::{self},
     };
     // Independent source-derived oracle: Study shroud 2, willpower 5,
     // G=[-1,-2,skull(0)] and A=[-1]. FAQ p17 preserves G until Eyes chooses it;
@@ -157,7 +154,7 @@ fn eyes_chooses_olive_before_its_two_survivors_and_matches_only_the_retained_mem
     ] {
         let mut session =
             Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesOlive));
-        let play = session.observe_for_play().play.unwrap();
+        let play = session.observe().play.unwrap();
         let eyes = play.players[2]
             .assets
             .iter()
@@ -183,7 +180,7 @@ fn eyes_chooses_olive_before_its_two_survivors_and_matches_only_the_retained_mem
         choose(&mut session, &format!("tokens:olive:{position}:{olive}"));
         assert!(
             session
-                .observe_for_play()
+                .observe()
                 .choices
                 .iter()
                 .any(|choice| choice.id.starts_with("tokens:jacqueline"))
@@ -191,7 +188,7 @@ fn eyes_chooses_olive_before_its_two_survivors_and_matches_only_the_retained_mem
         choose(&mut session, "test:reveal");
         choose(&mut session, &format!("tokens:position:{position}"));
         choose(&mut session, "tokens:confirm");
-        let inner = session.observe_for_play();
+        let inner = session.observe();
         let tokens = inner.play.as_ref().unwrap().tokens.as_ref().unwrap();
         assert_eq!(
             tokens.revealed,
@@ -224,13 +221,13 @@ fn eyes_chooses_olive_before_its_two_survivors_and_matches_only_the_retained_mem
         let path = dir.path().join("eyes-inner.json");
         continuity::save_session(&path, &session).unwrap();
         let mut reopened = continuity::load_session(&path).unwrap();
-        assert_eq!(reopened.observe_for_play(), session.observe_for_play());
+        assert_eq!(reopened.observe(), session.observe());
         for active in [&mut session, &mut reopened] {
             choose(active, &format!("tokens:keep:{}", kept[1]));
             choose(active, "tokens:confirm");
         }
-        assert_eq!(reopened.observe_for_play(), session.observe_for_play());
-        let after = reopened.observe_for_play().play.unwrap();
+        assert_eq!(reopened.observe(), session.observe());
+        let after = reopened.observe().play.unwrap();
         assert_eq!(after.completed_tests.last().unwrap().total, expected_total);
         assert_eq!(after.players[2].clues, expected_clues);
         assert_eq!(after.bag_count, 16);
@@ -252,9 +249,6 @@ fn eyes_chooses_olive_before_its_two_survivors_and_matches_only_the_retained_mem
                 .unwrap()
                 .ready
         );
-        let mut replay = Replay::new(reopened.recording()).unwrap();
-        while replay.next() {}
-        assert_eq!(replay.current(), &reopened.observe_for_play());
     }
 }
 
@@ -265,7 +259,7 @@ fn robes_cannot_reduce_dark_prophecy_because_its_printed_trait_is_only_augury() 
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::RobesProphecy));
     reach_reveal(&mut session);
-    let before = session.observe_for_play();
+    let before = session.observe();
     assert!(
         !before
             .choices
@@ -293,7 +287,7 @@ fn robes_cannot_reduce_dark_prophecy_because_its_printed_trait_is_only_augury() 
             )
             .is_err()
     );
-    assert_eq!(session.observe_for_play(), before);
+    assert_eq!(session.observe(), before);
     choose(&mut session, "test:reveal");
     session.validate().unwrap();
 }
@@ -304,11 +298,11 @@ fn voice_of_ra_counts_curse_and_elder_sign_without_skill_test_effects() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::VoiceRaCurse));
     assert_eq!(
-        session.observe_for_play().play.as_ref().unwrap().players[2].resources,
+        session.observe().play.as_ref().unwrap().players[2].resources,
         6
     );
     choose(&mut session, "test:reveal");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert_eq!(
         play.players[2].resources, 10,
         "Starting5 plusVoiceinitial1 plus2 for eachofCurse/ElderSign"
@@ -340,7 +334,7 @@ fn a_paid_voice_of_ra_does_not_resolve_after_lethal_opportunity_damage() {
     let mut session = Session::with_hostile_fixture(HostileFixture::Tokens(
         TokenFixture::VoiceRaLethalOpportunity,
     ));
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let event = before.players[2]
         .hand
         .iter()
@@ -348,7 +342,7 @@ fn a_paid_voice_of_ra_does_not_resolve_after_lethal_opportunity_damage() {
         .unwrap()
         .id;
     choose(&mut session, &format!("action:ordinary:play:spell:{event}"));
-    let pending = session.observe_for_play();
+    let pending = session.observe();
     assert_eq!(pending.play.as_ref().unwrap().players[2].resources, 5);
     assert!(
         !pending.play.as_ref().unwrap().players[2]
@@ -364,7 +358,7 @@ fn a_paid_voice_of_ra_does_not_resolve_after_lethal_opportunity_damage() {
         .id
         .clone();
     choose(&mut session, &attack);
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert!(play.players[2].defeated);
     assert!(play.players[2].removed.iter().any(|card| card.id == event));
     assert!(
@@ -380,7 +374,7 @@ fn olive_seals_two_premonition_tokens_and_both_resolve_with_one_spell_drawback()
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::PremonitionOlive));
     let olive = session
-        .observe_for_play()
+        .observe()
         .choices
         .iter()
         .find(|choice| choice.id.starts_with("tokens:olive:"))
@@ -390,7 +384,7 @@ fn olive_seals_two_premonition_tokens_and_both_resolve_with_one_spell_drawback()
     choose(&mut session, &olive);
     assert!(
         session
-            .observe_for_play()
+            .observe()
             .choices
             .iter()
             .any(|choice| choice.id.starts_with("tokens:jacqueline"))
@@ -399,7 +393,7 @@ fn olive_seals_two_premonition_tokens_and_both_resolve_with_one_spell_drawback()
     choose(&mut session, "tokens:keep:0");
     choose(&mut session, "tokens:keep:1");
     choose(&mut session, "tokens:confirm");
-    let sealed = session.observe_for_play().play.unwrap();
+    let sealed = session.observe().play.unwrap();
     assert_eq!(
         sealed.premonition.as_ref().unwrap().faces,
         [TokenFace::ElderSign, TokenFace::PlusOne]
@@ -419,7 +413,7 @@ fn olive_seals_two_premonition_tokens_and_both_resolve_with_one_spell_drawback()
     reach_reveal(&mut session);
     choose(&mut session, "test:reveal");
     choose(&mut session, "harm:horror:investigator");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert_eq!(play.completed_tests.last().unwrap().total, 7);
     assert_eq!(play.players[2].clues, 2);
     assert_eq!(
@@ -436,7 +430,7 @@ fn premonition_seals_then_forces_the_next_clairvoyance_reveal() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::Premonition));
     choose(&mut session, "test:reveal");
-    let sealed = session.observe_for_play().play.unwrap();
+    let sealed = session.observe().play.unwrap();
     assert_eq!(
         sealed
             .premonition
@@ -458,7 +452,7 @@ fn premonition_seals_then_forces_the_next_clairvoyance_reveal() {
         &format!("action:ordinary:investigate:spell:{clairvoyance}"),
     );
     reach_reveal(&mut session);
-    let forced = session.observe_for_play();
+    let forced = session.observe();
     assert!(
         !forced
             .choices
@@ -468,7 +462,7 @@ fn premonition_seals_then_forces_the_next_clairvoyance_reveal() {
                 || choice.id.starts_with("tokens:prophecy"))
     );
     choose(&mut session, "test:reveal");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert!(play.premonition.is_none());
     assert_eq!(play.bag_count, 16);
     assert_eq!(play.completed_tests.last().unwrap().total, 6);
@@ -494,7 +488,7 @@ fn eyes_katarina_and_confidence_preserve_protected_tokens_and_count_all_reveals(
     use arkham_unfolded_experiment::gathering::TokenFixture;
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesKatarina));
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let confidence = before.players[2]
         .hand
         .iter()
@@ -509,7 +503,7 @@ fn eyes_katarina_and_confidence_preserve_protected_tokens_and_count_all_reveals(
         .card
         .id;
     while !session
-        .observe_for_play()
+        .observe()
         .choices
         .iter()
         .any(|choice| choice.id == format!("commit:{confidence}"))
@@ -519,7 +513,7 @@ fn eyes_katarina_and_confidence_preserve_protected_tokens_and_count_all_reveals(
     choose(&mut session, &format!("commit:{confidence}"));
     choose(&mut session, "commit:confirm");
     while session
-        .observe_for_play()
+        .observe()
         .choices
         .iter()
         .any(|choice| choice.id == "window:pass")
@@ -529,7 +523,7 @@ fn eyes_katarina_and_confidence_preserve_protected_tokens_and_count_all_reveals(
     choose(&mut session, "tokens:eyes:1");
     choose(&mut session, &format!("tokens:katarina:0:{katarina}"));
     choose(&mut session, "test:reveal");
-    let revealed = session.observe_for_play();
+    let revealed = session.observe();
     assert_eq!(
         revealed
             .play
@@ -550,7 +544,7 @@ fn eyes_katarina_and_confidence_preserve_protected_tokens_and_count_all_reveals(
     );
     choose(&mut session, "tokens:keep:2");
     choose(&mut session, "tokens:confirm");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert_eq!(play.completed_tests.last().unwrap().total, 10);
     assert_eq!(play.players[2].clues, 1);
     assert!(
@@ -585,7 +579,7 @@ fn eyes_matches_a_number_ignored_by_its_nested_katarina_reveal() {
     use arkham_unfolded_experiment::gathering::TokenFixture;
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesIgnoredMatch));
-    let before = session.observe_for_play().play.unwrap();
+    let before = session.observe().play.unwrap();
     let confidence = before.players[2]
         .hand
         .iter()
@@ -600,7 +594,7 @@ fn eyes_matches_a_number_ignored_by_its_nested_katarina_reveal() {
         .card
         .id;
     while session
-        .observe_for_play()
+        .observe()
         .choices
         .iter()
         .any(|choice| choice.id == "window:pass")
@@ -610,7 +604,7 @@ fn eyes_matches_a_number_ignored_by_its_nested_katarina_reveal() {
     choose(&mut session, &format!("commit:{confidence}"));
     choose(&mut session, "commit:confirm");
     while session
-        .observe_for_play()
+        .observe()
         .choices
         .iter()
         .any(|choice| choice.id == "window:pass")
@@ -622,7 +616,7 @@ fn eyes_matches_a_number_ignored_by_its_nested_katarina_reveal() {
     choose(&mut session, "test:reveal");
     choose(&mut session, "tokens:keep:3");
     choose(&mut session, "tokens:confirm");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert_eq!(play.completed_tests.last().unwrap().total, 8);
     assert_eq!(
         play.players[2].clues, 2,
@@ -636,7 +630,7 @@ fn dark_prophecy_uses_taboo_preference_and_cannot_be_declared_after_reveal() {
     use arkham_unfolded_experiment::gathering::TokenFixture;
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::DarkProphecy));
-    let card = session.observe_for_play().play.unwrap().players[2]
+    let card = session.observe().play.unwrap().players[2]
         .hand
         .iter()
         .find(|card| card.code == "04032")
@@ -646,7 +640,7 @@ fn dark_prophecy_uses_taboo_preference_and_cannot_be_declared_after_reveal() {
     let declaration = format!("tokens:prophecy:0:{card}");
     choose(&mut session, &declaration);
     choose(&mut session, "test:reveal");
-    let pending = session.observe_for_play();
+    let pending = session.observe();
     assert_eq!(pending.play.as_ref().unwrap().bag_count, 11);
     assert!(
         !pending
@@ -655,10 +649,10 @@ fn dark_prophecy_uses_taboo_preference_and_cannot_be_declared_after_reveal() {
             .any(|choice| choice.id == "tokens:keep:0")
     );
     assert!(session.choose(pending.revision, &declaration).is_err());
-    assert_eq!(session.observe_for_play(), pending);
+    assert_eq!(session.observe(), pending);
     choose(&mut session, "tokens:keep:1");
     choose(&mut session, "tokens:confirm");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert_eq!(play.completed_tests.last().unwrap().total, 5);
     assert!(play.completed_tests.last().unwrap().success);
     assert_eq!(play.players[2].resources, 4);
@@ -681,11 +675,11 @@ fn nested_prophecy_cleanup_reveals_the_declared_batch_before_selection() {
     use arkham_unfolded_experiment::gathering::{TokenFixture, continuity};
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::NestedProphecyCleanup));
-    let prophecy = session.observe_for_play().play.unwrap().players[2].hand[0].id;
+    let prophecy = session.observe().play.unwrap().players[2].hand[0].id;
     choose(&mut session, "tokens:jacqueline");
     choose(&mut session, &format!("tokens:prophecy:0:{prophecy}"));
     choose(&mut session, "test:reveal");
-    let nested = session.observe_for_play();
+    let nested = session.observe();
     assert_eq!(
         nested
             .play
@@ -703,10 +697,10 @@ fn nested_prophecy_cleanup_reveals_the_declared_batch_before_selection() {
     let path = dir.path().join("nested-tokens.json");
     continuity::save_session(&path, &session).unwrap();
     session = continuity::load_session(&path).unwrap();
-    assert_eq!(session.observe_for_play(), nested);
+    assert_eq!(session.observe(), nested);
     choose(&mut session, "tokens:keep:1");
     choose(&mut session, "tokens:confirm");
-    let outer = session.observe_for_play();
+    let outer = session.observe();
     let play = outer.play.as_ref().unwrap();
     assert_eq!(play.tokens.as_ref().unwrap().revealed.len(), 11);
     assert_eq!(play.tokens.as_ref().unwrap().ignored, [3, 4]);
@@ -718,11 +712,11 @@ fn nested_prophecy_cleanup_reveals_the_declared_batch_before_selection() {
             .any(|card| card.code == "60403")
     );
     assert!(session.choose(outer.revision, "tokens:cancel:0").is_err());
-    assert_eq!(session.observe_for_play(), outer);
+    assert_eq!(session.observe(), outer);
     choose(&mut session, "tokens:cancel-position:1");
     choose(&mut session, "tokens:cancel-position:2");
     choose(&mut session, "tokens:confirm");
-    let finished = session.observe_for_play().play.unwrap();
+    let finished = session.observe().play.unwrap();
     assert_eq!(finished.bag_count, 16);
     assert!(finished.completed_tests.is_empty());
     assert_eq!(finished.players[2].resources, 4);
@@ -742,7 +736,7 @@ fn jacqueline_cancels_the_autofail_and_resolves_both_remaining_numbers() {
     reach_reveal(&mut session);
     choose(&mut session, "tokens:jacqueline");
     choose(&mut session, "test:reveal");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert_eq!(
         play.tokens.as_ref().unwrap().revealed,
         [TokenFace::AutoFail, TokenFace::Zero, TokenFace::MinusOne]
@@ -750,11 +744,11 @@ fn jacqueline_cancels_the_autofail_and_resolves_both_remaining_numbers() {
     assert_eq!(play.bag_count, 13);
     choose(&mut session, "tokens:cancel:0");
     choose(&mut session, "tokens:confirm");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     let result = play.completed_tests.last().unwrap();
     assert!(result.success);
     assert_eq!(result.total, 4);
-    let report = result.breakdown.as_ref().unwrap();
+    let report = &result.breakdown;
     assert_eq!(
         report
             .tokens
@@ -779,7 +773,7 @@ fn dark_future_allows_extra_reveals_but_protects_every_symbol_in_the_witness() {
     choose(&mut session, "tokens:jacqueline");
     choose(&mut session, "test:reveal");
     choose(&mut session, "result:0");
-    let play = session.observe_for_play().play.unwrap();
+    let play = session.observe().play.unwrap();
     assert!(!play.completed_tests.last().unwrap().success);
     assert_eq!(play.players[2].horror, 6);
     assert_eq!(play.bag_count, 16);
@@ -791,7 +785,7 @@ fn dark_future_allows_extra_reveals_but_protects_every_symbol_in_the_witness() {
     );
     assert!(
         !session
-            .observe_for_play()
+            .observe()
             .choices
             .iter()
             .any(|choice| choice.id.starts_with("tokens:cancel:"))

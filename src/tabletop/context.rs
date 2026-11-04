@@ -53,8 +53,7 @@ pub(super) fn feedback(
             }),
             _ => false,
         };
-        mark.commitment = (table.replay.is_none()
-            && source.0 == Source::Card(1)
+        mark.commitment = (source.0 == Source::Card(1)
             && view
                 .choices
                 .iter()
@@ -139,7 +138,7 @@ pub(super) struct Context {
     utilities: bool,
     anchor: Vec2,
     generation: u64,
-    snapshot: Option<(Observation, Option<usize>)>,
+    snapshot: Option<Observation>,
     pending: Option<String>,
 }
 
@@ -164,21 +163,15 @@ impl Context {
         self.pending.as_deref()
     }
 
-    pub fn select(
-        &mut self,
-        view: &Observation,
-        replay_index: Option<usize>,
-        source: Source,
-        anchor: Vec2,
-    ) {
-        if !self.current(view, replay_index) {
+    pub fn select(&mut self, view: &Observation, source: Source, anchor: Vec2) {
+        if !self.current(view) {
             self.pending = None;
         }
         self.generation += 1;
         self.selected = Some(source);
         self.anchor = anchor;
         self.open = true;
-        self.snapshot = Some((view.clone(), replay_index));
+        self.snapshot = Some(view.clone());
     }
 
     /// Inspection and focus close the menu but retain selection and utilities.
@@ -217,32 +210,25 @@ impl Context {
 
     /// Call at the existing post-action/synchronization points, not before
     /// admission: source-less callbacks deliberately do not require a snapshot.
-    pub fn synchronize(&mut self, view: &Observation, replay_index: Option<usize>) -> bool {
-        if self.snapshot.is_none() || self.current(view, replay_index) {
+    pub fn synchronize(&mut self, view: &Observation) -> bool {
+        if self.snapshot.is_none() || self.current(view) {
             return false;
         }
         self.invalidate();
         true
     }
 
-    fn current(&self, view: &Observation, replay_index: Option<usize>) -> bool {
+    fn current(&self, view: &Observation) -> bool {
         self.snapshot
             .as_ref()
-            .is_some_and(|(snapshot, index)| snapshot == view && *index == replay_index)
+            .is_some_and(|snapshot| snapshot == view)
     }
 
-    pub fn prepare_cancellation(
-        &mut self,
-        view: &Observation,
-        replay_index: Option<usize>,
-        generation: u64,
-        id: &str,
-    ) {
+    pub fn prepare_cancellation(&mut self, view: &Observation, generation: u64, id: &str) {
         // Preserve preparation's existing lack of a menu-open check. Each token
         // offers every complete cancellation, including sets without that token.
-        if replay_index.is_none()
-            && self.generation == generation
-            && self.current(view, replay_index)
+        if self.generation == generation
+            && self.current(view)
             && self.selected.is_some_and(|source| {
                 matches!(source, Source::Token(_))
                     && choices(view, source).iter().any(|choice| choice.id == id)
@@ -257,14 +243,12 @@ impl Context {
     pub fn offered_choice<'a>(
         &self,
         view: &'a Observation,
-        replay_index: Option<usize>,
         generation: u64,
         id: &str,
     ) -> Option<&'a crate::Choice> {
-        if replay_index.is_some()
-            || !self.open
+        if !self.open
             || self.generation != generation
-            || !self.current(view, replay_index)
+            || !self.current(view)
             || (id.starts_with("cancel-") && self.pending_cancellation() != Some(id))
         {
             return None;
@@ -277,11 +261,10 @@ impl Context {
     pub fn offered_source_less<'a>(
         &self,
         view: &'a Observation,
-        replay_index: Option<usize>,
         generation: u64,
         id: &str,
     ) -> Option<&'a crate::Choice> {
-        if replay_index.is_some() || self.generation != generation || !source_less(id) {
+        if self.generation != generation || !source_less(id) {
             return None;
         }
         view.choices.iter().find(|choice| choice.id == id)
@@ -305,12 +288,8 @@ pub(super) fn source_less(id: &str) -> bool {
     matches!(id, "decline-promise" | "end")
 }
 
-pub(super) fn inspection_only(view: &Observation, replay: bool, source: Source) -> Option<usize> {
-    let game_choices = if replay {
-        vec![]
-    } else {
-        choices(view, source)
-    };
+pub(super) fn inspection_only(view: &Observation, source: Source) -> Option<usize> {
+    let game_choices = { choices(view, source) };
     let inspect = match source {
         Source::Card(index) if index < CARDS.len() => Some(Some(index)),
         _ => None,
@@ -364,7 +343,7 @@ pub(super) fn keyboard(
 }
 
 pub(super) fn synchronize(mut context: ResMut<Context>, mut table: ResMut<Tabletop>) {
-    if context.synchronize(&table.view(), table.replay.as_ref().map(Replay::index)) {
+    if context.synchronize(&table.view()) {
         table.dirty = true;
     }
 }
@@ -397,7 +376,7 @@ pub(super) fn show(
     viewport: Vec2,
 ) {
     if !context.open
-        || !context.current(&table.view(), table.replay.as_ref().map(Replay::index))
+        || !context.current(&table.view())
         || table.inspect.is_some()
         || table.result_open
         || table.history
@@ -408,11 +387,7 @@ pub(super) fn show(
         return;
     };
     let view = table.view();
-    let choices = if table.replay.is_none() {
-        choices(&view, source)
-    } else {
-        vec![]
-    };
+    let choices = { choices(&view, source) };
     let title =
         match source {
             Source::Card(index) => CARDS[index].title.to_owned(),
@@ -452,13 +427,7 @@ pub(super) fn show(
         Item::Text(title, 17., GOLD),
         Item::Text(crate::tabletop_feedback::KEYBOARD_HINT.into(), 14., MUTED),
     ];
-    if table.replay.is_some() {
-        content.push(Item::Text(
-            "Recorded view / inspection only".into(),
-            14.,
-            MUTED,
-        ));
-    }
+
     if choices.is_empty() {
         content.push(Item::Text("No available game action".into(), 14., MUTED));
     }
@@ -484,7 +453,7 @@ pub(super) fn show(
     if let Some(id) = context
         .pending
         .as_ref()
-        .filter(|_| table.replay.is_none() && matches!(source, Source::Token(_)))
+        .filter(|_| matches!(source, Source::Token(_)))
     {
         content.push(Item::Action(
             "Confirm cancellation".into(),

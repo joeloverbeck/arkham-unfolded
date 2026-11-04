@@ -1,31 +1,23 @@
 use arkham_unfolded_experiment::gathering::{
     Session,
-    continuity::{
-        Replay, commit_choice, load_session, previous_path, restart_session, save_recording,
-        save_session,
-    },
+    continuity::{commit_choice, load_session, previous_path, restart_session, save_session},
 };
 
 #[test]
-fn restart_retains_exact_bytes_and_replay_after_new_attempt_autosaves() {
+fn restart_retains_exact_bytes_after_new_attempt_autosaves() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("gathering.json");
-    let recording_path = directory.path().join("recording.json");
     let mut old = Session::with_seed(89);
     commit_choice(&path, &mut old, 0, "lead:tony").unwrap();
-    save_recording(&recording_path, &old.recording()).unwrap();
     // Valid whitespace is part of the original file custody, not its semantic identity.
     let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     let original = serde_json::to_vec_pretty(&value).unwrap();
     std::fs::write(&path, &original).unwrap();
-    let recording_bytes = std::fs::read(&recording_path).unwrap();
+    old = load_session(&path).unwrap();
     let mut fresh = Session::with_seed(90);
     let archive = restart_session(&path, &old, &fresh).unwrap();
     assert_eq!(load_session(&path).unwrap(), fresh);
-    assert_eq!(
-        fresh.observe_for_play().source,
-        old.observe_for_play().source
-    );
+    assert_eq!(fresh.observe().source, old.observe().source);
     assert_eq!(std::fs::read(&archive).unwrap(), original);
     assert_eq!(std::fs::read(previous_path(&path)).unwrap(), original);
     commit_choice(&path, &mut fresh, 0, "lead:patrice").unwrap();
@@ -34,11 +26,6 @@ fn restart_retains_exact_bytes_and_replay_after_new_attempt_autosaves() {
     assert_eq!(std::fs::read(&archive).unwrap(), original);
     let recovered = load_session(&archive).unwrap();
     assert_eq!(recovered, old);
-    let mut replay = Replay::new(recovered.recording()).unwrap();
-    while replay.next() {}
-    assert_eq!(replay.current(), &old.observe_for_play());
-    assert_eq!(std::fs::read(&recording_path).unwrap(), recording_bytes);
-
     let second = restart_session(&path, &fresh, &Session::with_seed(91)).unwrap();
     assert_ne!(second, archive);
     assert_eq!(load_session(second).unwrap(), fresh);
@@ -56,7 +43,7 @@ fn restart_refuses_stale_missing_and_nonfresh_inputs_without_replacing_progress(
     let fresh = Session::with_seed(90);
 
     let error = restart_session(&path, &initial, &fresh).unwrap_err();
-    assert!(error.to_string().contains("later Gathering decision"));
+    assert!(error.to_string().contains("later decision"));
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
     let error = restart_session(&path, &current, &current).unwrap_err();
     assert!(error.to_string().contains("fresh Gathering setup"));

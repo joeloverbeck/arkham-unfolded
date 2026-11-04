@@ -18,7 +18,7 @@ pub(super) struct Context {
     utilities: bool,
     commitments: BTreeSet<u16>,
     cancellations: BTreeSet<u16>,
-    stamp: Option<(u64, Option<usize>)>,
+    stamp: Option<u64>,
 }
 pub(super) enum SelectionEffect {
     Menu,
@@ -61,13 +61,12 @@ impl Context {
     pub fn contribution(
         &self,
         view: &Observation,
-        live: bool,
         source: Source,
     ) -> Option<feedback::Contribution> {
         let Source::Hand(id) = source else {
             return None;
         };
-        if !live || !self.can_toggle_commitment(view, id) {
+        if !self.can_toggle_commitment(view, id) {
             return None;
         }
         let card = view
@@ -100,7 +99,7 @@ impl Context {
         self.dismiss();
         Some(index)
     }
-    /// Party also resets after successful reopen, return to live, and a new attempt.
+    /// Party also resets after successful reopen and a new attempt.
     pub fn reset(&mut self) {
         self.dismiss();
         self.selected = None;
@@ -108,8 +107,8 @@ impl Context {
         self.cancellations.clear();
         self.stamp = None;
     }
-    pub fn sync(&mut self, revision: u64, replay: Option<usize>) {
-        let stamp = Some((revision, replay));
+    pub fn sync(&mut self, revision: u64) {
+        let stamp = Some(revision);
         if self.stamp != stamp {
             self.reset();
             self.stamp = stamp;
@@ -118,7 +117,6 @@ impl Context {
     pub fn select(
         &mut self,
         view: &Observation,
-        live: bool,
         revision: u64,
         source: Source,
         at: Vec3,
@@ -130,14 +128,12 @@ impl Context {
         self.selected = Some((source, at));
         self.open = true;
         self.utilities = false;
-        Some(
-            if let Some(index) = self.inspection_only(view, live, source) {
-                self.dismiss();
-                SelectionEffect::Inspect(index)
-            } else {
-                SelectionEffect::Menu
-            },
-        )
+        Some(if let Some(index) = self.inspection_only(view, source) {
+            self.dismiss();
+            SelectionEffect::Inspect(index)
+        } else {
+            SelectionEffect::Menu
+        })
     }
     fn accepts(&self, epoch: u64) -> bool {
         self.open && self.epoch == epoch
@@ -146,17 +142,8 @@ impl Context {
     pub fn contextual_choice(&self, epoch: u64, revision: u64, id: String) -> Option<Action> {
         self.accepts(epoch).then_some(Action::Choose(revision, id))
     }
-    pub fn toggle(
-        &mut self,
-        view: &Observation,
-        live: bool,
-        epoch: u64,
-        revision: u64,
-        id: u16,
-        cancel: bool,
-    ) {
-        if live
-            && self.accepts(epoch)
+    pub fn toggle(&mut self, view: &Observation, epoch: u64, revision: u64, id: u16, cancel: bool) {
+        if self.accepts(epoch)
             && revision == view.revision
             && if cancel {
                 selectable(view, id, true)
@@ -363,9 +350,9 @@ fn inspect_targets(view: &Observation, source: Source) -> Vec<(String, usize)> {
         Source::Deck(_) => vec![],
     }
 }
-fn entries(context: &Context, view: &Observation, live: bool, source: Source) -> Vec<Entry> {
+fn entries(context: &Context, view: &Observation, source: Source) -> Vec<Entry> {
     let mut entries = Vec::new();
-    if live {
+    {
         for choice in source_choices(view, source) {
             entries.push(Entry {
                 label: ui::choice_label(view, choice),
@@ -432,8 +419,8 @@ fn entries(context: &Context, view: &Observation, live: bool, source: Source) ->
     entries
 }
 impl Context {
-    fn inspection_only(&self, view: &Observation, live: bool, source: Source) -> Option<usize> {
-        feedback::sole_inspection(entries(self, view, live, source).into_iter().map(|e| {
+    fn inspection_only(&self, view: &Observation, source: Source) -> Option<usize> {
+        feedback::sole_inspection(entries(self, view, source).into_iter().map(|e| {
             if let Action::Inspect(i) = e.action {
                 Some(i)
             } else {
@@ -476,12 +463,7 @@ pub(super) fn render(
     let Some((source, at)) = table.context.selected else {
         return;
     };
-    let entries = entries(
-        &table.context,
-        &table.view(),
-        table.replay.is_none(),
-        source,
-    );
+    let entries = entries(&table.context, &table.view(), source);
     let anchor = camera
         .0
         .world_to_viewport(camera.1, at)

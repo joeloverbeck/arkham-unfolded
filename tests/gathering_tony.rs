@@ -6,7 +6,7 @@ use arkham_unfolded_experiment::gathering::{
 };
 
 fn choose(session: &mut Session, id: &str) {
-    let observation = session.observe_for_play();
+    let observation = session.observe();
     assert!(
         observation.choices.iter().any(|choice| choice.id == id),
         "Expected {id}; got {:?}",

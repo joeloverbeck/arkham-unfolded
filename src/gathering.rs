@@ -23,6 +23,7 @@ pub use encounter_search::SearchFixture;
 pub use player_cards::AssetFixture;
 pub mod continuity;
 pub mod inspection;
+mod live;
 mod moments;
 mod peter;
 mod phases;
@@ -61,7 +62,7 @@ pub use runtime::{
 };
 
 pub use crate::party::Investigator;
-use crate::{APP_VERSION, Choice, RuleError, TokenFace};
+use crate::{Choice, RuleError, TokenFace};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, io::Read};
@@ -235,19 +236,7 @@ impl Observation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Recording {
-    pub source_revision: String,
-    pub app_version: String,
-    pub moments: Vec<Observation>,
-    pub presentation_moments: Vec<PresentationMoment>,
-    // Verification inputs belong to the private record, never to player views.
-    seed: u64,
-    decisions: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    verification_fixture: Option<HostileFixture>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Session {
     seed: u64,
     random: u64,
@@ -263,8 +252,11 @@ pub struct Session {
     scenario: Option<ScenarioSetup>,
     decisions: Vec<String>,
     history: Vec<String>,
-    moments: Vec<Observation>,
-    presentation_moments: Vec<PresentationMoment>,
+    live: live::LiveState,
+    #[serde(skip)]
+    transition: live::Transition,
+    #[serde(skip)]
+    baseline: crate::saved_state::Baseline,
     // Normalized live choices point into the append-only audit. Undo itself
     // never appears here, so restoring a position cannot recursively replay it.
     active_decisions: Vec<usize>,
@@ -393,16 +385,15 @@ impl Session {
             });
             decks.push(cards);
         }
-        let mut session = Self {
+        let session = Self {
             seed, random: seed, revision: 0, stage: Stage::ChooseLead,
             source: PreparationSources { rules_revision: SOURCE_REVISION.into(),
                 deck_projection_sha256: digest, taboo_id: 10, decks: sources },
             lead: None, mulligan_index: 0, investigators, decks,
             excluded_weaknesses: vec![vec![], vec![], vec![]], encounter_deck: vec![],
-            scenario: None, decisions: vec![], moments: vec![], presentation_moments: vec![], active_decisions: vec![], undo_floor: 0, verification_fixture: None, runtime: None,
+            scenario: None, decisions: vec![], live: Default::default(), transition: Default::default(), baseline: Default::default(), active_decisions: vec![], undo_floor: 0, verification_fixture: None, runtime: None,
             history: vec!["Fresh campaign preparation: choose the lead investigator. The retained starting lists use the three owner-selected basic weaknesses; no previous campaign history is imported. Rules and taboo 10 are pinned to the #89 research, not claimed to be the latest available release.".into()],
         };
-        session.moments.push(session.observe());
         Ok(session)
     }
 
@@ -517,19 +508,40 @@ impl Session {
         }
     }
 
-    pub fn observe_for_play(&self) -> Observation {
-        self.observe()
-    }
-
+    /// Only the latest live transition, never historical steps; empty after loading.
     pub fn presentation_after(&self, revision: u64) -> &[PresentationMoment] {
-        let start = self
-            .presentation_moments
-            .partition_point(|moment| moment.revision <= revision);
-        &self.presentation_moments[start..]
+        if revision < self.revision {
+            &self.transition.steps
+        } else {
+            &[]
+        }
     }
 
     pub fn observe_presentation(&self, moment: &PresentationMoment) -> Observation {
-        moments::project(&self.moments, &self.presentation_moments, moment)
+        let current = self.observe();
+        moments::project(
+            self.transition.before.as_ref().unwrap_or(&current),
+            &current,
+            &self.transition.steps,
+            moment,
+        )
+    }
+
+    #[cfg(feature = "tabletop")]
+    pub(crate) fn live_state(&self) -> &live::LiveState {
+        &self.live
+    }
+
+    #[cfg(feature = "tabletop")]
+    pub(crate) fn pending_test_view(&self) -> Option<TestView> {
+        let mut game = self.runtime.clone()?;
+        if game.test.is_none() {
+            game.test = game.frames.iter().rev().find_map(|frame| match frame {
+                runtime::Frame::TestCleanup(test) => Some((**test).clone()),
+                _ => None,
+            });
+        }
+        game.observe().test
     }
 
     pub fn choose(&mut self, revision: u64, id: &str) -> Result<(), RuleError> {
@@ -561,7 +573,7 @@ impl Session {
         if id == "undo" {
             candidate.restore_previous_position()?;
             if let Some(game) = &mut candidate.runtime {
-                game.capture_presentation("Undo restores the previous position. The earlier choices remain in the recording.");
+                game.capture_presentation("Undo restores the previous position. The action history retains the earlier choices.");
             }
         } else {
             candidate.apply(id, &mut setup_draws)?;
@@ -571,6 +583,10 @@ impl Session {
             }
         }
         candidate.revision += 1;
+        candidate.transition = live::Transition {
+            before: Some(self.observe()),
+            steps: vec![],
+        };
         for batch in setup_draws {
             draws.push(moments::DrawCue {
                 revision: candidate.revision,
@@ -598,17 +614,21 @@ impl Session {
                         batch,
                     });
                 }
-                candidate.presentation_moments.push(PresentationMoment {
+                candidate.transition.steps.push(PresentationMoment {
                     revision: candidate.revision,
                     sequence,
                     caption: snapshot.caption,
                     play: snapshot.play,
+                    revealed_story: vec![],
                 });
             }
         }
         candidate.decisions.push(id.into());
         candidate.history.push(choice.label);
-        candidate.moments.push(candidate.observe());
+        let after = candidate.observe();
+        candidate
+            .live
+            .capture(&self.observe(), &mut candidate.transition.steps, &after);
         *self = candidate;
         Ok(draws)
     }
@@ -645,8 +665,8 @@ impl Session {
         restored.revision = self.revision;
         restored.decisions = self.decisions.clone();
         restored.history = self.history.clone();
-        restored.moments = self.moments.clone();
-        restored.presentation_moments = self.presentation_moments.clone();
+        restored.baseline = self.baseline.clone();
+        restored.live = self.live.clone();
         restored.active_decisions = active;
         restored.undo_floor = self.undo_floor;
         *self = restored;
@@ -801,31 +821,10 @@ impl Session {
         Ok(())
     }
 
-    pub fn recording(&self) -> Recording {
-        Recording {
-            source_revision: SOURCE_REVISION.into(),
-            app_version: APP_VERSION.into(),
-            moments: self.moments.clone(),
-            presentation_moments: self.presentation_moments.clone(),
-            seed: self.seed,
-            decisions: self.decisions.clone(),
-            verification_fixture: self.verification_fixture,
-        }
-    }
-
     pub fn same_run(&self, other: &Self) -> bool {
         self.seed == other.seed
             && self.source == other.source
             && self.verification_fixture == other.verification_fixture
-    }
-
-    pub fn is_continuation_of(&self, prior: &Self) -> bool {
-        self.same_run(prior)
-            && self.decisions.starts_with(&prior.decisions)
-            && self.moments.starts_with(&prior.moments)
-            && self
-                .presentation_moments
-                .starts_with(&prior.presentation_moments)
     }
 
     pub fn is_fresh(&self) -> bool {
@@ -836,15 +835,6 @@ impl Session {
         let mut reconstructed = Self::from_origin(self.seed, self.verification_fixture)?;
         for decision in &self.decisions {
             reconstructed.choose(reconstructed.revision, decision)?;
-        }
-        match_recorded_projection_presence(
-            &mut reconstructed.moments,
-            &mut reconstructed.presentation_moments,
-            &self.moments,
-            &self.presentation_moments,
-        );
-        if let (Some(expected), Some(recorded)) = (&mut reconstructed.runtime, &self.runtime) {
-            test_report::match_runtime(expected, recorded);
         }
         if &reconstructed != self {
             return Err(RuleError(
@@ -872,7 +862,7 @@ impl Session {
             session.verification_fixture = Some(fixture);
             if fixture == HostileFixture::GatheringFromSetup {
                 session.history.push("Privileged verification continues from these actual opening hands through the rules runtime. This record remains excluded from ordinary player clients.".into());
-                session.moments = vec![session.observe()];
+                session.live = Default::default();
                 return Ok(session);
             }
             session.stage = Stage::Playing;
@@ -883,60 +873,10 @@ impl Session {
             game.presentation.clear();
             session.history.append(&mut game.history);
             session.runtime = Some(game);
-            session.moments = vec![session.observe()];
+            let view = session.observe();
+            session.live.capture(&view, &mut [], &view);
+            session.live.new_story.clear();
         }
         Ok(session)
-    }
-}
-
-pub fn validate_recording(recording: &Recording) -> Result<(), RuleError> {
-    recording_draws(recording).map(|_| ())
-}
-
-fn recording_draws(recording: &Recording) -> Result<Vec<moments::DrawCue>, RuleError> {
-    if recording.source_revision != SOURCE_REVISION
-        || recording.app_version != APP_VERSION
-        || recording.moments.is_empty()
-    {
-        return Err(RuleError(
-            "Unsupported or empty Gathering setup recording.".into(),
-        ));
-    }
-    let mut reconstructed = Session::from_origin(recording.seed, recording.verification_fixture)?;
-    let mut draws = Vec::new();
-    for decision in &recording.decisions {
-        draws.extend(reconstructed.choose_with_draws(reconstructed.revision, decision)?);
-    }
-    match_recorded_projection_presence(
-        &mut reconstructed.moments,
-        &mut reconstructed.presentation_moments,
-        &recording.moments,
-        &recording.presentation_moments,
-    );
-    if reconstructed.moments != recording.moments
-        || reconstructed.presentation_moments != recording.presentation_moments
-    {
-        return Err(RuleError(
-            "Gathering recording does not match its recorded decisions and pinned inputs.".into(),
-        ));
-    }
-    Ok(draws)
-}
-
-fn match_recorded_projection_presence(
-    expected: &mut [Observation],
-    expected_presentation: &mut [PresentationMoment],
-    recorded: &[Observation],
-    recorded_presentation: &[PresentationMoment],
-) {
-    for (expected, recorded) in expected.iter_mut().zip(recorded) {
-        if let (Some(expected), Some(recorded)) = (&mut expected.play, &recorded.play) {
-            expected.match_recorded_projection_presence(recorded);
-        }
-    }
-    for (expected, recorded) in expected_presentation.iter_mut().zip(recorded_presentation) {
-        expected
-            .play
-            .match_recorded_projection_presence(&recorded.play);
     }
 }
