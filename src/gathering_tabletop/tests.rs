@@ -1,5 +1,6 @@
 use super::*;
 
+mod cards;
 mod draws;
 mod navigation;
 mod restart;
@@ -400,6 +401,11 @@ pub(super) fn click_source(app: &mut App, source: controls::Source) {
 }
 
 fn click_mesh_observer(app: &mut App, entity: Entity) {
+    queue_mesh_click(app, entity);
+    app.update();
+}
+
+fn queue_mesh_click(app: &mut App, entity: Entity) {
     use bevy::{
         camera::RenderTarget,
         picking::{
@@ -434,7 +440,6 @@ fn click_mesh_observer(app: &mut App, entity: Entity) {
         duration: std::time::Duration::from_millis(20),
         count: 1,
     });
-    app.update();
 }
 
 fn keyboard(app: &mut App, code: KeyCode, logical_key: bevy::input::keyboard::Key, pressed: bool) {

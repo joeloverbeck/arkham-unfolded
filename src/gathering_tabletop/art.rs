@@ -103,6 +103,14 @@ impl Default for Art {
 
 impl Art {
     #[cfg(test)]
+    pub(super) fn with_symbol_font_for_test(font: Handle<Font>) -> Self {
+        Self {
+            symbol_font: Some(font),
+            ..default()
+        }
+    }
+
+    #[cfg(test)]
     pub(super) fn with_images_for_test(
         images: impl IntoIterator<Item = (&'static str, Handle<Image>)>,
     ) -> Self {

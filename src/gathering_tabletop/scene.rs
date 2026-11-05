@@ -38,28 +38,6 @@ pub(super) fn bind_source(
     );
 }
 
-/// Caption edits follow deferred card construction without changing its identity.
-pub(super) fn replace_caption(commands: &mut Commands, card: Entity, text: Option<String>) {
-    commands.queue(move |world: &mut World| {
-        let labels = world
-            .query::<(Entity, &motion::CardLabel)>()
-            .iter(world)
-            .filter_map(|(label, owner)| (owner.0 == card).then_some(label))
-            .collect::<Vec<_>>();
-        for label in labels {
-            if let Some(text) = &text {
-                world.get_mut::<Text>(label).unwrap().0 =
-                    crate::tabletop::readable_text(text.clone());
-                world
-                    .entity_mut(label)
-                    .insert(AccessibleLabel::new(text.clone()));
-            } else {
-                world.entity_mut(label).despawn();
-            }
-        }
-    });
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn deck(
     commands: &mut Commands,
@@ -151,18 +129,16 @@ pub(super) fn render(
         for (name, at) in layout::zone_labels(index) {
             label(commands, context, name, at, false);
         }
-        let entity = card(
+        card(
             commands,
             meshes,
             materials,
             context,
-            layout::investigator_card(index),
-            who.name(),
-            code,
-            false,
-            layout::investigator_color(index),
+            CardSpec {
+                source: Some(controls::Source::Investigator(who)),
+                ..CardSpec::new(layout::investigator_card(index), who.name(), code)
+            },
         );
-        context.bind(commands, entity, controls::Source::Investigator(who));
         let player = view.play.as_ref().map(|play| &play.players[index]);
         let projection = player.map(|player| &player.presentation);
         let panel = pieces::InvestigatorCounters {
@@ -207,44 +183,45 @@ pub(super) fn render(
             );
         }
         for (slot, held) in investigator.hand.iter().enumerate() {
-            let entity = card(
+            card(
                 commands,
                 meshes,
                 materials,
                 context,
-                layout::hand_position(index, investigator.hand.len(), slot),
-                &held.title,
-                &held.code,
-                investigator.selected_mulligan.contains(&held.id)
-                    || view
-                        .play
-                        .as_ref()
-                        .and_then(|play| play.test.as_ref())
-                        .is_some_and(|test| test.selected.contains(&held.id)),
-                PAPER,
+                CardSpec {
+                    physical_id: Some(held.id),
+                    source: Some(controls::Source::Card(held.id)),
+                    selected: investigator.selected_mulligan.contains(&held.id)
+                        || view
+                            .play
+                            .as_ref()
+                            .and_then(|play| play.test.as_ref())
+                            .is_some_and(|test| test.selected.contains(&held.id)),
+                    ..CardSpec::new(
+                        layout::hand_position(index, investigator.hand.len(), slot),
+                        &held.title,
+                        &held.code,
+                    )
+                },
             );
-            commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(held.id));
-            context.bind(commands, entity, controls::Source::Card(held.id));
         }
         if view.play.is_none() {
             for (slot, permanent) in investigator.permanents.iter().enumerate() {
-                let entity = card(
+                card(
                     commands,
                     meshes,
                     materials,
                     context,
-                    layout::investigator_asset(index, slot),
-                    &permanent.title,
-                    &permanent.code,
-                    false,
-                    PAPER,
+                    CardSpec {
+                        physical_id: Some(permanent.id),
+                        source: Some(controls::Source::Card(permanent.id)),
+                        ..CardSpec::new(
+                            layout::investigator_asset(index, slot),
+                            &permanent.title,
+                            &permanent.code,
+                        )
+                    },
                 );
-                commands
-                    .entity(entity)
-                    .insert(motion::PhysicalCard(permanent.id));
-                context.bind(commands, entity, controls::Source::Card(permanent.id));
             }
             deck(
                 commands,
@@ -288,33 +265,33 @@ pub(super) fn render(
                     side,
                     Vec2::new(pieces::CARD_WIDTH, pieces::CARD_LENGTH),
                 );
-                let entity = card(
+                card(
                     commands,
                     meshes,
                     materials,
                     context,
-                    pose.translation,
-                    title,
-                    code,
-                    false,
-                    PAPER,
+                    CardSpec {
+                        pose,
+                        source: Some(source),
+                        ..CardSpec::new(pose.translation, title, code)
+                    },
                 );
-                commands.entity(entity).insert(pose);
-                context.bind(commands, entity, source);
             }
         }
-        let reference = card(
+        card(
             commands,
             meshes,
             materials,
             context,
-            layout::SCENARIO_REFERENCE,
-            "Standard reference",
-            &scenario.reference,
-            false,
-            PAPER,
+            CardSpec {
+                source: Some(controls::Source::ScenarioReference),
+                ..CardSpec::new(
+                    layout::SCENARIO_REFERENCE,
+                    "Standard reference",
+                    &scenario.reference,
+                )
+            },
         );
-        context.bind(commands, reference, controls::Source::ScenarioReference);
         let map = crate::tabletop_gathering_map::GatheringMap::new(
             scenario
                 .locations
@@ -328,10 +305,16 @@ pub(super) fn render(
         }
         for code in &scenario.locations {
             let at = map.position(code);
-            let entity = card(
-                commands, meshes, materials, context, at, "Study", code, false, PAPER,
+            card(
+                commands,
+                meshes,
+                materials,
+                context,
+                CardSpec {
+                    source: Some(controls::Source::Location(code.clone())),
+                    ..CardSpec::new(at, "Study", code)
+                },
             );
-            context.bind(commands, entity, controls::Source::Location(code.clone()));
         }
         deck(
             commands,

@@ -232,28 +232,24 @@ impl Playback {
             return;
         };
         for (index, aside) in beat.aside.iter().enumerate() {
-            let entity = card(
-                commands,
-                meshes,
-                materials,
-                context,
-                aside.at,
-                &aside.card.title,
-                &aside.card.code,
-                false,
-                PAPER,
-            );
-            commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(aside.card.id));
             // The small stack has one caption. Returning cards need none next
             // to the existing deck count; the prompt already describes the move.
             let caption = (index + 1 == beat.aside.len()
                 && self.returning(aside.card.id).is_none())
             .then(|| format!("Mulligan cards · {}", beat.aside.len()));
-            scene::replace_caption(commands, entity, caption);
             // Leave the card's direct inspection observer in place: this public
             // face is outside the observed hand and has no gameplay choices.
+            card(
+                commands,
+                meshes,
+                materials,
+                context,
+                CardSpec {
+                    physical_id: Some(aside.card.id),
+                    caption: caption.as_deref().map(Caption::Text),
+                    ..CardSpec::new(aside.at, &aside.card.title, &aside.card.code)
+                },
+            );
         }
     }
 }
