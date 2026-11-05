@@ -31,6 +31,7 @@ mod results;
 mod reveal;
 mod scene;
 mod story;
+mod trays;
 mod ui;
 
 const INK: Color = Color::srgb(0.035, 0.055, 0.065);
@@ -62,6 +63,7 @@ enum Action {
     History,
     Close,
     Focus(Area),
+    Resolve,
     Follow,
 }
 
@@ -84,6 +86,7 @@ struct Table {
     last_rendered: Option<Observation>,
     last_rendered_health: Option<(bool, String)>,
     motion_origins: motion::Origins,
+    trays: trays::State,
     context: controls::Context,
 }
 
@@ -107,6 +110,8 @@ impl Table {
 
     fn new(session: Session, save_path: PathBuf) -> Self {
         let presentation = presentation::Presentation::new(&session);
+        let mut trays = trays::State::default();
+        trays.prepare(&session.observe(), true);
         Self {
             session,
             save_path,
@@ -122,6 +127,7 @@ impl Table {
             last_rendered: None,
             last_rendered_health: None,
             motion_origins: motion::Origins::default(),
+            trays,
             context: controls::Context::default(),
         }
     }
@@ -186,7 +192,6 @@ struct CardRender<'a> {
     epoch: u64,
     story: &'a story::Faces,
     consequences: &'a consequences::State,
-    drawing: bool,
 }
 
 impl CardRender<'_> {
@@ -435,6 +440,7 @@ fn install(app: &mut App) {
                 controls::render,
                 contextual_feedback,
                 motion::animate,
+                trays::animate,
                 world_labels,
                 crate::tabletop_tokens::position_labels,
             )
@@ -604,9 +610,9 @@ fn handle_actions(
                         );
                         table.context.reset();
                         table.epoch += 1;
-                        orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
+                        orbit.update_follow_target(Some(play::framing(&table.view())));
                         if reveal_focus {
-                            orbit.focus(layout::focus(Area::Test));
+                            orbit.focus(play::framing(&table.view()));
                         }
                         String::new()
                     }
@@ -651,11 +657,19 @@ fn handle_actions(
                 orbit.focus(layout::focus(area));
                 table.dirty = true;
             }
+            Action::Resolve => {
+                let view = table.view();
+                if let Some(tray) = view.play.as_ref().and_then(trays::Layout::for_play) {
+                    table.context.dismiss();
+                    orbit.focus(tray.focus());
+                    table.dirty = true;
+                }
+            }
             Action::Follow => {
                 table.context.dismiss();
                 let following = !orbit.is_following();
                 orbit.set_following(following);
-                orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
+                orbit.update_follow_target(Some(play::framing(&table.view())));
                 table.dirty = true;
             }
             Action::Close => {
@@ -1028,7 +1042,6 @@ fn render(
         view,
         story,
         transfers,
-        drawing,
     } = {
         let table = &mut *table;
         table.presentation.prepare(&table.session)
@@ -1043,15 +1056,19 @@ fn render(
         table.reduced_motion,
     );
     table.last_rendered = Some(view.clone());
+    let reduced_motion = table.reduced_motion;
+    table.trays.prepare(&view, reduced_motion);
     let context = CardRender {
         art: &art,
         view: &view,
         epoch: table.epoch,
         story: &story,
         consequences: &consequences,
-        drawing,
     };
     scene::render(&mut commands, &mut meshes, &mut materials, &context);
+    table
+        .trays
+        .render(&mut commands, &mut meshes, &mut materials, &context);
     table
         .presentation
         .render_draws(&mut commands, &mut meshes, &mut materials, &context);
@@ -1137,7 +1154,7 @@ fn advance_presentation(
         table.dirty = true;
     }
     if progress == presentation::Progress::Moment {
-        orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
+        orbit.update_follow_target(Some(play::framing(&table.view())));
     }
 }
 
@@ -1318,6 +1335,7 @@ fn request_redraw(
     mut redraw: ResMut<Redraw>,
 ) {
     if (!moving.is_empty() && !table.motion_blocked())
+        || (table.trays.active() && !table.motion_blocked())
         || orbit.is_moving()
         || health.is_checking()
         || (consequences.active() && !table.motion_blocked())

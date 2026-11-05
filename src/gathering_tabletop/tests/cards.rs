@@ -91,11 +91,9 @@ fn asset_status_and_discard(symbols: bool) {
             pack_id
         );
         assert!(
-            app.world()
-                .get::<Transform>(pack)
-                .unwrap()
-                .rotation
-                .abs_diff_eq(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2), 0.001,)
+            (app.world().get::<Transform>(pack).unwrap().rotation * Vec3::NEG_Z)
+                .abs_diff_eq(Vec3::X, 0.001),
+            "exhaustion moves the printed top edge to the right"
         );
         let discard = by_source(&mut app, controls::Source::Discard(Investigator::Tony));
         assert_eq!(
@@ -172,6 +170,18 @@ fn grouped_enemies_and_scenario_piles(symbols: bool) {
     for _ in 0..2 {
         let lower = by_source(&mut app, controls::Source::Card(900));
         let top = by_source(&mut app, controls::Source::Card(901));
+        assert!(
+            (app.world().get::<Transform>(top).unwrap().rotation * Vec3::NEG_Z)
+                .abs_diff_eq(Vec3::X, 0.001),
+            "An exhausted unengaged enemy turns clockwise too"
+        );
+        let room = by_source(&mut app, controls::Source::Location("01112".into()));
+        let room_x = app.world().get::<Transform>(room).unwrap().translation.x;
+        let enemy_x = app.world().get::<Transform>(top).unwrap().translation.x;
+        assert!(
+            enemy_x - 1.89 / 2. > room_x + 2.3,
+            "The rotated enemy must clear the room's standee/caption reservation"
+        );
         assert!(captions(&mut app, lower).is_empty());
         assert_eq!(
             captions(&mut app, top),

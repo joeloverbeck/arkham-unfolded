@@ -172,6 +172,7 @@ Content support follows the owner's actual use. Starting decks, campaign content
 - [Play contract](docs/foundation/play-contract.md)
 - [Sources and verification](docs/foundation/sources-and-verification.md)
 - [Prepared asset collection decision](docs/adr/0001-prepared-runtime-assets.md)
+- [Tabletop presentation contract](docs/adr/0002-persistent-table-areas.md#test-area-and-resolution-trays) — skill tests belong in Test; other temporary card and token resolution uses investigator trays. Joel accepted this presentation change after checking the live app on 2026-11-05.
 - [Issue #1 feasibility assessment](docs/research/issue-1-assessment.md) — accepted source baseline and evidence for the selected bounded experiment
 - [Run the Tony turn and verify its native experience](docs/experiments/tony-turn.md) — prepared turn under [issue #22](https://github.com/joeloverbeck/arkham-unfolded/issues/22)
 - [Run the earlier Jacqueline skill-test experiment](docs/experiments/jacqueline-curse.md) — native tabletop, player-equivalent driver, save/reopen under [issue #2](https://github.com/joeloverbeck/arkham-unfolded/issues/2)

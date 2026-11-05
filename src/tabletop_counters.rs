@@ -375,15 +375,7 @@ pub(crate) fn spawn_actions_with_allowance(
         }
         let token = root.id();
         entities.push(token);
-        if additional {
-            entities.push(spawn_label(
-                commands,
-                token,
-                "Fight / Engage\nEnemy with bounty".into(),
-                Vec3::new(1.65, 0.0, -0.05),
-                Some(128.0),
-            ));
-        } else if slot == 1 && (row.icon.is_none() || row.background.is_none()) {
+        if !additional && slot == 1 && (row.icon.is_none() || row.background.is_none()) {
             entities.push(spawn_label(
                 commands,
                 token,

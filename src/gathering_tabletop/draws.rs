@@ -1,4 +1,4 @@
-//! Individual visual beats of committed draws. These views never execute rules.
+//! Visual beats of committed draws and resolutions. These views never execute rules.
 
 use super::*;
 use crate::gathering::{CardView, DrawBatch, DrawSource};
@@ -24,6 +24,7 @@ pub(super) enum Turn {
 struct Aside {
     card: CardView,
     at: Vec3,
+    mulligan: bool,
 }
 
 struct Beat {
@@ -42,9 +43,6 @@ pub(super) struct Playback {
 impl Playback {
     pub(super) fn new(before: &Observation, target: &Observation, batches: &[DrawBatch]) -> Self {
         let mut result = Self::default();
-        if batches.is_empty() {
-            return result;
-        }
         let mut view = target.clone();
         view.choices.clear();
         view.decision_owner = None;
@@ -143,7 +141,126 @@ impl Playback {
             }
             set_deck_count(&mut view, batch.source, deck_count(target, batch.source));
         }
+        result.resolutions(before, target);
         result
+    }
+
+    /// Searches expose only the cards already disclosed by the rules. They stay
+    /// in their rules zones; these transfers are temporary presentation copies.
+    fn resolutions(&mut self, before: &Observation, target: &Observation) {
+        let searched = |view: &Observation| -> Vec<(CardView, DrawSource)> {
+            let Some(play) = &view.play else {
+                return vec![];
+            };
+            let mut cards = play
+                .searched_encounter
+                .iter()
+                .cloned()
+                .map(|card| (card, DrawSource::Encounter))
+                .collect::<Vec<_>>();
+            if let Some(owner) = play.pending.resolution_owner {
+                cards.extend(
+                    play.searched_player
+                        .iter()
+                        .cloned()
+                        .map(|card| (card, DrawSource::Investigator(owner))),
+                );
+            }
+            cards
+        };
+        let prior = searched(before);
+        let next = searched(target);
+        let mut transfers = Vec::new();
+        let mut aside = Vec::new();
+        for (card, source) in &next {
+            if !prior.iter().any(|(prior, _)| prior.id == card.id) {
+                transfers.push(Transfer {
+                    id: card.id,
+                    start: Some(
+                        deck_position(*source)
+                            + Vec3::Y * (deck_count(target, *source) as f32 * 0.0065 + 0.012),
+                    ),
+                    source: *source,
+                    turn: Turn::Up,
+                });
+            }
+        }
+        let destinations = motion::Origins::from_view(Some(target));
+        for (card, source) in prior {
+            if destinations.contains(card.id) {
+                continue;
+            }
+            // Backpack attachments have a lasting face-down home under the
+            // asset. Their existing aggregate menu remains the inspection route.
+            let attachment = target.play.as_ref().and_then(|play| {
+                play.backpacks
+                    .iter()
+                    .find(|pack| pack.cards.iter().any(|attached| attached.id == card.id))
+                    .and_then(|pack| {
+                        play.players[pack.owner.index()]
+                            .assets
+                            .iter()
+                            .position(|asset| asset.card.id == pack.asset)
+                            .map(|slot| {
+                                layout::investigator_asset(pack.owner.index(), slot)
+                                    + Vec3::new(0.25, 0.025, 0.)
+                            })
+                    })
+            });
+            let at = attachment.unwrap_or_else(|| {
+                deck_position(source)
+                    + Vec3::Y * (deck_count(target, source) as f32 * 0.0065 + 0.012)
+            });
+            transfers.push(Transfer {
+                id: card.id,
+                start: None,
+                source,
+                turn: Turn::Down,
+            });
+            aside.push(Aside {
+                card,
+                at,
+                mulligan: false,
+            });
+        }
+        // The lasting discard representation shows only its top card. Keep the
+        // other ordered cards visible for their trip to the same pile as well.
+        if let Some(discard) = before
+            .play
+            .as_ref()
+            .and_then(|play| play.pending.discard.as_ref())
+            && let Some(play) = &target.play
+        {
+            let pile = &play.players[discard.owner.index()].discard;
+            for card in discard.ordered.iter().chain(&discard.remaining) {
+                if pile.iter().any(|placed| placed.id == card.id)
+                    && pile.last().is_some_and(|top| top.id != card.id)
+                {
+                    transfers.push(Transfer {
+                        id: card.id,
+                        start: None,
+                        source: DrawSource::Investigator(discard.owner),
+                        turn: Turn::FaceUp,
+                    });
+                    aside.push(Aside {
+                        card: card.clone(),
+                        at: layout::investigator_discard(discard.owner.index()) - Vec3::Y * 0.005,
+                        mulligan: false,
+                    });
+                }
+            }
+        }
+        if !transfers.is_empty() {
+            let mut view = target.clone();
+            view.choices.clear();
+            view.decision_owner = None;
+            self.beats.push_back(Beat {
+                view,
+                aside,
+                transfers,
+                rendered: false,
+            });
+        }
     }
 
     fn push(
@@ -168,6 +285,7 @@ impl Playback {
                 .map(|(index, card)| Aside {
                     card: card.clone(),
                     at: at + Vec3::new(index as f32 * 0.035, index as f32 * 0.008, 0.),
+                    mulligan: true,
                 })
                 .collect(),
             transfers,
@@ -234,12 +352,13 @@ impl Playback {
         for (index, aside) in beat.aside.iter().enumerate() {
             // The small stack has one caption. Returning cards need none next
             // to the existing deck count; the prompt already describes the move.
-            let caption = (index + 1 == beat.aside.len()
+            let caption = (aside.mulligan
+                && index + 1 == beat.aside.len()
                 && self.returning(aside.card.id).is_none())
             .then(|| format!("Mulligan cards · {}", beat.aside.len()));
             // Leave the card's direct inspection observer in place: this public
             // face is outside the observed hand and has no gameplay choices.
-            card(
+            let entity = card(
                 commands,
                 meshes,
                 materials,
@@ -250,6 +369,11 @@ impl Playback {
                     ..CardSpec::new(aside.at, &aside.card.title, &aside.card.code)
                 },
             );
+            if !aside.mulligan {
+                // These cards are already represented by their committed pile
+                // or attachment; only the lasting menu may inspect them.
+                commands.entity(entity).insert(Pickable::IGNORE);
+            }
         }
     }
 }

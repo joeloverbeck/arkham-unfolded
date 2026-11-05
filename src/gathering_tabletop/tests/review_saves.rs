@@ -3,6 +3,101 @@ use super::*;
 #[path = "../../../tests/support/gathering_draw_review.rs"]
 mod draw_review;
 
+#[path = "../../../tests/support/gathering_resolution_review.rs"]
+mod resolution_review;
+
+#[test]
+fn patrice_upkeep_orders_one_physical_hand_in_her_drawer_and_reopens_there() {
+    use super::draws::{physical, tick};
+    let point = resolution_review::checkpoints()
+        .unwrap()
+        .into_iter()
+        .find(|point| point.name == "patrice-upkeep")
+        .unwrap();
+    let cards: Vec<_> = point.session.observe().investigators[1]
+        .hand
+        .iter()
+        .filter(|card| !card.weakness)
+        .map(|card| card.id)
+        .collect();
+    assert_eq!(cards.len(), 5);
+    let mut expected = point.session.clone();
+    let (_directory, mut app) = open_review_save(&point.session);
+    for id in &cards {
+        let at = physical(&mut app, *id).translation;
+        assert!(
+            at.x.abs() < 7. && at.z > 30.,
+            "Patrice orders each non-weakness card in her own drawer: {at:?}"
+        );
+    }
+    activate_choice(&mut app, &point.trigger);
+    expected
+        .choose(expected.observe().revision, &point.trigger)
+        .unwrap();
+    tick(&mut app, 0.5);
+    let committed = app.world().resource::<Table>().session.clone();
+    assert_eq!(committed, expected);
+    assert_eq!(committed.observe().investigators[1].hand.len(), 5);
+    let (_reopened_directory, mut app) = open_review_save(&committed);
+    for id in &cards {
+        assert!(physical(&mut app, *id).translation.z > 30.);
+    }
+    for _ in 1..cards.len() {
+        let view = expected.observe();
+        let choice = view
+            .choices
+            .iter()
+            .find(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
+            .unwrap()
+            .id
+            .clone();
+        expected.choose(view.revision, &choice).unwrap();
+        activate_choice(&mut app, &choice);
+        tick(&mut app, 0.5);
+    }
+    expected
+        .choose(expected.observe().revision, "upkeep:patrice-refill")
+        .unwrap();
+    activate_choice(&mut app, "upkeep:patrice-refill");
+    for id in cards {
+        assert!(
+            physical(&mut app, id).translation.z > 30.,
+            "Every ordered card starts its discard travel from the drawer"
+        );
+    }
+    finish_presentation(&mut app);
+    assert_eq!(app.world().resource::<Table>().session, expected);
+    assert!(expected.observe().play.unwrap().pending.discard.is_none());
+}
+
+#[test]
+fn resolution_review_saves_open_as_ordinary_sessions_with_the_expected_decisions() {
+    for point in resolution_review::checkpoints().unwrap() {
+        let (_directory, mut app) = open_review_save(&point.session);
+        let view = app.world().resource::<Table>().view();
+        assert!(
+            view.choices.iter().any(|choice| choice.id == point.trigger),
+            "{}",
+            point.name
+        );
+        assert!(parse_initial_view(point.initial_view).is_ok());
+        if point.name == "revelation-pending" {
+            let play = view.play.unwrap();
+            let id = play.pending_revelation.unwrap().card.id;
+            assert_eq!(play.test.unwrap().source_card.unwrap().id, id);
+            let world = app.world_mut();
+            let at = world
+                .query::<(&motion::PhysicalCard, &Transform)>()
+                .iter(world)
+                .filter(|(card, _)| card.0 == id)
+                .map(|(_, at)| at.translation)
+                .collect::<Vec<_>>();
+            assert_eq!(at.len(), 1, "The revelation has one physical test source");
+            assert!(at[0].abs_diff_eq(layout::test_source(), 0.001));
+        }
+    }
+}
+
 #[test]
 fn draw_review_checkpoints_open_on_visible_triggers_and_preserve_manual_framing() {
     let checkpoints = draw_review::checkpoints().unwrap();
@@ -78,7 +173,12 @@ fn draw_review_checkpoints_open_on_visible_triggers_and_preserve_manual_framing(
     }
 }
 
-fn assert_draw_anchors_unobscured(app: &mut App, anchors: &[Vec3], size: Vec2, name: &str) {
+pub(super) fn assert_draw_anchors_unobscured(
+    app: &mut App,
+    anchors: &[Vec3],
+    size: Vec2,
+    name: &str,
+) {
     let world = app.world_mut();
     let panels = world
         .query::<(&ScrollablePanel, &ComputedNode, &UiGlobalTransform)>()

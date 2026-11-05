@@ -18,7 +18,6 @@ pub(super) struct Frame {
     pub view: Observation,
     pub story: story::Faces,
     pub transfers: Vec<draws::Transfer>,
-    pub drawing: bool,
 }
 
 #[derive(PartialEq, Eq)]
@@ -146,7 +145,6 @@ impl Presentation {
             view,
             story,
             transfers,
-            drawing: self.drawing(),
         }
     }
 

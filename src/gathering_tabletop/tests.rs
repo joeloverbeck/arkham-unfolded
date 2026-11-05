@@ -6,6 +6,7 @@ mod navigation;
 mod restart;
 mod results;
 mod review_saves;
+mod trays;
 mod victory;
 
 fn assert_initial_table(app: &mut App) {
@@ -1433,9 +1434,15 @@ fn activate_choice(app: &mut App, id: &str) {
     finish_presentation(app);
     let view = app.world().resource::<Table>().view();
     let choice = view.choices.iter().find(|choice| choice.id == id).unwrap();
-    let label = ui::choice_label(choice).to_owned();
+    let source = choice_source(app, id);
+    let displayed = source.as_ref().and_then(|source| {
+        controls::source_choices(&view, source)
+            .into_iter()
+            .find(|choice| choice.id == id)
+    });
+    let label = ui::choice_label(displayed.as_ref().unwrap_or(choice)).to_owned();
     if button_with_label(app, &label).is_none() {
-        if let Some(source) = choice_source(app, id) {
+        if let Some(source) = source {
             click_source(app, source);
         } else {
             let pending = button_with_label(app, "Pending decision").expect(
@@ -1447,7 +1454,9 @@ fn activate_choice(app: &mut App, id: &str) {
     }
     let entity = button_with_label(app, &label)
         .or_else(|| button_with_label(app, &feedback::menu::label(&label)))
-        .expect("The selected context or global controls offer the legal choice");
+        .unwrap_or_else(|| {
+            panic!("The selected context or global controls must offer {id}: {label}")
+        });
     app.world_mut().trigger(Activate { entity });
     app.update();
 }
@@ -1611,7 +1620,7 @@ fn native_paid_ward_and_unapplied_horror_remain_visible_and_inspectable() {
     );
     let text = rendered_text(&mut app);
     assert!(text.contains("1 horror on Jacqueline Fine"));
-    assert!(text.contains("Resolving cards  /  1"));
+    assert!(text.contains("Jacqueline Fine  /  Resolving"));
 }
 
 #[test]

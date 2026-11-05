@@ -969,7 +969,7 @@ impl Game {
                 let result = (!test.revealed.is_empty()).then(|| self.result(test));
                 TestView {
                     breakdown: super::test_report::breakdown(self, test),
-                    source_card: test.source_card.clone(),
+                    source_card: super::presentation::test_source(self, test),
                     ignored_tokens: test.ignored_tokens.clone(),
                     cancelled_tokens: test.cancelled_tokens.clone(),
                     tester: test.tester,

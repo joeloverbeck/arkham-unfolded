@@ -1,6 +1,6 @@
 //! Gathering's offered reveal routes, using the shared screen-fixed control.
 //! This adapter never commits a choice or moves the camera. The parent's normal
-//! save-before-install branch owns both, and focuses Test only after success.
+//! save-before-install branch owns both, and focuses the resolution after success.
 use super::*;
 use crate::tabletop_reveal::{Artwork, Shortcut};
 

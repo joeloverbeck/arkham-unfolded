@@ -142,6 +142,11 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
         play.pending
             .resolving_cards
             .extend(draw.revelations.iter().cloned());
+        if !draw.revelations.is_empty() {
+            play.pending
+                .resolution_owner
+                .get_or_insert(draw.investigator);
+        }
         game.capture_public_view(
             format!(
                 "{} draws the completed batch of player cards. Resolve drawn weaknesses next.",

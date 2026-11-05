@@ -236,6 +236,14 @@ pub(super) fn render(
                 p.commands().entity(entity).insert(AutoFocus);
             }
         }
+        if view
+            .play
+            .as_ref()
+            .and_then(trays::Layout::for_play)
+            .is_some()
+        {
+            button(art, p, "Resolve", Action::Resolve);
+        }
         p.spawn(art.text("WASD: pan\nRight drag: orbit\nWheel: zoom\nHome: overview\n\nFocus does not select who acts.", 11., MUTED));
     });
     screen::decision_panel(

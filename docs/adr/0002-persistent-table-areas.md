@@ -10,6 +10,85 @@ presentation, supported save/resume, Undo, inspection and camera decisions remai
 in force. Dated implementation and verification records below remain historical
 evidence; the retirement decision does not claim its implementation is complete.
 
+## Test area and resolution trays
+
+On 2026-11-05, against `4e610893604d05eb256a2dfe1e19dd43c8004d54`, Joel
+accepted the resolution-tray and caption recommendations in the
+[`grill-with-docs` investigation](../research/gathering-resolution-presentation.md)
+for [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89), answering
+"As you recommend" to both choices. He explicitly requested a durable rule for
+future card implementations. This section records the accepted presentation
+contract. After checking the live app, Joel reported that the changes improved
+the previous state, particularly the investigator drawers, and authorized
+publication on 2026-11-05. This accepts the bounded presentation change;
+complete Gathering play and owner acceptance remain under #89. The
+[acceptance record](../research/gathering-resolution-presentation.md#owner-acceptance-and-publication)
+retains the exact scope and evidence limits.
+
+**Test is dedicated to skill tests. It is not a general staging area for card
+effects.** Keep the chaos bag, scenario reference and curse supply there between
+tests. When adding or changing a card's presentation, route its temporary
+components according to the effect being resolved:
+
+| Effect or component | Presentation home |
+| --- | --- |
+| Current skill-test source, committed cards, skill-test tokens and reactions directly resolving that test | Test area |
+| Encounter- or investigator-deck search, including its resolving event and all cards the search permits viewing | Originating investigator's resolution tray |
+| Encounter or weakness revelation, other non-test card resolution, and pending discard-order choices | Originating investigator's resolution tray |
+| Non-test chaos-token resolution, including Voice of Ra, Dark Future and Premonition | Originating investigator's resolution tray |
+| Cards or tokens that remain in play after their temporary resolution | Their appropriate lasting home; Premonition and its sealed token stay with its controller |
+
+An existing skill test does not turn a nested search, revelation or other
+non-test effect into test content. Preserve the parent test while the separate
+effect resolves. Conversely, when a revelation initiates a skill test, give that
+test its established Test presentation without duplicating its physical source.
+This rule covers future card implementations as well as the current inventory.
+
+The resolution tray is a temporary 3D drawer extending toward the viewer from
+the originating investigator's area. It appears when needed, supports physical
+card movement and the existing contextual menus and Inspect, and retracts after
+its temporary components reach their destinations. It remains associated with
+the originating effect through nested responses by other investigators. A tray
+is a presentation arrangement, not a new rules-defined game zone.
+
+Provide enough space for Hornet's nine candidates in a 3-by-3 arrangement with
+its event alongside, and for Backpack's six-card search and explicit selection
+completion. Display every card the search permits viewing while exposing game
+actions only for legal candidates. Preserve legal selection, decline and order
+choices; searching must not be treated as drawing or resolving every card.
+Clicking an individual face uses its normal contextual menu. The drawer surface
+also retains the aggregate search, resolution or discard-order menu, without
+introducing an artificial summary card.
+
+A temporary **Resolve** shortcut frames the tray. Manual camera control remains
+the default; opening a tray does not force a camera jump. Optional Follow may
+frame the resolution. Save/reopen reconstructs pending resolution without
+repeating committed effects, and reduced motion settles components immediately.
+Exact dimensions and motion remain implementation choices subject to native
+readability and interaction checks.
+
+This supersedes the earlier [encounter-draw staging](#gathering-card-draws) through
+Test. The drawer was selected over a permanent shared resolution table to retain
+investigator association and clear unused space, and over an interactive modal
+to retain physical continuity and the existing scene interaction. The
+[investigation](../research/gathering-resolution-presentation.md) records source
+evidence, the full current inventory, consulted rules and the implementation
+handoff. #89 owns active work and acceptance.
+
+### Clockwise exhaustion and Tony's action marker
+
+Use clockwise exhaustion from each card's upright orientation for Gathering's
+assets and enemies, including exhausted unengaged enemies. This follows the
+publisher's illustrated convention; the written rule requires 90 degrees but
+does not specify handedness. Landscape card orientation is a separate concern.
+
+Remove Tony's permanent **Fight / Engage — Enemy with bounty** caption while
+retaining the distinct additional-action marker and its spending/eligibility
+display. Existing Tony inspection and legal action wording explain the
+restriction on demand. This supersedes the
+[permanent-caption decision](#selected-artwork-and-bonus-marker-recommendation)
+and applies through the shared renderer to Gathering, Tony and Party.
+
 ## Gathering card draws
 
 On 2026-11-04, against `c313ede262de3ed0e294028b4dae8291162ec452`, Joel
@@ -27,9 +106,11 @@ draws, upkeep including Patrice's refill, card-effect draws and encounter draws.
 
 Mulliganed cards visibly leave the hand for a temporary set-aside pile, remain
 there while replacements are dealt, then return to the investigator deck.
-Every encounter draw first reveals in the existing Test area, including enemies,
-then travels to its actual destination. Pending tests and choices keep the card
-at its resolving position. Ordinary consequences still progress automatically;
+The original decision sent every encounter draw through Test, including enemies.
+The accepted [resolution-tray contract](#test-area-and-resolution-trays) now
+supersedes that staging: encounter draws first reveal on their investigator's
+tray, with actual skill tests using Test. Pending tests and choices keep the card
+at its appropriate resolving position. Ordinary consequences still progress automatically;
 existing inspection, result/story reading stops, manual camera control and
 reduced-motion behavior remain applicable.
 
@@ -472,7 +553,7 @@ During the 2026-11-01 `grill-with-docs` interview against `6e1bcac3febd4dcd6d15e
 
 - **Clues:** preserve the intact green/gold emblem on one solid round token representing the total, with a separate numeric label including `1`. At a location, center the token over the printed LOCATION/set area and remove the former clue-count suffix below the card when represented by the counter. Keep the location name and meaningful statuses such as Unrevealed or Entry blocked. Zero clues means no clue token or numeric label. Full card inspection retains unobscured card artwork.
 - **Resources:** use the shaped crate artwork, with a solid profile following its silhouette so its shape distinguishes it from round clue/action counters. Place resources left and clues right below the investigator card in stable slots; hide each independently at zero. Remove the former under-card resource/clue/action/Acting/Waiting/Turn ended summary. Count labels remain numeric, and the existing named turn heading and portrait badges retain turn ownership. Damage/Horror retain their accepted positions.
-- **Actions:** center a row below the resource/clue row using each investigator's class icon over its matching background, with physical thickness. Retain spent markers, crossed and dimmed; unused markers after an early turn end are subdued but not crossed. Before a turn begins, an uncrossed marker does not grant permission to interrupt the active investigator. A restricted additional action uses the accepted distinct marker and readable restriction below.
+- **Actions:** center a row below the resource/clue row using each investigator's class icon over its matching background, with physical thickness. Retain spent markers, crossed and dimmed; unused markers after an early turn end are subdued but not crossed. Before a turn begins, an uncrossed marker does not grant permission to interrupt the active investigator. A restricted additional action uses the accepted distinct marker; the later [caption refinement](#clockwise-exhaustion-and-tonys-action-marker) replaces its permanent restriction caption with existing on-demand explanations.
 - **Discovery:** after a clue gain has committed successfully, lift one clue marker, carry it along a gentle raised arc, and lower it into the investigator's clue slot, without a rendered hand. Decrease the displayed source count on departure and increase the displayed destination count on arrival. The last source clue leaves no stationary token; the first destination clue creates its counter. A multi-clue transfer uses one moving marker labeled with its transferred quantity. Reduced motion places it immediately. Animation has no rules authority and cannot repeat a gain on load, undo, camera movement or scene rebuild. Older replay records must retain honest recorded outcomes; the candidate must not invent transfer provenance absent from its consumer's state.
 - **Missing artwork:** Joel delegated the fallback choice. Use a named solid substitute for each missing component independently, preserving its exact count and zero behavior even when surrounding card artwork loads. Do not resurrect the entire old personal summary for one missing image. Unrepresented values in older experiments remain unrepresented, rather than becoming invented zeros or action allowances.
 - **Alignment:** match Hand's width and side margins to Assets, and shift Threats/Deck/Discard together left until Discard's right edge aligns with Assets. At the inspected revision the widths are 17.6 and 17.3, respectively, and the upper group's required shift is 0.325 units. Preserve contents, readable spacing and the existing investigator-surface dimensions.
@@ -485,7 +566,7 @@ Archive-relative resource source: `images/other/unclassified/en/sce-base-save/Re
 
 All six class icon/background pairs exist as consistently padded 319-square Texture2D exports under `images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Texture2D/`. Layer their white transparent icons over the matching class backgrounds. Select and bind exact identities in the preparation recipes during implementation. The existing prepared-collection contract applies: preserve the source archive and active collections, prepare and verify fresh collections, and keep image bytes outside Git. The shapes, not color alone, distinguish the selected resource, clue and action counters.
 
-[Focused research](../research/action-marker-presentation.md) supports the selected additional Rogue disk, separated from the three ordinary disks by a small gap, with a raised `+` rim badge and a permanent two-line caption: **Fight / Engage** and **Enemy with bounty**. Center the complete row. The `+` is an application cue; the text supplies the restriction. Available Fight/Engage and Bounty illustrations were considered, but neither a single symbol nor the detailed bounty picture conveys the complete allowance. The marker shows accounting; it is not a new action button or payment-choice control. Party supplies this unused allowance without an eligible bounty enemy, so its marker is subdued. Jacqueline does not represent action allowances; the presentation must not invent them.
+[Focused research](../research/action-marker-presentation.md) supported the original additional Rogue disk, separated from the three ordinary disks by a small gap, with a raised `+` rim badge and a permanent two-line caption: **Fight / Engage** and **Enemy with bounty**. The [2026-11-05 refinement](#clockwise-exhaustion-and-tonys-action-marker) supersedes that permanent caption while retaining the disk and badge. Center the complete row. The `+` is an application cue; the original caption supplied the restriction. Available Fight/Engage and Bounty illustrations were considered, but neither a single symbol nor the detailed bounty picture conveys the complete allowance. The marker shows accounting; it is not a new action button or payment-choice control. Party supplies this unused allowance without an eligible bounty enemy, so its marker is subdued. Jacqueline does not represent action allowances; the presentation must not invent them.
 
 ### Accepted implementation handoff
 

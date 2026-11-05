@@ -1,14 +1,14 @@
 use super::*;
 use crate::gathering_tabletop::draws::DURATION;
 
-fn tick(app: &mut App, seconds: f32) {
+pub(super) fn tick(app: &mut App, seconds: f32) {
     app.world_mut()
         .resource_mut::<PresentationTime>()
         .advance_by(std::time::Duration::from_secs_f32(seconds));
     app.update();
 }
 
-fn physical(app: &mut App, id: u16) -> Transform {
+pub(super) fn physical(app: &mut App, id: u16) -> Transform {
     let world = app.world_mut();
     let positions = world
         .query::<(&motion::PhysicalCard, &Transform)>()
@@ -471,7 +471,7 @@ fn encounter_card_leaves_its_deck_reveals_in_test_and_moves_to_its_actual_discar
     for _ in 0..80 {
         tick(&mut app, 0.1);
         let at = physical(&mut app, card.id);
-        if at.translation.abs_diff_eq(layout::test_source(), 0.001) {
+        if at.translation.z > 30. && at.translation.y < 0.06 {
             saw_reveal = true;
             assert!((at.rotation * Vec3::Y).y > 0.99);
         }

@@ -749,6 +749,10 @@ pub struct TokenResolution {
 }
 
 impl TokenResolution {
+    pub fn is_skill_test(&self) -> bool {
+        matches!(self.purpose, TokenPurpose::SkillTest)
+    }
+
     /// Paid events in the reveal continuation are public; unrevealed faces are not.
     pub(super) fn resolving_cards(&self) -> Vec<super::CardView> {
         fn collect(node: &RevealNode, cards: &mut Vec<super::CardView>) {
@@ -1546,6 +1550,7 @@ pub(super) fn resume(game: &mut Game) -> Result<TokenStep, RuleError> {
         && (!tokens.ignored.is_empty() || !tokens.cancelled.is_empty())
     {
         let mut play = game.observe();
+        play.pending.include_tokens(&tokens);
         play.tokens = Some(tokens.clone());
         game.capture_public_view(
             "The selected chaos tokens remain after ignored and cancelled tokens are excluded.",
