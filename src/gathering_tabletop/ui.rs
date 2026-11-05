@@ -348,11 +348,11 @@ pub(super) fn render(
             button(art, p, "Close menu", Action::Dismiss);
         });
     }
-    if table.results.current().is_some() {
+    if table.presentation.result().is_some() {
         results::render(commands, table, view, art, size);
     } else if table.restart_confirmation {
         restart_confirmation(commands, table, art, size);
-    } else if let Some(card) = table.reading.current() {
+    } else if let Some(card) = table.presentation.story() {
         story_reading(commands, art, size, card);
     } else if table.result_opportunities() {
         results::render(commands, table, view, art, size);

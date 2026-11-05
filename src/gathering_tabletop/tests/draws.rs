@@ -249,7 +249,7 @@ fn mulligan_moves_rejected_cards_out_deals_replacements_then_returns_them() {
                     .any(|c| rejected.iter().any(|old| old.id == c.id))
             );
         }
-        let returning = table.draws.returning(rejected[0].id).is_some();
+        let returning = table.presentation.returning(rejected[0].id).is_some();
         if returning {
             saw_return = true;
             assert!(
@@ -358,7 +358,7 @@ fn reduced_motion_and_reopen_keep_committed_setup_without_redrawing_rules() {
         .0
         .push(Action::Motion);
     app.update();
-    assert!(!app.world().resource::<Table>().draws.active());
+    assert!(!app.world().resource::<Table>().presentation.drawing());
     let saved = std::fs::read(&path).unwrap();
     let target = app.world().resource::<Table>().view();
     assert_eq!(
@@ -371,8 +371,79 @@ fn reduced_motion_and_reopen_keep_committed_setup_without_redrawing_rules() {
     );
     assert_eq!(std::fs::read(&path).unwrap(), saved);
     let fresh = Table::open(path).unwrap();
-    assert!(!fresh.draws.active());
+    assert!(!fresh.presentation.drawing());
     assert_eq!(fresh.view(), target);
+}
+
+#[test]
+fn equal_session_reopen_preserves_an_in_progress_deal() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("equal-reopen.json");
+    let mut app = host(path.clone());
+    activate_choice(&mut app, "lead:tony");
+    tick(&mut app, 0.25);
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Utilities);
+    app.update();
+    let visible = app.world().resource::<Table>().view();
+    let first = visible.investigators[0].hand[0].id;
+    let position = physical(&mut app, first);
+    let saved = std::fs::read(&path).unwrap();
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Reopen);
+    tick(&mut app, 10.);
+    assert_eq!(app.world().resource::<Table>().view(), visible);
+    assert_eq!(physical(&mut app, first), position);
+    assert!(app.world().resource::<Table>().is_presenting());
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Dismiss);
+    tick(&mut app, 0.05);
+    tick(&mut app, 0.05);
+    assert_ne!(physical(&mut app, first), position);
+    finish_presentation(&mut app);
+    assert_eq!(
+        app.world().resource::<Table>().view(),
+        continuity::load_session(&path).unwrap().observe()
+    );
+    assert_eq!(std::fs::read(path).unwrap(), saved);
+}
+
+#[test]
+fn changed_session_reopen_discards_the_old_deal_even_at_the_same_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("changed-reopen.json");
+    let mut app = host(path.clone());
+    let mut alternate = app.world().resource::<Table>().session.clone();
+    alternate.choose(0, "lead:patrice").unwrap();
+    let alternate_path = dir.path().join("alternate.json");
+    continuity::save_session(&alternate_path, &alternate).unwrap();
+    activate_choice(&mut app, "lead:tony");
+    tick(&mut app, 0.25);
+    assert_eq!(
+        app.world().resource::<Table>().view().revision,
+        alternate.observe().revision
+    );
+    assert!(app.world().resource::<Table>().is_presenting());
+    // A separately saved legal branch supplies a different Session at the same revision.
+    std::fs::copy(&alternate_path, &path).unwrap();
+    let saved = std::fs::read(&path).unwrap();
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Reopen);
+    tick(&mut app, 0.);
+    assert_eq!(app.world().resource::<Table>().view(), alternate.observe());
+    assert!(!app.world().resource::<Table>().is_presenting());
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
+    tick(&mut app, 10.);
+    assert_eq!(app.world().resource::<Table>().view(), alternate.observe());
 }
 
 #[test]

@@ -533,7 +533,7 @@ fn native_choice_persists_before_showing_real_opening_hands() {
     assert_eq!(saved, app.world().resource::<Table>().session.observe());
     assert_eq!(saved.stage, crate::gathering::Stage::Mulligan);
     assert!(saved.investigators.iter().all(|p| p.hand.len() == 5));
-    assert!(app.world().resource::<Table>().draws.active());
+    assert!(app.world().resource::<Table>().presentation.drawing());
     finish_presentation(&mut app);
     assert_eq!(saved, app.world().resource::<Table>().view());
 }
@@ -1818,10 +1818,22 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
     let mut app = host(path.clone());
     app.insert_resource(Table::new(session, path.clone()));
     app.update();
-    assert!(app.world().resource::<Table>().reading.current().is_none());
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .story()
+            .is_none()
+    );
     activate_choice(&mut app, "act:contribute:2");
     for _ in 0..30 {
-        if app.world().resource::<Table>().reading.current().is_some() {
+        if app
+            .world()
+            .resource::<Table>()
+            .presentation
+            .story()
+            .is_some()
+        {
             break;
         }
         app.world_mut()
@@ -1830,7 +1842,7 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
         app.update();
     }
     assert_eq!(
-        app.world().resource::<Table>().reading.current(),
+        app.world().resource::<Table>().presentation.story(),
         Some(story::StoryCard::ActTwo)
     );
     let saved = std::fs::read(&path).unwrap();
@@ -1859,7 +1871,7 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
         .advance_by(std::time::Duration::from_secs(20));
     app.update();
     assert_eq!(
-        app.world().resource::<Table>().reading.current(),
+        app.world().resource::<Table>().presentation.story(),
         Some(story::StoryCard::ActTwo)
     );
     assert_eq!(app.world().resource::<Orbit>().pose(), pose);
@@ -1868,14 +1880,20 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
         entity: continue_button,
     });
     app.update();
-    assert!(app.world().resource::<Table>().reading.current().is_none());
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .story()
+            .is_none()
+    );
     assert_eq!(app.world().resource::<Table>().session.clone(), record);
     assert_eq!(std::fs::read(&path).unwrap(), saved);
     let resumed = continuity::load_session(&path).unwrap();
     app.insert_resource(Table::new(resumed, path.clone()));
     app.update();
     assert_eq!(
-        app.world().resource::<Table>().reading.current(),
+        app.world().resource::<Table>().presentation.story(),
         Some(story::StoryCard::ActTwo)
     );
     assert_eq!(std::fs::read(path).unwrap(), saved);

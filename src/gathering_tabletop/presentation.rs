@@ -1,0 +1,224 @@
+//! Gathering's transient live presentation. Only committed sessions enter here;
+//! clocks and reading acknowledgments never execute or save rules decisions.
+use super::*;
+use crate::gathering::{DrawCue, DrawSource, TestResult};
+
+pub(super) struct Presentation {
+    moments: Vec<PresentationMoment>,
+    index: usize,
+    clock: f32,
+    draw_cues: Vec<DrawCue>,
+    draws: draws::Playback,
+    story: story::Reading,
+    results: results::Reading,
+}
+
+/// One coherent scene input, including the transfers acknowledged by this render.
+pub(super) struct Frame {
+    pub view: Observation,
+    pub story: story::Faces,
+    pub transfers: Vec<draws::Transfer>,
+    pub drawing: bool,
+}
+
+#[derive(PartialEq, Eq)]
+pub(super) enum Progress {
+    Waiting,
+    Draw,
+    Moment,
+}
+
+impl Presentation {
+    pub(super) fn new(session: &Session) -> Self {
+        Self {
+            moments: vec![],
+            index: 0,
+            clock: 0.,
+            draw_cues: vec![],
+            draws: draws::Playback::default(),
+            story: story::Reading::for_session(session),
+            results: results::Reading::for_session(session),
+        }
+    }
+
+    pub(super) fn view(&self, session: &Session) -> Observation {
+        self.draws
+            .view()
+            .cloned()
+            .unwrap_or_else(|| self.base_view(session))
+    }
+
+    fn base_view(&self, session: &Session) -> Observation {
+        self.moments.get(self.index).map_or_else(
+            || session.observe(),
+            |moment| session.observe_presentation(moment),
+        )
+    }
+
+    pub(super) fn active(&self) -> bool {
+        self.drawing() || self.index < self.moments.len()
+    }
+
+    pub(super) fn drawing(&self) -> bool {
+        self.draws.active()
+    }
+
+    pub(super) fn result(&self) -> Option<&TestResult> {
+        self.results.current()
+    }
+
+    pub(super) fn story(&self) -> Option<story::StoryCard> {
+        self.story.current()
+    }
+
+    pub(super) fn acknowledge_result(&mut self) {
+        self.results.advance();
+    }
+
+    pub(super) fn acknowledge_story(&mut self) {
+        self.story.advance();
+    }
+
+    pub(super) fn reduce_motion(&mut self) {
+        self.draws.clear();
+    }
+
+    /// The caller has already saved and installed the successful choice.
+    pub(super) fn committed(
+        &mut self,
+        session: &Session,
+        before: &Observation,
+        choice: &str,
+        draws: Vec<DrawCue>,
+        reduced_motion: bool,
+    ) {
+        if choice == "undo" {
+            self.results = results::Reading::at(Some(&session.observe()));
+        }
+        self.moments = session.presentation_after(before.revision).to_vec();
+        self.index = 0;
+        self.clock = 0.;
+        self.draw_cues = draws;
+        self.start_draws(session, before, reduced_motion);
+    }
+
+    /// In-place reopen differs from fresh open: retain the exact ongoing reading
+    /// and draw state only when the whole loaded Session is unchanged.
+    pub(super) fn reopen(&mut self, previous: &Session, loaded: &Session) {
+        if loaded != previous {
+            *self = Self::new(loaded);
+        }
+    }
+
+    fn start_draws(&mut self, session: &Session, before: &Observation, reduced_motion: bool) {
+        self.draws.clear();
+        if reduced_motion {
+            return;
+        }
+        let target = self.base_view(session);
+        let sequence = self.moments.get(self.index).map(|moment| moment.sequence);
+        let batches = self
+            .draw_cues
+            .iter()
+            .filter(|cue| cue.revision == target.revision && cue.sequence == sequence)
+            .map(|cue| cue.batch.clone())
+            .collect::<Vec<_>>();
+        self.draws = draws::Playback::new(before, &target, &batches);
+    }
+
+    /// Called only when the adapter is rebuilding the actual scene. Its view is
+    /// also retained by the adapter as evidence for subsequent advancement.
+    pub(super) fn prepare(&mut self, session: &Session) -> Frame {
+        let transfers = self.draws.take_transfers();
+        let view = self.view(session);
+        self.results.synchronize(&view);
+        let story = if let Some(moment) = self.moments.get(self.index) {
+            story::Faces::from_codes(moment.revealed_story.iter().map(String::as_str))
+        } else {
+            story::Faces::from_codes(session.live_state().known_story.iter().map(String::as_str))
+        };
+        if view.revision == 0 {
+            self.story = story::Reading::at(story.clone());
+        } else {
+            self.story.synchronize(&story);
+        }
+        Frame {
+            view,
+            story,
+            transfers,
+            drawing: self.drawing(),
+        }
+    }
+
+    /// The adapter checks its distinct dialog, health and consequence blockers.
+    /// Even a long unblocked tick cannot skip a beat that has not reached the
+    /// scene or whose physical cards are still moving.
+    pub(super) fn advance(
+        &mut self,
+        session: &Session,
+        delta: f32,
+        last_rendered: Option<&Observation>,
+        moving: bool,
+        reduced_motion: bool,
+    ) -> Progress {
+        if !self.active() {
+            return Progress::Waiting;
+        }
+        let view = self.view(session);
+        if last_rendered != Some(&view) {
+            return Progress::Waiting;
+        }
+        if self.drawing() {
+            if self.draws.advance(delta, moving) {
+                self.clock = 0.;
+                return Progress::Draw;
+            }
+            return Progress::Waiting;
+        }
+        self.clock += delta;
+        let play = view
+            .play
+            .as_ref()
+            .expect("A presentation moment has play state");
+        let duration = if play
+            .test
+            .as_ref()
+            .is_some_and(|test| !test.revealed.is_empty())
+            || play.pending.harm.is_some()
+        {
+            1.0
+        } else {
+            motion::CARD_DURATION
+        };
+        if self.clock < duration || moving {
+            return Progress::Waiting;
+        }
+        self.index += 1;
+        self.clock = 0.;
+        self.start_draws(session, &view, reduced_motion);
+        Progress::Moment
+    }
+
+    pub(super) fn returning(&self, id: u16) -> Option<DrawSource> {
+        self.draws.returning(id)
+    }
+
+    pub(super) fn render_draws(
+        &self,
+        commands: &mut Commands,
+        meshes: &mut Assets<Mesh>,
+        materials: &mut Assets<StandardMaterial>,
+        context: &CardRender<'_>,
+    ) {
+        self.draws.render(commands, meshes, materials, context);
+    }
+
+    /// Synthetic populated-layout input, never used by lifecycle tests.
+    #[cfg(test)]
+    pub(super) fn at_moment(session: &Session, moment: PresentationMoment) -> Self {
+        Self {
+            moments: vec![moment],
+            ..Self::new(session)
+        }
+    }
+}
