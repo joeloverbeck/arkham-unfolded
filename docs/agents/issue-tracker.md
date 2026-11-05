@@ -46,6 +46,8 @@ Before changing GitHub settings or diagnosing a publication refusal, read [GitHu
 
 Designate one issue comment as the current handoff and retain its URL. It owns the current candidate, completed checks, remaining acceptance checklist, next acceptance boundary and publication status. Read that comment before updating it, edit it by identity, and verify the exact body afterward. Reuse it as results and owner decisions arrive; carry forward accepted checks unless a later change invalidates them.
 
+Keep that comment compact: state the candidate, summarize verification, list only remaining decisions, and link the accepted brief and dated evidence. Historical bodies belong behind links; collapsed `<details>` still sends the full text to API readers. If the current comment is the only copy of the accepted brief, preserve its exact text once in a dated comment during the authorized handoff update. Verify that archive by its returned identity before replacing the original with the compact handoff and archive link. Reuse an existing preserved brief rather than posting another copy. Leave dated records unchanged; later decisions receive their own linked records.
+
 Keep review results, native observations and authorization decisions as dated evidence records linked from the current handoff. Link each new record back to that handoff. Those records describe what happened at that revision and its evidence limits; current pending/completed status belongs in the handoff. Preserve the distinction between an owner's acceptance and observations the agent did not perform. New evidence or an owner decision updates the single current checklist without synchronizing copies of it across earlier comments.
 
 ## Bounded context reads
