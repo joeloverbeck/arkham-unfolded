@@ -56,6 +56,200 @@ fn manifest(output: &Path) -> Value {
     serde_json::from_slice(&fs::read(output.join("manifest.json")).unwrap()).unwrap()
 }
 
+fn manifest_digest(snapshot: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    format!(
+        "{:x}",
+        Sha256::digest(fs::read(snapshot.join("manifest.json")).unwrap())
+    )
+}
+
+fn verify_index(root: &Path, snapshot: &Path, sha256: &str) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .current_dir(root)
+        .args(["review-verify", "--snapshot"])
+        .arg(snapshot)
+        .args(["--sha256", sha256])
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn verifies_index_contents_despite_patch_formatting_without_changing_inputs() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("selected.txt"), "reviewed\n").unwrap();
+    let output = directory.path().join("review");
+    assert!(
+        snapshot(&root, &base, &output, &["selected.txt"], None)
+            .status
+            .success()
+    );
+    let hash = manifest_digest(&output);
+    git(&root, &["add", "selected.txt"]);
+    let patch = fs::read(output.join("changes.patch")).unwrap();
+    assert_ne!(patch, git(&root, &["diff", "--cached", "--binary", &base]));
+    // Only the staged candidate is being checked; later working edits stay local.
+    fs::write(root.join("selected.txt"), "later unstaged edit\n").unwrap();
+    let index = fs::read(root.join(".git/index")).unwrap();
+    let result = verify_index(&root, &output, &hash);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(String::from_utf8_lossy(&result.stdout).contains("Index matches reviewed candidate"));
+    assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+    assert_eq!(
+        fs::read(root.join("selected.txt")).unwrap(),
+        b"later unstaged edit\n"
+    );
+    assert_eq!(fs::read(output.join("changes.patch")).unwrap(), patch);
+    assert_eq!(manifest_digest(&output), hash);
+}
+
+#[test]
+fn rejects_changed_index_contents_and_unreviewed_staged_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("selected.txt"), "reviewed\n").unwrap();
+    let output = directory.path().join("review");
+    assert!(
+        snapshot(&root, &base, &output, &["selected.txt"], None)
+            .status
+            .success()
+    );
+    let hash = manifest_digest(&output);
+    fs::write(root.join("selected.txt"), "different staged bytes\n").unwrap();
+    git(&root, &["add", "selected.txt"]);
+    fs::write(root.join("selected.txt"), "reviewed\n").unwrap();
+    let index = fs::read(root.join(".git/index")).unwrap();
+    let result = verify_index(&root, &output, &hash);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("selected.txt"));
+    assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+    assert_eq!(fs::read(root.join("selected.txt")).unwrap(), b"reviewed\n");
+
+    git(&root, &["add", "selected.txt"]);
+    assert!(verify_index(&root, &output, &hash).status.success());
+    fs::write(root.join("extra.txt"), "outside the review\n").unwrap();
+    git(&root, &["add", "extra.txt"]);
+    let result = verify_index(&root, &output, &hash);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("extra.txt"));
+
+    git(&root, &["rm", "--cached", "extra.txt"]);
+    git(&root, &["config", "diff.ignoreSubmodules", "all"]);
+    git(
+        &root,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            "160000",
+            &base,
+            "external",
+        ],
+    );
+    let result = verify_index(&root, &output, &hash);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("unsupported index mode"));
+}
+
+#[test]
+fn refuses_changed_snapshot_identity_files_and_patch() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("selected.txt"), "reviewed\n").unwrap();
+    let output = directory.path().join("review");
+    assert!(
+        snapshot(&root, &base, &output, &["selected.txt"], None)
+            .status
+            .success()
+    );
+    let hash = manifest_digest(&output);
+    git(&root, &["add", "selected.txt"]);
+    let index = fs::read(root.join(".git/index")).unwrap();
+    let manifest_path = output.join("manifest.json");
+    let original = fs::read(&manifest_path).unwrap();
+    let mut changed = original.clone();
+    changed.push(b'\n');
+    fs::write(&manifest_path, changed).unwrap();
+    let result = verify_index(&root, &output, &hash);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("manifest SHA-256"));
+    fs::write(manifest_path, original).unwrap();
+
+    fs::write(output.join("candidate/selected.txt"), "tampered\n").unwrap();
+    let result = verify_index(&root, &output, &hash);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("candidate files"));
+    fs::write(output.join("candidate/selected.txt"), "reviewed\n").unwrap();
+    fs::write(output.join("changes.patch"), "tampered\n").unwrap();
+    let result = verify_index(&root, &output, &hash);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("patch does not match"));
+    assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+}
+
+#[test]
+fn intent_to_add_does_not_count_as_staging_an_empty_reviewed_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("empty.txt"), "").unwrap();
+    let output = directory.path().join("review");
+    assert!(
+        snapshot(&root, &base, &output, &["empty.txt"], None)
+            .status
+            .success()
+    );
+    let hash = manifest_digest(&output);
+    git(&root, &["add", "--intent-to-add", "empty.txt"]);
+    let result = verify_index(&root, &output, &hash);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("empty.txt"));
+    git(&root, &["add", "empty.txt"]);
+    assert!(verify_index(&root, &output, &hash).status.success());
+}
+
+#[test]
+fn refuses_an_unresolved_index() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("selected.txt"), "reviewed\n").unwrap();
+    let output = directory.path().join("review");
+    assert!(
+        snapshot(&root, &base, &output, &["selected.txt"], None)
+            .status
+            .success()
+    );
+    let hash = manifest_digest(&output);
+    git(&root, &["checkout", "-b", "ours"]);
+    git(&root, &["add", "selected.txt"]);
+    git(&root, &["commit", "--quiet", "-m", "ours"]);
+    git(&root, &["checkout", "-b", "theirs", &base]);
+    fs::write(root.join("selected.txt"), "conflicting\n").unwrap();
+    git(&root, &["add", "selected.txt"]);
+    git(&root, &["commit", "--quiet", "-m", "theirs"]);
+    git(&root, &["checkout", "ours"]);
+    let merge = Command::new("git")
+        .current_dir(&root)
+        .args(["merge", "--no-edit", "theirs"])
+        .output()
+        .unwrap();
+    assert!(!merge.status.success());
+    let index = fs::read(root.join(".git/index")).unwrap();
+    let result = verify_index(&root, &output, &hash);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("resolve index conflicts"));
+    assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+}
+
 #[test]
 fn captures_selected_working_bytes_with_base_context_and_leaves_the_checkout_alone() {
     let directory = tempfile::tempdir().unwrap();
@@ -178,6 +372,23 @@ fn preserves_binary_additions_deletions_executable_modes_and_symlink_targets() {
     let patch = fs::read_to_string(output.join("changes.patch")).unwrap();
     assert!(patch.contains("GIT binary patch"));
     assert!(patch.contains("old mode 100644\nnew mode 100755"));
+
+    let hash = manifest_digest(&output);
+    git(&root, &["add", "--all"]);
+    assert!(
+        verify_index(&root.join("nested"), &output, &hash)
+            .status
+            .success()
+    );
+    // Each omitted staged change must be detected, including modes and link targets.
+    for path in ["removed.txt", "mode.sh", "link", "new\nfile.bin"] {
+        git(&root, &["reset", "--quiet", base.trim(), "--", path]);
+        let result = verify_index(&root, &output, &hash);
+        assert!(!result.status.success(), "missed staged change at {path:?}");
+        assert!(String::from_utf8_lossy(&result.stderr).contains("index differs"));
+        git(&root, &["add", "--all", "--", path]);
+        assert!(verify_index(&root, &output, &hash).status.success());
+    }
 }
 
 #[test]

@@ -32,6 +32,8 @@ enum Command {
     SearchContext(reader::SearchArgs),
     /// Capture selected working-tree files and their base in a fresh review snapshot.
     ReviewSnapshot(review::Args),
+    /// Verify Git's index against the recorded review snapshot without changing either.
+    ReviewVerify(review::VerifyArgs),
     /// Reject generated files in Git's index, including force-added paths.
     CheckTrackedFiles,
     /// Select the repository's pinned Rust override for the CI cache key.
@@ -68,6 +70,7 @@ fn main() -> ExitCode {
         Command::ReadContextBatch(args) => write_context_page(reader::batch(args)),
         Command::SearchContext(args) => write_context_page(reader::search(args)),
         Command::ReviewSnapshot(args) => review::run(args),
+        Command::ReviewVerify(args) => review::verify(args),
         Command::CheckTrackedFiles => tracked::check().map_err(anyhow::Error::msg),
         Command::PrepareCiToolchain => ci::prepare_toolchain().map_err(anyhow::Error::msg),
         Command::Native { command } => native::run(command),

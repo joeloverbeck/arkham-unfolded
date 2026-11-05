@@ -56,20 +56,10 @@ scripts/tools search-context /tmp/review-v1/manifest.json \
 sha256sum /tmp/review-v1/manifest.json /tmp/review-v1/changes.patch
 ```
 
-Compare those digests with the recorded capture identity. For each selected
-regular file, read only its manifest entry and compare its expected SHA-256 with
-both the captured file and the checkout file:
-
-```sh
-scripts/tools search-context /tmp/review-v1/manifest.json \
-  --find '"path/to/changed.rs": {' --context 3 --max-bytes 1200
-sha256sum /tmp/review-v1/candidate/path/to/changed.rs path/to/changed.rs
-```
-
-Substitute the explicit selected paths, including new files. Check deletions as
-absence and symlinks by their link target/mode; the regular-file recipe does not
-cover them. Keep the full inventory on disk. These focused reads do not replace
-the helper's whole-candidate verification when refreshing with `--previous`.
+Compare those digests with the recorded capture identity. Keep the full inventory
+on disk and review the captured files. The helper verifies the whole candidate
+when refreshing with `--previous`; staged verification after review is described
+below.
 
 Confirm the fixed point resolves and the complete selected candidate is non-empty before spawning reviewers. A new-file-only candidate is valid even when `git diff` is empty.
 
@@ -133,6 +123,27 @@ If the spec is missing, skip the Spec sub-agent and note this in the final repor
 Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings, because the two axes are deliberately separate (see _Why two axes_).
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
+
+### Verify a reviewed candidate before commit
+
+When the authorized implementation later stages its reviewed files for a commit,
+verify the index against the snapshot using the manifest digest recorded for the
+review:
+
+```sh
+scripts/tools review-verify --snapshot /tmp/review-v1 \
+  --sha256 RECORDED_MANIFEST_SHA256
+```
+
+Require exit 0 before committing. This read-only command checks the recorded
+manifest, candidate files and patch, then compares the complete staged tree with
+the captured candidate, including contents,
+modes, symlink targets, additions, deletions and unreviewed staged paths. It compares
+file identities, so snapshot/Git patch prefixes and ordering do not affect equality.
+Unstaged working edits are outside this check. Use the recorded digest to preserve
+the review binding; recomputing it from changed input would select another candidate.
+An identity match establishes neither test success nor human acceptance. Review
+alone does not authorize staging, committing or publication.
 
 ## Why two axes
 

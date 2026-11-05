@@ -1,5 +1,5 @@
-//! Detached review inputs. Git is read-only; paths select complete working files,
-//! including staged and unstaged changes, rather than selected index hunks.
+//! Detached review inputs and staged verification. Git remains read-only.
+//! Capture selects complete working files; verification compares the index.
 use anyhow::{Context, Result, ensure};
 use clap::Args as ClapArgs;
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,16 @@ pub struct Args {
     /// Exact repository-relative file paths; directories and ignored new files are refused.
     #[arg(required = true, num_args = 1..)]
     paths: Vec<String>,
+}
+
+#[derive(ClapArgs)]
+pub struct VerifyArgs {
+    /// Immutable review-snapshot directory.
+    #[arg(long)]
+    snapshot: PathBuf,
+    /// Manifest SHA-256 recorded when the candidate was reviewed.
+    #[arg(long)]
+    sha256: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -278,6 +288,97 @@ fn previous_snapshot(path: &Path) -> Result<(Manifest, String)> {
         "patch does not match the manifest"
     );
     Ok((manifest, digest(&bytes)))
+}
+
+fn index_diff(root: &Path, base: &str) -> Result<Vec<u8>> {
+    git(
+        root,
+        &[
+            "diff",
+            "--cached",
+            "--raw",
+            "-z",
+            "--no-abbrev",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules=none",
+            "--ita-invisible-in-index",
+            base,
+            "--",
+        ],
+    )
+}
+
+fn index_tree(root: &Path, base: &str, diff: &[u8]) -> Result<Tree> {
+    let mut tree = base_tree(root, base)?;
+    let mut rows = diff.split(|byte| *byte == 0).filter(|row| !row.is_empty());
+    while let Some(header) = rows.next() {
+        let fields: Vec<_> = std::str::from_utf8(header)?.split(' ').collect();
+        ensure!(
+            fields.len() == 5 && matches!(fields[4], "A" | "M" | "D" | "T"),
+            "unsupported or conflicted index entry"
+        );
+        let path = std::str::from_utf8(rows.next().context("missing index path")?)
+            .context("snapshot paths must be UTF-8")?;
+        check_path(path)?;
+        if fields[4] == "D" {
+            tree.remove(path);
+        } else {
+            ensure!(
+                matches!(fields[1], "100644" | "100755" | "120000"),
+                "unsupported index mode at {path:?}"
+            );
+            tree.insert(
+                path.into(),
+                File {
+                    mode: fields[1].into(),
+                    bytes: git(root, &["cat-file", "blob", fields[3]])?,
+                },
+            );
+        }
+    }
+    Ok(tree)
+}
+
+pub fn verify(args: VerifyArgs) -> Result<u8> {
+    let root = PathBuf::from(git_text(Path::new("."), &["rev-parse", "--show-toplevel"])?)
+        .canonicalize()?;
+    let (manifest, hash) = previous_snapshot(&args.snapshot).context("verify review snapshot")?;
+    ensure!(
+        hash == args.sha256,
+        "snapshot manifest SHA-256 differs from reviewed identity"
+    );
+    let base = git_text(
+        &root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            &format!("{}^{{commit}}", manifest.base),
+        ],
+    )?;
+    ensure!(
+        git(&root, &["ls-files", "-u", "-z"])?.is_empty(),
+        "resolve index conflicts before verification"
+    );
+    let diff = index_diff(&root, &base)?;
+    let indexed = inventory(&index_tree(&root, &base, &diff)?);
+    ensure!(
+        index_diff(&root, &base)? == diff,
+        "index changed during verification"
+    );
+    let differences = changes(&manifest.files, &indexed);
+    if let Some(first) = differences.first() {
+        anyhow::bail!(
+            "index differs from reviewed candidate at {:?} ({}); {} mismatched paths",
+            first.path,
+            first.kind,
+            differences.len()
+        );
+    }
+    println!("Index matches reviewed candidate.\nManifest SHA256: {hash}");
+    Ok(0)
 }
 
 fn publish(source: &Path, destination: &Path) -> Result<()> {
