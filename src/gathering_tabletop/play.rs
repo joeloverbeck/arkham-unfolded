@@ -278,17 +278,23 @@ pub(super) fn focus(view: &Observation) -> Area {
         if play.scenario.outcome.is_some() {
             return Area::Scenario;
         }
-        if play.test.is_some()
-            || play.tokens.is_some()
-            || play.pending_revelation.is_some()
-            || !play.searched_encounter.is_empty()
-        {
+        if play.test.is_some() {
             return Area::Test;
         }
     }
     view.decision_owner
         .or_else(|| view.play.as_ref().and_then(|play| play.actor))
         .map_or(Area::Scenario, |owner| Area::Investigator(owner.index()))
+}
+
+pub(super) fn framing(view: &Observation) -> (Vec3, f32) {
+    view.play
+        .as_ref()
+        .and_then(trays::Layout::for_play)
+        .filter(|tray| {
+            tray.has_content() || view.play.as_ref().is_none_or(|play| play.test.is_none())
+        })
+        .map_or_else(|| layout::focus(focus(view)), |tray| tray.focus())
 }
 
 pub(super) fn status(view: &Observation) -> Option<String> {
@@ -689,7 +695,7 @@ pub(super) fn render(
                 .with_rotation(if asset.ready {
                     Quat::IDENTITY
                 } else {
-                    Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
+                    Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)
                 });
             paint.card(CardSpec {
                 source: Some(attached.map_or(Source::Card(asset.card.id), |_| {
@@ -927,8 +933,8 @@ pub(super) fn render(
             Some(title.clone())
         };
         let pose = Transform::from_translation(enemy_position(play, slot)).with_rotation(
-            if enemy.exhausted && enemy.engaged.is_some() {
-                Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
+            if enemy.exhausted {
+                Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)
             } else {
                 Quat::IDENTITY
             },
@@ -962,36 +968,16 @@ pub(super) fn render(
             )
         });
     }
-    // All public cards awaiting a decision share the same spaced rows. Searches
-    // can leave their event resolving while the revealed choices are displayed.
+    // Test contains only the current skill test. Other public resolutions have
+    // an investigator-owned tray, including while a parent test is suspended.
     let committed_count = play.test.as_ref().map_or(0, |test| test.committed.len());
-    let player_search_offset = committed_count + play.searched_encounter.len();
-    let resolving_offset = player_search_offset + play.searched_player.len();
-    let resolving_cards: Vec<_> = play
-        .pending
-        .resolving_cards
-        .iter()
-        .filter(|card| {
-            !play.test.as_ref().is_some_and(|test| {
-                test.source_card
-                    .as_ref()
-                    .is_some_and(|source| source.id == card.id)
-            }) && !play
-                .pending_revelation
-                .as_ref()
-                .is_some_and(|pending| pending.card.id == card.id)
-        })
-        .collect();
-    let public_count = resolving_offset + resolving_cards.len();
+    let test_cards = test_resolving_cards(play);
+    let test_count = committed_count + test_cards.len();
     if let Some(test) = &play.test {
-        if let Some(source) = &test.source_card
-            && !play
-                .pending_revelation
-                .as_ref()
-                .is_some_and(|pending| pending.card.id == source.id)
-        {
+        if let Some(source) = &test.source_card {
             paint.card(CardSpec {
                 source: Some(Source::Card(source.id)),
+                physical_id: test_source_is_physical(play, source.id).then_some(source.id),
                 ..CardSpec::new(layout::test_source(), &source.title, &source.code)
             });
         }
@@ -1000,7 +986,7 @@ pub(super) fn render(
                 source: Some(Source::Card(committed.card.id)),
                 physical_id: Some(committed.card.id),
                 ..CardSpec::new(
-                    layout::test_commitment(public_count, slot),
+                    layout::test_commitment(test_count, slot),
                     &format!(
                         "{}\n{}'s commitment",
                         committed.card.title,
@@ -1011,106 +997,37 @@ pub(super) fn render(
             });
         }
     }
-    if let Some(pending) = &play.pending_revelation {
+    for (slot, card) in test_cards.iter().enumerate() {
         paint.card(CardSpec {
-            source: Some(Source::Card(pending.card.id)),
-            physical_id: Some(pending.card.id),
+            source: Some(Source::Card(card.id)),
+            physical_id: Some(card.id),
             ..CardSpec::new(
-                layout::test_source(),
-                &format!(
-                    "{}\nDrawn by {}",
-                    pending.card.title,
-                    pending.drawn_by.name()
-                ),
-                &pending.card.code,
+                layout::test_commitment(test_count, committed_count + slot),
+                &card.title,
+                &card.code,
             )
         });
     }
-    if !play.searched_encounter.is_empty() {
-        paint.card(CardSpec {
-            source: Some(Source::SearchEncounter),
-            ..CardSpec::new(
-                layout::test_source(),
-                &format!("Encounter search · {} cards", play.searched_encounter.len()),
-                "searched-encounter",
-            )
-        });
-    }
-    for (slot, searched) in play.searched_encounter.iter().enumerate() {
-        paint.card(CardSpec {
-            source: Some(Source::Card(searched.id)),
-            ..CardSpec::new(
-                layout::test_commitment(public_count, committed_count + slot),
-                &searched.title,
-                &searched.code,
-            )
-        });
-    }
-    if !play.searched_player.is_empty() {
-        paint.card(CardSpec {
-            source: Some(Source::SearchPlayer),
-            ..CardSpec::new(
-                layout::test_source(),
-                &format!(
-                    "Backpack search · {} cards\nInspect revealed cards",
-                    play.searched_player.len()
-                ),
-                "searched-player",
-            )
-        });
-        for (slot, searched) in play.searched_player.iter().enumerate() {
+    let tray = trays::Layout::for_play(play);
+    if let Some(tray) = &tray {
+        for (slot, card) in tray.candidates.iter().enumerate() {
             paint.card(CardSpec {
-                source: Some(Source::Card(searched.id)),
-                ..CardSpec::new(
-                    layout::test_commitment(public_count, player_search_offset + slot),
-                    &searched.title,
-                    &searched.code,
-                )
+                source: Some(Source::Card(card.id)),
+                physical_id: Some(card.id),
+                ..CardSpec::new(tray.candidate(slot), &card.title, &card.code)
             });
         }
-    }
-    if !play.pending.resolving_cards.is_empty() {
-        // A summary face would duplicate the card while its physical copy is
-        // still travelling from the deck. Retain the count without that face.
-        if paint.context.drawing {
-            scene::label(
-                paint.commands,
-                paint.context,
-                format!("Resolving cards · {}", play.pending.resolving_cards.len()),
-                resolving_position(),
-                false,
-            );
-        } else {
+        for (slot, card) in tray.sources.iter().enumerate() {
             paint.card(CardSpec {
-                source: Some(Source::Resolving),
-                ..CardSpec::new(
-                    resolving_position(),
-                    &format!("Resolving cards · {}", play.pending.resolving_cards.len()),
-                    "resolving-cards",
-                )
+                source: Some(Source::Card(card.id)),
+                physical_id: Some(card.id),
+                ..CardSpec::new(tray.source(slot), &card.title, &card.code)
             });
         }
-        for (slot, resolving) in resolving_cards.iter().enumerate() {
-            paint.card(CardSpec {
-                source: Some(Source::Card(resolving.id)),
-                physical_id: Some(resolving.id),
-                ..CardSpec::new(
-                    layout::test_commitment(public_count, resolving_offset + slot),
-                    &resolving.title,
-                    &resolving.code,
-                )
-            });
-        }
-    }
-    if play.pending.discard.is_some() {
-        paint.card(CardSpec {
-            source: Some(Source::PendingDiscard),
-            ..CardSpec::new(
-                layout::test_source() + Vec3::new(5., 0., 0.),
-                "Pending discard order",
-                "pending-discard",
-            )
-        });
+        paint.caption(
+            tray.source(0) - Vec3::Z * 2.3,
+            format!("{} · Resolving", tray.owner.name()),
+        );
     }
     if let Some(tokens) = &play.tokens {
         for (slot, token) in tokens.revealed.iter().enumerate() {
@@ -1124,14 +1041,26 @@ pub(super) fn render(
                 ShownTokenState::Revealed
             };
             paint.token(
-                layout::test_token(false, slot),
+                if tokens.is_skill_test() {
+                    layout::test_token(false, slot)
+                } else {
+                    tray.as_ref()
+                        .expect("Non-test tokens have an owner")
+                        .token(slot)
+                },
                 *token,
                 state,
                 slot + 1,
                 true,
             );
         }
-    } else if let Some(test) = &play.test {
+    }
+    if !play
+        .tokens
+        .as_ref()
+        .is_some_and(|tokens| tokens.is_skill_test())
+        && let Some(test) = &play.test
+    {
         for (slot, token) in test.revealed.iter().enumerate() {
             paint.token(
                 layout::test_token(false, slot),
@@ -1142,7 +1071,7 @@ pub(super) fn render(
                     ShownTokenState::Revealed
                 },
                 slot + 1,
-                true,
+                play.tokens.is_none(),
             );
         }
         for (slot, (token, state)) in test
@@ -1166,10 +1095,12 @@ pub(super) fn render(
         }
     }
     if let Some(sealed) = &play.premonition {
+        let at = trays::sealed_position(play, sealed.controller);
         paint.card(CardSpec {
             source: Some(Source::Card(sealed.card.id)),
+            physical_id: Some(sealed.card.id),
             ..CardSpec::new(
-                layout::test_bag() + Vec3::new(0., 0., 2.5),
+                at,
                 &format!(
                     "Premonition\n{} · Sealed\n{}",
                     sealed.controller.name(),
@@ -1183,6 +1114,15 @@ pub(super) fn render(
                 &sealed.card.code,
             )
         });
+        for (slot, token) in sealed.faces.iter().enumerate() {
+            paint.token(
+                at + Vec3::new(slot as f32 * 0.65, 0.1, 0.),
+                *token,
+                ShownTokenState::Selected,
+                slot + 1,
+                false,
+            );
+        }
     }
 }
 
@@ -1216,7 +1156,14 @@ pub(super) fn enemy_position(play: &PlayObservation, slot: usize) -> Vec3 {
         .iter()
         .position(|other| other.card.id == enemy.card.id)
         .unwrap();
-    local_enemy_position(map.position(&enemy.location), ordinal, group.len())
+    // Preserve the left-edge clearance from location standees when a quarter
+    // turn makes the card wider. Ready enemies retain their established anchor.
+    let clearance = if enemy.exhausted {
+        (crate::tabletop_pieces::CARD_LENGTH - crate::tabletop_pieces::CARD_WIDTH) / 2.
+    } else {
+        0.
+    };
+    local_enemy_position(map.position(&enemy.location), ordinal, group.len()) + Vec3::X * clearance
 }
 
 fn local_enemy_position(location: Vec3, ordinal: usize, count: usize) -> Vec3 {
@@ -1228,8 +1175,39 @@ fn local_enemy_position(location: Vec3, ordinal: usize, count: usize) -> Vec3 {
     location + Vec3::new(3.2, ordinal as f32 * 0.015, ordinal as f32 * step)
 }
 
-pub(super) fn resolving_position() -> Vec3 {
-    layout::test_source() + Vec3::new(2.5, 0., 0.)
+pub(super) fn test_resolving_cards(play: &PlayObservation) -> Vec<&crate::gathering::CardView> {
+    play.pending
+        .resolving_cards
+        .iter()
+        .filter(|card| {
+            play.pending.test_resolving_cards.contains(&card.id)
+                && !play.test.as_ref().is_some_and(|test| {
+                    test.source_card
+                        .as_ref()
+                        .is_some_and(|source| source.id == card.id)
+                })
+        })
+        .collect()
+}
+
+fn test_source_is_physical(play: &PlayObservation, id: u16) -> bool {
+    // Assets, enemies, and other cards with a lasting home keep that physical
+    // copy; Test shows a reference. An event or revelation held in a temporary
+    // continuation has only its Test copy.
+    !play.players.iter().any(|player| {
+        player.assets.iter().any(|asset| asset.card.id == id)
+            || player
+                .hand
+                .iter()
+                .chain(&player.threats)
+                .chain(&player.discard)
+                .chain(&player.removed)
+                .any(|card| card.id == id)
+    }) && !play
+        .scenario
+        .enemies
+        .iter()
+        .any(|enemy| enemy.card.id == id)
 }
 
 #[cfg(test)]

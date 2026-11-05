@@ -37,8 +37,12 @@ An individual investigator's personal playing surface, distinct from the shared 
 _Avoid_: Player table when referring to an investigator's area
 
 **Test area**:
-The shared presentation space for the chaos bag, scenario reference, cards committed to the current skill test and its revealed or canceled chaos tokens. It is a tabletop arrangement, not an additional rules-defined game zone.
-_Avoid_: Threat area, investigator area
+The shared presentation space dedicated to the current skill test, its source, commitments and chaos-token resolution, with the chaos bag and scenario reference kept there between tests. It is a tabletop arrangement, not a rules-defined game zone or a general area for resolving card effects.
+_Avoid_: Threat area, investigator area, resolution tray
+
+**Resolution tray**:
+An investigator-associated temporary presentation space for searches, revelations and other card or token effects outside skill-test resolution. It is a tabletop arrangement, not a rules-defined game zone; components retain their rules-defined zones until an effect moves them.
+_Avoid_: Test area, discard pile
 
 **Encounter discard pile**:
 The shared, ordered, face-up pile of discarded cards owned by the encounter deck. Its contents are public information and out of play; card abilities and rules can specify a different destination.

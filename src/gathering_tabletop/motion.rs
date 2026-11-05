@@ -49,9 +49,6 @@ impl Origins {
         }
         if let Some(play) = &view.play {
             if let Some(pending) = &play.pending_revelation {
-                result
-                    .positions
-                    .insert(pending.card.id, layout::test_source());
                 result.transfers.insert(
                     pending.card.id,
                     draws::Transfer {
@@ -89,10 +86,23 @@ impl Origins {
                 }
             }
             if let Some(test) = &play.test {
+                if let Some(source) = &test.source_card {
+                    result
+                        .positions
+                        .entry(source.id)
+                        .or_insert(layout::test_source());
+                }
+                let cards = play::test_resolving_cards(play);
+                let count = test.committed.len() + cards.len();
                 for (slot, committed) in test.committed.iter().enumerate() {
+                    result
+                        .positions
+                        .insert(committed.card.id, layout::test_commitment(count, slot));
+                }
+                for (slot, card) in cards.iter().enumerate() {
                     result.positions.insert(
-                        committed.card.id,
-                        layout::test_commitment(test.committed.len(), slot),
+                        card.id,
+                        layout::test_commitment(count, test.committed.len() + slot),
                     );
                 }
             }
@@ -101,8 +111,14 @@ impl Origins {
                     .positions
                     .insert(enemy.card.id, play::enemy_position(play, slot));
             }
-            for card in &play.pending.resolving_cards {
-                result.positions.insert(card.id, play::resolving_position());
+            if let Some(tray) = trays::Layout::for_play(play) {
+                result.positions.extend(tray.positions());
+            }
+            if let Some(sealed) = &play.premonition {
+                result.positions.insert(
+                    sealed.card.id,
+                    trays::sealed_position(play, sealed.controller),
+                );
             }
             for card in &play.encounter_discard {
                 result.positions.insert(card.id, layout::ENCOUNTER_DISCARD);
@@ -119,6 +135,10 @@ impl Origins {
         if let Some(motion) = motion {
             self.continuing.insert(id, *motion);
         }
+    }
+
+    pub(super) fn contains(&self, id: u16) -> bool {
+        self.positions.contains_key(&id)
     }
 
     pub(super) fn transfer(&mut self, transfer: draws::Transfer) {

@@ -183,6 +183,22 @@ pub(super) fn render(
             );
         }
         for (slot, held) in investigator.hand.iter().enumerate() {
+            // Upkeep ordering keeps cards in their rules zone until the whole
+            // discard resolves, but their one physical face is in the drawer.
+            if view
+                .play
+                .as_ref()
+                .and_then(|play| play.pending.discard.as_ref())
+                .is_some_and(|discard| {
+                    discard
+                        .ordered
+                        .iter()
+                        .chain(&discard.remaining)
+                        .any(|card| card.id == held.id)
+                })
+            {
+                continue;
+            }
             card(
                 commands,
                 meshes,

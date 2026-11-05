@@ -195,11 +195,16 @@ fn installed_personal_fallback_captions_have_separate_rendered_text_bounds() {
     }
     let world = app.world_mut();
     let mut rectangles = Vec::new();
+    assert!(
+        world
+            .query::<&Text>()
+            .iter(world)
+            .all(|text| text.0 != "Fight / Engage\nEnemy with bounty")
+    );
     for title in [
         "Resources 1",
         "Clues 1",
         "Actions",
-        "Fight / Engage\nEnemy with bounty",
         "Damage 0/9",
         "Horror 0/5",
     ] {
