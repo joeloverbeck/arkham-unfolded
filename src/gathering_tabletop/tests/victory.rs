@@ -26,13 +26,16 @@ fn scenario_pile_captions_and_heading_clear_the_book_at_normal_focus() {
                     weakness: false,
                 });
                 let mut table = Table::new(session, dir.path().join("layout.json"));
-                table.presentation = vec![PresentationMoment {
-                    revealed_story: vec![],
-                    revision: 1,
-                    sequence: 0,
-                    caption: "Populated Scenario layout witness".into(),
-                    play,
-                }];
+                table.presentation = presentation::Presentation::at_moment(
+                    &table.session,
+                    PresentationMoment {
+                        revealed_story: vec![],
+                        revision: 1,
+                        sequence: 0,
+                        caption: "Populated Scenario layout witness".into(),
+                        play,
+                    },
+                );
                 app.insert_resource(table);
             }
             heading_checks::viewport::<MainCamera>(&mut app, size, scale);
@@ -223,13 +226,16 @@ fn only_eligible_locations_join_the_display_at_scenario_end() {
             });
         }
         let mut table = Table::new(session.clone(), dir.path().join("locations.json"));
-        table.presentation = vec![PresentationMoment {
-            revealed_story: vec![],
-            revision: 1,
-            sequence: 0,
-            caption: "Victory collection witness".into(),
-            play: play.clone(),
-        }];
+        table.presentation = presentation::Presentation::at_moment(
+            &table.session,
+            PresentationMoment {
+                revealed_story: vec![],
+                revision: 1,
+                sequence: 0,
+                caption: "Victory collection witness".into(),
+                play: play.clone(),
+            },
+        );
         app.insert_resource(table);
         app.update();
         let caption = if ended {
@@ -254,7 +260,13 @@ fn only_eligible_locations_join_the_display_at_scenario_end() {
         // Collecting the Priest reveals the Act reverse. Use the actual story
         // acknowledgment before inspecting the pile, just as a player must.
         for _ in 0..3 {
-            if app.world().resource::<Table>().reading.current().is_none() {
+            if app
+                .world()
+                .resource::<Table>()
+                .presentation
+                .story()
+                .is_none()
+            {
                 break;
             }
             app.world_mut()

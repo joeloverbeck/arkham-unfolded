@@ -197,7 +197,11 @@ fn discard_ordering_preserves_the_acknowledgment_and_reopens_the_frozen_report()
     activate_choice(&mut app, &format!("discard-card:{courage}"));
     finish_presentation(&mut app);
     assert!(
-        app.world().resource::<Table>().results.current().is_none(),
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_none(),
         "ST8 cleanup must not repeat the result already read at ST6"
     );
 }
@@ -356,8 +360,8 @@ fn lethal_test_consequences_do_not_consume_the_survivors_next_result() {
     assert_eq!(
         app.world()
             .resource::<Table>()
-            .results
-            .current()
+            .presentation
+            .result()
             .unwrap()
             .tester,
         Investigator::Patrice
@@ -388,7 +392,13 @@ fn lethal_test_consequences_do_not_consume_the_survivors_next_result() {
     activate_choice(&mut app, "action:ordinary:investigate");
     for _ in 0..16 {
         finish_presentation(&mut app);
-        if app.world().resource::<Table>().results.current().is_some() {
+        if app
+            .world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_some()
+        {
             break;
         }
         let view = app.world().resource::<Table>().view();
@@ -408,8 +418,8 @@ fn lethal_test_consequences_do_not_consume_the_survivors_next_result() {
     assert_eq!(
         app.world()
             .resource::<Table>()
-            .results
-            .current()
+            .presentation
+            .result()
             .map(|report| report.tester),
         Some(Investigator::Tony),
         "The survivor's test needs its own acknowledgment even when ST7 prevented prior cleanup"
@@ -513,11 +523,23 @@ fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
     activate_choice(&mut app, "test:reveal");
     // Play the genuine cancellation/outcome decisions until ST6 fixes the result.
     for _ in 0..40 {
-        if app.world().resource::<Table>().results.current().is_some() {
+        if app
+            .world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_some()
+        {
             break;
         }
         finish_presentation(&mut app);
-        if app.world().resource::<Table>().results.current().is_some() {
+        if app
+            .world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_some()
+        {
             break;
         }
         let view = app.world().resource::<Table>().view();
@@ -531,7 +553,7 @@ fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
         app.update();
     }
     let table = app.world().resource::<Table>();
-    assert!(table.results.current().is_some());
+    assert!(table.presentation.result().is_some());
     let epoch = table.epoch;
     let before = table.session.clone();
     let revision = table.session.observe().revision;
@@ -541,7 +563,13 @@ fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
     ]);
     app.update();
     assert_eq!(app.world().resource::<Table>().session.clone(), before);
-    assert!(app.world().resource::<Table>().results.current().is_some());
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_some()
+    );
     app.world_mut().resource_mut::<Actions>().0.extend([
         Action::ContinueResult(epoch),
         Action::ContinueResult(epoch),
@@ -550,7 +578,11 @@ fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
     app.update();
     finish_presentation(&mut app);
     assert!(
-        app.world().resource::<Table>().results.current().is_none(),
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_none(),
         "Cleanup must not repeat the acknowledged ST6 result"
     );
     assert!(button_with_label(&mut app, "Decline Quick Thinking").is_some());
@@ -587,6 +619,61 @@ fn explicit_decline_is_saved_and_reopening_the_report_does_not_change_rules() {
     let mut reopened = host_with_table(Table::new(saved.clone(), path), false);
     assert_eq!(reopened.world().resource::<Table>().session, saved);
     assert!(button_with_label(&mut reopened, "Decline Quick Thinking").is_none());
+}
+
+#[test]
+fn undo_after_a_completed_test_does_not_reoffer_its_acknowledged_result() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("undo-reading.json");
+    let session = quick_thinking_session();
+    continuity::save_session(&path, &session).unwrap();
+    let mut app = host_with_table(Table::new(session, path.clone()), false);
+    acknowledge_result(&mut app);
+    let decline = button_with_label(&mut app, "Decline Quick Thinking").unwrap();
+    app.world_mut().trigger(Activate { entity: decline });
+    app.update();
+    finish_presentation(&mut app);
+    let before = app.world().resource::<Table>().view().play.unwrap();
+    assert_eq!(before.completed_tests.len(), 1);
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(std::time::Duration::from_millis(100));
+    for _ in 0..30 {
+        app.update();
+    }
+    let revision = app.world().resource::<Table>().view().revision;
+    activate_choice(&mut app, "action:ordinary:resource");
+    finish_presentation(&mut app);
+    let pending = app.world().resource::<Table>().view();
+    assert_eq!(pending.revision, revision + 1);
+    // The engaged enemy's attack of opportunity precedes gaining the resource.
+    // Undo must restore the acknowledged result even at that pending consequence.
+    assert!(pending.choices.iter().any(|choice| choice.id == "undo"));
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(std::time::Duration::from_millis(100));
+    for _ in 0..30 {
+        app.update();
+    }
+    activate_choice(&mut app, "undo");
+    finish_presentation(&mut app);
+    let restored = app.world().resource::<Table>().view();
+    assert_eq!(
+        restored.play.as_ref().unwrap().players[0].resources,
+        before.players[0].resources
+    );
+    assert_eq!(
+        restored.play.as_ref().unwrap().completed_tests,
+        before.completed_tests
+    );
+    assert!(button_with_label(&mut app, "Continue").is_none());
+    assert!(
+        restored
+            .choices
+            .iter()
+            .any(|choice| choice.id == "action:ordinary:resource")
+    );
+    assert_eq!(continuity::load_session(&path).unwrap().observe(), restored);
 }
 
 #[test]

@@ -26,6 +26,7 @@ mod controls;
 mod draws;
 mod motion;
 mod play;
+mod presentation;
 mod results;
 mod reveal;
 mod scene;
@@ -77,15 +78,9 @@ struct Table {
     menu_open: bool,
     restart_confirmation: bool,
     reduced_motion: bool,
-    reading: story::Reading,
-    results: results::Reading,
+    presentation: presentation::Presentation,
     epoch: u64,
     dirty: bool,
-    presentation: Vec<PresentationMoment>,
-    presentation_index: usize,
-    presentation_clock: f32,
-    draw_cues: Vec<crate::gathering::DrawCue>,
-    draws: draws::Playback,
     last_rendered: Option<Observation>,
     last_rendered_health: Option<(bool, String)>,
     motion_origins: motion::Origins,
@@ -111,8 +106,7 @@ impl Table {
     }
 
     fn new(session: Session, save_path: PathBuf) -> Self {
-        let reading = story::Reading::for_session(&session);
-        let results = results::Reading::for_session(&session);
+        let presentation = presentation::Presentation::new(&session);
         Self {
             session,
             save_path,
@@ -122,15 +116,9 @@ impl Table {
             menu_open: false,
             restart_confirmation: false,
             reduced_motion: false,
-            reading,
-            results,
+            presentation,
             epoch: 0,
             dirty: true,
-            presentation: vec![],
-            presentation_index: 0,
-            presentation_clock: 0.,
-            draw_cues: vec![],
-            draws: draws::Playback::default(),
             last_rendered: None,
             last_rendered_health: None,
             motion_origins: motion::Origins::default(),
@@ -139,58 +127,17 @@ impl Table {
     }
 
     fn view(&self) -> Observation {
-        self.draws
-            .view()
-            .cloned()
-            .unwrap_or_else(|| self.base_view())
-    }
-
-    fn base_view(&self) -> Observation {
-        self.presentation.get(self.presentation_index).map_or_else(
-            || self.session.observe(),
-            |moment| self.session.observe_presentation(moment),
-        )
+        self.presentation.view(&self.session)
     }
 
     fn is_presenting(&self) -> bool {
-        self.draws.active() || self.presentation_index < self.presentation.len()
-    }
-
-    fn start_draws(&mut self, before: &Observation) {
-        self.draws.clear();
-        if self.reduced_motion {
-            return;
-        }
-        let target = self.base_view();
-        let batches = {
-            let sequence = self
-                .presentation
-                .get(self.presentation_index)
-                .map(|moment| moment.sequence);
-            self.draw_cues
-                .iter()
-                .filter(|cue| cue.revision == target.revision && cue.sequence == sequence)
-                .map(|cue| cue.batch.clone())
-                .collect::<Vec<_>>()
-        };
-        self.draws = draws::Playback::new(before, &target, &batches);
-    }
-
-    fn next_presentation(&mut self) {
-        if self.is_presenting() {
-            let before = self.view();
-            self.presentation_index += 1;
-            self.presentation_clock = 0.;
-            self.start_draws(&before);
-            self.epoch += 1;
-            self.dirty = true;
-        }
+        self.presentation.active()
     }
 
     fn modal(&self) -> bool {
-        self.results.current().is_some()
+        self.presentation.result().is_some()
             || self.result_opportunities()
-            || self.reading.current().is_some()
+            || self.presentation.story().is_some()
             || self.inspection.is_some()
             || self.history_open
             || self.restart_confirmation
@@ -205,27 +152,13 @@ impl Table {
     }
 
     fn motion_blocked(&self) -> bool {
-        self.results.current().is_some()
-            || self.reading.current().is_some()
+        self.presentation.result().is_some()
+            || self.presentation.story().is_some()
             || self.inspection.is_some()
             || self.history_open
             || self.restart_confirmation
             || self.menu_open
             || self.context.is_open()
-    }
-
-    fn story_faces(&self, _view: &Observation) -> story::Faces {
-        if let Some(moment) = self.presentation.get(self.presentation_index) {
-            story::Faces::from_codes(moment.revealed_story.iter().map(String::as_str))
-        } else {
-            story::Faces::from_codes(
-                self.session
-                    .live_state()
-                    .known_story
-                    .iter()
-                    .map(String::as_str),
-            )
-        }
     }
 }
 
@@ -584,11 +517,11 @@ fn handle_actions(
         };
         // The same dispatch boundary as Party: a dialog captures actions that
         // were already queued before its barrier appeared on screen.
-        let reading = table.reading.current().is_some();
+        let reading = table.presentation.story().is_some();
         let result_choice = matches!(action, Action::ResultChoice(..))
-            && table.results.current().is_none()
+            && table.presentation.result().is_none()
             && table.result_opportunities();
-        let permitted_in_modal = if table.results.current().is_some() {
+        let permitted_in_modal = if table.presentation.result().is_some() {
             matches!(action, Action::ContinueResult(_))
         } else if reading {
             matches!(action, Action::ContinueStory)
@@ -621,13 +554,13 @@ fn handle_actions(
         }
         match action {
             Action::ContinueResult(epoch) if epoch == table.epoch => {
-                table.results.advance();
+                table.presentation.acknowledge_result();
                 table.epoch += 1;
                 table.dirty = true;
             }
             Action::ContinueResult(_) => {}
             Action::ContinueStory => {
-                table.reading.advance();
+                table.presentation.acknowledge_story();
                 table.dirty = true;
             }
             Action::Utilities => {
@@ -643,7 +576,7 @@ fn handle_actions(
             Action::Motion => {
                 table.reduced_motion = !table.reduced_motion;
                 if table.reduced_motion {
-                    table.draws.clear();
+                    table.presentation.reduce_motion();
                 }
                 table.dirty = true;
             }
@@ -661,15 +594,15 @@ fn handle_actions(
                     &id,
                 ) {
                     Ok(draws) => {
-                        if id == "undo" {
-                            table.results = results::Reading::at(Some(&table.session.observe()));
-                        }
+                        let table = &mut *table;
+                        table.presentation.committed(
+                            &table.session,
+                            &before,
+                            &id,
+                            draws,
+                            table.reduced_motion,
+                        );
                         table.context.reset();
-                        table.presentation = table.session.presentation_after(revision).to_vec();
-                        table.presentation_index = 0;
-                        table.presentation_clock = 0.;
-                        table.draw_cues = draws;
-                        table.start_draws(&before);
                         table.epoch += 1;
                         orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
                         if reveal_focus {
@@ -761,15 +694,8 @@ fn handle_actions(
                         consequences.clear();
                         table.context.reset();
                         table.epoch += 1;
-                        if session != table.session {
-                            table.reading = story::Reading::for_session(&session);
-                            table.results = results::Reading::for_session(&session);
-                            table.presentation.clear();
-                            table.presentation_index = 0;
-                            table.presentation_clock = 0.;
-                            table.draws.clear();
-                            table.draw_cues.clear();
-                        }
+                        let table = &mut *table;
+                        table.presentation.reopen(&table.session, &session);
                         table.session = session;
                         table.inspection = None;
                         table.history_open = false;
@@ -1038,11 +964,18 @@ fn render(
         commands.entity(entity).despawn();
     }
     table.motion_origins = origins;
-    for transfer in table.draws.take_transfers() {
+    let presentation::Frame {
+        view,
+        story,
+        transfers,
+        drawing,
+    } = {
+        let table = &mut *table;
+        table.presentation.prepare(&table.session)
+    };
+    for transfer in transfers {
         table.motion_origins.transfer(transfer);
     }
-    let view = table.view();
-    table.results.synchronize(&view);
     consequences.prepare(
         table.last_rendered.as_ref(),
         &view,
@@ -1050,24 +983,18 @@ fn render(
         table.reduced_motion,
     );
     table.last_rendered = Some(view.clone());
-    let story = table.story_faces(&view);
-    if view.revision == 0 {
-        table.reading = story::Reading::at(story.clone());
-    } else {
-        table.reading.synchronize(&story);
-    }
     let context = CardRender {
         art: &art,
         view: &view,
         epoch: table.epoch,
         story: &story,
         consequences: &consequences,
-        drawing: table.draws.active(),
+        drawing,
     };
     scene::render(&mut commands, &mut meshes, &mut materials, &context);
     table
-        .draws
-        .render(&mut commands, &mut meshes, &mut materials, &context);
+        .presentation
+        .render_draws(&mut commands, &mut meshes, &mut materials, &context);
     ui::render(
         &mut commands,
         &table,
@@ -1134,43 +1061,22 @@ fn advance_presentation(
     consequences: Res<consequences::State>,
     moving: Query<(), With<motion::CardMotion>>,
 ) {
-    if !health.allows_play()
-        || consequences.active()
-        || table.presentation_blocked()
-        || (!table.is_presenting() && !table.draws.active())
-    {
+    if !health.allows_play() || consequences.active() || table.presentation_blocked() {
         return;
     }
-    let view = table.view();
-    // A long frame must not skip an event before it has reached the real scene.
-    if table.last_rendered.as_ref() != Some(&view) {
-        return;
+    let table = &mut *table;
+    let progress = table.presentation.advance(
+        &table.session,
+        time.delta_secs(),
+        table.last_rendered.as_ref(),
+        !moving.is_empty(),
+        table.reduced_motion,
+    );
+    if progress != presentation::Progress::Waiting {
+        table.epoch += 1;
+        table.dirty = true;
     }
-    if table.draws.active() {
-        if table.draws.advance(time.delta_secs(), !moving.is_empty()) {
-            table.epoch += 1;
-            table.dirty = true;
-            table.presentation_clock = 0.;
-        }
-        return;
-    }
-    table.presentation_clock += time.delta_secs();
-    let play = view
-        .play
-        .as_ref()
-        .expect("A presentation moment has play state");
-    let duration = if play
-        .test
-        .as_ref()
-        .is_some_and(|test| !test.revealed.is_empty())
-        || play.pending.harm.is_some()
-    {
-        1.0
-    } else {
-        motion::CARD_DURATION
-    };
-    if table.presentation_clock >= duration && moving.is_empty() {
-        table.next_presentation();
+    if progress == presentation::Progress::Moment {
         orbit.update_follow_target(Some(layout::focus(play::focus(&table.view()))));
     }
 }
@@ -1355,7 +1261,7 @@ fn request_redraw(
         || orbit.is_moving()
         || health.is_checking()
         || (consequences.active() && !table.motion_blocked())
-        || ((table.is_presenting() || table.draws.active()) && !table.presentation_blocked())
+        || (table.is_presenting() && !table.presentation_blocked())
     {
         redraw.request();
     }

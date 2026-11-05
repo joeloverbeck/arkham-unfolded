@@ -165,7 +165,7 @@ pub(super) fn render(
     art: &art::Art,
     size: Vec2,
 ) {
-    let pending = table.results.current();
+    let pending = table.presentation.result();
     let current = view.play.as_ref().and_then(|play| play.test.as_ref());
     let provisional = current.is_some_and(|test| !test.resolved);
     let report = pending

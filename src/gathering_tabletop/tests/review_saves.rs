@@ -172,7 +172,10 @@ fn quick_thinking_review_saves_open_on_reveal_then_the_untimed_result() {
     session.choose(10, "test:reveal").unwrap();
     let (_after_directory, mut after) = open_review_save(&session);
     let table = after.world().resource::<Table>();
-    let result = table.results.current().expect("Saved result needs reading");
+    let result = table
+        .presentation
+        .result()
+        .expect("Saved result needs reading");
     assert_eq!((result.total, result.difficulty), (7, 2));
     assert_eq!(
         result.breakdown.base
@@ -312,6 +315,27 @@ fn expanded_map_review_requires_a_clear_screen_after_the_story_transition() {
     assert!(obscured.world().resource::<Table>().modal());
     assert_visible_button(&mut obscured, "Continue");
     assert!(button_with_label(&mut obscured, "End turn").is_none());
+
+    let path = obscured.world().resource::<Table>().save_path.clone();
+    let saved = std::fs::read(&path).unwrap();
+    let continue_button = button_with_label(&mut obscured, "Continue").unwrap();
+    obscured.world_mut().trigger(Activate {
+        entity: continue_button,
+    });
+    obscured.update();
+    assert!(button_with_label(&mut obscured, "Continue").is_none());
+    obscured
+        .world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Reopen);
+    obscured.update();
+    assert!(
+        button_with_label(&mut obscured, "Continue").is_none(),
+        "In-place reopen of the same Session must retain the story acknowledgment"
+    );
+    assert_eq!(std::fs::read(path).unwrap(), saved);
+    assert_eq!(obscured.world().resource::<Table>().session, session);
 
     // The follow-up input is one legal decision later, not a forced dismissal or
     // a privileged fixture. Startup must now expose the map without a story panel.
