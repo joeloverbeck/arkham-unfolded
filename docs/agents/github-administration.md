@@ -12,7 +12,14 @@ Issue closure is separate from merging: close an issue only after its acceptance
 
 ## Monitor required checks
 
-Keep the run and job IDs for the exact PR head. During a wait, use one compact job-status query to observe the current verification phase:
+Keep the run and job IDs for the exact PR head. Start one watcher for the selected run:
+
+```sh
+gh run watch <run-id> --repo joeloverbeck/arkham-unfolded \
+  --compact --exit-status --interval 30
+```
+
+Let the watcher run in a tool session, retrieving bounded output while keeping the user informed. Await its terminal result; `--exit-status` makes a failed run return nonzero. If watch mode is unavailable, or its output leaves the current phase unclear, use the compact job-status query:
 
 ```sh
 gh api repos/joeloverbeck/arkham-unfolded/actions/jobs/<job-id> \
@@ -23,7 +30,7 @@ Use the phase and elapsed wait in progress updates. Before merging, recheck the 
 
 Fetch detailed logs only to diagnose a failed check or unresolved status, or to satisfy an explicit audit request; the CLI may refuse logs while a job is running. Bound each retrieval to 30 seconds, for example `timeout 30s gh run view <run-id> --repo joeloverbeck/arkham-unfolded --log`. Report unavailable logs and any question they leave unresolved. When the required checks are verified successful for the exact PR head and logs are optional, unavailable logs do not block publication.
 
-If several polls show no progress, and before reporting publication blocked, reconcile fresh observations of the PR head's check runs with the latest workflow run and attempt. A retry can replace the job being monitored. Read the selected run's `head_sha` and `run_attempt`, then obtain its current jobs; confirm that the required check belongs to that same head and expected provider. The relevant endpoints are `commits/<head-sha>/check-runs`, `actions/runs/<run-id>` and `actions/runs/<run-id>/attempts/<attempt>/jobs` in this repository.
+If repeated observations show no progress, and before reporting publication blocked, reconcile fresh observations of the PR head's check runs with the latest workflow run and attempt. A retry can replace the job being monitored. Read the selected run's `head_sha` and `run_attempt`, then obtain its current jobs; confirm that the required check belongs to that same head and expected provider. The relevant endpoints are `commits/<head-sha>/check-runs`, `actions/runs/<run-id>` and `actions/runs/<run-id>/attempts/<attempt>/jobs` in this repository.
 
 Retain the local UTC observation time and the returned status timestamps. For a stalled or contradictory response, `gh api --include` also exposes the HTTP `Date` and request ID; save that diagnostic output locally and keep routine polling compact. If the observations disagree, report the disagreement and refresh the affected records before deciding whether the PR can merge. A service incident is supporting context, not evidence that this particular PR is blocked. Preserve protection and the exact-head check when the uncertainty cannot be resolved.
 

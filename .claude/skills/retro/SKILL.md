@@ -6,11 +6,13 @@ disable-model-invocation: true
 
 The user has asked for a **retrospective**. You are suggesting improvements to the coding agent's **environment** to improve future runs.
 
+Before memory lookup, session discovery or supporting-document reads, read the repository's [bounded context procedure](../../../docs/agents/issue-tracker.md#bounded-context-reads). It owns repository-scoped searches and the shared reading budget.
+
 ## Steps
 
 1. Read and apply the [writing-for-agents guide](../writing-for-agents/SKILL.md). Native skill invocation may load it when available; otherwise read the linked file directly.
 
-2. Read the primary sources for the session the user specifies; default to the current one. Locate local logs by the supplied session identifier or the current thread identifier (for example, `CODEX_THREAD_ID`) before listing session files. Filter filenames by that identifier, then confirm the session identity and working directory in its metadata. If the identifier is unavailable or yields no match, narrow discovery by repository and date before reading log contents. Use the repository's [bounded context procedure](../../../docs/agents/issue-tracker.md#bounded-context-reads) for excerpts and any supporting memory lookup.
+2. Read the primary sources for the session the user specifies; default to the current one. Locate local logs by the supplied session identifier or the current thread identifier (for example, `CODEX_THREAD_ID`) before listing session files. Filter filenames by that identifier, then confirm the session identity and working directory in its metadata. If the identifier is unavailable or yields no match, narrow discovery by repository and date before reading log contents.
 
 3. Look for candidates for improvement in these categories.
 
