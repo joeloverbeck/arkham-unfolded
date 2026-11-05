@@ -181,6 +181,8 @@ Content support follows the owner's actual use. Starting decks, campaign content
 
 ## Current use and external inputs
 
+### Local builds and checks
+
 The built experiment runs offline. A clean clone needs no artwork or credentials for the checks or readable tabletop substitutes. Run `scripts/check` for tracked-file hygiene, formatting, strict Clippy, and the Rust tool, rules, continuity and tabletop tests. Rustup uses the compiler and components in `rust-toolchain.toml`. The Ubuntu PR workflow runs the same phase launchers as named steps without a display or private assets; the portal transport tests start a private `dbus-daemon`. CI compiles its small Rust toolchain-preparation entry point directly with `rustc` before restoring Cargo's cache; the full tools package builds afterward.
 
 On Linux x86_64 and aarch64, the file-replacement lock test uses `ptrace` to observe its own driver child. The test environment must permit this child tracing. If a restricted agent or container sandbox denies it with `Operation not permitted`, rerun the unchanged check in an authorized environment that permits child tracing. Successful verification requires the tracing test to execute and pass.
@@ -199,6 +201,8 @@ Protected commands share a lock on this checkout's directory. A second command w
 The repository's [VS Code settings](.vscode/settings.json) route rust-analyzer's diagnostics and build-script/procedural-macro compilation through the same launcher, with the tabletop feature enabled. These use rust-analyzer's [command overrides](https://rust-analyzer.github.io/book/configuration#rust-analyzer.check.overrideCommand). A busy editor check can be rerun with **rust-analyzer: Run flycheck** after the full check finishes; other editors need equivalent local configuration.
 
 The launcher requires `flock` and a running user systemd manager; a failed scope launch stops the command without an unlimited retry. CPU and memory controller delegation is a host prerequisite: verify the effective cgroup limits when setting up another host, since accepted systemd properties alone do not prove enforcement. A hard-limit failure is a failed check, never permission to retry without limits. Direct Cargo commands retain the job/debug defaults but do not get the systemd limits or checkout lock. CI continues to run the named phase launchers under its existing runner settings.
+
+A restricted agent can be denied access to the user session bus even when the user manager is running. `Failed to connect to user scope bus via local transport: Operation not permitted` means the launcher failed before the check started. Retain the failed record, then rerun the unchanged command with authorized host access to that bus, keeping `scripts/dev` and its limits in place. Use a fresh `record-check` output directory and require a finished, successful record before treating the check as passed.
 
 For a retained check with resource measurements, prepare the small helper under the limits, then run its recorder outside the build scope:
 

@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Triage
 
+Before memory lookup, startup-document reads or tool discovery, read the repository's [tracker procedure](../../../docs/agents/issue-tracker.md) from client selection through bounded context reads. It owns repository-scoped searches and the shared reading budget.
+
 Move issues on the project issue tracker through a small state machine of triage roles.
 
 If this repo treats external pull requests as a request surface (see the issue-tracker config), triage covers them too: **a PR is an issue with attached code**, using the same roles, same states, and same machine, with a few deltas marked "for a PR" below. Resolve a bare `#42` to an issue or PR per the tracker config.
