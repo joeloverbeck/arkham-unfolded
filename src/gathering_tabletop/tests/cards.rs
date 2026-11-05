@@ -1,6 +1,6 @@
 use super::*;
 
-fn at_public_moment(
+pub(super) fn at_public_moment(
     session: Session,
     play: crate::gathering::PlayObservation,
     path: PathBuf,
@@ -29,7 +29,7 @@ fn at_public_moment(
 fn by_source(app: &mut App, source: controls::Source) -> Entity {
     let world = app.world_mut();
     world
-        .query::<(Entity, &ContextTarget)>()
+        .query_filtered::<(Entity, &ContextTarget), With<CardFeedback>>()
         .iter(world)
         .find_map(|(entity, target)| (target.source == source).then_some(entity))
         .expect("the public card has a selectable face")
@@ -179,30 +179,21 @@ fn grouped_enemies_and_scenario_piles(symbols: bool) {
         let room_x = app.world().get::<Transform>(room).unwrap().translation.x;
         let enemy_x = app.world().get::<Transform>(top).unwrap().translation.x;
         assert!(
-            enemy_x - 1.89 / 2. > room_x + 2.3,
+            enemy_x + 1.89 / 2. < room_x - 2.3,
             "The rotated enemy must clear the room's standee/caption reservation"
         );
-        assert!(captions(&mut app, lower).is_empty());
-        assert_eq!(
-            captions(&mut app, top),
-            ["Ghoul Minion\n2 enemies  /  Top exhausted"]
-        );
+        assert_eq!(captions(&mut app, lower), ["Ghoul Minion"]);
+        assert_eq!(captions(&mut app, top), ["Ghoul Minion\nExhausted"]);
         let label = caption_entity(&mut app, top);
         assert_eq!(
             app.world().get::<AccessibleLabel>(label).unwrap().0,
-            "Ghoul Minion\n2 enemies · Top exhausted"
+            "Ghoul Minion\nHallway · Exhausted\nUnengaged"
         );
         let spans = caption_spans(&app, label);
-        if symbols {
-            // The inherited replacement leaves the detailed title's rich spans.
-            // Removing this artifact is a separate presentation correction.
-            assert!(spans.contains("Ghoul Minion\nHallway"));
-            assert!(spans.contains("\u{2060}Q\u{2060}"));
-            assert!(spans.contains("Doom "));
-            assert!(spans.contains("Bounties "));
-        } else {
-            assert!(spans.is_empty());
-        }
+        assert!(
+            spans.is_empty(),
+            "Individual card captions have no stale group spans"
+        );
         for (source, id) in [
             (controls::Source::Victory, 902),
             (controls::Source::ScenarioRemoved, 903),
@@ -227,7 +218,7 @@ fn grouped_enemies_and_scenario_piles(symbols: bool) {
             };
             assert_eq!(selection.source, controls::Source::Card(id));
             assert_eq!(selection.inspect_code, "01160");
-            assert!(selection.title.contains("Damage "));
+            assert!(!selection.title.contains("Damage "));
         }
         app.world_mut().resource_mut::<Table>().dirty = true;
         app.update();

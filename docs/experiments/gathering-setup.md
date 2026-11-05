@@ -41,6 +41,129 @@ This dated check is not a guarantee about a future campaign's latest version.
 The original deck revisions and explicit weakness selections are
 visible in the observation. Original ArkhamDB snapshots remain unchanged.
 
+## Counter, shuffle and enemy-board verification, 2026-11-05
+
+The local candidate on `feat/gathering-counters-and-shuffling` starts at
+`92ad202b052105bc88a69bdafd317c03363f41c3`. It implements the
+[accepted contract](../adr/0002-persistent-table-areas.md#gathering-card-counters-and-shuffling).
+Before the post-native layout changes, `scripts/check` completed with exit 0, retained at
+`/tmp/gathering-implementation-checks/final-check-2/run.json`; the normal app and
+asset tools build completed with exit 0 at `final-build/run.json` in that same
+directory. Standards and specification reviews of that earlier candidate found
+no unresolved source findings after restoring enemy descriptions and interrupted-draw
+custody. Those results do not verify the subsequent working-tree geometry.
+
+The rejected enlarged-board candidate failed the later required check,
+`/tmp/gathering-implementation-checks/final-check-3/run.json`, finished with exit
+101: 428 library tests passed, two failed and one was ignored. The wider Scenario
+framing introduces existing caption collisions between Chaos bag and Committed
+cards, and between Deck and Agenda 1 at 1280×800. The owner-authorized extension
+of 30 minutes and at most two further layout repair cycles reached its cycle
+limit. Implementation stopped at that point. That historical candidate is retained
+in `/tmp/gathering-implementation-review-v7-stopped`.
+
+Its source reviews also identified two unclosed consumer paths. The
+`CompactLabel` marker on bounty/doom text does not reach the `WorldLabel` query;
+those shared labels remain 11 pixels. Missing damage art with a present symbol
+font creates explicitly sized child spans, which the root-font adjustment does
+not resize. Their actual crowded overlap was unverified.
+
+Joel subsequently inspected the app and rejected the oversized board. The current
+correction follows his revised priorities: the enemy board is 8 × 22 world units,
+aligned with the scenario/map board, with navy felt and a steel-blue rim. Scenario
+and Overview restore their earlier camera distances. Names, location headings
+and damage labels keep their ordinary 13-pixel text; icon spans retain their
+intended 1.25× size. Bounty/doom counts retain the shared token renderer's
+11-pixel text. The ineffective adaptive resizing markers and arguments are removed:
+shared counter labels continue through their own positioning system, and damage
+text keeps the established plain/rich-text construction. Text is no longer
+shrunk to make crowded captions fit.
+
+Caption-overlap tuning is explicitly deferred to Joel's later feedback. The
+updated regression checks the map-sized board, exposed physical cards, correct
+group membership, visible labels and stable font sizes through the actual label
+paths, with the symbol font present and absent. This replaces the former crowded
+glyph non-overlap criterion; it does not assert that every caption is separated.
+
+The compact correction's focused checks, full `scripts/check`, and normal app
+build all finished with exit 0. Their retained `run.json` records are under
+`/tmp/gathering-implementation-checks/compact-board-green`,
+`compact-board-full-check`, and `compact-board-build`, respectively. The full
+gate includes 430 passing library tests (one ignored); both Scenario caption
+checks that failed on the enlarged candidate pass again. Separate Standards and
+Spec reviews of `/tmp/gathering-implementation-review-v8-compact` found no
+introduced findings. Its manifest SHA-256 is
+`116450401d5e6cca74eb0a4fefb9d3d8c0fd8bf3eccfca241bb0251e1d5e0275`.
+The rebuilt `target/debug/arkham-tabletop` SHA-256 is
+`68b39b9135d3be156e12967eb9773b766f57749038055a4369528469eb8b9e7d`.
+Quit and relaunch the app to use that executable with the existing save. These
+checks complete the revised local implementation scope; the new palette and
+native readability have not been inspected in a further agent desktop session.
+
+Production-renderer fixtures, production-registered interaction/animation tests
+and rules tests cover numeric/symbol chaos rows, typed
+zero counters, separate enemy actions, keyboard cross-highlighting, the finite
+twelve-enemy layout pressure (including `9+1+1+1`), shuffle ordering and Menu
+pause, save preservation, and the retained anonymous pile during an interrupted
+draw. The discard remains visible until its recycle beat. These checks establish
+the selected scene/state behavior, not native appearance, physical input or pacing.
+
+The collection prepared for that check verified 143/143 roles. The earlier
+collection supplied 140 verified roles, with named substitutes for bounty, ammo
+and charge artwork. That preparation left the source archive, personal saves and
+earlier collection unchanged. The later [installation consolidation](#artwork-preparation-and-selection)
+replaces those cache paths with one stable installed collection. The supplied
+symbol font has no bounty glyph.
+
+Ordinary review saves are prepared at `/tmp/gathering-presentation-review-saves`
+(opening/mulligan) and `/tmp/gathering-presentation-resolution-saves`
+(`evaded-enemy.json` opens on the saved result; Continue reveals its exhausted
+enemy). Their production startup paths are covered by the existing review-save
+checks. Joel authorized a native interval from 20:42:33 to 20:52:33 UTC. All
+owned apps and portal grants were closed by 20:51:20. Isolated copies showed
+Tony's centered Bounty Contracts counter at 6, his played .38 Long Colt's ammo
+counter at 3, and an exhausted Swarm of Rats on the sideboard with `0/1` damage,
+the matching Study marker and its own contextual actions. Hover linked the
+heading and marker. Source saves and personal settings were unchanged.
+
+The native evidence is under
+`~/.cache/agent-tmp/gathering-presentation-2026-11-05/`: the relevant captures are
+`mulligan-native/interaction/ammo-and-bounties.png`,
+`enemy-native/interaction/enemy-board.png` and
+`enemy-native/interaction/enemy-inspection.png` (a contextual menu, not the
+Inspect modal). That pass exposed a header/damage clearance problem. A further
+capture inside the same interval, `enemy-clearance/scenario.png`, showed the
+first-row correction. Its executable was
+`93940583bd3c42d730e8f5062dbe6104691cc9d793c652ca67eb22c2b698b942`.
+Subsequent glyph measurements drove an intermediate 15.6 × 44 board with text
+as small as six pixels. Its focused clearance test passed
+(`crowded-layout-extension-2/run.json`), but the full checks failed and Joel
+rejected the height in ordinary use. The compact correction above supersedes
+that geometry and text policy. It has not been inspected through a new agent
+desktop session.
+
+The retained shuffle clip framed a deck that did not shuffle, so it does not
+verify shuffle pacing. That agent-driven interval also did not cover native
+charges, zero asset counters, enemy bounty/doom or crowded arrangements. These
+remain limits of the recorded agent evidence, separate from Joel's later acceptance.
+
+### Owner acceptance and publication
+
+After the stable artwork installation was completed, Joel tested the application
+and reported on 2026-11-05 that the requested changes were "good enough for now to
+consider this finished." He explicitly authorized publication, PR creation,
+merging the PR and pulling `main`. This accepts the requested chaos-result,
+shuffle, counter, enemy-sideboard and artwork-handoff increment under the revised
+compact-board and ordinary-text requirements. Caption-overlap tuning stays
+deferred. It does not assert that he executed every prepared review checkpoint,
+and #89 remains open for complete original Gathering play and acceptance.
+
+The publication candidate includes the exact local implementation verified by
+the retained checks above and the installation checks below, plus these acceptance
+records. Publication follows the protected PR path and the required `Rust checks`
+for the reviewed head; the PR and current #89 handoff retain its commit and CI
+identities. Consulted for publication: `AUTH-1`–`3`, `OPS-5`–`7` and `PUB-1`.
+
 ## Card-draw review preparation
 
 The [current #89 handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060)
@@ -368,8 +491,7 @@ The native table uses the same session and save file:
 ```sh
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
 target/debug/arkham-tabletop \
-  --experiment gathering --save /tmp/arkham-gathering-setup.session.json \
-  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
+  --experiment gathering --save /tmp/arkham-gathering-setup.session.json
 ```
 
 Click an investigator card to open its contextual menu and choose the lead.
@@ -442,8 +564,7 @@ gathering_recovery_dir=$(mktemp -d /tmp/arkham-gathering-recovered.XXXXXX) &&
 cp -- /absolute/path/session.json.archived-ABC123.json "$gathering_recovery_dir/session.json" &&
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
 target/debug/arkham-tabletop \
-  --experiment gathering --save "$gathering_recovery_dir/session.json" \
-  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
+  --experiment gathering --save "$gathering_recovery_dir/session.json"
 ```
 
 This preserves the archive while the recovered copy receives autosaves. **Menu → History** shows the recovered attempt's action history. Restart refuses a
@@ -459,11 +580,29 @@ for graphics readiness and exits after writing the image. This checks rendering;
 it does not verify camera-button interaction or gameplay. Agree the desktop
 interval before an agent launch.
 
-Two full-scenario additions are prepared for owner review. Several unengaged
-enemies occupy a small local pile beside their room; clicking the room or any
-enemy offers every enemy's inspections and legal actions. Engaged enemies use
-the investigator's threat area. An exhausted enemy in a narrow room pile is
-identified in text instead of rotating into the neighboring location.
+Unengaged enemies occupy a separate board to the left of the map, grouped by
+location in rows of three. Every card remains exposed. A colored letter/count
+marker above the location matches its named group; hover or keyboard focus
+highlights the link without moving the camera. Each enemy offers its own actions
+and inspection. Location markers offer group access. Ordinary engaged enemies
+retain their investigator threat-area positions. Scenario and Overview include
+the board; enemy names and counters remain visible at those distances.
+
+Every enemy shows damage/max health above its card, including `0/max`. Bounty
+counters stay on its left and doom on its right. Ammo, spell charges and Bounty
+Contracts use centered counters, including zero; charge counters combine the
+supplied Spell motif with a violet disk. Loaded artwork replaces the named
+substitute for that counter. The symbol font has no bounty glyph, so rules text
+continues to spell out bounty/bounties.
+
+Actual deck shuffles now lift, split, interleave, square and settle in roughly
+1.3 seconds. Mulligan returns and discard recycling precede the mix; following
+draws wait for it. Keeping every mulligan card does not invent a shuffle. Menu
+and Inspect pause movement; reduced motion skips it and supplies a brief account.
+Result panels and History show an ordinary numeric chaos token's value once,
+while preserving altered contributions, symbol modifiers and ignored/canceled
+status. The [verification record](#counter-shuffle-and-enemy-board-verification-2026-11-05)
+separates the inspected native cases from remaining spacing and timing checks.
 
 Newly revealed Act/Agenda reverses use Party's blocking reading layout.
 **Continue** acknowledges the reading and resumes presentation; the transition's
@@ -488,35 +627,87 @@ native retest below does not verify the new artwork/menu path.
 
 ### Artwork preparation and selection
 
-The README uses the verified collection already prepared on this machine. To
-prepare another portable collection from the original local archive, first use
-the [existing reveal-icon download](../../README.md#prepare-the-tony-artwork), then:
+Gathering has one installed collection at
+`$XDG_DATA_HOME/arkham-unfolded/gathering-assets`, normally
+`~/.local/share/arkham-unfolded/gathering-assets`. The normal launch command uses
+that stable location without `--art-root`. Collection version identifiers in the
+manifest describe the expected contents; they are not alternate artwork choices
+or a reason to change the installation path.
+
+For a first installation from the original local archive, use the
+[existing reveal-icon download](../../README.md#prepare-the-tony-artwork), then:
 
 ```sh
 scripts/dev cargo run --locked --bin arkham-assets -- prepare-gathering \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /tmp/arkham-reveal-icon.png \
-  --output "$HOME/.local/share/arkham-unfolded/gathering-assets-v1"
+  --output "$HOME/.local/share/arkham-unfolded/gathering-assets" &&
 scripts/dev cargo run --locked --bin arkham-assets -- check-gathering \
-  "$HOME/.local/share/arkham-unfolded/gathering-assets-v1"
+  "$HOME/.local/share/arkham-unfolded/gathering-assets"
 ```
 
-The finite recipe contains 140 roles: 94 card identities, 11 reverse/unrevealed
+The finite recipe contains 143 roles: 94 card identities, 11 reverse/unrevealed
 sides, card backs, investigator standees, token/class artwork, reveal icon and
-symbol font. Location roles explicitly distinguish unrevealed and revealed
+symbol font, including bounty, ammo and the Spell charge motif. An earlier v1
+collection is incomplete and uses named substitutes for these three roles.
+Location roles explicitly distinguish unrevealed and revealed
 faces. Preparation preserves source bytes and the archive; an identical complete
 destination is reusable, while conflicting or incomplete output is refused.
 Runtime loads only verified files from the prepared collection. Copy its whole
 folder, including `manifest.json`, to relocate it; ordinary play needs no archive.
 
+For an update, prepare and verify a fresh sibling staging folder while the
+installed collection remains intact. Close the app, replace the installed
+directory only after the staging check succeeds, and verify the installed path
+again before deleting the previous prepared copy. If installation or verification
+fails, restore the previous directory. Keep the stable path and normal launch
+command unchanged. Only remove known prepared copies whose contents have been
+accounted for; the source archive, personal saves, settings and retained research
+evidence are separate. This installation step belongs to an artwork change's
+handoff: rebuilding the executable alone does not update its external files.
+Staging folders are temporary and must not become normal launch targets.
+
 `--art-root PATH` selects a folder for that launch. **Choose asset folder** saves
 the next-launch preference in `$XDG_CONFIG_HOME/arkham-unfolded/gathering.toml`
 (normally `~/.config/arkham-unfolded/gathering.toml`). Without an override or saved
-preference, Gathering uses `$XDG_DATA_HOME/arkham-unfolded/gathering-assets-v1`
-(normally `~/.local/share/arkham-unfolded/gathering-assets-v1`). Other experiments'
-settings remain separate. `--no-art` is available for diagnostic substitute mode.
+preference, Gathering uses the stable installation above. Remove obsolete
+`--art-root` arguments from saved launch commands. An explicit saved choice still
+takes precedence; it is not silently rewritten. Other experiments' settings and
+distinct finite content selections remain separate. With a custom `XDG_DATA_HOME`,
+install in that data directory or explicitly select the installed folder.
+`--no-art` is available for diagnostic substitute mode.
 Startup reports the chosen folder and verified coverage; absent or corrupt roles
 use readable substitutes rather than an unchecked image.
+
+On 2026-11-05 Joel confirmed that the compact enemy board looked good, then found
+missing bounty art when launching the old cache collection. Direct inspection
+found 140/143 roles there and all 143 in the newer prepared collection. He
+authorized consolidation into one installed collection and cleanup of the two
+obsolete Gathering copies. This local follow-up changes the default root and
+handoff, not artwork identities, save paths or gameplay. The return point is the
+verified installation, rebuilt app and required checks within the ordinary
+`OPS-4` bound; it authorizes no new desktop session or remote publication.
+Consulted: `PURP-1`–`6`, `WORK-1`–`6`, `AGENT-5`, `OPS-1`–`7`, `AUTH-1`–`3`,
+`PUB-1`, `EVID-3` and `EVID-4`.
+
+The consolidation completed locally: the installed collection verifies all 143
+roles and its manifest SHA-256 is
+`72c88d571603eaeca435814f24d22c2886ba3ad816f5e5a63da72f06ecc1d365`.
+Its payloads matched the complete prepared copy before cleanup; the older copy
+differed only in its manifest and the three missing token files. Both obsolete
+Gathering cache collections were removed after verification. Source artwork,
+personal saves, settings, native captures and other experiments' collections
+were not changed. No linked-directory redirects were installed: the loader's
+existing integrity checks still require a real collection directory.
+
+The retained `run.json` records under `/tmp/gathering-art-consolidation/` are
+`full-check`, `build`, `cleanup` and `final-installed-check`; all finished with
+exit 0. The full gate includes 430 passing library tests (one ignored), including
+the default-folder and explicit-preference test. The rebuilt tabletop executable
+SHA-256 is `b6139fc2b3a2b7730585dd72ad31ae135a0dca2d0ededf1cac00a10354628b2c`.
+This verifies installation, default selection and build checks without claiming
+a further native visual session. Launch without the obsolete `--art-root`
+argument to consume the installed collection.
 
 The driver prints the current observation and legal choices. Send one JSON
 request per line. At the initial decision, for example:

@@ -21,9 +21,15 @@ cd /home/joeloverbeck/src/arkham-unfolded
 mkdir -p local/gathering
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
 target/debug/arkham-tabletop \
-  --experiment gathering --save local/gathering/session.json \
-  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
+  --experiment gathering --save local/gathering/session.json
 ```
+
+Gathering reads its installed artwork from `~/.local/share/arkham-unfolded/gathering-assets`
+by default. Artwork updates replace the verified contents at that stable location;
+the launch command does not change. Remove old `--art-root` arguments from saved
+commands. A folder deliberately chosen in the artwork settings still takes precedence
+over the default. See [artwork preparation and selection](docs/experiments/gathering-setup.md#artwork-preparation-and-selection)
+for installation and updates, including custom XDG data locations.
 
 This starts original **The Gathering on Standard**, using the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine decks and the prepared artwork on this machine. Keep the terminal open and the window visible and focused during **Checking graphics...**. On a new save, the heading says **The Gathering · Standard · Setup**: click an investigator card and choose them as lead from its contextual menu. Click individual hand cards for mulligan choices, then confirm each investigator's hand to begin ordinary scenario play.
 
@@ -35,7 +41,7 @@ During play, click cards, locations, decks and tokens for their contextual actio
 
 Hold **WASD** to pan, including when an ordinary button has keyboard focus. Panning dismisses an open card-action list without choosing an action. Inspect, Menu and other blocking dialogs suspend camera input; closing them restores it without clicking the table. Tab/Shift+Tab and Enter/Space continue to navigate and activate buttons.
 
-On 2026-11-03, Joel verified immediate WASD, Inspect blocking and release, continuous panning after playing Azure Flame, restart cancellation, fresh setup and reopening the new attempt in a bounded native check. This confirms that reported control/restart route; broader presentation comparison and a full native scenario playthrough remain outstanding. Two full-scenario presentations are proposed for owner review: local enemy piles beside their rooms, and a blocking reading panel for newly revealed Act/Agenda reverses. Its **Continue** advances the presentation of the saved transition without repeating rules effects. See the [Gathering guide](docs/experiments/gathering-setup.md) for evidence, artwork preparation and save-format requirements.
+Gathering shows unengaged enemies individually on a navy board left of the map, linked by matching location markers. The enemy board matches the map board's depth, and labels retain their ordinary text sizes. Ammo, spell charges and bounties use counters; every enemy shows damage/max health above its card. Actual shuffles split, interleave and settle before subsequent draws. Reduced motion skips the movement. Joel accepted this presentation increment on 2026-11-05 after testing the app with the consolidated artwork installation. Caption-overlap tuning remains deferred. The [Gathering guide](docs/experiments/gathering-setup.md#counter-shuffle-and-enemy-board-verification-2026-11-05) records verification, acceptance and the remaining full-scenario boundary.
 
 ## Launch and resume the party experiment
 

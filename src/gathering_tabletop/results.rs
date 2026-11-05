@@ -258,11 +258,34 @@ pub(super) fn details(body: &mut ChildSpawnerCommands, art: &art::Art, report: &
     }
     body.spawn(art.text("Chaos tokens", 20., GOLD));
     for token in &detail.tokens {
-        token_row(body, art, token.face, &format!("{:+}", token.amount));
+        use crate::TokenFace;
+        let amount = format!("{:+}", token.amount).replace('-', "−");
+        let label = match token.face {
+            TokenFace::AutoFail => "Automatic failure".to_owned(),
+            TokenFace::PlusOne
+            | TokenFace::Zero
+            | TokenFace::MinusOne
+            | TokenFace::MinusTwo
+            | TokenFace::MinusThree
+            | TokenFace::MinusFour => {
+                if token.face.modifier() == Some(token.amount) {
+                    token.face.label().to_owned()
+                } else {
+                    format!("{} → {amount}", token.face.label())
+                }
+            }
+            _ => format!("{} · {amount}", token.face.label()),
+        };
+        token_row(body, art, token.face, &label);
     }
     for (heading, faces) in [("Ignored", &detail.ignored), ("Canceled", &detail.canceled)] {
         for face in faces {
-            token_row(body, art, *face, &format!("{heading} · no contribution"));
+            token_row(
+                body,
+                art,
+                *face,
+                &format!("{} · {heading} · no contribution", face.label()),
+            );
         }
     }
     if let Some(reason) = &detail.outcome_reason {
@@ -310,6 +333,6 @@ fn token_row(body: &mut ChildSpawnerCommands, art: &art::Art, face: crate::Token
                 Pickable::IGNORE,
             ));
         }
-        row.spawn(art.text(format!("{}  {value}", face.label()), 20., PAPER));
+        row.spawn(art.text(value, 20., PAPER));
     });
 }

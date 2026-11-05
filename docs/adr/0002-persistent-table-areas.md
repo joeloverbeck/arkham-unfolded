@@ -89,6 +89,173 @@ restriction on demand. This supersedes the
 [permanent-caption decision](#selected-artwork-and-bonus-marker-recommendation)
 and applies through the shared renderer to Gathering, Tony and Party.
 
+## Gathering card counters and shuffling
+
+During the 2026-11-05 `grill-with-docs` interview against
+`92ad202b052105bc88a69bdafd317c03363f41c3`, Joel reported seven presentation
+issues under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89).
+The [research](../research/gathering-tokens-and-shuffling.md) records the
+shuffle inventory, exact artwork/font evidence and comparisons. Joel's final
+"Proceed as you recommend" selects the researched sideboard below and closes
+the design interview. These choices are the accepted presentation contract;
+implementation, native appearance and pacing remain unverified.
+
+Joel subsequently authorized implementation of this complete design. The local
+candidate starts at the same `92ad202b` baseline under #89, preserving live-save
+version 3 and existing rules. The accepted player-observation and production
+renderer test boundaries cover arithmetic, counter ownership, layout/actions and
+ordered deck operations; native appearance and pacing still require inspection.
+This is product-bearing work within the existing Gathering path. It does not
+authorize publication, new scenario rules or modification of the source archive.
+The ordinary `OPS-4` convergence limits apply. Activation consulted `PURP-1`–`6`,
+`WORK-1`–`6`, `EVID-1`–`10`, `SEM-1`–`2`, `REP-1`–`3`, `GOV-1`–`3`, `AGENT-5`
+and `OPS-1`–`7`; the accepted design supplies the finite behavior and oracle.
+
+The pre-native local implementation passed the full automated checks; the
+[Gathering verification record](../experiments/gathering-setup.md#counter-shuffle-and-enemy-board-verification-2026-11-05)
+names the retained evidence, fresh artwork collection and bounded native check.
+Tony's ammo/bounty counters and a single sideboard enemy were inspected through
+ordinary controls. Crowded layout, charge appearance and shuffle pacing still
+need native inspection, separately from owner acceptance.
+
+After the native interval, glyph measurements found crowded caption/counter
+overlaps. The first three geometry repairs reached the `OPS-4` limit. Joel then
+authorized one further 30-minute pass, with at most two additional repair
+cycles, limited to crowded enemy captions/counters and verification, preserving
+physical card size and the clear map. That extension authorizes no further
+desktop control or publication. Consultation for the continuation: `AUTH-2`,
+`AUTH-3`, `AGENT-5` and `OPS-1`–`OPS-5`. The verification record distinguishes
+the current candidate's checks from the earlier native images. The two-cycle
+extension reached its limit: the focused crowded check passed, but the wider
+Scenario framing failed two existing caption checks and source review identified
+unclosed counter-label scaling paths. That working-tree candidate was left
+unfinished when the allowance ended.
+
+Joel then inspected the application and rejected the enlarged enemy board. His
+new priority is a board with exactly the scenario/map board's depth, a distinct
+palette, ordinary readable text and complete counter-label handling. He explicitly
+defers caption-overlap tuning to later feedback. This replaces crowded-text
+non-overlap as the gate for this increment; it does not permit hiding cards or
+changing their identity, rules or counts. The local correction restores the
+compact footprint and earlier camera distances, removes adaptive tiny-text
+sizing, and lets each existing label renderer own its labels, including rich-text
+spans. Palette selection is delegated. Native control and publication remain
+outside this correction. The return point is the rebuilt local candidate and
+required checks within the ordinary `OPS-4` bound. Consulted for this reframe:
+`PURP-1`–`6`, `WORK-1`–`6`, `AGENT-5`, `OPS-1`–`7` and the applicable evidence
+requirements. This is a changed owner-selected acceptance criterion, not a claim
+that the stopped layout passed its former checks.
+
+The revised local correction is complete: the board uses an 8 × 22 footprint
+with navy felt and a steel-blue rim, ordinary text sizes are restored, and the
+real damage and shared-counter label paths are covered. Focused checks, full
+`scripts/check`, the app build, and separate Standards/Spec source reviews passed;
+the [verification record](../experiments/gathering-setup.md#counter-shuffle-and-enemy-board-verification-2026-11-05)
+retains the exact artifacts and native evidence limits. The source reviews also
+consulted `EVID-3`, `EVID-4`, `EVID-6` and `REP-2`. This completes the changed local
+scope without claiming further native inspection or full-scenario acceptance.
+
+After the artwork installation was consolidated, Joel tested the application
+and on 2026-11-05 accepted the requested changes as good enough to consider this
+increment finished. He authorized publication, PR creation, merge and pulling
+`main`. This supersedes the earlier publication restriction for this increment;
+caption-overlap tuning remains deferred, and full Gathering play and acceptance
+remain under #89. The [acceptance record](../experiments/gathering-setup.md#owner-acceptance-and-publication)
+separates his report from the agent's narrower native evidence. Publication
+consulted `AUTH-1`–`3`, `OPS-5`–`7` and `PUB-1`.
+
+- **Shuffle:** after each actual shuffle, use a compact face-down two-packet
+  interleave, square and settle at the deck's own position, initially about
+  1.3 seconds. Return travel precedes mixing. Preserve the order of shuffling,
+  draws, searches and nested effects without exposing hidden cards or changing
+  game randomness. Reduced motion settles immediately with a readable account
+  of the shuffle. Exact trajectories and timing adjustments are implementation
+  choices to judge through native use.
+- **Typed card counters:** use the selected bounty and ammo graphics and a
+  distinct charge token for their actual rules-defined types, at approximately
+  clue-token size. One token with a separate readable number represents each
+  total. Center Bounty Contracts' counter on its card; place ammo and charge
+  counters consistently on their own cards. Preserve the emblem and unobscured
+  full-card inspection. Remove only the corresponding redundant count caption
+  when the replacement is readable; keep titles and unrelated state.
+- **Stable enemy margins:** bounty starts on the left and doom on the right,
+  protecting the central printed damage/horror icons. Center the occupied
+  counters on each side with visible gaps. Joel explicitly anticipates further
+  types such as clues: assign each additional supported type a stable side,
+  balancing assigned types where practical. Counters do not switch sides when
+  another disappears. This does not implement future scenario content.
+- **Zero counts:** keep ammo, charge and Bounty Contracts counters at `0` while
+  their card remains in play. Omit enemy bounty and doom counters at zero.
+  Enemy damage is accrued damage over effective maximum health, including
+  `0/2` on an undamaged two-health enemy. Center its damage token above its
+  card, including when it is on the enemy sideboard.
+- **Charges:** use a solid deep-violet disk with the exact supplied Spell
+  sprite as its pale motif, a restrained rim and a separate readable count.
+  Preserve the motif; a visual candidate must establish the actual composition
+  and readability. This is the selected direction, not acceptance of an image
+  that has not yet been prepared.
+- **Chaos-token results:** show one textual value for a numeric token whose
+  face and contribution agree, for example `[−2 token] −2`. Keep explicit
+  resolved values for symbols, separate canceled/ignored rows and the aggregate
+  test arithmetic. Show `Automatic failure` without a misleading `+0`. If a
+  supported effect changes a numeric face's contribution, show the distinction
+  explicitly. Apply the same convention to the result modal and History, using
+  the frozen report and preserving one row per physical revelation.
+
+Required per-component English fallbacks, prepared-collection custody and
+original card-text fidelity remain governed by
+the existing foundations. The current font has no bounty glyph, so this design
+does not replace “bounty” or “bounties” in card text with an approximate symbol.
+
+### Enemy sideboard
+
+Joel selected a physical sideboard to the map's left after comparing
+[physical-play and digital precedents](../research/gathering-enemy-location-display.md).
+This replaces collapsed location enemy piles and their top-only visible state.
+The selected benefit is seeing every applicable enemy and its counters while
+preserving a clear location map and its four investigator standee slots.
+
+- Group cards beneath the full location name in three columns, wrapping extra
+  cards into further exposed rows. Preserve card size; do not solve crowding by
+  overlapping, collapsing, putting cards in a scroll panel or continually
+  shrinking them.
+  Reserve space for clockwise exhaustion, damage above, side counters and names.
+- Put one enemy-presence marker above each location with a nonempty group.
+  Repeat its stable color, short identifier and group count beside the sideboard
+  heading. The identity survives a group becoming empty and later returning.
+  Keep the marker distinct from printed connection symbols and gameplay tokens,
+  and route connectors around its footprint without changing their connections.
+- The count is the number of cards in that sideboard group. Ordinary engaged
+  enemies stay in investigator threat areas; their presence at the same location
+  does not add them to this count. When Massive content is supported, its single
+  location-resident card belongs on the sideboard whether ready or exhausted;
+  only a ready Massive enemy is considered engaged with everyone there. This
+  convention does not add Massive rules to the current Gathering content.
+- Keep location groups and physical enemy copies in stable orders. Engagement,
+  evasion, movement and defeat retain each card's identity and its own counters.
+  Card positions, group counts and markers use the same displayed moment.
+- Each exposed card opens its own legal actions and Inspect. Hover or keyboard
+  focus highlights the matching location marker and sideboard heading, without
+  moving the camera. Group access remains available from the marker or heading.
+- Scenario and Overview framing include the sideboard while preserving manual
+  camera control and the existing optional-follow preference. All cards remain
+  exposed; full printed text still uses ordinary zoom/Inspect. Do not let a wider
+  view silently hide the names or counters needed to understand the board.
+
+The research's approximately 8 × 22 sideboard and twelve-card inventory pressure
+are implementation starting points. Native verification must cover crowded
+groups, several occupied locations, exhausted cards, duplicate enemies with
+different damage, transfers, location attachments, Study removal and resolution.
+Source arithmetic does not establish readability or natural reachability of a
+layout stress fixture. No runtime changes, asset preparation, native verification
+or publication are recorded by this design closeout; #89 remains open.
+
+The complete constitution revision 2026-09-30.1 was read for these foundation
+and presentation amendments. Applicable consultation includes `AUTH-1`–`AUTH-3`,
+`PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`, `EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`,
+`REP-1`–`REP-3`, `BOUND-1`–`BOUND-5`, `INT-1`–`INT-4`, `AGENT-1`–`AGENT-5`,
+`OPS-1`–`OPS-7`, `GOV-1`–`GOV-3` and `ADOPT-1`–`ADOPT-4`.
+
 ## Gathering card draws
 
 On 2026-11-04, against `c313ede262de3ed0e294028b4dae8291162ec452`, Joel

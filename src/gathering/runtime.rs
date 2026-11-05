@@ -105,6 +105,15 @@ pub struct AssetView {
 }
 pub(super) type AssetState = AssetView;
 
+impl AssetView {
+    /// Rules-defined use type; this projection adds no saved state.
+    pub fn use_kind(&self) -> Option<super::UseKind> {
+        cards::definition(&self.card.code)?
+            .uses
+            .map(|(kind, _)| kind)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct PlayerState {
     pub investigator: Investigator,
@@ -870,6 +879,43 @@ impl Game {
 
     pub(super) fn capture_presentation(&mut self, caption: impl Into<String>) {
         self.capture_public_view(caption, self.observe());
+    }
+
+    pub(super) fn capture_shuffle(
+        &mut self,
+        source: super::DrawSource,
+        recycled: usize,
+        returned: Vec<CardView>,
+    ) {
+        use super::{DeckStep, DrawBatch, DrawSource};
+        let (count, name) = match source {
+            DrawSource::Investigator(who) => (
+                self.players[who.index()].deck.len(),
+                format!("{}'s deck", who.name()),
+            ),
+            DrawSource::Encounter => (self.encounter_deck.len(), "the encounter deck".into()),
+        };
+        if count == 0 {
+            return;
+        }
+        let mut steps = Vec::new();
+        if recycled > 0 {
+            steps.push(DeckStep::Recycle { count: recycled });
+        }
+        if !returned.is_empty() {
+            steps.push(DeckStep::Return);
+        }
+        steps.push(DeckStep::Shuffle { count });
+        self.presentation.push(super::moments::StepSnapshot {
+            caption: format!("Shuffle {name}."),
+            play: self.observe(),
+            draw: Some(DrawBatch {
+                source,
+                cards: vec![],
+                returned,
+                steps,
+            }),
+        });
     }
 
     pub(super) fn capture_public_view(

@@ -511,6 +511,7 @@ fn shuffle(game: &mut Game) {
         let other = game.random_index(index + 1);
         game.encounter_deck.swap(index, other);
     }
+    game.capture_shuffle(super::DrawSource::Encounter, 0, vec![]);
 }
 
 fn finish(game: &mut Game, event: PaidEvent) {
@@ -563,6 +564,10 @@ fn draw_encounter(game: &mut Game, owner: Investigator) {
             source: super::moments::DrawSource::Encounter,
             cards: vec![drawn],
             returned: vec![],
+            steps: vec![super::DeckStep::Draw {
+                card: 0,
+                remaining: game.encounter_deck.len(),
+            }],
         });
     }
 }

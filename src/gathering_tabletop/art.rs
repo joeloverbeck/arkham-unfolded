@@ -6,7 +6,7 @@
 use crate::{assets, tabletop_health::HealthAssets};
 use bevy::{asset::AssetPlugin, prelude::*};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -87,6 +87,7 @@ impl Prepared {
 #[derive(Resource)]
 pub(super) struct Art {
     handles: BTreeMap<String, Handle<Image>>,
+    loaded: HashSet<AssetId<Image>>,
     symbol_font: Option<Handle<Font>>,
     status: String,
 }
@@ -95,6 +96,7 @@ impl Default for Art {
     fn default() -> Self {
         Self {
             handles: BTreeMap::new(),
+            loaded: HashSet::new(),
             symbol_font: None,
             status: DISABLED.to_owned(),
         }
@@ -125,6 +127,26 @@ impl Art {
 
     pub(super) fn image(&self, role: &str) -> Option<Handle<Image>> {
         self.handles.get(role).cloned()
+    }
+
+    pub(super) fn refresh_loaded(&mut self, images: &Assets<Image>) -> bool {
+        let loaded = self
+            .handles
+            .values()
+            .filter(|image| images.contains(image.id()))
+            .map(Handle::id)
+            .collect();
+        if self.loaded == loaded {
+            return false;
+        }
+        self.loaded = loaded;
+        true
+    }
+
+    /// Captions disappear only after the replacement image has decoded.
+    pub(super) fn loaded_image(&self, role: &str) -> Option<Handle<Image>> {
+        self.image(role)
+            .filter(|image| self.loaded.contains(&image.id()))
     }
 
     /// `back` means the reverse or hidden presentation side, not an archive

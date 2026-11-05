@@ -32,6 +32,14 @@ _Avoid_: Player area, map area when referring to all shared components
 The part of the scenario area containing locations, their connections and the investigator standees at those locations. It is a tabletop arrangement, not an additional rules-defined game zone.
 _Avoid_: Scenario area when referring only to the map
 
+**Enemy sideboard**:
+The tabletop display of enemy cards that remain at locations rather than in an investigator's threat area, grouped by their location. It is a presentation arrangement, not a rules-defined game zone.
+_Avoid_: Threat area, enemy deck, off-map zone
+
+**Enemy-presence marker**:
+A tabletop marker linking a location to its group on the enemy sideboard. Its count represents that group's cards, not every enemy sharing the location with investigators.
+_Avoid_: Enemy token, total enemies at the location
+
 **Investigator area**:
 An individual investigator's personal playing surface, distinct from the shared scenario area. One human player can control several investigators, each with their own area.
 _Avoid_: Player table when referring to an investigator's area

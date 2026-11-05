@@ -189,6 +189,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                         cards: attached,
                     });
                 }
+                game.capture_shuffle(super::DrawSource::Investigator(owner), 0, vec![]);
             } else {
                 let id: u16 = id
                     .strip_prefix("backpack:select:")

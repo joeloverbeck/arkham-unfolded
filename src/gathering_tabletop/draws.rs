@@ -1,7 +1,7 @@
 //! Visual beats of committed draws and resolutions. These views never execute rules.
 
 use super::*;
-use crate::gathering::{CardView, DrawBatch, DrawSource};
+use crate::gathering::{CardView, DeckStep, DrawBatch, DrawSource};
 use std::collections::VecDeque;
 
 pub(super) const DURATION: f32 = 0.7;
@@ -32,6 +32,7 @@ struct Beat {
     aside: Vec<Aside>,
     transfers: Vec<Transfer>,
     rendered: bool,
+    deck: Option<shuffle::Operation>,
 }
 
 #[derive(Default)]
@@ -44,10 +45,20 @@ impl Playback {
     pub(super) fn new(before: &Observation, target: &Observation, batches: &[DrawBatch]) -> Self {
         let mut result = Self::default();
         let mut view = target.clone();
+        if let Some(play) = &mut view.play {
+            play.pending.held_draws = before
+                .play
+                .as_ref()
+                .map_or_else(Vec::new, |prior| prior.pending.held_draws.clone());
+        }
         view.choices.clear();
         view.decision_owner = None;
+        let mut initialized = Vec::new();
         for batch in batches {
             for card in &batch.cards {
+                hide(&mut view, card.id);
+            }
+            for card in &batch.returned {
                 hide(&mut view, card.id);
             }
             if let DrawSource::Investigator(who) = batch.source {
@@ -55,7 +66,9 @@ impl Playback {
                 let original = &before.investigators[who.index()].hand;
                 let hand = &mut view.investigators[who.index()].hand;
                 for card in &batch.returned {
-                    hand.push(card.clone());
+                    if original.iter().any(|held| held.id == card.id) {
+                        hand.push(card.clone());
+                    }
                 }
                 hand.sort_by_key(|card| {
                     original
@@ -65,18 +78,29 @@ impl Playback {
                 });
                 sync_hand(&mut view, who);
             }
-            let final_count = deck_count(target, batch.source);
-            if interpolate_deck_count(before, target, batch) {
-                set_deck_count(
-                    &mut view,
-                    batch.source,
-                    final_count.saturating_sub(batch.returned.len()) + batch.cards.len(),
-                );
+            if !initialized.contains(&batch.source) {
+                let count = match batch.steps.first() {
+                    Some(DeckStep::Shuffle { count }) => *count,
+                    _ => deck_count(before, batch.source),
+                };
+                set_deck_count(&mut view, batch.source, count);
+                if batch
+                    .steps
+                    .iter()
+                    .any(|step| matches!(step, DeckStep::Recycle { .. }))
+                {
+                    copy_discard(&mut view, before, batch.source);
+                }
+                initialized.push(batch.source);
             }
         }
+        // Returning search cards must reach the deck before its shuffle starts.
+        result.resolutions(before, &view);
         for batch in batches {
             let mut aside = Vec::new();
-            if let DrawSource::Investigator(who) = batch.source {
+            if let DrawSource::Investigator(who) = batch.source
+                && !batch.cards.is_empty()
+            {
                 for card in &batch.returned {
                     hide(&mut view, card.id);
                     aside.push(card.clone());
@@ -95,54 +119,125 @@ impl Playback {
                     );
                 }
             }
-            for (index, card) in batch.cards.iter().enumerate() {
-                show(&mut view, target, card, batch.source);
-                // Interpolate counts only when the public endpoints establish
-                // an uninterrupted draw. A reset keeps its recorded count.
-                let final_count = deck_count(target, batch.source);
-                if interpolate_deck_count(before, target, batch) {
-                    let remaining = final_count.saturating_sub(batch.returned.len())
-                        + batch.cards.len()
-                        - index
-                        - 1;
-                    set_deck_count(&mut view, batch.source, remaining);
+            for step in &batch.steps {
+                match *step {
+                    DeckStep::Draw { card, .. } | DeckStep::RevealHeld { card } => {
+                        let at = match *step {
+                            DeckStep::Draw { remaining, .. } => {
+                                set_deck_count(&mut view, batch.source, remaining);
+                                deck_position(batch.source)
+                                    + Vec3::Y * ((remaining + 1) as f32 * 0.0065 + 0.006)
+                            }
+                            _ => {
+                                let remaining = held_count(&view, batch.source).saturating_sub(1);
+                                set_held_count(&mut view, batch.source, remaining);
+                                deck_position(batch.source)
+                                    + Vec3::Z * 2.4
+                                    + Vec3::Y * (remaining as f32 * 0.0065)
+                            }
+                        };
+                        let card = &batch.cards[card];
+                        show(&mut view, target, card, batch.source);
+                        view.prompt = match batch.source {
+                            DrawSource::Investigator(who) => {
+                                format!("{} draws a card.", who.name())
+                            }
+                            DrawSource::Encounter => "Draw and reveal an encounter card.".into(),
+                        };
+                        result.push(
+                            &view,
+                            &aside,
+                            batch.source,
+                            false,
+                            vec![Transfer {
+                                id: card.id,
+                                start: Some(at),
+                                source: batch.source,
+                                turn: Turn::Up,
+                            }],
+                        );
+                    }
+                    DeckStep::Return => {
+                        view.prompt = "Return the cards to their deck.".into();
+                        let count = deck_count(&view, batch.source) + batch.returned.len();
+                        set_deck_count(&mut view, batch.source, count);
+                        let transfers = batch
+                            .returned
+                            .iter()
+                            .map(|card| Transfer {
+                                id: card.id,
+                                start: None,
+                                source: batch.source,
+                                turn: Turn::Down,
+                            })
+                            .collect();
+                        result.push(&view, &batch.returned, batch.source, true, transfers);
+                        aside.clear();
+                    }
+                    DeckStep::Shuffle { count } => {
+                        set_deck_count(&mut view, batch.source, count);
+                        view.prompt = match batch.source {
+                            DrawSource::Investigator(who) => {
+                                format!("Shuffle {}'s deck.", who.name())
+                            }
+                            DrawSource::Encounter => "Shuffle the encounter deck.".into(),
+                        };
+                        result.deck_beat(
+                            &view,
+                            shuffle::Operation::Shuffle {
+                                source: batch.source,
+                                count,
+                            },
+                        );
+                    }
+                    DeckStep::Recycle { count } => {
+                        copy_discard(&mut view, target, batch.source);
+                        view.prompt = "Return the discard pile to the deck.".into();
+                        result.deck_beat(
+                            &view,
+                            shuffle::Operation::Recycle {
+                                source: batch.source,
+                                count,
+                                base: deck_count(&view, batch.source),
+                            },
+                        );
+                        let total = deck_count(&view, batch.source) + count;
+                        set_deck_count(&mut view, batch.source, total);
+                    }
+                    DeckStep::TakeHidden { remaining, held } => {
+                        set_deck_count(&mut view, batch.source, remaining);
+                        set_held_count(&mut view, batch.source, held.saturating_sub(1));
+                        view.prompt =
+                            "Draw a card face down; the simultaneous draw is not yet complete."
+                                .into();
+                        result.deck_beat(
+                            &view,
+                            shuffle::Operation::Take {
+                                source: batch.source,
+                                remaining,
+                                held,
+                            },
+                        );
+                        set_held_count(&mut view, batch.source, held);
+                    }
                 }
-                let at = deck_position(batch.source)
-                    + Vec3::Y * ((deck_count(&view, batch.source) + 1) as f32 * 0.0065 + 0.006);
-                view.prompt = match batch.source {
-                    DrawSource::Investigator(who) => format!("{} draws a card.", who.name()),
-                    DrawSource::Encounter => "Draw and reveal an encounter card.".into(),
-                };
-                result.push(
-                    &view,
-                    &aside,
-                    batch.source,
-                    false,
-                    vec![Transfer {
-                        id: card.id,
-                        start: Some(at),
-                        source: batch.source,
-                        turn: Turn::Up,
-                    }],
-                );
             }
-            if !aside.is_empty() {
-                view.prompt = "Return the set-aside mulligan cards to their deck.".into();
-                let transfers = aside
-                    .iter()
-                    .map(|card| Transfer {
-                        id: card.id,
-                        start: None,
-                        source: batch.source,
-                        turn: Turn::Down,
-                    })
-                    .collect();
-                result.push(&view, &aside, batch.source, true, transfers);
-            }
-            set_deck_count(&mut view, batch.source, deck_count(target, batch.source));
         }
-        result.resolutions(before, target);
         result
+    }
+
+    fn deck_beat(&mut self, view: &Observation, operation: shuffle::Operation) {
+        self.beats.push_back(Beat {
+            view: view.clone(),
+            aside: vec![],
+            transfers: vec![],
+            rendered: false,
+            deck: Some(operation),
+        });
+    }
+
+    pub(super) fn deck_motion(&self) -> Option<(shuffle::Operation, f32)> {
+        Some((self.beats.front()?.deck?, self.elapsed))
     }
 
     /// Searches expose only the cards already disclosed by the rules. They stay
@@ -259,6 +354,7 @@ impl Playback {
                 aside,
                 transfers,
                 rendered: false,
+                deck: None,
             });
         }
     }
@@ -290,6 +386,7 @@ impl Playback {
                 .collect(),
             transfers,
             rendered: false,
+            deck: None,
         });
     }
 
@@ -331,7 +428,12 @@ impl Playback {
             return false;
         }
         self.elapsed += delta;
-        if self.elapsed < DURATION || moving {
+        let duration = self
+            .beats
+            .front()
+            .and_then(|beat| beat.deck)
+            .map_or(DURATION, shuffle::Operation::duration);
+        if self.elapsed < duration || moving {
             return false;
         }
         self.beats.pop_front();
@@ -349,6 +451,16 @@ impl Playback {
         let Some(beat) = self.beats.front() else {
             return;
         };
+        if let Some(operation) = beat.deck {
+            shuffle::spawn(
+                commands,
+                meshes,
+                materials,
+                context,
+                operation,
+                self.elapsed,
+            );
+        }
         for (index, aside) in beat.aside.iter().enumerate() {
             // The small stack has one caption. Returning cards need none next
             // to the existing deck count; the prompt already describes the move.
@@ -385,13 +497,6 @@ pub(super) fn deck_position(source: DrawSource) -> Vec3 {
     }
 }
 
-fn interpolate_deck_count(before: &Observation, target: &Observation, batch: &DrawBatch) -> bool {
-    before.play.is_none()
-        || (batch.returned.is_empty()
-            && deck_count(before, batch.source).checked_sub(batch.cards.len())
-                == Some(deck_count(target, batch.source)))
-}
-
 fn deck_count(view: &Observation, source: DrawSource) -> usize {
     match source {
         DrawSource::Investigator(who) => view.investigators[who.index()].deck_count,
@@ -418,6 +523,50 @@ fn set_deck_count(view: &mut Observation, source: DrawSource, count: usize) {
     }
 }
 
+fn held_count(view: &Observation, source: DrawSource) -> usize {
+    let DrawSource::Investigator(who) = source else {
+        return 0;
+    };
+    view.play
+        .as_ref()
+        .and_then(|play| {
+            play.pending
+                .held_draws
+                .iter()
+                .find(|held| held.investigator == who)
+        })
+        .map_or(0, |held| held.count)
+}
+
+fn set_held_count(view: &mut Observation, source: DrawSource, count: usize) {
+    let (Some(play), DrawSource::Investigator(who)) = (&mut view.play, source) else {
+        return;
+    };
+    play.pending
+        .held_draws
+        .retain(|held| held.investigator != who);
+    if count > 0 {
+        play.pending
+            .held_draws
+            .push(crate::gathering::HeldDrawView {
+                investigator: who,
+                count,
+            });
+    }
+}
+
+fn copy_discard(view: &mut Observation, from: &Observation, source: DrawSource) {
+    let (Some(play), Some(from)) = (&mut view.play, &from.play) else {
+        return;
+    };
+    match source {
+        DrawSource::Investigator(who) => {
+            play.players[who.index()].discard = from.players[who.index()].discard.clone()
+        }
+        DrawSource::Encounter => play.encounter_discard = from.encounter_discard.clone(),
+    }
+}
+
 fn sync_hand(view: &mut Observation, who: Investigator) {
     if let Some(play) = &mut view.play {
         play.players[who.index()].hand = view.investigators[who.index()].hand.clone();
@@ -429,6 +578,11 @@ fn hide(view: &mut Observation, id: u16) {
         player.hand.retain(|card| card.id != id);
     }
     if let Some(play) = &mut view.play {
+        if let Some(test) = &mut play.test
+            && test.source_card.as_ref().is_some_and(|card| card.id == id)
+        {
+            test.source_card = None;
+        }
         for player in &mut play.players {
             player.hand.retain(|card| card.id != id);
         }

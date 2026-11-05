@@ -37,20 +37,39 @@ pub(crate) fn asset_roles() -> impl Iterator<Item = String> {
 pub(crate) enum CounterKind {
     Clue,
     Resource,
+    Ammo,
+    Charge,
+    Bounty,
+    Doom,
 }
 
 impl CounterKind {
     fn size(self) -> f32 {
         match self {
-            Self::Clue => 0.8,
             Self::Resource => 0.9,
+            _ => 0.8,
         }
     }
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Clue => "Clues",
             Self::Resource => "Resources",
+            Self::Ammo => "Ammo",
+            Self::Charge => "Charges",
+            Self::Bounty => "Bounties",
+            Self::Doom => "Doom",
+        }
+    }
+
+    pub(crate) fn image_role(self) -> &'static str {
+        match self {
+            Self::Clue => "token/clue",
+            Self::Resource => "token/resource",
+            Self::Ammo => "token/ammo",
+            Self::Charge => "token/charge",
+            Self::Bounty => "token/bounty",
+            Self::Doom => "token/doom",
         }
     }
 }
@@ -85,14 +104,19 @@ pub(crate) struct CounterLabel {
     offset: Vec3,
 }
 
-/// Zero totals have neither a token nor a caption. A label follows its physical root.
+/// Empty assets retain their use counter; other zero totals have no token.
 pub(crate) fn spawn_count(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     visual: CounterVisual,
 ) -> Option<(Entity, Entity)> {
-    if visual.amount == 0 {
+    if visual.amount == 0
+        && !matches!(
+            visual.kind,
+            CounterKind::Ammo | CounterKind::Charge | CounterKind::Bounty
+        )
+    {
         return None;
     }
     let counter = Counter {
@@ -118,13 +142,14 @@ pub(crate) fn spawn_count(
             0.0,
             0.04,
             match visual.kind {
-                CounterKind::Clue => 0.336,
                 CounterKind::Resource => 0.403,
+                _ => 0.336,
             },
         ),
         None,
     );
     commands.entity(label).insert((
+        AccessibleLabel::new(format!("{} {}", visual.kind.name(), visual.amount)),
         Node {
             position_type: PositionType::Absolute,
             padding: UiRect::axes(px(3.0), px(1.0)),
@@ -152,6 +177,22 @@ fn spawn_body(
             Color::srgb(0.13, 0.30, 0.22),
         ),
         CounterKind::Resource => (resource_body(), Color::srgb(0.33, 0.20, 0.10)),
+        CounterKind::Ammo => (
+            Mesh::from(Cylinder::new(0.31, 0.12)),
+            Color::srgb(0.40, 0.10, 0.08),
+        ),
+        CounterKind::Charge => (
+            Mesh::from(Cylinder::new(0.31, 0.12)),
+            Color::srgb(0.48, 0.34, 0.60),
+        ),
+        CounterKind::Bounty => (
+            Mesh::from(Cylinder::new(0.31, 0.12)),
+            Color::srgb(0.52, 0.37, 0.12),
+        ),
+        CounterKind::Doom => (
+            Mesh::from(Cylinder::new(0.31, 0.12)),
+            Color::srgb(0.42, 0.09, 0.14),
+        ),
     };
     // Resize the mesh rather than the root: traveling counters animate their
     // root scale independently and must retain the same physical token size.
@@ -167,15 +208,31 @@ fn spawn_body(
         Transform::from_translation(at).with_scale(Vec3::splat(scale)),
         Pickable::IGNORE,
     ));
+    if kind == CounterKind::Charge {
+        root.with_child((
+            Mesh3d(meshes.add(Cylinder::new(0.285 * size, 0.008 * size))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.17, 0.06, 0.29),
+                unlit: true,
+                ..default()
+            })),
+            Transform::from_xyz(0., 0.064 * size, 0.),
+            Pickable::IGNORE,
+        ));
+    }
     if let Some(image) = image {
         let (face, rotation) = match kind {
-            CounterKind::Clue => (
-                Mesh::from(Circle::new(0.31)),
-                Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
-            ),
             CounterKind::Resource => (
                 Plane3d::default().mesh().size(0.58, 0.654).build(),
                 Quat::IDENTITY,
+            ),
+            _ => (
+                Mesh::from(Circle::new(if kind == CounterKind::Charge {
+                    0.25
+                } else {
+                    0.31
+                })),
+                Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
             ),
         };
         root.with_child((
@@ -187,12 +244,21 @@ fn spawn_body(
                 // emblem, not a usable transparency mask. Preserve that RGB;
                 // the circular mesh clips the square image's white corners.
                 alpha_mode: match kind {
-                    CounterKind::Clue => AlphaMode::Opaque,
-                    CounterKind::Resource => AlphaMode::Blend,
+                    CounterKind::Resource | CounterKind::Charge => AlphaMode::Blend,
+                    _ => AlphaMode::Opaque,
                 },
                 ..default()
             })),
-            Transform::from_xyz(0.0, 0.062 * size, 0.0).with_rotation(rotation),
+            Transform::from_xyz(
+                0.0,
+                if kind == CounterKind::Charge {
+                    0.07
+                } else {
+                    0.062
+                } * size,
+                0.0,
+            )
+            .with_rotation(rotation),
             Pickable::IGNORE,
         ));
     }

@@ -201,6 +201,10 @@ impl Presentation {
         self.draws.returning(id)
     }
 
+    pub(super) fn deck_motion(&self) -> Option<(shuffle::Operation, f32)> {
+        self.draws.deck_motion()
+    }
+
     pub(super) fn render_draws(
         &self,
         commands: &mut Commands,

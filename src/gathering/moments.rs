@@ -24,6 +24,19 @@ pub struct DrawBatch {
     pub source: DrawSource,
     pub cards: Vec<CardView>,
     pub returned: Vec<CardView>,
+    pub steps: Vec<DeckStep>,
+}
+
+/// Actual deck-operation order. Counts are public; indices address only the
+/// faces already disclosed in this batch. Hidden draws have no card identity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DeckStep {
+    Draw { card: usize, remaining: usize },
+    RevealHeld { card: usize },
+    TakeHidden { remaining: usize, held: usize },
+    Return,
+    Recycle { count: usize },
+    Shuffle { count: usize },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
