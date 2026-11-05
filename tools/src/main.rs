@@ -2,6 +2,7 @@ mod check;
 mod ci;
 mod desktop;
 mod interaction;
+mod merge;
 mod native;
 mod portal;
 mod process;
@@ -24,6 +25,8 @@ struct Cli {
 enum Command {
     /// Keep complete check output and an atomic completion record across session loss.
     RecordCheck(check::CheckArgs),
+    /// Verify exact PR revisions and required checks, then perform one authorized merge.
+    MergeReviewed(merge::MergeArgs),
     /// Read a bounded page of whole UTF-8 lines, bound to the source hash.
     ReadContext(reader::Args),
     /// Read multiple excerpts under one shared output budget and source identity.
@@ -66,6 +69,7 @@ fn main() -> ExitCode {
     }
     let result = match command {
         Command::RecordCheck(args) => check::run(args),
+        Command::MergeReviewed(args) => merge::run(args),
         Command::ReadContext(args) => write_context_page(reader::page(args)),
         Command::ReadContextBatch(args) => write_context_page(reader::batch(args)),
         Command::SearchContext(args) => write_context_page(reader::search(args)),

@@ -65,7 +65,7 @@ The [current rendering block](../../src/gathering_tabletop/play.rs#L965) combine
 | Persistent Premonition | The in-play card and its sealed token after initial resolution | Controller's investigator area, until the effect consumes/discards them |
 | Actual skill-test components | Test source, commitments, skill-test tokens and associated test reactions | Test, retaining the bag, reference card and curse supply at their established homes |
 
-This inventory follows the complete resolving-card producer in [presentation.rs](../../src/gathering/presentation.rs#L91), the [token-purpose variants](../../src/gathering/tokens.rs#L618), and the rendering block through [Premonition placement](../../src/gathering_tabletop/play.rs#L1168). A non-test effect can interrupt a test: route by the actual effect, not merely by whether a test exists anywhere in the pending state.
+This inventory follows the normal pending-view projection in [presentation.rs](../../src/gathering/presentation.rs), the [token-purpose variants](../../src/gathering/tokens.rs#L618), and the rendering block through [Premonition placement](../../src/gathering_tabletop/play.rs#L1168). Captured intermediate views have two additional producers: `draws::advance` in [draws.rs](../../src/gathering/draws.rs) adds drawn weaknesses and their owner, and `tokens::resume` in [tokens.rs](../../src/gathering/tokens.rs) includes detached token resolution and its paid cards. Both pass the supplemented view to `Game::capture_public_view`; changes to resolving cards, ownership or test routing must cover all three producers. A non-test effect can interrupt a test: route by the actual effect, not merely by whether a test exists anywhere in the pending state.
 
 ## Compared designs
 
@@ -235,6 +235,12 @@ implementation and automated evidence remain unchanged. The PR enumerates the
 published commit and file set, and #89's current handoff retains the resulting
 publication status. Consulted for publication: `AUTH-1`–`AUTH-3`, `OPS-5`–`OPS-7`
 and `PUB-1`.
+
+## Retrospective follow-up
+
+Joel accepted three bounded follow-up changes after PR #108: make the pre-merge checks and head-matched merge one fail-closed Rust command, correct the presentation-producer map, and reject `record-check -- scripts/dev scripts/check` before it waits on its own checkout lock. The starting commit is `dc5b7c01c9dd4870a9ea1ff668f3ecd90a006397`. The agreed verification seam is the tools CLI: a Rust `gh` fixture observes whether rejected prerequisites reach a merge, and the check-runner fixture observes whether an invalid composition starts a child. Existing detached-draw/token regressions remain the presentation evidence. This increment authorizes local implementation and verification; publication remains a separate instruction. It adds no gameplay behavior, settings changes or automatic publication authority.
+
+The merge procedure lives in [GitHub administration](../agents/github-administration.md#merge-an-accepted-pr); this supporting note is not another work queue. Consulted for the follow-up: `AUTH-1`–`AUTH-3`, `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`, `EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`, `REP-1`–`REP-3`, `BOUND-1`–`BOUND-5`, `INT-1`–`INT-4`, `AGENT-1`–`AGENT-5`, `OPS-1`–`OPS-7`, `PUB-1` and `GOV-1`–`GOV-3`.
 
 ## Evidence limits
 
