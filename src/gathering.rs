@@ -6,6 +6,7 @@ mod asset_entry;
 mod backpack;
 pub use backpack::BackpackFixture;
 mod cards;
+pub use cards::UseKind;
 mod combat;
 mod content;
 mod crypt_chill;
@@ -27,11 +28,11 @@ mod live;
 mod moments;
 mod peter;
 mod phases;
-pub use moments::{DrawBatch, DrawCue, DrawSource, PresentationMoment};
+pub use moments::{DeckStep, DrawBatch, DrawCue, DrawSource, PresentationMoment};
 pub use peter::PeterFixture;
 mod player_cards;
 mod presentation;
-pub use presentation::{DiscardView, HarmAllocation, HarmView, PendingView};
+pub use presentation::{DiscardView, HarmAllocation, HarmView, HeldDrawView, PendingView};
 mod tokens;
 pub use scenario::{Resolution, ResolutionRecord};
 pub use tokens::TokenFixture;
@@ -684,14 +685,17 @@ impl Session {
             for offset in 0..3 {
                 let index = (self.lead.expect("Offered lead").index() + offset) % 3;
                 self.shuffle_deck(index);
+                let count = self.decks[index].len();
                 self.investigators[index].resources = 5;
-                let cards = self.draw_opening(index, 5)?;
+                let (cards, mut steps) = self.draw_opening(index, 5)?;
+                steps.insert(0, DeckStep::Shuffle { count });
                 draws.push(moments::DrawBatch {
                     source: moments::DrawSource::Investigator(
                         self.investigators[index].investigator,
                     ),
                     cards,
                     returned: vec![],
+                    steps,
                 });
             }
             self.stage = Stage::Mulligan;
@@ -714,7 +718,7 @@ impl Session {
                 .into_iter()
                 .partition(|card| selected.contains(&card.id));
             self.investigators[index].hand = kept;
-            let cards = self.draw_opening(index, removed.len())?;
+            let (cards, steps) = self.draw_opening(index, removed.len())?;
             if !cards.is_empty() {
                 draws.push(moments::DrawBatch {
                     source: moments::DrawSource::Investigator(
@@ -722,12 +726,18 @@ impl Session {
                     ),
                     cards,
                     returned: removed.clone(),
+                    steps,
                 });
             }
             // Mulliganed cards stay out until replacement draws have finished.
             if !removed.is_empty() {
                 self.decks[index].extend(removed);
                 self.shuffle_deck(index);
+                let steps = &mut draws.last_mut().expect("Mulligan replacement").steps;
+                steps.push(DeckStep::Return);
+                steps.push(DeckStep::Shuffle {
+                    count: self.decks[index].len(),
+                });
             }
             self.investigators[index].deck_count = self.decks[index].len();
             self.investigators[index].mulligan_complete = true;
@@ -738,10 +748,28 @@ impl Session {
                     if !excluded.is_empty() {
                         self.decks[owner].extend(excluded);
                         self.shuffle_deck(owner);
+                        draws.push(DrawBatch {
+                            source: DrawSource::Investigator(
+                                self.investigators[owner].investigator,
+                            ),
+                            cards: vec![],
+                            returned: vec![],
+                            steps: vec![DeckStep::Shuffle {
+                                count: self.decks[owner].len(),
+                            }],
+                        });
                     }
                     self.investigators[owner].deck_count = self.decks[owner].len();
                 }
                 self.assemble_scenario()?;
+                draws.push(DrawBatch {
+                    source: DrawSource::Encounter,
+                    cards: vec![],
+                    returned: vec![],
+                    steps: vec![DeckStep::Shuffle {
+                        count: self.encounter_deck.len(),
+                    }],
+                });
                 self.history.push("Opening hands and mulligans are complete; set-aside weaknesses return to their owners' shuffled decks without revelation. The original Gathering components are assembled: Study with six clues; 26 encounter cards; 14 cards in their other setup destinations. [RR p27; CG p2]".into());
                 let mut game = runtime::Game::after_setup(
                     self.lead.expect("Setup lead"),
@@ -758,8 +786,13 @@ impl Session {
         Ok(())
     }
 
-    fn draw_opening(&mut self, index: usize, count: usize) -> Result<Vec<CardView>, RuleError> {
+    fn draw_opening(
+        &mut self,
+        index: usize,
+        count: usize,
+    ) -> Result<(Vec<CardView>, Vec<DeckStep>), RuleError> {
         let mut drawn = Vec::with_capacity(count);
+        let mut steps = Vec::with_capacity(count);
         for _ in 0..count {
             loop {
                 let card = self.decks[index].pop().ok_or_else(|| {
@@ -768,6 +801,10 @@ impl Session {
                 if card.weakness {
                     self.excluded_weaknesses[index].push(card);
                 } else {
+                    steps.push(DeckStep::Draw {
+                        card: drawn.len(),
+                        remaining: self.decks[index].len(),
+                    });
                     drawn.push(card.clone());
                     self.investigators[index].hand.push(card);
                     break;
@@ -775,7 +812,7 @@ impl Session {
             }
         }
         self.investigators[index].deck_count = self.decks[index].len();
-        Ok(drawn)
+        Ok((drawn, steps))
     }
 
     fn random_index(&mut self, upper: usize) -> usize {

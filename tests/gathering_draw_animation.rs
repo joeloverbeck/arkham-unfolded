@@ -1,6 +1,7 @@
 //! The visual sidecar must describe real draws without changing saved rules.
 use arkham_unfolded_experiment::gathering::{
-    DrawCue, DrawFixture, DrawSource, HostileFixture, Investigator, SearchFixture, Session,
+    DeckStep, DrawCue, DrawFixture, DrawSource, HostileFixture, Investigator, SearchFixture,
+    Session,
     continuity::{self},
 };
 
@@ -8,6 +9,41 @@ fn choose(session: &mut Session, id: &str) -> Vec<DrawCue> {
     session
         .choose_with_draws(session.observe().revision, id)
         .unwrap()
+}
+
+#[test]
+fn shuffles_are_ordered_between_actual_returns_and_draws() {
+    let mut session = Session::with_seed(19);
+    let opening = choose(&mut session, "lead:tony");
+    for cue in opening {
+        assert!(matches!(
+            cue.batch.steps.first(),
+            Some(DeckStep::Shuffle { .. })
+        ));
+        assert_eq!(
+            cue.batch
+                .steps
+                .iter()
+                .filter(|step| matches!(step, DeckStep::Draw { .. }))
+                .count(),
+            5
+        );
+    }
+    let rejected = session.observe().investigators[0].hand[0].id;
+    choose(&mut session, &format!("mulligan:{rejected}"));
+    let replaced = choose(&mut session, "confirm-mulligan");
+    assert!(matches!(
+        replaced[0].batch.steps.as_slice(),
+        [
+            DeckStep::Draw { .. },
+            DeckStep::Return,
+            DeckStep::Shuffle { .. }
+        ]
+    ));
+    assert!(
+        choose(&mut session, "confirm-mulligan").is_empty(),
+        "Keeping every card does not shuffle"
+    );
 }
 
 #[test]
@@ -65,13 +101,44 @@ fn failed_save_or_stale_choice_returns_no_animation_or_committed_effect() {
 fn interrupted_draw_stays_hidden_until_completion_and_weakness_order_remains_a_choice() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Draws(DrawFixture::PatriceExhaustion));
-    assert!(choose(&mut session, "result:0").is_empty());
+    let interrupted = choose(&mut session, "result:0");
+    assert_eq!(interrupted.len(), 1);
+    assert!(
+        interrupted[0].batch.cards.is_empty(),
+        "Unfinished draws expose no faces"
+    );
+    assert!(matches!(
+        interrupted[0].batch.steps.as_slice(),
+        [DeckStep::TakeHidden { .. }]
+    ));
+    let held = session.observe().play.unwrap().pending.held_draws;
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0].investigator, Investigator::Patrice);
+    assert_eq!(held[0].count, 1);
     for _ in 0..3 {
         assert!(choose(&mut session, "harm:damage:investigator").is_empty());
     }
     let resumed = choose(&mut session, "harm:confirm");
+    assert!(
+        session
+            .observe()
+            .play
+            .unwrap()
+            .pending
+            .held_draws
+            .is_empty()
+    );
     assert_eq!(resumed.len(), 1);
     assert_eq!(resumed[0].batch.cards.len(), 2);
+    assert!(matches!(
+        resumed[0].batch.steps.as_slice(),
+        [
+            DeckStep::RevealHeld { .. },
+            DeckStep::Recycle { .. },
+            DeckStep::Shuffle { .. },
+            DeckStep::Draw { .. }
+        ]
+    ));
     assert_eq!(
         resumed[0].batch.source,
         DrawSource::Investigator(Investigator::Patrice)

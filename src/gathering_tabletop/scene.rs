@@ -55,8 +55,16 @@ pub(super) fn deck(
         "card-back/player"
     });
     let deck = pieces::deck(commands, meshes, materials, image, count, at);
-    commands.entity(deck.body).insert(ScenePiece);
-    commands.entity(deck.top).insert(ScenePiece);
+    let deck_source = match source {
+        controls::Source::Deck(who) => crate::gathering::DrawSource::Investigator(who),
+        _ => crate::gathering::DrawSource::Encounter,
+    };
+    commands
+        .entity(deck.body)
+        .insert((ScenePiece, shuffle::DeckSurface(deck_source)));
+    commands
+        .entity(deck.top)
+        .insert((ScenePiece, shuffle::DeckSurface(deck_source)));
     bind_source(
         commands,
         context,
@@ -82,7 +90,7 @@ pub(super) fn deck(
         commands,
         context,
         format!("{count} cards"),
-        at + Vec3::Z * 1.1,
+        at + Vec3::Z * 1.1 - Vec3::X * if encounter { 0.12 } else { 0. },
         false,
     );
 }

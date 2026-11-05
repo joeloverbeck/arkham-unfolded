@@ -171,7 +171,7 @@ fn locations(
         // An explicit saved choice always takes precedence and is never migrated here.
         Experiment::Tony => ("tony.toml", "tony-assets-v4"),
         Experiment::Party => ("party.toml", "party-assets-v1"),
-        Experiment::Gathering => ("gathering.toml", "gathering-assets-v1"),
+        Experiment::Gathering => ("gathering.toml", "gathering-assets"),
     };
     Ok((
         base(config_home, ".config")?
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(
             gathering.root(),
             dir.path()
-                .join(".local/share/arkham-unfolded/gathering-assets-v1")
+                .join(".local/share/arkham-unfolded/gathering-assets")
         );
         assert!(gathering.path().ends_with("arkham-unfolded/gathering.toml"));
         assert!(!gathering.path().exists());

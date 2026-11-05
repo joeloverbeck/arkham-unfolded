@@ -1,6 +1,7 @@
 use super::*;
 
 mod cards;
+mod counters_and_enemies;
 mod draws;
 mod navigation;
 mod restart;
@@ -98,7 +99,9 @@ fn host_with_table(table: Table, raw_window_events: bool) -> App {
         .init_resource::<art::Art>()
         .insert_resource(table)
         .insert_resource(RenderHealth::ready_for_test())
-        .insert_resource(Orbit::new(CameraMode::Jacqueline));
+        .insert_resource(
+            Orbit::new(CameraMode::Jacqueline).with_home(enemy_board::focus(Area::Overview)),
+        );
     app.world_mut().spawn((
         Window {
             resolution: (1600, 1000).into(),
@@ -187,7 +190,9 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
     parse(&[]).unwrap().unwrap().configure_diagnostics(&mut app);
     assert_eq!(
         app.world().resource::<Orbit>().pose(),
-        Orbit::new(CameraMode::Jacqueline).pose()
+        Orbit::new(CameraMode::Jacqueline)
+            .with_home(enemy_board::focus(Area::Overview))
+            .pose()
     );
     for (name, area) in [
         ("overview", Area::Overview),
@@ -203,7 +208,7 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
             .configure_diagnostics(&mut app);
         assert_eq!(
             app.world().resource::<Orbit>().pose().target,
-            layout::focus(area).0
+            enemy_board::focus(area).0
         );
         assert!(!app.world().resource::<Orbit>().is_following());
     }
@@ -248,7 +253,7 @@ fn gathering_static_capture_waits_for_graphics_and_finishes_the_actual_write() {
     options.configure_diagnostics(&mut app);
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
-        layout::focus(Area::Scenario).0
+        enemy_board::focus(Area::Scenario).0
     );
     for health in [
         RenderHealth::default(),
@@ -1182,6 +1187,20 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
         3,
         "Rerender replaces the links with the scene"
     );
+}
+
+#[test]
+fn card_counters_show_typed_uses_and_undamaged_enemy_capacity_without_art() {
+    let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+        crate::gathering::TonyEffectFixture::GregoryCigarette,
+    ));
+    let mut app = host_with_table(Table::new(session, PathBuf::new()), false);
+    let text = rendered_text(&mut app);
+    for expected in ["Ammo 3", "Bounties 5", "Bounties 1", "Damage 0/2"] {
+        assert!(text.contains(expected), "Missing {expected:?}: {text}");
+    }
+    assert!(!text.contains("Uses 3"));
+    assert!(!text.contains("Damage 0  /  Doom"));
 }
 
 #[test]

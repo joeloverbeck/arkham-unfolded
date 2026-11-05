@@ -1,7 +1,7 @@
 //! Simultaneous player draws and their nested exhaustion/revelation effects.
 
 use super::{
-    CardView, Investigator, cards,
+    CardView, DeckStep, DrawBatch, DrawSource, Investigator, cards,
     runtime::{
         AssetState, CommittedCard, Frame, Game, HarmOrigin, PendingRevelation, Skill,
         TestOperation, TestResultEffect, Window,
@@ -27,6 +27,10 @@ pub(super) struct DrawState {
 }
 
 impl DrawState {
+    pub(super) fn held_count(&self) -> usize {
+        self.drawn.len()
+    }
+
     /// The completed batch has exposed these faces before revelation ordering.
     /// Cards held during an unfinished simultaneous draw remain hidden.
     pub(super) fn pending_revelations(&self) -> &[CardView] {
@@ -78,6 +82,8 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
         return Err(RuleError("No player draw is waiting to continue.".into()));
     };
     let index = draw.investigator.index();
+    let held_before = draw.drawn.len();
+    let mut deck_steps = Vec::new();
     if game.players[index].defeated || game.players[index].resigned {
         // The interrupted draw retains physical custody even when its owner
         // is eliminated before the simultaneous batch can finish.
@@ -93,15 +99,22 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
                 break;
             }
             game.players[index].deck = std::mem::take(&mut game.players[index].discard);
+            let count = game.players[index].deck.len();
             for upper in (1..game.players[index].deck.len()).rev() {
                 let other = game.random_index(upper + 1);
                 game.players[index].deck.swap(upper, other);
             }
+            deck_steps.push(DeckStep::Recycle { count });
+            deck_steps.push(DeckStep::Shuffle { count });
             draw.exhaustion_horror += 1;
             game.history.push(format!("{} resets the empty deck from the discard pile and continues the same draw. Its horror waits until the draw resolves. [RR Drawing Cards]", draw.investigator.name()));
         }
         let card = game.players[index].deck.pop().expect("Available draw card");
         draw.drawn.push(card);
+        deck_steps.push(DeckStep::TakeHidden {
+            remaining: game.players[index].deck.len(),
+            held: draw.drawn.len(),
+        });
         draw.remaining -= 1;
         if game.players[index].deck.is_empty()
             && let Some(watcher) = game.players[index]
@@ -115,6 +128,19 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
                 .and_then(|definition| definition.enemy)
                 .expect("Selected Watcher values");
             game.frames.push(Frame::Draw(draw));
+            game.capture_presentation(format!(
+                "{} holds the unfinished draw face down while Watcher interrupts.",
+                investigator.name()
+            ));
+            game.presentation
+                .last_mut()
+                .expect("Captured interrupted draw")
+                .draw = Some(DrawBatch {
+                source: DrawSource::Investigator(investigator),
+                cards: vec![],
+                returned: vec![],
+                steps: deck_steps,
+            });
             game.history.push("Patrice's deck has just run out while Watcher is already in her hand. Its forced attack interrupts the draw before any reset or later draw. [06017; FAQ 1.4]".into());
             game.queue_harm(
                 investigator,
@@ -155,6 +181,16 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
             play,
         );
         if !drawn.is_empty() {
+            let steps = (0..held_before)
+                .map(|card| DeckStep::RevealHeld { card })
+                .chain(deck_steps.into_iter().map(|step| match step {
+                    DeckStep::TakeHidden { remaining, held } => DeckStep::Draw {
+                        card: held - 1,
+                        remaining,
+                    },
+                    step => step,
+                }))
+                .collect();
             game.presentation
                 .last_mut()
                 .expect("Captured completed draw")
@@ -162,6 +198,7 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
                 source: super::moments::DrawSource::Investigator(draw.investigator),
                 cards: drawn,
                 returned: vec![],
+                steps,
             });
         }
     }

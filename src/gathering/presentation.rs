@@ -22,6 +22,15 @@ pub struct PendingView {
     pub resolution_owner: Option<Investigator>,
     /// Resolving reaction cards belonging to the current skill-test token sequence.
     pub test_resolving_cards: Vec<u16>,
+    /// Counts are public; unfinished simultaneous draws disclose no card identities.
+    #[serde(default)]
+    pub held_draws: Vec<HeldDrawView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldDrawView {
+    pub investigator: Investigator,
+    pub count: usize,
 }
 
 impl PendingView {
@@ -161,9 +170,16 @@ pub(super) fn observe(game: &Game) -> PendingView {
         }
     };
     let mut resolution_owner = None;
+    let mut held_draws = vec![];
     for frame in &game.frames {
         match frame {
             Frame::Draw(draw) => {
+                if draw.held_count() > 0 {
+                    held_draws.push(HeldDrawView {
+                        investigator: draw.investigator,
+                        count: draw.held_count(),
+                    });
+                }
                 for card in draw.pending_revelations() {
                     add(card);
                     resolution_owner.get_or_insert(draw.investigator);
@@ -229,6 +245,7 @@ pub(super) fn observe(game: &Game) -> PendingView {
         resolving_cards,
         resolution_owner,
         test_resolving_cards: vec![],
+        held_draws,
     };
     if let Some(tokens) = &game.tokens {
         pending.include_tokens(tokens);

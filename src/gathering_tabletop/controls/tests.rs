@@ -733,96 +733,86 @@ fn bag_and_token_read_only_inspection_uses_the_standard_reference() {
 }
 
 #[test]
-fn room_and_exposed_enemy_open_the_whole_public_enemy_group_once() {
+fn room_opens_the_whole_public_enemy_group_once() {
     let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringHunters);
     let view = session.observe();
-    let enemies = &view.play.as_ref().unwrap().scenario.enemies;
-    let exposed = enemies
-        .iter()
-        .rev()
-        .find(|enemy| enemy.engaged.is_none() && enemy.location == "01112")
+    let source = Source::Location("01112".into());
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = super::super::tests::host(directory.path().join("enemy-group.json"));
+    {
+        let mut table = app.world_mut().resource_mut::<Table>();
+        table.session = session.clone();
+        table.epoch += 1;
+        table.dirty = true;
+    }
+    app.update();
+    super::super::tests::click_source(&mut app, source.clone());
+    let world = app.world_mut();
+    let menu = world
+        .query_filtered::<Entity, With<Menu>>()
+        .single(world)
         .unwrap();
-    for source in [
-        Source::Location("01112".into()),
-        Source::Card(exposed.card.id),
-    ] {
-        let directory = tempfile::tempdir().unwrap();
-        let mut app = super::super::tests::host(directory.path().join("enemy-group.json"));
-        {
-            let mut table = app.world_mut().resource_mut::<Table>();
-            table.session = session.clone();
-            table.epoch += 1;
-            table.dirty = true;
-        }
-        app.update();
-        super::super::tests::click_source(&mut app, source.clone());
-        let world = app.world_mut();
-        let menu = world
-            .query_filtered::<Entity, With<Menu>>()
-            .single(world)
-            .unwrap();
-        let labels = world
-            .get::<Children>(menu)
-            .unwrap()
+    let labels = world
+        .get::<Children>(menu)
+        .unwrap()
+        .iter()
+        .filter_map(|row| {
+            world
+                .get::<AccessibleLabel>(row)
+                .map(|label| label.0.clone())
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        labels.iter().any(
+            |label| label.starts_with("Inspect Swarm of Rats · 1 of 2\n")
+                && label.contains("Damage ")
+                && label.contains("Doom ")
+                && label.contains("Bounties ")
+        ),
+        "{labels:?}"
+    );
+    assert!(
+        labels.iter().any(
+            |label| label.starts_with("Inspect Swarm of Rats · 2 of 2\n")
+                && label.contains("Damage ")
+                && label.contains("Doom ")
+                && label.contains("Bounties ")
+        ),
+        "{labels:?}"
+    );
+    assert!(
+        labels
             .iter()
-            .filter_map(|row| {
-                world
-                    .get::<AccessibleLabel>(row)
-                    .map(|label| label.0.clone())
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            labels.iter().any(
-                |label| label.starts_with("Inspect Swarm of Rats · 1 of 2\n")
-                    && label.contains("Damage ")
-                    && label.contains("Doom ")
-                    && label.contains("Bounties ")
-            ),
-            "{labels:?}"
-        );
-        assert!(
-            labels.iter().any(
-                |label| label.starts_with("Inspect Swarm of Rats · 2 of 2\n")
-                    && label.contains("Damage ")
-                    && label.contains("Doom ")
-                    && label.contains("Bounties ")
-            ),
-            "{labels:?}"
-        );
-        assert!(
+            .any(|label| label.starts_with("Inspect Ghoul Priest\n")),
+        "{labels:?}"
+    );
+    let choices = source_choices(&view, &source);
+    assert!(
+        !choices.is_empty(),
+        "The enemy-phase fixture offers a real Hunter choice"
+    );
+    let ids = choices
+        .iter()
+        .map(|choice| choice.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        ids.len(),
+        choices.len(),
+        "The original clicked enemy is not listed twice"
+    );
+    for choice in choices {
+        assert_eq!(
             labels
                 .iter()
-                .any(|label| label.starts_with("Inspect Ghoul Priest\n")),
-            "{labels:?}"
-        );
-        let choices = source_choices(&view, &source);
-        assert!(
-            !choices.is_empty(),
-            "The enemy-phase fixture offers a real Hunter choice"
-        );
-        let ids = choices
-            .iter()
-            .map(|choice| choice.id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(
-            ids.len(),
-            choices.len(),
-            "The original clicked enemy is not listed twice"
-        );
-        for choice in choices {
-            assert_eq!(
-                labels
-                    .iter()
-                    .filter(|label| **label == feedback::menu::label(&choice.label))
-                    .count(),
-                1
-            );
-        }
-        assert_eq!(
-            app.world().resource::<Table>().session.clone(),
-            session.clone()
+                .filter(|label| **label == feedback::menu::label(&choice.label))
+                .count(),
+            1
         );
     }
+    assert_eq!(
+        app.world().resource::<Table>().session.clone(),
+        session.clone()
+    );
 }
 
 #[test]

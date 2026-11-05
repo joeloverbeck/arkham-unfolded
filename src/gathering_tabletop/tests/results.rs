@@ -1,6 +1,89 @@
 use super::*;
 use crate::gathering::{HostileFixture, TonyEffectFixture};
 
+#[test]
+fn chaos_report_rows_keep_each_token_without_repeating_numeric_contributions() {
+    use crate::{
+        TokenFace,
+        gathering::{Skill, TestBreakdown, TestResult, TokenContribution},
+    };
+    use bevy::ecs::system::RunSystemOnce;
+
+    let report = TestResult {
+        tester: Investigator::Tony,
+        source: "Report presentation fixture".into(),
+        total: 0,
+        difficulty: 2,
+        success: false,
+        failure_margin: 2,
+        breakdown: TestBreakdown {
+            skill: Skill::Combat,
+            base: 5,
+            cards: vec![],
+            bonuses: vec![],
+            tokens: vec![
+                TokenContribution {
+                    face: TokenFace::MinusTwo,
+                    amount: -2,
+                },
+                TokenContribution {
+                    face: TokenFace::MinusTwo,
+                    amount: -2,
+                },
+                TokenContribution {
+                    face: TokenFace::Skull,
+                    amount: -2,
+                },
+                TokenContribution {
+                    face: TokenFace::Curse,
+                    amount: -2,
+                },
+                TokenContribution {
+                    face: TokenFace::MinusTwo,
+                    amount: -4,
+                },
+                TokenContribution {
+                    face: TokenFace::AutoFail,
+                    amount: 0,
+                },
+            ],
+            token_total: -12,
+            ignored: vec![TokenFace::MinusOne],
+            canceled: vec![TokenFace::AutoFail],
+            outcome_reason: None,
+        },
+    };
+    let mut app = crate::tabletop_layout::heading_checks::app();
+    app.init_resource::<art::Art>();
+    app.world_mut()
+        .run_system_once(move |mut commands: Commands, art: Res<art::Art>| {
+            commands.spawn(Node::default()).with_children(|body| {
+                super::super::results::details(body, &art, &report);
+            });
+        })
+        .unwrap();
+    let rows: Vec<String> = app
+        .world_mut()
+        .query::<&Text>()
+        .iter(app.world())
+        .map(|text| text.0.clone())
+        .collect();
+    assert_eq!(rows.iter().filter(|row| row.as_str() == "-2").count(), 2);
+    for expected in [
+        "Skull  /  -2",
+        "Curse  /  -2",
+        "-2 > -4",
+        "Automatic failure",
+        "-1  /  Ignored  /  no contribution",
+        "Auto-fail  /  Canceled  /  no contribution",
+    ] {
+        assert!(
+            rows.iter().any(|row| row == expected),
+            "Missing {expected:?}: {rows:?}"
+        );
+    }
+}
+
 fn reach_reveal(session: &mut Session) {
     for _ in 0..12 {
         let view = session.observe();

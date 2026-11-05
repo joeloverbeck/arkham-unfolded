@@ -165,9 +165,12 @@ review attempt; **Menu → Reopen saved attempt** tests an in-place reopen.
 ```sh
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop
 target/debug/arkham-tabletop --experiment gathering \
-  --save /tmp/arkham-tray-review-saves-final/hornet.json --initial-view tony \
-  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-89-art-menu/gathering-assets-v1
+  --save /tmp/arkham-tray-review-saves-final/hornet.json --initial-view tony
 ```
+
+This launch example now uses Gathering's [stable installed artwork folder](../experiments/gathering-setup.md#artwork-preparation-and-selection).
+The former cache collection was retired on 2026-11-05; this command update does
+not represent a new native review of the checkpoints below.
 
 | Save filename | Initial view | Review action and expected result |
 | --- | --- | --- |

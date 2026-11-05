@@ -174,6 +174,17 @@ pub fn gathering_image_roles() -> impl Iterator<Item = &'static str> {
 
 // Exact earlier selections remain useful without claiming newly selected artwork.
 fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
+    if selection.collection == "arkham-unfolded-gathering-v2" {
+        let mut previous = selection.manifest();
+        previous.collection = "arkham-unfolded-gathering-v1".into();
+        previous.assets.retain(|asset| {
+            !matches!(
+                asset.role.as_str(),
+                "token/ammo" | "token/bounty" | "token/charge"
+            )
+        });
+        return vec![previous];
+    }
     let versions: &[u32] = match selection.collection.as_str() {
         "arkham-unfolded-tony-turn-v3" => &[1, 2],
         "arkham-unfolded-tony-turn-v4" => &[1, 2, 3],
@@ -889,6 +900,9 @@ mod tests {
             "token/damage",
             "token/horror",
             "ui/reveal-chaos-token",
+            "token/ammo",
+            "token/bounty",
+            "token/charge",
         ] {
             assert!(
                 roles.contains(role),

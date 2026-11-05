@@ -1,6 +1,45 @@
 {
   "assets": [
     {
+      "role": "token/bounty",
+      "path": "tokens/bounty.png",
+      "bytes": 210889,
+      "sha256": "1128d732cab07a656e0607a95bbc28ca6830f7d945a05c205a4779d7df03bc12",
+      "evidence": "#89 accepted card counters: exact SCE bounty PNG; circular token geometry clips the square corners without altering source pixels.",
+      "source": {
+        "path": "images/other/unclassified/en/sce-base-save/Bounty--ImageURL--5e10a5f17dda3cb8d795.png",
+        "bytes": 210889,
+        "sha256": "1128d732cab07a656e0607a95bbc28ca6830f7d945a05c205a4779d7df03bc12"
+      },
+      "transform": { "kind": "copy" }
+    },
+    {
+      "role": "token/ammo",
+      "path": "tokens/ammo.png",
+      "bytes": 257490,
+      "sha256": "4eefba18f84d9afb06815853c93ea4931080b42cd103c3d63d0df0c656a38f6c",
+      "evidence": "#89 accepted card counters: exact SCE ammunition PNG on a clue-sized circular token.",
+      "source": {
+        "path": "images/other/unclassified/en/sce-base-save/Ammo--ImageURL--1d0027bdf77a9f2c7229.png",
+        "bytes": 257490,
+        "sha256": "4eefba18f84d9afb06815853c93ea4931080b42cd103c3d63d0df0c656a38f6c"
+      },
+      "transform": { "kind": "copy" }
+    },
+    {
+      "role": "token/charge",
+      "path": "tokens/charge-motif.png",
+      "bytes": 5208,
+      "sha256": "ecea8bdecb56f0ff9e1908ce64e1d457de90aa2bd00afe16f8fa85c2dc8a651c",
+      "evidence": "#89 accepted charge composition: exact pale Spell motif layered over a solid deep-violet disk at runtime; the numeric count remains separate.",
+      "source": {
+        "path": "images/bundles/7af1e2752099652f0a9dbc894013fd3c9803ec75e44885106e4c613b59763445/Sprite/Spell--2d26e3476eb8f7e7.png",
+        "bytes": 5208,
+        "sha256": "ecea8bdecb56f0ff9e1908ce64e1d457de90aa2bd00afe16f8fa85c2dc8a651c"
+      },
+      "transform": { "kind": "copy" }
+    },
+    {
       "bytes": 1130602,
       "dimensions": [
         750,
@@ -2546,7 +2585,7 @@
       }
     }
   ],
-  "collection": "arkham-unfolded-gathering-v1",
+  "collection": "arkham-unfolded-gathering-v2",
   "deck_projection_sha256": "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb",
   "format_version": 1,
   "scenario_binding_sha256": "635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0",

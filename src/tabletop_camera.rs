@@ -98,6 +98,7 @@ pub(crate) struct CameraStep {
 #[derive(Resource)]
 pub(crate) struct Orbit {
     mode: CameraMode,
+    home: (Vec3, f32),
     pose: Pose,
     desired_target: Vec3,
     desired_distance: f32,
@@ -110,12 +111,19 @@ impl Orbit {
         let pose = Pose::at(mode.home());
         Self {
             mode,
+            home: mode.home(),
             pose,
             desired_target: pose.target,
             desired_distance: pose.distance,
             following: false,
             drag: None,
         }
+    }
+
+    pub(crate) fn with_home(mut self, framing: (Vec3, f32)) -> Self {
+        self.home = framing;
+        self.focus(framing);
+        self
     }
 
     /// A diagnostic launch changes the starting pose, never the mode's Home pose.
@@ -227,7 +235,7 @@ impl Orbit {
             }
             if input.keys.just_pressed(KeyCode::Home) {
                 // Home resets framing, not a held scene drag's capture.
-                self.focus(self.mode.home());
+                self.focus(self.home);
                 changed = true;
             }
         }

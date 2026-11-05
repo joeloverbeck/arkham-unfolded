@@ -243,7 +243,7 @@ fn inspections(view: &Observation, selection: &Selection) -> Vec<Inspection> {
     targets
 }
 
-/// A room and any exposed member of its unengaged pile reach the same enemies.
+/// Location markers and headers reach the whole group; each enemy owns its menu.
 fn unengaged_enemies<'a>(
     view: &'a Observation,
     source: &Source,
@@ -253,12 +253,6 @@ fn unengaged_enemies<'a>(
     };
     let room = match source {
         Source::Location(code) => Some(code.as_str()),
-        Source::Card(id) => play
-            .scenario
-            .enemies
-            .iter()
-            .find(|enemy| enemy.card.id == *id && enemy.engaged.is_none())
-            .map(|enemy| enemy.location.as_str()),
         _ => None,
     };
     play.scenario

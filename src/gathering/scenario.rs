@@ -128,6 +128,13 @@ pub struct EnemyState {
     pub owner: Option<Investigator>,
 }
 
+impl EnemyState {
+    /// The same effective capacity used by damage and defeat resolution.
+    pub fn health(&self) -> Option<u8> {
+        enemy_health(&self.card.code)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScenarioState {
     pub locations: Vec<LocationState>,
@@ -1913,8 +1920,10 @@ pub(super) fn check_agenda(game: &mut Game) -> Result<Option<ScenarioConsequence
 /// S8: finish after one pass, then rebuild. It never restores victory/set-aside
 /// enemies or keeps reshuffling inside the same search.
 pub(super) fn agenda_two_ghoul(game: &mut Game) -> Option<CardView> {
+    let recycled = game.encounter_discard.len();
     game.encounter_deck.append(&mut game.encounter_discard);
     shuffle_encounter(game);
+    game.capture_shuffle(super::DrawSource::Encounter, recycled, vec![]);
     let mut found = None;
     while let Some(card) = game.encounter_deck.pop() {
         if enemy_definition(&card.code).is_some_and(|enemy| enemy.ghoul) {
@@ -1924,8 +1933,10 @@ pub(super) fn agenda_two_ghoul(game: &mut Game) -> Option<CardView> {
         game.encounter_discard.push(card);
     }
     if found.is_none() {
+        let recycled = game.encounter_discard.len();
         game.encounter_deck.append(&mut game.encounter_discard);
         shuffle_encounter(game);
+        game.capture_shuffle(super::DrawSource::Encounter, recycled, vec![]);
     }
     game.history.push(if found.is_some() {
         "Agenda 2 finds a Ghoul; the lead draws it with its ordinary spawn instructions. [01106b]".into()
@@ -1946,8 +1957,10 @@ fn shuffle_encounter(game: &mut Game) {
 /// before another encounter draw. Never rebuild inside an unresolved search.
 pub(super) fn rebuild_empty_encounter(game: &mut Game) {
     if game.encounter_deck.is_empty() && !game.encounter_discard.is_empty() {
+        let recycled = game.encounter_discard.len();
         game.encounter_deck.append(&mut game.encounter_discard);
         shuffle_encounter(game);
+        game.capture_shuffle(super::DrawSource::Encounter, recycled, vec![]);
     }
 }
 

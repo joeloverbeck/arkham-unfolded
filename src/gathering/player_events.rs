@@ -211,11 +211,13 @@ pub(super) fn finish_event(game: &mut Game, event: PaidEvent) {
         })
     ) {
         let owner = event.owner;
+        let returned = event.card.clone();
         game.players[owner.index()].deck.push(event.card);
         for index in (1..game.players[owner.index()].deck.len()).rev() {
             let other = game.random_index(index + 1);
             game.players[owner.index()].deck.swap(index, other);
         }
+        game.capture_shuffle(super::DrawSource::Investigator(owner), 0, vec![returned]);
         game.history.push(
             "Winging It played from discard resolves and shuffles into its owner's deck. [04272]"
                 .into(),

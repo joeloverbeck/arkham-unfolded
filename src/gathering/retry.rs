@@ -98,9 +98,15 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                     .position(|card| card.id == id)
                     .expect("Offered retained card"),
             );
+            let recycled = player.discard.len();
             player.deck.append(&mut player.discard);
             player.discard.push(retained);
             shuffle_player(game, Investigator::Patrice);
+            game.capture_shuffle(
+                super::DrawSource::Investigator(Investigator::Patrice),
+                recycled,
+                vec![],
+            );
             game.history.push("Patrice resolves the delayed elder-sign ability after ST8: keep the selected discard and shuffle all other discarded cards into the deck, before optional after-test events. [06005; RR pp3,8]".into());
         }
         game.frames.push(Frame::AfterTest(state));

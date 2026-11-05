@@ -294,7 +294,7 @@ pub(super) fn framing(view: &Observation) -> (Vec3, f32) {
         .filter(|tray| {
             tray.has_content() || view.play.as_ref().is_none_or(|play| play.test.is_none())
         })
-        .map_or_else(|| layout::focus(focus(view)), |tray| tray.focus())
+        .map_or_else(|| enemy_board::focus(focus(view)), |tray| tray.focus())
 }
 
 pub(super) fn status(view: &Observation) -> Option<String> {
@@ -510,11 +510,8 @@ impl Painter<'_, '_, '_> {
         amount: u8,
         source: Source,
     ) {
-        use crate::tabletop_counters::{CounterKind, CounterVisual, spawn_count};
-        let (role, title) = match kind {
-            CounterKind::Clue => ("token/clue", "Clues"),
-            CounterKind::Resource => ("token/resource", "Resources"),
-        };
+        use crate::tabletop_counters::{CounterVisual, spawn_count};
+        let (role, title) = (kind.image_role(), kind.name());
         if let Some((token, label)) = spawn_count(
             self.commands,
             self.meshes,
@@ -651,6 +648,8 @@ pub(super) fn render(
 ) {
     let view = context.view;
     let Some(play) = &view.play else { return };
+    enemy_board::render(commands, meshes, materials, context);
+    shuffle::held(commands, meshes, materials, context);
     let mut paint = Painter {
         commands,
         meshes,
@@ -668,9 +667,8 @@ pub(super) fn render(
                 |_| format!("backpack:{}", asset.card.id),
             );
             let mut details = Vec::new();
-            if asset.card.code == "06010" {
-                details.push(format!("{} bounties", asset.uses));
-            } else if asset.uses > 0 {
+            let counter = card_counters::use_counter(asset.use_kind());
+            if counter.is_none() && asset.uses > 0 {
                 details.push(format!("Uses {}", asset.uses));
             }
             if asset.damage > 0 {
@@ -697,7 +695,7 @@ pub(super) fn render(
                 } else {
                     Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)
                 });
-            paint.card(CardSpec {
+            let card = paint.card(CardSpec {
                 source: Some(attached.map_or(Source::Card(asset.card.id), |_| {
                     Source::Backpack(asset.card.id)
                 })),
@@ -706,6 +704,19 @@ pub(super) fn render(
                 caption: Some(caption),
                 ..CardSpec::new(pose.translation, &asset.card.title, &inspection)
             });
+            if let Some(kind) = counter {
+                card_counters::count(
+                    paint.commands,
+                    paint.meshes,
+                    paint.materials,
+                    context,
+                    card,
+                    pose.translation,
+                    Vec3::Y * 0.15,
+                    kind,
+                    asset.uses,
+                );
+            }
         }
         for (slot, threat) in player.threats.iter().enumerate() {
             paint.card(CardSpec {
@@ -894,15 +905,13 @@ pub(super) fn render(
         if play.scenario.location_in_victory_display(&enemy.location) {
             continue;
         }
-        let group: Vec<_> = play
-            .scenario
-            .enemies
-            .iter()
-            .filter(|other| other.engaged.is_none() && other.location == enemy.location)
-            .collect();
-        let grouped = enemy.engaged.is_none() && group.len() > 1;
+        let caption = format!(
+            "{}{}",
+            enemy.card.title,
+            if enemy.exhausted { "\nExhausted" } else { "" }
+        );
         let title = format!(
-            "{}\n{} · {}\nDamage {} · Doom {} · Bounties {}\n{}",
+            "{}\n{} · {}\n{}",
             enemy.card.title,
             location_name(&enemy.location),
             if enemy.exhausted {
@@ -910,28 +919,11 @@ pub(super) fn render(
             } else {
                 "Ready"
             },
-            enemy.damage,
-            enemy.doom,
-            enemy.bounties,
             enemy.engaged.map_or("Unengaged".into(), |owner| format!(
                 "Engaged with {}",
                 owner.name()
             ))
         );
-        let caption = if grouped {
-            let top = group.last().unwrap().card.id == enemy.card.id;
-            let count = group.len();
-            let title = enemy.card.title.clone();
-            let exhausted = enemy.exhausted;
-            top.then(|| {
-                format!(
-                    "{title}\n{count} enemies{}",
-                    if exhausted { " · Top exhausted" } else { "" }
-                )
-            })
-        } else {
-            Some(title.clone())
-        };
         let pose = Transform::from_translation(enemy_position(play, slot)).with_rotation(
             if enemy.exhausted {
                 Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)
@@ -939,19 +931,66 @@ pub(super) fn render(
                 Quat::IDENTITY
             },
         );
-        paint.card(CardSpec {
+        let card = paint.card(CardSpec {
             source: Some(Source::Card(enemy.card.id)),
             physical_id: Some(enemy.card.id),
             pose,
-            caption: caption.as_deref().map(|text| {
-                if grouped {
-                    Caption::EnemyGroup(text)
-                } else {
-                    Caption::Text(text)
-                }
-            }),
+            caption: Some(Caption::Text(&caption)),
             ..CardSpec::new(pose.translation, &title, &enemy.card.code)
         });
+        let on_sideboard = enemy.engaged.is_none();
+        paint.commands.queue(move |world: &mut World| {
+            let labels: Vec<_> = world
+                .query::<(Entity, &motion::CardLabel)>()
+                .iter(world)
+                .filter(|(_, label)| label.0 == card)
+                .map(|(entity, _)| entity)
+                .collect();
+            for label in labels {
+                world.entity_mut(label).insert((
+                    enemy_board::PersistentLabel,
+                    AccessibleLabel::new(title.clone()),
+                ));
+                if on_sideboard {
+                    world.entity_mut(label).insert(enemy_board::Caption);
+                }
+            }
+        });
+        card_counters::damage(
+            paint.commands,
+            paint.meshes,
+            paint.materials,
+            context,
+            card,
+            pose.translation,
+            enemy.damage,
+            enemy.health(),
+            enemy.exhausted,
+        );
+        // Stable, screen-upright margins protect the enemy's printed attack icons.
+        for (kind, amount, side) in [
+            (
+                crate::tabletop_counters::CounterKind::Bounty,
+                enemy.bounties,
+                -1.,
+            ),
+            (crate::tabletop_counters::CounterKind::Doom, enemy.doom, 1.),
+        ] {
+            if amount > 0 {
+                let edge = if enemy.exhausted { 0.94 } else { 0.67 };
+                card_counters::count(
+                    paint.commands,
+                    paint.meshes,
+                    paint.materials,
+                    context,
+                    card,
+                    pose.translation,
+                    Vec3::new(side * edge, 0.15, 0.),
+                    kind,
+                    amount,
+                );
+            }
+        }
     }
     if play.scenario.lita_in_play
         && !play
@@ -1138,41 +1177,7 @@ pub(super) fn enemy_position(play: &PlayObservation, slot: usize) -> Vec3 {
             play.players[owner.index()].threats.len() + prior,
         );
     }
-    let map = crate::tabletop_gathering_map::GatheringMap::new(
-        play.scenario
-            .locations
-            .iter()
-            .map(|room| (room.code.as_str(), room.revealed)),
-        Vec2::new(1.35, 1.89),
-    )
-    .expect("The selected Gathering locations fit their shared scenario surface");
-    let group = play
-        .scenario
-        .enemies
-        .iter()
-        .filter(|other| other.engaged.is_none() && other.location == enemy.location)
-        .collect::<Vec<_>>();
-    let ordinal = group
-        .iter()
-        .position(|other| other.card.id == enemy.card.id)
-        .unwrap();
-    // Preserve the left-edge clearance from location standees when a quarter
-    // turn makes the card wider. Ready enemies retain their established anchor.
-    let clearance = if enemy.exhausted {
-        (crate::tabletop_pieces::CARD_LENGTH - crate::tabletop_pieces::CARD_WIDTH) / 2.
-    } else {
-        0.
-    };
-    local_enemy_position(map.position(&enemy.location), ordinal, group.len()) + Vec3::X * clearance
-}
-
-fn local_enemy_position(location: Vec3, ordinal: usize, count: usize) -> Vec3 {
-    let step = if count > 1 {
-        (1. / (count - 1) as f32).min(0.25)
-    } else {
-        0.
-    };
-    location + Vec3::new(3.2, ordinal as f32 * 0.015, ordinal as f32 * step)
+    enemy_board::position(play, enemy.card.id)
 }
 
 pub(super) fn test_resolving_cards(play: &PlayObservation) -> Vec<&crate::gathering::CardView> {
@@ -1208,43 +1213,4 @@ fn test_source_is_physical(play: &PlayObservation, id: u16) -> bool {
         .enemies
         .iter()
         .any(|enemy| enemy.card.id == id)
-}
-
-#[cfg(test)]
-mod presentation_tests {
-    use super::*;
-
-    #[test]
-    fn local_enemy_fans_clear_every_room_standee_reservation() {
-        let rooms = ["01112", "01113", "01114", "01115"];
-        let map = crate::tabletop_gathering_map::GatheringMap::new(
-            rooms.map(|code| (code, true)),
-            Vec2::new(1.35, 1.89),
-        )
-        .unwrap();
-        for room in rooms {
-            for count in [1, 2, 3, 8, 16] {
-                for ordinal in 0..count {
-                    let at = local_enemy_position(map.position(room), ordinal, count).xz();
-                    let card = Rect::from_center_size(at, Vec2::new(1.35, 1.89));
-                    for other in rooms {
-                        let center = map.position(other).xz();
-                        // Independent fixed oracle for the shared1.35×1.89
-                        // location face plus reserved standees and captions.
-                        let reserved = Rect::from_corners(
-                            center + Vec2::new(-2.3, -1.145),
-                            center + Vec2::new(2.3, 2.945),
-                        );
-                        assert!(
-                            card.max.x < reserved.min.x
-                                || card.min.x > reserved.max.x
-                                || card.max.y < reserved.min.y
-                                || card.min.y > reserved.max.y,
-                            "{room} enemy {ordinal}/{count} overlaps {other}"
-                        );
-                    }
-                }
-            }
-        }
-    }
 }

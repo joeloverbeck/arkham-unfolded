@@ -41,6 +41,128 @@ fn back_rotation(app: &mut App, id: u16) -> Quat {
     face.rotation * back
 }
 
+#[test]
+fn interrupted_draw_keeps_an_anonymous_pile_across_rebuild_and_resumes_before_recycling() {
+    let mut session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Draws(
+        crate::gathering::DrawFixture::PatriceExhaustion,
+    ));
+    session
+        .choose(session.observe().revision, "result:0")
+        .unwrap();
+    let before = session.observe();
+    let discard = before.play.as_ref().unwrap().players[1].discard.clone();
+    assert!(!discard.is_empty());
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("held.json")), false);
+    finish_presentation(&mut app);
+    for _ in 0..2 {
+        assert!(rendered_text(&mut app).contains("Draw in progress"));
+        let world = app.world_mut();
+        let held: Vec<_> = world
+            .query::<(Entity, &Name)>()
+            .iter(world)
+            .filter(|(_, name)| name.as_str() == "Held face-down draw")
+            .map(|(entity, _)| entity)
+            .collect();
+        assert_eq!(
+            held.len(),
+            2,
+            "One anonymous body and back survive at the pending choice"
+        );
+        assert!(
+            held.iter()
+                .all(|entity| world.get::<motion::PhysicalCard>(*entity).is_none())
+        );
+        world.resource_mut::<Table>().dirty = true;
+        app.update();
+    }
+    for _ in 0..3 {
+        activate_choice(&mut app, "harm:damage:investigator");
+    }
+    activate_choice(&mut app, "harm:confirm");
+    for _ in 0..100 {
+        if app.world().resource::<Table>().presentation.drawing() {
+            break;
+        }
+        tick(&mut app, 0.1);
+    }
+    assert!(app.world().resource::<Table>().presentation.drawing());
+    let view = app.world().resource::<Table>().view();
+    assert_eq!(
+        view.play.as_ref().unwrap().players[1].discard,
+        discard,
+        "The discard remains until the later recycle beat starts"
+    );
+    assert!(
+        view.play.as_ref().unwrap().pending.held_draws.is_empty(),
+        "The held card is now the one physical face turning over"
+    );
+    finish_presentation(&mut app);
+    assert!(!rendered_text(&mut app).contains("Draw in progress"));
+}
+
+#[test]
+fn shuffle_splits_interleaves_and_settles_before_dealing_and_pauses_in_menu() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("shuffle.json");
+    let mut app = host(path.clone());
+    activate_choice(&mut app, "lead:tony");
+    let saved = std::fs::read(&path).unwrap();
+    let packets = |app: &mut App| -> Vec<Transform> {
+        app.world_mut()
+            .query_filtered::<&Transform, With<shuffle::Piece>>()
+            .iter(app.world())
+            .copied()
+            .collect()
+    };
+    assert!(
+        app.world().resource::<Table>().view().investigators[0]
+            .hand
+            .is_empty()
+    );
+    assert!(
+        packets(&mut app).len() <= 24,
+        "Large decks use bounded anonymous edge groups"
+    );
+    tick(&mut app, 0.4);
+    let split = packets(&mut app);
+    let x = layout::investigator_deck(0).x;
+    assert!(split.iter().any(|at| at.translation.x < x - 0.6));
+    assert!(split.iter().any(|at| at.translation.x > x + 0.6));
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Utilities);
+    app.update();
+    tick(&mut app, 2.);
+    assert_eq!(packets(&mut app), split);
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Dismiss);
+    tick(&mut app, 0.4);
+    assert!(
+        packets(&mut app)
+            .iter()
+            .all(|at| (at.translation.x - x).abs() < 0.6)
+    );
+    tick(&mut app, 0.36);
+    assert!(
+        packets(&mut app)
+            .iter()
+            .all(|at| (at.translation.x - x).abs() < 0.001)
+    );
+    tick(&mut app, 0.15);
+    assert_eq!(
+        app.world().resource::<Table>().view().investigators[0]
+            .hand
+            .len(),
+        1
+    );
+    assert!(packets(&mut app).is_empty());
+    assert_eq!(std::fs::read(path).unwrap(), saved);
+}
+
 fn assert_right_to_left_draw(app: &mut App, id: u16) {
     // card_shape maps the top of either image to -Z and its right edge to +X.
     let back = back_rotation(app, id);
@@ -74,6 +196,7 @@ fn investigator_draw_flips_right_to_left_with_both_faces_upright() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = host(dir.path().join("sideways-draw.json"));
     activate_choice(&mut app, "lead:tony");
+    tick(&mut app, shuffle::DURATION);
     let id = app.world().resource::<Table>().view().investigators[0].hand[0].id;
     assert_right_to_left_draw(&mut app, id);
 }
@@ -103,6 +226,15 @@ fn opening_deal_is_serial_from_actual_decks_and_pauses_without_restarting() {
     activate_choice(&mut app, "lead:jacqueline");
     let committed = continuity::load_session(&path).unwrap();
     let first = committed.observe().investigators[2].hand[0].clone();
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .view()
+            .investigators
+            .iter()
+            .all(|player| player.hand.is_empty())
+    );
+    tick(&mut app, shuffle::DURATION);
     let view = app.world().resource::<Table>().view();
     assert_eq!(
         view.investigators
@@ -381,6 +513,7 @@ fn equal_session_reopen_preserves_an_in_progress_deal() {
     let path = dir.path().join("equal-reopen.json");
     let mut app = host(path.clone());
     activate_choice(&mut app, "lead:tony");
+    tick(&mut app, shuffle::DURATION);
     tick(&mut app, 0.25);
     app.world_mut()
         .resource_mut::<Actions>()

@@ -21,15 +21,18 @@ use std::path::PathBuf;
 
 mod art;
 mod capture;
+mod card_counters;
 mod consequences;
 mod controls;
 mod draws;
+mod enemy_board;
 mod motion;
 mod play;
 mod presentation;
 mod results;
 mod reveal;
 mod scene;
+mod shuffle;
 mod story;
 mod trays;
 mod ui;
@@ -360,13 +363,16 @@ impl Options {
     }
 
     fn configure_diagnostics(&self, app: &mut App) {
-        app.insert_resource(
-            Orbit::new(CameraMode::Jacqueline).with_initial_view(self.initial_view),
-        )
-        .insert_resource(capture::State::new(
-            self.screenshot.clone(),
-            self.quit_after_screenshot,
-        ));
+        let mut orbit =
+            Orbit::new(CameraMode::Jacqueline).with_home(enemy_board::focus(Area::Overview));
+        if let Some(area) = self.initial_view {
+            orbit.focus(enemy_board::focus(area));
+        }
+        app.insert_resource(orbit)
+            .insert_resource(capture::State::new(
+                self.screenshot.clone(),
+                self.quit_after_screenshot,
+            ));
     }
 }
 
@@ -439,7 +445,10 @@ fn install(app: &mut App) {
                 render,
                 controls::render,
                 contextual_feedback,
+                enemy_board::highlight,
                 motion::animate,
+                shuffle::animate,
+                card_counters::follow,
                 trays::animate,
                 world_labels,
                 crate::tabletop_tokens::position_labels,
@@ -601,6 +610,12 @@ fn handle_actions(
                 ) {
                     Ok(draws) => {
                         let table = &mut *table;
+                        let shuffled = table.reduced_motion
+                            && draws.iter().any(|cue| {
+                                cue.batch.steps.iter().any(|step| {
+                                    matches!(step, crate::gathering::DeckStep::Shuffle { .. })
+                                })
+                            });
                         table.presentation.committed(
                             &table.session,
                             &before,
@@ -614,7 +629,11 @@ fn handle_actions(
                         if reveal_focus {
                             orbit.focus(play::framing(&table.view()));
                         }
-                        String::new()
+                        if shuffled {
+                            "Decks shuffled. Reduced motion is on.".into()
+                        } else {
+                            String::new()
+                        }
                     }
                     Err(error) => format!("Decision not committed: {error}"),
                 };
@@ -654,7 +673,7 @@ fn handle_actions(
             }
             Action::Focus(area) => {
                 table.context.dismiss();
-                orbit.focus(layout::focus(area));
+                orbit.focus(enemy_board::focus(area));
                 table.dirty = true;
             }
             Action::Resolve => {
@@ -754,7 +773,7 @@ fn handle_actions(
                         *table = next;
                         consequences.clear();
                         orbit.set_following(false);
-                        orbit.focus(layout::focus(Area::Overview));
+                        orbit.focus(enemy_board::focus(Area::Overview));
                     }
                     Err(error) => {
                         table.notice = format!("Restart failed: {error}");
@@ -790,7 +809,6 @@ fn setup(
 enum Caption<'a> {
     Text(&'a str),
     AssetStatus { title: &'a str, status: &'a str },
-    EnemyGroup(&'a str),
 }
 
 /// The requested Gathering representation. Motion, contextual selection and
@@ -902,13 +920,9 @@ fn card(
         let label_text = match caption {
             Caption::Text(text) => text,
             Caption::AssetStatus { title, .. } => title,
-            Caption::EnemyGroup(_) => spec.title,
         };
         let label = scene::label(commands, context, label_text, at + offset, false);
-        // Preserve the existing text/span treatment while the construction owner
-        // holds the label directly. Asset status is literal text; group summaries
-        // replace the root but retain the title's existing rich-text children.
-        // Correcting that inherited group artifact needs a presentation change.
+        // Keep literal status separate from rich-text card names.
         match caption {
             Caption::Text(_) => {}
             Caption::AssetStatus { status, .. } => {
@@ -916,12 +930,6 @@ fn card(
                 commands.queue(move |world: &mut World| {
                     world.get_mut::<Text>(label).unwrap().0.push_str(&status);
                 });
-            }
-            Caption::EnemyGroup(text) => {
-                commands.entity(label).insert((
-                    Text::new(crate::tabletop::readable_text(text.to_owned())),
-                    AccessibleLabel::new(text.to_owned()),
-                ));
             }
         }
         if let Some(side) = book_side {
@@ -992,7 +1000,7 @@ fn render(
     mut commands: Commands,
     mut table: ResMut<Table>,
     health: Res<RenderHealth>,
-    art: Res<art::Art>,
+    mut art: ResMut<art::Art>,
     images: Res<Assets<Image>>,
     mut previous_ui: Local<(Vec2, [bool; 3])>,
     mut consequences: ResMut<consequences::State>,
@@ -1017,7 +1025,7 @@ fn render(
         size,
         ui::portraits(&art, &images).map(|portrait| portrait.is_some()),
     );
-    let ui_changed = *previous_ui != ui_state;
+    let ui_changed = *previous_ui != ui_state || art.refresh_loaded(&images);
     *previous_ui = ui_state;
     if !table.dirty && !health_changed && !ui_changed {
         return;
@@ -1226,6 +1234,8 @@ fn world_labels(
         Has<layout::TestAreaHeading>,
         Has<layout::ScenarioAreaHeading>,
         Has<crate::tabletop_pieces::CardCaption>,
+        Has<enemy_board::Caption>,
+        Has<enemy_board::PersistentLabel>,
         Option<&layout::ScenarioBookSide>,
         &mut Node,
         &mut Visibility,
@@ -1239,12 +1249,14 @@ fn world_labels(
         test_heading,
         scenario_heading,
         card_caption,
+        enemy_caption,
+        persistent,
         book_side,
         mut node,
         mut visibility,
     ) in &mut labels
     {
-        if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 {
+        if orbit.pose().distance > layout::DETAIL_LABEL_DISTANCE && !label.1 && !persistent {
             *visibility = Visibility::Hidden;
             continue;
         }
@@ -1272,7 +1284,11 @@ fn world_labels(
             camera.0.world_to_viewport(camera.1, anchor).ok()
         };
         if let Some(point) = point {
-            if card_caption
+            if enemy_caption {
+                if let Some(width) = enemy_board::caption_width(camera.0, camera.1, anchor) {
+                    node.width = px(width);
+                }
+            } else if card_caption
                 && let Some(width) =
                     crate::tabletop_pieces::CardCaption::width(camera.0, camera.1, anchor)
             {
