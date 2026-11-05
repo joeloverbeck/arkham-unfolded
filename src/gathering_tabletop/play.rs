@@ -483,20 +483,14 @@ impl Painter<'_, '_, '_> {
         );
     }
 
-    fn card(&mut self, at: Vec3, title: &str, code: &str, color: Color, source: Source) -> Entity {
-        let entity = card(
+    fn card(&mut self, spec: CardSpec<'_>) -> Entity {
+        card(
             self.commands,
             self.meshes,
             self.materials,
             self.context,
-            at,
-            title,
-            code,
-            false,
-            color,
-        );
-        self.context.bind(self.commands, entity, source);
-        entity
+            spec,
+        )
     }
 
     fn selectable(&mut self, entity: Entity, selection: controls::Selection) {
@@ -667,25 +661,6 @@ pub(super) fn render(
                 || asset.card.code.clone(),
                 |_| format!("backpack:{}", asset.card.id),
             );
-            let entity = paint.card(
-                layout::investigator_asset(index, slot),
-                &asset.card.title,
-                &inspection,
-                PAPER,
-                attached.map_or(Source::Card(asset.card.id), |_| {
-                    Source::Backpack(asset.card.id)
-                }),
-            );
-            paint
-                .commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(asset.card.id));
-            if !asset.ready {
-                paint.commands.entity(entity).insert(
-                    Transform::from_translation(layout::investigator_asset(index, slot))
-                        .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)),
-                );
-            }
             let mut details = Vec::new();
             if asset.card.code == "06010" {
                 details.push(format!("{} bounties", asset.uses));
@@ -701,44 +676,52 @@ pub(super) fn render(
             if let Some(attached) = attached.filter(|attached| !attached.cards.is_empty()) {
                 details.push(format!("{} attached", attached.cards.len()));
             }
-            if !details.is_empty() {
-                // Continue the card's one caption instead of placing a second
-                // overlapping status caption over the settled Party layout.
-                paint.commands.queue(move |world: &mut World| {
-                    let mut labels = world.query::<(&motion::CardLabel, &mut Text)>();
-                    for (owner, mut text) in labels.iter_mut(world) {
-                        if owner.0 == entity {
-                            text.0.push_str(&format!("\n{}", details.join(" · ")));
-                        }
-                    }
+            let status = details.join(" · ");
+            let caption = if status.is_empty() {
+                Caption::Text(&asset.card.title)
+            } else {
+                Caption::AssetStatus {
+                    title: &asset.card.title,
+                    status: &status,
+                }
+            };
+            let pose = Transform::from_translation(layout::investigator_asset(index, slot))
+                .with_rotation(if asset.ready {
+                    Quat::IDENTITY
+                } else {
+                    Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
                 });
-            }
+            paint.card(CardSpec {
+                source: Some(attached.map_or(Source::Card(asset.card.id), |_| {
+                    Source::Backpack(asset.card.id)
+                })),
+                physical_id: Some(asset.card.id),
+                pose,
+                caption: Some(caption),
+                ..CardSpec::new(pose.translation, &asset.card.title, &inspection)
+            });
         }
         for (slot, threat) in player.threats.iter().enumerate() {
-            let entity = paint.card(
-                layout::investigator_threat(index, slot),
-                &threat.title,
-                &threat.code,
-                PAPER,
-                Source::Card(threat.id),
-            );
-            paint
-                .commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(threat.id));
+            paint.card(CardSpec {
+                source: Some(Source::Card(threat.id)),
+                physical_id: Some(threat.id),
+                ..CardSpec::new(
+                    layout::investigator_threat(index, slot),
+                    &threat.title,
+                    &threat.code,
+                )
+            });
         }
         if let Some(top) = player.discard.last() {
-            let entity = paint.card(
-                layout::investigator_discard(index),
-                &format!("{} cards\n{}", player.discard.len(), top.title),
-                &format!("discard:{}", player.investigator.id()),
-                PAPER,
-                Source::Discard(player.investigator),
-            );
-            paint
-                .commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(top.id));
+            paint.card(CardSpec {
+                source: Some(Source::Discard(player.investigator)),
+                physical_id: Some(top.id),
+                ..CardSpec::new(
+                    layout::investigator_discard(index),
+                    &format!("{} cards\n{}", player.discard.len(), top.title),
+                    &format!("discard:{}", player.investigator.id()),
+                )
+            });
         } else {
             paint.caption(layout::investigator_discard(index), "0 cards".into());
         }
@@ -753,17 +736,15 @@ pub(super) fn render(
             false,
         );
         if let Some(top) = player.removed.last() {
-            let entity = paint.card(
-                layout::investigator_discard(index) + Vec3::new(0., 0., 3.),
-                &format!("Removed · {} cards", player.removed.len()),
-                &format!("removed:{}", player.investigator.id()),
-                MUTED,
-                Source::Removed(player.investigator),
-            );
-            paint
-                .commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(top.id));
+            paint.card(CardSpec {
+                source: Some(Source::Removed(player.investigator)),
+                physical_id: Some(top.id),
+                ..CardSpec::new(
+                    layout::investigator_discard(index) + Vec3::new(0., 0., 3.),
+                    &format!("Removed · {} cards", player.removed.len()),
+                    &format!("removed:{}", player.investigator.id()),
+                )
+            });
         }
     }
     for (side, code, label, source) in [
@@ -781,16 +762,20 @@ pub(super) fn render(
         ),
     ] {
         let pose = layout::scenario_book_card_transform(side, Vec2::new(1.35, 1.89));
-        let entity = paint.card(pose.translation, &label, &code, PAPER, source);
-        paint.commands.entity(entity).insert(pose);
+        paint.card(CardSpec {
+            source: Some(source),
+            pose,
+            ..CardSpec::new(pose.translation, &label, &code)
+        });
     }
-    paint.card(
-        layout::SCENARIO_REFERENCE,
-        "The Gathering · Standard",
-        "01104",
-        PAPER,
-        Source::ScenarioReference,
-    );
+    paint.card(CardSpec {
+        source: Some(Source::ScenarioReference),
+        ..CardSpec::new(
+            layout::SCENARIO_REFERENCE,
+            "The Gathering · Standard",
+            "01104",
+        )
+    });
     paint.chaos_area(play.bag_count, Some(play.curse_pool));
     super::scene::deck(
         paint.commands,
@@ -803,17 +788,15 @@ pub(super) fn render(
         true,
     );
     if let Some(top) = play.encounter_discard.last() {
-        let entity = paint.card(
-            layout::ENCOUNTER_DISCARD,
-            &format!("{} cards\n{}", play.encounter_discard.len(), top.title),
-            "encounter-discard",
-            PAPER,
-            Source::EncounterDiscard,
-        );
-        paint
-            .commands
-            .entity(entity)
-            .insert(motion::PhysicalCard(top.id));
+        paint.card(CardSpec {
+            source: Some(Source::EncounterDiscard),
+            physical_id: Some(top.id),
+            ..CardSpec::new(
+                layout::ENCOUNTER_DISCARD,
+                &format!("{} cards\n{}", play.encounter_discard.len(), top.title),
+                "encounter-discard",
+            )
+        });
     } else {
         paint.caption(layout::ENCOUNTER_DISCARD, "0 cards".into());
     }
@@ -821,40 +804,30 @@ pub(super) fn render(
     let points: u8 = victory.iter().map(|card| card.points).sum();
     let victory_caption = format!("Victory display · {} cards · {points} VP", victory.len());
     if let Some(top) = victory.last() {
-        let entity = paint.card(
-            layout::VICTORY_DISPLAY,
-            &victory_caption,
-            "victory",
-            PAPER,
-            Source::Victory,
-        );
-        if let Some(id) = top.physical_id {
-            paint
-                .commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(id));
-        }
         // The footprint supplies the pile name. Keep its changing count and
         // points compact instead of wrapping a whole sentence to a card's width.
-        super::scene::replace_caption(paint.commands, entity, None);
+        paint.card(CardSpec {
+            source: Some(Source::Victory),
+            physical_id: top.physical_id,
+            caption: None,
+            ..CardSpec::new(layout::VICTORY_DISPLAY, &victory_caption, "victory")
+        });
     }
     paint.caption(
         layout::VICTORY_DISPLAY,
         format!("{} cards\n{points} VP", victory.len()),
     );
     if let Some(top) = play.scenario.removed.last() {
-        let entity = paint.card(
-            layout::SCENARIO_REMOVED,
-            &format!("Scenario removed · {} cards", play.scenario.removed.len()),
-            "scenario-removed",
-            MUTED,
-            Source::ScenarioRemoved,
-        );
-        paint
-            .commands
-            .entity(entity)
-            .insert(motion::PhysicalCard(top.id));
-        super::scene::replace_caption(paint.commands, entity, None);
+        paint.card(CardSpec {
+            source: Some(Source::ScenarioRemoved),
+            physical_id: Some(top.id),
+            caption: None,
+            ..CardSpec::new(
+                layout::SCENARIO_REMOVED,
+                &format!("Scenario removed · {} cards", play.scenario.removed.len()),
+                "scenario-removed",
+            )
+        });
         paint.caption(
             layout::SCENARIO_REMOVED,
             format!("Removed\n{} cards", play.scenario.removed.len()),
@@ -887,13 +860,10 @@ pub(super) fn render(
         } else {
             location_name(&room.code).to_owned()
         };
-        paint.card(
-            at,
-            &title,
-            &room.code,
-            PAPER,
-            Source::Location(room.code.clone()),
-        );
+        paint.card(CardSpec {
+            source: Some(Source::Location(room.code.clone())),
+            ..CardSpec::new(at, &title, &room.code)
+        });
         paint.count(
             layout::location_clue(at),
             crate::tabletop_counters::CounterKind::Clue,
@@ -907,17 +877,11 @@ pub(super) fn render(
             paint.standee(at, slot, index, player.investigator);
         }
         if let Some(fog) = &room.fog {
-            let entity = paint.card(
-                at + Vec3::new(0., 0., -2.5),
-                &fog.title,
-                &fog.code,
-                PAPER,
-                Source::Card(fog.id),
-            );
-            paint
-                .commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(fog.id));
+            paint.card(CardSpec {
+                source: Some(Source::Card(fog.id)),
+                physical_id: Some(fog.id),
+                ..CardSpec::new(at + Vec3::new(0., 0., -2.5), &fog.title, &fog.code)
+            });
         }
     }
     for (slot, enemy) in play.scenario.enemies.iter().enumerate() {
@@ -931,55 +895,57 @@ pub(super) fn render(
             .filter(|other| other.engaged.is_none() && other.location == enemy.location)
             .collect();
         let grouped = enemy.engaged.is_none() && group.len() > 1;
-        let entity = paint.card(
-            enemy_position(play, slot),
-            &format!(
-                "{}\n{} · {}\nDamage {} · Doom {} · Bounties {}\n{}",
-                enemy.card.title,
-                location_name(&enemy.location),
-                if enemy.exhausted {
-                    "Exhausted"
-                } else {
-                    "Ready"
-                },
-                enemy.damage,
-                enemy.doom,
-                enemy.bounties,
-                enemy.engaged.map_or("Unengaged".into(), |owner| format!(
-                    "Engaged with {}",
-                    owner.name()
-                ))
-            ),
-            &enemy.card.code,
-            PAPER,
-            Source::Card(enemy.card.id),
+        let title = format!(
+            "{}\n{} · {}\nDamage {} · Doom {} · Bounties {}\n{}",
+            enemy.card.title,
+            location_name(&enemy.location),
+            if enemy.exhausted {
+                "Exhausted"
+            } else {
+                "Ready"
+            },
+            enemy.damage,
+            enemy.doom,
+            enemy.bounties,
+            enemy.engaged.map_or("Unengaged".into(), |owner| format!(
+                "Engaged with {}",
+                owner.name()
+            ))
         );
-        paint
-            .commands
-            .entity(entity)
-            .insert(motion::PhysicalCard(enemy.card.id));
-        if enemy.exhausted && enemy.engaged.is_some() {
-            paint.commands.entity(entity).insert(
-                Transform::from_translation(enemy_position(play, slot))
-                    .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)),
-            );
-        }
-        if grouped {
+        let caption = if grouped {
             let top = group.last().unwrap().card.id == enemy.card.id;
             let count = group.len();
             let title = enemy.card.title.clone();
             let exhausted = enemy.exhausted;
-            super::scene::replace_caption(
-                paint.commands,
-                entity,
-                top.then(|| {
-                    format!(
-                        "{title}\n{count} enemies{}",
-                        if exhausted { " · Top exhausted" } else { "" }
-                    )
-                }),
-            );
-        }
+            top.then(|| {
+                format!(
+                    "{title}\n{count} enemies{}",
+                    if exhausted { " · Top exhausted" } else { "" }
+                )
+            })
+        } else {
+            Some(title.clone())
+        };
+        let pose = Transform::from_translation(enemy_position(play, slot)).with_rotation(
+            if enemy.exhausted && enemy.engaged.is_some() {
+                Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
+            } else {
+                Quat::IDENTITY
+            },
+        );
+        paint.card(CardSpec {
+            source: Some(Source::Card(enemy.card.id)),
+            physical_id: Some(enemy.card.id),
+            pose,
+            caption: caption.as_deref().map(|text| {
+                if grouped {
+                    Caption::EnemyGroup(text)
+                } else {
+                    Caption::Text(text)
+                }
+            }),
+            ..CardSpec::new(pose.translation, &title, &enemy.card.code)
+        });
     }
     if play.scenario.lita_in_play
         && !play
@@ -987,13 +953,14 @@ pub(super) fn render(
             .iter()
             .any(|player| player.assets.iter().any(|asset| asset.card.code == "01117"))
     {
-        paint.card(
-            layout::SCENARIO_MAP_CENTER + Vec3::new(3., 0., 4.),
-            "Lita Chantler · Parlor",
-            "01117",
-            PAPER,
-            Source::Lita,
-        );
+        paint.card(CardSpec {
+            source: Some(Source::Lita),
+            ..CardSpec::new(
+                layout::SCENARIO_MAP_CENTER + Vec3::new(3., 0., 4.),
+                "Lita Chantler · Parlor",
+                "01117",
+            )
+        });
     }
     // All public cards awaiting a decision share the same spaced rows. Searches
     // can leave their event resolving while the revealed choices are displayed.
@@ -1023,86 +990,83 @@ pub(super) fn render(
                 .as_ref()
                 .is_some_and(|pending| pending.card.id == source.id)
         {
-            paint.card(
-                layout::test_source(),
-                &source.title,
-                &source.code,
-                PAPER,
-                Source::Card(source.id),
-            );
+            paint.card(CardSpec {
+                source: Some(Source::Card(source.id)),
+                ..CardSpec::new(layout::test_source(), &source.title, &source.code)
+            });
         }
         for (slot, committed) in test.committed.iter().enumerate() {
-            let entity = paint.card(
-                layout::test_commitment(public_count, slot),
-                &format!(
-                    "{}\n{}'s commitment",
-                    committed.card.title,
-                    committed.owner.name()
-                ),
-                &committed.card.code,
-                PAPER,
-                Source::Card(committed.card.id),
-            );
-            paint
-                .commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(committed.card.id));
+            paint.card(CardSpec {
+                source: Some(Source::Card(committed.card.id)),
+                physical_id: Some(committed.card.id),
+                ..CardSpec::new(
+                    layout::test_commitment(public_count, slot),
+                    &format!(
+                        "{}\n{}'s commitment",
+                        committed.card.title,
+                        committed.owner.name()
+                    ),
+                    &committed.card.code,
+                )
+            });
         }
     }
     if let Some(pending) = &play.pending_revelation {
-        let entity = paint.card(
-            layout::test_source(),
-            &format!(
-                "{}\nDrawn by {}",
-                pending.card.title,
-                pending.drawn_by.name()
-            ),
-            &pending.card.code,
-            PAPER,
-            Source::Card(pending.card.id),
-        );
-        paint
-            .commands
-            .entity(entity)
-            .insert(motion::PhysicalCard(pending.card.id));
+        paint.card(CardSpec {
+            source: Some(Source::Card(pending.card.id)),
+            physical_id: Some(pending.card.id),
+            ..CardSpec::new(
+                layout::test_source(),
+                &format!(
+                    "{}\nDrawn by {}",
+                    pending.card.title,
+                    pending.drawn_by.name()
+                ),
+                &pending.card.code,
+            )
+        });
     }
     if !play.searched_encounter.is_empty() {
-        paint.card(
-            layout::test_source(),
-            &format!("Encounter search · {} cards", play.searched_encounter.len()),
-            "searched-encounter",
-            PAPER,
-            Source::SearchEncounter,
-        );
+        paint.card(CardSpec {
+            source: Some(Source::SearchEncounter),
+            ..CardSpec::new(
+                layout::test_source(),
+                &format!("Encounter search · {} cards", play.searched_encounter.len()),
+                "searched-encounter",
+            )
+        });
     }
     for (slot, searched) in play.searched_encounter.iter().enumerate() {
-        paint.card(
-            layout::test_commitment(public_count, committed_count + slot),
-            &searched.title,
-            &searched.code,
-            PAPER,
-            Source::Card(searched.id),
-        );
-    }
-    if !play.searched_player.is_empty() {
-        paint.card(
-            layout::test_source(),
-            &format!(
-                "Backpack search · {} cards\nInspect revealed cards",
-                play.searched_player.len()
-            ),
-            "searched-player",
-            PAPER,
-            Source::SearchPlayer,
-        );
-        for (slot, searched) in play.searched_player.iter().enumerate() {
-            paint.card(
-                layout::test_commitment(public_count, player_search_offset + slot),
+        paint.card(CardSpec {
+            source: Some(Source::Card(searched.id)),
+            ..CardSpec::new(
+                layout::test_commitment(public_count, committed_count + slot),
                 &searched.title,
                 &searched.code,
-                PAPER,
-                Source::Card(searched.id),
-            );
+            )
+        });
+    }
+    if !play.searched_player.is_empty() {
+        paint.card(CardSpec {
+            source: Some(Source::SearchPlayer),
+            ..CardSpec::new(
+                layout::test_source(),
+                &format!(
+                    "Backpack search · {} cards\nInspect revealed cards",
+                    play.searched_player.len()
+                ),
+                "searched-player",
+            )
+        });
+        for (slot, searched) in play.searched_player.iter().enumerate() {
+            paint.card(CardSpec {
+                source: Some(Source::Card(searched.id)),
+                ..CardSpec::new(
+                    layout::test_commitment(public_count, player_search_offset + slot),
+                    &searched.title,
+                    &searched.code,
+                )
+            });
         }
     }
     if !play.pending.resolving_cards.is_empty() {
@@ -1117,36 +1081,36 @@ pub(super) fn render(
                 false,
             );
         } else {
-            paint.card(
-                resolving_position(),
-                &format!("Resolving cards · {}", play.pending.resolving_cards.len()),
-                "resolving-cards",
-                PAPER,
-                Source::Resolving,
-            );
+            paint.card(CardSpec {
+                source: Some(Source::Resolving),
+                ..CardSpec::new(
+                    resolving_position(),
+                    &format!("Resolving cards · {}", play.pending.resolving_cards.len()),
+                    "resolving-cards",
+                )
+            });
         }
         for (slot, resolving) in resolving_cards.iter().enumerate() {
-            let entity = paint.card(
-                layout::test_commitment(public_count, resolving_offset + slot),
-                &resolving.title,
-                &resolving.code,
-                PAPER,
-                Source::Card(resolving.id),
-            );
-            paint
-                .commands
-                .entity(entity)
-                .insert(motion::PhysicalCard(resolving.id));
+            paint.card(CardSpec {
+                source: Some(Source::Card(resolving.id)),
+                physical_id: Some(resolving.id),
+                ..CardSpec::new(
+                    layout::test_commitment(public_count, resolving_offset + slot),
+                    &resolving.title,
+                    &resolving.code,
+                )
+            });
         }
     }
     if play.pending.discard.is_some() {
-        paint.card(
-            layout::test_source() + Vec3::new(5., 0., 0.),
-            "Pending discard order",
-            "pending-discard",
-            PAPER,
-            Source::PendingDiscard,
-        );
+        paint.card(CardSpec {
+            source: Some(Source::PendingDiscard),
+            ..CardSpec::new(
+                layout::test_source() + Vec3::new(5., 0., 0.),
+                "Pending discard order",
+                "pending-discard",
+            )
+        });
     }
     if let Some(tokens) = &play.tokens {
         for (slot, token) in tokens.revealed.iter().enumerate() {
@@ -1202,22 +1166,23 @@ pub(super) fn render(
         }
     }
     if let Some(sealed) = &play.premonition {
-        paint.card(
-            layout::test_bag() + Vec3::new(0., 0., 2.5),
-            &format!(
-                "Premonition\n{} · Sealed\n{}",
-                sealed.controller.name(),
-                sealed
-                    .faces
-                    .iter()
-                    .map(|face| face.label())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            &sealed.card.code,
-            PAPER,
-            Source::Card(sealed.card.id),
-        );
+        paint.card(CardSpec {
+            source: Some(Source::Card(sealed.card.id)),
+            ..CardSpec::new(
+                layout::test_bag() + Vec3::new(0., 0., 2.5),
+                &format!(
+                    "Premonition\n{} · Sealed\n{}",
+                    sealed.controller.name(),
+                    sealed
+                        .faces
+                        .iter()
+                        .map(|face| face.label())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                &sealed.card.code,
+            )
+        });
     }
 }
 

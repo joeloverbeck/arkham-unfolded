@@ -772,40 +772,70 @@ fn setup(
     commands.spawn((Camera3d::default(), Transform::default(), MainCamera));
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Existing caption roles keep their distinct literal and rich-text treatment.
+enum Caption<'a> {
+    Text(&'a str),
+    AssetStatus { title: &'a str, status: &'a str },
+    EnemyGroup(&'a str),
+}
+
+/// The requested Gathering representation. Motion, contextual selection and
+/// inspection identities are independent: a preview can select a physical card
+/// without being that card, and a mulligan card can move without offering actions.
+struct CardSpec<'a> {
+    title: &'a str,
+    inspect_code: &'a str,
+    pose: Transform,
+    caption: Option<Caption<'a>>,
+    source: Option<controls::Source>,
+    physical_id: Option<u16>,
+    selected: bool,
+}
+
+impl<'a> CardSpec<'a> {
+    fn new(at: Vec3, title: &'a str, inspect_code: &'a str) -> Self {
+        let landscape = matches!(inspect_code, "06003" | "06005" | "60401");
+        Self {
+            title,
+            inspect_code,
+            pose: Transform::from_translation(at).with_rotation(if landscape {
+                Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
+            } else {
+                Quat::IDENTITY
+            }),
+            // Investigators are named by their area heading.
+            caption: (!landscape).then_some(Caption::Text(title)),
+            source: None,
+            physical_id: None,
+            selected: false,
+        }
+    }
+}
+
 fn card(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     context: &CardRender<'_>,
-    at: Vec3,
-    title: &str,
-    code: &str,
-    selected: bool,
-    _color: Color,
+    spec: CardSpec<'_>,
 ) -> Entity {
-    let landscape = matches!(code, "06003" | "06005" | "60401");
-    let transform = Transform::from_translation(at).with_rotation(if landscape {
-        Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
-    } else {
-        Quat::IDENTITY
-    });
+    let at = spec.pose.translation;
     let entity = crate::tabletop_pieces::card(
         commands,
         meshes,
         materials,
-        context.image(code),
-        transform,
-        title,
+        context.image(spec.inspect_code),
+        spec.pose,
+        spec.title,
     );
-    let title = title.to_owned();
-    let code = code.to_owned();
+    let title = spec.title.to_owned();
+    let code = spec.inspect_code.to_owned();
     commands
         .entity(entity)
         .insert((
             ScenePiece,
             CardFeedback {
-                pending_choice: selected,
+                pending_choice: spec.selected,
                 symbol_font: context.art.symbol_font().clone(),
                 ..default()
             },
@@ -834,9 +864,15 @@ fn card(
                 }
             }
         });
+    if let Some(source) = spec.source {
+        context.bind(commands, entity, source);
+    }
+    if let Some(id) = spec.physical_id {
+        commands.entity(entity).insert(motion::PhysicalCard(id));
+    }
     // Party names investigators in the area heading; ordinary card captions sit
     // below the face and move with it without exposing physical copy IDs.
-    if !landscape {
+    if let Some(caption) = spec.caption {
         let book_side = story::StoryCard::from_code(&code).map(|card| card.side());
         let offset = book_side.map_or(Vec3::Z * 1.1, |side| {
             let edge = crate::tabletop_pieces::CARD_LENGTH / 2. + 0.4;
@@ -849,7 +885,31 @@ fn card(
                 0.,
             )
         });
-        let label = scene::label(commands, context, title, at + offset, false);
+        let label_text = match caption {
+            Caption::Text(text) => text,
+            Caption::AssetStatus { title, .. } => title,
+            Caption::EnemyGroup(_) => spec.title,
+        };
+        let label = scene::label(commands, context, label_text, at + offset, false);
+        // Preserve the existing text/span treatment while the construction owner
+        // holds the label directly. Asset status is literal text; group summaries
+        // replace the root but retain the title's existing rich-text children.
+        // Correcting that inherited group artifact needs a presentation change.
+        match caption {
+            Caption::Text(_) => {}
+            Caption::AssetStatus { status, .. } => {
+                let status = format!("\n{status}");
+                commands.queue(move |world: &mut World| {
+                    world.get_mut::<Text>(label).unwrap().0.push_str(&status);
+                });
+            }
+            Caption::EnemyGroup(text) => {
+                commands.entity(label).insert((
+                    Text::new(crate::tabletop::readable_text(text.to_owned())),
+                    AccessibleLabel::new(text.to_owned()),
+                ));
+            }
+        }
         if let Some(side) = book_side {
             commands.entity(label).insert((
                 side,
