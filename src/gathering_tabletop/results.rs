@@ -101,63 +101,6 @@ fn result(test: &TestView) -> Option<TestResult> {
     })
 }
 
-/// These windows have an explicit rules-level decline. Other choices (such as
-/// assigning damage) remain in their existing consequence flow.
-pub(super) fn opportunities(view: &Observation) -> bool {
-    view.choices.iter().any(|choice| {
-        is_decline(choice)
-            // Small Favor can also defeat an enemy, without a skill test.
-            // Keep that existing non-test decision out of the result panel.
-            && (choice.id != "defeat:done"
-                || view.play.as_ref().is_some_and(|play| play.test.is_some()))
-    })
-}
-
-fn opportunity_label(choice: &crate::Choice, view: &Observation) -> String {
-    if choice.id == "defeat:done" {
-        return if view
-            .choices
-            .iter()
-            .any(|choice| choice.id.starts_with("defeat:bleeds:"))
-        {
-            "Decline If it bleeds...".into()
-        } else {
-            "Finish enemy-defeat reactions".into()
-        };
-    }
-    if let Some(location) = choice
-        .id
-        .strip_prefix("spell-move:")
-        .filter(|value| *value != "decline")
-    {
-        return format!(
-            "Move to {} (Mists of R'lyeh)",
-            play::location_name(location)
-        );
-    }
-    if let Some(owner) = choice.id.strip_prefix("tony:quick-thinking:") {
-        let name = match owner {
-            "tony" => "Tony",
-            "patrice" => "Patrice",
-            "jacqueline" => "Jacqueline",
-            _ => owner,
-        };
-        return format!("Take {name}'s extra action (Quick Thinking)");
-    }
-    if matches!(choice.id.as_str(), "after-test:pass" | "success:pass") {
-        let uses: Vec<_> = view
-            .choices
-            .iter()
-            .filter(|other| other.id != choice.id && other.id != "undo")
-            .collect();
-        if uses.len() == 1 && uses[0].id.starts_with("tony:quick-thinking:") {
-            return "Decline Quick Thinking".into();
-        }
-        return "Decline all listed effects".into();
-    }
-    controls::display_history(view, &choice.label)
-}
-
 pub(super) fn render(
     commands: &mut Commands,
     table: &Table,
@@ -166,6 +109,10 @@ pub(super) fn render(
     size: Vec2,
 ) {
     let pending = table.presentation.result();
+    let opportunities = controls::result_opportunities(view);
+    let uses = opportunities
+        .as_ref()
+        .map_or_else(Vec::new, |offered| offered.uses());
     let current = view.play.as_ref().and_then(|play| play.test.as_ref());
     let provisional = current.is_some_and(|test| !test.resolved);
     let report = pending
@@ -234,16 +181,11 @@ pub(super) fn render(
                     ))
                     .observe(screen::scroll_panel)
                     .with_children(|options| {
-                        for (index, choice) in view
-                            .choices
-                            .iter()
-                            .filter(|choice| choice.id != "undo" && !is_decline(choice))
-                            .enumerate()
-                        {
+                        for (index, choice) in uses.iter().enumerate() {
                             let button = ui::button(
                                 art,
                                 options,
-                                &opportunity_label(choice, view),
+                                &choice.label,
                                 Action::ResultChoice(table.epoch, view.revision, choice.id.clone()),
                             );
                             if index == 0 {
@@ -261,22 +203,16 @@ pub(super) fn render(
                         Action::ContinueResult(table.epoch),
                     ))
                 } else {
-                    view.choices
-                        .iter()
-                        .find(|choice| is_decline(choice))
-                        .and_then(|choice| {
-                            let button = ui::control(
-                                art,
-                                row,
-                                &opportunity_label(choice, view),
-                                Action::ResultChoice(table.epoch, view.revision, choice.id.clone()),
-                            );
-                            (!view
-                                .choices
-                                .iter()
-                                .any(|other| other.id != "undo" && !is_decline(other)))
-                            .then_some(button)
-                        })
+                    opportunities.as_ref().and_then(|offered| {
+                        let choice = offered.decline();
+                        let button = ui::control(
+                            art,
+                            row,
+                            &choice.label,
+                            Action::ResultChoice(table.epoch, view.revision, choice.id.clone()),
+                        );
+                        uses.is_empty().then_some(button)
+                    })
                 };
                 if let Some(first) = first {
                     row.commands().entity(first).insert(AutoFocus);
@@ -287,19 +223,6 @@ pub(super) fn render(
             }
         },
     );
-}
-
-fn is_decline(choice: &crate::Choice) -> bool {
-    matches!(
-        choice.id.as_str(),
-        "after-test:pass"
-            | "success:pass"
-            | "lucky:decline"
-            | "patrice-shuffle:decline"
-            | "spell-move:decline"
-            | "lita:decline-damage"
-            | "defeat:done"
-    )
 }
 
 fn outcome(report: &TestResult) -> String {
