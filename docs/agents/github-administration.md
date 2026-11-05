@@ -34,6 +34,18 @@ If repeated observations show no progress, and before reporting publication bloc
 
 Retain the local UTC observation time and the returned status timestamps. For a stalled or contradictory response, `gh api --include` also exposes the HTTP `Date` and request ID; save that diagnostic output locally and keep routine polling compact. If the observations disagree, report the disagreement and refresh the affected records before deciding whether the PR can merge. A service incident is supporting context, not evidence that this particular PR is blocked. Preserve protection and the exact-head check when the uncertainty cannot be resolved.
 
+## Merge an accepted PR
+
+After the exact changes have been reviewed, accepted and authorized for publication, use the repository's Rust helper with the full accepted head SHA and reviewed `main` tip:
+
+```sh
+scripts/tools merge-reviewed --pr <number> --head <accepted-head-sha> --base <reviewed-main-sha>
+```
+
+The helper requires an open, non-draft PR targeting `main`, matching head and base, `CLEAN` merge state, and exactly one successful, completed `Rust checks` result from GitHub Actions app `15368` on that head. It reads all [check-run pages](https://docs.github.com/en/rest/checks/runs#list-check-runs-for-a-git-reference) using the API's `latest` filter, rejects incomplete or ambiguous responses, and refreshes the PR after checking CI. Only then does it invoke [`gh pr merge --merge --match-head-commit`](https://cli.github.com/manual/gh_pr_merge), followed by a readback of the merged head and merge commit. Every `gh` call has a 30-second limit; prerequisite errors prevent merge, and merge is never retried automatically.
+
+This command enforces the mechanical prerequisites; it does not grant acceptance or publication authority. GitHub's strict branch protection remains the final gate for changes racing the last read: `--match-head-commit` binds the head, but GitHub CLI supplies no atomic expected-base argument. A failed merge or readback requires inspecting the PR before another attempt. After a confirmed merge, follow [the checkout synchronization procedure](issue-tracker.md#conventions).
+
 ## Inspect before changing settings
 
 Follow the target verification and write/readback conventions in [issue-tracker.md](issue-tracker.md). These commands read state:

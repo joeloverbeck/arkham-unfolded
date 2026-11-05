@@ -1,4 +1,9 @@
 //! Player-visible pending consequences, projected from the runtime's typed frames.
+//!
+//! `observe` is the normal projection. `draws::advance` and `tokens::resume`
+//! also supplement `PendingView` for captured views while their continuation
+//! is detached from `Game`, then call `Game::capture_public_view`. Changes to
+//! resolving cards, ownership or test routing must cover those producers too.
 
 use super::{
     CardView, Investigator,

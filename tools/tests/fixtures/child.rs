@@ -1,4 +1,5 @@
 use std::{env, fs, io::Write, process::{Command, ExitCode}, thread, time::Duration};
+mod github;
 
 fn main() -> ExitCode {
     let args: Vec<_> = env::args_os().skip(1).collect();
@@ -22,6 +23,7 @@ fn main() -> ExitCode {
     }
     let program = env::args_os().next().unwrap();
     let name = std::path::Path::new(&program).file_name().unwrap();
+    if name == "gh" { return github::run(&args); }
     // Substitute only the systemd boundary; execute the real check launchers.
     // Effective resource enforcement is verified separately on the actual host.
     if name == "systemd-run" {

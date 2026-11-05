@@ -33,6 +33,93 @@ fn metadata(output: &Path) -> Value {
 }
 
 #[test]
+fn nested_dev_check_is_rejected_before_spawning_with_the_correct_command() {
+    let root = tempfile::tempdir().unwrap();
+    let scripts = root.path().join("scripts");
+    fs::create_dir(&scripts).unwrap();
+    fs::create_dir(root.path().join("tools")).unwrap();
+    for name in ["dev", "check"] {
+        fs::copy(support::fixture().join("child"), scripts.join(name)).unwrap();
+    }
+    for (case, cwd, dev, check) in [
+        (
+            "relative",
+            ".",
+            PathBuf::from("scripts/dev"),
+            PathBuf::from("scripts/check"),
+        ),
+        ("absolute", ".", scripts.join("dev"), scripts.join("check")),
+        (
+            "dot",
+            ".",
+            PathBuf::from("./scripts/dev"),
+            PathBuf::from("./scripts/check"),
+        ),
+        (
+            "from-subdirectory",
+            "tools",
+            PathBuf::from("../scripts/dev"),
+            PathBuf::from("scripts/check"),
+        ),
+    ] {
+        let output = root.path().join(case);
+        let trace = root.path().join(format!("{case}.trace"));
+        let result = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .current_dir(root.path().join(cwd))
+            .args(["record-check", "--output-dir"])
+            .arg(&output)
+            .arg("--")
+            .args([dev, check])
+            .env("ARKHAM_FIXTURE_CHECK", "1")
+            .env("ARKHAM_FIXTURE_TRACE", &trace)
+            .output()
+            .unwrap();
+        assert!(!result.status.success(), "{case}: {result:?}");
+        let error = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            error.contains("scripts/check already runs scripts/dev"),
+            "{error}"
+        );
+        assert!(error.contains("-- scripts/check"), "{error}");
+        assert!(!trace.exists(), "the rejected command must never start");
+        assert!(
+            !output.exists(),
+            "argument rejection must not claim a check run"
+        );
+    }
+}
+
+#[test]
+fn check_alone_and_dev_with_another_command_still_run() {
+    let root = tempfile::tempdir().unwrap();
+    let scripts = root.path().join("scripts");
+    fs::create_dir(&scripts).unwrap();
+    for name in ["dev", "check"] {
+        fs::copy(support::fixture().join("child"), scripts.join(name)).unwrap();
+    }
+    for (name, command) in [
+        ("check", vec!["scripts/check"]),
+        ("dev", vec!["scripts/dev", "cargo", "test"]),
+    ] {
+        let output = root.path().join(name);
+        let trace = root.path().join(format!("{name}.trace"));
+        let result = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .current_dir(root.path())
+            .args(["record-check", "--output-dir"])
+            .arg(&output)
+            .arg("--")
+            .args(command)
+            .env("ARKHAM_FIXTURE_CHECK", "1")
+            .env("ARKHAM_FIXTURE_TRACE", &trace)
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "{result:?}");
+        assert!(trace.exists());
+        assert_eq!(metadata(&output)["exit_code"], 0);
+    }
+}
+
+#[test]
 fn optional_resource_capture_keeps_measurements_and_original_failure_status() {
     let root = tempfile::tempdir().unwrap();
     for code in [0, 42] {
