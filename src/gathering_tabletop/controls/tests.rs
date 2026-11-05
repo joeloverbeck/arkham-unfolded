@@ -94,6 +94,74 @@ fn unknown_choices_remain_explicit_and_are_never_guessed_from_the_label() {
     assert_eq!(pending_choices(&view)[0].id, "future-rule:06003");
 }
 
+#[test]
+fn result_opportunities_preserve_metadata_and_select_the_first_recognized_decline() {
+    let mut view = Session::with_seed(19).observe();
+    view.choices = vec![
+        Choice {
+            id: "defeat:done".into(),
+            label: "Finish reactions".into(),
+            cancel_faces: vec![crate::TokenFace::Skull],
+        },
+        Choice {
+            id: "tony:quick-thinking:jacqueline".into(),
+            label: "Original Quick Thinking wording".into(),
+            cancel_faces: vec![crate::TokenFace::AutoFail],
+        },
+        Choice {
+            id: "lucky:decline".into(),
+            label: "Decline Lucky!".into(),
+            cancel_faces: vec![],
+        },
+        Choice {
+            id: "future:effect".into(),
+            label: "An unrecognized effect".into(),
+            cancel_faces: vec![crate::TokenFace::ElderSign],
+        },
+    ];
+    let original = view.clone();
+    let offered = result_opportunities(&view).unwrap();
+    let uses = offered.uses();
+    assert_eq!(uses.len(), 2);
+    let mut expected = original.choices[1].clone();
+    expected.label = "Take Jacqueline's extra action (Quick Thinking)".into();
+    assert_eq!(uses[0], expected);
+    assert_eq!(uses[1], original.choices[3]);
+    let mut decline = original.choices[0].clone();
+    decline.label = "Finish enemy-defeat reactions".into();
+    assert_eq!(offered.decline(), decline);
+    assert_eq!(view, original);
+
+    // A later Lucky! decline admits this observation without a current test,
+    // but does not displace the first recognized footer choice.
+    view.choices.remove(2);
+    assert!(result_opportunities(&view).is_none());
+    assert_eq!(pending_choices(&view)[0].id, "future:effect");
+}
+
+#[test]
+fn only_enemy_defeat_requires_a_current_test_for_result_opportunities() {
+    let mut view = Session::with_seed(19).observe();
+    for id in [
+        "after-test:pass",
+        "success:pass",
+        "lucky:decline",
+        "patrice-shuffle:decline",
+        "spell-move:decline",
+        "lita:decline-damage",
+    ] {
+        view.choices = vec![Choice {
+            id: id.into(),
+            label: "Offered decline".into(),
+            cancel_faces: vec![],
+        }];
+        assert_eq!(result_opportunities(&view).unwrap().decline().id, id);
+    }
+    view.choices[0].id = "future:decline".into();
+    assert!(result_opportunities(&view).is_none());
+    assert_eq!(pending_choices(&view), view.choices);
+}
+
 fn public_fixtures() -> Vec<crate::gathering::HostileFixture> {
     use crate::gathering::{
         AssetFixture as A, BackpackFixture as B, DrawFixture as D, HarmFixture as H,

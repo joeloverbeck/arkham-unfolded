@@ -144,7 +144,7 @@ impl Table {
     }
 
     fn result_opportunities(&self) -> bool {
-        !self.is_presenting() && results::opportunities(&self.view())
+        !self.is_presenting() && controls::result_opportunities(&self.view()).is_some()
     }
 
     fn presentation_blocked(&self) -> bool {

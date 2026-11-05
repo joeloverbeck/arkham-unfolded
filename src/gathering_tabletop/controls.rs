@@ -1,4 +1,4 @@
-//! Gathering's transient contextual selection. The Session remains the sole
+//! Gathering's choice presentation and transient contextual selection. The Session remains the sole
 //! authority for legal choices and committed decisions.
 
 use super::*;
@@ -714,6 +714,114 @@ pub(super) fn pending_choices(view: &Observation) -> Vec<Choice> {
         .filter(|choice| route(view, &choice.id) == Route::Pending)
         .map(|choice| display_choice(view, choice))
         .collect()
+}
+
+/// An admitted result window. Recognition is cheap for modal/input checks;
+/// presentation choices are derived only when the renderer requests them.
+pub(super) struct ResultOpportunities<'a> {
+    view: &'a Observation,
+    decline: &'a Choice,
+}
+
+pub(super) fn result_opportunities(view: &Observation) -> Option<ResultOpportunities<'_>> {
+    // Small Favor also defeats enemies without a skill test. That window keeps
+    // its ordinary reaction route instead of reopening an earlier result.
+    if !view.choices.iter().any(|choice| {
+        result_decline(choice)
+            && (choice.id != "defeat:done"
+                || view.play.as_ref().is_some_and(|play| play.test.is_some()))
+    }) {
+        return None;
+    }
+    Some(ResultOpportunities {
+        view,
+        // Admission and footer selection are distinct: preserve the first
+        // recognized decline even when a later one admitted this window.
+        decline: view.choices.iter().find(|choice| result_decline(choice))?,
+    })
+}
+
+impl ResultOpportunities<'_> {
+    pub(super) fn uses(&self) -> Vec<Choice> {
+        self.view
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "undo" && !result_decline(choice))
+            .map(|choice| self.displayed(choice))
+            .collect()
+    }
+
+    pub(super) fn decline(&self) -> Choice {
+        self.displayed(self.decline)
+    }
+
+    fn displayed(&self, choice: &Choice) -> Choice {
+        let mut shown = choice.clone();
+        shown.label = self.label(choice);
+        shown
+    }
+
+    fn label(&self, choice: &Choice) -> String {
+        if choice.id == "defeat:done" {
+            return if self
+                .view
+                .choices
+                .iter()
+                .any(|choice| choice.id.starts_with("defeat:bleeds:"))
+            {
+                "Decline If it bleeds...".into()
+            } else {
+                "Finish enemy-defeat reactions".into()
+            };
+        }
+        if let Some(location) = choice
+            .id
+            .strip_prefix("spell-move:")
+            .filter(|value| *value != "decline")
+        {
+            return format!(
+                "Move to {} (Mists of R'lyeh)",
+                play::location_name(location)
+            );
+        }
+        if let Some(owner) = choice.id.strip_prefix("tony:quick-thinking:") {
+            let name = match owner {
+                "tony" => "Tony",
+                "patrice" => "Patrice",
+                "jacqueline" => "Jacqueline",
+                _ => owner,
+            };
+            return format!("Take {name}'s extra action (Quick Thinking)");
+        }
+        if matches!(choice.id.as_str(), "after-test:pass" | "success:pass") {
+            // Other declines count here too; this is wording context, not the
+            // use group. A second offered decline retains the plural wording.
+            let others: Vec<_> = self
+                .view
+                .choices
+                .iter()
+                .filter(|other| other.id != choice.id && other.id != "undo")
+                .collect();
+            if others.len() == 1 && others[0].id.starts_with("tony:quick-thinking:") {
+                return "Decline Quick Thinking".into();
+            }
+            return "Decline all listed effects".into();
+        }
+        display_history(self.view, &choice.label)
+    }
+}
+
+fn result_decline(choice: &Choice) -> bool {
+    matches!(
+        choice.id.as_str(),
+        "after-test:pass"
+            | "success:pass"
+            | "lucky:decline"
+            | "patrice-shuffle:decline"
+            | "spell-move:decline"
+            | "lita:decline-damage"
+            | "defeat:done"
+    )
 }
 
 // Spell-event choices retain canonical physical identities in their IDs and

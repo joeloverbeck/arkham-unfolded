@@ -430,6 +430,124 @@ fn quick_thinking_session() -> Session {
     quick_thinking_until("tony:quick-thinking:tony")
 }
 
+/// Challenge the production renderer with public-observation variants. These
+/// choices test presentation only; they do not claim new legal rules windows.
+fn render_opportunity_choices(choices: &[(&str, &str)]) -> App {
+    use bevy::ecs::system::RunSystemOnce;
+
+    let table = Table::new(Session::with_seed(19), PathBuf::new());
+    let mut view = table.view();
+    view.choices = choices
+        .iter()
+        .map(|(id, label)| crate::Choice {
+            id: (*id).into(),
+            label: (*label).into(),
+            cancel_faces: vec![],
+        })
+        .collect();
+    let mut app = crate::tabletop_layout::heading_checks::app();
+    app.init_resource::<art::Art>().init_resource::<Actions>();
+    app.world_mut()
+        .run_system_once(move |mut commands: Commands, art: Res<art::Art>| {
+            super::super::results::render(
+                &mut commands,
+                &table,
+                &view,
+                &art,
+                Vec2::new(1600., 1000.),
+            );
+        })
+        .unwrap();
+    app
+}
+
+#[test]
+fn opportunity_controls_preserve_unknown_use_order_and_first_decline() {
+    let mut app = render_opportunity_choices(&[
+        ("future:z", "Unrecognized last-letter effect"),
+        ("after-test:pass", "Original pass wording"),
+        ("undo", "Undo"),
+        ("tony:quick-thinking:patrice", "Original use wording"),
+        ("lucky:decline", "Second decline"),
+        ("future:a", "Unrecognized first-letter effect"),
+    ]);
+    let labels = [
+        "Unrecognized last-letter effect",
+        "Take Patrice's extra action (Quick Thinking)",
+        "Unrecognized first-letter effect",
+    ];
+    let buttons = labels.map(|label| button_with_label(&mut app, label).unwrap());
+    let world = app.world();
+    let parent = world.get::<ChildOf>(buttons[0]).unwrap().parent();
+    assert_eq!(
+        world
+            .get::<Children>(parent)
+            .unwrap()
+            .iter()
+            .collect::<Vec<_>>(),
+        buttons,
+        "Use controls retain observation order, including unrecognized choices"
+    );
+    assert!(world.get::<AutoFocus>(buttons[0]).is_some());
+    for button in &buttons[1..] {
+        assert!(world.get::<AutoFocus>(*button).is_none());
+    }
+    let decline = button_with_label(&mut app, "Decline all listed effects").unwrap();
+    assert!(app.world().get::<AutoFocus>(decline).is_none());
+    assert!(button_with_label(&mut app, "Undo").is_none());
+    assert!(button_with_label(&mut app, "Second decline").is_none());
+    for (button, id) in buttons
+        .into_iter()
+        .zip(["future:z", "tony:quick-thinking:patrice", "future:a"])
+        .chain([(decline, "after-test:pass")])
+    {
+        app.world_mut().trigger(Activate { entity: button });
+        assert!(matches!(
+            app.world_mut().resource_mut::<Actions>().0.pop(),
+            Some(Action::ResultChoice(_, 0, chosen)) if chosen == id
+        ));
+    }
+}
+
+#[test]
+fn opportunity_footer_focus_and_plural_wording_include_other_declines() {
+    for (choices, footer_focused) in [
+        (
+            vec![("after-test:pass", "Pass"), ("success:pass", "Other pass")],
+            true,
+        ),
+        (
+            vec![
+                ("tony:quick-thinking:tony", "Use Quick Thinking"),
+                ("after-test:pass", "Pass"),
+                ("success:pass", "Other pass"),
+            ],
+            false,
+        ),
+    ] {
+        let mut app = render_opportunity_choices(&choices);
+        let footer = button_with_label(&mut app, "Decline all listed effects").unwrap();
+        assert_eq!(
+            app.world().get::<AutoFocus>(footer).is_some(),
+            footer_focused
+        );
+        assert!(button_with_label(&mut app, "Decline Quick Thinking").is_none());
+        let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<Entity, With<AutoFocus>>()
+                .iter(world)
+                .count(),
+            1
+        );
+        world.trigger(Activate { entity: footer });
+        assert!(matches!(
+            world.resource_mut::<Actions>().0.pop(),
+            Some(Action::ResultChoice(_, 0, chosen)) if chosen == "after-test:pass"
+        ));
+    }
+}
+
 #[test]
 fn result_and_optional_effect_controls_stay_visible_when_details_scroll() {
     let directory = tempfile::tempdir().unwrap();
