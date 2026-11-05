@@ -43,6 +43,34 @@ directory for a refresh: it verifies the previous candidate and patch against
 their manifest and reports the changed paths. Invalid inputs and failed captures
 exit nonzero without publishing a snapshot. Use `--help` for supported inputs.
 
+The manifest's `files` inventory covers the entire captured candidate tree;
+`selected_paths` names the review selection. Start with the helper's printed
+digest/count and read the manifest's identity/selection prefix under a byte
+budget. Follow a hash-bound `NEXT` only as needed to finish that prefix, then stop
+at `files`; locate a later field directly:
+
+```sh
+scripts/tools read-context /tmp/review-v1/manifest.json --max-bytes 2000
+scripts/tools search-context /tmp/review-v1/manifest.json \
+  --find '"patch_sha256"' --context 0 --max-bytes 1000
+sha256sum /tmp/review-v1/manifest.json /tmp/review-v1/changes.patch
+```
+
+Compare those digests with the recorded capture identity. For each selected
+regular file, read only its manifest entry and compare its expected SHA-256 with
+both the captured file and the checkout file:
+
+```sh
+scripts/tools search-context /tmp/review-v1/manifest.json \
+  --find '"path/to/changed.rs": {' --context 3 --max-bytes 1200
+sha256sum /tmp/review-v1/candidate/path/to/changed.rs path/to/changed.rs
+```
+
+Substitute the explicit selected paths, including new files. Check deletions as
+absence and symlinks by their link target/mode; the regular-file recipe does not
+cover them. Keep the full inventory on disk. These focused reads do not replace
+the helper's whole-candidate verification when refreshing with `--previous`.
+
 Confirm the fixed point resolves and the complete selected candidate is non-empty before spawning reviewers. A new-file-only candidate is valid even when `git diff` is empty.
 
 ### 2. Identify the spec source

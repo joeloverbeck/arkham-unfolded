@@ -224,6 +224,31 @@ ps -p RECORDED_PID -o pid,etime,stat,comm
 
 A live PID shows process presence, not check success. Use a finished `run.json` even when the tool session's terminal status was lost; losing that status alone does not justify rerunning unchanged work. If the process has gone away without a finished record, retain the result as incomplete.
 
+For a behavior-preserving refactor, run focused characterizations before moving production code. If a later comparison needs a temporary baseline tree, record its revision and the test/helper files copied onto it. Moving the tree also moves its vendored renderer dependency; sharing `target/` alone does not preserve that dependency's source identity.
+
+When the dependency inputs are identical, the baseline can use the original checkout's renderer path. First require `git diff --exit-code BASE CANDIDATE -- Cargo.toml Cargo.lock .cargo/config.toml rust-toolchain.toml vendor/wgpu-hal` to exit zero with no differences, and verify the temporary tree retains those inputs. If any differ, use the baseline's own dependencies and a separate target directory. Keep the toolchain, features and profile consistent with the comparison being made.
+
+For the unchanged-dependency case, create `/tmp/baseline-checks/` and put this override in `/tmp/baseline-checks/canonical-renderer.toml`, replacing the checkout path if needed:
+
+```toml
+[patch.crates-io]
+wgpu-hal = { path = "/home/joeloverbeck/src/arkham-unfolded/vendor/wgpu-hal" }
+```
+
+Run from the original checkout so both builds use its launcher lock. Replace the temporary baseline path and test filter with the prepared tree and focused characterizations; use fresh record directories for each attempt:
+
+```sh
+scripts/tools record-check --output-dir /tmp/baseline-checks/baseline -- \
+  scripts/dev cargo test --locked --offline \
+  --manifest-path /tmp/caption-baseline/Cargo.toml \
+  --target-dir /home/joeloverbeck/src/arkham-unfolded/target \
+  --config /tmp/baseline-checks/canonical-renderer.toml \
+  --features tabletop --lib gathering_tabletop::tests::cards \
+  --message-format=json-render-diagnostics
+```
+
+Require a finished, successful baseline record before returning to the candidate. Run the same command with a fresh output directory and without `--manifest-path` and `--config` to check the original checkout. Inspect Cargo's retained `compiler-artifact` records and their `fresh` fields for the renderer dependencies; a shared path is not a cache-hit guarantee. The first baseline build may still recompile them. Keep these large JSON records on disk and use bounded reads rather than printing whole artifact lines. This comparison establishes the selected tests' behavior and observed cache reuse; it does not replace the candidate's required checks or native acceptance.
+
 Repository helpers live in the independent `arkham-tools` Cargo package. `scripts/tools --help` lists the bounded reader, Git-index guard, native verification and profiling commands; building these helpers does not compile Bevy. The launcher isolates its build artifacts from application compilation so context reads can proceed during a build, while Cargo still rebuilds changed helper sources. Its invocation parameters leave the caller's build-directory environment available to commands such as `record-check`. The index guard rejects generated caches and recognizable non-Rust executable source/template filenames, including force-added files. Inline code, templates and invocation-only shell remain subject to review under the [implementation-language contract](docs/foundation/mission.md#implementation-language). See the experiment guide for [native verification](docs/experiments/jacqueline-curse.md#developer-native-verification), external inputs, records and evidence limits.
 
 The application reads a separately configured prepared asset collection. Image and font bytes are not included in Git. Gameplay remains usable with readable English substitutes when artwork is absent; absent or unsupported rules behavior must be identified before play. The [source contract](docs/foundation/sources-and-verification.md#presentation-asset-preparation) requires deliberate selection, copying/conversion and verification whenever development introduces a new asset dependency. The original archive's layout and source identities belong to that preparation step.
