@@ -21,19 +21,7 @@ pub(super) struct Prepared {
 impl Prepared {
     /// Resolve the already-selected root without changing the saved preference.
     pub(super) fn new(root: Option<PathBuf>) -> Result<Self, String> {
-        let root = root
-            .map(|root| {
-                if root.is_absolute() {
-                    Ok(root)
-                } else {
-                    std::env::current_dir()
-                        .map(|current| current.join(root))
-                        .map_err(|error| {
-                            format!("Could not resolve Gathering artwork folder: {error}")
-                        })
-                }
-            })
-            .transpose()?;
+        let root = root.map(crate::asset_config::resolve_root).transpose()?;
         let collection = root.as_deref().map(assets::inspect_gathering);
         let status = collection
             .as_ref()

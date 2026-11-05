@@ -354,7 +354,7 @@ impl Options {
         }
         Ok(Some(Self {
             save,
-            art_root: (!no_art).then(|| root.unwrap_or_else(|| config.root().to_path_buf())),
+            art_root: (!no_art).then(|| config.launch_root(root)).transpose()?,
             config,
             screenshot,
             quit_after_screenshot,

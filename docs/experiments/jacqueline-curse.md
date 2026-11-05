@@ -139,6 +139,7 @@ Finish source reading, tool discovery, builds, headless checks and route plannin
 ```text
 Candidate: commit; executable/hash; completed check records.
 Run: exact launch/resume command; isolated save/settings/art paths; run manifest.
+Artwork, when required by the claim: resolved launch root and completeness-check result.
 Prepared saves: input identity/revision; production-startup check/result;
   expected visible screen, pending modal/Continue state and available action.
 Authority: accepted journey, total allowance and stop conditions.
@@ -157,6 +158,8 @@ Recovery: app PID/start identity and window; supervisor and helper tool session 
 ```
 
 Copy the selected JSON examples from the interaction procedure below into the route, including capture and stop, so resumption needs no source lookup. Resolve target coordinates from an inspected client capture; examples are not preapproved click locations. Fill runtime identities as they become available and record the absolute deadline when the interval starts. Preparation grants no desktop access: launch, focus, consent and interaction stay inside the allowance actually authorized, including startup when that is part of the accepted interval. Keep the app's owner-review lifetime separate from the short control interval.
+
+For Gathering artwork claims, use the [launch-configuration check](gathering-setup.md#artwork-preparation-and-selection) with the handoff's environment and artwork flags. A complete staging collection alone does not establish what this launch will load.
 
 Before scheduling a capture from a prepared save, load it through the production startup path in the headless UI host and check the expected visible controls and blocking dialogs, alongside the game state. A save containing expanded locations may reopen on an Act story panel; location membership alone does not establish capture readiness. Preserve that reading barrier and prepare an ordinary later decision when the route requires an unobscured map. Record the result in the handoff above. Gathering's `gathering_tabletop::tests::review_saves` checks the seed-89 initial, Hard Knocks and expanded-map inputs, including the obstructing story transition; its retained result is in the [current verification status](gathering-setup.md#presentation-correction-verification). These checks do not establish GPU rendering or native readability.
 
@@ -330,6 +333,8 @@ This wrapper does not change kernel profiling settings or run a permanent servic
 ### Visual and wording review
 
 Before implementing a scenario, mode or tabletop UI change, identify the accepted presentation it inherits and its revision. Account for every affected section in the existing issue or PR: investigator counters, card captions, contextual and global controls, portrait/camera navigation, inspection, and deck/pile rendering as applicable. Name the production component paths and the behavior to preserve. Reuse the established implementation where it already serves that behavior; explain a necessary local adapter or an owner-authorized difference. A new scenario alone is not a reason to redesign the player's interface. Bring proposed changes to accepted behavior to the owner with their consequences before adopting them.
+
+For repairs after a native check, retain the reference capture and its candidate identity (commit or working-tree snapshot), viewport/camera, populated state and relevant board/card/text dimensions in the existing issue handoff. Distinguish owner-accepted constraints from agent observations and deferred preferences. Supply this reference alongside the Git fixed point in later reviews, even when it comes from earlier uncommitted work in the same session. Compare repairs at comparable framing and assess tradeoffs against the owner's priorities: a passing collision check alone does not justify larger boards, smaller cards or text, or wider camera framing. An unavailable reference leaves that comparison unverified; source checks retain their narrower meaning.
 
 For a caption-construction refactor, characterize the affected representation before moving it. Follow [`tabletop_pieces::label`](../../src/tabletop_pieces.rs) through [`tabletop_harm_text::ui`](../../src/tabletop_harm_text.rs), including any caller edits afterward. Exercise the relevant font-present and font-absent paths; inspect root text, ordered child spans and the accessible label, including separators and multi-field status text. A root `Text` assertion alone can miss glyph substitutions or retained spans. Reuse the [Gathering caption tests](../../src/gathering_tabletop/tests/cards.rs) that exercise the production UI where applicable. Record inherited artifacts separately from authorized corrections; these checks establish scene representation, while native readability and physical input retain the evidence requirements below.
 

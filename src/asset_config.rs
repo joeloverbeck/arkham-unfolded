@@ -89,6 +89,11 @@ impl AssetConfig {
         self.saved_root.as_deref().unwrap_or(&self.default_root)
     }
 
+    /// Select and resolve a launch-only override without changing the saved preference.
+    pub fn launch_root(&self, override_root: Option<PathBuf>) -> Result<PathBuf, String> {
+        resolve_root(override_root.unwrap_or_else(|| self.root().to_path_buf()))
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -148,6 +153,16 @@ impl AssetConfig {
         self.saved_root = Some(root.to_path_buf());
         self.original = Some(text.into_bytes());
         Ok(())
+    }
+}
+
+pub(crate) fn resolve_root(root: PathBuf) -> Result<PathBuf, String> {
+    if root.is_absolute() {
+        Ok(root)
+    } else {
+        std::env::current_dir()
+            .map(|current| current.join(root))
+            .map_err(|error| format!("Could not resolve artwork folder: {error}"))
     }
 }
 
