@@ -684,6 +684,7 @@ pub(super) fn begin_enemy(game: &mut Game) {
 }
 pub(super) fn begin_mythos(game: &mut Game) {
     game.phase = Phase::Mythos;
+    game.jacqueline_uses = 0;
     for player in &mut game.players {
         player.frozen_action_used = false;
         player.completed_actions_this_phase = 0;

@@ -235,7 +235,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(
             expected.len() >= 2,
-            "Keep both reveal scopes even for a single draw"
+            "Historical engine choice IDs remain compatible"
         );
         let mut app = host(session, directory.path().join("ability-layout.json"));
         crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
@@ -265,7 +265,6 @@ mod tests {
             app.world().get::<ComputedNode>(panel).unwrap().size().y < 300.,
             "Short token options must fit their content"
         );
-        click(&mut app, "Jacqueline's ability...");
         assert_eq!(app.world().resource::<Table>().session, expected_session);
         let text = app
             .world_mut()
@@ -276,15 +275,15 @@ mod tests {
             .join("\n");
         assert!(text.contains("Tony Morgan is testing"), "{text}");
         assert!(text.contains("at the same location"), "{text}");
-        assert!(text.contains("2 additional tokens"), "{text}");
+        assert!(text.contains("Add 2 tokens"), "{text}");
         for choice in &expected {
             assert!(
-                button(&mut app, &choice.label).is_some(),
-                "Missing {}",
+                button(&mut app, &choice.label).is_none(),
+                "Redundant alias shown: {}",
                 choice.id
             );
         }
-        click(&mut app, &expected[0].label);
+        click(&mut app, "Use Jacqueline — reveal 3 tokens");
         expected_session
             .choose(before.revision, &expected[0].id)
             .unwrap();

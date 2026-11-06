@@ -21,6 +21,55 @@ fn pending_token_cancellation_reopens_with_the_same_physical_tokens() {
     assert_eq!(reopened.observe(), session.observe());
 }
 
+#[test]
+fn arbiter_cannot_repeat_jacquelines_reaction_on_her_own_pending_reveal() {
+    use arkham_unfolded_experiment::gathering::{TokenFixture, continuity};
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::ArbiterCancellation));
+    reach_reveal(&mut session);
+    let arbiter = session
+        .observe()
+        .choices
+        .iter()
+        .find(|choice| choice.id.starts_with("tokens:jacqueline:arbiter:"))
+        .unwrap()
+        .id
+        .clone();
+    choose(&mut session, &arbiter);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("arbiter-declaration.json");
+    continuity::save_session(&path, &session).unwrap();
+    let mut reopened = continuity::load_session(&path).unwrap();
+    assert_eq!(reopened.observe(), session.observe());
+    let pending = reopened.observe();
+    assert!(
+        !pending
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tokens:jacqueline")),
+        "Exempting the round limit does not allow reacting to the same reveal again: {:?}",
+        pending.choices
+    );
+    assert!(
+        reopened
+            .choose(pending.revision, "tokens:jacqueline:at:0")
+            .is_err()
+    );
+    assert_eq!(reopened.observe(), pending);
+    choose(&mut reopened, "test:reveal");
+    assert_eq!(
+        reopened
+            .observe()
+            .play
+            .unwrap()
+            .tokens
+            .unwrap()
+            .revealed
+            .len(),
+        3
+    );
+}
+
 fn choose(session: &mut Session, id: &str) {
     let view = session.observe();
     assert!(
@@ -29,6 +78,137 @@ fn choose(session: &mut Session, id: &str) {
         view.choices
     );
     session.choose(view.revision, id).unwrap();
+}
+
+#[test]
+fn plain_singleton_jacqueline_scopes_have_the_same_draw_and_cancellation_outcomes() {
+    use arkham_unfolded_experiment::gathering::TokenFixture;
+    for (fixture, cancelled, arbiter) in [
+        (HostileFixture::JacquelineCancellation, vec![0], false),
+        (HostileFixture::JacquelineCancellation, vec![1, 2], false),
+        (
+            HostileFixture::Tokens(TokenFixture::ArbiterCancellation),
+            vec![0],
+            true,
+        ),
+        (
+            HostileFixture::Tokens(TokenFixture::ArbiterCancellation),
+            vec![1, 2],
+            true,
+        ),
+        (HostileFixture::JacquelineProtectedTokens, vec![], false),
+        (
+            HostileFixture::Tokens(TokenFixture::ProtectedNumbers),
+            vec![1, 2],
+            false,
+        ),
+        (
+            HostileFixture::Tokens(TokenFixture::ArbiterCurse),
+            vec![1, 2],
+            true,
+        ),
+    ] {
+        let mut root = Session::with_hostile_fixture(fixture);
+        reach_reveal(&mut root);
+        assert!(
+            root.observe()
+                .play
+                .unwrap()
+                .tokens
+                .unwrap()
+                .is_plain_single_draw()
+        );
+        let cost = if arbiter {
+            let view = root.observe();
+            let id = view.play.unwrap().players[2]
+                .assets
+                .iter()
+                .find(|asset| asset.card.code == "60402")
+                .unwrap()
+                .card
+                .id;
+            format!(":arbiter:{id}")
+        } else {
+            String::new()
+        };
+        let mut child = root.clone();
+        choose(&mut root, &format!("tokens:jacqueline{cost}"));
+        choose(&mut child, &format!("tokens:jacqueline:at:0{cost}"));
+        for session in [&mut root, &mut child] {
+            reopen_tokens(session);
+            choose(session, "test:reveal");
+            reopen_tokens(session);
+            for index in &cancelled {
+                choose(session, &format!("tokens:cancel:{index}"));
+            }
+            if !cancelled.is_empty() {
+                reopen_tokens(session);
+                choose(session, "tokens:confirm");
+            }
+            if session
+                .observe()
+                .choices
+                .iter()
+                .any(|choice| choice.id == "result:0")
+            {
+                choose(session, "result:0");
+            }
+        }
+        if fixture == HostileFixture::Tokens(TokenFixture::ArbiterCurse) {
+            for (session, scope) in [
+                (&mut root, "tokens:jacqueline"),
+                (&mut child, "tokens:jacqueline:at:0"),
+            ] {
+                // A curse creates a new would-reveal opportunity. Arbiter saved
+                // the round use, which remains legal on that independent reveal.
+                reopen_tokens(session);
+                let view = session.observe();
+                assert!(
+                    view.play
+                        .as_ref()
+                        .unwrap()
+                        .tokens
+                        .as_ref()
+                        .unwrap()
+                        .is_plain_single_draw()
+                );
+                assert!(view.choices.iter().any(|choice| choice.id == scope));
+                assert!(
+                    !view
+                        .choices
+                        .iter()
+                        .any(|choice| choice.id.contains(":arbiter:"))
+                );
+                choose(session, scope);
+                choose(session, "test:reveal");
+                reopen_tokens(session);
+                choose(session, "tokens:cancel:4");
+                choose(session, "tokens:cancel:5");
+                choose(session, "tokens:confirm");
+            }
+        }
+        // Reveal tree paths and history wording differ; physical faces, effects,
+        // resources and the next offered decisions must not.
+        let a = root.observe();
+        let b = child.observe();
+        assert_eq!(a.choices, b.choices);
+        let a = a.play.unwrap();
+        let b = b.play.unwrap();
+        assert_eq!(a.players, b.players);
+        assert_eq!(a.test, b.test);
+        assert_eq!(a.completed_tests, b.completed_tests);
+        assert_eq!(a.bag_count, b.bag_count);
+    }
+}
+
+fn reopen_tokens(session: &mut Session) {
+    use arkham_unfolded_experiment::gathering::continuity;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-tokens.json");
+    continuity::save_session(&path, session).unwrap();
+    let reopened = continuity::load_session(&path).unwrap();
+    assert_eq!(&reopened, session);
+    *session = reopened;
 }
 
 fn reach_reveal(session: &mut Session) {

@@ -68,7 +68,7 @@ fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
     p.spawn((
         Node {
             min_height: px(0),
-            padding: UiRect::all(px(4)),
+            padding: UiRect::axes(px(0), px(4)),
             flex_direction: FlexDirection::Column,
             row_gap: px(5),
             overflow: Overflow::scroll_y(),
@@ -114,7 +114,26 @@ fn token_options_body(
     let Some(tokens) = &play.tokens else {
         return;
     };
-    if tokens.revealed.is_empty() {
+    // Preserve historical engine choice IDs. Collapse aliases only when neither
+    // a replacement policy nor a later offered modifier can distinguish scopes.
+    let plain = tokens.is_plain_single_draw()
+        && !view.choices.iter().any(|choice| {
+            ["tokens:olive:", "tokens:prophecy:", "tokens:katarina:"]
+                .iter()
+                .any(|prefix| choice.id.starts_with(prefix))
+        });
+    let jacqueline: Vec<_> = view
+        .choices
+        .iter()
+        .filter(|choice| {
+            choice.id.starts_with("tokens:jacqueline")
+                && !(plain && choice.id.starts_with("tokens:jacqueline:at:"))
+        })
+        .collect();
+    let direct = plain && jacqueline.len() == 1;
+    // A curse opens another declaration while earlier tokens remain held.
+    let declaring = view.choices.iter().any(|choice| choice.id == "test:reveal");
+    if declaring {
         if let Some(announcement) = reveal::announcement(view) {
             p.spawn(art.text(announcement, 14., PAPER));
         }
@@ -145,21 +164,38 @@ fn token_options_body(
                 ("tokens:olive:", "Olive McBride"),
                 ("tokens:katarina:", "Katarina Sojka"),
             ] {
+                if prefix == "tokens:jacqueline" && direct {
+                    control(
+                        art,
+                        row,
+                        "Use Jacqueline — reveal 3 tokens",
+                        Action::Choose(table.epoch, view.revision, jacqueline[0].id.clone()),
+                    );
+                    continue;
+                }
                 if view
                     .choices
                     .iter()
                     .any(|choice| choice.id.starts_with(prefix))
                 {
-                    control(
+                    let expanded = table.token_options.as_deref() == Some(prefix);
+                    let entity = control(
                         art,
                         row,
-                        &format!("{name}..."),
+                        &format!(
+                            "{} {name} options · {}",
+                            if expanded { "▾" } else { "▸" },
+                            if expanded { "hide" } else { "show" }
+                        ),
                         Action::TokenOptions(prefix.into()),
                     );
+                    row.commands()
+                        .entity(entity)
+                        .insert(feedback::DisclosureButton);
                 }
             }
         });
-        if table.token_options.as_deref() == Some("tokens:jacqueline") {
+        if direct || table.token_options.as_deref() == Some("tokens:jacqueline") {
             let activity = if tokens.is_skill_test() {
                 "testing"
             } else {
@@ -175,12 +211,27 @@ fn token_options_body(
                 14.,
                 PAPER,
             ));
-            p.spawn(art.text("Her ability adds 2 additional tokens, then cancels 2 tokens or only the auto-fail. Choose the affected reveal below.", 13., MUTED));
+            p.spawn(art.text("Add 2 tokens, then cancel 2 tokens or only the auto-fail. Tokens are revealed only when you resolve the declared reveal.", 13., MUTED));
+            if !plain {
+                p.spawn(art.text("Whole reveal: affect the entire group. A numbered draw: affect only that position; other positions still resolve normally.", 13., MUTED));
+            }
+            if jacqueline
+                .iter()
+                .any(|choice| choice.id.contains(":arbiter:"))
+            {
+                p.spawn(art.text("To use Arbiter this round, exhaust it now and preserve your ordinary use. Spending the ordinary use first leaves no further use to initiate.", 13., MUTED));
+            }
         }
     }
     screen::controls(p, |p| {
         for choice in &view.choices {
-            let visible = if tokens.revealed.is_empty() {
+            if declaring
+                && choice.id.starts_with("tokens:jacqueline")
+                && (direct || !jacqueline.iter().any(|shown| shown.id == choice.id))
+            {
+                continue;
+            }
+            let visible = if declaring {
                 choice.id.starts_with("tokens:eyes:")
                     || table
                         .token_options
@@ -190,10 +241,19 @@ fn token_options_body(
                 choice.id.starts_with("tokens:") && choice.id != "tokens:confirm"
             };
             if visible {
+                let label = if plain && choice.id.starts_with("tokens:jacqueline") {
+                    if choice.id.contains(":arbiter:") {
+                        "Use Jacqueline + Arbiter — preserve round use"
+                    } else {
+                        "Use Jacqueline — spend round use"
+                    }
+                } else {
+                    choice_label(choice)
+                };
                 control(
                     art,
                     p,
-                    choice_label(choice),
+                    label,
                     Action::Choose(table.epoch, view.revision, choice.id.clone()),
                 );
             }
@@ -472,7 +532,7 @@ pub(super) fn render(
                 || view.choices.iter().all(|choice| choice.id == "undo")
                 || view.verification_fixture.is_some()
             {
-                p.spawn(art.text(&view.prompt, 18., PAPER));
+                p.spawn(art.text(play::location_text(&view.prompt), 18., PAPER));
             }
             if let Some(status) = play::status(view) {
                 p.spawn(art.text(status, 15., GOLD));

@@ -9,6 +9,15 @@ pub struct RevealGroup {
 }
 
 impl TokenResolution {
+    /// Only the unmodified All[Draw] tree has equivalent root and draw scopes.
+    /// A one-token count alone does not establish equivalence (e.g. sealed tokens).
+    pub fn is_plain_single_draw(&self) -> bool {
+        self.stage == TokenStage::Declaration
+            && self.root.policy == Policy::All
+            && !self.root.jacqueline
+            && self.root.children == [RevealNode::draw()]
+    }
+
     pub fn reveal_groups(&self) -> Vec<RevealGroup> {
         fn collect(
             node: &RevealNode,

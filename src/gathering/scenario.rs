@@ -727,6 +727,7 @@ pub(super) fn prepare_fixture(game: &mut Game, fixture: HostileFixture) {
             | HostileFixture::GatheringLitaParley
             | HostileFixture::GatheringNonterminalDefeat
             | HostileFixture::GatheringHunters
+            | HostileFixture::GatheringArrival
             | HostileFixture::GatheringAgendaTwoNoGhoul
             | HostileFixture::GatheringAncientEvilsTerminal
             | HostileFixture::GatheringGhoulMovement
@@ -884,6 +885,15 @@ pub(super) fn prepare_fixture(game: &mut Game, fixture: HostileFixture) {
             game.players[Investigator::Jacqueline.index()].horror = 2;
             game.players[Investigator::Jacqueline.index()].location = ATTIC.into();
             game.history.push("Nonterminal defeat witness: Tony defeats a Ghoul Minion bearing two bounties. Forced Contracts payout precedes optional If it bleeds (cost1, printed horror1); only active investigators at Tony's location heal. [06010/02225/01160]".into());
+        }
+        HostileFixture::GatheringArrival => {
+            game.agenda = 1;
+            game.agenda_doom = 0;
+            let card = fixture_encounter(game, "01118");
+            spawn_encounter_enemy(game, card, Investigator::Patrice)
+                .expect("Flesh-Eater spawns in the empty Attic");
+            game.enable_fixture_turn(Investigator::Patrice);
+            game.history.push("Privileged arrival witness: Patrice in Hallway can enter the revealed Attic containing a ready, unengaged Flesh-Eater. Its engagement and card transfer belong to her arrival. [01118; RR p10]".into());
         }
         HostileFixture::GatheringHunters => {
             game.agenda = 1;

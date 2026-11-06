@@ -210,7 +210,7 @@ pub(super) fn assert_draw_anchors_unobscured(
 
 // Reproduce the ordinary seed-89 saves used in the 2026-11-03 native review.
 // Load through native startup before installing the production scene and UI.
-fn open_review_save(session: &Session) -> (tempfile::TempDir, App) {
+pub(super) fn open_review_save(session: &Session) -> (tempfile::TempDir, App) {
     assert!(!session.is_verification_fixture());
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("review.json");
@@ -228,8 +228,8 @@ fn open_review_save(session: &Session) -> (tempfile::TempDir, App) {
     (directory, app)
 }
 
-fn assert_visible_button(app: &mut App, label: &str) {
-    let entity = button_with_label(app, label).unwrap_or_else(|| panic!("Missing button: {label}"));
+pub(super) fn assert_visible_button(app: &mut App, label: &str) {
+    let entity = choice_button(app, label).unwrap_or_else(|| panic!("Missing button: {label}"));
     assert!(
         app.world()
             .get::<InheritedVisibility>(entity)
@@ -348,6 +348,33 @@ fn export_reveal_and_story_review_saves() {
         .choose(ordinary.observe().revision, "action:ordinary:investigate")
         .unwrap();
     reach_reveal(&mut ordinary);
+    let mut arbiter = (0..64)
+        .find_map(|seed| {
+            let mut session = Session::with_seed(seed);
+            for id in [
+                "lead:tony",
+                "confirm-mulligan",
+                "confirm-mulligan",
+                "confirm-mulligan",
+                "turn:jacqueline",
+            ] {
+                session.choose(session.observe().revision, id).unwrap();
+            }
+            let view = session.observe();
+            let card = view.play.as_ref().unwrap().players[2]
+                .hand
+                .iter()
+                .find(|card| card.code == "60402")?;
+            session
+                .choose(view.revision, &format!("action:ordinary:play:{}", card.id))
+                .unwrap();
+            session
+                .choose(session.observe().revision, "action:ordinary:investigate")
+                .unwrap();
+            Some(session)
+        })
+        .expect("An ordinary opening hand containing Arbiter within 64 seeds");
+    reach_reveal(&mut arbiter);
     let mut sealed = Session::with_seed(2);
     for id in [
         "lead:tony",
@@ -389,6 +416,12 @@ fn export_reveal_and_story_review_saves() {
     assert!(agenda.live_state().new_story.contains("01105"));
     let points = [
         ("ordinary-reveal", ordinary, "Reveal tokens", None),
+        (
+            "arbiter-reveal",
+            arbiter,
+            "▸ Jacqueline's ability options · show",
+            None,
+        ),
         ("sealed-reveal", sealed, "Resolve tokens", None),
         (
             "act-reading",
@@ -409,7 +442,7 @@ fn export_reveal_and_story_review_saves() {
         assert_visible_button(&mut app, label);
         assert_eq!(app.world().resource::<Table>().presentation.story(), *story);
         if *name == "ordinary-reveal" {
-            assert_visible_button(&mut app, "Jacqueline's ability...");
+            assert_visible_button(&mut app, "Use Jacqueline — reveal 3 tokens");
         }
     }
     std::fs::create_dir(&output).unwrap();
@@ -461,7 +494,7 @@ fn initial_and_hard_knocks_review_saves_open_on_the_expected_actions() {
     assert_eq!(ready.world().resource::<Table>().view(), view);
 }
 
-fn expanded_map_transition() -> Session {
+pub(super) fn expanded_map_transition() -> Session {
     let mut session = tony_turn();
     for _ in 0..200 {
         let view = session.observe();

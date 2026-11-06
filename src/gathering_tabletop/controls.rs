@@ -1009,6 +1009,7 @@ pub(super) fn display_history(view: &Observation, original: &str) -> String {
         remaining = &annotation[end + 1..];
     }
     label.push_str(remaining);
+    label = play::location_text(&label);
     for (marker, fallback, suffix) in [
         ("enemy ", "the enemy", ""),
         ("end-of-turn effect ", "the card", "'s end-of-turn effect"),

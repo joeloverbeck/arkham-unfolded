@@ -25,6 +25,7 @@ pub enum HostileFixture {
     GatheringLitaParley,
     GatheringNonterminalDefeat,
     GatheringHunters,
+    GatheringArrival,
     SimultaneousAssetDefeat,
     DissonantVoicesAssetPlay,
     TestModifierFreeze,
@@ -1266,7 +1267,10 @@ impl Game {
                 .map(|location| {
                     choice(
                         &format!("quarry:{location}"),
-                        &format!("Spawn Tony's Quarry at {location}"),
+                        &format!(
+                            "Spawn Tony's Quarry at {}",
+                            content::title(location).expect("Scenario location")
+                        ),
                     )
                 })
                 .collect();
@@ -1412,7 +1416,10 @@ impl Game {
                     .map(|location| {
                         choice(
                             &format!("quarry:{location}"),
-                            &format!("Spawn Tony's Quarry at {location}"),
+                            &format!(
+                                "Spawn Tony's Quarry at {}",
+                                content::title(location).expect("Scenario location")
+                            ),
                         )
                     })
                     .collect();
@@ -2163,7 +2170,10 @@ impl Game {
             if self.scenario.can_move(&player.location, &location.code) {
                 actions.push(choice(
                     &format!("move:{}", location.code),
-                    &format!("Move to {}", location.code),
+                    &format!(
+                        "Move to {}",
+                        content::title(&location.code).expect("Scenario location")
+                    ),
                 ));
             }
         }

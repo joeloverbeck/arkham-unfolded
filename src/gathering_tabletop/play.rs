@@ -15,6 +15,21 @@ pub(super) fn location_name(code: &str) -> &str {
     }
 }
 
+/// Display known generated location references without rewriting saved text or
+/// removing the source codes deliberately shown by card inspection.
+pub(super) fn location_text(original: &str) -> String {
+    let mut text = original.to_owned();
+    for code in ["01111", "01112", "01113", "01114", "01115"] {
+        for prefix in ["Move to ", "Spawn Tony's Quarry at ", "from "] {
+            text = text.replace(
+                &format!("{prefix}{code}"),
+                &format!("{prefix}{}", location_name(code)),
+            );
+        }
+    }
+    text
+}
+
 fn investigator_code(investigator: Investigator) -> &'static str {
     match investigator {
         Investigator::Tony => "06003",
@@ -365,7 +380,7 @@ pub(super) fn status(view: &Observation) -> Option<String> {
             harm.damage,
             harm.horror,
             harm.investigator.name(),
-            harm.source
+            location_name(&harm.source)
         ));
         for allocation in &harm.allocations {
             let target = allocation.asset.as_ref().map_or_else(
@@ -501,7 +516,9 @@ impl Painter<'_, '_, '_> {
             layout::investigator_class(index),
             size,
         );
-        self.commands.entity(entity).insert(ScenePiece);
+        self.commands
+            .entity(entity)
+            .insert((ScenePiece, map_motion::Surface::Investigator(who)));
         // Mesh hits bubble to the investigator's menu observer.
         self.commands.queue(move |world: &mut World| {
             let children = world
@@ -559,6 +576,13 @@ impl Painter<'_, '_, '_> {
             },
         ) {
             self.commands.entity(token).insert(ScenePiece);
+            if kind == crate::tabletop_counters::CounterKind::Clue
+                && let Source::Location(code) = &source
+            {
+                self.commands
+                    .entity(token)
+                    .insert(map_motion::Surface::Clue(code.clone()));
+            }
             self.commands.entity(label).insert(ScenePiece);
             let inspect_code = match &source {
                 Source::Investigator(who) => investigator_code(*who).into(),
@@ -964,10 +988,14 @@ pub(super) fn render(
         } else {
             location_name(&room.code).to_owned()
         };
-        paint.card(CardSpec {
+        let card = paint.card(CardSpec {
             source: Some(Source::Location(room.code.clone())),
             ..CardSpec::new(at, &title, &room.code)
         });
+        paint
+            .commands
+            .entity(card)
+            .insert(map_motion::Surface::Location(room.code.clone()));
         paint.count(
             layout::location_clue(at),
             crate::tabletop_counters::CounterKind::Clue,
@@ -977,8 +1005,8 @@ pub(super) fn render(
         let occupants = play.players.iter().enumerate().filter(|(_, player)| {
             !player.defeated && !player.resigned && player.location == room.code
         });
-        for (slot, (index, player)) in occupants.enumerate() {
-            paint.standee(at, slot, index, player.investigator);
+        for (index, player) in occupants {
+            paint.standee(at, player.investigator.index(), index, player.investigator);
         }
         if let Some(fog) = &room.fog {
             paint.card(CardSpec {

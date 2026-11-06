@@ -333,7 +333,10 @@ pub(super) fn choices(game: &Game, decision: &SpellDecision) -> Vec<Choice> {
                 {
                     result.push(choice(
                         format!("spell-move:{}", location.code),
-                        format!("Move to {} after evading", location.code),
+                        format!(
+                            "Move to {} after evading",
+                            super::content::title(&location.code).expect("Scenario location")
+                        ),
                     ));
                 }
             }
