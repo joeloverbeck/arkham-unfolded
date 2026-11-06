@@ -267,7 +267,7 @@ fn quick_thinking_review_saves_open_on_reveal_then_the_untimed_result() {
     assert_eq!(session.observe().revision, 10);
     let (_before_directory, mut before) = open_review_save(&session);
     assert!(!before.world().resource::<Table>().modal());
-    assert_visible_button(&mut before, "Reveal chaos token");
+    assert_visible_button(&mut before, "Reveal tokens");
 
     session.choose(10, "test:reveal").unwrap();
     let (_after_directory, mut after) = open_review_save(&session);
@@ -319,6 +319,110 @@ fn tony_turn() -> Session {
         session.choose(session.observe().revision, id).unwrap();
     }
     session
+}
+
+// An explicit opt-in exports the same ordinary sessions checked through native
+// startup, so a short desktop review need not navigate to these decisions.
+#[test]
+#[ignore = "exports native review saves to ARKHAM_CONTROLS_REVIEW_DIR"]
+fn export_reveal_and_story_review_saves() {
+    fn reach_reveal(session: &mut Session) {
+        for _ in 0..12 {
+            let view = session.observe();
+            if view.choices.iter().any(|choice| choice.id == "test:reveal") {
+                return;
+            }
+            let id = ["window:pass", "commit:confirm"]
+                .into_iter()
+                .find(|id| view.choices.iter().any(|choice| choice.id == *id))
+                .unwrap();
+            session.choose(view.revision, id).unwrap();
+        }
+        panic!("Review preparation did not reach its reveal");
+    }
+    let output = PathBuf::from(
+        std::env::var_os("ARKHAM_CONTROLS_REVIEW_DIR").expect("Set a fresh output directory"),
+    );
+    let mut ordinary = tony_turn();
+    ordinary
+        .choose(ordinary.observe().revision, "action:ordinary:investigate")
+        .unwrap();
+    reach_reveal(&mut ordinary);
+    let mut sealed = Session::with_seed(2);
+    for id in [
+        "lead:tony",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "turn:jacqueline",
+        "premonition:210",
+        "test:reveal",
+        "action:ordinary:investigate",
+    ] {
+        sealed.choose(sealed.observe().revision, id).unwrap();
+    }
+    reach_reveal(&mut sealed);
+    assert!(super::super::reveal::announcement(&sealed.observe()).is_some());
+    let mut agenda = tony_turn();
+    for _ in 0..200 {
+        if agenda.live_state().new_story.contains("01105") {
+            break;
+        }
+        let view = agenda.observe();
+        let id = [
+            "turn:tony",
+            "turn:patrice",
+            "turn:jacqueline",
+            "turn:end",
+            "window:pass",
+            "commit:confirm",
+            "test:reveal",
+            "tokens:confirm",
+            "success:pass",
+        ]
+        .into_iter()
+        .find(|id| view.choices.iter().any(|choice| choice.id == *id))
+        .or_else(|| view.choices.first().map(|choice| choice.id.as_str()))
+        .unwrap();
+        agenda.choose(view.revision, id).unwrap();
+    }
+    assert!(agenda.live_state().new_story.contains("01105"));
+    let points = [
+        ("ordinary-reveal", ordinary, "Reveal tokens", None),
+        ("sealed-reveal", sealed, "Resolve tokens", None),
+        (
+            "act-reading",
+            expanded_map_transition(),
+            "Continue",
+            Some(story::StoryCard::ActOne),
+        ),
+        (
+            "agenda-reading",
+            agenda,
+            "Continue",
+            Some(story::StoryCard::AgendaOne),
+        ),
+    ];
+    // Validate every checkpoint before creating the export directory.
+    for (name, session, label, story) in &points {
+        let (_directory, mut app) = open_review_save(session);
+        assert_visible_button(&mut app, label);
+        assert_eq!(app.world().resource::<Table>().presentation.story(), *story);
+        if *name == "ordinary-reveal" {
+            assert_visible_button(&mut app, "Jacqueline's ability...");
+        }
+    }
+    std::fs::create_dir(&output).unwrap();
+    for (name, session, _, _) in points {
+        let path = output.join(format!("{name}.json"));
+        continuity::save_session(&path, &session).unwrap();
+        assert_eq!(continuity::load_session(&path).unwrap(), session);
+        println!(
+            "{}: revision {}",
+            path.display(),
+            session.observe().revision
+        );
+    }
 }
 
 #[test]

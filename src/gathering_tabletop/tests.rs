@@ -270,7 +270,7 @@ fn host_with_table(table: Table, raw_window_events: bool) -> App {
     app
 }
 
-fn assert_unclipped_button(app: &mut App, label: &str, size: Vec2, scale: f32) {
+pub(super) fn assert_unclipped_button(app: &mut App, label: &str, size: Vec2, scale: f32) {
     let button = button_with_label(app, label).unwrap();
     let world = app.world();
     let node = world.get::<ComputedNode>(button).unwrap();
@@ -2092,6 +2092,24 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
         app.world().resource::<Table>().presentation.story(),
         Some(story::StoryCard::ActTwo)
     );
+    let size = Vec2::new(1600., 1000.);
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
+    app.world_mut().resource_mut::<Table>().dirty = true;
+    for _ in 0..4 {
+        app.update();
+    }
+    let button = button_with_label(&mut app, "Continue").unwrap();
+    let world = app.world_mut();
+    let panel = world
+        .query_filtered::<Entity, With<ModalDialog>>()
+        .single(world)
+        .unwrap();
+    let height = world.get::<ComputedNode>(panel).unwrap().size().y;
+    assert!(height < 650., "Short Act story grew to {height}");
+    let center = world.get::<UiGlobalTransform>(panel).unwrap().translation;
+    let button_center = world.get::<UiGlobalTransform>(button).unwrap().translation;
+    assert!((center.x - button_center.x).abs() < 1., "Center Continue");
+    assert_unclipped_button(&mut app, "Continue", size, 1.);
     let saved = std::fs::read(&path).unwrap();
     let record = app.world().resource::<Table>().session.clone();
     assert_eq!(

@@ -3,7 +3,6 @@
 use super::*;
 use crate::gathering::{Session, TestResult, TestView};
 use crate::tabletop_ui as screen;
-use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier};
 
 #[derive(Default)]
 pub(super) struct Reading {
@@ -130,9 +129,11 @@ pub(super) fn render(
             }
         },
     );
-    reading_panel(
+    reading::panel(
         commands,
         size,
+        (size.x * 0.94).min(760.),
+        "Skill test result",
         |panel| {
             panel.spawn((
                 art.text(&heading, 28., GOLD),
@@ -380,72 +381,4 @@ fn contribution(body: &mut ChildSpawnerCommands, art: &art::Art, label: &str, am
             },
         ));
     });
-}
-
-/// A result sizes itself from its explanation; story cards retain their own layout.
-fn reading_panel(
-    commands: &mut Commands,
-    size: Vec2,
-    heading: impl FnOnce(&mut ChildSpawnerCommands),
-    details: impl FnOnce(&mut ChildSpawnerCommands),
-    footer: impl FnOnce(&mut ChildSpawnerCommands),
-) {
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                width: percent(100),
-                height: percent(100),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.015, 0.025, 0.03, 0.88)),
-            GlobalZIndex(90),
-            ModalDialogBarrier,
-            Panel,
-        ))
-        .with_children(|overlay| {
-            overlay
-                .spawn((
-                    Node {
-                        width: px((size.x * 0.94).min(760.)),
-                        max_height: px(size.y * 0.9),
-                        padding: UiRect::all(px(22)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: px(10),
-                        ..default()
-                    },
-                    BackgroundColor(INK),
-                    ModalDialog,
-                    TabGroup::modal(),
-                    AccessibleLabel::new("Skill test result"),
-                ))
-                .with_children(|panel| {
-                    heading(panel);
-                    panel
-                        .spawn((
-                            Node {
-                                min_height: px(0),
-                                overflow: Overflow::scroll_y(),
-                                flex_direction: FlexDirection::Column,
-                                padding: UiRect::all(px(6)),
-                                row_gap: px(8),
-                                ..default()
-                            },
-                            ScrollPosition::default(),
-                            ScrollablePanel { inspection: true },
-                        ))
-                        .observe(screen::scroll_panel)
-                        .with_children(details);
-                    panel
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Column,
-                            flex_shrink: 0.,
-                            row_gap: px(10),
-                            ..default()
-                        })
-                        .with_children(footer);
-                });
-        });
 }

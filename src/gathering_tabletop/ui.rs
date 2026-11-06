@@ -68,8 +68,6 @@ fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
     p.spawn((
         Node {
             min_height: px(0),
-            flex_grow: 1.,
-            flex_basis: px(0),
             padding: UiRect::all(px(4)),
             flex_direction: FlexDirection::Column,
             row_gap: px(5),
@@ -117,6 +115,9 @@ fn token_options_body(
         return;
     };
     if tokens.revealed.is_empty() {
+        if let Some(announcement) = reveal::announcement(view) {
+            p.spawn(art.text(announcement, 14., PAPER));
+        }
         for line in tokens.reveal_plan() {
             p.spawn(art.text(line, 13., MUTED));
         }
@@ -139,7 +140,7 @@ fn token_options_body(
         }
         screen::controls(p, |row| {
             for (prefix, name) in [
-                ("tokens:jacqueline", "Jacqueline"),
+                ("tokens:jacqueline", "Jacqueline's ability"),
                 ("tokens:prophecy:", "Dark Prophecy"),
                 ("tokens:olive:", "Olive McBride"),
                 ("tokens:katarina:", "Katarina Sojka"),
@@ -152,12 +153,30 @@ fn token_options_body(
                     control(
                         art,
                         row,
-                        &format!("{name} · choose target"),
+                        &format!("{name}..."),
                         Action::TokenOptions(prefix.into()),
                     );
                 }
             }
         });
+        if table.token_options.as_deref() == Some("tokens:jacqueline") {
+            let activity = if tokens.is_skill_test() {
+                "testing"
+            } else {
+                "revealing tokens"
+            };
+            let assistance = if tokens.revealer == Investigator::Jacqueline {
+                String::new()
+            } else {
+                " Jacqueline can assist at the same location.".into()
+            };
+            p.spawn(art.text(
+                format!("{} is {activity}.{assistance}", tokens.revealer.name()),
+                14.,
+                PAPER,
+            ));
+            p.spawn(art.text("Her ability adds 2 additional tokens, then cancels 2 tokens or only the auto-fail. Choose the affected reveal below.", 13., MUTED));
+        }
     }
     screen::controls(p, |p| {
         for choice in &view.choices {
@@ -510,7 +529,6 @@ pub(super) fn render(
             right: px(12),
             bottom: px(10),
             max_height: px((size.y * 0.4).min(330.)),
-            height: px((size.y * 0.4).min(330.)),
             padding: UiRect::all(px(12)),
             flex_direction: FlexDirection::Column,
             row_gap: px(5),
@@ -607,32 +625,68 @@ fn story_reading(commands: &mut Commands, art: &art::Art, size: Vec2, card: stor
         layout::ScenarioBookSide::Agenda => "Agenda advances",
         layout::ScenarioBookSide::Act => "Act advances",
     };
-    screen::story_reading(
+    let width = (size.x * 0.94).min(1200.);
+    let image = art.card(card.code(), true);
+    let columns = width >= 900. && image.is_some();
+    let content_width = width - 56.;
+    reading::panel(
         commands,
-        Panel,
-        ScrollablePanel { inspection: true },
         size,
-        art.card(card.code(), true).is_some(),
+        width,
         card.title(),
         |panel| {
             panel.spawn(art.text(kind, 16., MUTED));
             panel.spawn(art.text(card.title(), 27., GOLD));
         },
-        |body, width| {
-            if let Some(image) = art.card(card.code(), true) {
-                inspection_image(body, image, card.code(), width);
-            }
-        },
-        |text| {
-            if let Some(rules) = crate::gathering::inspection::scenario_card_reverse(card.code()) {
-                text.spawn(art.text(rules, 19., PAPER));
-            }
+        |body| {
+            body.spawn(Node {
+                flex_direction: if columns {
+                    FlexDirection::Row
+                } else {
+                    FlexDirection::Column
+                },
+                flex_shrink: 0.,
+                column_gap: px(24),
+                row_gap: px(16),
+                ..default()
+            })
+            .with_children(|body| {
+                if let Some(image) = image {
+                    let image_width = if columns {
+                        (content_width - 24.) * 0.45
+                    } else {
+                        content_width
+                    };
+                    inspection_image(body, image, card.code(), image_width);
+                }
+                body.spawn(Node {
+                    width: if columns {
+                        px((content_width - 24.) * 0.55)
+                    } else {
+                        percent(100)
+                    },
+                    flex_shrink: 0.,
+                    ..default()
+                })
+                .with_children(|text| {
+                    if let Some(rules) =
+                        crate::gathering::inspection::scenario_card_reverse(card.code())
+                    {
+                        text.spawn(art.text(rules, 19., PAPER));
+                    }
+                });
+            });
         },
         |panel| {
-            screen::controls(panel, |row| {
-                let first = { control(art, row, "Continue", Action::ContinueStory) };
-                row.commands().entity(first).insert(AutoFocus);
-            });
+            panel
+                .spawn(Node {
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                })
+                .with_children(|row| {
+                    let first = control(art, row, "Continue", Action::ContinueStory);
+                    row.commands().entity(first).insert(AutoFocus);
+                });
         },
     );
 }
@@ -875,6 +929,93 @@ mod tests {
             app.world().resource::<Table>().session.observe().revision,
             revision
         );
+    }
+
+    #[test]
+    fn act_and_agenda_readings_fit_content_and_keep_continue_outside_long_body() {
+        use bevy::ecs::system::RunSystemOnce;
+        for card in [story::StoryCard::ActOne, story::StoryCard::AgendaTwo] {
+            for (size, scale, artwork) in [
+                (Vec2::new(1600., 1000.), 1., false),
+                (Vec2::new(1600., 1000.), 1., true),
+                (Vec2::new(960., 540.), 1.25, true),
+            ] {
+                let directory = tempfile::tempdir().unwrap();
+                let mut app = super::super::tests::host(directory.path().join("story.json"));
+                crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+                    &mut app, size, scale,
+                );
+                app.update();
+                let panels = app
+                    .world_mut()
+                    .query_filtered::<Entity, With<Panel>>()
+                    .iter(app.world())
+                    .collect::<Vec<_>>();
+                for panel in panels {
+                    app.world_mut().despawn(panel);
+                }
+                if artwork {
+                    let image = app
+                        .world_mut()
+                        .resource_mut::<Assets<Image>>()
+                        .add(Image::default());
+                    let role = if card == story::StoryCard::ActOne {
+                        "card-01108-back"
+                    } else {
+                        "card-01106-back"
+                    };
+                    app.insert_resource(art::Art::with_images_for_test([(role, image)]));
+                    // Art is normally admitted before the reading is rendered.
+                    let world = app.world_mut();
+                    world.resource_scope(|world, mut art: Mut<art::Art>| {
+                        art.refresh_loaded(world.resource::<Assets<Image>>());
+                    });
+                }
+                app.world_mut().resource_mut::<Table>().dirty = false;
+                app.world_mut()
+                    .run_system_once(move |mut commands: Commands, art: Res<art::Art>| {
+                        story_reading(&mut commands, &art, size, card)
+                    })
+                    .unwrap();
+                for _ in 0..4 {
+                    app.update();
+                }
+                let button = button_named(&mut app, "Continue");
+                let world = app.world_mut();
+                let dialog = world
+                    .query_filtered::<Entity, With<ModalDialog>>()
+                    .single(world)
+                    .unwrap();
+                let height = world.get::<ComputedNode>(dialog).unwrap().size().y / scale;
+                assert!(height <= size.y * 0.9 + 1., "{card:?}: {height}");
+                if size.y == 1000. {
+                    assert!(height < 800., "Short story must fit its content: {height}");
+                }
+                let center = world.get::<UiGlobalTransform>(dialog).unwrap().translation;
+                let button_center = world.get::<UiGlobalTransform>(button).unwrap().translation;
+                assert!(
+                    (center.x - button_center.x).abs() <= scale,
+                    "{card:?} at {size:?}, {scale}x, artwork {artwork}: dialog {center:?}, Continue {button_center:?}"
+                );
+                let (body, node) = world
+                    .query::<(Entity, &ComputedNode, &ScrollablePanel)>()
+                    .iter(world)
+                    .find_map(|(entity, node, panel)| panel.inspection.then_some((entity, node)))
+                    .unwrap();
+                if size.y == 540. {
+                    assert!(
+                        node.content_size().y > node.size().y,
+                        "Narrow story scrolls"
+                    );
+                }
+                let mut ancestor = button;
+                while ancestor != dialog {
+                    assert_ne!(ancestor, body, "Continue must not scroll with the body");
+                    ancestor = world.get::<ChildOf>(ancestor).unwrap().parent();
+                }
+                super::super::tests::assert_unclipped_button(&mut app, "Continue", size, scale);
+            }
+        }
     }
 
     #[test]

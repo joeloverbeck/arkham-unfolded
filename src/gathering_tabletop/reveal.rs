@@ -70,7 +70,18 @@ pub(super) fn sync(
     mut artwork: ResMut<Artwork>,
 ) {
     artwork.0 = art.image(crate::tabletop_reveal::ART_ROLE);
-    shortcut.caption(announcement(&table.view()), art.symbol_font().clone());
+    shortcut.attention_cue(true);
+    shortcut.caption(
+        Some(
+            if announcement(&table.view()).is_some() {
+                "Resolve tokens"
+            } else {
+                "Reveal tokens"
+            }
+            .into(),
+        ),
+        art.symbol_font().clone(),
+    );
     refresh(&table, settings.as_deref(), &health, &mut shortcut);
 }
 
@@ -132,6 +143,154 @@ mod tests {
         panic!("Ordinary setup did not reach its offered reveal");
     }
 
+    fn sealed_reveal() -> Session {
+        let mut session =
+            Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::PremonitionVoice));
+        session
+            .choose(session.observe().revision, "test:reveal")
+            .unwrap();
+        let voice = session.observe().play.unwrap().players[2]
+            .hand
+            .iter()
+            .find(|card| card.code == "60416")
+            .unwrap()
+            .id;
+        session
+            .choose(
+                session.observe().revision,
+                &format!("action:ordinary:play:spell:{voice}"),
+            )
+            .unwrap();
+        session
+    }
+
+    #[test]
+    fn sealed_reveal_preserves_the_button_gap_and_keeps_its_explanation_in_the_panel() {
+        let directory = tempfile::tempdir().unwrap();
+        let session = sealed_reveal();
+        let announcement = announcement(&session.observe()).unwrap();
+        let footer_label = session
+            .observe()
+            .choices
+            .iter()
+            .find(|choice| choice.id == "test:reveal")
+            .unwrap()
+            .label
+            .clone();
+        let mut app = host(session, directory.path().join("sealed-layout.json"));
+        for (size, scale) in [(Vec2::new(1600., 1000.), 1.), (Vec2::new(960., 540.), 1.25)] {
+            crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+            app.world_mut().resource_mut::<Table>().dirty = true;
+            for _ in 0..4 {
+                app.update();
+            }
+            let footer = button(&mut app, &footer_label).unwrap();
+            let world = app.world_mut();
+            let (reveal, node, at) = world
+            .query_filtered::<(Entity, &ComputedNode, &UiGlobalTransform), With<crate::tabletop_reveal::RevealButton>>()
+            .single(world).unwrap();
+            let right = at.transform_point2(node.size() / 2.).x;
+            let mut panel = footer;
+            while world.get::<Panel>(panel).is_none() {
+                panel = world.get::<ChildOf>(panel).unwrap().parent();
+            }
+            let panel_node = world.get::<ComputedNode>(panel).unwrap();
+            let panel_at = world.get::<UiGlobalTransform>(panel).unwrap();
+            let left = panel_at.transform_point2(-panel_node.size() / 2.).x;
+            assert!(
+                ((left - right) / scale - 16.).abs() < 0.1,
+                "Preserve 16px gap: button right {right}, panel left {left}"
+            );
+            assert_eq!(
+                world.get::<AccessibleLabel>(reveal).unwrap().0,
+                "Resolve tokens"
+            );
+            let explanation = world
+                .query::<(Entity, &AccessibleLabel)>()
+                .iter(world)
+                .find_map(|(entity, label)| (label.0 == announcement).then_some(entity))
+                .expect("Keep the known faces and additional draws visible");
+            let mut ancestor = explanation;
+            while ancestor != panel {
+                ancestor = world
+                    .get::<ChildOf>(ancestor)
+                    .expect("Explanation belongs to the adjacent panel")
+                    .parent();
+            }
+            super::super::tests::assert_unclipped_button(&mut app, &footer_label, size, scale);
+        }
+    }
+
+    #[test]
+    fn reveal_control_compacts_the_panel_and_explains_jacquelines_assistance() {
+        let directory = tempfile::tempdir().unwrap();
+        let session = ordinary_reveal();
+        let mut expected_session = session.clone();
+        let before = session.observe();
+        let expected = before
+            .choices
+            .iter()
+            .filter(|choice| choice.id.starts_with("tokens:jacqueline"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(
+            expected.len() >= 2,
+            "Keep both reveal scopes even for a single draw"
+        );
+        let mut app = host(session, directory.path().join("ability-layout.json"));
+        crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+            &mut app,
+            Vec2::new(1600., 1000.),
+            1.,
+        );
+        app.world_mut().resource_mut::<Table>().dirty = true;
+        for _ in 0..4 {
+            app.update();
+        }
+        let footer = button(
+            &mut app,
+            &before
+                .choices
+                .iter()
+                .find(|choice| choice.id == "test:reveal")
+                .unwrap()
+                .label,
+        )
+        .unwrap();
+        let mut panel = footer;
+        while app.world().get::<Panel>(panel).is_none() {
+            panel = app.world().get::<ChildOf>(panel).unwrap().parent();
+        }
+        assert!(
+            app.world().get::<ComputedNode>(panel).unwrap().size().y < 300.,
+            "Short token options must fit their content"
+        );
+        click(&mut app, "Jacqueline's ability...");
+        assert_eq!(app.world().resource::<Table>().session, expected_session);
+        let text = app
+            .world_mut()
+            .query::<&AccessibleLabel>()
+            .iter(app.world())
+            .map(|label| label.0.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Tony Morgan is testing"), "{text}");
+        assert!(text.contains("at the same location"), "{text}");
+        assert!(text.contains("2 additional tokens"), "{text}");
+        for choice in &expected {
+            assert!(
+                button(&mut app, &choice.label).is_some(),
+                "Missing {}",
+                choice.id
+            );
+        }
+        click(&mut app, &expected[0].label);
+        expected_session
+            .choose(before.revision, &expected[0].id)
+            .unwrap();
+        assert_eq!(app.world().resource::<Table>().session, expected_session);
+    }
+
     fn host(session: Session, path: PathBuf) -> App {
         let mut app = super::super::tests::host(path.clone());
         let mut table = Table::new(session, path);
@@ -191,7 +350,7 @@ mod tests {
             .clone();
         let mut app = host(session.clone(), directory.path().join("keyboard.json"));
         let camera = app.world().resource::<Orbit>().pose();
-        click(&mut app, "Reveal chaos token");
+        click(&mut app, "Reveal tokens");
         let first = button(&mut app, &label).unwrap();
         let focused = app.world().resource::<InputFocus>().get();
         assert_eq!(
@@ -220,7 +379,7 @@ mod tests {
         let path = directory.path().join("pan.json");
         let session = ordinary_reveal();
         let mut app = host(session.clone(), path.clone());
-        let reveal = button(&mut app, "Reveal chaos token").unwrap();
+        let reveal = button(&mut app, "Reveal tokens").unwrap();
         // Start with the renderer's actual control focused; keyboard input and
         // activation below use the normal plugins and registered observers.
         app.world_mut()
@@ -239,7 +398,7 @@ mod tests {
                 focused.is_some(),
                 "Panning must retain the focused Reveal control"
             );
-            assert_eq!(focused, button(&mut app, "Reveal chaos token"));
+            assert_eq!(focused, button(&mut app, "Reveal tokens"));
         }
         key(&mut app, KeyCode::KeyW, Key::Character("w".into()), false);
         key(&mut app, KeyCode::Enter, Key::Enter, true);
@@ -262,7 +421,7 @@ mod tests {
         let mut app = host(session.clone(), directory.path().join("read-only.json"));
         app.insert_resource(RenderHealth::failed_for_test());
         app.update();
-        assert!(button(&mut app, "Reveal chaos token").is_none());
+        assert!(button(&mut app, "Reveal tokens").is_none());
         assert_eq!(app.world().resource::<Table>().session, session);
     }
 
@@ -279,7 +438,7 @@ mod tests {
             .expect("Jacqueline is eligible in this ordinary investigation");
         let revision = session.observe().revision;
         let mut app = host(session, path.clone());
-        click(&mut app, "Reveal chaos token");
+        click(&mut app, "Reveal tokens");
         for _ in 0..selected {
             key(&mut app, KeyCode::Tab, Key::Tab, true);
             key(&mut app, KeyCode::Tab, Key::Tab, false);
@@ -318,7 +477,7 @@ mod tests {
             .clone();
         let mut app = host(session.clone(), path.clone());
         let camera = app.world().resource::<Orbit>().pose();
-        click(&mut app, "Reveal chaos token");
+        click(&mut app, "Reveal tokens");
         assert_eq!(app.world().resource::<Table>().session, session);
         assert_eq!(app.world().resource::<Orbit>().pose(), camera);
         let entity = button(&mut app, &label).unwrap();
@@ -360,7 +519,7 @@ mod tests {
             .clone();
         let mut app = host(session.clone(), directory.path().to_owned());
         let camera = app.world().resource::<Orbit>().pose();
-        click(&mut app, "Reveal chaos token");
+        click(&mut app, "Reveal tokens");
         click(&mut app, &label);
         assert_eq!(app.world().resource::<Table>().session, session);
         assert_eq!(app.world().resource::<Orbit>().pose(), camera);
@@ -370,7 +529,7 @@ mod tests {
                 .notice
                 .contains("not committed")
         );
-        click(&mut app, "Reveal chaos token");
+        click(&mut app, "Reveal tokens");
         let entity = button(&mut app, &label).unwrap();
         app.world_mut().trigger(Activate { entity });
         app.world_mut()
@@ -380,7 +539,7 @@ mod tests {
         app.update();
         assert_eq!(app.world().resource::<Table>().session, session);
         assert_eq!(app.world().resource::<Orbit>().pose(), camera);
-        assert!(button(&mut app, "Reveal chaos token").is_none());
+        assert!(button(&mut app, "Reveal tokens").is_none());
     }
 
     #[test]

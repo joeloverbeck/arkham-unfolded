@@ -93,6 +93,138 @@ fn unfinished_presentation_extends_cadence_then_settles() {
 }
 
 #[test]
+fn reveal_control_attention_moves_only_the_icon_and_sleeps_when_paused() {
+    use crate::tabletop_reveal::{self as reveal, Artwork, Shortcut};
+    let mut app = app();
+    app.add_plugins(reveal::RevealPlugin).add_systems(
+        Update,
+        (
+            |mut time: ResMut<PresentationTime>| time.advance_by(Duration::from_millis(400)),
+            reveal::render,
+        )
+            .chain(),
+    );
+    app.world_mut().resource_mut::<Artwork>().0 = Some(Handle::default());
+    let choices = [crate::Choice {
+        id: "test:reveal".into(),
+        label: "Reveal".into(),
+        cancel_faces: vec![],
+    }];
+    {
+        let mut shortcut = app.world_mut().resource_mut::<Shortcut>();
+        shortcut.attention_cue(true);
+        shortcut.sync_offered(1, 1, &choices, true, true);
+    }
+    app.update();
+    app.world_mut()
+        .resource_mut::<Shortcut>()
+        .sync_offered(1, 1, &choices, true, false);
+    for _ in 0..3 {
+        app.update();
+    }
+    let (icon, initial) = app
+        .world_mut()
+        .query_filtered::<(Entity, &UiTransform), With<ImageNode>>()
+        .single(app.world())
+        .map(|(entity, transform)| (entity, *transform))
+        .unwrap();
+    let root = app
+        .world_mut()
+        .query_filtered::<Entity, With<reveal::Root>>()
+        .single(app.world())
+        .unwrap();
+    let button = app
+        .world_mut()
+        .query_filtered::<Entity, With<reveal::RevealButton>>()
+        .single(app.world())
+        .unwrap();
+    let hitbox = *app.world().get::<UiTransform>(button).unwrap();
+    // Force a settled cadence: only the production attention cue may keep it awake.
+    app.world_mut().resource_mut::<Cadence>().active_until = Some(Instant::now());
+    app.update();
+    assert_ne!(
+        app.world().get::<UiTransform>(icon).unwrap().translation,
+        initial.translation
+    );
+    assert_eq!(
+        app.world().get::<UiTransform>(root).unwrap().scale,
+        Vec2::ONE
+    );
+    assert_eq!(*app.world().get::<UiTransform>(button).unwrap(), hitbox);
+    assert!(!app.world().resource::<Cadence>().idle);
+
+    app.world_mut()
+        .query::<&mut Window>()
+        .single_mut(app.world_mut())
+        .unwrap()
+        .focused = false;
+    settled(&mut app);
+    let paused = *app.world().get::<UiTransform>(icon).unwrap();
+    app.update();
+    assert_eq!(*app.world().get::<UiTransform>(icon).unwrap(), paused);
+    app.world_mut()
+        .query::<&mut Window>()
+        .single_mut(app.world_mut())
+        .unwrap()
+        .focused = true;
+    app.world_mut()
+        .resource_mut::<Shortcut>()
+        .sync_offered(1, 1, &choices, true, true);
+    settled(&mut app);
+    let alternatives = [
+        choices[0].clone(),
+        crate::Choice {
+            id: "tokens:jacqueline".into(),
+            label: "Use Jacqueline".into(),
+            cancel_faces: vec![],
+        },
+    ];
+    app.world_mut()
+        .resource_mut::<Shortcut>()
+        .sync_offered(1, 1, &alternatives, true, false);
+    app.update();
+    let button = app
+        .world_mut()
+        .query_filtered::<Entity, With<reveal::RevealButton>>()
+        .single(app.world())
+        .unwrap();
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: button });
+    let request = app
+        .world_mut()
+        .resource_mut::<Shortcut>()
+        .drain()
+        .pop()
+        .unwrap();
+    assert!(matches!(
+        app.world_mut().resource_mut::<Shortcut>().admit(request),
+        Some(reveal::Accepted::Opened)
+    ));
+    settled(&mut app);
+    app.world_mut().resource_mut::<Shortcut>().dismiss();
+    app.world_mut().resource_mut::<Artwork>().0 = None;
+    settled(&mut app);
+    assert!(
+        app.world_mut()
+            .query::<&ImageNode>()
+            .iter(app.world())
+            .next()
+            .is_none()
+    );
+    app.world_mut()
+        .resource_mut::<Shortcut>()
+        .sync_offered(1, 1, &choices, false, true);
+    settled(&mut app);
+    assert!(
+        app.world_mut()
+            .query_filtered::<Entity, With<reveal::Root>>()
+            .iter(app.world())
+            .next()
+            .is_none()
+    );
+}
+
+#[test]
 fn idle_wait_is_not_charged_to_new_motion_or_delayed_into_the_next_frame() {
     let start = Instant::now();
     let mut cadence = Cadence::default();

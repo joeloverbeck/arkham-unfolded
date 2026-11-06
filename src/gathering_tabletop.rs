@@ -29,6 +29,7 @@ mod enemy_board;
 mod motion;
 mod play;
 mod presentation;
+mod reading;
 mod results;
 mod reveal;
 mod scene;
@@ -715,6 +716,7 @@ fn handle_actions(
             Action::TokenOptions(source) => {
                 table.token_options =
                     (table.token_options.as_ref() != Some(&source)).then_some(source);
+                table.dirty = true;
             }
             Action::AssetFolder => {
                 if let Some(settings) = settings.as_mut() {

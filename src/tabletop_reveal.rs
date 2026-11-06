@@ -88,6 +88,10 @@ pub(crate) struct Shortcut {
     offer: Option<Offer>,
     generation: u64,
     chooser: bool,
+    attention_cue: bool,
+    attention_phase: f32,
+    attention_moving: bool,
+    rendered_artwork: Option<Handle<Image>>,
     reduced_motion: bool,
     dirty: bool,
     opacity: f32,
@@ -96,6 +100,12 @@ pub(crate) struct Shortcut {
 }
 
 impl Shortcut {
+    pub(crate) fn attention_cue(&mut self, enabled: bool) {
+        if self.attention_cue != enabled {
+            self.attention_cue = enabled;
+            self.dirty = true;
+        }
+    }
     pub(crate) fn caption(&mut self, caption: Option<String>, font: Option<Handle<Font>>) {
         if self.caption != caption || self.symbol_font != font {
             self.caption = caption;
@@ -217,6 +227,8 @@ pub(crate) struct Root;
 pub(crate) struct FadeColor(Color);
 #[derive(Component)]
 pub(crate) struct RevealButton;
+#[derive(Component)]
+pub(crate) struct AttentionIcon;
 #[derive(Component)]
 struct OfferedMenu;
 
@@ -346,6 +358,7 @@ fn button(
     image: Option<Handle<Image>>,
     opacity: f32,
     font: &Option<Handle<Font>>,
+    centered: bool,
 ) -> Entity {
     parent
         .spawn((
@@ -391,6 +404,15 @@ fn button(
                     Pickable::IGNORE,
                 ))
                 .id();
+            if centered {
+                parent.commands().entity(text).insert((
+                    TextLayout::justify(Justify::Center),
+                    Node {
+                        max_width: percent(100),
+                        ..default()
+                    },
+                ));
+            }
             fade_text(&mut parent.commands(), text, opacity);
         })
         .id()
@@ -406,7 +428,8 @@ pub(crate) fn render(
     artwork: Res<Artwork>,
     time: Res<PresentationTime>,
     roots: Query<Entity, With<Root>>,
-    mut transforms: Query<&mut UiTransform, With<Root>>,
+    mut transforms: Query<&mut UiTransform, (With<Root>, Without<AttentionIcon>)>,
+    mut icons: Query<&mut UiTransform, (With<AttentionIcon>, Without<Root>)>,
     mut colors: Query<(
         &FadeColor,
         Option<&mut TextColor>,
@@ -434,6 +457,22 @@ pub(crate) fn render(
         shortcut.dirty = true;
     }
     let visible = shortcut.offer.is_some();
+    if shortcut.rendered_artwork != artwork.0 {
+        shortcut.rendered_artwork = artwork.0.clone();
+        shortcut.dirty = true;
+    }
+    shortcut.attention_moving = shortcut.attention_cue
+        && visible
+        && artwork.0.is_some()
+        && !shortcut.reduced_motion
+        && !shortcut.chooser
+        && windows.iter().any(|window| window.focused);
+    if shortcut.attention_moving {
+        shortcut.attention_phase = (shortcut.attention_phase + time.delta_secs() / 2.4) % 1.0;
+    } else {
+        shortcut.attention_phase = 0.;
+    }
+    let bob = -1.5 * (1.0 - (shortcut.attention_phase * std::f32::consts::TAU).cos());
     let target = if visible { 1.0 } else { 0.0 };
     if shortcut.reduced_motion {
         shortcut.opacity = target;
@@ -494,7 +533,11 @@ pub(crate) fn render(
                 Root,
                 Pickable::IGNORE,
                 UiTransform {
-                    scale: Vec2::splat(0.94 + 0.06 * opacity),
+                    scale: Vec2::splat(if shortcut.attention_cue {
+                        1.0
+                    } else {
+                        0.94 + 0.06 * opacity
+                    }),
                     ..default()
                 },
             ))
@@ -523,6 +566,7 @@ pub(crate) fn render(
                                 None,
                                 opacity,
                                 &None,
+                                false,
                             );
                             parent.commands().entity(first).insert(AutoFocus);
                             button(
@@ -532,6 +576,7 @@ pub(crate) fn render(
                                 None,
                                 opacity,
                                 &None,
+                                false,
                             );
                             button(
                                 parent,
@@ -540,25 +585,63 @@ pub(crate) fn render(
                                 None,
                                 opacity,
                                 &None,
+                                false,
                             );
                             label(parent, feedback::KEYBOARD_HINT, 12.0, PAPER, opacity);
                         });
+                }
+                if shortcut.attention_cue
+                    && let Some(image) = artwork.0.clone()
+                {
+                    parent.spawn((
+                        ImageNode {
+                            color: TEAL.with_alpha(opacity),
+                            ..ImageNode::new(image)
+                        },
+                        Node {
+                            width: px(42),
+                            height: px(42),
+                            align_self: AlignSelf::Center,
+                            ..default()
+                        },
+                        AttentionIcon,
+                        UiTransform {
+                            translation: Val2::px(0., bob),
+                            ..default()
+                        },
+                        FadeColor(TEAL),
+                        Pickable::IGNORE,
+                    ));
                 }
                 let main = button(
                     parent,
                     shortcut.caption.as_deref().unwrap_or("Reveal chaos token"),
                     Request::Press(generation),
-                    artwork.0.clone(),
+                    if shortcut.attention_cue {
+                        None
+                    } else {
+                        artwork.0.clone()
+                    },
                     opacity,
                     &shortcut.symbol_font,
+                    shortcut.attention_cue,
                 );
                 parent.commands().entity(main).insert(Node {
-                    width: px(if shortcut.caption.is_some() { 240 } else { 118 }),
+                    width: px(if shortcut.caption.is_some() && !shortcut.attention_cue {
+                        240
+                    } else {
+                        118
+                    }),
                     min_height: px(72),
                     padding: UiRect::all(px(10)),
                     flex_direction: FlexDirection::Column,
                     row_gap: px(6),
                     align_items: AlignItems::Center,
+                    justify_content: if shortcut.attention_cue {
+                        JustifyContent::Center
+                    } else {
+                        default()
+                    },
                     border_radius: BorderRadius::all(px(8)),
                     ..default()
                 });
@@ -571,7 +654,14 @@ pub(crate) fn render(
         shortcut.dirty = false;
     }
     for mut transform in &mut transforms {
-        transform.scale = Vec2::splat(0.94 + 0.06 * shortcut.opacity);
+        transform.scale = Vec2::splat(if shortcut.attention_cue {
+            1.0
+        } else {
+            0.94 + 0.06 * shortcut.opacity
+        });
+    }
+    for mut transform in &mut icons {
+        transform.translation = Val2::px(0., bob);
     }
     for mut opacity in &mut feedback_opacity {
         opacity.0 = shortcut.opacity;
@@ -590,7 +680,7 @@ pub(crate) fn render(
 
 fn request_redraw(shortcut: Res<Shortcut>, mut redraw: ResMut<Redraw>) {
     let target = if shortcut.offer.is_some() { 1.0 } else { 0.0 };
-    if shortcut.dirty || shortcut.opacity != target {
+    if shortcut.dirty || shortcut.opacity != target || shortcut.attention_moving {
         redraw.request();
     }
 }
