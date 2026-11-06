@@ -1,8 +1,8 @@
 # Arkham Unfolded
 
-Read `docs/foundation/mission.md`, `docs/foundation/play-contract.md`, and `docs/foundation/sources-and-verification.md` before selecting project work. GitHub Issues and pull requests own active work. Consult `README.md` for implemented status and launch instructions.
+Before memory lookup, session discovery, supporting-document reads or tool discovery, read the [tracker procedure](docs/agents/issue-tracker.md) from client selection through **Bounded context reads**. It owns the GitHub client choice and shared reading budget.
 
-For long references or multiple excerpts, use the [bounded context reader](docs/agents/issue-tracker.md#bounded-context-reads), including its shared batch budget.
+Read `docs/foundation/mission.md`, `docs/foundation/play-contract.md`, and `docs/foundation/sources-and-verification.md` before selecting project work. GitHub Issues and pull requests own active work. Consult `README.md` for implemented status and launch instructions.
 
 <!-- BEGIN PRINCIPLES-FOR-REPOS BOOTSTRAP 2026-09-30.1 -->
 ## Repository constitution

@@ -146,6 +146,7 @@ Finish source reading, tool discovery, builds, headless checks and route plannin
 
 ```text
 Candidate: commit; executable/hash; completed check records.
+Retention: final evidence directory; selected records and original-path mapping.
 Normal launch: owner command/cwd; resolved save; fresh or resume; startup result;
   tested replacement command and README recovery when compatibility changed.
 Run: exact launch/resume command; isolated save/settings/art paths; run manifest.
@@ -175,7 +176,7 @@ Before scheduling a capture from a prepared save, load it through the production
 
 When the owner supplies physical input, present the complete human route, expected results, capture pauses and stopping conditions before starting the timer or opening the game. Once the agreed interval begins, announce the absolute close deadline and let the owner follow that route without switching back to chat for routine instructions or intermediate answers. Request one combined report after the window closes, including anything untested. Interrupt during the run only for a planned capture pause, a failure, a stop condition or a necessary deadline reminder. The existing allowance and cleanup reserve still apply; delivering instructions late does not extend them.
 
-Before recording motion, frame both its source and destination with the relevant labels visible. Use a short recording for movement evidence; inspect it after cleanup when possible. Reserve time for the affected fresh-process reopening checks before repeating an already observed path. At a context interruption, recover only the handoff, run manifest and last acknowledged event/capture, retaining the original deadline. An acknowledgement without a terminal result can hide partial input: inspect the existing helper's events before deciding whether any retry is safe. If the remaining budget cannot fit the next operation and cleanup, stop and leave that observation pending. The deadline and cleanup rules below remain controlling.
+For an animation change, prepare the [short recording recipe](#record-a-short-motion-clip) before the desktop timer starts. Put the loop, reduced-motion and relevant focus-loss/resume cases early in the route, before repeating static layouts. Frame both the moving object and its stationary neighbors, with relevant labels visible; inspect the clip after cleanup when possible. Reserve time for affected fresh-process reopening checks. At a context interruption, recover only the handoff, run manifest and last acknowledged event/capture, retaining the original deadline. An acknowledgement without a terminal result can hide partial input: inspect the existing helper's events before deciding whether any retry is safe. If the remaining budget cannot fit the next operation and cleanup, stop and leave that observation pending. The deadline and cleanup rules below remain controlling.
 
 ### Build an instrumented source copy
 
@@ -336,7 +337,90 @@ The cleanup reserve reduces normal overruns but cannot guarantee interruption of
 
 For folder persistence, exercise **Choose asset folder → check → Save folder → close**. After the supervisor exits, relaunch the staged executable using the same working directory, XDG directories and save recorded in `run.json`, omitting both `--art-root` and `--no-art`. Verify that the saved path and asset status are restored; do not create a fresh isolated run for this restart check. Capture helpers must use the new PID. A screenshot establishes the inspected rendering; the actual interaction and restart establish their separate behavior. Any review of the owner's real preference uses its explicitly agreed scope instead of these diagnostic settings.
 
-Close the verification window normally and let the launch supervisor report its exit. If cleanup is needed, interrupt that supervisor; for a manually restarted app, confirm its recorded identity before terminating it. Stop only the identified launch and helpers. Keep logs/captures local; record the revision, command, outcome and evidence location in the active issue. Remove temporary files only after the needed evidence has been retained.
+Close the verification window normally and let the launch supervisor report its exit. If cleanup is needed, interrupt that supervisor; for a manually restarted app, confirm its recorded identity before terminating it. Stop only the identified launch and helpers. Keep logs/captures local; record the revision, command, outcome and [retained evidence location](#retain-final-verification-evidence) in the active issue. Remove temporary files only after the needed evidence has been retained.
+
+### Record a short motion clip
+
+Prepare this branch only when the accepted route needs motion evidence. Before
+desktop access, check `ffmpeg -hide_banner -h demuxer=x11grab`,
+`ffmpeg -hide_banner -h encoder=libx264` and `ffprobe -version`; prepare fresh
+clip and check-record names. The tools must support the options below. A
+synthetic encoding probe can check the codec and output settings without opening
+the desktop; it does not establish native capture or animation quality.
+
+During the agreed interval, use the app PID, client window and run directory
+from [launch and interaction](#launch-capture-and-interact). Start this sequence
+only with at least 60 seconds left before the original absolute deadline.
+Recheck the client and focus through the existing guarded capture:
+
+```sh
+timeout 10s scripts/tools native capture \
+  --pid "$native_pid" --window "$native_window" --output "$review_dir/motion-before.png"
+```
+
+Require success and inspect that frame before recording. Confirm the intended
+motion is available, the window geometry is stable, and at least 45 seconds
+remain. Keep the verified window ID: `0` selects the whole desktop in FFmpeg
+and is not a permitted substitute. Record only that client, with no audio:
+
+```sh
+scripts/tools record-check --output-dir "$review_dir/motion-normal" -- \
+  timeout --signal=INT --kill-after=2s 12s \
+  ffmpeg -hide_banner -loglevel warning -nostdin -n \
+  -f x11grab -framerate 20 -draw_mouse 0 -window_id "$native_window" -i "$DISPLAY" \
+  -t 6 -an -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' \
+  -c:v libx264 -preset ultrafast -crf 18 -threads 2 -pix_fmt yuv420p \
+  "$review_dir/motion-normal.mp4"
+```
+
+This requests six seconds of video; the external timeout bounds a stalled
+encoder and leaves cleanup time. The capture must remain inside the original
+desktop interval. Keep normal-focus motion separate from a deliberately
+unfocused comparison. Record any focus operation, geometry change or obscured
+window; stop an invalid capture instead of substituting a different window.
+Use fresh names for any separately budgeted reduced-motion or resume case.
+Neither finishing a clip nor a failed capture renews the interval.
+
+After cleanup, require the recorder's `run.json` to be `finished` with exit 0
+and inspect its complete log. A timed-out or interrupted file remains partial
+evidence. Inspect the clip itself as well as its stream metadata:
+
+```sh
+ffprobe -v error -select_streams v:0 \
+  -show_entries stream=width,height,avg_frame_rate,nb_frames:format=duration \
+  -of json "$review_dir/motion-normal.mp4"
+```
+
+For Gathering's 2.4-second reminder, a six-second clip should expose more than
+two cycles, with the button and adjacent panel stationary. Metadata alone does
+not prove advancing frames, smooth pacing or readable content. Describe the
+motion actually observed; pleasantness and owner acceptance remain separate.
+
+### Retain final verification evidence
+
+Before a handoff relies on local evidence, copy its final records into a fresh
+`local/verification/<commit-or-review-digest>/<task>/` directory. `local/` is
+ignored by Git. Native launches still use fresh staging directories outside the
+checkout; retain their evidence here after their processes and grants close.
+The directory name does not replace the recorded candidate and executable hashes.
+
+Keep the completed check manifests and full logs, review snapshot and report,
+native captures/recordings and input events, and the input saves/settings needed
+to understand the inspected state. Retain a staged executable when the comparison
+depends on those exact bytes; one copy is enough when all recorded hashes match.
+Leave build caches and redundant executables disposable, and record omissions.
+Follow the [source contract](../foundation/sources-and-verification.md) for private
+inputs and artwork; local retention does not grant publication permission.
+
+Verify the selected copy by content comparison and preserve its recorded hashes.
+For example, a checksum dry run with `rsync --dry-run --checksum --itemize-changes`
+and the same selection should report no file-content differences. Check the
+recorded SHA-256 values for the executable and review manifest, and read the
+copied run results before claiming retention succeeded. Preserve original
+records unchanged; a small README maps their old absolute paths to retained
+copies and lists any omissions. Link this location from the current handoff.
+Keep it while acceptance or later comparisons rely on it; a temporary directory,
+cache location or conversation attachment is not the sole retained copy.
 
 Protocol references: [RemoteDesktop](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html) and [ScreenCast](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html). Support and evidence remain limited to the desktop and journey actually exercised.
 
