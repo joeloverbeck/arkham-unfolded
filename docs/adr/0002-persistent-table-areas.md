@@ -10,6 +10,41 @@ presentation, supported save/resume, Undo, inspection and camera decisions remai
 in force. Dated implementation and verification records below remain historical
 evidence; the retirement decision does not claim its implementation is complete.
 
+## Gathering movement, location revelation and Jacqueline controls
+
+On 2026-11-06, against `239dfe427e3883facdaa51a395269340ff8301d1`, Joel accepted
+Q1–Q3 from the [Jacqueline and map investigation](../research/gathering-jacqueline-and-map-presentation.md):
+"as you recommend" for Q1 and Q2, followed by the same answer for Q3. The selected
+effect is readable, physical component handling during ordinary Gathering play.
+
+- An investigator standee lifts with its complete base and holder, travels via
+  the connecting brass arrow and settles into a destination location standee
+  slot. Other investigators remain stationary. On first entry, the destination
+  location then turns over in place using its actual faces; its counted clue
+  token descends and settles with one brief gold/green glint. Target roughly one
+  to two seconds for the complete first-entry sequence, subject to native tuning.
+  Ordinary revisits omit the flip and clue placement. No extra Continue is added.
+- Location enemy-presence markers retain their fixed group identity. A moving
+  enemy uses a temporary, individually named travelling marker along the brass
+  route, with its card transfer and group counts synchronized. This does not add
+  permanent enemy standees or put enemies in investigator standee slots.
+- For a proven-equivalent ordinary singleton reveal, show one genuine **Use
+  Jacqueline — reveal 3 tokens** action with the cancellation explanation.
+  Distinct scopes or Arbiter costs use an aligned disclosure row with a chevron
+  and clearly explained choices. Declaration, revelation and cancellation remain
+  explicit. Preserve every distinct legal continuation; a matching physical draw
+  count alone is insufficient evidence for collapsing choices. This narrowly
+  supersedes the earlier requirement to retain both singleton scope aliases.
+
+Animations present successfully committed consequences and preserve existing
+save/reopen, Undo, missing-art, inspection, manual-camera and Reduced-motion
+behavior. Reduced motion shows the same completed state immediately. Enemies do
+not reveal rooms; zero-clue reveals create no clue token; scenario placement does
+not invent a map connection. Location names replace raw identifiers in shared
+player-facing destination labels. The linked investigation records the separate
+Jacqueline rules defects and verification requirements. These accepted choices
+do not establish repaired behavior, native pacing or #89's complete-play acceptance.
+
 ## Gathering reveal cue and story panel refinements
 
 During the 2026-11-06 `grill-with-docs` interview for

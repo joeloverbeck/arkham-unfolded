@@ -3,6 +3,7 @@ use super::*;
 mod cards;
 mod counters_and_enemies;
 mod draws;
+mod map_motion;
 mod navigation;
 mod restart;
 mod results;

@@ -26,6 +26,7 @@ mod consequences;
 mod controls;
 mod draws;
 mod enemy_board;
+mod map_motion;
 mod motion;
 mod play;
 mod presentation;
@@ -495,7 +496,7 @@ fn install(app: &mut App) {
                 controls::render,
                 contextual_feedback,
                 enemy_board::highlight,
-                motion::animate,
+                (motion::animate, map_motion::animate).chain(),
                 sealed::animate,
                 shuffle::animate,
                 card_counters::follow,
@@ -1123,12 +1124,16 @@ fn render(
         view,
         story,
         transfers,
+        map_arrivals,
     } = {
         let table = &mut *table;
         table.presentation.prepare(&table.session)
     };
     for transfer in transfers {
         table.motion_origins.transfer(transfer);
+    }
+    for (id, at) in map_arrivals {
+        table.motion_origins.arrived(id, at);
     }
     consequences.prepare(
         table.last_rendered.as_ref(),
@@ -1164,6 +1169,12 @@ fn render(
     table
         .presentation
         .render_draws(&mut commands, &mut meshes, &mut materials, &context);
+    if !table.presentation.drawing() {
+        table
+            .presentation
+            .map()
+            .render(&mut commands, &mut meshes, &mut materials, &context);
+    }
     ui::render(
         &mut commands,
         &table,

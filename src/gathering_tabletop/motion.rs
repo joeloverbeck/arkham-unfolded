@@ -144,6 +144,13 @@ impl Origins {
     pub(super) fn transfer(&mut self, transfer: draws::Transfer) {
         self.transfers.insert(transfer.id, transfer);
     }
+
+    /// A map beat already carried this card to its committed destination.
+    pub(super) fn arrived(&mut self, id: u16, at: Vec3) {
+        self.positions.insert(id, at);
+        self.continuing.remove(&id);
+        self.transfers.remove(&id);
+    }
 }
 
 impl CardMotion {
@@ -201,13 +208,31 @@ fn attach_back(
     parent: Entity,
     source: crate::gathering::DrawSource,
 ) {
-    use crate::tabletop_pieces::{CARD_LENGTH, CARD_WIDTH, card_shape};
     let image = art.image(match source {
         crate::gathering::DrawSource::Investigator(_) => "card-back/player",
         crate::gathering::DrawSource::Encounter => "card-back/encounter",
     });
+    attach_reverse(
+        commands,
+        meshes,
+        materials,
+        parent,
+        image,
+        "Drawn card back",
+    );
+}
+
+pub(super) fn attach_reverse(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    parent: Entity,
+    image: Option<Handle<Image>>,
+    name: &'static str,
+) {
+    use crate::tabletop_pieces::{CARD_LENGTH, CARD_WIDTH, card_shape};
     commands.spawn((
-        Name::new("Drawn card back"),
+        Name::new(name),
         Mesh3d(meshes.add(card_shape::face(CARD_WIDTH, CARD_LENGTH))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: if image.is_some() {

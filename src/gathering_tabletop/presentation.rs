@@ -9,6 +9,7 @@ pub(super) struct Presentation {
     clock: f32,
     draw_cues: Vec<DrawCue>,
     draws: draws::Playback,
+    map: map_motion::Playback,
     story: story::Reading,
     results: results::Reading,
 }
@@ -18,12 +19,14 @@ pub(super) struct Frame {
     pub view: Observation,
     pub story: story::Faces,
     pub transfers: Vec<draws::Transfer>,
+    pub map_arrivals: Vec<(u16, Vec3)>,
 }
 
 #[derive(PartialEq, Eq)]
 pub(super) enum Progress {
     Waiting,
     Draw,
+    Map,
     Moment,
 }
 
@@ -35,6 +38,7 @@ impl Presentation {
             clock: 0.,
             draw_cues: vec![],
             draws: draws::Playback::default(),
+            map: map_motion::Playback::default(),
             story: story::Reading::for_session(session),
             results: results::Reading::for_session(session),
         }
@@ -43,6 +47,7 @@ impl Presentation {
     pub(super) fn view(&self, session: &Session) -> Observation {
         self.draws
             .view()
+            .or_else(|| self.map.view())
             .cloned()
             .unwrap_or_else(|| self.base_view(session))
     }
@@ -55,7 +60,7 @@ impl Presentation {
     }
 
     pub(super) fn active(&self) -> bool {
-        self.drawing() || self.index < self.moments.len()
+        self.drawing() || self.map.active() || self.index < self.moments.len()
     }
 
     pub(super) fn drawing(&self) -> bool {
@@ -80,6 +85,11 @@ impl Presentation {
 
     pub(super) fn reduce_motion(&mut self) {
         self.draws.clear();
+        self.map.clear();
+    }
+
+    pub(super) fn map(&self) -> &map_motion::Playback {
+        &self.map
     }
 
     /// The caller has already saved and installed the successful choice.
@@ -98,7 +108,7 @@ impl Presentation {
         self.index = 0;
         self.clock = 0.;
         self.draw_cues = draws;
-        self.start_draws(session, before, reduced_motion);
+        self.start_transitions(session, before, reduced_motion);
     }
 
     /// In-place reopen differs from fresh open: retain the exact ongoing reading
@@ -109,12 +119,14 @@ impl Presentation {
         }
     }
 
-    fn start_draws(&mut self, session: &Session, before: &Observation, reduced_motion: bool) {
+    fn start_transitions(&mut self, session: &Session, before: &Observation, reduced_motion: bool) {
         self.draws.clear();
+        self.map.clear();
         if reduced_motion {
             return;
         }
         let target = self.base_view(session);
+        self.map = map_motion::Playback::new(before, &target);
         let sequence = self.moments.get(self.index).map(|moment| moment.sequence);
         let batches = self
             .draw_cues
@@ -130,6 +142,9 @@ impl Presentation {
     pub(super) fn prepare(&mut self, session: &Session) -> Frame {
         let transfers = self.draws.take_transfers();
         let view = self.view(session);
+        if !self.drawing() {
+            self.map.rendered();
+        }
         self.results.synchronize(&view);
         let story = if let Some(moment) = self.moments.get(self.index) {
             story::Faces::from_codes(moment.revealed_story.iter().map(String::as_str))
@@ -145,6 +160,7 @@ impl Presentation {
             view,
             story,
             transfers,
+            map_arrivals: self.map.take_arrivals(),
         }
     }
 
@@ -173,6 +189,13 @@ impl Presentation {
             }
             return Progress::Waiting;
         }
+        if self.map.active() {
+            return if self.map.advance(delta, moving) {
+                Progress::Map
+            } else {
+                Progress::Waiting
+            };
+        }
         self.clock += delta;
         let play = view
             .play
@@ -193,7 +216,7 @@ impl Presentation {
         }
         self.index += 1;
         self.clock = 0.;
-        self.start_draws(session, &view, reduced_motion);
+        self.start_transitions(session, &view, reduced_motion);
         Progress::Moment
     }
 

@@ -834,6 +834,27 @@ fn displayed_choices_remove_copy_annotations_without_changing_recorded_choices()
 }
 
 #[test]
+fn recorded_destination_labels_display_known_names_without_rewriting_the_record() {
+    let view = Session::with_seed(19).observe();
+    for (original, expected) in [
+        (
+            "Spend an action: Move to 01113",
+            "Spend an action: Move to Attic",
+        ),
+        (
+            "Move to 01114 after evading",
+            "Move to Cellar after evading",
+        ),
+        (
+            "Spawn Tony's Quarry at 01112",
+            "Spawn Tony's Quarry at Hallway",
+        ),
+    ] {
+        assert_eq!(display_history(&view, original), expected);
+    }
+}
+
+#[test]
 fn enemy_inspection_keeps_each_public_physical_state_without_showing_its_id() {
     let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringHunters);
     let view = session.observe();

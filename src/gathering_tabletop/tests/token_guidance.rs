@@ -1,5 +1,172 @@
 use super::*;
 
+#[test]
+fn curse_followup_offers_one_new_jacqueline_declaration_while_prior_tokens_stay_held() {
+    let mut session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tokens(
+        crate::gathering::TokenFixture::ArbiterCurse,
+    ));
+    for _ in 0..5 {
+        let view = session.observe();
+        if view.choices.iter().any(|choice| choice.id == "test:reveal") {
+            break;
+        }
+        let id = if view
+            .choices
+            .iter()
+            .any(|choice| choice.id == "commit:confirm")
+        {
+            "commit:confirm"
+        } else {
+            "window:pass"
+        };
+        session.choose(view.revision, id).unwrap();
+    }
+    let arbiter = session
+        .observe()
+        .choices
+        .into_iter()
+        .find(|choice| choice.id.starts_with("tokens:jacqueline:arbiter:"))
+        .unwrap()
+        .id;
+    for id in [
+        arbiter.as_str(),
+        "test:reveal",
+        "tokens:cancel:1",
+        "tokens:cancel:2",
+        "tokens:confirm",
+    ] {
+        session.choose(session.observe().revision, id).unwrap();
+    }
+    let held = session.observe().play.unwrap().tokens.unwrap().revealed;
+    assert_eq!(held.len(), 3);
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("curse.json")), true);
+    let action = choice_button(&mut app, "Use Jacqueline — reveal 3 tokens")
+        .expect("The new curse reveal has the same direct declaration control");
+    assert!(choice_button(&mut app, "Use Jacqueline — spend round use").is_none());
+    app.world_mut().trigger(Activate { entity: action });
+    app.update();
+    let tokens = app
+        .world()
+        .resource::<Table>()
+        .session
+        .observe()
+        .play
+        .unwrap()
+        .tokens
+        .unwrap();
+    assert_eq!(
+        tokens.revealed, held,
+        "Declaring never releases or redraws held tokens"
+    );
+    assert_eq!(tokens.fresh_reveal_count(), Some(3));
+}
+
+#[test]
+fn plain_jacqueline_control_declares_three_tokens_without_revealing_or_changing_tester() {
+    let mut session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::JacquelineCancellation);
+    for _ in 0..5 {
+        let view = session.observe();
+        if view.choices.iter().any(|choice| choice.id == "test:reveal") {
+            break;
+        }
+        let id = if view
+            .choices
+            .iter()
+            .any(|choice| choice.id == "commit:confirm")
+        {
+            "commit:confirm"
+        } else {
+            "window:pass"
+        };
+        session.choose(view.revision, id).unwrap();
+    }
+    let revealer = session.observe().play.unwrap().tokens.unwrap().revealer;
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("tokens.json")), true);
+    let action = choice_button(&mut app, "Use Jacqueline — reveal 3 tokens")
+        .expect("One direct ability action");
+    assert!(button_with_label(&mut app, "Jacqueline's ability...").is_none());
+    app.world_mut().trigger(Activate { entity: action });
+    app.update();
+    let tokens = app
+        .world()
+        .resource::<Table>()
+        .session
+        .observe()
+        .play
+        .unwrap()
+        .tokens
+        .unwrap();
+    assert_eq!(tokens.revealer, revealer);
+    assert!(tokens.revealed.is_empty());
+    assert_eq!(tokens.fresh_reveal_count(), Some(3));
+}
+
+#[test]
+fn jacqueline_cost_disclosure_is_flat_aligned_and_does_not_execute_a_choice() {
+    let mut session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tokens(
+        crate::gathering::TokenFixture::ArbiterCancellation,
+    ));
+    for _ in 0..5 {
+        let view = session.observe();
+        if view.choices.iter().any(|choice| choice.id == "test:reveal") {
+            break;
+        }
+        let id = if view
+            .choices
+            .iter()
+            .any(|choice| choice.id == "commit:confirm")
+        {
+            "commit:confirm"
+        } else {
+            "window:pass"
+        };
+        session.choose(view.revision, id).unwrap();
+    }
+    let before = session.clone();
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("tokens.json")), true);
+    let disclosure = choice_button(&mut app, "▸ Jacqueline's ability options · show").unwrap();
+    assert_eq!(
+        app.world().get::<BackgroundColor>(disclosure).unwrap().0,
+        Color::NONE
+    );
+    app.world_mut().trigger(Activate { entity: disclosure });
+    app.update();
+    assert_eq!(app.world().resource::<Table>().session, before);
+    let expanded = choice_button(&mut app, "▾ Jacqueline's ability options · hide").unwrap();
+    let ordinary = choice_button(&mut app, "Use Jacqueline — spend round use").unwrap();
+    let arbiter = choice_button(&mut app, "Use Jacqueline + Arbiter — preserve round use").unwrap();
+    let resolve = choice_button(&mut app, "Resolve the declared token reveal").unwrap();
+    let left = |entity| {
+        let node = app.world().get::<ComputedNode>(entity).unwrap();
+        app.world()
+            .get::<UiGlobalTransform>(entity)
+            .unwrap()
+            .transform_point2(-node.size() / 2.)
+            .x
+    };
+    assert!((left(expanded) - left(resolve)).abs() < 0.1);
+    assert!((left(ordinary) - left(resolve)).abs() < 0.1);
+    assert!(
+        app.world()
+            .get::<feedback::DisclosureButton>(arbiter)
+            .is_none()
+    );
+    app.world_mut().trigger(Activate { entity: arbiter });
+    app.update();
+    let live = app.world().resource::<Table>().session.observe();
+    assert!(
+        !live
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tokens:jacqueline"))
+    );
+    assert!(live.play.unwrap().tokens.unwrap().revealed.is_empty());
+}
+
 fn voice_ra_selection() -> Session {
     use crate::gathering::{HostileFixture, TokenFixture};
     let mut session =

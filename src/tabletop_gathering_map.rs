@@ -223,6 +223,24 @@ impl GatheringMap {
         code == "01115" && !revealed
     }
 
+    /// Follow the exact displayed brass link, in the requested direction.
+    /// No link is invented for scenario placement or a room that is not shown.
+    pub(crate) fn connection_route(&self, from: &str, to: &str) -> Option<Vec<Vec3>> {
+        let (from, to) = (Room::from_code(from)?, Room::from_code(to)?);
+        let (connection, points) = self.links.iter().find(|(link, _)| {
+            (link.from == from && link.to == to && link.forward)
+                || (link.to == from && link.from == to && link.backward)
+        })?;
+        let mut route: Vec<_> = points
+            .iter()
+            .map(|point| Vec3::new(point.x, 0., point.y))
+            .collect();
+        if connection.from != from {
+            route.reverse();
+        }
+        Some(route)
+    }
+
     /// Return root entities so each renderer owns its own scene cleanup.
     pub fn spawn(
         &self,

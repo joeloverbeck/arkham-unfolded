@@ -32,6 +32,10 @@ pub(crate) fn sole_inspection<T>(operations: impl IntoIterator<Item = Option<T>>
 #[derive(Component)]
 pub(crate) struct ContextButton;
 
+/// A disclosure retains keyboard/hover feedback without looking like a game action.
+#[derive(Component)]
+pub(crate) struct DisclosureButton;
+
 /// Presentation-only opacity; hover and keyboard focus retain their shared style.
 #[derive(Component)]
 pub(crate) struct FeedbackOpacity(pub f32);
@@ -234,16 +238,19 @@ fn button_feedback(
             &mut BackgroundColor,
             &mut Outline,
             Option<&FeedbackOpacity>,
+            Has<DisclosureButton>,
         ),
         With<ContextButton>,
     >,
     focus: Option<Res<InputFocus>>,
 ) {
-    for (entity, hover, pressed, mut background, mut outline, opacity) in &mut buttons {
+    for (entity, hover, pressed, mut background, mut outline, opacity, disclosure) in &mut buttons {
         background.0 = if pressed {
             GOLD
         } else if hover.0 {
             HOVER
+        } else if disclosure {
+            Color::NONE
         } else {
             NEUTRAL
         };

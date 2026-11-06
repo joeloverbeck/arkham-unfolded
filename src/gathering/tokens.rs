@@ -22,6 +22,7 @@ pub struct SealedPremonition {
 pub enum TokenFixture {
     ProtectedNumbers,
     ArbiterCancellation,
+    ArbiterCurse,
     DarkProphecy,
     RobesProphecy,
     NestedProphecyCleanup,
@@ -149,7 +150,7 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
                 .expect("Selected Dark Future");
             jacqueline.threats.push(jacqueline.deck.remove(index));
         }
-        TokenFixture::ArbiterCancellation => {
+        TokenFixture::ArbiterCancellation | TokenFixture::ArbiterCurse => {
             let index = jacqueline
                 .deck
                 .iter()
@@ -603,6 +604,24 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
         TokenFace::Zero,
         TokenFace::MinusOne,
     ]);
+    if case == TokenFixture::ArbiterCurse {
+        let patrice = &mut game.players[Investigator::Patrice.index()];
+        let index = patrice
+            .deck
+            .iter()
+            .position(|card| card.code == "07032")
+            .expect("Promise of Power supplied the curse");
+        patrice.discard.push(patrice.deck.remove(index));
+        game.bag.push(TokenFace::Curse);
+        game.set_fixture_tokens(vec![
+            TokenFace::Curse,
+            TokenFace::Zero,
+            TokenFace::MinusOne,
+            TokenFace::PlusOne,
+            TokenFace::MinusTwo,
+            TokenFace::MinusThree,
+        ]);
+    }
     if matches!(
         case,
         TokenFixture::DarkProphecy | TokenFixture::RobesProphecy
@@ -1256,12 +1275,15 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
             let mut result = vec![choice("test:reveal", "Resolve the declared token reveal")];
             let owner = &game.players[tokens.revealer.index()];
             let jacqueline = &game.players[Investigator::Jacqueline.index()];
+            let mut positions = vec![];
+            tokens.root.declarations(vec![], &mut positions);
             let jacqueline_available = game.jacqueline_uses == 0
                 && !jacqueline.defeated
                 && !jacqueline.resigned
-                && jacqueline.location == owner.location;
-            let mut positions = vec![];
-            tokens.root.declarations(vec![], &mut positions);
+                && jacqueline.location == owner.location
+                // Arbiter exempts the round limit, not the reaction's trigger.
+                // A later curse reveal replaces this root and gets its own opportunity.
+                && !positions.iter().any(|(_, _, used)| *used);
             for (path, policy, used_jacqueline) in positions {
                 let position = path_name(&path);
                 let target = tokens.target_label(&path);
