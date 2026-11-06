@@ -37,6 +37,7 @@ pub(crate) fn asset_roles() -> impl Iterator<Item = String> {
 pub(crate) enum CounterKind {
     Clue,
     Resource,
+    Supply,
     Ammo,
     Charge,
     Bounty,
@@ -46,7 +47,7 @@ pub(crate) enum CounterKind {
 impl CounterKind {
     fn size(self) -> f32 {
         match self {
-            Self::Resource => 0.9,
+            Self::Resource | Self::Supply => 0.9,
             _ => 0.8,
         }
     }
@@ -55,6 +56,7 @@ impl CounterKind {
         match self {
             Self::Clue => "Clues",
             Self::Resource => "Resources",
+            Self::Supply => "Supplies",
             Self::Ammo => "Ammo",
             Self::Charge => "Charges",
             Self::Bounty => "Bounties",
@@ -65,7 +67,7 @@ impl CounterKind {
     pub(crate) fn image_role(self) -> &'static str {
         match self {
             Self::Clue => "token/clue",
-            Self::Resource => "token/resource",
+            Self::Resource | Self::Supply => "token/resource",
             Self::Ammo => "token/ammo",
             Self::Charge => "token/charge",
             Self::Bounty => "token/bounty",
@@ -114,7 +116,7 @@ pub(crate) fn spawn_count(
     if visual.amount == 0
         && !matches!(
             visual.kind,
-            CounterKind::Ammo | CounterKind::Charge | CounterKind::Bounty
+            CounterKind::Ammo | CounterKind::Charge | CounterKind::Bounty | CounterKind::Supply
         )
     {
         return None;
@@ -142,7 +144,7 @@ pub(crate) fn spawn_count(
             0.0,
             0.04,
             match visual.kind {
-                CounterKind::Resource => 0.403,
+                CounterKind::Resource | CounterKind::Supply => 0.403,
                 _ => 0.336,
             },
         ),
@@ -176,7 +178,9 @@ fn spawn_body(
             Mesh::from(Cylinder::new(0.31, 0.12)),
             Color::srgb(0.13, 0.30, 0.22),
         ),
-        CounterKind::Resource => (resource_body(), Color::srgb(0.33, 0.20, 0.10)),
+        CounterKind::Resource | CounterKind::Supply => {
+            (resource_body(), Color::srgb(0.33, 0.20, 0.10))
+        }
         CounterKind::Ammo => (
             Mesh::from(Cylinder::new(0.31, 0.12)),
             Color::srgb(0.40, 0.10, 0.08),
@@ -222,7 +226,7 @@ fn spawn_body(
     }
     if let Some(image) = image {
         let (face, rotation) = match kind {
-            CounterKind::Resource => (
+            CounterKind::Resource | CounterKind::Supply => (
                 Plane3d::default().mesh().size(0.58, 0.654).build(),
                 Quat::IDENTITY,
             ),
@@ -244,7 +248,9 @@ fn spawn_body(
                 // emblem, not a usable transparency mask. Preserve that RGB;
                 // the circular mesh clips the square image's white corners.
                 alpha_mode: match kind {
-                    CounterKind::Resource | CounterKind::Charge => AlphaMode::Blend,
+                    CounterKind::Resource | CounterKind::Supply | CounterKind::Charge => {
+                        AlphaMode::Blend
+                    }
                     _ => AlphaMode::Opaque,
                 },
                 ..default()

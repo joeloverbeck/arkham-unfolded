@@ -702,6 +702,80 @@ pub(super) fn global_choices(view: &Observation) -> Vec<Choice> {
         .collect()
 }
 
+/// Administrative steps have no strategic alternative. The UI still commits
+/// their existing revision-bound choices, preserving saves and the audit trail.
+pub(super) fn automatic_choice(view: &Observation) -> Option<&str> {
+    if view
+        .choices
+        .iter()
+        .any(|choice| choice.id == "enemy:skip-empty")
+    {
+        return Some("enemy:skip-empty");
+    }
+    let mut choices = view.choices.iter().filter(|choice| choice.id != "undo");
+    let choice = choices.next()?;
+    if choices.next().is_some() {
+        return None;
+    }
+    matches!(
+        choice.id.as_str(),
+        "enemy:attacks"
+            | "enemy:next-investigator"
+            | "enemy:attacks-complete"
+            | "enemy:attack-complete"
+            | "enemy:end"
+            | "phase-window:pass"
+    )
+    .then_some(choice.id.as_str())
+}
+
+pub(super) fn window_opportunities(view: &Observation) -> Vec<(Source, String)> {
+    if !view
+        .choices
+        .iter()
+        .any(|choice| matches!(choice.id.as_str(), "window:pass" | "phase-window:pass"))
+    {
+        return vec![];
+    }
+    let mut result = Vec::new();
+    for choice in &view.choices {
+        let Route::Sources(mut sources) = route(view, &choice.id) else {
+            continue;
+        };
+        // The other Violin route is its discard payment, not a playable card.
+        if choice.id.starts_with("violin:") {
+            sources.truncate(1);
+        }
+        for source in sources {
+            if result.iter().any(|(prior, _)| prior == &source) {
+                continue;
+            }
+            let label = match &source {
+                Source::Card(id) | Source::Backpack(id) => view
+                    .play
+                    .as_ref()
+                    .and_then(|play| {
+                        play.players.iter().find_map(|player| {
+                            player
+                                .hand
+                                .iter()
+                                .chain(player.assets.iter().map(|asset| &asset.card))
+                                .find(|card| card.id == *id)
+                                .map(|card| {
+                                    format!("{} — {}", player.investigator.name(), card.title)
+                                })
+                        })
+                    })
+                    .unwrap_or_else(|| choice.label.clone()),
+                Source::Investigator(owner) => format!("{} — {}", owner.name(), choice.label),
+                _ => continue,
+            };
+            result.push((source, label));
+        }
+    }
+    result
+}
+
 pub(super) fn pending_choices(view: &Observation) -> Vec<Choice> {
     view.choices
         .iter()
@@ -822,6 +896,12 @@ fn result_decline(choice: &Choice) -> bool {
 // observations. Their existing "(copy N)" annotations are unnecessary on screen.
 fn display_choice(view: &Observation, choice: &Choice) -> Choice {
     let mut shown = choice.clone();
+    if choice.id == "test:reveal"
+        && let Some(label) = reveal::announcement(view)
+    {
+        shown.label = label;
+        return shown;
+    }
     if let Some(id) = choice
         .id
         .strip_prefix("opportunity:")

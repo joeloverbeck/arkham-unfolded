@@ -4,6 +4,35 @@
 use super::*;
 use crate::tabletop_reveal::{Artwork, Shortcut};
 
+pub(super) fn announcement(view: &Observation) -> Option<String> {
+    let tokens = view.play.as_ref()?.tokens.as_ref()?;
+    let sealed = tokens.pending_sealed()?;
+    let faces = sealed
+        .faces
+        .iter()
+        .map(|face| match face {
+            crate::TokenFace::Skull => "[skull]",
+            crate::TokenFace::Cultist => "[cultist]",
+            crate::TokenFace::Tablet => "[tablet]",
+            crate::TokenFace::AutoFail => "[auto_fail]",
+            crate::TokenFace::ElderSign => "[elder_sign]",
+            crate::TokenFace::Curse => "[curse]",
+            _ => face.label(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut label = format!("Resolve sealed {faces} from Premonition");
+    match tokens.fresh_reveal_count() {
+        Some(0) => {}
+        Some(count) => label.push_str(&format!(
+            "; reveal {count} additional token{}",
+            if count == 1 { "" } else { "s" }
+        )),
+        None => label.push_str("; reveal additional tokens as declared"),
+    }
+    Some(label)
+}
+
 fn offered(view: &Observation) -> Vec<crate::Choice> {
     if !view.choices.iter().any(|choice| choice.id == "test:reveal") {
         return vec![];
@@ -41,6 +70,7 @@ pub(super) fn sync(
     mut artwork: ResMut<Artwork>,
 ) {
     artwork.0 = art.image(crate::tabletop_reveal::ART_ROLE);
+    shortcut.caption(announcement(&table.view()), art.symbol_font().clone());
     refresh(&table, settings.as_deref(), &health, &mut shortcut);
 }
 

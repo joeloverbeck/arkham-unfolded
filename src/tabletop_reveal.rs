@@ -83,6 +83,8 @@ pub(crate) enum Accepted {
 
 #[derive(Resource, Default)]
 pub(crate) struct Shortcut {
+    caption: Option<String>,
+    symbol_font: Option<Handle<Font>>,
     offer: Option<Offer>,
     generation: u64,
     chooser: bool,
@@ -94,6 +96,13 @@ pub(crate) struct Shortcut {
 }
 
 impl Shortcut {
+    pub(crate) fn caption(&mut self, caption: Option<String>, font: Option<Handle<Font>>) {
+        if self.caption != caption || self.symbol_font != font {
+            self.caption = caption;
+            self.symbol_font = font;
+            self.dirty = true;
+        }
+    }
     /// Explicit routes supplied by a consumer's current rules observation.
     pub(crate) fn sync_offered(
         &mut self,
@@ -258,6 +267,7 @@ fn offered_menu(
     generation: u64,
     size: Vec2,
     opacity: f32,
+    font: &Option<Handle<Font>>,
 ) {
     use feedback::menu::{Item, MenuText};
     let mut items = vec![
@@ -283,7 +293,7 @@ fn offered_menu(
             UiTransform::default(),
         ),
         MenuText {
-            symbol_font: &None,
+            symbol_font: font,
             action_size: 16.,
             action_pickable: Pickable::IGNORE,
         },
@@ -296,8 +306,12 @@ fn offered_menu(
         },
     );
     commands.entity(menu).observe(offered_scroll);
+    fade_text(commands, menu, opacity);
+}
+
+fn fade_text(commands: &mut Commands, root: Entity, opacity: f32) {
     commands.queue(move |world: &mut World| {
-        let mut descendants = vec![menu];
+        let mut descendants = vec![root];
         while let Some(entity) = descendants.pop() {
             if let Some(children) = world.get::<Children>(entity) {
                 descendants.extend(children.iter());
@@ -331,6 +345,7 @@ fn button(
     request: Request,
     image: Option<Handle<Image>>,
     opacity: f32,
+    font: &Option<Handle<Font>>,
 ) -> Entity {
     parent
         .spawn((
@@ -370,7 +385,13 @@ fn button(
                     Pickable::IGNORE,
                 ));
             }
-            label(parent, value, 16.0, PAPER, opacity);
+            let text = parent
+                .spawn((
+                    crate::tabletop_harm_text::ui(value, 16., PAPER, font),
+                    Pickable::IGNORE,
+                ))
+                .id();
+            fade_text(&mut parent.commands(), text, opacity);
         })
         .id()
 }
@@ -448,7 +469,14 @@ pub(crate) fn render(
         if shortcut.chooser
             && let Some(choices) = offered
         {
-            offered_menu(&mut commands, choices, generation, viewport, opacity);
+            offered_menu(
+                &mut commands,
+                choices,
+                generation,
+                viewport,
+                opacity,
+                &shortcut.symbol_font,
+            );
         }
         commands
             .spawn((
@@ -494,6 +522,7 @@ pub(crate) fn render(
                                 Request::Choose(generation, Route::Normal),
                                 None,
                                 opacity,
+                                &None,
                             );
                             parent.commands().entity(first).insert(AutoFocus);
                             button(
@@ -502,6 +531,7 @@ pub(crate) fn render(
                                 Request::Choose(generation, Route::Jacqueline),
                                 None,
                                 opacity,
+                                &None,
                             );
                             button(
                                 parent,
@@ -509,19 +539,21 @@ pub(crate) fn render(
                                 Request::Dismiss(generation),
                                 None,
                                 opacity,
+                                &None,
                             );
                             label(parent, feedback::KEYBOARD_HINT, 12.0, PAPER, opacity);
                         });
                 }
                 let main = button(
                     parent,
-                    "Reveal chaos token",
+                    shortcut.caption.as_deref().unwrap_or("Reveal chaos token"),
                     Request::Press(generation),
                     artwork.0.clone(),
                     opacity,
+                    &shortcut.symbol_font,
                 );
                 parent.commands().entity(main).insert(Node {
-                    width: px(118),
+                    width: px(if shortcut.caption.is_some() { 240 } else { 118 }),
                     min_height: px(72),
                     padding: UiRect::all(px(10)),
                     flex_direction: FlexDirection::Column,
@@ -583,6 +615,42 @@ mod offered_tests {
             .sync_offered(3, 7, choices, true, true);
         app.update();
         app
+    }
+
+    #[test]
+    fn known_symbol_caption_spans_follow_the_button_fade() {
+        let mut app = app(&[choice("test:reveal", "Reveal")]);
+        {
+            let mut shortcut = app.world_mut().resource_mut::<Shortcut>();
+            shortcut.caption(
+                Some("Resolve sealed [tablet], [auto_fail] from Premonition".into()),
+                Some(Handle::default()),
+            );
+            shortcut.reduced_motion = false;
+            shortcut.opacity = 0.2;
+        }
+        app.update();
+        let world = app.world_mut();
+        let spans = world
+            .query_filtered::<(&TextSpan, &TextColor, &FadeColor), With<TextSpan>>()
+            .iter(world)
+            .collect::<Vec<_>>();
+        assert!(spans.iter().any(|(span, _, _)| span.0.contains('o')));
+        assert!(spans.iter().any(|(span, _, _)| span.0.contains('q')));
+        assert!(
+            spans
+                .iter()
+                .all(|(_, color, _)| (color.0.alpha() - 0.2).abs() < 0.001)
+        );
+        app.world_mut().resource_mut::<Shortcut>().opacity = 0.8;
+        app.update();
+        let world = app.world_mut();
+        assert!(
+            world
+                .query_filtered::<&TextColor, With<TextSpan>>()
+                .iter(world)
+                .all(|color| (color.0.alpha() - 0.8).abs() < 0.001)
+        );
     }
 
     fn click(app: &mut App, label: &str) -> Request {

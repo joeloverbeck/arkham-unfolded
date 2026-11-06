@@ -379,7 +379,10 @@ mod tests {
                     (transform.translation.x - center.x).abs() + aabb.half_extents.x < 9.0,
                     "counter must stay on its investigator surface"
                 );
-                assert!(aabb.half_extents.y > 0.05, "counter has visible thickness");
+                assert!(
+                    (aabb.half_extents.y * 2. - 0.096).abs() < 0.001,
+                    "counter matches bounty/ammo thickness"
+                );
                 assert!(
                     transform.translation.z + aabb.half_extents.z < card.z - CARD_WIDTH / 2.0,
                     "the entire counter must clear the upper edge of the landscape card"

@@ -1,5 +1,70 @@
 # Gathering candidate
 
+## Supplies, asset harm, optional windows and sealed-token follow-up
+
+After Joel reported Peter's harm counters overlapping Patrice's action tokens,
+the shared Damage/Horror disks were reduced from 0.70 to 0.496 units in diameter,
+matching ammo/bounty counters, with proportionally resized artwork and 0.096
+thickness. Card-mounted counters move about 0.08 units toward the upper edge;
+investigator-area counters move 0.08 units closer while keeping caption anchors.
+The new Peter regression checks both ready/exhausted orientations and action-row
+clearance. Existing projected checks retain separate token/caption bounds and the
+caption-to-card gap at both tested viewport sizes and display scales.
+`/tmp/harm-token-spacing-check-2/run.json` and
+`/tmp/harm-token-spacing-build/run.json` both finished with exit 0. This follow-up
+supersedes the executable identity below. Joel subsequently confirmed the visuals
+natively and accepted the rest of this session's implementation on 2026-11-06,
+then explicitly authorized publication, PR creation, merge and pulling `main`.
+That owner report accepts this bounded increment; it does not establish completion
+of the entire scenario under #89. Publication consulted `AUTH-1`–`AUTH-3` and `PUB-1`.
+
+The 2026-11-06 local implementation against
+`f24111eb975ed5ac659d02698b747759bc7404bc` implements the
+[accepted follow-up design](../adr/0002-persistent-table-areas.md#supplies-asset-harm-player-windows-and-persistent-premonition).
+Supplies retain the shaped resource counter at zero and are named explicitly in
+context and inspection. Tennessee Sour Mash is the supplies card in the selected
+starting decks. Asset Damage/Horror counters show zero/current damage or horror
+over the supported capacity, including Lita; absent capacities have no counter.
+
+The native adapter commits administrative enemy-phase choices through the
+existing save-before-install path. No-activity detection checks Hunter movement,
+attacks, agenda movement and legal player opportunities. Existing recorded choices
+remain accepted. Retained windows name and mark their actual ability sources;
+Violin's discard-payment candidates are not advertised as playable abilities.
+
+Premonition stays in its controller's open drawer, including while its mandatory
+replacement is pending. The reveal control identifies its known faces and any
+additional fresh reveals. Tokens travel from the card before it moves to discard;
+the drawer closes after its remaining content finishes. The existing qualified
+rules interpretation for Jacqueline, Olive and multiple-token reveals is unchanged.
+
+Verification records are local:
+
+- `/tmp/gathering-fixes-full-check-4/run.json`: `finished`, exit 0 for
+  `scripts/check`, including tools, format, Clippy, application/integration tests
+  and renderer tests. The application library result is 437 passed, one optional
+  external-artwork test ignored. New regressions cover supplies at zero, real asset
+  capacities, automatic advancement and saved history, actual opportunity markers,
+  exhausted-enemy agenda movement, token origins, History pause/redraw, ordered
+  discard/drawer closure, and rich-symbol caption fading.
+- `/tmp/gathering-fixes-native-build/run.json`: `finished`, exit 0 for
+  `scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop`.
+  Executable SHA-256:
+  `4ced1f01e67b9d916e77d8f86066601a08a2a52043aa74c9dcc89835cc6dc6e7`.
+- Independent Standards and Spec reviews found the glyph fade, Violin payment
+  cue, and inactive-enemy explanation gaps; all were corrected and re-reviewed.
+
+These checks establish source behavior and production scene/UI transitions.
+No agent desktop interaction or new artwork-loading check is claimed. Joel's
+subsequent native confirmation and session acceptance are recorded above; they do
+not imply that he executed every checkpoint in this suggested route: inspect Sour Mash at zero,
+Peter and a single-capacity asset, pass an inactive enemy phase, then seal and consume
+Premonition with and without optional fresh reveals. Inspect the token departure,
+subsequent card discard, drawer retraction, History pause, and fresh-process
+continuation. Use the existing bounded native-verification procedure; personal
+saves and preferences were not used during these checks. Issue #89 retains full
+scenario playthrough and owner acceptance.
+
 Replay has been retired in all four modes. Saves from before this change are unsupported and remain untouched; use `--save` with a new path to start an attempt. New-format saves retain exact continuation, action history and applicable Undo. There is no recording export or historical reader. [Decision and scope](../adr/0003-retire-replay.md). Dated evidence below describes its original builds; references to replay in those historical reports are superseded.
 
 This is the local implementation candidate for original Gathering

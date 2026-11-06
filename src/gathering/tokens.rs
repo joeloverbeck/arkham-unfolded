@@ -749,6 +749,42 @@ pub struct TokenResolution {
 }
 
 impl TokenResolution {
+    pub fn sealing_card(&self) -> Option<u16> {
+        match &self.purpose {
+            TokenPurpose::Premonition { event, .. } => Some(event.id),
+            _ => None,
+        }
+    }
+
+    /// Known sealed faces remain public while the mandatory replacement waits.
+    pub fn pending_sealed(&self) -> Option<&SealedPremonition> {
+        fn find(node: &RevealNode) -> Option<&SealedPremonition> {
+            if !node.sealed_card_departed
+                && let Some(sealed) = &node.sealed
+            {
+                return Some(sealed);
+            }
+            node.children.iter().find_map(find)
+        }
+        find(&self.root)
+    }
+
+    /// None means a declared effect reveals until a condition, not a fixed count.
+    pub fn fresh_reveal_count(&self) -> Option<usize> {
+        fn count(node: &RevealNode) -> Option<usize> {
+            match node.policy {
+                Policy::Sealed => Some(0),
+                Policy::Draw => Some(1),
+                Policy::Katarina => None,
+                _ => node
+                    .children
+                    .iter()
+                    .try_fold(0, |total, child| Some(total + count(child)?)),
+            }
+        }
+        count(&self.root)
+    }
+
     pub fn is_skill_test(&self) -> bool {
         matches!(self.purpose, TokenPurpose::SkillTest)
     }

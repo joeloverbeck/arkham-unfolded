@@ -201,7 +201,8 @@ pub(crate) fn investigator_action(index: usize, slot: usize, additional: bool) -
 
 /// Center of a permanent counter; its caption sits between this row and the card.
 pub(crate) fn investigator_harm(index: usize, horror: bool) -> Vec3 {
-    investigator_center(index, 3) + Vec3::new(-7.15 + if horror { 0.75 } else { -0.75 }, 0.14, -7.0)
+    investigator_center(index, 3)
+        + Vec3::new(-7.15 + if horror { 0.75 } else { -0.75 }, 0.14, -6.92)
 }
 
 /// Named substitutes need wider captions, without moving the physical counters.
@@ -211,7 +212,7 @@ pub(crate) fn investigator_harm_caption(index: usize, horror: bool, named: bool)
     } else {
         0.0
     };
-    investigator_harm(index, horror) + Vec3::new(outward, 0.0, 0.4)
+    investigator_harm(index, horror) + Vec3::new(outward, 0.0, 0.32)
 }
 
 pub(crate) fn investigator_deck(index: usize) -> Vec3 {
@@ -852,11 +853,11 @@ mod tests {
             }
             assert_eq!(
                 investigator_harm(index, false),
-                center + Vec3::new(-7.90, 0.14, -7.0)
+                center + Vec3::new(-7.90, 0.14, -6.92)
             );
             assert_eq!(
                 investigator_harm(index, true),
-                center + Vec3::new(-6.40, 0.14, -7.0)
+                center + Vec3::new(-6.40, 0.14, -6.92)
             );
         }
     }

@@ -442,9 +442,13 @@ fn expanded_map_review_requires_a_clear_screen_after_the_story_transition() {
     session
         .choose(session.observe().revision, "turn:end")
         .unwrap();
+    // The new UI automatically traverses administrative enemy-phase choices.
+    while let Some(id) = controls::automatic_choice(&session.observe()).map(str::to_owned) {
+        session.choose(session.observe().revision, &id).unwrap();
+    }
     let (_directory, mut ready) = open_review_save(&session);
     let table = ready.world().resource::<Table>();
-    assert_eq!(table.view().revision, 62);
+    assert_eq!(table.view().revision, session.observe().revision);
     assert!(!table.modal());
     assert!(!table.is_presenting());
     assert!(button_with_label(&mut ready, "Continue").is_none());

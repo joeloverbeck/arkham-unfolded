@@ -32,6 +32,7 @@ mod presentation;
 mod results;
 mod reveal;
 mod scene;
+mod sealed;
 mod shuffle;
 mod story;
 mod trays;
@@ -75,6 +76,7 @@ struct Actions(Vec<Action>);
 
 #[derive(Resource)]
 struct Table {
+    sealed: sealed::State,
     session: Session,
     save_path: PathBuf,
     notice: String,
@@ -116,6 +118,7 @@ impl Table {
         let mut trays = trays::State::default();
         trays.prepare(&session.observe(), true);
         Self {
+            sealed: sealed::State::default(),
             session,
             save_path,
             notice: String::new(),
@@ -140,7 +143,7 @@ impl Table {
     }
 
     fn is_presenting(&self) -> bool {
-        self.presentation.active()
+        self.presentation.active() || self.sealed.active()
     }
 
     fn modal(&self) -> bool {
@@ -435,6 +438,7 @@ fn install(app: &mut App) {
             Update,
             (
                 poll_settings,
+                advance_framework,
                 handle_actions,
                 consequences::advance,
                 reveal::sync,
@@ -447,6 +451,7 @@ fn install(app: &mut App) {
                 contextual_feedback,
                 enemy_board::highlight,
                 motion::animate,
+                sealed::animate,
                 shuffle::animate,
                 card_counters::follow,
                 trays::animate,
@@ -897,6 +902,21 @@ fn card(
             }
         });
     if let Some(source) = spec.source {
+        if controls::window_opportunities(context.view)
+            .iter()
+            .any(|(available, _)| available == &source)
+        {
+            let label = scene::label(
+                commands,
+                context,
+                "Available now",
+                at + Vec3::new(0., 0.15, -1.45),
+                false,
+            );
+            commands
+                .entity(label)
+                .insert(motion::CardLabel(entity, Vec3::new(0., 0.15, -1.45)));
+        }
         context.bind(commands, entity, source);
     }
     if let Some(id) = spec.physical_id {
@@ -1063,6 +1083,9 @@ fn render(
         true,
         table.reduced_motion,
     );
+    let previous = table.last_rendered.clone();
+    let reduced = table.reduced_motion;
+    table.sealed.prepare(previous.as_ref(), &view, reduced);
     table.last_rendered = Some(view.clone());
     let reduced_motion = table.reduced_motion;
     table.trays.prepare(&view, reduced_motion);
@@ -1146,7 +1169,11 @@ fn advance_presentation(
     consequences: Res<consequences::State>,
     moving: Query<(), With<motion::CardMotion>>,
 ) {
-    if !health.allows_play() || consequences.active() || table.presentation_blocked() {
+    if !health.allows_play()
+        || consequences.active()
+        || table.sealed.active()
+        || table.presentation_blocked()
+    {
         return;
     }
     let table = &mut *table;
@@ -1313,9 +1340,15 @@ fn world_labels(
 
 fn contextual_feedback(table: Res<Table>, mut cards: Query<(&ContextTarget, &mut CardFeedback)>) {
     let view = table.view();
+    let opportunities = controls::window_opportunities(&view);
     let test = view.play.as_ref().and_then(|play| play.test.as_ref());
     for (target, mut feedback) in &mut cards {
         feedback.menu_source = table.context.is_menu_source(&target.source);
+        feedback.opportunity = !table.modal()
+            && !table.is_presenting()
+            && opportunities
+                .iter()
+                .any(|(source, _)| source == &target.source);
         feedback.commitment = None;
         if !table.modal()
             && !table.is_presenting()
@@ -1342,6 +1375,36 @@ fn contextual_feedback(table: Res<Table>, mut cards: Query<(&ContextTarget, &mut
     }
 }
 
+fn advance_framework(
+    table: Res<Table>,
+    health: Res<RenderHealth>,
+    settings: Option<Res<AssetSettings>>,
+    consequences: Res<consequences::State>,
+    mut actions: ResMut<Actions>,
+    mut redraw: ResMut<Redraw>,
+) {
+    if table.last_rendered.is_none()
+        || !health.allows_play()
+        || health.just_became_ready()
+        || table.presentation_blocked()
+        || table.is_presenting()
+        || table.sealed.active()
+        || consequences.active()
+        || !actions.0.is_empty()
+        || table.notice.starts_with("Decision not committed:")
+        || settings.as_ref().is_some_and(|settings| settings.is_busy())
+    {
+        return;
+    }
+    let view = table.view();
+    if let Some(id) = controls::automatic_choice(&view) {
+        actions
+            .0
+            .push(Action::Choose(table.epoch, view.revision, id.into()));
+        redraw.request();
+    }
+}
+
 fn request_redraw(
     orbit: Res<Orbit>,
     health: Res<RenderHealth>,
@@ -1352,6 +1415,7 @@ fn request_redraw(
 ) {
     if (!moving.is_empty() && !table.motion_blocked())
         || (table.trays.active() && !table.motion_blocked())
+        || (table.sealed.active() && !table.motion_blocked())
         || orbit.is_moving()
         || health.is_checking()
         || (consequences.active() && !table.motion_blocked())

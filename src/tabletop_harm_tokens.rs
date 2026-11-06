@@ -4,6 +4,11 @@ use bevy::prelude::*;
 #[derive(Component)]
 pub(crate) struct HarmToken;
 
+// Match the 0.31 × 0.8 radius and 0.12 × 0.8 thickness of ammo/bounty counters.
+pub(crate) const RADIUS: f32 = 0.248;
+const HEIGHT: f32 = 0.096;
+const ART_SCALE: f32 = RADIUS / 0.35;
+
 /// The caller owns totals, readable substitutes, scene lifetime and any animation.
 pub(crate) fn spawn(
     commands: &mut Commands,
@@ -14,7 +19,7 @@ pub(crate) fn spawn(
     horror: bool,
 ) -> Entity {
     let mut token = commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(0.35, 0.14))),
+        Mesh3d(meshes.add(Cylinder::new(RADIUS, HEIGHT))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: if horror {
                 Color::srgb(0.13, 0.36, 0.68)
@@ -33,7 +38,7 @@ pub(crate) fn spawn(
             Vec2::new(0.56, 0.46)
         } else {
             Vec2::new(0.46, 0.56)
-        };
+        } * ART_SCALE;
         token.with_child((
             Mesh3d(meshes.add(Plane3d::default().mesh().size(size.x, size.y))),
             MeshMaterial3d(materials.add(StandardMaterial {
@@ -43,7 +48,7 @@ pub(crate) fn spawn(
                 alpha_mode: AlphaMode::Blend,
                 ..default()
             })),
-            Transform::from_xyz(0.0, 0.075, 0.0),
+            Transform::from_xyz(0.0, HEIGHT / 2.0 + 0.005, 0.0),
             Pickable::IGNORE,
         ));
     }

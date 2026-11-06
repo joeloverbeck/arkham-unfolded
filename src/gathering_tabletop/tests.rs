@@ -10,6 +10,159 @@ mod review_saves;
 mod trays;
 mod victory;
 
+#[test]
+fn empty_enemy_phase_advances_without_a_click_and_saves_its_history() {
+    let mut session = (0..100)
+        .find_map(|seed| {
+            let mut session = Session::with_seed(seed);
+            for id in [
+                "lead:tony",
+                "confirm-mulligan",
+                "confirm-mulligan",
+                "confirm-mulligan",
+            ] {
+                session.choose(session.observe().revision, id).unwrap();
+            }
+            (!session.observe().investigators[2]
+                .hand
+                .iter()
+                .any(|card| card.code == "04199"))
+            .then_some(Session::with_seed(seed))
+        })
+        .unwrap();
+    for id in [
+        "lead:tony",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "turn:tony",
+        "turn:end",
+        "turn:jacqueline",
+        "turn:end",
+        "turn:patrice",
+        "turn:end",
+    ] {
+        session.choose(session.observe().revision, id).unwrap();
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("empty-phase.json");
+    let mut app = host_with_table(Table::new(session, path.clone()), false);
+    for _ in 0..40 {
+        draws::tick(&mut app, 0.1);
+    }
+    let session = &app.world().resource::<Table>().session;
+    let view = session.observe();
+    assert!(
+        view.choices
+            .iter()
+            .any(|choice| choice.id == "upkeep:ready"),
+        "{:?}",
+        view.choices
+    );
+    assert!(
+        view.history
+            .iter()
+            .any(|entry| entry.contains("Enemy phase — no activity"))
+    );
+    assert_eq!(&continuity::load_session(path).unwrap(), session);
+}
+
+#[test]
+fn player_window_explains_and_marks_the_playable_card_without_auto_passing() {
+    let mut session = (0..100)
+        .find_map(|seed| {
+            let mut session = Session::with_seed(seed);
+            for id in [
+                "lead:tony",
+                "confirm-mulligan",
+                "confirm-mulligan",
+                "confirm-mulligan",
+            ] {
+                session.choose(session.observe().revision, id).unwrap();
+            }
+            for id in ["turn:tony", "action:ordinary:investigate"] {
+                session.choose(session.observe().revision, id).unwrap();
+            }
+            session
+                .observe()
+                .choices
+                .iter()
+                .any(|choice| choice.id.starts_with("premonition:"))
+                .then_some(session)
+        })
+        .expect("A real opening hand with Premonition");
+    let before = session.observe();
+    let card = before.investigators[2]
+        .hand
+        .iter()
+        .find(|card| card.code == "04199")
+        .unwrap()
+        .id;
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(
+        Table::new(session.clone(), directory.path().join("window.json")),
+        false,
+    );
+    for _ in 0..12 {
+        draws::tick(&mut app, 0.1);
+    }
+    let text = rendered_text(&mut app);
+    assert!(text.contains("Available now"), "{text}");
+    assert!(text.contains("Jacqueline") && text.contains("Premonition"));
+    let world = app.world_mut();
+    assert!(
+        world
+            .query::<(&ContextTarget, &Children)>()
+            .iter(world)
+            .any(|(target, children)| {
+                target.source == controls::Source::Card(card)
+                    && children.iter().any(|child| {
+                        world
+                            .get::<Name>(child)
+                            .is_some_and(|name| name.as_str() == "Card available opportunity")
+                            && world.get::<Visibility>(child) == Some(&Visibility::Inherited)
+                    })
+            })
+    );
+    assert_eq!(world.resource::<Table>().session, session);
+    session.choose(before.revision, "window:pass").unwrap();
+}
+
+#[test]
+fn violin_opportunity_marks_its_ability_not_the_discard_payment() {
+    use crate::gathering::HostileFixture;
+    let mut session = Session::with_hostile_fixture(HostileFixture::PatriceCancellationVision);
+    let view = session.observe();
+    let cancel = view
+        .choices
+        .iter()
+        .find(|choice| choice.id.starts_with("test-of-will:"))
+        .unwrap();
+    session.choose(view.revision, &cancel.id).unwrap();
+    let view = session.observe();
+    let play = view.play.as_ref().unwrap();
+    let violin = play.players[1]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "06016")
+        .unwrap()
+        .card
+        .id;
+    let opportunities = controls::window_opportunities(&view);
+    assert!(
+        opportunities
+            .iter()
+            .any(|(source, _)| *source == controls::Source::Card(violin))
+    );
+    for card in &play.players[1].hand {
+        assert!(
+            !opportunities
+                .iter()
+                .any(|(source, _)| *source == controls::Source::Card(card.id))
+        );
+    }
+}
+
 fn assert_initial_table(app: &mut App) {
     let view = app.world().resource::<Table>().view();
     assert!(view.play.is_none());

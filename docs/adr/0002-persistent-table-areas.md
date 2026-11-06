@@ -10,6 +10,82 @@ presentation, supported save/resume, Undo, inspection and camera decisions remai
 in force. Dated implementation and verification records below remain historical
 evidence; the retirement decision does not claim its implementation is complete.
 
+## Supplies, asset harm, player windows and persistent Premonition
+
+On 2026-11-06, during the owner-requested `grill-with-docs` interview for
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89), against
+`f24111eb975ed5ac659d02698b747759bc7404bc`, Joel accepted these two
+presentation decisions:
+
+- When the enemy phase has neither effects to resolve nor legal player choices,
+  advance automatically, show a brief non-blocking **Enemy phase — no activity**
+  message, and retain an action-history entry. Absence of enemies alone does not
+  establish absence of legal opportunities.
+- Every retained player-window pause names the actually playable cards or
+  abilities and their investigators, with a matching visual cue on the relevant
+  cards. Preserve an explicit Pass choice whenever a genuine opportunity exists.
+  Joel delegated the cue's appearance on 2026-11-06: use a restrained static
+  violet edge marker and an **Available now** label. Keep it distinguishable
+  from pale hover, blue menu-source, gold pending-choice and teal commitment
+  marks by shape and text as well as color. Clicking opens the relevant legal
+  choices; marking availability does not select or activate an ability.
+
+Joel also selected the following counter and persistent-placement requirements:
+
+- Supplies use the existing shaped investigator-resource artwork, retaining one
+  counter at zero while the card remains in play. Inspection and contextual text
+  call these **Supplies**; shared artwork does not make them investigator
+  resources or spell charges. Other use types retain their own rules meaning.
+- In-play assets with health display accrued damage over effective maximum
+  health, including zero; those with sanity display accrued horror over effective
+  maximum sanity, including zero. Use the existing Damage/Horror token artwork
+  above the card. Display only the capacities the card actually has. This applies
+  to future supported cards as well as the currently implemented assets.
+  Following Joel's Peter/Patrice overlap report, Damage/Horror disks use the
+  ammo/bounty diameter and thickness (0.496 and 0.096 tabletop units), replacing
+  the former 0.70 diameter. Scale their artwork proportionally. Card-mounted
+  disks sit closer to the upper card edge while retaining the caption gap;
+  investigator-area disks also move closer, retaining their caption anchors.
+- Premonition and its sealed token or group remain together in the controller's
+  open resolution drawer until consumed. Subsequent temporary effects occupy
+  space alongside them. Sealed tokens remain visibly on the card; they do not
+  return to the bag merely because the sealing animation finishes. This
+  supersedes the earlier placement beside the controller's assets and the
+  assumption that the drawer always closes after temporary resolution.
+- The existing reveal control announces the known sealed face or group, using
+  the prepared symbol font for symbolic faces and ordinary signed values for
+  numeric faces. For example, **Resolve sealed [tablet] from Premonition**;
+  when fresh positions remain, also state their number. Preserve readable
+  English names and missing-font fallbacks. Tablet and auto-fail use their
+  existing chaos-symbol glyphs, not emoji or invented numeric modifiers.
+  This announcement adds no acknowledgment click.
+- On consumption, animate the sealed token or group from its actual position
+  on Premonition into the appropriate resolution area. Then animate Premonition
+  to its controller's investigator discard pile and retract the drawer normally
+  once no other resident or resolving component needs it. If the consuming
+  non-test effect still occupies that drawer, it stays open until that effect
+  finishes. Sequence presentation around the committed rules consequences;
+  token cleanup follows its actual destination and timing, not the card's
+  discard animation. Reduced motion preserves the same visible destinations
+  and explanation without requiring travel animations.
+
+The original Premonition text explicitly discards the event after its forced
+replacement. The [existing qualified interpretation](../research/issue-89-premonition-followup.md)
+continues to govern replacement of one reveal position by the entire sealed
+group. Jacqueline can modify the initial sealing reveal when eligible; she
+cannot reopen a position already replaced by Premonition. Remaining fresh
+positions in a multiple-token request retain their legal opportunities. This
+presentation decision does not turn that interpretation into an exact publisher
+ruling for every pairing.
+
+These are accepted design decisions, not implementation or native verification
+claims. Joel accepted the known-token announcement and requested the ordered
+token movement, event discard and drawer retraction on 2026-11-06. Issue #89
+retains work and acceptance
+authority. Consulted rules: `AUTH-2`–`AUTH-3`, `PURP-1`–`PURP-6`,
+`WORK-1`–`WORK-6`, `EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`,
+`REP-1`–`REP-3`, `AGENT-5`, `OPS-1`–`OPS-7`, and `GOV-1`–`GOV-3`.
+
 ## Test area and resolution trays
 
 On 2026-11-05, against `4e610893604d05eb256a2dfe1e19dd43c8004d54`, Joel

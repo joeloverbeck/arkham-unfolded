@@ -9,6 +9,45 @@ use super::{
 use crate::{Choice, RuleError};
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inactive_enemies_skip_but_exhausted_agenda_movement_does_not() {
+        let session = crate::gathering::Session::with_hostile_fixture(
+            crate::gathering::HostileFixture::GatheringGhoulMovement,
+        );
+        let mut game = session.runtime.unwrap();
+        for player in &mut game.players {
+            player.hand.clear();
+            player.assets.clear();
+        }
+        assert!(!game.scenario.enemies.is_empty());
+        for enemy in &mut game.scenario.enemies {
+            enemy.exhausted = true;
+            enemy.engaged = None;
+            enemy.location = scenario::HALLWAY.into();
+        }
+        let decision = PhaseDecision::Hunters { remaining: vec![] };
+        game.frames = vec![Frame::Phase(decision.clone())];
+        game.agenda = 3;
+        assert!(
+            !choices(&game, &decision)
+                .iter()
+                .any(|choice| choice.id == "enemy:skip-empty")
+        );
+        game.agenda = 1;
+        assert!(
+            choices(&game, &decision)
+                .iter()
+                .any(|choice| choice.id == "enemy:skip-empty")
+        );
+        choose(&mut game, "enemy:skip-empty").unwrap();
+        assert_eq!(game.phase, Phase::Upkeep);
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum PhaseDecision {
     PlayerWindow {
@@ -145,7 +184,13 @@ pub(super) fn choices(game: &Game, decision: &PhaseDecision) -> Vec<Choice> {
                 })
                 .collect();
             if choices.is_empty() {
-                vec![choice("enemy:attacks", "Begin enemy attacks")]
+                let mut choices = vec![choice("enemy:attacks", "Begin enemy attacks")];
+                if !scenario::enemy_phase_has_activity(game)
+                    && game.player_window_choices().is_empty()
+                {
+                    choices.push(choice("enemy:skip-empty", "Enemy phase — no activity"));
+                }
+                choices
             } else {
                 choices
             }
@@ -292,6 +337,24 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
         return Err(RuleError(
             "That framework choice is no longer available.".into(),
         ));
+    }
+    if id == "enemy:skip-empty" {
+        // Keep the ordinary framework path (and old recorded choices) intact.
+        // Admission above proves there are no remaining effects or opportunities.
+        choose(game, "enemy:attacks")?;
+        while let Some(Frame::Phase(PhaseDecision::EnemyAttacks { order, index })) =
+            game.frames.last()
+        {
+            let next = if *index < order.len() {
+                "enemy:next-investigator"
+            } else {
+                "enemy:attacks-complete"
+            };
+            choose(game, next)?;
+        }
+        choose(game, "enemy:end")?;
+        game.capture_presentation("Enemy phase — no activity. Upkeep begins.");
+        return Ok(());
     }
     game.frames.pop();
     match decision {
