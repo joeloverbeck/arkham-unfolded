@@ -811,24 +811,29 @@ pub(super) fn pending_choices(view: &Observation) -> Vec<Choice> {
 /// presentation choices are derived only when the renderer requests them.
 pub(super) struct ResultOpportunities<'a> {
     view: &'a Observation,
-    decline: &'a Choice,
+    decline: Option<&'a Choice>,
 }
 
 pub(super) fn result_opportunities(view: &Observation) -> Option<ResultOpportunities<'_>> {
     // Small Favor also defeats enemies without a skill test. That window keeps
     // its ordinary reaction route instead of reopening an earlier result.
-    if !view.choices.iter().any(|choice| {
-        result_decline(choice)
-            && (choice.id != "defeat:done"
-                || view.play.as_ref().is_some_and(|play| play.test.is_some()))
-    }) {
+    if !view
+        .choices
+        .iter()
+        .any(|choice| choice.id.starts_with("result:"))
+        && !view.choices.iter().any(|choice| {
+            result_decline(choice)
+                && (choice.id != "defeat:done"
+                    || view.play.as_ref().is_some_and(|play| play.test.is_some()))
+        })
+    {
         return None;
     }
     Some(ResultOpportunities {
         view,
         // Admission and footer selection are distinct: preserve the first
         // recognized decline even when a later one admitted this window.
-        decline: view.choices.iter().find(|choice| result_decline(choice))?,
+        decline: view.choices.iter().find(|choice| result_decline(choice)),
     })
 }
 
@@ -842,8 +847,8 @@ impl ResultOpportunities<'_> {
             .collect()
     }
 
-    pub(super) fn decline(&self) -> Choice {
-        self.displayed(self.decline)
+    pub(super) fn decline(&self) -> Option<Choice> {
+        self.decline.map(|choice| self.displayed(choice))
     }
 
     fn displayed(&self, choice: &Choice) -> Choice {
@@ -1175,10 +1180,14 @@ pub(super) fn render(
                     format!("Inspect {}", target.title)
                 }
             };
-            let label = target
-                .details
-                .as_ref()
-                .map_or(label.clone(), |details| format!("{label}\n{details}"));
+            let label = if targets.len() > 1 {
+                target
+                    .details
+                    .as_ref()
+                    .map_or(label.clone(), |details| format!("{label}\n{details}"))
+            } else {
+                label
+            };
             content.push(Item::Action(
                 label,
                 Action::ContextInspect(

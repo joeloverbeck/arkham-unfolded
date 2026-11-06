@@ -42,6 +42,14 @@ Every decision autosaves to `local/gathering/session.json`. Run the same command
 
 Skill tests pause at a detailed result panel until **Continue**. Optional effects such as Quick Thinking then offer explicit use-or-decline choices. **Menu → History** retains recorded breakdowns; see [skill test results](docs/experiments/gathering-setup.md#read-a-skill-test-result) for timing and reopening.
 
+Selecting **Watch this!** now opens an explicit wager choice, including **0 · icons
+only**, before confirming commitments. **Old Keyring** shows a Keys counter and
+automatically removes a key after an ordinary successful use, discarding the
+empty asset. Consequential result ordering remains a direct choice. Jacqueline's
+ordinary three-token reveal shares one row with numbered captions and a selection
+count. See the [implementation notes](docs/research/gathering-wagers-keys-and-token-layout.md#implementation-and-verification)
+for verification and the development-save compatibility boundary.
+
 During play, click cards, locations, decks and tokens for their contextual actions. Choose **Inspect** for enlarged artwork and effective rules; piles offer their individual cards. The portrait rail moves the camera, and **TURN** identifies the current investigator independently of camera focus. **Menu** at the upper right contains history, motion settings, save/reopen and artwork settings. The bottom panel holds the current decision and table-wide choices. Gathering's artwork collection includes all 94 card identities needed by the selected decks and original scenario, with the necessary card backs and shared tokens. It is separate from Party's smaller collection.
 
 Hold **WASD** to pan, including when an ordinary button has keyboard focus. Panning dismisses an open card-action list without choosing an action. Inspect, Menu and other blocking dialogs suspend camera input; closing them restores it without clicking the table. Tab/Shift+Tab and Enter/Space continue to navigate and activate buttons.
@@ -60,7 +68,7 @@ cd /home/joeloverbeck/src/arkham-unfolded
 mkdir -p local/gathering
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
 target/debug/arkham-tabletop \
-  --experiment gathering --save local/gathering/session-2026-11-06.json
+  --experiment gathering --save local/gathering/session-wagers-keys-2026-11-06.json
 ```
 
 Choose another filename if that path already contains an older attempt. Keep

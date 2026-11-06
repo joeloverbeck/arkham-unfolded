@@ -177,11 +177,20 @@ pub(super) fn render(
         },
         |footer| {
             if pending.is_none() {
-                footer.spawn(art.text(
-                    "Use an available effect, or explicitly decline.",
-                    18.,
-                    GOLD,
-                ));
+                footer.spawn(
+                    art.text(
+                        if opportunities
+                            .as_ref()
+                            .is_some_and(|offered| offered.decline().is_none())
+                        {
+                            "Choose which result to apply next. All remaining results still apply."
+                        } else {
+                            "Use an available effect, or explicitly decline."
+                        },
+                        18.,
+                        GOLD,
+                    ),
+                );
                 footer
                     .spawn((
                         Node {
@@ -228,7 +237,7 @@ pub(super) fn render(
                         ))
                     } else {
                         opportunities.as_ref().and_then(|offered| {
-                            let choice = offered.decline();
+                            let choice = offered.decline()?;
                             let button = ui::control(
                                 art,
                                 row,

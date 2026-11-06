@@ -34,14 +34,6 @@ fn finish_test(session: &mut Session) {
         .iter()
         .find(|&&id| view.choices.iter().any(|choice| choice.id == id))
         .copied()
-        .or_else(|| {
-            view.choices
-                .iter()
-                .find(|choice| {
-                    choice.id.starts_with("result:") && choice.label.contains("Old Keyring")
-                })
-                .map(|choice| choice.id.as_str())
-        })
         .unwrap_or_else(|| panic!("Unexpected {:?}", view.choices));
         choose(session, id);
     }
@@ -271,4 +263,43 @@ fn old_keyring_reduces_shroud_and_spends_keys_only_on_success() {
         }
         session.validate().unwrap();
     }
+}
+
+#[test]
+fn old_keyring_last_key_is_discarded_automatically_without_resourceful() {
+    let mut session = Session::with_hostile_fixture(HostileFixture::PlayerEvents(
+        PlayerEventFixture::KeyringLast,
+    ));
+    let before = session.observe().play.unwrap();
+    let keyring = before.players[1]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "60507")
+        .unwrap()
+        .card
+        .id;
+    choose(
+        &mut session,
+        &format!("action:ordinary:investigate:spell:{keyring}"),
+    );
+    finish_test(&mut session);
+    let after = session.observe().play.unwrap();
+    assert!(
+        !after.players[1]
+            .assets
+            .iter()
+            .any(|asset| asset.card.id == keyring)
+    );
+    assert!(
+        after.players[1]
+            .discard
+            .iter()
+            .any(|card| card.id == keyring)
+    );
+    assert_eq!(after.players[1].clues, before.players[1].clues + 1);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("keyring.json");
+    continuity::save_session(&path, &session).unwrap();
+    let reopened = continuity::load_session(&path).unwrap();
+    assert_eq!(reopened.observe(), session.observe());
 }

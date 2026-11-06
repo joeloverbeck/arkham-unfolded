@@ -1,6 +1,20 @@
 {
   "assets": [
     {
+      "role": "token/key",
+      "path": "tokens/key.jpg",
+      "bytes": 26451,
+      "sha256": "b74d80672dd82ee194d68b3c81e523fefca49a1e9b74dd79ebde7624a897e4aa",
+      "dimensions": [170, 170],
+      "evidence": "#89 accepted neutral key artwork for Old Keyring uses. Preserve the complete White Key tile on a square token; count is rendered separately. Catalog identity cff3dc6e3390a7298f0784e17e130ede03db2179a106cec1010e3cf2e882611d.",
+      "source": {
+        "path": "images/other/official/en/the_innsmouth_conspiracy/White Key--ImageURL--cff3dc6e3390a7298f07.jpg",
+        "bytes": 26451,
+        "sha256": "b74d80672dd82ee194d68b3c81e523fefca49a1e9b74dd79ebde7624a897e4aa"
+      },
+      "transform": { "kind": "copy" }
+    },
+    {
       "role": "token/bounty",
       "path": "tokens/bounty.png",
       "bytes": 210889,
@@ -2585,7 +2599,7 @@
       }
     }
   ],
-  "collection": "arkham-unfolded-gathering-v2",
+  "collection": "arkham-unfolded-gathering-v3",
   "deck_projection_sha256": "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb",
   "format_version": 1,
   "scenario_binding_sha256": "635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0",

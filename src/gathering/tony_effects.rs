@@ -15,6 +15,7 @@ pub enum TonyEffectFixture {
     QuickThinking,
     QuickSupport,
     WatchSuccess,
+    WatchDouble,
     WatchTie,
     WatchFailure,
     WatchSupport,
@@ -150,10 +151,15 @@ pub(super) fn commitment_choices(game: &Game) -> Vec<Choice> {
     }
     let player = &game.players[test.tester.index()];
     let mut choices = Vec::new();
-    for card in player
+    let copies: Vec<_> = player
         .hand
         .iter()
-        .filter(|card| card.code == "03233" && test.selected.contains(&card.id))
+        .filter(|card| card.code == "03233")
+        .collect();
+    for (index, card) in copies
+        .iter()
+        .enumerate()
+        .filter(|(_, card)| test.selected.contains(&card.id))
     {
         let other_cost: u8 = test
             .tony
@@ -165,10 +171,42 @@ pub(super) fn commitment_choices(game: &Game) -> Vec<Choice> {
             .map(|wager| wager.amount)
             .sum();
         for amount in 0..=3.min(player.resources.saturating_sub(other_cost)) {
-            choices.push(choice(format!("tony:watch:{}:{amount}", card.id), format!("Set Watch this! additional commitment cost to {amount} resources; gain {} on success by at least 1", amount * 2)));
+            let copy = if copies.len() > 1 {
+                format!(" · {} of {}", index + 1, copies.len())
+            } else {
+                String::new()
+            };
+            let outcome = if amount == 0 {
+                "icons only".into()
+            } else {
+                format!("gain {} on success by at least 1", amount * 2)
+            };
+            choices.push(choice(
+                format!("tony:watch:{}:{amount}", card.id),
+                format!("Watch this!{copy} — Wager {amount} resources ({outcome})"),
+            ));
         }
     }
     choices
+}
+
+pub(super) fn pending_wager(test: &SkillTest, card: u16) -> Option<u8> {
+    test.tony
+        .watch
+        .iter()
+        .find(|wager| wager.card == card && !wager.paid)
+        .map(|wager| wager.amount)
+}
+
+pub(super) fn commitment_ready(game: &Game) -> bool {
+    let Some(test) = &game.test else {
+        return false;
+    };
+    game.players[test.tester.index()]
+        .hand
+        .iter()
+        .filter(|card| card.code == "03233" && test.selected.contains(&card.id))
+        .all(|card| pending_wager(test, card.id).is_some())
 }
 
 pub(super) fn choose_commitment(game: &mut Game, id: &str) -> Result<(), RuleError> {
@@ -203,6 +241,9 @@ pub(super) fn reset_commitment(game: &mut Game, card: u16) {
 /// Called before moving the selected cards out of hand. Selection and wager
 /// editing are proposals; the additional costs are paid together on confirmation.
 pub(super) fn pay_commitment_costs(game: &mut Game) -> Result<(), RuleError> {
+    if !commitment_ready(game) {
+        return Err(RuleError("Choose a wager, including zero for icons only, for each Watch this! before confirming.".into()));
+    }
     let test = game.test.as_mut().expect("Confirming commitment");
     let player = &mut game.players[test.tester.index()];
     let selected: Vec<_> = player
@@ -226,16 +267,12 @@ pub(super) fn pay_commitment_costs(game: &mut Game) -> Result<(), RuleError> {
         .watch
         .retain(|wager| wager.paid || selected.contains(&wager.card));
     for card in selected {
-        if let Some(wager) = test.tony.watch.iter_mut().find(|wager| wager.card == card) {
-            wager.paid = true;
-        } else {
-            test.tony.watch.push(WatchWager {
-                owner: test.tester,
-                card,
-                amount: 0,
-                paid: true,
-            });
-        }
+        test.tony
+            .watch
+            .iter_mut()
+            .find(|wager| wager.card == card)
+            .expect("Every selected Watch this! has an explicit wager")
+            .paid = true;
     }
     Ok(())
 }
@@ -471,6 +508,7 @@ pub(super) fn configure_fixture(game: &mut Game, fixture: TonyEffectFixture) {
             TonyEffectFixture::QuickThinking
                 | TonyEffectFixture::QuickSupport
                 | TonyEffectFixture::WatchSuccess
+                | TonyEffectFixture::WatchDouble
                 | TonyEffectFixture::WatchTie
                 | TonyEffectFixture::WatchFailure
                 | TonyEffectFixture::WatchSupport
@@ -561,10 +599,15 @@ pub(super) fn configure_fixture(game: &mut Game, fixture: TonyEffectFixture) {
             }
         }
         TonyEffectFixture::WatchSuccess
+        | TonyEffectFixture::WatchDouble
         | TonyEffectFixture::WatchTie
         | TonyEffectFixture::WatchFailure
         | TonyEffectFixture::WatchSupport => {
             let watch = take(game, "03233");
+            if fixture == TonyEffectFixture::WatchDouble {
+                let other = take(game, "03233");
+                game.players[0].hand.push(other);
+            }
             game.players[0].hand.push(watch);
             game.set_fixture_tokens(vec![match fixture {
                 TonyEffectFixture::WatchSuccess => TokenFace::MinusThree,

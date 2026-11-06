@@ -129,7 +129,7 @@ fn result_opportunities_preserve_metadata_and_select_the_first_recognized_declin
     assert_eq!(uses[1], original.choices[3]);
     let mut decline = original.choices[0].clone();
     decline.label = "Finish enemy-defeat reactions".into();
-    assert_eq!(offered.decline(), decline);
+    assert_eq!(offered.decline(), Some(decline));
     assert_eq!(view, original);
 
     // A later Lucky! decline admits this observation without a current test,
@@ -155,7 +155,10 @@ fn only_enemy_defeat_requires_a_current_test_for_result_opportunities() {
             label: "Offered decline".into(),
             cancel_faces: vec![],
         }];
-        assert_eq!(result_opportunities(&view).unwrap().decline().id, id);
+        assert_eq!(
+            result_opportunities(&view).unwrap().decline().unwrap().id,
+            id
+        );
     }
     view.choices[0].id = "future:decline".into();
     assert!(result_opportunities(&view).is_none());
@@ -852,6 +855,20 @@ fn recorded_destination_labels_display_known_names_without_rewriting_the_record(
     ] {
         assert_eq!(display_history(&view, original), expected);
     }
+}
+
+#[test]
+fn a_single_enemy_inspect_button_omits_the_repeated_public_state() {
+    let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+        crate::gathering::TonyEffectFixture::WatchSuccess,
+    ));
+    let enemy = session.observe().play.unwrap().scenario.enemies[0].card.id;
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = super::super::tests::host(directory.path().join("enemy.json"));
+    app.insert_resource(Table::new(session, directory.path().join("enemy.json")));
+    app.update();
+    super::super::tests::click_source(&mut app, Source::Card(enemy));
+    assert!(super::super::tests::choice_button(&mut app, "Inspect").is_some());
 }
 
 #[test]

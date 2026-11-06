@@ -12,6 +12,7 @@ mod slots;
 mod token_guidance;
 mod trays;
 mod victory;
+mod wagers_keys;
 
 #[test]
 fn empty_enemy_phase_advances_without_a_click_and_saves_its_history() {
@@ -272,7 +273,9 @@ fn host_with_table(table: Table, raw_window_events: bool) -> App {
 }
 
 pub(super) fn assert_unclipped_button(app: &mut App, label: &str, size: Vec2, scale: f32) {
-    let button = button_with_label(app, label).unwrap();
+    let button = button_with_label(app, label)
+        .or_else(|| choice_button(app, label))
+        .unwrap();
     let world = app.world();
     let node = world.get::<ComputedNode>(button).unwrap();
     assert!(node.size().min_element() > 0.);

@@ -52,6 +52,10 @@ _Avoid_: Location standee slot, asset card count
 The investigator's current slot allowance after applicable effects, including any restrictions on which assets can use additional slots.
 _Avoid_: Printed capacity when referring to the modified allowance
 
+**Keys**:
+A card-defined type of use, such as the two uses on Old Keyring. Keys are distinct from other use types such as ammo, charges and supplies.
+_Avoid_: Charges when referring to keys
+
 **Test area**:
 The shared presentation space dedicated to the current skill test, its source, commitments and chaos-token resolution, with the chaos bag and scenario reference kept there between tests. It is a tabletop arrangement, not a rules-defined game zone or a general area for resolving card effects.
 _Avoid_: Threat area, investigator area, resolution tray

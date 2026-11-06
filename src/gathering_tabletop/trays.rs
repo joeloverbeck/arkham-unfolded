@@ -55,7 +55,7 @@ impl<'a> Layout<'a> {
                 tokens
                     .reveal_groups()
                     .iter()
-                    .map(|group| group.members.len().div_ceil(6) * 6)
+                    .map(|group| group.members.len().div_ceil(3) * 3)
                     .sum()
             }),
         })
@@ -77,9 +77,9 @@ impl<'a> Layout<'a> {
     pub(super) fn token(&self, slot: usize) -> Vec3 {
         anchor(self.owner)
             + Vec3::new(
-                -1.5 + (slot % 6) as f32 * 1.05,
+                -1.5 + (slot % 3) as f32 * 3.75,
                 0.12,
-                1.8 + self.candidates.len().div_ceil(3) as f32 * 2.8 + (slot / 6) as f32 * 1.4,
+                2.4 + self.candidates.len().div_ceil(3) as f32 * 2.8 + (slot / 3) as f32 * 3.0,
             )
     }
 
@@ -102,7 +102,14 @@ impl<'a> Layout<'a> {
             .len()
             .div_ceil(3)
             .max(self.sources.len() + 1);
-        (3.5 + rows as f32 * 2.8 + self.token_count.div_ceil(6) as f32 * 1.4).max(10.)
+        let card_depth = (3.5 + rows as f32 * 2.8).max(10.);
+        // Sources sit beside the tokens, not before them. Adding both column
+        // depths made Resolve zoom out enough to hide their captions.
+        let token_depth = self
+            .token_count
+            .checked_sub(1)
+            .map_or(0., |last| self.token(last).z - anchor(self.owner).z + 2.4);
+        card_depth.max(token_depth)
     }
 
     pub(super) fn focus(&self) -> (Vec3, f32) {

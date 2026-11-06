@@ -4,7 +4,7 @@ use super::*;
 mod draw_review;
 
 #[path = "../../../tests/support/gathering_resolution_review.rs"]
-mod resolution_review;
+pub(super) mod resolution_review;
 
 #[test]
 fn patrice_upkeep_orders_one_physical_hand_in_her_drawer_and_reopens_there() {
@@ -81,6 +81,14 @@ fn resolution_review_saves_open_as_ordinary_sessions_with_the_expected_decisions
             point.name
         );
         assert!(parse_initial_view(point.initial_view).is_ok());
+        if matches!(point.name, "watch-wager" | "jacqueline-three") {
+            let choice = view
+                .choices
+                .iter()
+                .find(|choice| choice.id == point.trigger)
+                .unwrap();
+            assert_visible_button(&mut app, &choice.label);
+        }
         if point.name == "revelation-pending" {
             let play = view.play.unwrap();
             let id = play.pending_revelation.unwrap().card.id;

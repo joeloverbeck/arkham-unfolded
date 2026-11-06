@@ -117,7 +117,9 @@ pub(super) fn render(
     }
     let heading = label(commands, context, "Test area", layout::test_heading(), true);
     commands.entity(heading).insert(layout::TestAreaHeading);
-    for (name, at) in layout::test_zone_labels() {
+    // Token groups supply their own headings; an ordinary Jacqueline reveal
+    // shares one row instead of implying a separate protected original draw.
+    for (name, at) in layout::test_zone_labels().into_iter().take(1) {
         label(commands, context, name, at, false);
     }
     for (index, investigator) in view.investigators.iter().enumerate() {

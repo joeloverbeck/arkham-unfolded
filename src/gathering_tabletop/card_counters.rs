@@ -24,6 +24,7 @@ pub(super) fn use_counter(kind: Option<UseKind>) -> Option<CounterKind> {
         UseKind::Charge => Some(CounterKind::Charge),
         UseKind::Bounty => Some(CounterKind::Bounty),
         UseKind::Supply => Some(CounterKind::Supply),
+        UseKind::Key => Some(CounterKind::Key),
         _ => None,
     }
 }

@@ -38,6 +38,7 @@ pub(crate) enum CounterKind {
     Clue,
     Resource,
     Supply,
+    Key,
     Ammo,
     Charge,
     Bounty,
@@ -57,6 +58,7 @@ impl CounterKind {
             Self::Clue => "Clues",
             Self::Resource => "Resources",
             Self::Supply => "Supplies",
+            Self::Key => "Keys",
             Self::Ammo => "Ammo",
             Self::Charge => "Charges",
             Self::Bounty => "Bounties",
@@ -70,6 +72,7 @@ impl CounterKind {
             Self::Resource | Self::Supply => "token/resource",
             Self::Ammo => "token/ammo",
             Self::Charge => "token/charge",
+            Self::Key => "token/key",
             Self::Bounty => "token/bounty",
             Self::Doom => "token/doom",
         }
@@ -193,6 +196,10 @@ fn spawn_body(
             Mesh::from(Cylinder::new(0.31, 0.12)),
             Color::srgb(0.52, 0.37, 0.12),
         ),
+        CounterKind::Key => (
+            Mesh::from(Cuboid::new(0.62, 0.12, 0.62)),
+            Color::srgb(0.64, 0.60, 0.48),
+        ),
         CounterKind::Doom => (
             Mesh::from(Cylinder::new(0.31, 0.12)),
             Color::srgb(0.42, 0.09, 0.14),
@@ -226,6 +233,10 @@ fn spawn_body(
     }
     if let Some(image) = image {
         let (face, rotation) = match kind {
+            CounterKind::Key => (
+                Plane3d::default().mesh().size(0.62, 0.62).build(),
+                Quat::IDENTITY,
+            ),
             CounterKind::Resource | CounterKind::Supply => (
                 Plane3d::default().mesh().size(0.58, 0.654).build(),
                 Quat::IDENTITY,

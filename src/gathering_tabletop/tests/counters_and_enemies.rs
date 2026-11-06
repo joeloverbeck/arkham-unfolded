@@ -19,6 +19,7 @@ fn render_with_counter_art(view: Observation, loaded: bool) -> App {
         ("token/ammo", image.clone()),
         ("token/bounty", image.clone()),
         ("token/charge", image.clone()),
+        ("token/key", image.clone()),
         ("token/resource", image.clone()),
         ("token/damage", image),
     ]);
@@ -46,6 +47,36 @@ fn render_with_counter_art(view: Observation, loaded: bool) -> App {
         )
         .unwrap();
     app
+}
+
+#[test]
+fn old_keyring_has_a_named_keys_counter_with_art_or_a_readable_substitute() {
+    use crate::tabletop_counters::Counter;
+    for loaded in [false, true] {
+        let view = Session::with_hostile_fixture(crate::gathering::HostileFixture::PlayerEvents(
+            crate::gathering::PlayerEventFixture::KeyringSuccess,
+        ))
+        .observe();
+        let key = view.play.as_ref().unwrap().players[1]
+            .assets
+            .iter()
+            .find(|asset| asset.card.code == "60507")
+            .unwrap()
+            .card
+            .id;
+        let mut app = render_with_counter_art(view, loaded);
+        let world = app.world_mut();
+        let counters: Vec<_> = world
+            .query::<(&Counter, &card_counters::Attached)>()
+            .iter(world)
+            .filter(|(_, attached)| world.get::<motion::PhysicalCard>(attached.0).unwrap().0 == key)
+            .map(|(counter, _)| (counter.kind.name(), counter.amount))
+            .collect();
+        assert_eq!(counters, vec![("Keys", 2)]);
+        let text = rendered_text(&mut app);
+        assert_eq!(text.contains("Keys 2"), !loaded);
+        assert!(!text.contains("Uses 2"));
+    }
 }
 
 #[test]
