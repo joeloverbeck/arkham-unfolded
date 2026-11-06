@@ -211,21 +211,108 @@ pub(super) fn assert_draw_anchors_unobscured(
 // Reproduce the ordinary seed-89 saves used in the 2026-11-03 native review.
 // Load through native startup before installing the production scene and UI.
 pub(super) fn open_review_save(session: &Session) -> (tempfile::TempDir, App) {
+    open_review_save_in_view(session, None).unwrap()
+}
+
+fn review_launch_args(path: &std::path::Path, initial_view: Option<&str>) -> Vec<String> {
+    let mut args = vec![
+        "--experiment".into(),
+        "gathering".into(),
+        "--save".into(),
+        path.to_str().unwrap().into(),
+    ];
+    if let Some(view) = initial_view {
+        args.extend(["--initial-view".into(), view.into()]);
+    }
+    args
+}
+
+pub(super) fn open_review_save_in_view(
+    session: &Session,
+    initial_view: Option<&str>,
+) -> Result<(tempfile::TempDir, App), String> {
     assert!(!session.is_verification_fixture());
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("review.json");
     continuity::save_session(&path, session).unwrap();
-    let saved = std::fs::read(&path).unwrap();
-    let mut app = host_with_table(Table::open(path.clone()).unwrap(), false);
+    let app = preflight_review_launch(&path, initial_view)?;
+    Ok((directory, app))
+}
+
+fn preflight_review_launch(
+    path: &std::path::Path,
+    initial_view: Option<&str>,
+) -> Result<App, String> {
+    let session = continuity::load_session(path).unwrap();
+    assert!(!session.is_verification_fixture());
+    let saved = std::fs::read(path).unwrap();
+    let directory = path.parent().unwrap();
+    let options = Options::parse(
+        AssetConfig::load_at(directory.join("settings"), directory.join("art")),
+        review_launch_args(path, initial_view).into_iter(),
+    )?
+    .unwrap();
+    let mut app = host_with_table(options.open_table()?, false);
+    options.configure_diagnostics(&mut app)?;
     for _ in 0..4 {
         app.update();
     }
-    assert_eq!(
-        app.world().resource::<Table>().session.clone(),
-        session.clone()
-    );
+    assert_eq!(app.world().resource::<Table>().session, session);
     assert_eq!(std::fs::read(path).unwrap(), saved);
-    (directory, app)
+    Ok(app)
+}
+
+pub(super) fn export_review_saves(output: &std::path::Path, points: &[(&str, &Session, &str)]) {
+    for (_, session, view) in points {
+        let _ = open_review_save_in_view(session, Some(view)).unwrap();
+    }
+    std::fs::create_dir(output).unwrap();
+    let mut launches = Vec::new();
+    let mut recipes = String::from(
+        "# Disposable Gathering launches\n\nRun from the repository root after building. Replace FRESH_RUN with a new directory outside the checkout for each launch; add --art-root PREPARED_FOLDER for artwork. The helper copies each source save before use. These recipes do not authorize desktop access.\n\n",
+    );
+    for (name, session, view) in points {
+        let path = std::path::absolute(output.join(format!("{name}.json"))).unwrap();
+        continuity::save_session(&path, session).unwrap();
+        // Validate the exact exported save and arguments, not only a similar state.
+        let _ = preflight_review_launch(&path, Some(view)).unwrap();
+        let args = review_launch_args(&path, Some(view));
+        let native_args: Vec<_> = args
+            .iter()
+            .map(|arg| {
+                if arg == "--save" {
+                    "--load"
+                } else {
+                    arg.as_str()
+                }
+            })
+            .collect();
+        let quoted = native_args
+            .iter()
+            .map(|arg| format!("'{}'", arg.replace('\'', "'\\''")))
+            .collect::<Vec<_>>()
+            .join(" ");
+        recipes.push_str(&format!(
+            "## {name}\n\n```sh\nscripts/tools native launch --binary target/debug/arkham-tabletop --output-dir FRESH_RUN {quoted}\n```\n\n"
+        ));
+        launches.push(serde_json::json!({
+            "checkpoint": name,
+            "initial_view": view,
+            "application_args": args,
+            "native_launch_args": native_args,
+        }));
+        println!(
+            "{}: revision {}",
+            path.display(),
+            session.observe().revision
+        );
+    }
+    std::fs::write(output.join("launches.md"), recipes).unwrap();
+    std::fs::write(
+        output.join("launches.json"),
+        serde_json::to_vec_pretty(&launches).unwrap(),
+    )
+    .unwrap();
 }
 
 pub(super) fn assert_visible_button(app: &mut App, label: &str) {
@@ -321,11 +408,12 @@ fn tony_turn() -> Session {
     session
 }
 
-// An explicit opt-in exports the same ordinary sessions checked through native
-// startup, so a short desktop review need not navigate to these decisions.
-#[test]
-#[ignore = "exports native review saves to ARKHAM_CONTROLS_REVIEW_DIR"]
-fn export_reveal_and_story_review_saves() {
+fn reveal_and_story_review_saves() -> Vec<(
+    &'static str,
+    Session,
+    &'static str,
+    Option<story::StoryCard>,
+)> {
     fn reach_reveal(session: &mut Session) {
         for _ in 0..12 {
             let view = session.observe();
@@ -340,9 +428,6 @@ fn export_reveal_and_story_review_saves() {
         }
         panic!("Review preparation did not reach its reveal");
     }
-    let output = PathBuf::from(
-        std::env::var_os("ARKHAM_CONTROLS_REVIEW_DIR").expect("Set a fresh output directory"),
-    );
     let mut ordinary = tony_turn();
     ordinary
         .choose(ordinary.observe().revision, "action:ordinary:investigate")
@@ -414,7 +499,7 @@ fn export_reveal_and_story_review_saves() {
         agenda.choose(view.revision, id).unwrap();
     }
     assert!(agenda.live_state().new_story.contains("01105"));
-    let points = [
+    vec![
         ("ordinary-reveal", ordinary, "Reveal tokens", None),
         (
             "arbiter-reveal",
@@ -435,27 +520,47 @@ fn export_reveal_and_story_review_saves() {
             "Continue",
             Some(story::StoryCard::AgendaOne),
         ),
-    ];
-    // Validate every checkpoint before creating the export directory.
+    ]
+}
+
+fn reveal_or_story_view(story: Option<story::StoryCard>) -> &'static str {
+    if story.is_some() { "scenario" } else { "test" }
+}
+
+#[test]
+fn review_launch_recipes_validate_the_saved_state_and_initial_view() {
+    let points = reveal_and_story_review_saves();
     for (name, session, label, story) in &points {
-        let (_directory, mut app) = open_review_save(session);
+        let view = reveal_or_story_view(*story);
+        let (_directory, mut app) = open_review_save_in_view(session, Some(view)).unwrap();
         assert_visible_button(&mut app, label);
         assert_eq!(app.world().resource::<Table>().presentation.story(), *story);
         if *name == "ordinary-reveal" {
             assert_visible_button(&mut app, "Use Jacqueline — reveal 3 tokens");
         }
     }
-    std::fs::create_dir(&output).unwrap();
-    for (name, session, _, _) in points {
-        let path = output.join(format!("{name}.json"));
-        continuity::save_session(&path, &session).unwrap();
-        assert_eq!(continuity::load_session(&path).unwrap(), session);
-        println!(
-            "{}: revision {}",
-            path.display(),
-            session.observe().revision
-        );
-    }
+    let error = open_review_save_in_view(&points[0].1, Some("resolve"))
+        .err()
+        .unwrap();
+    assert_eq!(
+        error,
+        "No active resolution drawer for --initial-view resolve."
+    );
+}
+
+// Export the same checkpoints and exact startup arguments exercised above.
+#[test]
+#[ignore = "exports native review saves to ARKHAM_CONTROLS_REVIEW_DIR"]
+fn export_reveal_and_story_review_saves() {
+    let output = PathBuf::from(
+        std::env::var_os("ARKHAM_CONTROLS_REVIEW_DIR").expect("Set a fresh output directory"),
+    );
+    let points = reveal_and_story_review_saves();
+    let launches: Vec<_> = points
+        .iter()
+        .map(|(name, session, _, story)| (*name, session, reveal_or_story_view(*story)))
+        .collect();
+    export_review_saves(&output, &launches);
 }
 
 #[test]

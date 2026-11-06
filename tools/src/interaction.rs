@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     path::Path,
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -41,6 +42,49 @@ pub trait Portal {
 }
 
 pub const CLEANUP_RESERVE: Duration = Duration::from_secs(15);
+
+/// Cancellation is observed while consent is pending as well as during input.
+#[derive(Default)]
+pub(crate) struct CommandInput {
+    ended: AtomicBool,
+    stopped: AtomicBool,
+}
+
+impl CommandInput {
+    pub fn observe(&self, line: &str) {
+        if matches!(
+            serde_json::from_str::<Request>(line),
+            Ok(Request {
+                action: Action::Stop,
+                ..
+            })
+        ) {
+            self.stopped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    pub fn end(&self) {
+        self.ended.store(true, Ordering::SeqCst);
+    }
+
+    pub fn check(&self) -> Result<()> {
+        ensure!(!self.stopped.load(Ordering::SeqCst), StopRequested);
+        ensure!(
+            !self.ended.load(Ordering::SeqCst),
+            "Command input ended or its reader stopped"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StopRequested;
+impl std::fmt::Display for StopRequested {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Session stopped by request")
+    }
+}
+impl std::error::Error for StopRequested {}
 
 /// One agreed end time; the injected monotonic clock also drives fault tests.
 pub struct SessionTiming<'a> {
@@ -100,7 +144,7 @@ pub fn run_session(
             Ok(event) => emit(event)?,
             Err(error) => {
                 emit(json!({"status":"refused", "reason":format!("{error:#}")}))?;
-                if error.is::<CommandTimedOut>() {
+                if error.is::<CommandTimedOut>() || error.is::<StopRequested>() {
                     return Err(error);
                 }
             }
@@ -199,6 +243,7 @@ pub fn run_session(
                     if error.is::<ReleaseFailed>()
                         || error.is::<CommandTimedOut>()
                         || error.is::<SessionTimeExhausted>()
+                        || error.is::<StopRequested>()
                     {
                         return Err(error);
                     }
@@ -207,6 +252,10 @@ pub fn run_session(
         }
         Ok(())
     })();
+    let result = match result {
+        Err(error) if error.is::<StopRequested>() => emit(json!({"status":"stopped"})),
+        other => other,
+    };
     let closed = portal.close();
     match &closed {
         Ok(()) => emit(json!({"status":"session-closed"}))?,

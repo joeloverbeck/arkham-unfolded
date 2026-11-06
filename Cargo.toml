@@ -33,6 +33,10 @@ bevy = { version = "=0.20.0", optional = true, default-features = false, feature
 name = "arkham-assets"
 path = "src/bin/assets.rs"
 
+[dev-dependencies]
+# Inspect the assigned font's character map in headless UI checks.
+swash = "=0.2.10"
+
 [[bin]]
 name = "arkham-tabletop"
 path = "src/bin/tabletop.rs"

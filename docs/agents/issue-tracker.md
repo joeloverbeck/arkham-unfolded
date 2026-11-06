@@ -119,7 +119,7 @@ The reader prints verbatim source lines with number prefixes and caps the whole 
 
 Use the same reader on saved issue bodies (`gh api ... --jq .body > /tmp/issue-body.md`). `--max-bytes` accepts 512–12,000; a line that cannot fit is explicitly refused, never shortened or skipped. Budget the combined output of a batch against the outer tool limit as well. If the outer tool truncates a page, lower the byte limit and reread that page before continuing. The helper reads UTF-8 files only and never modifies them.
 
-For several excerpts, put 1–32 requests in a JSON file and use one shared page budget. For example, `/tmp/context-requests.json`:
+For several excerpts, put 1–32 requests in a JSON file and use one shared page budget. Do this before issuing the reads; several individually bounded calls in one response can still exceed the outer limit. Use `scripts/tools read-context-batch --help` when uncertain about arguments. For example, `/tmp/context-requests.json`:
 
 ```json
 [

@@ -549,6 +549,38 @@ Arbiter control remain automated evidence only. The two post-inspection display
 repairs have no new native capture. The owner has not accepted motion quality or
 complete Gathering gameplay, and the closed interval grants no later desktop use.
 
+## Accepted retrospective follow-up, 2026-11-06
+
+After PR #118 merged, the owner requested the session retrospective and accepted
+its recommended changes with “Proceed with your recommended changes.” This local
+patch starts at `ebffbfd177c0937b761ba36dc2ec75022d98600d` and addresses five bounded
+items in existing components:
+
+1. Check displayed `Text`, `TextSpan` and `Text2d` against their assigned font
+   assets in the production UI harness. Accessible labels are not displayed glyphs;
+   symbol spans use their own assigned font. Exercise both disclosure states.
+2. Recognize `stop` while portal consent is pending and close the request/session
+   without injected input. Bound startup/consent separately, preserving the
+   original session deadline and existing EOF cancellation.
+3. Retain each exported checkpoint's initial view and generate disposable-launch
+   recipes. Validate the actual save/arguments through production parsing,
+   opening and diagnostic configuration. Reject the known incorrect `resolve`
+   launch before spending desktop time.
+4. Clarify the existing shared-budget `read-context-batch` example.
+5. Clarify sequential build/check execution and successful terminal records;
+   retain the current shared lock and timeout.
+
+Consulted: PURP-1–6, WORK-1–6, AGENT-5, OPS-1–7, and the continuing BOUND-1–5,
+INT-1–4 and AGENT-1–5 workflow constraints; EVID-3, EVID-4, EVID-6 and REP-2 bound
+the verification claims. These extend existing test/helper
+seams; they add no new rules engine, generic workflow framework or root standards.
+Evidence is retained under
+`local/verification/ebffbfd177c0937b761ba36dc2ec75022d98600d/retro/` with recorded
+commands, terminal status and source fingerprints. Font coverage, private mock
+D-Bus and headless launch checks establish only their respective behaviors.
+There is no new desktop interval, native appearance claim, owner acceptance or
+publication authorization for this follow-up. #89 remains the gameplay handoff.
+
 [faq]: https://cdn.svc.asmodee.net/production-fantasyflightgames/uploads/2026/09/ahc_faq_v25_february_2026-web-1.pdf
 [rr]: https://cdn.svc.asmodee.net/production-fantasyflightgames/uploads/2026/09/ahc60_rules_reference_eng-compressed.pdf
 [arbiter]: https://arkhamdb.com/card/60402

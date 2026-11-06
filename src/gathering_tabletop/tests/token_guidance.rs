@@ -87,6 +87,7 @@ fn plain_jacqueline_control_declares_three_tokens_without_revealing_or_changing_
     let mut app = host_with_table(Table::new(session, dir.path().join("tokens.json")), true);
     let action = choice_button(&mut app, "Use Jacqueline — reveal 3 tokens")
         .expect("One direct ability action");
+    crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
     assert!(button_with_label(&mut app, "Jacqueline's ability...").is_none());
     app.world_mut().trigger(Activate { entity: action });
     app.update();
@@ -129,6 +130,7 @@ fn jacqueline_cost_disclosure_is_flat_aligned_and_does_not_execute_a_choice() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = host_with_table(Table::new(session, dir.path().join("tokens.json")), true);
     let disclosure = choice_button(&mut app, "▸ Jacqueline's ability options · show").unwrap();
+    crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
     assert_eq!(
         app.world().get::<BackgroundColor>(disclosure).unwrap().0,
         Color::NONE
@@ -137,6 +139,7 @@ fn jacqueline_cost_disclosure_is_flat_aligned_and_does_not_execute_a_choice() {
     app.update();
     assert_eq!(app.world().resource::<Table>().session, before);
     let expanded = choice_button(&mut app, "▾ Jacqueline's ability options · hide").unwrap();
+    crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
     let ordinary = choice_button(&mut app, "Use Jacqueline — spend round use").unwrap();
     let arbiter = choice_button(&mut app, "Use Jacqueline + Arbiter — preserve round use").unwrap();
     let resolve = choice_button(&mut app, "Resolve the declared token reveal").unwrap();

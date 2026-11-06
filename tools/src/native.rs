@@ -19,11 +19,7 @@ use std::{
     },
     path::{Component, Path, PathBuf},
     process::{Command as Process, Stdio},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
+    sync::{Arc, mpsc},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -109,6 +105,9 @@ pub struct Session {
     /// Total session limit including desktop consent and idle input.
     #[arg(long, default_value_t = 600, value_parser = clap::value_parser!(u32).range(1..=600))]
     timeout_seconds: u32,
+    /// Maximum consent/startup wait, bounded by the original session deadline.
+    #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=120))]
+    consent_timeout_seconds: u32,
     /// Previously agreed UTC end time, in Unix seconds; startup never extends it.
     #[arg(long)]
     deadline_unix_seconds: Option<u64>,
@@ -228,10 +227,15 @@ fn session(args: Session) -> Result<u8> {
     let directory = resolve(&args.output_dir)?;
     fresh_directory(&directory)?;
     let mut log = new_file(&directory.join("events.jsonl"))?;
-    let (receive, input_ended) = input_lines(std::io::BufReader::new(std::io::stdin()));
-    let mut portal = DesktopPortal::connect(input_deadline, input_ended)?;
+    let (receive, input) = input_lines(std::io::BufReader::new(std::io::stdin()));
+    let mut portal = DesktopPortal::connect(
+        input_deadline,
+        input.clone(),
+        Duration::from_secs(args.consent_timeout_seconds.into()),
+    )?;
     let check = || -> Result<()> {
         crate::process::check_interrupt()?;
+        input.check()?;
         ensure!(
             Instant::now() < input_deadline,
             "Native verification input deadline reached; closing the session"
@@ -262,7 +266,8 @@ fn session(args: Session) -> Result<u8> {
     event(
         json!({"status":"session-budget", "deadline_unix_seconds":(wall_now + remaining).as_secs_f64(),
         "cleanup_reserve_seconds":interaction::CLEANUP_RESERVE.as_secs(),
-        "remaining_ms":deadline.saturating_duration_since(Instant::now()).as_millis()}),
+        "remaining_ms":deadline.saturating_duration_since(Instant::now()).as_millis(),
+        "consent_timeout_seconds":args.consent_timeout_seconds}),
     )?;
     interaction::run_session(
         &mut desktop,
@@ -281,20 +286,26 @@ fn session(args: Session) -> Result<u8> {
 
 pub(crate) fn input_lines(
     reader: impl BufRead + Send + 'static,
-) -> (mpsc::Receiver<std::io::Result<String>>, Arc<AtomicBool>) {
+) -> (
+    mpsc::Receiver<std::io::Result<String>>,
+    Arc<interaction::CommandInput>,
+) {
     let (send, receive) = mpsc::sync_channel(8);
-    let ended = Arc::new(AtomicBool::new(false));
+    let ended = Arc::new(interaction::CommandInput::default());
     let signal = ended.clone();
     thread::spawn(move || {
         for line in reader.lines() {
             let failed = line.is_err();
+            if let Ok(line) = &line {
+                signal.observe(line);
+            }
             // Do not block the reader behind a pending consent dialog: loss of
             // input (or an overfull command queue) must cancel that request.
             if send.try_send(line).is_err() || failed {
                 break;
             }
         }
-        signal.store(true, Ordering::SeqCst);
+        signal.end();
     });
     (receive, ended)
 }
