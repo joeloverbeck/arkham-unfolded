@@ -235,6 +235,137 @@ fn peters_harm_counters_clear_patrices_actions_and_keep_the_caption_gap() {
 }
 
 #[test]
+#[ignore = "Known pre-existing caption/card overlap at investigator zoom; owner deferred the visual correction on 2026-11-06"]
+fn peters_projected_harm_labels_clear_tokens_actions_and_card() {
+    peters_projected_harm(true);
+}
+
+#[test]
+fn peters_projected_harm_tokens_clear_card() {
+    peters_projected_harm(false);
+}
+
+fn peters_projected_harm(check_deferred_clearance: bool) {
+    use crate::tabletop_counters::ActionMarker;
+    use crate::tabletop_layout::heading_checks::{mesh_bounds, rendered_text_bounds, viewport};
+    for ready in [true, false] {
+        for loaded in [false, true] {
+            let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+                crate::gathering::TonyEffectFixture::GregoryCigarette,
+            ));
+            let mut play = session.observe().play.unwrap();
+            let mut peter = play.players[0].assets[0].clone();
+            peter.card.id = 60000;
+            peter.card.code = "02033".into();
+            peter.card.title = "Peter Sylvestre".into();
+            peter.ready = ready;
+            play.players[1].assets = vec![peter];
+            let mut app = super::cards::at_public_moment(session, play, PathBuf::new(), false);
+            if loaded {
+                let image = app
+                    .world_mut()
+                    .resource_mut::<Assets<Image>>()
+                    .add(Image::default());
+                let mut art = art::Art::with_images_for_test([
+                    ("token/damage", image.clone()),
+                    ("token/horror", image),
+                ]);
+                art.refresh_loaded(app.world().resource::<Assets<Image>>());
+                app.insert_resource(art);
+                app.world_mut().resource_mut::<Table>().dirty = true;
+            }
+            app.world_mut()
+                .resource_mut::<Orbit>()
+                .focus(layout::focus(Area::Investigator(1)));
+            for size in [Vec2::new(1280., 720.), Vec2::new(1600., 1000.)] {
+                for scale in [1., 2.] {
+                    viewport::<MainCamera>(&mut app, size, scale);
+                    for _ in 0..5 {
+                        app.update();
+                    }
+                    let world = app.world_mut();
+                    let card = world
+                        .query::<(Entity, &motion::PhysicalCard)>()
+                        .iter(world)
+                        .find(|(_, card)| card.0 == 60000)
+                        .unwrap()
+                        .0;
+                    let tokens: Vec<_> = world
+                        .query::<(Entity, &card_counters::Attached)>()
+                        .iter(world)
+                        .filter(|(_, attached)| attached.0 == card)
+                        .map(|(entity, _)| entity)
+                        .collect();
+                    assert_eq!(tokens.len(), 2);
+                    let labels: Vec<_> = world
+                        .query::<(Entity, &motion::CardLabel)>()
+                        .iter(world)
+                        .filter(|(_, label)| tokens.contains(&label.0))
+                        .map(|(entity, _)| entity)
+                        .collect();
+                    assert_eq!(labels.len(), 2);
+                    let actions: Vec<_> = world
+                        .query_filtered::<Entity, With<ActionMarker>>()
+                        .iter(world)
+                        .collect();
+                    let (camera, camera_at) = world
+                        .query_filtered::<(&Camera, &GlobalTransform), With<MainCamera>>()
+                        .single(world)
+                        .unwrap();
+                    let card_bounds = mesh_bounds(world, camera, camera_at, card);
+                    let token_bounds: Vec<_> = tokens
+                        .iter()
+                        .map(|token| mesh_bounds(world, camera, camera_at, *token))
+                        .collect();
+                    let caption_bounds: Vec<_> = labels
+                        .iter()
+                        .map(|label| rendered_text_bounds(world, *label, scale))
+                        .collect();
+                    let context =
+                        format!("ready={ready}, artwork={loaded}, {size:?}, scale={scale}");
+                    for caption in caption_bounds.iter().filter(|_| check_deferred_clearance) {
+                        assert!(
+                            caption.max.y < card_bounds.min.y,
+                            "{context}: preserve caption/card gap: {caption:?} / {card_bounds:?}"
+                        );
+                        for token in &token_bounds {
+                            assert!(
+                                caption.intersect(*token).is_empty(),
+                                "{context}: caption overlaps token"
+                            );
+                        }
+                    }
+                    if check_deferred_clearance {
+                        assert!(
+                            caption_bounds[0].intersect(caption_bounds[1]).is_empty(),
+                            "{context}: harm labels overlap"
+                        );
+                    }
+                    for token in &token_bounds {
+                        assert!(
+                            token.intersect(card_bounds).is_empty(),
+                            "{context}: harm token overlaps card"
+                        );
+                    }
+                    for action in actions.into_iter().filter(|_| check_deferred_clearance) {
+                        let bounds = mesh_bounds(world, camera, camera_at, action);
+                        for counter in token_bounds
+                            .iter()
+                            .chain(caption_bounds.iter().filter(|_| check_deferred_clearance))
+                        {
+                            assert!(
+                                counter.intersect(bounds).is_empty(),
+                                "{context}: harm overlaps action token"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
     use bevy::{camera::primitives::MeshAabb, text::FontSize};
     for symbols in [false, true] {

@@ -1,6 +1,8 @@
 //! Record one check invocation so its result survives a lost tool session.
 
 mod resources;
+mod source;
+pub mod summary;
 
 use crate::process::{Completion, OwnedChild};
 use anyhow::{Context, Result, bail};
@@ -35,6 +37,7 @@ enum Status {
     Finished,
     Interrupted,
     Incomplete,
+    Invalidated,
 }
 
 #[derive(Serialize)]
@@ -50,6 +53,7 @@ struct Record {
     error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     resources: Option<resources::Report>,
+    source: source::Report,
 }
 
 fn now() -> Result<u128> {
@@ -78,6 +82,7 @@ pub fn run(args: CheckArgs) -> Result<u8> {
         signal: None,
         error: None,
         resources: None,
+        source: source::Report::default(),
     };
     fs::create_dir(&args.output_dir).with_context(|| {
         format!(
@@ -92,7 +97,19 @@ pub fn run(args: CheckArgs) -> Result<u8> {
     record.resources = resources.as_ref().map(|capture| capture.report.clone());
     save(&directory, &record)?;
     // Opening this once and cloning the handle preserves both streams in one file.
-    let result = capture(&directory, &mut record, &mut resources);
+    let result = (|| {
+        record.source = source::Report::start(&record.cwd, &directory)?;
+        save(&directory, &record)?;
+        let code = capture(&directory, &mut record, &mut resources)?;
+        record.source.finish(&directory)?;
+        if record.source.changed() {
+            record.status = Status::Invalidated;
+            record.error =
+                Some("Source changed during the check; rerun on a stable candidate".into());
+            return Ok(if code == 0 { 1 } else { code });
+        }
+        Ok(code)
+    })();
     if let Some(mut capture) = resources {
         capture.finish();
         if let Some(error) = &capture.report.error {

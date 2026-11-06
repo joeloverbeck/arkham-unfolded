@@ -1,5 +1,48 @@
 # Gathering candidate
 
+## Retrospective verification improvements — 2026-11-06
+
+Joel authorized the four retrospective recommendations after PR #112, based on
+`c743144a1bf4f57e3284e6a13a68e0722113ee7a`, as bounded enabling work for
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). The observed
+bottleneck was ambiguous UI test selection, unbound check inputs, oversized
+failure diagnostics and incomplete projected asset-counter coverage. Existing
+`record-check`, test helpers and layout measurements are the consumers and
+incumbents; this increment extends those paths. It displaces further scenario
+work only through implementing and checking these four changes, then returns to
+the scenario's existing acceptance boundary. No gameplay or visual redesign is
+part of this follow-up. Consulted `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`,
+`EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`, `REP-1`–`REP-3`, `AGENT-1`–`AGENT-5`,
+`OPS-1`–`OPS-7` and `GOV-1`–`GOV-3`; the ordinary two-hour/no-increment and
+three-failed-repair-cycle limits apply.
+
+### Separately deferred asset-caption defect
+
+The new production-path projection test exposes a pre-existing caption/card
+overlap at normal investigator focus. For Peter in Patrice's first asset slot,
+ready, with fallback artwork at 1280×720 and scale 1, the Damage caption ends at
+screen y=283 while the card starts at y=275.988: about seven pixels of overlap.
+The earlier world-anchor test passes because it does not measure rendered glyphs.
+Evidence: `/tmp/retro-gathering-tests-1/check.log`; 100 other Gathering tests
+passed. This is a headless geometry observation, not a new native inspection.
+
+Joel explicitly selected **keep the visual fix separate** on 2026-11-06.
+`peters_projected_harm_labels_clear_tokens_actions_and_card` is therefore an
+explicitly ignored reproducer, not passing caption-clearance evidence. Run it
+with `scripts/dev cargo test --locked --features tabletop --lib
+peters_projected_harm_labels_clear_tokens_actions_and_card -- --ignored`.
+Its complete cases include ready/exhausted, loaded token-art handles/fallback,
+1280×720/1600×1000 and scales 1/2; the observed failure above occurs first, so
+later caption cases are not yet established. No external artwork is required.
+An additional conservative projected-bound check also overlaps an action-token
+rectangle in this first case (`/tmp/retro-full-check-1/check.log`). It remains in
+the deferred reproducer; a rectangle intersection alone is not native evidence
+that the disk silhouettes collide. The existing world-space action-clearance
+test stays active, and the companion projected token/card-clearance regression
+runs normally across all cases. The previously accepted
+visuals remain unchanged; fixing this defect and removing the ignore belong to
+separate owner-selected work.
+
 ## Supplies, asset harm, optional windows and sealed-token follow-up
 
 After Joel reported Peter's harm counters overlapping Patrice's action tokens,

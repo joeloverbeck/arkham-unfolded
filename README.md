@@ -221,11 +221,13 @@ target/debug/arkham-tools record-check --resources \
 
 The output directory must be new and its parent must exist. `run.json` retains the command's status and exit code; `resources.jsonl` samples host memory, CPU counters and pressure plus the child's visible cgroup about once per second. Kernel values retain their original names and units. Each reading exposes unavailable files as errors; `resources.error` reports capture/write failures without changing the command's exit status. Sampling runs inside the recorder, so completion or interruption leaves no separate sampler process. Only a finished record with exit code zero proves check success. Resource samples can miss short spikes or the last counters before a scope disappears; an observed `memory.peak` is not a guaranteed final peak. An abruptly killed recorder leaves incomplete evidence.
 
-For a running or apparently stalled check, inspect its retained record first, then a bounded log tail. If the record is still running, use its exact `pid` with compact process columns; replace `RECORDED_PID` below with that number. This avoids dumping wrapper arguments or unrelated processes:
+In a Git checkout, the recorder fingerprints tracked and non-ignored untracked files before and after the child runs, including dirty contents, missing files, permissions and symlink targets. The record directory itself is excluded. Changed inputs set `status` to `invalidated` and make a successful child return failure from the recorder; the original child `exit_code` is retained. Fingerprint errors produce `incomplete` evidence. Outside Git, the source fields are null. These endpoint fingerprints do not detect edit-and-revert during a run, follow external symlink contents, or cover ignored build inputs; keep the candidate stable throughout verification. Submodule entries are refused rather than silently omitted.
+
+For a running or apparently stalled check, inspect its retained record first, then bounded diagnostic excerpts. `check-summary` limits both individual lines and total output, reports omissions, and links the unchanged full log. Its recognized compiler/test/formatting markers are navigation hints, not a success verdict; unrecognized output gets a bounded tail. If the record is still running, use its exact `pid` with compact process columns; replace `RECORDED_PID` below with that number. This avoids dumping wrapper arguments or unrelated processes:
 
 ```sh
 cat /absolute/path/to/new-check-record/run.json
-tail -n 40 /absolute/path/to/new-check-record/check.log
+scripts/tools check-summary /absolute/path/to/new-check-record/check.log --max-bytes 6000
 ps -p RECORDED_PID -o pid,etime,stat,comm
 ```
 
