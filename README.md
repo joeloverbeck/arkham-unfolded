@@ -1,6 +1,6 @@
 # Arkham Unfolded
 
-**Save-format break:** replay is retired. All pre-removal saves are unsupported. Start with a new `--save PATH`; existing files are preserved. See [the decision](docs/adr/0003-retire-replay.md).
+**Development saves:** replay-era saves are unsupported, and the current Gathering changes can also invalidate older attempts. If startup rejects a save, [start with an unused `--save` path](#start-fresh-after-an-incompatible-save). Existing files are preserved; no migration is provided. See [the replay decision](docs/adr/0003-retire-replay.md) and [the current compatibility boundary](docs/research/gathering-results-tokens-and-slots.md#local-implementation-result--2026-11-06).
 
 An English-language Arkham Horror: The Card Game application for Ubuntu, planned with a Rust rules core and an animated 3D tabletop.
 
@@ -24,6 +24,11 @@ target/debug/arkham-tabletop \
   --experiment gathering --save local/gathering/session.json
 ```
 
+The `--save` path selects the attempt: an unused path starts setup; an existing
+file is loaded. Omitting `--save` instead selects
+`local/gathering/setup.session.json`. Rebuilding does not reset that save. If an
+older attempt prevents startup, use the [fresh-start command below](#start-fresh-after-an-incompatible-save).
+
 Gathering reads its installed artwork from `~/.local/share/arkham-unfolded/gathering-assets`
 by default. Artwork updates replace the verified contents at that stable location;
 the launch command does not change. Remove old `--art-root` arguments from saved
@@ -42,6 +47,27 @@ During play, click cards, locations, decks and tokens for their contextual actio
 Hold **WASD** to pan, including when an ordinary button has keyboard focus. Panning dismisses an open card-action list without choosing an action. Inspect, Menu and other blocking dialogs suspend camera input; closing them restores it without clicking the table. Tab/Shift+Tab and Enter/Space continue to navigate and activate buttons.
 
 Gathering shows unengaged enemies individually on a navy board left of the map, linked by matching location markers. The enemy board matches the map board's depth, and labels retain their ordinary text sizes. Ammo, spell charges and bounties use counters; every enemy shows damage/max health above its card. Actual shuffles split, interleave and settle before subsequent draws. Reduced motion skips the movement. Joel accepted this presentation increment on 2026-11-05 after testing the app with the consolidated artwork installation. Caption-overlap tuning remains deferred. The [Gathering guide](docs/experiments/gathering-setup.md#counter-shuffle-and-enemy-board-verification-2026-11-05) records verification, acceptance and the remaining full-scenario boundary.
+
+### Start fresh after an incompatible save
+
+If startup reports `Gathering setup does not match its recorded decisions and pinned inputs.`,
+the saved attempt cannot be resumed by this build. Early development prioritizes
+the current implementation over compatibility with older saves. Start a new
+attempt at an unused path, for example:
+
+```sh
+cd /home/joeloverbeck/src/arkham-unfolded
+mkdir -p local/gathering
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop \
+  --experiment gathering --save local/gathering/session-2026-11-06.json
+```
+
+Choose another filename if that path already contains an older attempt. Keep
+using this exact `--save` path to resume the new game; every decision autosaves
+there. The previous save is left untouched. **Menu → Restart The Gathering...**
+is available once a compatible attempt opens; it cannot recover a save that
+prevents startup.
 
 ## Launch and resume the party experiment
 

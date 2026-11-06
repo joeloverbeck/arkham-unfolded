@@ -132,14 +132,15 @@ pub(super) fn choices(game: &Game, decision: &CombatDecision) -> Vec<Choice> {
             .assets
             .iter()
             .filter(|asset| {
-                super::player_cards::asset_definition(&asset.card.code)
-                    .is_some_and(|definition| definition.slots.contains(&cards::Slot::Ally))
+                asset.card.code != "01117"
+                    && super::player_cards::asset_definition(&asset.card.code)
+                        .is_some_and(|definition| definition.slots.contains(&cards::Slot::Ally))
             })
             .map(|asset| {
                 choice(
                     &format!("lita:discard-ally:{}", asset.card.id),
                     &format!(
-                        "Discard {} to satisfy the ally slot limit",
+                        "Discard {} to make room for Lita Chantler; afterward: Ally: 1/1",
                         asset.card.title
                     ),
                 )

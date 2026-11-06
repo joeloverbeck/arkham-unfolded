@@ -10,6 +10,97 @@ presentation, supported save/resume, Undo, inspection and camera decisions remai
 in force. Dated implementation and verification records below remain historical
 evidence; the retirement decision does not claim its implementation is complete.
 
+## Compact results, guided token groups and visible asset capacity
+
+On 2026-11-06, during the owner-requested `grill-with-docs` interview for
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89), against
+`918b2e2d3819f4b83970513950e7a36f034aee70`, Joel accepted all three recommendations
+in the [results, tokens and slots investigation](../research/gathering-results-tokens-and-slots.md),
+answering "As you recommend" to Q1 and Q2 and "as you recommend" to Q3.
+
+### Compact skill-test results
+
+Present a compact result card with a prominent outcome and margin, one clear
+total-versus-difficulty comparison, quieter investigator/source context, and
+aligned contribution rows. Preserve the full meaningful breakdown by default,
+including card owners, zero-valued revealed tokens, and separate canceled/ignored
+states. Omit empty groups and repeated outcome text. Automatic failure and other
+special rules remain explicit rather than being disguised as ordinary arithmetic.
+
+Size the height to content, capped by the usable viewport. Short reports should
+have neither forced blank space nor unnecessary scrolling. Overflowing details
+scroll vertically while the outcome and controls remain visible. Center Continue
+beneath the content. Preserve the existing untimed reading stop and explicit
+optional-effect choices; acknowledging the result must not select or decline an
+ability. History retains the same explanation, using the frozen report rather
+than reconstructing it from later game state.
+
+This refines the existing full-detail result decision. Aligned rows were selected
+over individual contribution tiles to retain detail in less space. Exact widths,
+spacing and typography are implementation choices subject to native readability.
+
+### Guided physical token groups
+
+Keep physical tokens in their established presentation home: skill-test effects
+in Test, and non-test effects such as Voice of Ra in the investigator's resolution
+tray. Before revealing, organize the available abilities and their legal targets
+into a visible plan. Name the source and scope, for example **Voice of Ra — entire
+reveal** and **Voice of Ra — draw 1**. Do not expose raw paths or zero-based
+positions. Preserve every legal targeting and ordering choice, its cost, and the
+requirement to declare these replacements before the simultaneous reveal's faces
+are known.
+
+During resolution, arrange tokens in source-labelled groups and expose a persistent
+current instruction with direct selection controls. Highlight all legal targets
+together, distinguish the current selection scope from token origin, and show
+selection progress. Use text or shape as well as color. Keep ignored/canceled
+tokens distinguishable from current candidates without changing their physical
+custody. A nested group can represent one parent choice while retaining several
+physical tokens; its presentation must preserve that relationship.
+
+In the researched Voice of Ra sequence, first identify Dark Prophecy's five-token
+group and its eligible selection, then identify Jacqueline's cancellation scope
+across the five remaining parent results. Her cancellation is not restricted to
+the two draws she added. Explain relevant unavailable abilities, including
+Katarina's restriction to her controller's skill tests. Selection must not require
+trying individual tokens or discovering the chaos bag's contextual menu; existing
+token/contextual access remains available alongside the visible controls.
+
+This extends the accepted drawer interaction instead of replacing it with a token
+modal. Changing labels alone would leave the selection scope and next action
+unclear. The design adds no opportunity to react after learning hidden faces and
+does not alter card rules or automatically select an apparently favorable token.
+
+### Printed asset-slot strip
+
+Print a centered, dynamic strip on the investigator mat between the asset and
+hand regions. Show occupied slot types and any type whose capacity is modified,
+for example **Hand: 1/2 · Arcane: 2/2 · Ally: 1/1**. Investigator inspection exposes
+all capacities, including unused ones, and the effects modifying them. A restricted
+addition receives a visible qualifier, such as **Arcane: 3/3 (+1 Spell/Ritual)**;
+the denominator must not imply unrestricted capacity.
+
+Count slot units rather than asset cards. Slotless assets do not consume capacity,
+and exhaustion does not release a slot. Derive the strip from the same committed
+rules state as the assets, including capacity changes, save/reopen and Undo. Render
+it on the table plane rather than as a floating screen-space caption; retain the
+existing flexible asset rows.
+
+Replacement actions name and highlight the departing assets before commitment
+and make the resulting usage clear. Preserve genuine replacement and discard-order
+choices without adding a redundant confirmation to an already explicit single
+replacement action. Any continuation after costs or intervening attacks have
+committed must reflect that boundary rather than promise a cost-free cancellation.
+
+The quiet strip was selected over permanently listing all five categories with
+zeros. The investigation also records a separate rules discrepancy in Lita's
+gain-control path; accepting this presentation does not validate that behavior.
+
+These decisions settle the design interview. They do not establish implementation,
+native verification or complete Gathering acceptance. The linked investigation
+retains the evidence, rule consultations and remaining verification obligations;
+#89 continues to own active work and acceptance.
+
 ## Supplies, asset harm, player windows and persistent Premonition
 
 On 2026-11-06, during the owner-requested `grill-with-docs` interview for

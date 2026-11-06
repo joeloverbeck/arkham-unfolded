@@ -5,7 +5,7 @@ pub(super) use super::asset_entry::{
 };
 use super::{
     CardView, Investigator,
-    cards::{self, CardDefinition, CardKind, Slot},
+    cards::{self, CardDefinition, CardKind},
     runtime::{AssetState, Frame, Game, Phase, PlayerState},
 };
 use crate::{Choice, RuleError, TokenFace};
@@ -508,17 +508,21 @@ pub(super) fn placement_choices(game: &Game, prepared: &PreparedAsset) -> Vec<Ch
                 .join(", ");
             Choice {
                 id: format!("asset:{}:replace:{identities}", prepared.card.id),
-                label: if ids.is_empty() {
-                    format!(
-                        "Put {} into play without discarding an asset",
-                        prepared.card.title
-                    )
-                } else {
-                    format!(
-                        "Discard {names} in that order to make room for {}",
-                        prepared.card.title
-                    )
-                },
+                label: format!(
+                    "{}; afterward: {}",
+                    if ids.is_empty() {
+                        format!(
+                            "Put {} into play without discarding an asset",
+                            prepared.card.title
+                        )
+                    } else {
+                        format!(
+                            "Discard {names} in that order to make room for {}",
+                            prepared.card.title
+                        )
+                    },
+                    slot_summary_after(player, definition, &ids)
+                ),
                 cancel_faces: vec![],
             }
         })
@@ -640,8 +644,9 @@ fn asset_choices(game: &Game, actor: Investigator, mode: PlayMode) -> Vec<Choice
                             })
                             .collect();
                         label.push_str(&format!(
-                            "; discard {} in that order to make room",
-                            names.join(", ")
+                            "; discard {} in that order to make room; afterward: {}",
+                            names.join(", "),
+                            slot_summary_after(player, definition, &discarded)
                         ));
                     }
                     if let Some(robes) = payment.robes {
@@ -724,7 +729,11 @@ fn discard_orders(remaining: &[u16], prefix: &mut Vec<u16>, orders: &mut Vec<Vec
     }
 }
 
-fn slots_fit(player: &PlayerState, incoming: &CardDefinition, discarded: &[u16]) -> bool {
+fn placement_definitions<'a>(
+    player: &PlayerState,
+    incoming: &'a CardDefinition,
+    discarded: &[u16],
+) -> Vec<&'a CardDefinition> {
     let mut definitions: Vec<_> = player
         .assets
         .iter()
@@ -732,36 +741,22 @@ fn slots_fit(player: &PlayerState, incoming: &CardDefinition, discarded: &[u16])
         .filter_map(|asset| asset_definition(&asset.card.code))
         .collect();
     definitions.push(incoming);
-    let extra_arcane = definitions
+    definitions
+}
+
+fn slots_fit(player: &PlayerState, incoming: &CardDefinition, discarded: &[u16]) -> bool {
+    super::slots::fit(&placement_definitions(player, incoming, discarded))
+}
+
+fn slot_summary_after(
+    player: &PlayerState,
+    incoming: &CardDefinition,
+    discarded: &[u16],
+) -> String {
+    super::slots::usage(&placement_definitions(player, incoming, discarded))
         .iter()
-        .filter(|definition| definition.code == "05112")
-        .count();
-    for slot in [
-        Slot::Hand,
-        Slot::Arcane,
-        Slot::Ally,
-        Slot::Accessory,
-        Slot::Body,
-    ] {
-        let used = definitions
-            .iter()
-            .flat_map(|definition| definition.slots)
-            .filter(|occupied| **occupied == slot)
-            .count();
-        let limit = match slot {
-            Slot::Hand => 2,
-            Slot::Arcane => 2 + extra_arcane,
-            _ => 1,
-        };
-        if used > limit {
-            return false;
-        }
-    }
-    let unrestricted_arcane = definitions
-        .iter()
-        .filter(|definition| !definition.has_trait("Spell") && !definition.has_trait("Ritual"))
-        .flat_map(|definition| definition.slots)
-        .filter(|slot| **slot == Slot::Arcane)
-        .count();
-    unrestricted_arcane <= 2
+        .filter(|slot| slot.used > 0 || slot.spell_ritual > 0)
+        .map(|slot| slot.label())
+        .collect::<Vec<_>>()
+        .join(" · ")
 }

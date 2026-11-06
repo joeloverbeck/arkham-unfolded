@@ -145,16 +145,7 @@ mod tests {
     }
 
     fn button(app: &mut App, label: &str) -> Option<Entity> {
-        let world = app.world_mut();
-        world
-            .query_filtered::<(Entity, &Children), With<Button>>()
-            .iter(world)
-            .find_map(|(entity, children)| {
-                children
-                    .iter()
-                    .any(|child| world.get::<Text>(child).is_some_and(|text| text.0 == label))
-                    .then_some(entity)
-            })
+        super::super::tests::choice_button(app, label)
     }
 
     fn click(app: &mut App, label: &str) {

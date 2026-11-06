@@ -3,6 +3,7 @@
 use super::*;
 use crate::gathering::{Session, TestResult, TestView};
 use crate::tabletop_ui as screen;
+use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier};
 
 #[derive(Default)]
 pub(super) struct Reading {
@@ -129,30 +130,45 @@ pub(super) fn render(
             }
         },
     );
-    screen::story_reading(
+    reading_panel(
         commands,
-        Panel,
-        ScrollablePanel { inspection: true },
         size,
-        false,
-        "Skill test result",
         |panel| {
-            panel.spawn(art.text(&heading, 28., GOLD));
+            panel.spawn((
+                art.text(&heading, 28., GOLD),
+                Node {
+                    flex_shrink: 0.,
+                    ..default()
+                },
+            ));
             if let Some(report) = &report {
-                panel.spawn(art.text(
-                    format!(
-                        "{} · {}\nTotal {}  /  Difficulty {}",
-                        report.tester.name(),
-                        report.source,
-                        report.total,
-                        report.difficulty
+                panel.spawn((
+                    art.text(
+                        format!(
+                            "Total {}  ·  Difficulty {}",
+                            report.total, report.difficulty
+                        ),
+                        24.,
+                        PAPER,
                     ),
-                    20.,
-                    PAPER,
+                    Node {
+                        flex_shrink: 0.,
+                        ..default()
+                    },
+                ));
+                panel.spawn((
+                    art.text(
+                        format!("{} · {}", report.tester.name(), report.source),
+                        18.,
+                        MUTED,
+                    ),
+                    Node {
+                        flex_shrink: 0.,
+                        ..default()
+                    },
                 ));
             }
         },
-        |_, _| {},
         |body| {
             if let Some(report) = &report {
                 details(body, art, report);
@@ -194,30 +210,37 @@ pub(super) fn render(
                         }
                     });
             }
-            screen::controls(footer, |row| {
-                let first = if pending.is_some() {
-                    Some(ui::control(
-                        art,
-                        row,
-                        "Continue",
-                        Action::ContinueResult(table.epoch),
-                    ))
-                } else {
-                    opportunities.as_ref().and_then(|offered| {
-                        let choice = offered.decline();
-                        let button = ui::control(
+            footer
+                .spawn(Node {
+                    justify_content: JustifyContent::Center,
+                    flex_wrap: FlexWrap::Wrap,
+                    flex_shrink: 0.,
+                    ..default()
+                })
+                .with_children(|row| {
+                    let first = if pending.is_some() {
+                        Some(ui::control(
                             art,
                             row,
-                            &choice.label,
-                            Action::ResultChoice(table.epoch, view.revision, choice.id.clone()),
-                        );
-                        uses.is_empty().then_some(button)
-                    })
-                };
-                if let Some(first) = first {
-                    row.commands().entity(first).insert(AutoFocus);
-                }
-            });
+                            "Continue",
+                            Action::ContinueResult(table.epoch),
+                        ))
+                    } else {
+                        opportunities.as_ref().and_then(|offered| {
+                            let choice = offered.decline();
+                            let button = ui::control(
+                                art,
+                                row,
+                                &choice.label,
+                                Action::ResultChoice(table.epoch, view.revision, choice.id.clone()),
+                            );
+                            uses.is_empty().then_some(button)
+                        })
+                    };
+                    if let Some(first) = first {
+                        row.commands().entity(first).insert(AutoFocus);
+                    }
+                });
             if !table.notice.is_empty() {
                 footer.spawn(art.text(&table.notice, 16., GOLD));
             }
@@ -225,8 +248,15 @@ pub(super) fn render(
     );
 }
 
-fn outcome(report: &TestResult) -> String {
-    if report.success {
+pub(super) fn outcome(report: &TestResult) -> String {
+    if report
+        .breakdown
+        .tokens
+        .iter()
+        .any(|token| token.face == crate::TokenFace::AutoFail)
+    {
+        "Automatic failure".into()
+    } else if report.success {
         format!("Succeeded by {}", report.total - report.difficulty)
     } else {
         format!("Failed by {}", report.failure_margin)
@@ -235,28 +265,30 @@ fn outcome(report: &TestResult) -> String {
 
 pub(super) fn details(body: &mut ChildSpawnerCommands, art: &art::Art, report: &TestResult) {
     let detail = &report.breakdown;
-    body.spawn(art.text(
-        format!("Base {:?}  {}", detail.skill, detail.base),
-        21.,
-        PAPER,
-    ));
+    contribution(
+        body,
+        art,
+        &format!("Base {:?}", detail.skill),
+        &detail.base.to_string(),
+    );
     for (heading, rows) in [
         ("Committed cards", &detail.cards),
         ("Abilities and bonuses", &detail.bonuses),
     ] {
-        body.spawn(art.text(heading, 20., GOLD));
         if rows.is_empty() {
-            body.spawn(art.text("None", 18., MUTED));
+            continue;
         }
+        body.spawn(art.text(heading, 18., GOLD));
         for row in rows {
-            body.spawn(art.text(
-                format!("{} · {}  {:+}", row.label, row.owner.name(), row.amount),
-                19.,
-                PAPER,
-            ));
+            contribution(
+                body,
+                art,
+                &format!("{} · {}", row.label, row.owner.name()),
+                &format!("{:+}", row.amount),
+            );
         }
     }
-    body.spawn(art.text("Chaos tokens", 20., GOLD));
+    body.spawn(art.text("Chaos tokens", 18., GOLD));
     for token in &detail.tokens {
         use crate::TokenFace;
         let amount = format!("{:+}", token.amount).replace('-', "−");
@@ -294,21 +326,6 @@ pub(super) fn details(body: &mut ChildSpawnerCommands, art: &art::Art, report: &
     let cards: i32 = detail.cards.iter().map(|row| row.amount).sum();
     let bonuses: i32 = detail.bonuses.iter().map(|row| row.amount).sum();
     let chaos = detail.token_total;
-    body.spawn(art.text(
-        format!(
-            "{} base {:+} cards {:+} bonuses {:+} chaos = {}\nFinal total {} vs difficulty {} · {}",
-            detail.base,
-            cards,
-            bonuses,
-            chaos,
-            detail.base + cards + bonuses + chaos,
-            report.total,
-            report.difficulty,
-            outcome(report)
-        ),
-        20.,
-        PAPER,
-    ));
     if detail.base + cards + bonuses + chaos < 0 {
         body.spawn(art.text("Skill totals cannot be lower than 0.", 18., MUTED));
     }
@@ -326,8 +343,8 @@ fn token_row(body: &mut ChildSpawnerCommands, art: &art::Art, face: crate::Token
             row.spawn((
                 ImageNode::new(image),
                 Node {
-                    width: px(60),
-                    height: px(60),
+                    width: px(40),
+                    height: px(40),
                     ..default()
                 },
                 Pickable::IGNORE,
@@ -335,4 +352,100 @@ fn token_row(body: &mut ChildSpawnerCommands, art: &art::Art, face: crate::Token
         }
         row.spawn(art.text(value, 20., PAPER));
     });
+}
+
+fn contribution(body: &mut ChildSpawnerCommands, art: &art::Art, label: &str, amount: &str) {
+    body.spawn(Node {
+        width: percent(100),
+        column_gap: px(16),
+        align_items: AlignItems::Center,
+        flex_shrink: 0.,
+        ..default()
+    })
+    .with_children(|row| {
+        row.spawn((
+            art.text(label, 19., PAPER),
+            Node {
+                flex_grow: 1.,
+                flex_basis: px(0),
+                min_width: px(0),
+                ..default()
+            },
+        ));
+        row.spawn((
+            art.text(amount, 21., PAPER),
+            Node {
+                flex_shrink: 0.,
+                ..default()
+            },
+        ));
+    });
+}
+
+/// A result sizes itself from its explanation; story cards retain their own layout.
+fn reading_panel(
+    commands: &mut Commands,
+    size: Vec2,
+    heading: impl FnOnce(&mut ChildSpawnerCommands),
+    details: impl FnOnce(&mut ChildSpawnerCommands),
+    footer: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100),
+                height: percent(100),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.015, 0.025, 0.03, 0.88)),
+            GlobalZIndex(90),
+            ModalDialogBarrier,
+            Panel,
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        width: px((size.x * 0.94).min(760.)),
+                        max_height: px(size.y * 0.9),
+                        padding: UiRect::all(px(22)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(10),
+                        ..default()
+                    },
+                    BackgroundColor(INK),
+                    ModalDialog,
+                    TabGroup::modal(),
+                    AccessibleLabel::new("Skill test result"),
+                ))
+                .with_children(|panel| {
+                    heading(panel);
+                    panel
+                        .spawn((
+                            Node {
+                                min_height: px(0),
+                                overflow: Overflow::scroll_y(),
+                                flex_direction: FlexDirection::Column,
+                                padding: UiRect::all(px(6)),
+                                row_gap: px(8),
+                                ..default()
+                            },
+                            ScrollPosition::default(),
+                            ScrollablePanel { inspection: true },
+                        ))
+                        .observe(screen::scroll_panel)
+                        .with_children(details);
+                    panel
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            flex_shrink: 0.,
+                            row_gap: px(10),
+                            ..default()
+                        })
+                        .with_children(footer);
+                });
+        });
 }

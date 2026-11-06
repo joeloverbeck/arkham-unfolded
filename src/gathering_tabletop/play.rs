@@ -39,6 +39,22 @@ fn pile_text(title: &str, cards: &[CardView]) -> String {
 /// Only faces and piles represented by this player-safe observation are inspectable.
 pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
     let play = view.play.as_ref()?;
+    if let Some(player) = play
+        .players
+        .iter()
+        .find(|player| investigator_code(player.investigator) == code)
+    {
+        let slots = player
+            .slot_usage()
+            .iter()
+            .map(|slot| slot.details())
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Some(format!(
+            "{}\n\nAsset slots\n{slots}\nCounts show occupied slot units. Slotless assets do not use these limits.",
+            crate::gathering::inspection::card(code)?
+        ));
+    }
     if code == "chaos-bag" {
         let mut counts = std::collections::BTreeMap::new();
         for face in &view.standard_bag {
@@ -417,6 +433,7 @@ pub(super) fn status(view: &Observation) -> Option<String> {
 #[derive(Clone, Copy)]
 enum ShownTokenState {
     Revealed,
+    Available,
     Selected,
     Ignored,
     Cancelled,
@@ -427,6 +444,7 @@ impl ShownTokenState {
     fn label(self) -> &'static str {
         match self {
             Self::Revealed => "Revealed",
+            Self::Available => "Available now",
             Self::Selected => "Selected",
             Self::Ignored => "Ignored",
             Self::Cancelled => "Cancelled",
@@ -577,6 +595,27 @@ impl Painter<'_, '_, '_> {
         ordinal: usize,
         active: bool,
     ) {
+        if matches!(
+            state,
+            ShownTokenState::Available | ShownTokenState::Selected
+        ) {
+            let color = if matches!(state, ShownTokenState::Selected) {
+                GOLD
+            } else {
+                Color::srgb(0.25, 0.75, 0.95)
+            };
+            self.commands.spawn((
+                ScenePiece,
+                Mesh3d(self.meshes.add(Cylinder::new(0.58, 0.025))),
+                MeshMaterial3d(self.materials.add(StandardMaterial {
+                    base_color: color,
+                    unlit: true,
+                    ..default()
+                })),
+                Transform::from_translation(at - Vec3::Y * 0.065),
+                Pickable::IGNORE,
+            ));
+        }
         let status = match state {
             ShownTokenState::Cancelled => crate::TokenStatus::Canceled,
             ShownTokenState::Resolved => crate::TokenStatus::Resolved,
@@ -1117,29 +1156,41 @@ pub(super) fn render(
         );
     }
     if let Some(tokens) = &play.tokens {
-        for (slot, token) in tokens.revealed.iter().enumerate() {
-            let state = if tokens.cancelled.contains(&slot) {
-                ShownTokenState::Cancelled
-            } else if tokens.ignored.contains(&slot) {
-                ShownTokenState::Ignored
-            } else if tokens.selected.contains(&slot) {
-                ShownTokenState::Selected
-            } else {
-                ShownTokenState::Revealed
-            };
-            paint.token(
+        let eligible: Vec<_> = context
+            .view
+            .choices
+            .iter()
+            .flat_map(|choice| tokens.choice_members(&choice.id))
+            .collect();
+        let columns = if tokens.is_skill_test() { 4 } else { 6 };
+        let mut row_start = 0;
+        for group in tokens.reveal_groups() {
+            let position = |slot| {
                 if tokens.is_skill_test() {
                     layout::test_token(false, slot)
                 } else {
                     tray.as_ref()
                         .expect("Non-test tokens have an owner")
                         .token(slot)
-                },
-                *token,
-                state,
-                slot + 1,
-                true,
-            );
+                }
+            };
+            paint.caption(position(row_start) - Vec3::Z * 2.0, group.source);
+            for (offset, slot) in group.members.iter().copied().enumerate() {
+                let token = tokens.revealed[slot];
+                let state = if tokens.cancelled.contains(&slot) {
+                    ShownTokenState::Cancelled
+                } else if tokens.ignored.contains(&slot) {
+                    ShownTokenState::Ignored
+                } else if tokens.selected.contains(&slot) {
+                    ShownTokenState::Selected
+                } else if eligible.contains(&slot) {
+                    ShownTokenState::Available
+                } else {
+                    ShownTokenState::Revealed
+                };
+                paint.token(position(row_start + offset), token, state, slot + 1, true);
+            }
+            row_start += group.members.len().div_ceil(columns) * columns;
         }
     }
     if !play

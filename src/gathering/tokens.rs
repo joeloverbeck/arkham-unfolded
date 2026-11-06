@@ -8,6 +8,8 @@ use crate::{Choice, RuleError, TokenFace};
 use serde::{Deserialize, Serialize};
 
 mod groups;
+mod presentation;
+pub use presentation::RevealGroup;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SealedPremonition {
@@ -29,6 +31,7 @@ pub enum TokenFixture {
     EyesOliveProtected,
     EyesOliveJacqueline,
     VoiceRaCurse,
+    VoiceRaGuidance,
     VoiceRaLethalOpportunity,
     PremonitionVoiceOpportunity,
     Premonition,
@@ -58,7 +61,43 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
     }
     let jacqueline = &mut game.players[Investigator::Jacqueline.index()];
     jacqueline.deck.append(&mut jacqueline.hand);
+    if case == TokenFixture::VoiceRaGuidance {
+        let take = |player: &mut super::runtime::PlayerState, code: &str| {
+            let index = player
+                .deck
+                .iter()
+                .position(|card| card.code == code)
+                .expect("Selected reveal card");
+            player.deck.remove(index)
+        };
+        let event = take(jacqueline, "60416");
+        let prophecy = take(jacqueline, "04032");
+        jacqueline.hand.push(prophecy);
+        let katarina = take(jacqueline, "11069");
+        jacqueline.assets.push(AssetView {
+            card: katarina,
+            ready: true,
+            uses: 0,
+            damage: 0,
+            horror: 0,
+        });
+        jacqueline.resources = 3;
+        game.set_fixture_tokens(vec![
+            TokenFace::MinusTwo,
+            TokenFace::ElderSign,
+            TokenFace::Skull,
+            TokenFace::AutoFail,
+            TokenFace::MinusOne,
+            TokenFace::MinusOne,
+            TokenFace::Tablet,
+            TokenFace::MinusTwo,
+            TokenFace::Cultist,
+        ]);
+        begin_voice_ra(game, Investigator::Jacqueline, event).expect("One Voice of Ra reveal");
+        return;
+    }
     match case {
+        TokenFixture::VoiceRaGuidance => unreachable!("Configured above"),
         TokenFixture::JacquelineOlive
         | TokenFixture::JacquelineOliveProtected
         | TokenFixture::ProphecyOlive
@@ -1225,6 +1264,7 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
             tokens.root.declarations(vec![], &mut positions);
             for (path, policy, used_jacqueline) in positions {
                 let position = path_name(&path);
+                let target = tokens.target_label(&path);
                 if jacqueline_available
                     && !used_jacqueline
                     && policy != Policy::Katarina
@@ -1237,18 +1277,11 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                     };
                     result.push(choice(
                         &base,
-                        format!(
-                            "Jacqueline: add 2 reveals at {}",
-                            if path.is_empty() {
-                                "the outer reveal"
-                            } else {
-                                &position
-                            }
-                        ),
+                        format!("Jacqueline · {target}: add 2 tokens, then cancel"),
                     ));
                     for asset in &jacqueline.assets {
                         if asset.card.code == "60402" && asset.ready {
-                            result.push(choice(format!("{base}:arbiter:{}", asset.card.id), "Use Jacqueline and exhaust Arbiter of Fates; preserve the round use"));
+                            result.push(choice(format!("{base}:arbiter:{}", asset.card.id), format!("Jacqueline + Arbiter of Fates · {target}: add 2 tokens; exhaust Arbiter and preserve the round use")));
                         }
                     }
                 }
@@ -1258,7 +1291,10 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                 if owner.resources >= 1 && !owner.threats.iter().any(|card| card.code == "01165") {
                     for card in &owner.hand {
                         if card.code == "04032" {
-                            result.push(choice(format!("tokens:prophecy:{position}:{}", card.id), format!("Pay 1 for Dark Prophecy at reveal {position}: reveal 5 instead of 1")));
+                            result.push(choice(
+                                format!("tokens:prophecy:{position}:{}", card.id),
+                                format!("Dark Prophecy · {target}: pay 1, reveal 5 instead of 1"),
+                            ));
                         }
                     }
                 }
@@ -1269,13 +1305,13 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                     match asset.card.code.as_str() {
                         "04197" => result.push(choice(
                             format!("tokens:olive:{position}:{}", asset.card.id),
-                            format!("Exhaust Olive at reveal {position}: reveal 3 and resolve 2"),
+                            format!("Olive McBride · {target}: exhaust, reveal 3 and resolve 2"),
                         )),
                         "11069" if tokens.purpose == TokenPurpose::SkillTest => {
                             result.push(choice(
                                 format!("tokens:katarina:{position}:{}", asset.card.id),
                                 format!(
-                                    "Exhaust Katarina at reveal {position}: reveal until a symbol"
+                                    "Katarina Sojka · {target}: exhaust, reveal until a symbol"
                                 ),
                             ))
                         }

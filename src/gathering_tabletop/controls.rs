@@ -428,9 +428,14 @@ fn route(view: &Observation, id: &str) -> Route {
             }
             sources
         }
-        // Position indices identify nested reveal groups, not physical tokens.
-        // Public observations do not expose group membership; use the bag.
-        ["tokens", "position" | "cancel-position" | "eyes", _] => vec![Source::Bag],
+        ["tokens", "position" | "cancel-position", _] => {
+            let mut sources = vec![Source::Bag];
+            if let Some(tokens) = view.play.as_ref().and_then(|play| play.tokens.as_ref()) {
+                sources.extend(tokens.choice_members(id).into_iter().map(Source::Token));
+            }
+            sources
+        }
+        ["tokens", "eyes", _] => vec![Source::Bag],
         // These decisions name no card identity in the public choice protocol.
         // They belong to the decision maker, never to a guessed physical copy.
         ["test-card", "prescient", "even" | "odd" | "symbol"]
@@ -439,6 +444,24 @@ fn route(view: &Observation, id: &str) -> Route {
         _ => return Route::Pending,
     };
     admitted_sources(view, sources)
+}
+
+pub(super) fn replacement_members(id: &str) -> Vec<u16> {
+    if let Some(id) = id
+        .strip_prefix("lita:discard-ally:")
+        .and_then(|id| id.parse().ok())
+    {
+        return vec![id];
+    }
+    id.split_once(":replace:")
+        .map_or_else(Vec::new, |(_, tail)| {
+            tail.split(':')
+                .next()
+                .unwrap_or_default()
+                .split(',')
+                .filter_map(|id| id.parse().ok())
+                .collect()
+        })
 }
 
 fn global(id: &str) -> bool {
