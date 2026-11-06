@@ -342,7 +342,7 @@ impl Bus {
         DesktopPortal::new(
             connection,
             Instant::now() + Duration::from_secs_f64(seconds),
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(CommandInput::default()),
         )
     }
 
@@ -472,7 +472,7 @@ fn closing_command_input_cancels_pending_consent_and_closes_resources() {
     let mut portal = bus.portal(2.0);
     let (reader, writer) = std::os::unix::net::UnixStream::pair().unwrap();
     let (_commands, input_ended) = crate::native::input_lines(BufReader::new(reader));
-    portal.input_ended = input_ended;
+    portal.input = input_ended;
     let shared = bus.shared.clone();
     let closer = std::thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(1);
@@ -498,4 +498,64 @@ fn closing_command_input_cancels_pending_consent_and_closes_resources() {
     assert!(calls.iter().any(|call| call == "request-close"));
     assert_eq!(calls.last().unwrap(), "session-close");
     assert!(!calls.iter().any(|call| call.starts_with("move:")));
+}
+
+#[test]
+fn stop_command_cancels_pending_consent_without_closing_input() {
+    use std::io::Write;
+    let bus = Bus::new("timeout");
+    let mut portal = bus.portal(2.0);
+    let (reader, mut writer) = std::os::unix::net::UnixStream::pair().unwrap();
+    let (_commands, input_ended) = crate::native::input_lines(BufReader::new(reader));
+    portal.input = input_ended;
+    let shared = bus.shared.clone();
+    let sender = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !shared
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .any(|call| call == "start")
+        {
+            assert!(Instant::now() < deadline, "consent never started");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        writeln!(writer, "{{\"action\":\"stop\"}}").unwrap();
+        writer // Keep input open until the pending request has ended.
+    });
+    let start = Instant::now();
+    let result = portal.start(&mut |_| Ok(()));
+    portal.close().unwrap();
+    let _writer = sender.join().unwrap();
+    assert!(format!("{:#}", result.unwrap_err()).contains("stopped by request"));
+    assert!(start.elapsed() < Duration::from_secs(1));
+    let calls = &bus.shared.lock().unwrap().calls;
+    assert!(calls.iter().any(|call| call == "request-close"));
+    assert_eq!(calls.last().unwrap(), "session-close");
+    assert!(!calls.iter().any(|call| call.starts_with("move:")));
+}
+
+#[test]
+fn consent_has_its_own_budget_without_shortening_a_granted_session() {
+    let bus = Bus::new("timeout");
+    let mut portal = bus.portal(3.0);
+    portal.consent_timeout = Duration::from_millis(150);
+    let start = Instant::now();
+    let error = portal.start(&mut |_| Ok(())).unwrap_err();
+    portal.close().unwrap();
+    assert!(format!("{error:#}").contains("consent timed out"));
+    assert!(start.elapsed() < Duration::from_secs(1));
+    let calls = &bus.shared.lock().unwrap().calls;
+    assert!(calls.iter().any(|call| call == "request-close"));
+    assert_eq!(calls.last().unwrap(), "session-close");
+    assert!(!calls.iter().any(|call| call.starts_with("move:")));
+
+    let granted = Bus::new("ok");
+    let mut portal = granted.portal(3.0);
+    portal.consent_timeout = Duration::from_secs(1);
+    portal.start(&mut |_| Ok(())).unwrap();
+    std::thread::sleep(Duration::from_millis(1010));
+    portal.move_to([50., 50.]).unwrap();
+    portal.close().unwrap();
 }

@@ -1,4 +1,7 @@
-use crate::{interaction::Portal, process};
+use crate::{
+    interaction::{CommandInput, Portal},
+    process,
+};
 use anyhow::{Context, Result, bail, ensure};
 use futures_lite::StreamExt;
 use serde::Serialize;
@@ -7,7 +10,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -44,18 +47,26 @@ pub struct DesktopPortal {
     size: [f64; 2],
     pressed: BTreeSet<i32>,
     deadline: Instant,
-    input_ended: Arc<AtomicBool>,
+    input: Arc<CommandInput>,
+    consent_timeout: Duration,
+    consent_deadline: Option<Instant>,
 }
 
 impl DesktopPortal {
-    pub fn connect(deadline: Instant, input_ended: Arc<AtomicBool>) -> Result<Self> {
+    pub fn connect(
+        deadline: Instant,
+        input: Arc<CommandInput>,
+        consent_timeout: Duration,
+    ) -> Result<Self> {
         let connection = Builder::session()?
             .method_timeout(Duration::from_secs(5))
             .build()?;
-        Ok(Self::new(connection, deadline, input_ended))
+        let mut portal = Self::new(connection, deadline, input);
+        portal.consent_timeout = consent_timeout;
+        Ok(portal)
     }
 
-    fn new(connection: Connection, deadline: Instant, input_ended: Arc<AtomicBool>) -> Self {
+    fn new(connection: Connection, deadline: Instant, input: Arc<CommandInput>) -> Self {
         Self {
             connection: Some(connection),
             session: None,
@@ -63,7 +74,9 @@ impl DesktopPortal {
             size: [0.0; 2],
             pressed: BTreeSet::new(),
             deadline,
-            input_ended,
+            input,
+            consent_timeout: Duration::from_secs(30),
+            consent_deadline: None,
         }
     }
 
@@ -75,13 +88,14 @@ impl DesktopPortal {
 
     fn check_active(&self) -> Result<()> {
         process::check_interrupt()?;
-        ensure!(
-            !self.input_ended.load(Ordering::SeqCst),
-            "Command input ended or its reader stopped"
-        );
+        self.input.check()?;
         ensure!(
             Instant::now() < self.deadline,
             "Portal request or session timed out"
+        );
+        ensure!(
+            self.consent_deadline.is_none_or(|end| Instant::now() < end),
+            "Desktop consent timed out"
         );
         Ok(())
     }
@@ -146,6 +160,7 @@ impl DesktopPortal {
                     },
                 ));
                 if let Some(message) = message {
+                    self.check_active()?;
                     let message = message.context("Portal response stream closed")??;
                     let (code, values): (u32, Values) = message.body().deserialize()?;
                     completed = true;
@@ -168,6 +183,7 @@ impl DesktopPortal {
 
 impl Portal for DesktopPortal {
     fn start(&mut self, emit: &mut dyn FnMut(Json) -> Result<()>) -> Result<()> {
+        self.consent_deadline = Some((Instant::now() + self.consent_timeout).min(self.deadline));
         let session_token = token();
         let sender = self
             .connection()?
@@ -209,7 +225,9 @@ impl Portal for DesktopPortal {
             options.insert("multiple".into(), false.into());
             (expected.clone(), options)
         })?;
-        emit(json!({"status":"awaiting-desktop-consent"}))?;
+        emit(
+            json!({"status":"awaiting-desktop-consent", "timeout_seconds":self.consent_timeout.as_secs_f64()}),
+        )?;
         let mut grant = self.request(REMOTE, "Start", |token| {
             (expected.clone(), "", options(token))
         })?;
@@ -244,6 +262,7 @@ impl Portal for DesktopPortal {
         );
         self.stream = stream;
         self.size = [width.into(), height.into()];
+        self.consent_deadline = None;
         emit(json!({"status":"granted", "stream_size":[width,height]}))?;
         Ok(())
     }

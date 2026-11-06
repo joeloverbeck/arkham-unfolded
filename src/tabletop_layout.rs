@@ -7,6 +7,10 @@ use bevy::prelude::*;
 #[path = "tabletop_layout/heading_checks.rs"]
 pub(crate) mod heading_checks;
 
+#[cfg(test)]
+#[path = "tabletop_layout/font_checks.rs"]
+pub(crate) mod font_checks;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Area {
     Overview,

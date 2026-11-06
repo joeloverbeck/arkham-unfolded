@@ -214,6 +214,23 @@ scripts/tools native launch \
 
 The launcher copies and hashes the executable before starting it. Later builds cannot replace that running copy. It creates run-local configuration, data, cache, working directory and `session.json`; `--load SOURCE_SAVE` copies the supplied save before loading, because the loaded path is also the autosave destination. Original saves and settings stay untouched. The output directory must be new and outside the checkout. No-art checks readable substitutes; for real artwork use `--art-root /absolute/path/to/prepared-assets` and confirm completeness in `run/app.log`.
 
+Complete preparation before the desktop interval. Run Cargo/build/check jobs one
+at a time: await the producer's terminal result before starting the next job.
+For a recorded check, require `run.json` to say `finished` with exit code 0 and
+unchanged source fingerprints before using its output. `scripts/check` already
+uses `scripts/dev`; do not wrap it in another `scripts/dev`. A lock timeout is a
+failed invocation, not evidence of a code defect. Diagnose the competing job;
+do not widen the lock timeout or retry while that producer is still running.
+
+The Gathering reveal/story and map checkpoint exporters write `launches.json`
+and `launches.md` beside the saves. Use those generated disposable-launch recipes
+instead of choosing an initial view by hand. Export validates the exact saved
+state and arguments through production `Options::parse`, `open_table` and
+`configure_diagnostics` before any desktop run. Reveal checkpoints use `test`;
+story and map checkpoints use `scenario`. The regular checkpoint test also
+rejects the erroneous `resolve` view for an ordinary pre-reveal checkpoint.
+This is headless startup validation, not evidence of native rendering or input.
+
 For static layout checks, first agree the desktop interval and follow
 [foreground preparation](#foreground-performance-measurements) so the app remains
 visible and focused during the timed run. Add
@@ -266,7 +283,7 @@ deadline_unix=$(date -u -d '+3 minutes' +%s)
 date -u -d "@$deadline_unix" '+Desktop control ends at %H:%M:%S UTC'
 scripts/tools native session \
   --pid "$native_pid" --window "$native_window" --output-dir "$review_dir/interaction" \
-  --deadline-unix-seconds "$deadline_unix"
+  --deadline-unix-seconds "$deadline_unix" --consent-timeout-seconds 30
 ```
 
 Use an interactive terminal or a tool invocation with a persistent PTY (`tty: true` for `exec_command`), then send commands through that process's returned session ID. A pipe is suitable only while its writer remains open. Starting the helper with closed stdin cancels consent and input; reopening stdin requires a new helper and grant.
@@ -276,6 +293,15 @@ The earlier of the absolute deadline and `--timeout-seconds` applies. Startup, c
 The output directory must be new. The helper saves `initial.png` before requesting consent. In GNOME's dialog, select the monitor containing Arkham, enable **Allow Remote Interaction**, and click **Share**. One nonpersistent, pointer-only grant covers the run. The total session limit is 600 seconds, including consent and idle input; `--timeout-seconds` can shorten it. Keep Arkham covering the monitor's central 10%. Keep the keyboard and pointer idle throughout calibration and gestures. The helper measures the portal-to-X11 mapping and checks it at an independent point; it does not reuse a previous monitor's scale. Wait for `ready`, then inspect `initial.png` before choosing a target. Coordinates are pixels relative to the captured client, not a resized image in the conversation. A calibration refusal retains the session for the bounded recovery below unless its time budget expired.
 
 Send one JSON command per line on the same process's stdin. Each dequeued command emits `command-started` with a sequential `request` number, then a terminal result with that number and `elapsed_ms`. Keep one command outstanding. Each command has a 15-second budget checked before input and between guarded operations; focus and D-Bus calls retain their five-second call limits. A timeout attempts button release, reports `refused`, and ends the session for cleanup. This is cooperative cancellation, so an in-progress native call or cleanup can extend the response beyond the budget. A refusal can follow partial input: inspect before retrying. The input queue holds at most eight pending commands; overflow stops the input reader and cancels portal activity. EOF or a read error during pending consent cancels the request without waiting for approval.
+
+Consent/startup has a separate 30-second limit (`--consent-timeout-seconds`,
+1–120 seconds), capped by the original session deadline. A successful grant
+disarms only that shorter limit; it does not reset or extend the session budget.
+Sending `{"action":"stop"}` cancels pending consent without closing stdin and
+interrupts queued or active input at the next cooperative check. It reports
+`stopped`, then attempts request/session closure; no calibration follows a
+cancelled consent. EOF remains a cancellation route. A consent timeout closes
+the affected session and grants no automatic retry or extra desktop time.
 
 Use this compact action-and-capture sequence within the original deadline:
 

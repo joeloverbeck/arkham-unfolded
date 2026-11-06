@@ -409,7 +409,8 @@ fn export_map_motion_review_saves() {
         std::env::var_os("ARKHAM_MAP_REVIEW_DIR").expect("Set a fresh export directory"),
     );
     let before = movement_session();
-    let (_directory, mut app) = review_saves::open_review_save(&before);
+    let (_directory, mut app) =
+        review_saves::open_review_save_in_view(&before, Some("scenario")).unwrap();
     review_saves::assert_visible_button(&mut app, "Continue");
     let acknowledge = choice_button(&mut app, "Continue").unwrap();
     app.world_mut().trigger(Activate {
@@ -425,14 +426,13 @@ fn export_map_motion_review_saves() {
     after
         .choose(after.observe().revision, "action:ordinary:move:01113")
         .unwrap();
-    std::fs::create_dir(&output).unwrap();
-    for (name, session) in [("before-move", before), ("after-move", after)] {
-        let path = output.join(format!("{name}.json"));
-        continuity::save_session(&path, &session).unwrap();
-        assert_eq!(continuity::load_session(&path).unwrap(), session);
-        assert!(!session.is_verification_fixture());
-        println!("{}", path.display());
-    }
+    review_saves::export_review_saves(
+        &output,
+        &[
+            ("before-move", &before, "scenario"),
+            ("after-move", &after, "scenario"),
+        ],
+    );
 }
 
 #[test]

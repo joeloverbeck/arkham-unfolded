@@ -42,6 +42,7 @@ struct State {
     identity: bool,
     extent: [f64; 2],
     start_error: bool,
+    stop_during_start: bool,
     close_error: bool,
     press_error: bool,
     release_error_once: bool,
@@ -74,6 +75,7 @@ fn state() -> Rc<RefCell<State>> {
         identity: true,
         extent: [1920.0, 1080.0],
         start_error: false,
+        stop_during_start: false,
         close_error: false,
         press_error: false,
         release_error_once: false,
@@ -136,6 +138,7 @@ impl Portal for Grant {
         state.elapsed += delay;
         drop(state);
         ensure!(!self.0.borrow().start_error, "partial startup error");
+        ensure!(!self.0.borrow().stop_during_start, StopRequested);
         Ok(())
     }
     fn size(&self) -> [f64; 2] {
@@ -864,6 +867,33 @@ fn changed_state_after_press_or_mid_drag_stops_motion_and_releases() {
             assert_eq!(state.closes, 1);
         }
     }
+}
+
+#[test]
+fn stop_during_consent_acknowledges_and_closes_without_input() {
+    let shared = state();
+    shared.borrow_mut().stop_during_start = true;
+    let directory = tempfile::tempdir().unwrap();
+    let mut events = Vec::new();
+    run_session(
+        &mut Screen(shared.clone()),
+        &mut Grant(shared.clone()),
+        directory.path(),
+        &mut [Ok(r#"{"action":"click","x":400,"y":300}"#.to_owned())].into_iter(),
+        &mut |event| {
+            events.push(event);
+            Ok(())
+        },
+        &mut |_| Ok(()),
+    )
+    .unwrap();
+    assert!(events.iter().any(|event| event["status"] == "stopped"));
+    assert_eq!(events.last().unwrap()["status"], "session-closed");
+    let state = shared.borrow();
+    assert_eq!(state.closes, 1);
+    assert!(state.moves.is_empty());
+    assert!(state.presses.is_empty());
+    assert!(state.wheels.is_empty());
 }
 
 #[test]
