@@ -51,7 +51,13 @@ impl<'a> Layout<'a> {
             owner,
             candidates,
             sources,
-            token_count: tokens.map_or(0, |tokens| tokens.revealed.len()),
+            token_count: tokens.map_or(0, |tokens| {
+                tokens
+                    .reveal_groups()
+                    .iter()
+                    .map(|group| group.members.len().div_ceil(6) * 6)
+                    .sum()
+            }),
         })
     }
 

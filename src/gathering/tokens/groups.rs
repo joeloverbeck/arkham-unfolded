@@ -104,7 +104,7 @@ pub(super) fn choices(game: &Game, tokens: &TokenResolution) -> Option<Vec<Choic
             result.push(choice(
                 format!("tokens:{operation}:{position}"),
                 format!(
-                    "{} position {} [{}]{}",
+                    "{} {} [{}]{}",
                     if is_selected {
                         "Unselect"
                     } else if cancellation && !protected_faces.is_empty() {
@@ -114,7 +114,7 @@ pub(super) fn choices(game: &Game, tokens: &TokenResolution) -> Option<Vec<Choic
                     } else {
                         "Resolve"
                     },
-                    position + 1,
+                    tokens.target_label(&[tokens.active.as_slice(), &[*position]].concat()),
                     faces,
                     exception
                 ),

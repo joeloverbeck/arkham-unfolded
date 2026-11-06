@@ -671,11 +671,117 @@ fn dark_prophecy_uses_taboo_preference_and_cannot_be_declared_after_reveal() {
 }
 
 #[test]
+fn voice_ra_nine_tokens_preserve_origin_and_choice_membership_across_reopen() {
+    use arkham_unfolded_experiment::gathering::{TokenFixture, continuity};
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::VoiceRaGuidance));
+    let declaration = session.observe();
+    assert!(
+        !declaration
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tokens:katarina:"))
+    );
+    let prophecy = declaration.play.unwrap().players[2].hand[0].id;
+    choose(&mut session, "tokens:jacqueline");
+    choose(&mut session, &format!("tokens:prophecy:0:{prophecy}"));
+    choose(&mut session, "test:reveal");
+    let view = session.observe();
+    let tokens = view.play.as_ref().unwrap().tokens.as_ref().unwrap();
+    assert_eq!(tokens.revealed.len(), 9);
+    let groups = tokens.reveal_groups();
+    assert_eq!(
+        groups
+            .iter()
+            .map(|group| group.members.clone())
+            .collect::<Vec<_>>(),
+        [vec![0, 1, 2, 3, 4], vec![5, 6], vec![7, 8]]
+    );
+    assert!(groups[0].source.contains("Dark Prophecy"));
+    assert!(groups[1].source.contains("Voice of Ra"));
+    assert!(groups[2].source.contains("Jacqueline"));
+    assert!(
+        tokens.instruction().contains("Dark Prophecy") && tokens.instruction().contains("Choose 1")
+    );
+    assert_eq!(
+        view.choices
+            .iter()
+            .filter(|choice| choice.id.starts_with("tokens:keep:"))
+            .map(|choice| tokens.choice_members(&choice.id))
+            .collect::<Vec<_>>(),
+        [vec![2], vec![3]]
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("voice-ra.json");
+    continuity::save_session(&path, &session).unwrap();
+    session = continuity::load_session(&path).unwrap();
+    assert_eq!(session.observe(), view);
+    choose(&mut session, "tokens:keep:2");
+    choose(&mut session, "tokens:confirm");
+    let cancellation = session.observe();
+    let tokens = cancellation.play.as_ref().unwrap().tokens.as_ref().unwrap();
+    assert!(tokens.instruction().contains("Cancel 2"));
+    assert_eq!(
+        tokens.reveal_groups(),
+        groups,
+        "Origin survives the completion of Dark Prophecy"
+    );
+    assert!(
+        cancellation
+            .choices
+            .iter()
+            .any(|choice| choice.id == "tokens:cancel:2"),
+        "Jacqueline may cancel the retained Prophecy token, not only her extra tokens"
+    );
+    choose(&mut session, "tokens:cancel:5");
+    choose(&mut session, "tokens:cancel:7");
+    choose(&mut session, "tokens:confirm");
+    let finished = session.observe().play.unwrap();
+    assert_eq!(finished.players[2].resources, 9);
+    assert_eq!(finished.bag_count, 16);
+    assert!(
+        finished.players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.code == "11069")
+            .unwrap()
+            .ready
+    );
+    session.validate().unwrap();
+}
+
+#[test]
 fn nested_prophecy_cleanup_reveals_the_declared_batch_before_selection() {
     use arkham_unfolded_experiment::gathering::{TokenFixture, continuity};
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::NestedProphecyCleanup));
     let prophecy = session.observe().play.unwrap().players[2].hand[0].id;
+    let declaration = session.observe();
+    let jacqueline = declaration
+        .choices
+        .iter()
+        .find(|choice| choice.id == "tokens:jacqueline")
+        .unwrap();
+    assert!(
+        jacqueline.label.contains("Dark Future"),
+        "{}",
+        jacqueline.label
+    );
+    assert!(
+        jacqueline.label.contains("whole reveal"),
+        "{}",
+        jacqueline.label
+    );
+    let dark_prophecy = declaration
+        .choices
+        .iter()
+        .find(|choice| choice.id == format!("tokens:prophecy:0:{prophecy}"))
+        .unwrap();
+    assert!(
+        dark_prophecy.label.contains("Dark Future · draw 1"),
+        "{}",
+        dark_prophecy.label
+    );
     choose(&mut session, "tokens:jacqueline");
     choose(&mut session, &format!("tokens:prophecy:0:{prophecy}"));
     choose(&mut session, "test:reveal");

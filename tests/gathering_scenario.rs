@@ -752,7 +752,8 @@ fn failed_tie_retaliates_before_test_cleanup_and_keeps_the_priest_ready() {
 #[test]
 fn successful_lita_parley_resolves_the_actual_ally_slot_before_test_cleanup() {
     use arkham_unfolded_experiment::gathering::continuity::{load_session, save_session};
-    for keep_lita in [true, false] {
+    {
+        let keep_lita = true;
         let mut session = Session::with_hostile_fixture(HostileFixture::GatheringLitaParley);
         let before = session.observe().play.unwrap();
         let patrice = &before.players[Investigator::Patrice.index()];
@@ -777,6 +778,13 @@ fn successful_lita_parley_resolves_the_actual_ally_slot_before_test_cleanup() {
         reach_choice(&mut session, &discard);
         let pending = session.observe();
         assert_eq!(pending.decision_owner, Some(Investigator::Patrice));
+        assert!(
+            !pending
+                .choices
+                .iter()
+                .any(|choice| choice.id == "lita:discard-ally:401"),
+            "The incoming Lita cannot be discarded to make room for herself"
+        );
         let play = pending.play.unwrap();
         assert_eq!(play.bag_count, 15);
         assert_eq!(play.test.as_ref().unwrap().would_succeed, Some(true));

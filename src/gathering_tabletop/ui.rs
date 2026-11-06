@@ -16,6 +16,172 @@ pub(super) fn portraits(
     })
 }
 
+fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, view: &Observation) {
+    let tokens = view.play.as_ref().unwrap().tokens.as_ref().unwrap();
+    if let Some(summary) = view.play.as_ref().and_then(test_summary) {
+        p.spawn((
+            art.text(summary, 14., PAPER),
+            Node {
+                flex_shrink: 0.,
+                ..default()
+            },
+        ));
+    }
+    p.spawn((
+        art.text(tokens.instruction(), 17., GOLD),
+        Node {
+            flex_shrink: 0.,
+            ..default()
+        },
+    ));
+    if !tokens.revealed.is_empty() {
+        p.spawn((
+            art.text(
+                "Gold ring: selected · blue ring: available now · group labels show origin",
+                12.,
+                MUTED,
+            ),
+            Node {
+                flex_shrink: 0.,
+                ..default()
+            },
+        ));
+    }
+    if let Some(progress) = tokens.selection_progress(&view.choices) {
+        p.spawn((
+            art.text(progress, 14., PAPER),
+            Node {
+                flex_shrink: 0.,
+                ..default()
+            },
+        ));
+    }
+    if !table.notice.is_empty() {
+        p.spawn((
+            art.text(&table.notice, 14., GOLD),
+            Node {
+                flex_shrink: 0.,
+                ..default()
+            },
+        ));
+    }
+    p.spawn((
+        Node {
+            min_height: px(0),
+            flex_grow: 1.,
+            flex_basis: px(0),
+            padding: UiRect::all(px(4)),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(5),
+            overflow: Overflow::scroll_y(),
+            ..default()
+        },
+        ScrollPosition::default(),
+        ScrollablePanel { inspection: false },
+    ))
+    .observe(super::scroll_panel)
+    .with_children(|body| token_options_body(body, art, table, view));
+    p.spawn(Node {
+        flex_shrink: 0.,
+        ..default()
+    })
+    .with_children(|footer| {
+        screen::controls(footer, |row| {
+            for choice in &view.choices {
+                if matches!(
+                    choice.id.as_str(),
+                    "tokens:confirm" | "test:reveal" | "undo"
+                ) {
+                    control(
+                        art,
+                        row,
+                        choice_label(choice),
+                        Action::Choose(table.epoch, view.revision, choice.id.clone()),
+                    );
+                }
+            }
+        })
+    });
+}
+
+fn token_options_body(
+    p: &mut ChildSpawnerCommands,
+    art: &art::Art,
+    table: &Table,
+    view: &Observation,
+) {
+    let Some(play) = &view.play else {
+        return;
+    };
+    let Some(tokens) = &play.tokens else {
+        return;
+    };
+    if tokens.revealed.is_empty() {
+        for line in tokens.reveal_plan() {
+            p.spawn(art.text(line, 13., MUTED));
+        }
+        let count = tokens.fresh_reveal_count().map_or_else(
+            || "Reveal until the declared condition is met".into(),
+            |count| format!("Planned draw: {count} physical token(s)"),
+        );
+        p.spawn(art.text(count, 14., PAPER));
+        if !tokens.is_skill_test()
+            && play.players[tokens.revealer.index()]
+                .assets
+                .iter()
+                .any(|asset| asset.card.code == "11069")
+        {
+            p.spawn(art.text(
+                "Katarina Sojka is unavailable: her reaction requires your own skill test.",
+                13.,
+                MUTED,
+            ));
+        }
+        screen::controls(p, |row| {
+            for (prefix, name) in [
+                ("tokens:jacqueline", "Jacqueline"),
+                ("tokens:prophecy:", "Dark Prophecy"),
+                ("tokens:olive:", "Olive McBride"),
+                ("tokens:katarina:", "Katarina Sojka"),
+            ] {
+                if view
+                    .choices
+                    .iter()
+                    .any(|choice| choice.id.starts_with(prefix))
+                {
+                    control(
+                        art,
+                        row,
+                        &format!("{name} · choose target"),
+                        Action::TokenOptions(prefix.into()),
+                    );
+                }
+            }
+        });
+    }
+    screen::controls(p, |p| {
+        for choice in &view.choices {
+            let visible = if tokens.revealed.is_empty() {
+                choice.id.starts_with("tokens:eyes:")
+                    || table
+                        .token_options
+                        .as_ref()
+                        .is_some_and(|prefix| choice.id.starts_with(prefix))
+            } else {
+                choice.id.starts_with("tokens:") && choice.id != "tokens:confirm"
+            };
+            if visible {
+                control(
+                    art,
+                    p,
+                    choice_label(choice),
+                    Action::Choose(table.epoch, view.revision, choice.id.clone()),
+                );
+            }
+        }
+    });
+}
+
 fn short_name(who: Investigator) -> &'static str {
     who.name().split_whitespace().next().unwrap_or(who.name())
 }
@@ -246,7 +412,14 @@ pub(super) fn render(
         }
         p.spawn(art.text("WASD: pan\nRight drag: orbit\nWheel: zoom\nHome: overview\n\nFocus does not select who acts.", 11., MUTED));
     });
-    screen::decision_panel(
+    let token_decision = !table.is_presenting()
+        && !table.modal()
+        && view.play.as_ref().is_some_and(|play| play.tokens.is_some())
+        && view
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tokens:") || choice.id == "test:reveal");
+    let decision_panel = screen::decision_panel(
         commands,
         (
             Panel,
@@ -259,6 +432,10 @@ pub(super) fn render(
             if !health.allows_play() {
                 p.spawn(art.text(health.status(), 20., GOLD));
                 button(art, p, "Choose asset folder", Action::AssetFolder);
+                return;
+            }
+            if token_decision {
+                token_guidance(p, art, table, view);
                 return;
             }
             p.spawn(art.text("LIVE DECISION", 12., GOLD));
@@ -326,6 +503,21 @@ pub(super) fn render(
             }
         },
     );
+    if token_decision {
+        commands.entity(decision_panel).insert(Node {
+            position_type: PositionType::Absolute,
+            left: px(150),
+            right: px(12),
+            bottom: px(10),
+            max_height: px((size.y * 0.4).min(330.)),
+            height: px((size.y * 0.4).min(330.)),
+            padding: UiRect::all(px(12)),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(5),
+            overflow: Overflow::clip(),
+            ..default()
+        });
+    }
     if table.menu_open {
         screen::utilities(commands, (Panel, TabGroup::modal()), size, |p| {
             let first = button(art, p, "Action history and rules reasons", Action::History);
@@ -523,12 +715,13 @@ fn inspection(
                     for (index, report) in play.completed_tests.iter().enumerate().rev() {
                         body.spawn(art.text(
                             format!(
-                                "Test {} · {} · {} · {} vs {}",
+                                "Test {} · {} · {} · {} vs {} · {}",
                                 index + 1,
                                 report.tester.name(),
                                 report.source,
                                 report.total,
-                                report.difficulty
+                                report.difficulty,
+                                results::outcome(report)
                             ),
                             22.,
                             GOLD,

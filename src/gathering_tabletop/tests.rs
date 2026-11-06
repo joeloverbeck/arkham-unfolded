@@ -7,6 +7,8 @@ mod navigation;
 mod restart;
 mod results;
 mod review_saves;
+mod slots;
+mod token_guidance;
 mod trays;
 mod victory;
 
@@ -1633,7 +1635,7 @@ fn activate_choice(app: &mut App, id: &str) {
 
 /// Prefer the active modal's action over an identically captioned shortcut.
 /// Use the full accessible label so symbol spans do not erase action identity.
-fn choice_button(app: &mut App, label: &str) -> Option<Entity> {
+pub(super) fn choice_button(app: &mut App, label: &str) -> Option<Entity> {
     use bevy::input_focus::tab_navigation::TabGroup;
     let world = app.world_mut();
     let menu_label = feedback::menu::label(label);

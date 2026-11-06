@@ -34,6 +34,7 @@ mod reveal;
 mod scene;
 mod sealed;
 mod shuffle;
+mod slots;
 mod story;
 mod trays;
 mod ui;
@@ -55,6 +56,7 @@ enum Action {
     ContextInspect(u64, u64, u64, String, String),
     DismissContext,
     PendingChoices,
+    TokenOptions(String),
     Utilities,
     Dismiss,
     Motion,
@@ -93,6 +95,7 @@ struct Table {
     motion_origins: motion::Origins,
     trays: trays::State,
     context: controls::Context,
+    token_options: Option<String>,
 }
 
 impl Table {
@@ -135,6 +138,7 @@ impl Table {
             motion_origins: motion::Origins::default(),
             trays,
             context: controls::Context::default(),
+            token_options: None,
         }
     }
 
@@ -605,6 +609,7 @@ fn handle_actions(
                     && (!table.modal() || result_choice)
                     && !table.is_presenting() =>
             {
+                table.token_options = None;
                 let path = table.save_path.clone();
                 let before = table.view();
                 table.notice = match continuity::commit_choice_with_draws(
@@ -667,6 +672,10 @@ fn handle_actions(
                 table.context.open_pending();
             }
             Action::PendingChoices => {}
+            Action::TokenOptions(source) => {
+                table.token_options =
+                    (table.token_options.as_ref() != Some(&source)).then_some(source);
+            }
             Action::AssetFolder => {
                 if let Some(settings) = settings.as_mut() {
                     table.context.reset();
@@ -1021,7 +1030,9 @@ fn render(
     mut table: ResMut<Table>,
     health: Res<RenderHealth>,
     mut art: ResMut<art::Art>,
-    images: Res<Assets<Image>>,
+    mut images: ResMut<Assets<Image>>,
+    mut slot_surfaces: Local<slots::Surfaces>,
+    ui_scale: Res<UiScale>,
     mut previous_ui: Local<(Vec2, [bool; 3])>,
     mut consequences: ResMut<consequences::State>,
     old: Query<PriorRenderedCard<'_>, RenderedContent>,
@@ -1097,6 +1108,14 @@ fn render(
         consequences: &consequences,
     };
     scene::render(&mut commands, &mut meshes, &mut materials, &context);
+    slot_surfaces.render(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &mut images,
+        &context,
+        ui_scale.0,
+    );
     table
         .trays
         .render(&mut commands, &mut meshes, &mut materials, &context);
@@ -1338,12 +1357,34 @@ fn world_labels(
     }
 }
 
-fn contextual_feedback(table: Res<Table>, mut cards: Query<(&ContextTarget, &mut CardFeedback)>) {
+fn contextual_feedback(
+    table: Res<Table>,
+    mut cards: Query<(&ContextTarget, &mut CardFeedback)>,
+    buttons: Query<(Entity, &bevy::picking::hover::Hovered, &AccessibleLabel), With<Button>>,
+    focus: Option<Res<InputFocus>>,
+) {
     let view = table.view();
     let opportunities = controls::window_opportunities(&view);
     let test = view.play.as_ref().and_then(|play| play.test.as_ref());
+    let preview: Vec<_> = view
+        .choices
+        .iter()
+        .filter(|choice| {
+            buttons.iter().any(|(entity, hovered, label)| {
+                (hovered.0
+                    || focus
+                        .as_ref()
+                        .is_some_and(|focus| focus.get() == Some(entity)))
+                    && (label.0 == choice.label || label.0 == feedback::menu::label(&choice.label))
+            })
+        })
+        .flat_map(|choice| controls::replacement_members(&choice.id))
+        .collect();
     for (target, mut feedback) in &mut cards {
-        feedback.menu_source = table.context.is_menu_source(&target.source);
+        feedback.menu_source = table.context.is_menu_source(&target.source)
+            || (!table.modal()
+                && !table.is_presenting()
+                && matches!(target.source, controls::Source::Card(id) if preview.contains(&id)));
         feedback.opportunity = !table.modal()
             && !table.is_presenting()
             && opportunities

@@ -632,6 +632,44 @@ fn opportunity_footer_focus_and_plural_wording_include_other_declines() {
 }
 
 #[test]
+fn short_result_fits_its_content_and_centers_continue() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(
+        Table::new(
+            quick_thinking_session(),
+            directory.path().join("compact.json"),
+        ),
+        false,
+    );
+    let size = Vec2::new(1600., 1000.);
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
+    app.world_mut().resource_mut::<Table>().dirty = true;
+    for _ in 0..4 {
+        app.update();
+    }
+    let button = button_with_label(&mut app, "Continue").unwrap();
+    let world = app.world_mut();
+    let panel = world
+        .query_filtered::<Entity, With<bevy::ui_widgets::ModalDialog>>()
+        .single(world)
+        .unwrap();
+    let panel_size = world.get::<ComputedNode>(panel).unwrap().size();
+    assert!(panel_size.y < 650., "Short result grew to {panel_size:?}");
+    let panel_center = world.get::<UiGlobalTransform>(panel).unwrap().translation;
+    let button_center = world.get::<UiGlobalTransform>(button).unwrap().translation;
+    assert!(
+        (panel_center.x - button_center.x).abs() < 1.,
+        "Continue must be centered"
+    );
+    let text = rendered_text(&mut app);
+    assert!(
+        !text.lines().any(|line| line == "None"),
+        "Empty groups waste space: {text}"
+    );
+    assert_unclipped_button(&mut app, "Continue", size, 1.);
+}
+
+#[test]
 fn result_and_optional_effect_controls_stay_visible_when_details_scroll() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("layout.json");

@@ -44,6 +44,14 @@ _Avoid_: Enemy token, total enemies at the location
 An individual investigator's personal playing surface, distinct from the shared scenario area. One human player can control several investigators, each with their own area.
 _Avoid_: Player table when referring to an investigator's area
 
+**Asset slot**:
+A unit of an investigator's capacity for controlled assets, whose type and occupancy are specified by slot symbols and applicable card effects. An asset can occupy multiple slots or none; its traits alone do not determine slot occupancy.
+_Avoid_: Location standee slot, asset card count
+
+**Effective slot capacity**:
+The investigator's current slot allowance after applicable effects, including any restrictions on which assets can use additional slots.
+_Avoid_: Printed capacity when referring to the modified allowance
+
 **Test area**:
 The shared presentation space dedicated to the current skill test, its source, commitments and chaos-token resolution, with the chaos bag and scenario reference kept there between tests. It is a tabletop arrangement, not a rules-defined game zone or a general area for resolving card effects.
 _Avoid_: Threat area, investigator area, resolution tray
@@ -91,6 +99,10 @@ _Avoid_: Modifier when referring exclusively to chaos tokens
 **Skill test result**:
 The determined success or failure of a test, together with its final skill value, difficulty and applicable margin after modifiers and special rules are applied. It is distinct from a provisional outcome and from the consequences of that result.
 _Avoid_: Token modifier, result consequences when referring only to the determined outcome
+
+**Reveal group**:
+Chaos-token reveals governed together by one instruction or replacement effect. A nested group can remain one candidate for its containing instruction while retaining several physical tokens.
+_Avoid_: Outer reveal without naming its source, tokens added by Jacqueline when referring to her cancellation scope
 
 **Held chaos token**:
 A physical chaos token drawn from the bag and not yet returned to its rules-defined destination. Resolving or canceling its effects does not itself return it; a historical record of its face does not mean the token is still held.
