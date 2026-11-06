@@ -1,10 +1,28 @@
-use arkham_unfolded_experiment::assets::{
-    PrepareResult, inspect, inspect_gathering, inspect_party, inspect_tony, prepare,
-    prepare_gathering, prepare_party, prepare_tony,
+use arkham_unfolded_experiment::{
+    asset_config::AssetConfig,
+    assets::{
+        CollectionReport, PrepareResult, inspect, inspect_gathering, inspect_party, inspect_tony,
+        prepare, prepare_gathering, prepare_party, prepare_tony,
+    },
 };
 use std::path::PathBuf;
 
-const USAGE: &str = "arkham-assets prepare --source PATH --reveal-icon PATH --output PATH\narkham-assets check PATH\narkham-assets prepare-tony --source PATH --reveal-icon PATH --output PATH\narkham-assets check-tony PATH\narkham-assets prepare-party --source PATH --reveal-icon PATH --output PATH\narkham-assets check-party PATH\narkham-assets prepare-gathering --source PATH --reveal-icon PATH --output PATH\narkham-assets check-gathering PATH\n\nPreparation copies only the selected assets into a fresh external directory.\nThe reveal icon is the pinned Lorc Swap bag PNG; preparation never downloads it.\nIt never changes the source archive or overwrites an existing collection.";
+const USAGE: &str = "\
+arkham-assets prepare --source PATH --reveal-icon PATH --output PATH
+arkham-assets check PATH
+arkham-assets prepare-tony --source PATH --reveal-icon PATH --output PATH
+arkham-assets check-tony PATH
+arkham-assets prepare-party --source PATH --reveal-icon PATH --output PATH
+arkham-assets check-party PATH
+arkham-assets prepare-gathering --source PATH --reveal-icon PATH --output PATH
+arkham-assets check-gathering PATH
+arkham-assets check-gathering-launch [--art-root PATH] [--no-art]
+
+Preparation copies only the selected assets into a fresh external directory.
+The reveal icon is the pinned Lorc Swap bag PNG; preparation never downloads it.
+It never changes the source archive or overwrites an existing collection.
+Launch checking uses Gathering's saved/default folder and temporary artwork flags.
+It writes no files and exits nonzero for an incomplete collection or disabled artwork.";
 
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
@@ -62,21 +80,50 @@ fn run() -> Result<(), String> {
                 "check-gathering" => inspect_gathering(&root),
                 _ => inspect(&root),
             };
-            println!("{}", report.summary());
-            for diagnostic in &report.diagnostics {
-                println!("- {diagnostic}");
+            print_check(report)
+        }
+        Some("check-gathering-launch") => {
+            let mut override_root = None;
+            let mut no_art = false;
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--art-root" => {
+                        override_root =
+                            Some(PathBuf::from(args.next().ok_or("--art-root needs a path")?));
+                    }
+                    "--no-art" => no_art = true,
+                    _ => return Err(format!("Unknown Gathering artwork option: {arg}")),
+                }
             }
-            if report.complete {
-                Ok(())
-            } else {
-                Err("The collection is not complete for this application.".into())
+            let config = AssetConfig::load_gathering()?;
+            if let Some(warning) = config.warning() {
+                eprintln!("Asset settings: {warning}");
             }
+            if no_art {
+                println!("Artwork root: disabled (--no-art)");
+                return Err("Artwork is disabled; completeness was not checked.".into());
+            }
+            let root = config.launch_root(override_root)?;
+            println!("Artwork root: {}", root.display());
+            print_check(inspect_gathering(&root))
         }
         Some("--help" | "-h") | None => {
             println!("{USAGE}");
             Ok(())
         }
         Some(other) => Err(format!("Unknown command: {other}\n{USAGE}")),
+    }
+}
+
+fn print_check(report: CollectionReport) -> Result<(), String> {
+    println!("{}", report.summary());
+    for diagnostic in &report.diagnostics {
+        println!("- {diagnostic}");
+    }
+    if report.complete {
+        Ok(())
+    } else {
+        Err("The collection is not complete for this application.".into())
     }
 }
 

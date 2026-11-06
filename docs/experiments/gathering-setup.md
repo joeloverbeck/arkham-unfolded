@@ -667,6 +667,22 @@ evidence are separate. This installation step belongs to an artwork change's
 handoff: rebuilding the executable alone does not update its external files.
 Staging folders are temporary and must not become normal launch targets.
 
+Before handing off an artwork change, check the collection selected by the actual
+launch configuration, under the same user, working directory and HOME/XDG environment:
+
+```sh
+scripts/dev cargo run --locked --bin arkham-assets -- check-gathering-launch
+```
+
+If the launch includes `--art-root PATH`, pass that same option and path to this
+check. It shares Gathering's saved-preference/default and relative-path resolution,
+prints the selected absolute root, and reports configuration warnings and asset
+completeness without opening a window or changing settings, saves or artwork.
+An incomplete collection exits nonzero; `--no-art` also exits nonzero and explicitly
+reports that completeness was not checked. This does not change the game's
+readable-substitute behavior. Retain the resolved root and result in the handoff;
+`check-gathering PATH` remains the check for an explicitly named staging collection.
+
 `--art-root PATH` selects a folder for that launch. **Choose asset folder** saves
 the next-launch preference in `$XDG_CONFIG_HOME/arkham-unfolded/gathering.toml`
 (normally `~/.config/arkham-unfolded/gathering.toml`). Without an override or saved
