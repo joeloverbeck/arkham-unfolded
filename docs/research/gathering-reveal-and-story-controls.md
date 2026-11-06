@@ -333,3 +333,53 @@ that separate observation has no matched baseline reproduction and is not a
 confirmed regression from this patch. No adjacent caption repair was activated.
 Full Gathering play and owner acceptance remain open on #89; no publication was
 performed.
+
+## Retrospective follow-up, 2026-11-06
+
+After PR #116 merged as `6e197ff84c90f3fbb8caeef174daece2960f5006`, Joel
+authorized the four recommended environment improvements: retain final evidence
+outside temporary directories, reach bounded-reading guidance before startup
+discovery, prepare animation recording before the desktop timer, and use one CI
+watcher. This follow-up applies those recommendations through existing tools and
+documentation. It serves the next Gathering verification under the same
+[current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060).
+
+The original evidence is now copied under
+`local/verification/2e1311cd167e0a73d7967e45314cfb660355f358/reveal-story-controls/`.
+Its README maps the original `/tmp/` paths without rewriting historical records.
+The retained set includes check records, both review snapshots and their report,
+native captures/events/saves, publication readbacks, and the three supplied
+screenshots. Shader caches and six identical executable copies were omitted;
+one staged executable retains SHA256
+`4aa8fd02411b8662cba810b62a54abf130573070ea6de32ef7dc0e3be67235db`.
+The complete retained directory is approximately 330 MiB and remains ignored by
+Git. Source files were preserved.
+
+A checksum comparison found no differences in the selected copies; screenshot
+hashes matched their supplied files. The retained v2 review manifest still has
+SHA256 `0eae0ac36acc35b8bdab9f212f1c7321d13a73311c5bf3176e2e664598966aa7`,
+and `review-verify` successfully read that relocated snapshot against the
+unchanged published tree. Copied final-check, staged-check and native-build
+records all retain `finished` and exit 0. Retention supplies custody, not a new
+native execution or acceptance result.
+
+The motion recipe uses the existing guarded client capture, FFmpeg's explicit
+window selection, a six-second video duration and an external timeout inside
+the original desktop allowance. Installed FFmpeg/ffprobe 8.0.1 expose the needed
+capture and codec options. A generated 321 × 241 test pattern exercised the
+recipe's encoding settings and odd-dimension padding: the resulting clip is
+322 × 242, 120 frames at 20 fps, lasting six seconds, and fully decodes without
+errors. Both recorded commands finished with exit 0. Their records and clip are
+under `local/verification/6e197ff84c90f3fbb8caeef174daece2960f5006/retro-workflow/`.
+This probe used no desktop access and establishes encoding/decoding only; actual
+XWayland recording and animation inspection remain for an authorized native
+interval. The earlier two-frame observation keeps its narrower meaning.
+
+The root startup pointer now reaches client selection and the shared read budget
+first. The tracker procedure uses one connected CI watcher plus the terminal
+revision/status readback. Existing compiler, review and merge safeguards remain
+the verification path. This local documentation follow-up does not extend the
+closed desktop grant or #89's full-scenario acceptance.
+
+Consulted for this bounded continuation: PURP-1–6, WORK-1–6, AGENT-5 and OPS-1–7;
+the retrospective also consulted EVID-4, BOUND-1–5, INT-1–4 and AGENT-1–5.

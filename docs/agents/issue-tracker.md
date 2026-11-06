@@ -29,6 +29,22 @@ gh issue close ISSUE_NUMBER --repo joeloverbeck/arkham-unfolded
 
 Equality exits successfully; a failed read or mismatch prevents closure. This preserves body whitespace while avoiding the extra output newline from `gh api --jq .body`. Read back the issue state after closure. For a readback without a dependent write, end the sequence after `jq`.
 
+For an authorized PR, identify the workflow run for the accepted head once, then
+keep one watcher:
+
+```sh
+gh run watch RUN_ID --repo joeloverbeck/arkham-unfolded --compact --exit-status --interval 30
+```
+
+If the tool returns a running session, poll that same session with waits short
+enough to deliver required progress updates. Use its output for intermediate
+status; a second watcher or repeated `gh run view` calls add no evidence while
+it remains connected. After it exits, read the terminal run status and `headSha`
+and verify the expected revision before the guarded merge. If the connection is
+lost, inspect the run once before reconnecting; losing the watcher does not
+authorize rerunning CI. A failed run needs the failure diagnosis required by
+`OPS-3` before any repair or retry.
+
 After verifying that the accepted PR merged, use the same failure propagation for the authorized local update:
 
 ```sh
@@ -48,7 +64,7 @@ Designate one issue comment as the current handoff and retain its URL. It owns t
 
 Keep that comment compact: state the candidate, summarize verification, list only remaining decisions, and link the accepted brief and dated evidence. Historical bodies belong behind links; collapsed `<details>` still sends the full text to API readers. If the current comment is the only copy of the accepted brief, preserve its exact text once in a dated comment during the authorized handoff update. Verify that archive by its returned identity before replacing the original with the compact handoff and archive link. Reuse an existing preserved brief rather than posting another copy. Leave dated records unchanged; later decisions receive their own linked records.
 
-Keep review results, native observations and authorization decisions as dated evidence records linked from the current handoff. Link each new record back to that handoff. Those records describe what happened at that revision and its evidence limits; current pending/completed status belongs in the handoff. Preserve the distinction between an owner's acceptance and observations the agent did not perform. New evidence or an owner decision updates the single current checklist without synchronizing copies of it across earlier comments.
+Keep review results, native observations and authorization decisions as dated evidence records linked from the current handoff. Link each new record back to that handoff. Those records describe what happened at that revision and its evidence limits; current pending/completed status belongs in the handoff. Preserve the distinction between an owner's acceptance and observations the agent did not perform. New evidence or an owner decision updates the single current checklist without synchronizing copies of it across earlier comments. Before relying on local evidence in that handoff, follow [final evidence retention](../experiments/jacqueline-curse.md#retain-final-verification-evidence) and link the retained location.
 
 ## Bounded context reads
 
