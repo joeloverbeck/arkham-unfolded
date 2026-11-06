@@ -285,3 +285,51 @@ interval; that interval is still pending under the
 The owning work remains [#89's current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060).
 This local implementation neither closes full-scenario acceptance nor includes
 publication or the separately deferred card/token-caption repairs.
+
+## Native verification, 2026-11-06
+
+Joel authorized a ten-minute desktop interval. It ran from 16:42:49 UTC with a
+16:52:49 deadline; all diagnostic windows and grants were closed by 16:52:01.
+The inspected implementation was `986b8c832c8fd4f91611a444b4592ea78298ffc5`, using
+executable SHA256 `4aa8fd02411b8662cba810b62a54abf130573070ea6de32ef7dc0e3be67235db`.
+Manifests, application logs, independent client captures and portal input events
+are retained under `/tmp/gathering-controls-native-review/`.
+
+- **Reveal and assistance:** the ordinary and Premonition screens retained the
+  button/panel gap and centered short captions. The sealed skull explanation was
+  visible in the adjacent panel. Clicking Jacqueline's category immediately
+  showed Tony as testing, the same-location explanation and both reveal scopes.
+  Selecting the whole reveal produced a three-token plan; the diagnostic save
+  advanced to revision 10 and still named Tony as revealer. Captures are in
+  `input-ordinary/` and `sealed/sealed.png`.
+- **Cue and motion setting:** the menu hid the reveal control. Switching to
+  reduced motion and closing the menu restored the stationary bag and button.
+  The two independent `motion/frame-*.png` captures show different bag positions
+  while the button stays in place. This supports native motion presence, not a
+  continuous pacing measurement or the owner's judgement of pleasantness.
+- **Story reading:** Act 1 and Agenda 1 were compact with readable landscape
+  artwork, rules text and centered Continue at 3200 × 2000 client pixels. Act was
+  also inspected at 1920 × 1080 and 1280 × 1000. At the latter size the body
+  stacked and scrolled by actual pointer wheel input while the heading/footer
+  stayed visible. The first upward wheel at the top had no effect; the downward
+  wheel scrolled correctly. Continue dismissed both Act and Agenda without
+  changing their saved-session bytes. `input-act/` and `input-agenda/` retain
+  before/after captures and input acknowledgments.
+- **Absent artwork:** `act-no-art/story.png` and `agenda-no-art/story.png` show
+  compact readable substitutes and centered Continue. These static runs, and
+  the sealed-token capture run, exited 0. The four interactive/motion launchers
+  were deliberately interrupted for cleanup (supervisor exit 130; child
+  returncode -15); all three portal helpers acknowledged `session-closed` and
+  exited 0. These deliberate interruptions are not successful app-exit tests.
+
+The personal dated save and all four source checkpoints retained their hashes.
+No implementation correction was needed for the exercised controls. Physical
+keyboard interaction, a dedicated native focus-loss/resume check, the native
+mixed sealed-plus-fresh draw case, and the owner's pacing preference were not
+tested in this interval. Headless coverage of those applicable behaviors keeps
+its narrower meaning. At the deliberately very narrow 1280 × 1000 client size,
+the underlying Scenario header/counter labels overlap after the Act closes;
+that separate observation has no matched baseline reproduction and is not a
+confirmed regression from this patch. No adjacent caption repair was activated.
+Full Gathering play and owner acceptance remain open on #89; no publication was
+performed.
