@@ -315,12 +315,140 @@ fn non_test_tokens_resolve_in_the_tray_and_sealed_premonition_stays_with_its_own
         if let Some(sealed) = &final_view.play.as_ref().unwrap().premonition {
             let at = physical(&mut app, sealed.card.id).translation;
             assert!(
-                at.z > 15. && at.z < 30. && at.x > 10.,
+                at.z > 30. && at.x > 10.,
                 "Sealed Premonition remains with Jacqueline: {at:?}"
             );
         }
         assert!(final_view.play.unwrap().completed_tests.is_empty());
     }
+}
+
+#[test]
+fn pending_sealed_reveal_keeps_card_and_tokens_visible_then_moves_them_before_discard() {
+    use crate::gathering::TokenFixture;
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::PremonitionVoice));
+    session
+        .choose(session.observe().revision, "test:reveal")
+        .unwrap();
+    let voice = session.observe().play.unwrap().players[2]
+        .hand
+        .iter()
+        .find(|card| card.code == "60416")
+        .unwrap()
+        .id;
+    session
+        .choose(
+            session.observe().revision,
+            &format!("action:ordinary:play:spell:{voice}"),
+        )
+        .unwrap();
+    let view = session.observe();
+    let sealed = view
+        .play
+        .as_ref()
+        .unwrap()
+        .premonition
+        .clone()
+        .expect("Pending replacement still owns visible sealed tokens");
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(
+        Table::new(session, directory.path().join("sealed.json")),
+        false,
+    );
+    assert!(physical(&mut app, sealed.card.id).translation.z > 30.);
+    assert!(rendered_text(&mut app).contains("Resolve sealed"));
+    activate_choice(&mut app, "test:reveal");
+    // Voice of Ra still has legal modifiers for its fresh positions: the first
+    // press opens their chooser, and this press selects the announced reveal.
+    assert!(
+        app.world()
+            .resource::<crate::tabletop_reveal::Shortcut>()
+            .is_open()
+    );
+    let world = app.world_mut();
+    let reveal = world
+        .query_filtered::<Entity, (With<Button>, With<bevy::input_focus::AutoFocus>)>()
+        .single(world)
+        .unwrap();
+    world.trigger(Activate { entity: reveal });
+    app.update();
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .session
+            .observe()
+            .play
+            .unwrap()
+            .premonition
+            .is_none()
+    );
+    let start = physical(&mut app, sealed.card.id).translation;
+    assert!(start.z > 30., "Card must stay while tokens depart");
+    let token_start = super::super::trays::sealed_token(
+        view.play.as_ref().unwrap(),
+        sealed.controller,
+        0,
+        sealed.faces.len(),
+    );
+    let token_at = |app: &mut App| {
+        let world = app.world_mut();
+        world
+            .query::<(&sealed::Piece, &Transform)>()
+            .iter(world)
+            .find(|(piece, _)| piece.face == sealed.faces[0])
+            .map(|(_, at)| at.translation)
+            .unwrap()
+    };
+    assert!(token_at(&mut app).abs_diff_eq(token_start, 0.01));
+    tick(&mut app, 0.2);
+    let traveling = token_at(&mut app);
+    assert!(!traveling.abs_diff_eq(token_start, 0.01));
+    assert!(
+        physical(&mut app, sealed.card.id)
+            .translation
+            .abs_diff_eq(start, 0.01)
+    );
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::History);
+    app.update();
+    tick(&mut app, 0.4);
+    assert!(
+        token_at(&mut app).abs_diff_eq(traveling, 0.01),
+        "History pauses token travel across a redraw"
+    );
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Close);
+    app.update();
+    for _ in 0..80 {
+        tick(&mut app, 0.1);
+    }
+    let final_view = app.world().resource::<Table>().session.observe();
+    let play = final_view.play.as_ref().unwrap();
+    assert!(
+        play.premonition.is_none(),
+        "notice={} choices={:?}",
+        app.world().resource::<Table>().notice,
+        final_view.choices
+    );
+    assert!(
+        play.players[sealed.controller.index()]
+            .discard
+            .iter()
+            .any(|card| card.id == sealed.card.id)
+    );
+    assert!(!app.world().resource::<Table>().trays.active());
+    let world = app.world_mut();
+    assert!(
+        world
+            .query_filtered::<&Visibility, With<super::super::trays::Surface>>()
+            .iter(world)
+            .all(|visibility| *visibility == Visibility::Hidden)
+    );
 }
 
 #[test]

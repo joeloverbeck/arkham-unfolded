@@ -31,6 +31,10 @@ impl<'a> Layout<'a> {
                     .as_ref()
                     .is_some_and(|source| source.id == card.id)
             }) && !play.pending.test_resolving_cards.contains(&card.id)
+                && !play
+                    .premonition
+                    .as_ref()
+                    .is_some_and(|sealed| sealed.card.id == card.id)
                 && !candidates.iter().any(|candidate| candidate.id == card.id)
                 && !sources
                     .iter()
@@ -61,7 +65,7 @@ impl<'a> Layout<'a> {
     }
 
     pub(super) fn source(&self, slot: usize) -> Vec3 {
-        anchor(self.owner) + Vec3::new(-4.8, 0.05, 1.8 + slot as f32 * 2.8)
+        anchor(self.owner) + Vec3::new(-4.8, 0.05, 4.6 + slot as f32 * 2.8)
     }
 
     pub(super) fn token(&self, slot: usize) -> Vec3 {
@@ -87,7 +91,11 @@ impl<'a> Layout<'a> {
     }
 
     fn depth(&self) -> f32 {
-        let rows = self.candidates.len().div_ceil(3).max(self.sources.len());
+        let rows = self
+            .candidates
+            .len()
+            .div_ceil(3)
+            .max(self.sources.len() + 1);
         (3.5 + rows as f32 * 2.8 + self.token_count.div_ceil(6) as f32 * 1.4).max(10.)
     }
 
@@ -107,8 +115,22 @@ fn anchor(owner: Investigator) -> Vec3 {
     Vec3::new(layout::investigator_center(owner.index(), 3).x, 0., 30.6)
 }
 
-pub(super) fn sealed_position(play: &PlayObservation, owner: Investigator) -> Vec3 {
-    layout::investigator_asset(owner.index(), play.players[owner.index()].assets.len())
+pub(super) fn sealed_position(_play: &PlayObservation, owner: Investigator) -> Vec3 {
+    anchor(owner) + Vec3::new(-4.8, 0.05, 1.8)
+}
+
+pub(super) fn sealed_token(
+    play: &PlayObservation,
+    owner: Investigator,
+    slot: usize,
+    count: usize,
+) -> Vec3 {
+    sealed_position(play, owner)
+        + Vec3::new(
+            0.,
+            0.16,
+            (slot as f32 - (count.saturating_sub(1)) as f32 * 0.5) * 0.95,
+        )
 }
 
 #[derive(Clone, Copy, Default)]
@@ -128,6 +150,14 @@ impl State {
             drawer.wanted = layout
                 .as_ref()
                 .is_some_and(|layout| layout.owner.index() == index);
+            drawer.wanted |= view
+                .play
+                .as_ref()
+                .and_then(|play| play.premonition.as_ref())
+                .is_some_and(|sealed| sealed.controller.index() == index);
+            if drawer.wanted {
+                drawer.depth = drawer.depth.max(10.);
+            }
             if let Some(layout) = layout
                 .as_ref()
                 .filter(|layout| layout.owner.index() == index)
@@ -266,7 +296,7 @@ pub(super) fn animate(
     if table.motion_blocked() {
         return;
     }
-    let hold = !moving.is_empty() || table.is_presenting();
+    let hold = !moving.is_empty() || table.is_presenting() || table.sealed.active();
     let immediate = table.reduced_motion;
     for drawer in &mut table.trays.0 {
         if immediate {

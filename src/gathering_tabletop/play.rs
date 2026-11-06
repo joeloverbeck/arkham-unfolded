@@ -239,6 +239,22 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
                 .or_else(|| crate::gathering::inspection::scenario_card(code, true))
         })
         .flatten()
+        .map(|mut text| {
+            for player in &play.players {
+                for asset in &player.assets {
+                    if asset.card.code == code
+                        && asset.use_kind() == Some(crate::gathering::UseKind::Supply)
+                    {
+                        text.push_str(&format!(
+                            "\n\n{} — Supplies: {}",
+                            player.investigator.name(),
+                            asset.uses
+                        ));
+                    }
+                }
+            }
+            text
+        })
 }
 
 /// An inspection target retains the physical enemy identity privately so two
@@ -582,7 +598,16 @@ impl Painter<'_, '_, '_> {
                 label_offset: Vec3::Z * 0.55,
             },
         );
-        self.commands.entity(disk).insert(ScenePiece);
+        self.commands.entity(disk).insert((
+            ScenePiece,
+            sealed::Piece {
+                face,
+                destination: at,
+            },
+        ));
+        self.commands
+            .entity(label)
+            .insert(crate::tabletop_tokens::Follow(disk, Vec3::Z * 0.55));
         let title = format!("Token {ordinal} · {}\n{}", face.label(), state.label());
         if active {
             self.selectable(
@@ -671,12 +696,6 @@ pub(super) fn render(
             if counter.is_none() && asset.uses > 0 {
                 details.push(format!("Uses {}", asset.uses));
             }
-            if asset.damage > 0 {
-                details.push(format!("Damage {}", asset.damage));
-            }
-            if asset.horror > 0 {
-                details.push(format!("Horror {}", asset.horror));
-            }
             if let Some(attached) = attached.filter(|attached| !attached.cards.is_empty()) {
                 details.push(format!("{} attached", attached.cards.len()));
             }
@@ -695,6 +714,11 @@ pub(super) fn render(
                 } else {
                     Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)
                 });
+            let context_title = if asset.use_kind() == Some(crate::gathering::UseKind::Supply) {
+                format!("{} · Supplies: {}", asset.card.title, asset.uses)
+            } else {
+                asset.card.title.clone()
+            };
             let card = paint.card(CardSpec {
                 source: Some(attached.map_or(Source::Card(asset.card.id), |_| {
                     Source::Backpack(asset.card.id)
@@ -702,7 +726,7 @@ pub(super) fn render(
                 physical_id: Some(asset.card.id),
                 pose,
                 caption: Some(caption),
-                ..CardSpec::new(pose.translation, &asset.card.title, &inspection)
+                ..CardSpec::new(pose.translation, &context_title, &inspection)
             });
             if let Some(kind) = counter {
                 card_counters::count(
@@ -716,6 +740,30 @@ pub(super) fn render(
                     kind,
                     asset.uses,
                 );
+            }
+            let (health, sanity) = asset.harm_capacity();
+            for (horror, amount, capacity) in
+                [(false, asset.damage, health), (true, asset.horror, sanity)]
+            {
+                if let Some(capacity) = capacity {
+                    let x = if health.is_some() && sanity.is_some() {
+                        if horror { 0.5 } else { -0.5 }
+                    } else {
+                        0.
+                    };
+                    card_counters::harm(
+                        paint.commands,
+                        paint.meshes,
+                        paint.materials,
+                        context,
+                        card,
+                        pose.translation,
+                        amount,
+                        Some(capacity),
+                        horror,
+                        card_counters::harm_offset(!asset.ready).with_x(x),
+                    );
+                }
             }
         }
         for (slot, threat) in player.threats.iter().enumerate() {
@@ -1155,7 +1203,7 @@ pub(super) fn render(
         });
         for (slot, token) in sealed.faces.iter().enumerate() {
             paint.token(
-                at + Vec3::new(slot as f32 * 0.65, 0.1, 0.),
+                trays::sealed_token(play, sealed.controller, slot, sealed.faces.len()),
                 *token,
                 ShownTokenState::Selected,
                 slot + 1,

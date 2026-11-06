@@ -106,6 +106,13 @@ pub struct AssetView {
 pub(super) type AssetState = AssetView;
 
 impl AssetView {
+    /// The same capacities used by damage assignment and asset defeat.
+    pub fn harm_capacity(&self) -> (Option<u8>, Option<u8>) {
+        super::player_cards::asset_definition(&self.card.code).map_or((None, None), |definition| {
+            (definition.health, definition.sanity)
+        })
+    }
+
     /// Rules-defined use type; this projection adds no saved state.
     pub fn use_kind(&self) -> Option<super::UseKind> {
         cards::definition(&self.card.code)?
@@ -1075,7 +1082,11 @@ impl Game {
             actions_remaining: std::array::from_fn(|i| self.players[i].ordinary_actions),
             encounter_deck_count: self.encounter_deck.len(),
             tokens: self.tokens.clone(),
-            premonition: self.premonition.clone(),
+            premonition: self.premonition.clone().or_else(|| {
+                self.tokens
+                    .as_ref()
+                    .and_then(|tokens| tokens.pending_sealed().cloned())
+            }),
         }
     }
 

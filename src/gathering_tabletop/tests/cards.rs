@@ -70,16 +70,11 @@ fn asset_status_and_discard(symbols: bool) {
         .unwrap();
     pack.ready = false;
     pack.uses = 2;
-    pack.damage = 1;
-    pack.horror = 1;
     let pack_id = pack.card.id;
     let mut app = at_public_moment(session, play, dir.path().join("assets.json"), symbols);
     for _ in 0..2 {
         let pack = by_source(&mut app, controls::Source::Backpack(pack_id));
-        assert_eq!(
-            captions(&mut app, pack),
-            ["Backpack\nUses 2 · Damage 1 · Horror 1 · 2 attached"]
-        );
+        assert_eq!(captions(&mut app, pack), ["Backpack\nUses 2 · 2 attached"]);
         let label = caption_entity(&mut app, pack);
         assert_eq!(
             app.world().get::<AccessibleLabel>(label).unwrap().0,

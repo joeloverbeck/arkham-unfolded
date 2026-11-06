@@ -1580,6 +1580,25 @@ pub(super) fn complete_enemy_attack(game: &mut Game, attack: &EnemyAttack) {
 /// Agenda3's end-of-enemy-phase forced movement, after ordinary attacks.
 /// Returned IDs require a normal engagement check, not an enemy-entry reaction
 /// or another attack. Exhausted moved Ghouls remain exhausted and unengaged.
+/// Includes agenda movement even when the moving ghoul is exhausted.
+pub(super) fn enemy_phase_has_activity(game: &Game) -> bool {
+    if !ready_hunters(game).is_empty()
+        || player_order(game)
+            .into_iter()
+            .any(|owner| !enemy_phase_attacks(game, owner).is_empty())
+    {
+        return true;
+    }
+    if game.agenda == 3 {
+        let mut after = game.scenario.clone();
+        after.move_unengaged_ghouls_toward_parlor();
+        if after.enemies != game.scenario.enemies {
+            return true;
+        }
+    }
+    false
+}
+
 pub(super) fn finish_enemy_phase(game: &mut Game) -> Vec<u16> {
     if game.agenda != 3 {
         return vec![];

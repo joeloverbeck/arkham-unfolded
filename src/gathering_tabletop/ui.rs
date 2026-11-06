@@ -284,6 +284,15 @@ pub(super) fn render(
             if let Some(summary) = view.play.as_ref().and_then(test_summary) {
                 p.spawn(art.text(summary, 15., GOLD));
             }
+            if !table.is_presenting() {
+                for (_, label) in controls::window_opportunities(view) {
+                    p.spawn(art.text(
+                        format!("Available now: {label}"),
+                        15.,
+                        Color::srgb(0.78, 0.65, 0.95),
+                    ));
+                }
+            }
             screen::controls(p, |row| {
                 if !table.is_presenting() && !table.modal() {
                     for (index, choice) in controls::global_choices(view).into_iter().enumerate() {

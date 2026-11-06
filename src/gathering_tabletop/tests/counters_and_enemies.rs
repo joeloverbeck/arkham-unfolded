@@ -19,6 +19,7 @@ fn render_with_counter_art(view: Observation, loaded: bool) -> App {
         ("token/ammo", image.clone()),
         ("token/bounty", image.clone()),
         ("token/charge", image.clone()),
+        ("token/resource", image.clone()),
         ("token/damage", image),
     ]);
     if loaded {
@@ -62,6 +63,7 @@ fn empty_asset_counters_keep_their_type_owner_and_upright_count_with_or_without_
             (0, "06010", "Bounty Contracts"),
             (1, "06011", "Tony's .38 Long Colt"),
             (2, "60407", "Azure Flame"),
+            (3, "05117", "Tennessee Sour Mash"),
         ] {
             let mut asset = template.clone();
             asset.card.id = 60000 + index;
@@ -71,6 +73,11 @@ fn empty_asset_counters_keep_their_type_owner_and_upright_count_with_or_without_
             asset.ready = false;
             play.players[0].assets.push(asset);
         }
+        assert!(
+            play::inspect(&view, "05117")
+                .unwrap()
+                .contains("Tony Morgan — Supplies: 0")
+        );
         let mut app = render_with_counter_art(view, loaded);
         let world = app.world_mut();
         let counters: Vec<_> = world
@@ -92,8 +99,16 @@ fn empty_asset_counters_keep_their_type_owner_and_upright_count_with_or_without_
         ] {
             assert!(counters.contains(&(id, kind, 0, Quat::IDENTITY)));
         }
+        assert!(
+            counters
+                .iter()
+                .any(|(id, kind, amount, rotation)| *id == 60003
+                    && kind.name() == "Supplies"
+                    && *amount == 0
+                    && *rotation == Quat::IDENTITY)
+        );
         let text = rendered_text(&mut app);
-        for caption in ["Bounties 0", "Ammo 0", "Charges 0"] {
+        for caption in ["Bounties 0", "Ammo 0", "Charges 0", "Supplies 0"] {
             assert_eq!(
                 text.contains(caption),
                 !loaded,
@@ -101,6 +116,121 @@ fn empty_asset_counters_keep_their_type_owner_and_upright_count_with_or_without_
             );
         }
         assert!(!text.contains("Uses 0"));
+    }
+}
+
+#[test]
+fn asset_harm_tokens_show_only_real_capacities_including_zero_and_story_allies() {
+    let mut view = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+        crate::gathering::TonyEffectFixture::GregoryCigarette,
+    ))
+    .observe();
+    let play = view.play.as_mut().unwrap();
+    let template = play.players[0].assets[0].clone();
+    play.players[0].assets.clear();
+    for (index, code, expected) in [
+        (0, "02033", vec!["Damage 0/1", "Horror 0/2"]),
+        (1, "60412", vec!["Damage 0/2"]),
+        (2, "01117", vec!["Damage 0/3", "Horror 0/3"]),
+        (3, "05117", vec![]),
+    ] {
+        let mut single = view.clone();
+        let mut asset = template.clone();
+        asset.card.id = 60000 + index;
+        asset.card.code = code.into();
+        asset.damage = 0;
+        asset.horror = 0;
+        single.play.as_mut().unwrap().players[0].assets.push(asset);
+        let mut app = render_observation(single);
+        let text = rendered_text(&mut app);
+        for caption in &expected {
+            assert!(text.contains(caption), "Missing {caption}: {text}");
+        }
+        let world = app.world_mut();
+        let labels: Vec<_> = world
+            .query::<(&Text, &motion::CardLabel)>()
+            .iter(world)
+            .filter(|(text, _)| text.0.starts_with("Damage ") || text.0.starts_with("Horror "))
+            .filter(|(_, label)| {
+                world
+                    .get::<card_counters::Attached>(label.0)
+                    .and_then(|attached| world.get::<motion::PhysicalCard>(attached.0))
+                    .is_some_and(|card| card.0 == 60000 + index)
+            })
+            .collect();
+        assert_eq!(labels.len(), expected.len());
+        for (_, label) in labels {
+            let attached = world
+                .get::<card_counters::Attached>(label.0)
+                .expect("Harm token follows card");
+            assert_eq!(
+                world.get::<motion::PhysicalCard>(attached.0).unwrap().0,
+                60000 + index
+            );
+        }
+    }
+}
+
+#[test]
+fn peters_harm_counters_clear_patrices_actions_and_keep_the_caption_gap() {
+    use bevy::camera::primitives::MeshAabb;
+    for ready in [true, false] {
+        let mut view = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+            crate::gathering::TonyEffectFixture::GregoryCigarette,
+        ))
+        .observe();
+        let play = view.play.as_mut().unwrap();
+        let mut peter = play.players[0].assets[0].clone();
+        peter.card.id = 60000;
+        peter.card.code = "02033".into();
+        peter.card.title = "Peter Sylvestre".into();
+        peter.ready = ready;
+        play.players[1].assets = vec![peter];
+        let mut app = render_with_counter_art(view, true);
+        let world = app.world_mut();
+        let tokens: Vec<_> = world
+            .query::<(Entity, &card_counters::Attached, &Mesh3d, &Transform)>()
+            .iter(world)
+            .filter(|(_, attached, _, _)| {
+                world
+                    .get::<motion::PhysicalCard>(attached.0)
+                    .is_some_and(|card| card.0 == 60000)
+            })
+            .map(|(id, attached, mesh, at)| (id, attached.0, mesh.0.clone(), at.translation))
+            .collect();
+        assert_eq!(tokens.len(), 2);
+        for (token, card, mesh, at) in tokens {
+            let half = world
+                .resource::<Assets<Mesh>>()
+                .get(&mesh)
+                .unwrap()
+                .get_aabb()
+                .unwrap()
+                .half_extents;
+            assert!(
+                (half.x * 2. - 0.496).abs() < 0.001,
+                "Match bounty/ammo diameter"
+            );
+            let card_at = world.get::<Transform>(card).unwrap();
+            let edge = card_at.translation.z - if ready { 1.89 / 2. } else { 1.35 / 2. };
+            assert!(at.z + half.z < edge, "Token must clear the card face");
+            for slot in 0..3 {
+                let action = layout::investigator_action(1, slot, false);
+                assert!(
+                    at.xz().distance(action.xz()) > half.x + 0.21 + 0.02,
+                    "Peter must clear Patrice's action tokens"
+                );
+            }
+            let label = world
+                .query::<&motion::CardLabel>()
+                .iter(world)
+                .find(|label| label.0 == token)
+                .unwrap();
+            assert!(
+                edge - (at.z + label.1.z) > 0.10,
+                "Keep the label anchor above the card edge"
+            );
+        }
     }
 }
 

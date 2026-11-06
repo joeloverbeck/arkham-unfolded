@@ -259,7 +259,7 @@ pub(super) fn animate(
             continue;
         }
         if let Some(mut motion) = motion {
-            if !paused {
+            if !paused && !table.sealed.holds(card.0) {
                 motion.elapsed = (motion.elapsed + time.delta_secs()).min(motion.duration());
             }
             *transform = motion.transform();

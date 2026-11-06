@@ -50,6 +50,7 @@ pub(crate) struct FeedbackSettings {
 /// Add only to currently clickable faces. Inspection counts as interaction.
 #[derive(Component, Default)]
 pub(crate) struct CardFeedback {
+    pub opportunity: bool,
     pub menu_source: bool,
     pub pending_choice: bool,
     pub commitment: Option<Contribution>,
@@ -58,6 +59,7 @@ pub(crate) struct CardFeedback {
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum Mark {
+    AvailableOpportunity,
     Hover,
     MenuSource,
     PendingChoice,
@@ -122,6 +124,11 @@ pub(crate) fn attach_card_feedback(
         ),
         (Mark::PendingChoice, GOLD, "Card pending choice"),
         (Mark::AvailableCommitment, TEAL, "Card available commitment"),
+        (
+            Mark::AvailableOpportunity,
+            Color::srgb(0.70, 0.48, 0.88),
+            "Card available opportunity",
+        ),
     ] {
         let material = materials.add(StandardMaterial {
             base_color: color,
@@ -176,6 +183,10 @@ fn segments(kind: Mark, width: f32, length: f32) -> Vec<(Vec3, Vec3)> {
     let z = length * 0.5 + 0.045;
     let y = 0.018;
     match kind {
+        Mark::AvailableOpportunity => vec![(
+            Vec3::new(0., y, -z - 0.10),
+            Vec3::new(width * 0.65, 0.035, 0.075),
+        )],
         Mark::Hover => vec![], // The continuous rounded outline has its own mesh.
         Mark::MenuSource => vec![(
             Vec3::new(0.0, y, z + 0.09),
@@ -281,6 +292,7 @@ fn card_feedback(
             Mark::MenuSource => card.menu_source,
             Mark::PendingChoice => card.pending_choice,
             Mark::AvailableCommitment => card.commitment.is_some() && !card.pending_choice,
+            Mark::AvailableOpportunity => card.opportunity,
         });
         let opacity = if !wanted {
             0.0
@@ -528,7 +540,7 @@ mod tests {
         let card = add_card(&mut app);
         app.update();
         let marker_entities = app.world().get::<Children>(card).unwrap().to_vec();
-        assert_eq!(marker_entities.len(), 4);
+        assert_eq!(marker_entities.len(), 5);
         let pose = Transform::from_xyz(3.0, 1.0, -2.0).with_rotation(Quat::from_rotation_x(1.4));
         app.world_mut().entity_mut(card).insert(pose);
         point_at(&mut app, card);

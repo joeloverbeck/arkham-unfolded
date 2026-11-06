@@ -18,6 +18,9 @@ pub(crate) struct TokenVisual {
 #[derive(Component)]
 pub(crate) struct TokenLabel(Vec3);
 
+#[derive(Component)]
+pub(crate) struct Follow(pub Entity, pub Vec3);
+
 /// The settled tabletop return path; adapters own custody, admission and lifetime.
 #[derive(Component)]
 pub(crate) struct ReturningToken {
@@ -150,9 +153,15 @@ pub(crate) fn spawn(
 
 pub(crate) fn position_labels(
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
-    mut labels: Query<(&TokenLabel, &mut Node, &mut Visibility)>,
+    mut labels: Query<(&mut TokenLabel, Option<&Follow>, &mut Node, &mut Visibility)>,
+    tokens: Query<&Transform>,
 ) {
-    for (anchor, mut node, mut visibility) in &mut labels {
+    for (mut anchor, follow, mut node, mut visibility) in &mut labels {
+        if let Some(follow) = follow
+            && let Ok(at) = tokens.get(follow.0)
+        {
+            anchor.0 = at.translation + follow.1;
+        }
         if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor.0) {
             node.left = px(point.x - 42.0);
             node.top = px(point.y - 16.0);

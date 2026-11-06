@@ -8,11 +8,22 @@ use crate::{
 #[derive(Component)]
 pub(super) struct Attached(pub Entity, pub Vec3);
 
+pub(super) fn harm_offset(exhausted: bool) -> Vec3 {
+    let length = if exhausted {
+        crate::tabletop_pieces::CARD_WIDTH
+    } else {
+        crate::tabletop_pieces::CARD_LENGTH
+    };
+    // The smaller disk clears the card edge; the caption keeps its prior gap.
+    Vec3::new(0., 0.16, -length / 2. - 0.275)
+}
+
 pub(super) fn use_counter(kind: Option<UseKind>) -> Option<CounterKind> {
     match kind? {
         UseKind::Ammo => Some(CounterKind::Ammo),
         UseKind::Charge => Some(CounterKind::Charge),
         UseKind::Bounty => Some(CounterKind::Bounty),
+        UseKind::Supply => Some(CounterKind::Supply),
         _ => None,
     }
 }
@@ -60,7 +71,38 @@ pub(super) fn damage(
     capacity: Option<u8>,
     exhausted: bool,
 ) {
-    let image = context.art.loaded_image("token/damage");
+    harm(
+        commands,
+        meshes,
+        materials,
+        context,
+        card,
+        at,
+        amount,
+        capacity,
+        false,
+        harm_offset(exhausted),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn harm(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    context: &CardRender<'_>,
+    card: Entity,
+    at: Vec3,
+    amount: u8,
+    capacity: Option<u8>,
+    horror: bool,
+    offset: Vec3,
+) {
+    let image = context.art.loaded_image(if horror {
+        "token/horror"
+    } else {
+        "token/damage"
+    });
     let value = format!(
         "{amount}/{}",
         capacity.map_or_else(|| "?".into(), |max| max.to_string())
@@ -68,17 +110,16 @@ pub(super) fn damage(
     let caption = if image.is_some() {
         value
     } else {
-        format!("Damage {value}")
+        format!("{} {value}", if horror { "Horror" } else { "Damage" })
     };
-    let offset = Vec3::new(0., 0.16, if exhausted { -1.02 } else { -1.30 });
     let token =
-        crate::tabletop_harm_tokens::spawn(commands, meshes, materials, image, at + offset, false);
+        crate::tabletop_harm_tokens::spawn(commands, meshes, materials, image, at + offset, horror);
     commands
         .entity(token)
         .insert((ScenePiece, Attached(card, offset)));
     let label = scene::label(commands, context, caption, at + offset, false);
     commands.entity(label).insert((
-        motion::CardLabel(token, Vec3::new(0., 0.10, 0.24)),
+        motion::CardLabel(token, Vec3::new(0., 0.10, 0.16)),
         enemy_board::PersistentLabel,
     ));
 }
