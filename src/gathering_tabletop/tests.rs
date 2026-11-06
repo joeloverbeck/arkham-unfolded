@@ -1613,7 +1613,7 @@ fn activate_choice(app: &mut App, id: &str) {
             .find(|choice| choice.id == id)
     });
     let label = ui::choice_label(displayed.as_ref().unwrap_or(choice)).to_owned();
-    if button_with_label(app, &label).is_none() {
+    if choice_button(app, &label).is_none() {
         if let Some(source) = source {
             click_source(app, source);
         } else {
@@ -1624,13 +1624,67 @@ fn activate_choice(app: &mut App, id: &str) {
             app.update();
         }
     }
-    let entity = button_with_label(app, &label)
-        .or_else(|| button_with_label(app, &feedback::menu::label(&label)))
-        .unwrap_or_else(|| {
-            panic!("The selected context or global controls must offer {id}: {label}")
-        });
+    let entity = choice_button(app, &label).unwrap_or_else(|| {
+        panic!("The selected context or global controls must offer {id}: {label}")
+    });
     app.world_mut().trigger(Activate { entity });
     app.update();
+}
+
+/// Prefer the active modal's action over an identically captioned shortcut.
+/// Use the full accessible label so symbol spans do not erase action identity.
+fn choice_button(app: &mut App, label: &str) -> Option<Entity> {
+    use bevy::input_focus::tab_navigation::TabGroup;
+    let world = app.world_mut();
+    let menu_label = feedback::menu::label(label);
+    let mut candidates: Vec<_> = world
+        .query_filtered::<(Entity, &Children, Option<&AccessibleLabel>), With<Button>>()
+        .iter(world)
+        .filter(|(_, children, accessible)| {
+            accessible.is_some_and(|text| text.0 == label || text.0 == menu_label)
+                || children.iter().any(|child| {
+                    world
+                        .get::<Text>(child)
+                        .is_some_and(|text| text.0 == label || text.0 == menu_label)
+                })
+        })
+        .map(|(entity, _, _)| {
+            let mut parent = world.get::<ChildOf>(entity).map(ChildOf::parent);
+            let mut modal = false;
+            while let Some(ancestor) = parent {
+                modal |= world
+                    .get::<TabGroup>(ancestor)
+                    .is_some_and(|group| group.modal);
+                parent = world.get::<ChildOf>(ancestor).map(ChildOf::parent);
+            }
+            (entity, modal)
+        })
+        .collect();
+    if candidates.iter().any(|(_, modal)| *modal) {
+        candidates.retain(|(_, modal)| *modal);
+    }
+    assert!(
+        candidates.len() <= 1,
+        "Ambiguous action {label:?}: {} matching controls",
+        candidates.len()
+    );
+    candidates.first().map(|(entity, _)| *entity)
+}
+
+#[test]
+#[should_panic(expected = "Ambiguous action")]
+fn choice_selector_rejects_duplicate_actions_in_the_active_menu() {
+    let mut app = App::new();
+    app.world_mut()
+        .spawn(bevy::input_focus::tab_navigation::TabGroup::modal())
+        .with_children(|parent| {
+            for _ in 0..2 {
+                parent
+                    .spawn((Button, AccessibleLabel::new("Reveal")))
+                    .with_child(Text::new("Reveal"));
+            }
+        });
+    choice_button(&mut app, "Reveal");
 }
 
 pub(super) fn finish_presentation(app: &mut App) {

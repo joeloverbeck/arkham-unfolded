@@ -25,6 +25,8 @@ struct Cli {
 enum Command {
     /// Keep complete check output and an atomic completion record across session loss.
     RecordCheck(check::CheckArgs),
+    /// Show bounded diagnostic excerpts without changing the complete check log.
+    CheckSummary(check::summary::Args),
     /// Verify exact PR revisions and required checks, then perform one authorized merge.
     MergeReviewed(merge::MergeArgs),
     /// Read a bounded page of whole UTF-8 lines, bound to the source hash.
@@ -69,6 +71,7 @@ fn main() -> ExitCode {
     }
     let result = match command {
         Command::RecordCheck(args) => check::run(args),
+        Command::CheckSummary(args) => check::summary::run(args),
         Command::MergeReviewed(args) => merge::run(args),
         Command::ReadContext(args) => write_context_page(reader::page(args)),
         Command::ReadContextBatch(args) => write_context_page(reader::batch(args)),

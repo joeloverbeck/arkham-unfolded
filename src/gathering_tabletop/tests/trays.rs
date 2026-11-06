@@ -366,13 +366,7 @@ fn pending_sealed_reveal_keeps_card_and_tokens_visible_then_moves_them_before_di
             .resource::<crate::tabletop_reveal::Shortcut>()
             .is_open()
     );
-    let world = app.world_mut();
-    let reveal = world
-        .query_filtered::<Entity, (With<Button>, With<bevy::input_focus::AutoFocus>)>()
-        .single(world)
-        .unwrap();
-    world.trigger(Activate { entity: reveal });
-    app.update();
+    activate_choice(&mut app, "test:reveal");
     assert!(
         app.world()
             .resource::<Table>()

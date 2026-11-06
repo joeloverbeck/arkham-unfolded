@@ -33,6 +33,69 @@ fn metadata(output: &Path) -> Value {
 }
 
 #[test]
+fn source_fingerprints_bind_dirty_and_untracked_inputs_and_invalidate_mutation() {
+    let root = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        assert!(
+            Command::new("git")
+                .current_dir(root.path())
+                .args(args)
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+    };
+    git(&["init", "-q"]);
+    fs::write(root.path().join("tracked.rs"), "original").unwrap();
+    fs::write(root.path().join(".gitignore"), "ignored/\n").unwrap();
+    git(&["add", "."]);
+    fs::write(root.path().join("tracked.rs"), "dirty before check").unwrap();
+    fs::write(root.path().join("untracked.rs"), "new source").unwrap();
+    fs::create_dir(root.path().join("ignored")).unwrap();
+    for (case, change, code, expected) in [
+        ("stable", None, 0, 0),
+        ("tracked", Some("tracked.rs"), 0, 1),
+        ("new", Some("another.rs"), 0, 1),
+        ("untracked", Some("untracked.rs"), 42, 42),
+        ("ignored", Some("ignored/build"), 0, 0),
+    ] {
+        let output = root.path().join("ignored").join(case);
+        let mut command = record(root.path(), &output, &code.to_string());
+        if let Some(change) = change {
+            command.env("ARKHAM_FIXTURE_CHANGE_SOURCE", root.path().join(change));
+        }
+        let result = command.output().unwrap();
+        assert_eq!(result.status.code(), Some(expected), "{case}: {result:?}");
+        let data = metadata(&output);
+        assert_eq!(data["exit_code"], code, "preserve the child's result");
+        assert_eq!(
+            data["status"],
+            if case == "stable" || case == "ignored" {
+                "finished"
+            } else {
+                "invalidated"
+            }
+        );
+        assert_eq!(
+            data["source"]["before_sha256"] == data["source"]["after_sha256"],
+            expected == 0
+        );
+        assert_eq!(data["source"]["before_sha256"].as_str().unwrap().len(), 64);
+    }
+    // An unignored output directory must not invalidate itself.
+    let output = root.path().join("record");
+    assert!(
+        record(root.path(), &output, "0")
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert_eq!(metadata(&output)["status"], "finished");
+}
+
+#[test]
 fn nested_dev_check_is_rejected_before_spawning_with_the_correct_command() {
     let root = tempfile::tempdir().unwrap();
     let scripts = root.path().join("scripts");

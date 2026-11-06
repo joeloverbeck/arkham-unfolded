@@ -1,6 +1,6 @@
 use super::*;
 use crate::tabletop_counters::{ActionMarker, Counter, CounterKind};
-use bevy::camera::primitives::MeshAabb;
+use crate::tabletop_layout::heading_checks::mesh_bounds;
 use bevy::text::TextLayoutInfo;
 
 #[test]
@@ -97,40 +97,6 @@ fn glyph_bounds(
             .max(transform.transform_point2(origin + glyph.position + half));
     }
     rectangle
-}
-
-fn mesh_bounds(
-    world: &World,
-    camera: &Camera,
-    camera_at: &GlobalTransform,
-    entity: Entity,
-) -> Rect {
-    let mesh = world.get::<Mesh3d>(entity).unwrap();
-    let bounds = world
-        .resource::<Assets<Mesh>>()
-        .get(mesh)
-        .unwrap()
-        .get_aabb()
-        .unwrap();
-    let transform = world.get::<GlobalTransform>(entity).unwrap();
-    let mut projected = Rect {
-        min: Vec2::splat(f32::INFINITY),
-        max: Vec2::splat(f32::NEG_INFINITY),
-    };
-    for x in [-1.0, 1.0] {
-        for y in [-1.0, 1.0] {
-            for z in [-1.0, 1.0] {
-                let point = Vec3::from(bounds.center)
-                    + Vec3::from(bounds.half_extents) * Vec3::new(x, y, z);
-                let screen = camera
-                    .world_to_viewport(camera_at, transform.transform_point(point))
-                    .unwrap();
-                projected.min = projected.min.min(screen);
-                projected.max = projected.max.max(screen);
-            }
-        }
-    }
-    projected
 }
 
 #[test]

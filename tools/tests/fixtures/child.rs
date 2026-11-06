@@ -14,6 +14,9 @@ fn main() -> ExitCode {
             fs::write("descendant.pid", child.id().to_string()).unwrap();
         }
         println!("RECORD_CHECK_READY");
+        if let Some(path) = env::var_os("ARKHAM_FIXTURE_CHANGE_SOURCE") {
+            fs::write(path, "changed during check").unwrap();
+        }
         std::io::stdout().flush().unwrap();
         std::io::stderr().flush().unwrap();
         if args.get(1).is_some_and(|arg| arg == "wait") {
