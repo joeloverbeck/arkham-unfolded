@@ -100,13 +100,16 @@ struct Table {
 
 impl Table {
     fn open(save_path: PathBuf) -> Result<Self, String> {
-        let session = if save_path.exists() {
-            continuity::load_session(&save_path).map_err(|error| error.to_string())?
-        } else {
-            let session = Session::new().map_err(|error| error.to_string())?;
-            continuity::save_session(&save_path, &session).map_err(|error| error.to_string())?;
-            session
-        };
+        if save_path.exists() {
+            return Self::open_existing(save_path);
+        }
+        let session = Session::new().map_err(|error| error.to_string())?;
+        continuity::save_session(&save_path, &session).map_err(|error| error.to_string())?;
+        Ok(Self::new(session, save_path))
+    }
+
+    fn open_existing(save_path: PathBuf) -> Result<Self, String> {
+        let session = continuity::load_session(&save_path).map_err(|error| error.to_string())?;
         if session.is_verification_fixture() {
             return Err(
                 "This is a privileged verification fixture, not an ordinary Gathering setup."
@@ -312,7 +315,13 @@ struct Options {
     config: AssetConfig,
     screenshot: Option<PathBuf>,
     quit_after_screenshot: bool,
-    initial_view: Option<Area>,
+    initial_view: Option<InitialView>,
+}
+
+#[derive(Clone, Copy)]
+enum InitialView {
+    Area(Area),
+    Resolve,
 }
 
 impl Options {
@@ -343,13 +352,18 @@ impl Options {
                 }
                 "--quit-after-screenshot" => quit_after_screenshot = true,
                 "--initial-view" => {
-                    initial_view = Some(parse_initial_view(
-                        &args.next().ok_or("--initial-view needs a view")?,
-                    )?)
+                    let value = args.next().ok_or("--initial-view needs a view")?;
+                    initial_view = Some(if value == "resolve" {
+                        InitialView::Resolve
+                    } else {
+                        InitialView::Area(parse_initial_view(&value).map_err(|error| {
+                            format!("{error}, or resolve (active resolution drawer)")
+                        })?)
+                    });
                 }
                 "--help" | "-h" => {
                     println!(
-                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged."
+                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline|resolve\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged. The resolve view requires an active resolution drawer."
                     );
                     return Ok(None);
                 }
@@ -369,17 +383,43 @@ impl Options {
         }))
     }
 
-    fn configure_diagnostics(&self, app: &mut App) {
+    fn open_table(&self) -> Result<Table, String> {
+        if matches!(self.initial_view, Some(InitialView::Resolve)) {
+            Table::open_existing(self.save.clone()).map_err(|error| {
+                format!("Cannot open the saved resolution for --initial-view resolve: {error}")
+            })
+        } else {
+            Table::open(self.save.clone())
+        }
+    }
+
+    fn configure_diagnostics(&self, app: &mut App) -> Result<(), String> {
         let mut orbit =
             Orbit::new(CameraMode::Jacqueline).with_home(enemy_board::focus(Area::Overview));
-        if let Some(area) = self.initial_view {
-            orbit.focus(enemy_board::focus(area));
+        match self.initial_view {
+            Some(InitialView::Area(area)) => orbit.focus(enemy_board::focus(area)),
+            Some(InitialView::Resolve) => {
+                let focus = app
+                    .world()
+                    .get_resource::<Table>()
+                    .map(Table::view)
+                    .and_then(|view| {
+                        view.play
+                            .as_ref()
+                            .and_then(trays::Layout::for_play)
+                            .map(|tray| tray.focus())
+                    })
+                    .ok_or("No active resolution drawer for --initial-view resolve.")?;
+                orbit.focus(focus);
+            }
+            None => {}
         }
         app.insert_resource(orbit)
             .insert_resource(capture::State::new(
                 self.screenshot.clone(),
                 self.quit_after_screenshot,
             ));
+        Ok(())
     }
 }
 
@@ -389,9 +429,8 @@ pub fn run() -> Result<(), String> {
         return Ok(());
     };
     let mut app = App::new();
-    options.configure_diagnostics(&mut app);
-    let mut table = Table::open(options.save)?;
-    let prepared = art::Prepared::new(options.art_root)?;
+    let mut table = options.open_table()?;
+    let prepared = art::Prepared::new(options.art_root.clone())?;
     eprintln!(
         "Experiment: The Gathering (--experiment gathering)\nArtwork root: {}\n{}",
         prepared
@@ -402,8 +441,9 @@ pub fn run() -> Result<(), String> {
     if let Some(warning) = options.config.warning() {
         table.notice = format!("Asset settings: {warning}");
     }
+    app.insert_resource(table);
+    options.configure_diagnostics(&mut app)?;
     app.insert_resource(ClearColor(INK))
-        .insert_resource(table)
         .insert_resource(AssetSettings::new_gathering(options.config))
         .add_plugins(
             DefaultPlugins

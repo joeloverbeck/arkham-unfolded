@@ -197,72 +197,92 @@ fn gathering_launch_uses_its_save_contract_for_fresh_and_copied_sessions() {
 
 #[test]
 fn gathering_launch_forwards_static_capture_options_to_its_isolated_save() {
+    for view in ["scenario", "resolve"] {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("run");
+        let source = root.path().join("owner.session.json");
+        let art_root = root.path().join("prepared-art");
+        fs::write(&source, "owner pending decision").unwrap();
+        let child = launch(&support::fixture().join("child"), &directory)
+            .args(["--experiment", "gathering", "--load"])
+            .arg(&source)
+            .arg("--art-root")
+            .arg(&art_root)
+            .args([
+                "--initial-view",
+                view,
+                "--screenshot",
+                "scenario.png",
+                "--quit-after-screenshot",
+                "--timeout-seconds",
+                "5",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let metadata = running(&directory);
+        fs::write(directory.join("finish"), "").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            metadata["argv"],
+            serde_json::json!([
+                directory.join("arkham-tabletop"),
+                "--experiment",
+                "gathering",
+                "--save",
+                directory.join("session.json"),
+                "--art-root",
+                art_root,
+                "--screenshot",
+                directory.join("scenario.png"),
+                "--quit-after-screenshot",
+                "--initial-view",
+                view
+            ])
+        );
+        assert_eq!(metadata["initial_view"], view);
+        assert_eq!(
+            metadata["launch_conditions"]["screenshot"],
+            directory.join("scenario.png").to_str().unwrap()
+        );
+        assert_eq!(metadata["launch_conditions"]["quit_after_screenshot"], true);
+        assert_eq!(
+            metadata["launch_conditions"]["save_staging"],
+            "verified-copy"
+        );
+        assert_eq!(
+            fs::read_to_string(source).unwrap(),
+            "owner pending decision"
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("session.json")).unwrap(),
+            "autosaved copy"
+        );
+    }
+}
+
+#[test]
+fn resolution_view_refuses_other_experiments_before_staging() {
     let root = tempfile::tempdir().unwrap();
-    let directory = root.path().join("run");
-    let source = root.path().join("owner.session.json");
-    let art_root = root.path().join("prepared-art");
-    fs::write(&source, "owner pending decision").unwrap();
-    let child = launch(&support::fixture().join("child"), &directory)
-        .args(["--experiment", "gathering", "--load"])
-        .arg(&source)
-        .arg("--art-root")
-        .arg(&art_root)
-        .args([
-            "--initial-view",
-            "scenario",
-            "--screenshot",
-            "scenario.png",
-            "--quit-after-screenshot",
-            "--timeout-seconds",
-            "5",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let metadata = running(&directory);
-    fs::write(directory.join("finish"), "").unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        metadata["argv"],
-        serde_json::json!([
-            directory.join("arkham-tabletop"),
-            "--experiment",
-            "gathering",
-            "--save",
-            directory.join("session.json"),
-            "--art-root",
-            art_root,
-            "--screenshot",
-            directory.join("scenario.png"),
-            "--quit-after-screenshot",
-            "--initial-view",
-            "scenario"
-        ])
-    );
-    assert_eq!(metadata["initial_view"], "scenario");
-    assert_eq!(
-        metadata["launch_conditions"]["screenshot"],
-        directory.join("scenario.png").to_str().unwrap()
-    );
-    assert_eq!(metadata["launch_conditions"]["quit_after_screenshot"], true);
-    assert_eq!(
-        metadata["launch_conditions"]["save_staging"],
-        "verified-copy"
-    );
-    assert_eq!(
-        fs::read_to_string(source).unwrap(),
-        "owner pending decision"
-    );
-    assert_eq!(
-        fs::read_to_string(directory.join("session.json")).unwrap(),
-        "autosaved copy"
-    );
+    for experiment in ["jacqueline", "tony", "party"] {
+        let directory = root.path().join(experiment);
+        let output = launch(&support::fixture().join("child"), &directory)
+            .args(["--experiment", experiment, "--initial-view", "resolve"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("--initial-view resolve requires --experiment gathering")
+        );
+        assert!(!directory.exists());
+    }
 }
 
 fn summary_events(output: &[u8], directory: &Path, completed: &Value) -> Vec<Value> {

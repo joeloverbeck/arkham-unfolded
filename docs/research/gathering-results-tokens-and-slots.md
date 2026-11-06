@@ -467,3 +467,84 @@ changes, personal saves or artwork are included. The publication pass consulted
 `AUTH-1`–`AUTH-3`, `PUB-1` and `OPS-5`–`OPS-7`; prior implementation consultations
 remain applicable. The PR and #89's current handoff own the exact published
 commit, final review/check records and synchronization status.
+
+## Retrospective follow-up — activated 2026-11-06
+
+Joel instructed “Proceed with recommended changes” after the session
+retrospective. Starting from `d202dfa08f3765c35542da51b4580270054b7035`, this
+bounded follow-up improves the normal launch handoff, adds production UI
+assertions for changing token-selection counts and slot-strip placement, and
+adds diagnostic framing of the active resolution drawer through the existing
+native launch path. Existing bounded readers and scoped searches remain the
+tools for large references; no additional reader or global instruction file is
+needed. The unrelated deferred Peter caption correction remains separate.
+
+The accepted verification seams are the existing production UI host (visible
+progress after actual choices and measured mat/strip geometry) and the existing
+diagnostic startup/native-launch CLI tests (framing, argument forwarding and
+explicit refusal when no resolution drawer is available). These establish their
+specific behavior, not a fresh native playthrough. The local patch and recorded
+checks are the next review surface; this follow-up does not inherit publication
+authority for PR #114. The two-active-hour return boundary applies. Consulted
+`PURP`, `WORK`, `OPS`, `AGENT-5` and `EVID-4` for the retrospective and this same
+bounded follow-up; #89 remains the work-control authority.
+
+### Follow-up implementation and verification
+
+The native handoff guide now requires checking the owner's ordinary launch and
+providing tested fresh-save recovery with the README update when compatibility
+changes. The README's existing launch and incompatible-save instructions remain
+applicable; this increment does not change the save format.
+
+Production UI tests now exercise selection and deselection through Dark
+Prophecy and Jacqueline's one-Auto-fail or two-other-token alternatives, checking
+the displayed progress and legal confirmation. The slot test projects the
+actual printed surface into the camera and checks its bounds against the gap
+between the mat's asset and hand regions, plus centering and flat orientation.
+
+Gathering accepts `--initial-view resolve`, using the existing Resolve button's
+drawer framing. Tests compare those camera poses, check Home with keyboard focus
+on the table, preserve the pending session, and require an explicit no-drawer
+error. Resolution diagnostics reopen an existing save through a read-only path;
+they cannot start a fresh attempt. Review exposed the initial create-before-refuse
+ordering, and a regression reproduced it before correction. Startup-path tests
+now check both unused paths (including absent parent directories) and unchanged
+bytes for existing saves without a drawer. The native launcher forwards the
+option and rejects it for other modes before staging. Shared camera controls
+and drawer/token layout are unchanged.
+
+Completed records (`run.json` is `finished`, `exit_code: 0`):
+
+- `/tmp/gathering-retro-startup-green`: five UI/startup tests passed; the existing
+  supplied-save check remains opt-in.
+- `/tmp/gathering-retro-launch-green`: all eleven native-launch tests passed.
+- `/tmp/gathering-retro-native-build-2`: normal tabletop executable built.
+- `/tmp/gathering-retro-full-check-2`: complete `scripts/check` passed, including
+  format, Clippy, application/tool tests and renderer checks. The library suite
+  has 447 passing tests and three existing opt-in/deferred checks. This evidence
+  paragraph was updated afterward; executable code and tests are unchanged.
+
+The ordinary nine-token save at `/tmp/gathering-fresh-review/nine-tokens.json`
+opened through `native launch --experiment gathering --initial-view resolve`
+with the real collection. `/tmp/gathering-retro-resolve-native-3/run.json` records
+`status: exited`, `returncode: 0` and executable SHA-256
+`61c30e906e5a1304e4ca864267422a694a633aeed5ba22d320c9fc6f2149043a`.
+The screenshot is `resolution.png` in that directory (3200×2000 pixels for the
+1600×1000 logical window). Both source and staged save retained SHA-256
+`a5a4e5cdb4bc81f0358784de82522fbdcedda9567264dc233fb6327ccf9e935a`.
+No gameplay input was sent.
+
+The same executable refused an unused save path before creating a session in
+`/tmp/gathering-retro-missing-native` (`status: exited`, `returncode: 1`, expected
+missing-save error, no `session.json`). The preceding capture attempt in
+`/tmp/gathering-retro-resolve-native-2` timed out after losing foreground before
+graphics admission; its record and unchanged save remain retained. The final
+capture succeeded and is byte-identical to the first capture, confirming the
+startup correction preserved that view.
+
+The capture confirms drawer framing and visible selection instructions, but
+also exposes overlapping token captions in this crowded state. Resolve framing
+and token/label generation are unchanged from `d202dfa`; there is no native
+before/after pair at this exact view. Record this as a separate visual follow-up,
+not readability acceptance or a correction included in this verification patch.
+The earlier Peter caption deferral and #89's full-scenario boundary also remain.

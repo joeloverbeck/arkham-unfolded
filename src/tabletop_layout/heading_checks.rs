@@ -99,6 +99,23 @@ pub(crate) fn mesh_bounds(
     projected
 }
 
+/// The empty mat band between the asset and hand regions, independent of any
+/// text surface placed inside it. Coordinates are world x/z.
+pub(crate) fn asset_hand_gap(index: usize) -> Rect {
+    let center = super::investigator_center(index, 3);
+    let half_width = super::ASSET_REGION_SIZE.x.min(super::HAND_REGION_SIZE.x) / 2.;
+    Rect::from_corners(
+        Vec2::new(
+            center.x - half_width,
+            center.z + super::ASSET_REGION_Z + super::ASSET_REGION_SIZE.y / 2.,
+        ),
+        Vec2::new(
+            center.x + half_width,
+            center.z + super::HAND_REGION_Z - super::HAND_REGION_SIZE.y / 2.,
+        ),
+    )
+}
+
 pub(crate) fn assert_harm_captions<C: Component>(
     app: &mut App,
     captions: [Entity; 2],
