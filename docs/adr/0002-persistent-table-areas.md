@@ -10,6 +10,43 @@ presentation, supported save/resume, Undo, inspection and camera decisions remai
 in force. Dated implementation and verification records below remain historical
 evidence; the retirement decision does not claim its implementation is complete.
 
+## Gathering reveal cue and story panel refinements
+
+During the 2026-11-06 `grill-with-docs` interview for
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89), against
+`71c4c3e52752ca892f91c589579ec88d28a65ee1`, Joel accepted Q1–Q3 from the
+[reveal and story controls investigation](../research/gathering-reveal-and-story-controls.md).
+These are design decisions. Joel subsequently authorized their local implementation;
+the linked investigation records activation and keeps native acceptance separate.
+
+- **Reveal control:** keep the existing 16-logical-pixel gap to the panel on its
+  right. Use a fixed-width button with centered **Reveal tokens** or **Resolve
+  tokens** text. Preserve the complete Premonition explanation, including known
+  sealed faces and additional fresh draws, visibly in the adjacent panel. Place
+  the bag image above the button as a decorative cue with a gentle repeating bob;
+  only the stationary button activates the action. Reduced motion keeps the image
+  static. Stop the reminder when the action becomes unavailable or another dialog
+  takes focus. Retain the existing offered-choice, continuity and absent-art
+  contracts. This refines the earlier image-plus-label reveal shortcut without
+  changing the meaning of revealing or resolving tokens.
+- **Token planning:** fit the decision panel to its content with a viewport cap
+  and scrolling for long lists. Retain a compact **Jacqueline's ability...** chooser,
+  explaining who is testing, the additional reveals and subsequent cancellation,
+  and clearly naming each affected reveal scope. Preserve every offered scope,
+  cost and Arbiter of Fates alternative. Opening the chooser commits no ability;
+  Jacqueline assisting another investigator does not make her the testing
+  investigator. A single planned token does not justify discarding scope choices.
+- **Act and Agenda reading:** fit Gathering's story panels to their content up to
+  the usable viewport limit, with centered Continue. Longer bodies scroll while
+  the heading and control remain visible. Preserve readable story artwork and
+  text, and share the applicable layout behavior with Test Results. Story content
+  and continuation semantics remain owned by their existing flows; the layout
+  change must not replay consequences. Exact dimensions and local helper
+  extraction are delegated implementation choices.
+
+The linked investigation retains the source evidence, alternatives, rule
+consultations and verification limits. #89 remains the work-control authority.
+
 ## Compact results, guided token groups and visible asset capacity
 
 On 2026-11-06, during the owner-requested `grill-with-docs` interview for

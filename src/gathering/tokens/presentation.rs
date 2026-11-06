@@ -99,7 +99,7 @@ impl TokenResolution {
         let unit = if grouped { "reveal group" } else { "token" };
         match self.stage {
             TokenStage::Declaration => format!(
-                "{} · Plan the reveal before seeing any tokens. Choose an ability and its target, or reveal now.",
+                "{} · Plan the reveal before seeing any tokens. Choose an ability and the reveal it changes, or reveal now.",
                 self.purpose_label()
             ),
             TokenStage::EyesCharges => {
