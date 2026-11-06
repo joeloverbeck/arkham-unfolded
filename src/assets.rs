@@ -83,7 +83,7 @@ enum Transform {
     },
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
     format_version: u32,
@@ -91,7 +91,7 @@ struct Manifest {
     assets: Vec<AssetIdentity>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct AssetIdentity {
     role: String,
@@ -174,8 +174,11 @@ pub fn gathering_image_roles() -> impl Iterator<Item = &'static str> {
 
 // Exact earlier selections remain useful without claiming newly selected artwork.
 fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
-    if selection.collection == "arkham-unfolded-gathering-v2" {
+    if selection.collection == "arkham-unfolded-gathering-v3" {
         let mut previous = selection.manifest();
+        previous.collection = "arkham-unfolded-gathering-v2".into();
+        previous.assets.retain(|asset| asset.role != "token/key");
+        let v2 = previous.clone();
         previous.collection = "arkham-unfolded-gathering-v1".into();
         previous.assets.retain(|asset| {
             !matches!(
@@ -183,7 +186,7 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
                 "token/ammo" | "token/bounty" | "token/charge"
             )
         });
-        return vec![previous];
+        return vec![v2, previous];
     }
     let versions: &[u32] = match selection.collection.as_str() {
         "arkham-unfolded-tony-turn-v3" => &[1, 2],
@@ -903,6 +906,7 @@ mod tests {
             "token/ammo",
             "token/bounty",
             "token/charge",
+            "token/key",
         ] {
             assert!(
                 roles.contains(role),
@@ -1224,6 +1228,39 @@ mod tests {
             assert!(report.verified_path("class/rogue/background").is_some());
             assert!(report.verified_path("class/mystic/icon").is_some());
             assert!(report.verified_path("card/06003").is_some());
+            assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), manifest);
+        }
+    }
+
+    #[test]
+    fn gathering_previous_collections_keep_verified_art_without_claiming_the_key() {
+        for (version, expected) in [("v1", 140), ("v2", 143)] {
+            let directory = tempfile::tempdir().unwrap();
+            let source = directory.path().join("source");
+            let output = directory.path().join("assets");
+            let recipe = include_str!("../resources/gathering-asset-selection.json");
+            let selected = recipe_fixture(&source, recipe);
+            let mut earlier = recipe_fixture(&source, recipe);
+            earlier.collection = format!("arkham-unfolded-gathering-{version}");
+            earlier.assets.retain(|asset| {
+                asset.role != "token/key"
+                    && (version != "v1"
+                        || !matches!(
+                            asset.role.as_str(),
+                            "token/ammo" | "token/bounty" | "token/charge"
+                        ))
+            });
+            prepare_selection(&source, &output, &earlier).unwrap();
+            let manifest = fs::read(output.join(MANIFEST)).unwrap();
+            let report = inspect_selection(&output, &selected);
+            assert!(report.recognized && !report.complete);
+            assert_eq!(
+                (report.valid_count(), report.expected_count()),
+                (expected, 144)
+            );
+            assert!(report.verified_path("card-60507").is_some());
+            assert!(report.verified_path("token/key").is_none());
+            assert!(prepare_selection(&source, &output, &selected).is_err());
             assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), manifest);
         }
     }

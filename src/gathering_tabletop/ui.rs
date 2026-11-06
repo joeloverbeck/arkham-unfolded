@@ -36,11 +36,7 @@ fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
     ));
     if !tokens.revealed.is_empty() {
         p.spawn((
-            art.text(
-                "Gold ring: selected · blue ring: available now · group labels show origin",
-                12.,
-                MUTED,
-            ),
+            art.text("Gold ring: selected · blue ring: available now", 12., MUTED),
             Node {
                 flex_shrink: 0.,
                 ..default()
@@ -377,8 +373,16 @@ fn selected_commitments(view: &Observation) -> Option<String> {
                 .hand
                 .iter()
                 .find(|card| card.id == selected.card_id)?;
+            let wager = if card.code == "03233" {
+                selected.wager.map_or_else(
+                    || " · Choose a wager".into(),
+                    |amount| format!(" · Wager: {amount} resources"),
+                )
+            } else {
+                String::new()
+            };
             Some(format!(
-                "{}'s {} ({:+})",
+                "{}'s {} ({:+}){wager}",
                 short_name(selected.owner),
                 card.title,
                 selected.contribution
@@ -387,6 +391,78 @@ fn selected_commitments(view: &Observation) -> Option<String> {
         .collect::<Vec<_>>();
     (!selected.is_empty())
         .then(|| format!("Selected: {}. Select again to remove.", selected.join(", ")))
+}
+
+fn wager_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, view: &Observation) {
+    p.spawn(art.text(
+        "Watch this! — choose a wager for each selected copy.",
+        16.,
+        GOLD,
+    ));
+    p.spawn(art.text("0 commits icons only. Pay when confirming; succeed by at least 1 to gain twice your wager.", 13., PAPER));
+    let play = view.play.as_ref().expect("Commitment");
+    let test = play.test.as_ref().expect("Skill test");
+    for selected in test.commitment.iter().filter(|card| card.selected) {
+        let prefix = format!("tony:watch:{}:", selected.card_id);
+        let choices: Vec<_> = view
+            .choices
+            .iter()
+            .filter(|choice| choice.id.starts_with(&prefix))
+            .collect();
+        let Some(first) = choices.first() else {
+            continue;
+        };
+        let title = first.label.split(" — ").next().unwrap_or("Watch this!");
+        let status = selected.wager.map_or_else(
+            || "Choose a wager".into(),
+            |amount| format!("Wager: {amount} resources"),
+        );
+        screen::controls(p, |row| {
+            row.spawn((
+                art.text(format!("{title}\n{status}"), 13., GOLD),
+                Node {
+                    width: px(225),
+                    ..default()
+                },
+            ));
+            for choice in choices {
+                let amount = choice.id.rsplit(':').next().expect("Wager amount");
+                let label = if amount == "0" {
+                    "0 · icons only".to_owned()
+                } else {
+                    format!("Wager {amount}")
+                };
+                row.spawn(Node {
+                    width: px(145),
+                    ..default()
+                })
+                .with_children(|slot| {
+                    let entity = button(
+                        art,
+                        slot,
+                        &label,
+                        Action::Choose(table.epoch, view.revision, choice.id.clone()),
+                    );
+                    slot.commands()
+                        .entity(entity)
+                        .insert(AccessibleLabel::new(choice.label.clone()));
+                });
+            }
+        });
+    }
+    screen::controls(p, |row| {
+        for choice in controls::global_choices(view) {
+            control(
+                art,
+                row,
+                choice_label(&choice),
+                Action::Choose(table.epoch, view.revision, choice.id.clone()),
+            );
+        }
+    });
+    if let Some(summary) = selected_commitments(view) {
+        p.spawn(art.text(summary, 12., MUTED));
+    }
 }
 
 pub(super) fn button(
@@ -498,6 +574,12 @@ pub(super) fn render(
             .choices
             .iter()
             .any(|choice| choice.id.starts_with("tokens:") || choice.id == "test:reveal");
+    let wager_decision = !table.is_presenting()
+        && !table.modal()
+        && view
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tony:watch:"));
     let decision_panel = screen::decision_panel(
         commands,
         (
@@ -515,6 +597,10 @@ pub(super) fn render(
             }
             if token_decision {
                 token_guidance(p, art, table, view);
+                return;
+            }
+            if wager_decision {
+                wager_guidance(p, art, table, view);
                 return;
             }
             p.spawn(art.text("LIVE DECISION", 12., GOLD));
@@ -582,7 +668,7 @@ pub(super) fn render(
             }
         },
     );
-    if token_decision {
+    if token_decision || wager_decision {
         commands.entity(decision_panel).insert(Node {
             position_type: PositionType::Absolute,
             left: px(150),

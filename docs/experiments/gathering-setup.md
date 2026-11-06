@@ -754,10 +754,12 @@ scripts/dev cargo run --locked --bin arkham-assets -- check-gathering \
   "$HOME/.local/share/arkham-unfolded/gathering-assets"
 ```
 
-The finite recipe contains 143 roles: 94 card identities, 11 reverse/unrevealed
+The finite recipe contains 144 roles: 94 card identities, 11 reverse/unrevealed
 sides, card backs, investigator standees, token/class artwork, reveal icon and
-symbol font, including bounty, ammo and the Spell charge motif. An earlier v1
-collection is incomplete and uses named substitutes for these three roles.
+symbol font, including bounty, ammo, the Spell charge motif and the neutral key.
+An earlier v2 collection lacks the key; v1 also lacks bounty, ammo and charge
+artwork. Verified existing artwork remains available, with named substitutes for
+the missing roles. Old Keyring's counter is named **Keys**.
 Location roles explicitly distinguish unrevealed and revealed
 faces. Preparation preserves source bytes and the archive; an identical complete
 destination is reusable, while conflicting or incomplete output is refused.

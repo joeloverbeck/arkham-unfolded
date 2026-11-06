@@ -27,6 +27,27 @@ impl TokenResolution {
         ) {
             let source =
                 policy_label(node.policy).map_or(source, |name| format!("{name} · {location}"));
+            // In an ordinary Jacqueline reveal every draw has the same scope.
+            // Nested replacements retain their distinct provenance below.
+            if node.jacqueline
+                && node.policy == Policy::All
+                && node.children.len() == 3
+                && node.children.iter().any(|child| !child.drawn.is_empty())
+                && node
+                    .children
+                    .iter()
+                    .all(|child| child.policy == Policy::Draw && child.children.is_empty())
+            {
+                out.push(RevealGroup {
+                    source: format!("Jacqueline · {location}"),
+                    members: node
+                        .children
+                        .iter()
+                        .flat_map(|child| child.drawn.iter().copied())
+                        .collect(),
+                });
+                return;
+            }
             if node.children.is_empty() {
                 if !node.drawn.is_empty() {
                     if let Some(group) = out.iter_mut().find(|group| group.source == source) {
@@ -115,7 +136,7 @@ impl TokenResolution {
                 "Eyes of the Dreamer · Choose how many charges to spend before revealing.".into()
             }
             TokenStage::Cancellation => format!(
-                "Jacqueline · {target}\nCancel 2 non-auto-fail {unit}s, or 1 auto-fail {unit}. If fewer are eligible, cancel as many as possible. Choose below, then confirm."
+                "Jacqueline · {target} — choose {unit}s to cancel\nCancel 2 non-auto-fail {unit}s, or 1 auto-fail {unit}. If fewer are eligible, cancel as many as possible. Then confirm."
             ),
             TokenStage::Selection => {
                 let count = if node.policy == Policy::Olive { 2 } else { 1 };

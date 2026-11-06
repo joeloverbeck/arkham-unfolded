@@ -100,12 +100,34 @@ pub fn checkpoints() -> Result<Vec<Checkpoint>, String> {
         "search:finish",
         "action:ordinary:evade:318",
         "commit:7",
+        "tony:watch:7:0",
         "commit:118",
         "commit:201",
         "commit:confirm",
         "test:reveal",
     ] {
         choose(&mut hornet, id)?;
+        if id == "commit:7" {
+            result.push(point("watch-wager", "test", "tony:watch:7:0", &hornet));
+            let mut jacqueline = hornet.clone();
+            for choice in [
+                "tony:watch:7:0",
+                "commit:confirm",
+                "tokens:jacqueline",
+                "test:reveal",
+            ] {
+                choose(&mut jacqueline, choice)?;
+            }
+            let trigger = jacqueline
+                .observe()
+                .choices
+                .iter()
+                .find(|choice| choice.id.starts_with("tokens:cancel:"))
+                .ok_or("Jacqueline must offer cancellation")?
+                .id
+                .clone();
+            result.push(point("jacqueline-three", "test", &trigger, &jacqueline));
+        }
     }
     // Reopening retains the completed result reading before the owner examines
     // the evaded enemy; acknowledging it cannot repeat the evade.
@@ -119,6 +141,15 @@ pub fn checkpoints() -> Result<Vec<Checkpoint>, String> {
         return Err("The recorded ordinary evasion must exhaust its enemy".into());
     }
     result.push(point("evaded-enemy", "scenario", "turn:end", &hornet));
+
+    let mut keyring = start(0, "turn:patrice")?;
+    choose(&mut keyring, "action:ordinary:play:141")?;
+    result.push(point(
+        "keyring-two",
+        "patrice",
+        "action:ordinary:investigate:spell:141",
+        &keyring,
+    ));
 
     let mut revelation = Session::with_seed(0);
     for id in [

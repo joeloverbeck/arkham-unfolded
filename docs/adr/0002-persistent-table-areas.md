@@ -10,6 +10,43 @@ presentation, supported save/resume, Undo, inspection and camera decisions remai
 in force. Dated implementation and verification records below remain historical
 evidence; the retirement decision does not claim its implementation is complete.
 
+## Gathering wagers, keys and chaos-token spacing
+
+On 2026-11-06, Joel accepted the following `grill-with-docs` decisions for
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89), investigated at
+`be7f58e5ab4cf6a611ea60d844bc33ef44500222`. The
+[source investigation](../research/gathering-wagers-keys-and-token-layout.md)
+records the four reports, governing rules, exact local key artwork, code paths
+and evidence limits. This records design, not implementation or native acceptance.
+
+- Selecting Watch This! immediately presents an explicit, editable per-copy
+  wager: zero for icons only, or one to three resources up to the available total.
+  Commitment confirmation waits for a wager choice; it must not silently choose
+  zero. Costs are paid once when commitment is confirmed, not while editing.
+- A single enemy's contextual inspection action says only **Inspect**. Keep its
+  physical-card identity and full inspection content. Multi-card choosers retain
+  the information needed to distinguish their separate targets.
+- Ordinary successful Old Keyring use removes a key automatically and discards
+  the asset when empty. Preserve genuine result-order choices directly in the
+  test/result panel. With Resourceful, removing the last key first can make the
+  discarded Keyring recoverable; automation must not silently choose that order.
+- Display keys with the selected neutral key artwork from the source archive
+  and one numeric total, using the existing counter convention. Preserve the
+  whole key silhouette. Name the use type **Keys**, including missing-art
+  substitutes; it is not Charges. The counter leaves play with its card.
+- An ordinary Jacqueline three-token reveal uses one comfortably spaced row
+  with a single cancellation instruction and visible selection progress. The
+  original draw is not privileged over the added tokens. Preserve meaningful
+  nested groups, legal cancellation alternatives and canceled-token custody.
+  Token and group captions must have separate readable space in Test and Resolve,
+  including the retained/canceled view after a choice.
+
+The existing two Watch This! headless tests pass, establishing their exercised
+rules behavior only. The new prompt, automatic Keyring path, counter and token
+layout still require implementation and appropriate verification. #89 retains
+complete-scenario play and owner acceptance. The research records consulted
+constitutional rules; it creates no separate active work queue.
+
 ## Gathering movement, location revelation and Jacqueline controls
 
 On 2026-11-06, against `239dfe427e3883facdaa51a395269340ff8301d1`, Joel accepted

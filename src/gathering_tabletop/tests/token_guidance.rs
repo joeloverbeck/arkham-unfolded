@@ -63,6 +63,119 @@ fn curse_followup_offers_one_new_jacqueline_declaration_while_prior_tokens_stay_
 }
 
 #[test]
+fn jacquelines_three_tokens_share_one_row_and_have_separate_readable_captions() {
+    let session = super::review_saves::resolution_review::checkpoints()
+        .unwrap()
+        .into_iter()
+        .find(|point| point.name == "jacqueline-three")
+        .unwrap()
+        .session;
+    let groups = session
+        .observe()
+        .play
+        .unwrap()
+        .tokens
+        .unwrap()
+        .reveal_groups();
+    assert_eq!(groups.len(), 1, "The original draw has no special status");
+    assert_eq!(groups[0].members.len(), 3);
+    assert_token_captions_are_separate(session, true);
+}
+
+#[test]
+fn voice_of_ra_nested_tokens_have_separate_readable_captions() {
+    assert_token_captions_are_separate(voice_ra_selection(), false);
+}
+
+fn assert_token_captions_are_separate(session: Session, ordinary: bool) {
+    use crate::tabletop_layout::heading_checks::{rendered_text_bounds, viewport};
+    let group_names: Vec<_> = session
+        .observe()
+        .play
+        .unwrap()
+        .tokens
+        .unwrap()
+        .reveal_groups()
+        .into_iter()
+        .map(|group| crate::tabletop::readable_text(group.source))
+        .collect();
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("tokens.json")), true);
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(if ordinary {
+            Action::Focus(Area::Test)
+        } else {
+            Action::Resolve
+        });
+    finish_presentation(&mut app);
+    for size in [Vec2::new(1280., 720.), Vec2::new(1600., 1000.)] {
+        for scale in [1., 2.] {
+            viewport::<MainCamera>(&mut app, size, scale);
+            for _ in 0..5 {
+                app.update();
+            }
+            let world = app.world_mut();
+            let labels: Vec<_> = world
+                .query::<(Entity, &crate::tabletop_tokens::Follow)>()
+                .iter(world)
+                .map(|(entity, follow)| (entity, follow.0))
+                .collect();
+            assert_eq!(labels.len(), if ordinary { 3 } else { 9 });
+            if ordinary {
+                let z = world.get::<Transform>(labels[0].1).unwrap().translation.z;
+                assert!(labels.iter().all(|(_, token)| {
+                    (world.get::<Transform>(*token).unwrap().translation.z - z).abs() < 0.001
+                }));
+            }
+            let mut captions: Vec<_> = labels
+                .iter()
+                .map(|(entity, _)| {
+                    (
+                        world.get::<Text>(*entity).unwrap().0.clone(),
+                        rendered_text_bounds(world, *entity, scale),
+                    )
+                })
+                .collect();
+            let headings: Vec<_> = world
+                .query::<(Entity, &WorldLabel, &Text)>()
+                .iter(world)
+                .filter(|(_, _, text)| {
+                    group_names.contains(&text.0) || (ordinary && text.0.contains("Watch this!"))
+                })
+                .map(|(entity, _, text)| (entity, text.0.clone()))
+                .collect();
+            if !ordinary {
+                assert!(
+                    headings.len() >= group_names.len(),
+                    "Meaningful nested groups keep their headings"
+                );
+            }
+            for (entity, text) in headings {
+                assert!(
+                    world.get::<InheritedVisibility>(entity).unwrap().get(),
+                    "Group/card caption must remain visible at Resolve focus: {text}"
+                );
+                captions.push((text, rendered_text_bounds(world, entity, scale)));
+            }
+            for (index, (name, bounds)) in captions.iter().enumerate() {
+                assert!(
+                    bounds.min.cmpge(Vec2::ZERO).all() && bounds.max.cmple(size).all(),
+                    "{name}: {bounds:?}"
+                );
+                for (other, next) in &captions[index + 1..] {
+                    assert!(
+                        bounds.intersect(*next).is_empty(),
+                        "{size:?}/{scale}: {name} {bounds:?} overlaps {other} {next:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn plain_jacqueline_control_declares_three_tokens_without_revealing_or_changing_tester() {
     let mut session =
         Session::with_hostile_fixture(crate::gathering::HostileFixture::JacquelineCancellation);

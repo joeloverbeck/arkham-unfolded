@@ -447,6 +447,9 @@ pub struct CommitmentPresentation {
     pub owner: Investigator,
     pub selected: bool,
     pub contribution: i32,
+    /// Explicit unpaid Watch this! stake; absence is not an implicit zero.
+    #[serde(default)]
+    pub wager: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1056,6 +1059,7 @@ impl Game {
                                     owner: owner.investigator,
                                     selected: test.selected.contains(&card.id),
                                     contribution: self.commit_icons(test, card),
+                                    wager: super::tony_effects::pending_wager(test, card.id),
                                 })
                         })
                         .collect(),
@@ -1297,7 +1301,7 @@ impl Game {
                 .map(|(index, effect)| {
                     let label = match effect {
                         TestResultEffect::OldKeyring { .. } => {
-                            "Spend an Old Keyring key after successful investigation".into()
+                            "Remove 1 key from Old Keyring (discard it if empty)".into()
                         }
                         TestResultEffect::Operation => "Apply this skill test's effect".into(),
                         TestResultEffect::Resourceful { owner, .. } => format!(
@@ -1341,7 +1345,9 @@ impl Game {
                 Window::Commitment => {
                     let mut choices = self.commit_choices();
                     choices.extend(super::tony_effects::commitment_choices(self));
-                    choices.push(choice("commit:confirm", "Confirm committed cards"));
+                    if super::tony_effects::commitment_ready(self) {
+                        choices.push(choice("commit:confirm", "Confirm committed cards"));
+                    }
                     choices
                 }
                 Window::Reveal => vec![choice("test:reveal", "Reveal a chaos token")],
@@ -4115,8 +4121,21 @@ impl Game {
                     self.finish_test()?;
                     continue;
                 }
-                if effects.len() == 1 {
-                    self.choose_result("result:0")?;
+                // With only the investigation and its mandatory key removal,
+                // order cannot change a choice or consequence. Any additional
+                // result (notably Resourceful) retains the player's ST.7 order.
+                let key = (effects.len() == 2
+                    && effects
+                        .iter()
+                        .any(|effect| matches!(effect, TestResultEffect::Operation)))
+                .then(|| {
+                    effects
+                        .iter()
+                        .position(|effect| matches!(effect, TestResultEffect::OldKeyring { .. }))
+                })
+                .flatten();
+                if let Some(index) = key.or_else(|| (effects.len() == 1).then_some(0)) {
+                    self.choose_result(&format!("result:{index}"))?;
                     continue;
                 }
                 return Ok(());

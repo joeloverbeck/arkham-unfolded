@@ -274,11 +274,19 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
             for player in &play.players {
                 for asset in &player.assets {
                     if asset.card.code == code
-                        && asset.use_kind() == Some(crate::gathering::UseKind::Supply)
+                        && matches!(
+                            asset.use_kind(),
+                            Some(
+                                crate::gathering::UseKind::Supply | crate::gathering::UseKind::Key
+                            )
+                        )
                     {
                         text.push_str(&format!(
-                            "\n\n{} — Supplies: {}",
+                            "\n\n{} — {}: {}",
                             player.investigator.name(),
+                            card_counters::use_counter(asset.use_kind())
+                                .expect("Named use counter")
+                                .name(),
                             asset.uses
                         ));
                     }
@@ -693,10 +701,26 @@ impl Painter<'_, '_, '_> {
                     ..default()
                 })));
         }
-        self.commands
-            .entity(label)
-            .insert((ScenePiece, Text::new(crate::tabletop::readable_text(title))));
+        let caption = match state {
+            ShownTokenState::Available | ShownTokenState::Revealed => {
+                format!("{ordinal}: {}", face.label())
+            }
+            _ => format!("{ordinal}: {}\n{}", face.label(), state.label()),
+        };
+        self.commands.entity(label).insert((
+            ScenePiece,
+            Text::new(crate::tabletop::readable_text(caption)),
+        ));
     }
+}
+
+fn test_token(slot: usize) -> Vec3 {
+    layout::TEST_CENTER
+        + Vec3::new(
+            -3.5 + (slot % 3) as f32 * 3.5,
+            0.15,
+            3.0 + (slot / 3) as f32 * 3.0,
+        )
 }
 
 pub(super) fn render_setup_pieces(
@@ -1190,19 +1214,25 @@ pub(super) fn render(
             .iter()
             .flat_map(|choice| tokens.choice_members(&choice.id))
             .collect();
-        let columns = if tokens.is_skill_test() { 4 } else { 6 };
+        let columns = 3;
         let mut row_start = 0;
-        for group in tokens.reveal_groups() {
+        let groups = tokens.reveal_groups();
+        // The decision panel already names a single skill-test reveal. Keep
+        // the space below committed cards clear; nested groups still need labels.
+        let label_groups = !tokens.is_skill_test() || groups.len() > 1;
+        for group in groups {
             let position = |slot| {
                 if tokens.is_skill_test() {
-                    layout::test_token(false, slot)
+                    test_token(slot)
                 } else {
                     tray.as_ref()
                         .expect("Non-test tokens have an owner")
                         .token(slot)
                 }
             };
-            paint.caption(position(row_start) - Vec3::Z * 2.0, group.source);
+            if label_groups {
+                paint.caption(position(row_start + 1) - Vec3::Z * 2.5, group.source);
+            }
             for (offset, slot) in group.members.iter().copied().enumerate() {
                 let token = tokens.revealed[slot];
                 let state = if tokens.cancelled.contains(&slot) {
@@ -1229,7 +1259,7 @@ pub(super) fn render(
     {
         for (slot, token) in test.revealed.iter().enumerate() {
             paint.token(
-                layout::test_token(false, slot),
+                test_token(slot),
                 *token,
                 if test.resolved {
                     ShownTokenState::Resolved
@@ -1252,7 +1282,7 @@ pub(super) fn render(
             .enumerate()
         {
             paint.token(
-                layout::test_token(true, slot),
+                test_token(test.revealed.len().div_ceil(3) * 3 + slot),
                 *token,
                 state,
                 slot + 1,
