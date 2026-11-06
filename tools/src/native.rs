@@ -168,8 +168,9 @@ pub struct Launch {
     screenshot: Option<String>,
     #[arg(long, requires = "screenshot")]
     quit_after_screenshot: bool,
-    /// Diagnostic startup framing; leaves the app's Home behavior unchanged.
-    #[arg(long, value_parser = ["overview", "scenario", "test", "tony", "patrice", "jacqueline"])]
+    /// Diagnostic startup framing; resolve requires Gathering's active drawer.
+    /// Leaves the app's Home behavior unchanged.
+    #[arg(long, value_parser = ["overview", "scenario", "test", "tony", "patrice", "jacqueline", "resolve"])]
     initial_view: Option<String>,
     /// App lifetime for owner review, independent of any desktop-control grant.
     #[arg(long, default_value_t = 1800.0)]
@@ -562,6 +563,10 @@ fn launch_environment(overrides: &std::collections::BTreeMap<&str, PathBuf>) -> 
 }
 
 fn launch(args: Launch) -> Result<u8> {
+    ensure!(
+        args.initial_view.as_deref() != Some("resolve") || args.experiment == Experiment::Gathering,
+        "--initial-view resolve requires --experiment gathering"
+    );
     let directory = resolve(&args.output_dir)?;
     let binary = args.binary.canonicalize()?;
     let source_save = args.load.map(fs::canonicalize).transpose()?;

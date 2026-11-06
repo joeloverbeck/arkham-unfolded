@@ -134,10 +134,20 @@ with it. The real-asset test is optional for source-only checks and requires a
 complete external collection; CI remains independent of private artwork. Carry
 forward successful records when later changes do not invalidate their evidence.
 
+Before returning an implementation for owner play, check the owner's normal
+launch command, including its working directory, settings and resolved save
+path. After an intentional save-compatibility break, provide a tested fresh-start
+command with an unused `--save` path and the expected setup screen; update
+README's launch/recovery instructions in the same handoff. Keep the existing
+save bytes intact. Prepared diagnostic checkpoints have a separate purpose and
+do not establish that the ordinary launch command works.
+
 Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. After a long implementation phase, prepare the following compact handoff in the issue's [current handoff](../agents/issue-tracker.md#current-handoff). Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from this handoff and the procedure below without reconstructing the implementation transcript.
 
 ```text
 Candidate: commit; executable/hash; completed check records.
+Normal launch: owner command/cwd; resolved save; fresh or resume; startup result;
+  tested replacement command and README recovery when compatibility changed.
 Run: exact launch/resume command; isolated save/settings/art paths; run manifest.
 Artwork, when required by the claim: resolved launch root and completeness-check result.
 Prepared saves: input identity/revision; production-startup check/result;
@@ -203,7 +213,27 @@ scripts/tools native launch \
 
 The launcher copies and hashes the executable before starting it. Later builds cannot replace that running copy. It creates run-local configuration, data, cache, working directory and `session.json`; `--load SOURCE_SAVE` copies the supplied save before loading, because the loaded path is also the autosave destination. Original saves and settings stay untouched. The output directory must be new and outside the checkout. No-art checks readable substitutes; for real artwork use `--art-root /absolute/path/to/prepared-assets` and confirm completeness in `run/app.log`.
 
-For static layout checks, first agree the desktop interval and follow [foreground preparation](#foreground-performance-measurements) so the app remains visible and focused during the timed run. Add `--initial-view scenario --screenshot scenario.png --quit-after-screenshot` to `native launch`. This includes `--experiment gathering`, with artwork selected through `--art-root` as above. The normal executable starts at the existing Scenario focus without pointer input or a source-copy build. `overview`, `test`, `tony`, `patrice` and `jacqueline` are also supported. The chosen `initial_view` is recorded in `run.json`; omitting it preserves normal startup. This diagnostic option affects the first camera position only: Home retains the experiment's normal home view, and saves and gameplay are unchanged. These captures establish rendering evidence; checking focus buttons or camera gestures still requires the interaction procedure below.
+For static layout checks, first agree the desktop interval and follow
+[foreground preparation](#foreground-performance-measurements) so the app remains
+visible and focused during the timed run. Add
+`--initial-view scenario --screenshot scenario.png --quit-after-screenshot` to
+`native launch`. This includes `--experiment gathering`, with artwork selected
+through `--art-root` as above. The normal executable starts at the existing
+Scenario focus without pointer input or a source-copy build. `overview`, `test`,
+`tony`, `patrice` and `jacqueline` are also supported.
+
+For Gathering's resolution drawer, use `--initial-view resolve` with
+`--load /absolute/path/to/pending.session.json`. This uses the same framing as the
+in-game **Resolve** button and fails explicitly if the loaded session has no
+active drawer. Other experiments reject `resolve` before staging a run. It lets
+the static capture show a pending token choice without spending a desktop-control
+interval navigating to the drawer.
+
+The chosen `initial_view` is recorded in `run.json`; omitting it preserves normal
+startup. This diagnostic option affects the first camera position only: Home
+retains the experiment's normal home view, and saves and gameplay are unchanged.
+These captures establish rendering evidence; checking focus buttons or camera
+gestures still requires the interaction procedure below.
 
 When a capture stalls, read `app.log` alongside the terminal status in `run.json`. Graphics diagnostics report elapsed time and changes in foreground, continuous-update, asset and pipeline readiness, coalesced to at most one condition report per second; unchanged conditions remain quiet. Screenshot diagnostics record request, write-start and writer-return times, with the actual image-write success or failure inside the write context. A request or writer return alone does not establish a saved image. These observations identify the last reported waiting condition without extending the launch timeout or bypassing graphics-health checks; a successful retry does not establish the earlier failure's cause.
 

@@ -342,7 +342,11 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
         )
     };
     let mut app = App::new();
-    parse(&[]).unwrap().unwrap().configure_diagnostics(&mut app);
+    parse(&[])
+        .unwrap()
+        .unwrap()
+        .configure_diagnostics(&mut app)
+        .unwrap();
     assert_eq!(
         app.world().resource::<Orbit>().pose(),
         Orbit::new(CameraMode::Jacqueline)
@@ -360,7 +364,8 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
         parse(&["--initial-view", name])
             .unwrap()
             .unwrap()
-            .configure_diagnostics(&mut app);
+            .configure_diagnostics(&mut app)
+            .unwrap();
         assert_eq!(
             app.world().resource::<Orbit>().pose().target,
             enemy_board::focus(area).0
@@ -405,7 +410,7 @@ fn gathering_static_capture_waits_for_graphics_and_finishes_the_actual_write() {
     )
     .unwrap()
     .unwrap();
-    options.configure_diagnostics(&mut app);
+    options.configure_diagnostics(&mut app).unwrap();
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
         enemy_board::focus(Area::Scenario).0
