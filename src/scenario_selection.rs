@@ -340,7 +340,7 @@ fn capture(mut commands: Commands, mut state: ResMut<Selection>, time: Res<Time>
     let path = state.screenshot.take().unwrap();
     let mut shot = commands.spawn(Screenshot::primary_window());
     if state.quit_after_screenshot {
-        shot.observe(crate::tabletop_capture::save_to_disk_and_exit(
+        shot.observe(crate::tabletop_capture::save_selection_and_exit(
             path,
             time.elapsed(),
         ));
@@ -352,12 +352,64 @@ fn capture(mut commands: Commands, mut state: ResMut<Selection>, time: Res<Time>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::{
+        asset::RenderAssetUsages,
+        render::{
+            render_resource::{Extent3d, TextureDimension, TextureFormat},
+            view::screenshot::ScreenshotCaptured,
+        },
+    };
 
     fn host(state: Selection) -> App {
         let mut app = App::new();
         app.insert_resource(state).init_resource::<Time>();
         install(&mut app);
         app
+    }
+
+    #[test]
+    fn selection_capture_finishes_without_a_play_admission_resource() {
+        let directory = tempfile::tempdir().unwrap();
+        for (name, succeeds) in [("selection.png", true), ("bad.unsupported", false)] {
+            let path = directory.path().join(name);
+            let mut app = host(Selection {
+                screenshot: Some(path.clone()),
+                quit_after_screenshot: true,
+                ..default()
+            });
+            for _ in 0..90 {
+                app.update();
+            }
+            let world = app.world_mut();
+            assert!(!world.contains_resource::<crate::tabletop_health::RenderHealth>());
+            assert!(!world.contains_resource::<AssetServer>());
+            let entity = world
+                .query_filtered::<Entity, With<Screenshot>>()
+                .single(world)
+                .unwrap();
+            world.trigger(ScreenshotCaptured {
+                entity,
+                image: Image::new_fill(
+                    Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                    TextureDimension::D2,
+                    &[255, 0, 0, 255],
+                    TextureFormat::Rgba8UnormSrgb,
+                    RenderAssetUsages::MAIN_WORLD,
+                ),
+            });
+            let exits: Vec<_> = world
+                .resource::<Messages<AppExit>>()
+                .iter_current_update_messages()
+                .collect();
+            assert_eq!(exits.len(), 1);
+            assert_eq!(exits[0].is_success(), succeeds);
+            assert_eq!(path.exists(), succeeds);
+            assert!(world.resource::<Selection>().next.lock().unwrap().is_none());
+        }
     }
 
     #[test]
