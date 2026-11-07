@@ -391,3 +391,40 @@ local-only publication boundary. The final caption corrections still lack a
 second native capture; complete Gathering play and owner acceptance remain open
 under #89. The PR and current issue handoff own the resulting publication status.
 Publication consultation: `AUTH-1`–`AUTH-3` and `PUB-1`.
+
+### Accepted retrospective follow-up — 2026-11-07
+
+After the session retrospective, Joel instructed **Proceed with recommended
+changes**. From merged baseline `e4328c3a170fa30f8cad00a78830e5e3985f75e0`,
+this activates the three bounded verification/tooling improvements and the
+CI-wait adjustment identified in that retrospective:
+
+- Require the committed Watch this! caption to exist in the ordinary Jacqueline
+  checkpoint, alongside the existing visibility, glyph-bound and overlap checks.
+- Add `review-summary` for byte-limited, digest-bound pages of snapshot revisions,
+  selected paths and changes since the preceding snapshot. Keep the full context
+  inventory on disk and preserve snapshot/index verification boundaries.
+- Explain the native launcher's screenshot filename in CLI help and the prepared
+  route guidance, retaining its existing path validation.
+- Wait on the existing CI watcher for up to 45 seconds per call, within the
+  communication interval, instead of alternating short polls and sleeps.
+
+The selected verification boundaries are the existing production UI checkpoint
+and tool CLI. A temporary missing-caption mutation after layout failed with the
+new assertion; it is removed from the final candidate. The first mutation was
+applied before layout and was recreated by redraw, so its passing result was
+not evidence of the asserted missing-caption condition. Summary checks exercise
+identity and delta output, pagination with Unicode filenames, byte limits,
+read-only behavior and refusal of changed snapshots.
+
+These changes support future Gathering implementation and review. They do not
+alter gameplay, assets, save formats or native rendering, or establish a new
+native observation. The final caption fixes above still lack a second native
+capture. This follow-up authorizes local implementation and verification; the
+earlier publication instruction applied to PR #120. Results are retained under
+`local/verification/e4328c3a170fa30f8cad00a78830e5e3985f75e0/retro/`;
+#89 retains complete-play and owner acceptance.
+
+Consulted: `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`, `AGENT-5`, `OPS-1`–`OPS-7`,
+`EVID-3`, `EVID-4`, `EVID-6` and `REP-2`. This is a local improvement to the
+existing review path, with no wider framework or reusable-platform claim.

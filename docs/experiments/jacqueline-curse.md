@@ -240,6 +240,12 @@ through `--art-root` as above. The normal executable starts at the existing
 Scenario focus without pointer input or a source-copy build. `overview`, `test`,
 `tony`, `patrice` and `jacqueline` are also supported.
 
+`--screenshot` takes a plain filename inside the fresh `--output-dir`, such as
+`scenario.png`; the helper resolves its destination. Before the timer starts,
+put the complete command with that filename in the prepared route and check
+`scripts/tools native launch --help`. Launch itself remains inside the authorized
+desktop interval.
+
 For Gathering's resolution drawer, use `--initial-view resolve` with
 `--load /absolute/path/to/pending.session.json`. This uses the same framing as the
 in-game **Resolve** button and fails explicitly if the loaded session has no

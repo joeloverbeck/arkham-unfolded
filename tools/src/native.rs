@@ -163,7 +163,9 @@ pub struct Launch {
     art_root: Option<PathBuf>,
     #[arg(long)]
     no_art: bool,
-    #[arg(long)]
+    /// Plain filename inside --output-dir, not a path (for example: test.png).
+    /// Use --screenshot test.png --quit-after-screenshot for an automatic capture.
+    #[arg(long, value_name = "FILENAME")]
     screenshot: Option<String>,
     #[arg(long, requires = "screenshot")]
     quit_after_screenshot: bool,

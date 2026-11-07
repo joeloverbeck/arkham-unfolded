@@ -16,6 +16,8 @@ use std::{
     process::Command,
 };
 
+pub mod summary;
+
 #[derive(ClapArgs)]
 pub struct Args {
     /// Fixed commit/ref; the comparison base is its merge-base with HEAD.
@@ -542,9 +544,7 @@ pub fn run(args: Args) -> Result<u8> {
     );
     if let Some(delta) = &manifest.delta {
         println!("Changes since previous snapshot: {}", delta.len());
-        for change in delta {
-            println!("{} {:?}", change.kind, change.path);
-        }
     }
+    println!("Use review-summary with this snapshot and manifest SHA256 for bounded scope pages.");
     Ok(0)
 }
