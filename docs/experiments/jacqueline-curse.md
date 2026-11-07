@@ -417,9 +417,20 @@ Send `{"action":"stop"}` (acknowledged by `stopped`) or close stdin when finishe
 
 The cleanup reserve reduces normal overruns but cannot guarantee interruption of a blocked native call. Inspect the actual closure timestamp and report any overrun of the announced end time. A timeout during calibration ends the session as well.
 
-For folder persistence, exercise **Choose asset folder → check → Save folder → close**. After the supervisor exits, relaunch the staged executable using the same working directory, XDG directories and save recorded in `run.json`, omitting `--art-root`. Verify that the saved path and asset status are restored; do not create a fresh isolated run for this restart check. Capture helpers must use the new PID. A screenshot establishes the inspected rendering; the actual interaction and restart establish their separate behavior. Any review of the owner's real preference uses its explicitly agreed scope instead of these diagnostic settings.
+For folder persistence, exercise **Choose asset folder → check → Save folder → close**. After the supervisor exits, restart from its completed manifest:
 
-Close the verification window normally and let the launch supervisor report its exit. If cleanup is needed, interrupt that supervisor; for a manually restarted app, confirm its recorded identity before terminating it. Stop only the identified launch and helpers. Keep logs/captures local; record the revision, command, outcome and [retained evidence location](#retain-final-verification-evidence) in the active issue. Remove temporary files only after the needed evidence has been retained.
+```sh
+scripts/tools native restart --run /absolute/path/to/original-run/run.json \
+  --output-dir /absolute/path/to/new-restart-record --output-format summary
+```
+
+The restart reuses the verified staged executable, working directory, XDG directories and save. It omits `--art-root` and diagnostic startup framing/capture flags so the app reads its saved settings. If the manifest records no game save at either startup or exit, restart reuses that unsaved path with `--save`; saving an artwork folder alone does not require saving a game. A previously present save must remain present. Older manifests can resume an existing save, but cannot establish that a missing save was intentionally absent.
+
+The new directory holds this supervisor's log and manifest; the original manifest remains unchanged. The original approval and deadline still apply: expired or closed approval, changed executable, a lost save, an unfinished run or a concurrent restart is refused. Closing the original approval also stops a running restart. Use a new launch under separately accepted desktop time if the original interval has ended.
+
+Verify that the saved path and asset status are restored. Capture helpers must use the new PID from the restart record. A screenshot establishes the inspected rendering; the actual interaction and restart establish their separate behavior. Any review of the owner's real preference uses its explicitly agreed scope instead of these diagnostic settings.
+
+Close the verification window normally and let its supervisor report the exit. If cleanup is needed, interrupt that supervisor. Stop only the identified launch and helpers. Keep logs/captures local; record the revision, command, outcome and [retained evidence location](#retain-final-verification-evidence) in the active issue. Remove temporary files only after the needed evidence has been retained.
 
 ### Record a short motion clip
 

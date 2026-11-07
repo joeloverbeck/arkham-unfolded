@@ -14,6 +14,13 @@ fn main() -> ExitCode {
             fs::write("descendant.pid", child.id().to_string()).unwrap();
         }
         println!("RECORD_CHECK_READY");
+        if let Some(log) = env::var_os("ARKHAM_FIXTURE_REMOVE_LOG") { fs::remove_file(log).unwrap(); }
+        if env::var_os("ARKHAM_FIXTURE_LARGE_FAILURE").is_some() {
+            println!("error: RETAINED_FAILURE_DIAGNOSTIC");
+            println!("{}", "assertion payload 雨".repeat(100_000));
+            for line in 0..200 { eprintln!("error: diagnostic {line}"); }
+            println!("FULL_LOG_END");
+        }
         if let Some(path) = env::var_os("ARKHAM_FIXTURE_CHANGE_SOURCE") {
             fs::write(path, "changed during check").unwrap();
         }
@@ -128,7 +135,19 @@ fn main() -> ExitCode {
             fs::write("descendant.pid", child.id().to_string()).unwrap();
         }
         let position = args.iter().position(|arg| arg == "--save" || arg == "--load").unwrap();
-        fs::write(&args[position + 1], "autosaved copy").unwrap();
+        let fresh = env::var_os("ARKHAM_FIXTURE_UNSAVED").is_some();
+        if fresh {
+            assert_eq!(args[position], "--save");
+            assert!(!std::path::Path::new(&args[position + 1]).exists());
+        }
+        if env::var_os("ARKHAM_FIXTURE_EXPECT_RESTART").is_some() {
+            assert!(!args.iter().any(|arg| arg == "--art-root"));
+            if !fresh { assert_eq!(fs::read_to_string(&args[position + 1]).unwrap(), "pending decision"); }
+            let config = std::path::PathBuf::from(env::var_os("XDG_CONFIG_HOME").unwrap());
+            assert_eq!(fs::read_to_string(config.join("chosen-folder")).unwrap(), "persisted-art-root");
+            println!("RESTORED_SETTINGS_AND_SAVE");
+        }
+        if !fresh { fs::write(&args[position + 1], "autosaved copy").unwrap(); }
         for name in ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] {
             println!("{name}={}", env::var(name).unwrap());
         }

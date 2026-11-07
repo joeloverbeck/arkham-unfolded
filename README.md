@@ -290,6 +290,8 @@ The output directory must be new and its parent must exist. `run.json` retains t
 
 In a Git checkout, the recorder fingerprints tracked and non-ignored untracked files before and after the child runs, including dirty contents, missing files, permissions and symlink targets. The record directory itself is excluded. Changed inputs set `status` to `invalidated` and make a successful child return failure from the recorder; the original child `exit_code` is retained. Fingerprint errors produce `incomplete` evidence. Outside Git, the source fields are null. These endpoint fingerprints do not detect edit-and-revert during a run, follow external symlink contents, or cover ignored build inputs; keep the candidate stable throughout verification. Submodule entries are refused rather than silently omitted.
 
+After a recorded check fails, `record-check` automatically prints diagnostic excerpts using `check-summary`, with a 6,000-byte combined budget for paths, recorder notices and excerpts. It preserves the child's exit status, the complete log and `run.json`; unavailable excerpts do not replace the check result. Successful checks print their retained paths and any resource-capture warning.
+
 For a running or apparently stalled check, inspect its retained record first, then bounded diagnostic excerpts. `check-summary` limits both individual lines and total output, reports omissions, and links the unchanged full log. Its recognized compiler/test/formatting markers are navigation hints, not a success verdict; unrecognized output gets a bounded tail. If the record is still running, use its exact `pid` with compact process columns; replace `RECORDED_PID` below with that number. This avoids dumping wrapper arguments or unrelated processes:
 
 ```sh

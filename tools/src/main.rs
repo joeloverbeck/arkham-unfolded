@@ -5,7 +5,7 @@ mod interaction;
 mod merge;
 mod native;
 mod portal;
-mod process;
+use arkham_tools::process;
 mod profile;
 mod reader;
 mod review;

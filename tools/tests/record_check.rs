@@ -33,6 +33,45 @@ fn metadata(output: &Path) -> Value {
 }
 
 #[test]
+fn failure_automatically_shows_bounded_diagnostics_without_changing_the_record() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().join("record");
+    let output = record(root.path(), &directory, "42")
+        .env("ARKHAM_FIXTURE_LARGE_FAILURE", "1")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(42));
+    let combined = [output.stdout, output.stderr].concat();
+    assert!(combined.len() <= 6000, "{} bytes", combined.len());
+    let text = String::from_utf8(combined).unwrap();
+    assert!(text.contains("RETAINED_FAILURE_DIAGNOSTIC"), "{text}");
+    assert!(text.contains("[line truncated]"), "{text}");
+    assert!(text.contains("Excerpts may omit diagnostics"), "{text}");
+    assert!(text.contains(directory.join("check.log").to_str().unwrap()));
+    assert!(text.contains(directory.join("run.json").to_str().unwrap()));
+    let log = fs::read_to_string(directory.join("check.log")).unwrap();
+    assert!(log.len() > 1_000_000);
+    assert!(log.contains("FULL_LOG_END"));
+    assert_eq!(metadata(&directory)["status"], "finished");
+    assert_eq!(metadata(&directory)["exit_code"], 42);
+}
+
+#[test]
+fn unavailable_diagnostic_excerpt_preserves_the_original_failure_status() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().join("record");
+    let output = record(root.path(), &directory, "42")
+        .env("ARKHAM_FIXTURE_REMOVE_LOG", directory.join("check.log"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(42));
+    assert!(output.stdout.len() + output.stderr.len() <= 6000);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Diagnostic excerpts unavailable"));
+    assert_eq!(metadata(&directory)["status"], "finished");
+    assert_eq!(metadata(&directory)["exit_code"], 42);
+}
+
+#[test]
 fn source_fingerprints_bind_dirty_and_untracked_inputs_and_invalidate_mutation() {
     let root = tempfile::tempdir().unwrap();
     let git = |args: &[&str]| {

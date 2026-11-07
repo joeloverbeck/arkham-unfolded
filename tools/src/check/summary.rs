@@ -32,7 +32,7 @@ pub fn run(args: Args) -> Result<u8> {
     Ok(0)
 }
 
-fn summarize(mut reader: impl BufRead, heading: &str, budget: usize) -> Result<String> {
+pub(super) fn summarize(mut reader: impl BufRead, heading: &str, budget: usize) -> Result<String> {
     const FOOTER: &str = "Excerpts may omit diagnostics; full output remains in the log above.\n";
     ensure!(
         heading.len() + FOOTER.len() + 100 <= budget,

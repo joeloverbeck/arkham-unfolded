@@ -237,6 +237,7 @@ dependencies = [
 name = "arkham-unfolded-experiment"
 version = "0.1.0"
 dependencies = [
+ "arkham-tools",
  "bevy",
  "image",
  "lzma-rs",

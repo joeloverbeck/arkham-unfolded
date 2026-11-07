@@ -34,6 +34,7 @@ name = "arkham-assets"
 path = "src/bin/assets.rs"
 
 [dev-dependencies]
+arkham-tools = { path = "tools" }
 # Inspect the assigned font's character map in headless UI checks.
 swash = "=0.2.10"
 
