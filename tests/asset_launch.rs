@@ -76,7 +76,7 @@ fn saved_preference_and_relative_override_select_the_checked_folder_without_writ
 }
 
 #[test]
-fn no_art_in_either_flag_order_reports_that_completeness_was_not_checked() {
+fn removed_no_art_option_is_rejected_in_either_flag_order() {
     let directory = tempfile::tempdir().unwrap();
     for args in [
         vec!["--no-art"],
@@ -85,11 +85,11 @@ fn no_art_in_either_flag_order_reports_that_completeness_was_not_checked() {
     ] {
         let output = check_launch(directory.path(), &args);
         assert_eq!(output.status.code(), Some(1));
-        assert_eq!(
-            String::from_utf8(output.stdout).unwrap(),
-            "Artwork root: disabled (--no-art)\n"
+        assert!(output.stdout.is_empty());
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("Unknown Gathering artwork option: --no-art")
         );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("completeness was not checked"));
     }
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
 }

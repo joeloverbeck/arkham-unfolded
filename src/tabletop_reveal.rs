@@ -84,7 +84,7 @@ pub(crate) enum Accepted {
 #[derive(Resource, Default)]
 pub(crate) struct Shortcut {
     caption: Option<String>,
-    symbol_font: Option<Handle<Font>>,
+    symbol_font: Handle<Font>,
     offer: Option<Offer>,
     generation: u64,
     chooser: bool,
@@ -106,7 +106,7 @@ impl Shortcut {
             self.dirty = true;
         }
     }
-    pub(crate) fn caption(&mut self, caption: Option<String>, font: Option<Handle<Font>>) {
+    pub(crate) fn caption(&mut self, caption: Option<String>, font: Handle<Font>) {
         if self.caption != caption || self.symbol_font != font {
             self.caption = caption;
             self.symbol_font = font;
@@ -279,7 +279,7 @@ fn offered_menu(
     generation: u64,
     size: Vec2,
     opacity: f32,
-    font: &Option<Handle<Font>>,
+    font: &Handle<Font>,
 ) {
     use feedback::menu::{Item, MenuText};
     let mut items = vec![
@@ -357,7 +357,7 @@ fn button(
     request: Request,
     image: Option<Handle<Image>>,
     opacity: f32,
-    font: &Option<Handle<Font>>,
+    font: &Handle<Font>,
     centered: bool,
 ) -> Entity {
     parent
@@ -565,7 +565,7 @@ pub(crate) fn render(
                                 Request::Choose(generation, Route::Normal),
                                 None,
                                 opacity,
-                                &None,
+                                &shortcut.symbol_font,
                                 false,
                             );
                             parent.commands().entity(first).insert(AutoFocus);
@@ -575,7 +575,7 @@ pub(crate) fn render(
                                 Request::Choose(generation, Route::Jacqueline),
                                 None,
                                 opacity,
-                                &None,
+                                &shortcut.symbol_font,
                                 false,
                             );
                             button(
@@ -584,7 +584,7 @@ pub(crate) fn render(
                                 Request::Dismiss(generation),
                                 None,
                                 opacity,
-                                &None,
+                                &shortcut.symbol_font,
                                 false,
                             );
                             label(parent, feedback::KEYBOARD_HINT, 12.0, PAPER, opacity);
@@ -714,7 +714,7 @@ mod offered_tests {
             let mut shortcut = app.world_mut().resource_mut::<Shortcut>();
             shortcut.caption(
                 Some("Resolve sealed [tablet], [auto_fail] from Premonition".into()),
-                Some(Handle::default()),
+                Handle::default(),
             );
             shortcut.reduced_motion = false;
             shortcut.opacity = 0.2;

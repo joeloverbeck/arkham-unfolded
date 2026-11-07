@@ -2,10 +2,6 @@ use super::*;
 use bevy::ecs::system::RunSystemOnce;
 
 fn render_observation(view: Observation) -> App {
-    render_with_counter_art(view, false)
-}
-
-fn render_with_counter_art(view: Observation, loaded: bool) -> App {
     let mut app = crate::tabletop_layout::heading_checks::app();
     app.init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>()
@@ -15,7 +11,7 @@ fn render_with_counter_art(view: Observation, loaded: bool) -> App {
         .world_mut()
         .resource_mut::<Assets<Image>>()
         .add(Image::default());
-    let mut art = art::Art::with_images_for_test([
+    let art = art::Art::with_images_for_test([
         ("token/ammo", image.clone()),
         ("token/bounty", image.clone()),
         ("token/charge", image.clone()),
@@ -24,9 +20,6 @@ fn render_with_counter_art(view: Observation, loaded: bool) -> App {
         ("token/damage", image.clone()),
         ("token/horror", image),
     ]);
-    if loaded {
-        art.refresh_loaded(app.world().resource::<Assets<Image>>());
-    }
     app.insert_resource(art);
     app.world_mut()
         .run_system_once(
@@ -51,158 +44,163 @@ fn render_with_counter_art(view: Observation, loaded: bool) -> App {
 }
 
 #[test]
-fn old_keyring_has_a_named_keys_counter_with_art_or_a_readable_substitute() {
+fn old_keyring_has_key_art_a_quantity_and_an_accessible_name() {
     use crate::tabletop_counters::Counter;
-    for loaded in [false, true] {
-        let view = Session::with_hostile_fixture(crate::gathering::HostileFixture::PlayerEvents(
-            crate::gathering::PlayerEventFixture::KeyringSuccess,
-        ))
-        .observe();
-        let key = view.play.as_ref().unwrap().players[1]
-            .assets
-            .iter()
-            .find(|asset| asset.card.code == "60507")
-            .unwrap()
-            .card
-            .id;
-        let mut app = render_with_counter_art(view, loaded);
-        let world = app.world_mut();
-        let counters: Vec<_> = world
-            .query::<(&Counter, &card_counters::Attached)>()
-            .iter(world)
-            .filter(|(_, attached)| world.get::<motion::PhysicalCard>(attached.0).unwrap().0 == key)
-            .map(|(counter, _)| (counter.kind.name(), counter.amount))
-            .collect();
-        assert_eq!(counters, vec![("Keys", 2)]);
-        let text = rendered_text(&mut app);
-        assert_eq!(text.contains("Keys 2"), !loaded);
-        assert!(!text.contains("Uses 2"));
-    }
+    let view = Session::with_hostile_fixture(crate::gathering::HostileFixture::PlayerEvents(
+        crate::gathering::PlayerEventFixture::KeyringSuccess,
+    ))
+    .observe();
+    let key = view.play.as_ref().unwrap().players[1]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "60507")
+        .unwrap()
+        .card
+        .id;
+    let mut app = render_observation(view);
+    let world = app.world_mut();
+    let counters: Vec<_> = world
+        .query::<(&Counter, &card_counters::Attached)>()
+        .iter(world)
+        .filter(|(_, attached)| world.get::<motion::PhysicalCard>(attached.0).unwrap().0 == key)
+        .map(|(counter, _)| (counter.kind.name(), counter.amount))
+        .collect();
+    assert_eq!(counters, vec![("Keys", 2)]);
+    let text = rendered_text(&mut app);
+    assert!(!text.contains("Keys 2"));
+    assert!(
+        app.world_mut()
+            .query::<&AccessibleLabel>()
+            .iter(app.world())
+            .any(|label| label.0 == "Keys 2")
+    );
+    assert!(!text.contains("Uses 2"));
 }
 
 #[test]
-fn empty_asset_counters_keep_their_type_owner_and_upright_count_with_or_without_loaded_art() {
+fn empty_asset_counters_keep_their_type_owner_and_upright_count() {
     use crate::tabletop_counters::{Counter, CounterKind};
-    for loaded in [false, true] {
-        let mut view = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
-            crate::gathering::TonyEffectFixture::GregoryCigarette,
-        ))
-        .observe();
-        let play = view.play.as_mut().unwrap();
-        let template = play.players[0].assets[0].clone();
-        play.players[0].assets.clear();
-        for (index, code, title) in [
-            (0, "06010", "Bounty Contracts"),
-            (1, "06011", "Tony's .38 Long Colt"),
-            (2, "60407", "Azure Flame"),
-            (3, "05117", "Tennessee Sour Mash"),
-        ] {
-            let mut asset = template.clone();
-            asset.card.id = 60000 + index;
-            asset.card.code = code.into();
-            asset.card.title = title.into();
-            asset.uses = 0;
-            asset.ready = false;
-            play.players[0].assets.push(asset);
-        }
-        assert!(
-            play::inspect(&view, "05117")
-                .unwrap()
-                .contains("Tony Morgan — Supplies: 0")
-        );
-        let mut app = render_with_counter_art(view, loaded);
-        let world = app.world_mut();
-        let counters: Vec<_> = world
-            .query::<(&Counter, &card_counters::Attached, &Transform)>()
-            .iter(world)
-            .map(|(counter, attached, at)| {
-                (
-                    world.get::<motion::PhysicalCard>(attached.0).unwrap().0,
-                    counter.kind,
-                    counter.amount,
-                    at.rotation,
-                )
-            })
-            .collect();
-        for (id, kind) in [
-            (60000, CounterKind::Bounty),
-            (60001, CounterKind::Ammo),
-            (60002, CounterKind::Charge),
-        ] {
-            assert!(counters.contains(&(id, kind, 0, Quat::IDENTITY)));
-        }
-        assert!(
-            counters
-                .iter()
-                .any(|(id, kind, amount, rotation)| *id == 60003
-                    && kind.name() == "Supplies"
-                    && *amount == 0
-                    && *rotation == Quat::IDENTITY)
-        );
-        let text = rendered_text(&mut app);
-        for caption in ["Bounties 0", "Ammo 0", "Charges 0", "Supplies 0"] {
-            assert_eq!(
-                text.contains(caption),
-                !loaded,
-                "{caption}: loaded={loaded}"
-            );
-        }
-        assert!(!text.contains("Uses 0"));
+    let mut view = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+        crate::gathering::TonyEffectFixture::GregoryCigarette,
+    ))
+    .observe();
+    let play = view.play.as_mut().unwrap();
+    let template = play.players[0].assets[0].clone();
+    play.players[0].assets.clear();
+    for (index, code, title) in [
+        (0, "06010", "Bounty Contracts"),
+        (1, "06011", "Tony's .38 Long Colt"),
+        (2, "60407", "Azure Flame"),
+        (3, "05117", "Tennessee Sour Mash"),
+    ] {
+        let mut asset = template.clone();
+        asset.card.id = 60000 + index;
+        asset.card.code = code.into();
+        asset.card.title = title.into();
+        asset.uses = 0;
+        asset.ready = false;
+        play.players[0].assets.push(asset);
     }
+    assert!(
+        play::inspect(&view, "05117")
+            .unwrap()
+            .contains("Tony Morgan — Supplies: 0")
+    );
+    let mut app = render_observation(view);
+    let world = app.world_mut();
+    let counters: Vec<_> = world
+        .query::<(&Counter, &card_counters::Attached, &Transform)>()
+        .iter(world)
+        .map(|(counter, attached, at)| {
+            (
+                world.get::<motion::PhysicalCard>(attached.0).unwrap().0,
+                counter.kind,
+                counter.amount,
+                at.rotation,
+            )
+        })
+        .collect();
+    for (id, kind) in [
+        (60000, CounterKind::Bounty),
+        (60001, CounterKind::Ammo),
+        (60002, CounterKind::Charge),
+    ] {
+        assert!(counters.contains(&(id, kind, 0, Quat::IDENTITY)));
+    }
+    assert!(
+        counters
+            .iter()
+            .any(|(id, kind, amount, rotation)| *id == 60003
+                && kind.name() == "Supplies"
+                && *amount == 0
+                && *rotation == Quat::IDENTITY)
+    );
+    let text = rendered_text(&mut app);
+    for caption in ["Bounties 0", "Ammo 0", "Charges 0", "Supplies 0"] {
+        assert!(
+            !text.contains(caption),
+            "The counter displays its quantity: {caption}"
+        );
+        assert!(
+            app.world_mut()
+                .query::<&AccessibleLabel>()
+                .iter(app.world())
+                .any(|label| label.0 == caption)
+        );
+    }
+    assert!(!text.contains("Uses 0"));
 }
 
 #[test]
-fn native_olive_harm_badges_stay_separate_with_or_without_art() {
+fn native_olive_harm_badges_stay_separate() {
     use crate::tabletop_layout::heading_checks::{rendered_text_bounds, viewport};
     for (_, session) in super::review_saves::olive_review::checkpoints()
         .into_iter()
         .take(2)
     {
-        for loaded in [false, true] {
-            let dir = tempfile::tempdir().unwrap();
-            let mut app = host_with_table(
-                Table::new(session.clone(), dir.path().join("harm.json")),
-                true,
-            );
-            if loaded {
-                let image = app
-                    .world_mut()
-                    .resource_mut::<Assets<Image>>()
-                    .add(Image::default());
-                app.insert_resource(art::Art::with_images_for_test([
-                    ("token/damage", image.clone()),
-                    ("token/horror", image),
-                ]));
-            }
-            app.world_mut()
-                .resource_mut::<Orbit>()
-                .focus(layout::focus(Area::Investigator(2)));
-            for size in [Vec2::new(1280., 720.), Vec2::new(1600., 1000.)] {
-                for scale in [1., 2.] {
-                    viewport::<MainCamera>(&mut app, size, scale);
-                    for _ in 0..5 {
-                        app.update();
-                    }
-                    let world = app.world_mut();
-                    let labels: Vec<_> = world
-                        .query::<(Entity, &motion::CardLabel)>()
-                        .iter(world)
-                        .filter(|(_, label)| {
-                            world
-                                .get::<card_counters::Attached>(label.0)
-                                .and_then(|attached| world.get::<motion::PhysicalCard>(attached.0))
-                                .is_some_and(|card| card.0 == 209)
-                        })
-                        .map(|(entity, _)| entity)
-                        .collect();
-                    assert_eq!(labels.len(), 2);
-                    let first = rendered_text_bounds(world, labels[0], scale).inflate(3.);
-                    let second = rendered_text_bounds(world, labels[1], scale).inflate(3.);
-                    assert!(
-                        first.intersect(second).is_empty(),
-                        "{size:?}/{scale}, loaded={loaded}: {first:?} overlaps {second:?}"
-                    );
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = host_with_table(
+            Table::new(session.clone(), dir.path().join("harm.json")),
+            true,
+        );
+        {
+            let image = app
+                .world_mut()
+                .resource_mut::<Assets<Image>>()
+                .add(Image::default());
+            app.insert_resource(art::Art::with_images_for_test([
+                ("token/damage", image.clone()),
+                ("token/horror", image),
+            ]));
+        }
+        app.world_mut()
+            .resource_mut::<Orbit>()
+            .focus(layout::focus(Area::Investigator(2)));
+        for size in [Vec2::new(1280., 720.), Vec2::new(1600., 1000.)] {
+            for scale in [1., 2.] {
+                viewport::<MainCamera>(&mut app, size, scale);
+                for _ in 0..5 {
+                    app.update();
                 }
+                let world = app.world_mut();
+                let labels: Vec<_> = world
+                    .query::<(Entity, &motion::CardLabel)>()
+                    .iter(world)
+                    .filter(|(_, label)| {
+                        world
+                            .get::<card_counters::Attached>(label.0)
+                            .and_then(|attached| world.get::<motion::PhysicalCard>(attached.0))
+                            .is_some_and(|card| card.0 == 209)
+                    })
+                    .map(|(entity, _)| entity)
+                    .collect();
+                assert_eq!(labels.len(), 2);
+                let first = rendered_text_bounds(world, labels[0], scale).inflate(3.);
+                let second = rendered_text_bounds(world, labels[1], scale).inflate(3.);
+                assert!(
+                    first.intersect(second).is_empty(),
+                    "{size:?}/{scale}: {first:?} overlaps {second:?}"
+                );
             }
         }
     }
@@ -210,43 +208,35 @@ fn native_olive_harm_badges_stay_separate_with_or_without_art() {
 
 #[test]
 fn olive_harm_fractions_have_tightly_fitted_dark_backing() {
-    for loaded in [false, true] {
-        let view = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tokens(
-            crate::gathering::TokenFixture::JacquelineOlive,
-        ))
-        .observe();
-        let mut app = render_with_counter_art(view, loaded);
-        for _ in 0..4 {
-            app.update();
-        }
-        let world = app.world_mut();
-        for expected in if loaded {
-            ["0/1", "0/3"]
-        } else {
-            ["Damage\n0/1", "Horror\n0/3"]
-        } {
-            let (entity, computed, background) = world
-                .query::<(Entity, &Text, &ComputedNode, Option<&BackgroundColor>)>()
-                .iter(world)
-                .find_map(|(entity, text, computed, background)| {
-                    (text.0 == expected).then_some((entity, computed, background))
-                })
-                .unwrap_or_else(|| panic!("Missing {expected}"));
-            let color = background
-                .expect("Fractions need their own dark backing")
-                .0
-                .to_srgba();
-            assert!(
-                color.red < 0.05 && color.green < 0.05 && color.blue < 0.05 && color.alpha >= 0.9
-            );
-            let width = computed.size().x * computed.inverse_scale_factor;
-            let glyphs =
-                crate::tabletop_layout::heading_checks::rendered_text_bounds(world, entity, 1.);
-            assert!(
-                (4.0..=12.0).contains(&(width - glyphs.width())),
-                "{expected}: backing {width}, glyphs {glyphs:?}"
-            );
-        }
+    let view = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tokens(
+        crate::gathering::TokenFixture::JacquelineOlive,
+    ))
+    .observe();
+    let mut app = render_observation(view);
+    for _ in 0..4 {
+        app.update();
+    }
+    let world = app.world_mut();
+    for expected in ["0/1", "0/3"] {
+        let (entity, computed, background) = world
+            .query::<(Entity, &Text, &ComputedNode, Option<&BackgroundColor>)>()
+            .iter(world)
+            .find_map(|(entity, text, computed, background)| {
+                (text.0 == expected).then_some((entity, computed, background))
+            })
+            .unwrap_or_else(|| panic!("Missing {expected}"));
+        let color = background
+            .expect("Fractions need their own dark backing")
+            .0
+            .to_srgba();
+        assert!(color.red < 0.05 && color.green < 0.05 && color.blue < 0.05 && color.alpha >= 0.9);
+        let width = computed.size().x * computed.inverse_scale_factor;
+        let glyphs =
+            crate::tabletop_layout::heading_checks::rendered_text_bounds(world, entity, 1.);
+        assert!(
+            (4.0..=12.0).contains(&(width - glyphs.width())),
+            "{expected}: backing {width}, glyphs {glyphs:?}"
+        );
     }
 }
 
@@ -260,9 +250,9 @@ fn asset_harm_tokens_show_only_real_capacities_including_zero_and_story_allies()
     let template = play.players[0].assets[0].clone();
     play.players[0].assets.clear();
     for (index, code, expected) in [
-        (0, "02033", vec!["Damage\n0/1", "Horror\n0/2"]),
-        (1, "60412", vec!["Damage\n0/2"]),
-        (2, "01117", vec!["Damage\n0/3", "Horror\n0/3"]),
+        (0, "02033", vec!["0/1", "0/2"]),
+        (1, "60412", vec!["0/2"]),
+        (2, "01117", vec!["0/3", "0/3"]),
         (3, "05117", vec![]),
     ] {
         let mut single = view.clone();
@@ -281,7 +271,7 @@ fn asset_harm_tokens_show_only_real_capacities_including_zero_and_story_allies()
         let labels: Vec<_> = world
             .query::<(&Text, &motion::CardLabel)>()
             .iter(world)
-            .filter(|(text, _)| text.0.starts_with("Damage\n") || text.0.starts_with("Horror\n"))
+            .filter(|(text, _)| expected.contains(&text.0.as_str()))
             .filter(|(_, label)| {
                 world
                     .get::<card_counters::Attached>(label.0)
@@ -323,7 +313,7 @@ fn peters_harm_counters_clear_patrices_actions_and_keep_the_caption_gap() {
         peter.card.title = "Peter Sylvestre".into();
         peter.ready = ready;
         play.players[1].assets = vec![peter];
-        let mut app = render_with_counter_art(view, true);
+        let mut app = render_observation(view);
         let world = app.world_mut();
         let tokens: Vec<_> = world
             .query::<(Entity, &card_counters::Attached, &Mesh3d, &Transform)>()
@@ -386,115 +376,111 @@ fn peters_projected_harm(check_deferred_clearance: bool) {
     use crate::tabletop_counters::ActionMarker;
     use crate::tabletop_layout::heading_checks::{mesh_bounds, rendered_text_bounds, viewport};
     for ready in [true, false] {
-        for loaded in [false, true] {
-            let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
-                crate::gathering::TonyEffectFixture::GregoryCigarette,
-            ));
-            let mut play = session.observe().play.unwrap();
-            let mut peter = play.players[0].assets[0].clone();
-            peter.card.id = 60000;
-            peter.card.code = "02033".into();
-            peter.card.title = "Peter Sylvestre".into();
-            peter.ready = ready;
-            play.players[1].assets = vec![peter];
-            let mut app = super::cards::at_public_moment(session, play, PathBuf::new(), false);
-            if loaded {
-                let image = app
-                    .world_mut()
-                    .resource_mut::<Assets<Image>>()
-                    .add(Image::default());
-                let mut art = art::Art::with_images_for_test([
-                    ("token/damage", image.clone()),
-                    ("token/horror", image),
-                ]);
-                art.refresh_loaded(app.world().resource::<Assets<Image>>());
-                app.insert_resource(art);
-                app.world_mut().resource_mut::<Table>().dirty = true;
-            }
-            app.world_mut()
-                .resource_mut::<Orbit>()
-                .focus(layout::focus(Area::Investigator(1)));
-            for size in [Vec2::new(1280., 720.), Vec2::new(1600., 1000.)] {
-                for scale in [1., 2.] {
-                    viewport::<MainCamera>(&mut app, size, scale);
-                    for _ in 0..5 {
-                        app.update();
-                    }
-                    let world = app.world_mut();
-                    let card = world
-                        .query::<(Entity, &motion::PhysicalCard)>()
-                        .iter(world)
-                        .find(|(_, card)| card.0 == 60000)
-                        .unwrap()
-                        .0;
-                    let tokens: Vec<_> = world
-                        .query::<(Entity, &card_counters::Attached)>()
-                        .iter(world)
-                        .filter(|(_, attached)| attached.0 == card)
-                        .map(|(entity, _)| entity)
-                        .collect();
-                    assert_eq!(tokens.len(), 2);
-                    let labels: Vec<_> = world
-                        .query::<(Entity, &motion::CardLabel)>()
-                        .iter(world)
-                        .filter(|(_, label)| tokens.contains(&label.0))
-                        .map(|(entity, _)| entity)
-                        .collect();
-                    assert_eq!(labels.len(), 2);
-                    let actions: Vec<_> = world
-                        .query_filtered::<Entity, With<ActionMarker>>()
-                        .iter(world)
-                        .collect();
-                    let (camera, camera_at) = world
-                        .query_filtered::<(&Camera, &GlobalTransform), With<MainCamera>>()
-                        .single(world)
-                        .unwrap();
-                    let card_bounds = mesh_bounds(world, camera, camera_at, card);
-                    let token_bounds: Vec<_> = tokens
-                        .iter()
-                        .map(|token| mesh_bounds(world, camera, camera_at, *token))
-                        .collect();
-                    let caption_bounds: Vec<_> = labels
-                        .iter()
-                        .map(|label| rendered_text_bounds(world, *label, scale))
-                        .collect();
-                    let context =
-                        format!("ready={ready}, artwork={loaded}, {size:?}, scale={scale}");
-                    for caption in caption_bounds.iter().filter(|_| check_deferred_clearance) {
-                        assert!(
-                            caption.max.y < card_bounds.min.y,
-                            "{context}: preserve caption/card gap: {caption:?} / {card_bounds:?}"
-                        );
-                        for token in &token_bounds {
-                            assert!(
-                                caption.intersect(*token).is_empty(),
-                                "{context}: caption overlaps token"
-                            );
-                        }
-                    }
-                    if check_deferred_clearance {
-                        assert!(
-                            caption_bounds[0].intersect(caption_bounds[1]).is_empty(),
-                            "{context}: harm labels overlap"
-                        );
-                    }
+        let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+            crate::gathering::TonyEffectFixture::GregoryCigarette,
+        ));
+        let mut play = session.observe().play.unwrap();
+        let mut peter = play.players[0].assets[0].clone();
+        peter.card.id = 60000;
+        peter.card.code = "02033".into();
+        peter.card.title = "Peter Sylvestre".into();
+        peter.ready = ready;
+        play.players[1].assets = vec![peter];
+        let mut app = super::cards::at_public_moment(session, play, PathBuf::new(), false);
+        {
+            let image = app
+                .world_mut()
+                .resource_mut::<Assets<Image>>()
+                .add(Image::default());
+            let art = art::Art::with_images_for_test([
+                ("token/damage", image.clone()),
+                ("token/horror", image),
+            ]);
+            app.insert_resource(art);
+            app.world_mut().resource_mut::<Table>().dirty = true;
+        }
+        app.world_mut()
+            .resource_mut::<Orbit>()
+            .focus(layout::focus(Area::Investigator(1)));
+        for size in [Vec2::new(1280., 720.), Vec2::new(1600., 1000.)] {
+            for scale in [1., 2.] {
+                viewport::<MainCamera>(&mut app, size, scale);
+                for _ in 0..5 {
+                    app.update();
+                }
+                let world = app.world_mut();
+                let card = world
+                    .query::<(Entity, &motion::PhysicalCard)>()
+                    .iter(world)
+                    .find(|(_, card)| card.0 == 60000)
+                    .unwrap()
+                    .0;
+                let tokens: Vec<_> = world
+                    .query::<(Entity, &card_counters::Attached)>()
+                    .iter(world)
+                    .filter(|(_, attached)| attached.0 == card)
+                    .map(|(entity, _)| entity)
+                    .collect();
+                assert_eq!(tokens.len(), 2);
+                let labels: Vec<_> = world
+                    .query::<(Entity, &motion::CardLabel)>()
+                    .iter(world)
+                    .filter(|(_, label)| tokens.contains(&label.0))
+                    .map(|(entity, _)| entity)
+                    .collect();
+                assert_eq!(labels.len(), 2);
+                let actions: Vec<_> = world
+                    .query_filtered::<Entity, With<ActionMarker>>()
+                    .iter(world)
+                    .collect();
+                let (camera, camera_at) = world
+                    .query_filtered::<(&Camera, &GlobalTransform), With<MainCamera>>()
+                    .single(world)
+                    .unwrap();
+                let card_bounds = mesh_bounds(world, camera, camera_at, card);
+                let token_bounds: Vec<_> = tokens
+                    .iter()
+                    .map(|token| mesh_bounds(world, camera, camera_at, *token))
+                    .collect();
+                let caption_bounds: Vec<_> = labels
+                    .iter()
+                    .map(|label| rendered_text_bounds(world, *label, scale))
+                    .collect();
+                let context = format!("ready={ready}, {size:?}, scale={scale}");
+                for caption in caption_bounds.iter().filter(|_| check_deferred_clearance) {
+                    assert!(
+                        caption.max.y < card_bounds.min.y,
+                        "{context}: preserve caption/card gap: {caption:?} / {card_bounds:?}"
+                    );
                     for token in &token_bounds {
                         assert!(
-                            token.intersect(card_bounds).is_empty(),
-                            "{context}: harm token overlaps card"
+                            caption.intersect(*token).is_empty(),
+                            "{context}: caption overlaps token"
                         );
                     }
-                    for action in actions.into_iter().filter(|_| check_deferred_clearance) {
-                        let bounds = mesh_bounds(world, camera, camera_at, action);
-                        for counter in token_bounds
-                            .iter()
-                            .chain(caption_bounds.iter().filter(|_| check_deferred_clearance))
-                        {
-                            assert!(
-                                counter.intersect(bounds).is_empty(),
-                                "{context}: harm overlaps action token"
-                            );
-                        }
+                }
+                if check_deferred_clearance {
+                    assert!(
+                        caption_bounds[0].intersect(caption_bounds[1]).is_empty(),
+                        "{context}: harm labels overlap"
+                    );
+                }
+                for token in &token_bounds {
+                    assert!(
+                        token.intersect(card_bounds).is_empty(),
+                        "{context}: harm token overlaps card"
+                    );
+                }
+                for action in actions.into_iter().filter(|_| check_deferred_clearance) {
+                    let bounds = mesh_bounds(world, camera, camera_at, action);
+                    for counter in token_bounds
+                        .iter()
+                        .chain(caption_bounds.iter().filter(|_| check_deferred_clearance))
+                    {
+                        assert!(
+                            counter.intersect(bounds).is_empty(),
+                            "{context}: harm overlaps action token"
+                        );
                     }
                 }
             }
@@ -505,7 +491,8 @@ fn peters_projected_harm(check_deferred_clearance: bool) {
 #[test]
 fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
     use bevy::{camera::primitives::MeshAabb, text::FontSize};
-    for symbols in [false, true] {
+    {
+        let symbols = true;
         for scale in [1., 2.] {
             for size in [Vec2::new(1600., 1000.), Vec2::new(1280., 800.)] {
                 for area in [Area::Scenario, Area::Overview] {
@@ -638,17 +625,21 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                             }
                         }
                     }
-                    assert_eq!(rich_labels > 0, symbols);
-                    let counters: Vec<_> = world.query_filtered::<(&Text, &TextFont, &Node, &Visibility), With<crate::tabletop_counters::CounterLabel>>()
+                    assert_eq!(
+                        rich_labels, 0,
+                        "Names and damage fractions need no substitute glyph captions"
+                    );
+                    let counters: Vec<_> = world.query_filtered::<(&Text, &TextFont, &Node, &Visibility, &AccessibleLabel), With<crate::tabletop_counters::CounterLabel>>()
                     .iter(world)
-                    .filter(|(text, _, _, _)| matches!(text.0.as_str(), "Bounties 2" | "Doom 1"))
+                    .filter(|(_, _, _, _, label)| matches!(label.0.as_str(), "Bounties 2" | "Doom 1"))
                     .collect();
                     assert_eq!(
                         counters.len(),
                         2,
                         "Both side counters use the actual counter-label renderer"
                     );
-                    for (_, font, node, visibility) in counters {
+                    for (text, font, node, visibility, _) in counters {
+                        assert!(matches!(text.0.as_str(), "2" | "1"));
                         assert_eq!(font.font_size, FontSize::Px(11.));
                         assert_ne!(*visibility, Visibility::Hidden);
                         assert!(

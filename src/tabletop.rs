@@ -4,14 +4,11 @@
 use crate::tabletop_camera::{
     CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
 };
-use crate::tabletop_health::{HealthAssets, RenderHealth, TabletopHealthPlugin, exit_result};
+use crate::tabletop_health::{RenderHealth, TabletopHealthPlugin};
 use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin};
 use crate::{
-    Fixture, Observation, Session, Stage, TokenFace, TokenStatus,
-    asset_config::AssetConfig,
-    assets::{self, CollectionReport},
-    continuity,
-    explanation::explain_result,
+    Fixture, Observation, Session, Stage, TokenFace, TokenStatus, asset_config::AssetConfig,
+    assets::CollectionReport, continuity, explanation::explain_result,
 };
 use bevy::{
     input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
@@ -48,7 +45,6 @@ struct Card {
     title: &'static str,
     kind: &'static str,
     text: &'static str,
-    color: Color,
     landscape: bool,
 }
 
@@ -58,7 +54,6 @@ const CARDS: [Card; 4] = [
         title: "Rotting Remains",
         kind: "Treachery · The Gathering",
         text: "Revelation — Test willpower (3). For each point you fail by, take 1 horror.",
-        color: Color::srgb(0.40, 0.22, 0.18),
         landscape: false,
     },
     Card {
@@ -66,7 +61,6 @@ const CARDS: [Card; 4] = [
         title: "Promise of Power",
         kind: "Skill · Four wild icons · Level 0",
         text: "After you commit Promise of Power to a skill test, add 1 curse token to the chaos bag. If you cannot, take 2 horror instead.",
-        color: Color::srgb(0.29, 0.20, 0.42),
         landscape: false,
     },
     Card {
@@ -74,7 +68,6 @@ const CARDS: [Card; 4] = [
         title: "Jacqueline Fine",
         kind: "Investigator · Willpower 5",
         text: "Reaction — When an investigator at your location would reveal any number of chaos tokens: Reveal 2 additional tokens. Of the revealed tokens, choose and cancel 2 non-auto-fail tokens, or 1 auto-fail token. Limit once per round.\n\nElder sign: +1. If this effect is canceled or ignored, draw 1 card.\n\nThis experiment has no elder sign reveal or other replacement assets.",
-        color: Color::srgb(0.30, 0.24, 0.48),
         landscape: true,
     },
     Card {
@@ -82,7 +75,6 @@ const CARDS: [Card; 4] = [
         title: "The Gathering",
         kind: "Original scenario · Easy / Standard",
         text: "Skull: −X, where X is the number of Ghoul enemies at your location.\nCultist: −1. If you fail, take 1 horror.\nTablet: −2. If there is a Ghoul enemy at your location, take 1 damage.",
-        color: Color::srgb(0.40, 0.34, 0.22),
         landscape: false,
     },
 ];
@@ -150,7 +142,7 @@ struct Art {
     token_handles: Vec<(TokenFace, Handle<Image>)>,
     reminder: Option<Handle<Image>>,
     investigators: Vec<(String, Handle<Image>)>,
-    symbol_font: Option<Handle<Font>>,
+    symbol_font: Handle<Font>,
     status: String,
 }
 
@@ -179,7 +171,7 @@ struct Options {
     fixture: Fixture,
     save: PathBuf,
     load: Option<PathBuf>,
-    art_root: Option<PathBuf>,
+    art_root: PathBuf,
     config: AssetConfig,
     screenshot: Option<PathBuf>,
     quit_after_screenshot: bool,
@@ -199,7 +191,7 @@ impl Options {
             fixture: Fixture::curse(),
             save: "local/experiment/curse.session.json".into(),
             load: None,
-            art_root: Some(config.root().to_path_buf()),
+            art_root: config.root().to_path_buf(),
             config,
             screenshot: None,
             quit_after_screenshot: false,
@@ -229,14 +221,13 @@ impl Options {
                     explicit_save = true;
                 }
                 "--load" => options.load = Some(value()?.into()),
-                "--art-root" => options.art_root = Some(value()?.into()),
-                "--no-art" => options.art_root = None,
+                "--art-root" => options.art_root = value()?.into(),
                 "--screenshot" => options.screenshot = Some(value()?.into()),
                 "--quit-after-screenshot" => options.quit_after_screenshot = true,
                 "--initial-view" => options.initial_view = Some(parse_initial_view(&value()?)?),
                 "--help" | "-h" => {
                     println!(
-                        "Arkham Unfolded — scripted rules experiment\n\n--case curse|autofail  Choose the privileged starting fixture\n--save PATH            Session save and autosave path\n--load PATH            Reopen a saved pending decision\n--art-root PATH        Use a prepared asset collection for this launch\n--no-art               Use readable substitutes\n--screenshot PATH      Capture the actual window once ready\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline  Diagnostic startup framing; Home is unchanged\n\nCamera: WASD to pan; right drag or arrow keys to orbit; wheel or +/- to zoom; Home to reset. F12 saves a screenshot."
+                        "Arkham Unfolded — scripted rules experiment\n\n--case curse|autofail  Choose the privileged starting fixture\n--save PATH            Session save and autosave path\n--load PATH            Reopen a saved pending decision\n--art-root PATH        Use a prepared asset collection for this launch\n--screenshot PATH      Capture the actual window once ready\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline  Diagnostic startup framing; Home is unchanged\n\nCamera: WASD to pan; right drag or arrow keys to orbit; wheel or +/- to zoom; Home to reset. F12 saves a screenshot."
                     );
                     return Ok(None);
                 }
@@ -258,6 +249,11 @@ pub fn run() -> Result<(), String> {
     let Some(options) = Options::parse()? else {
         return Ok(());
     };
+    let (recovery, report) = crate::tabletop_startup::Recovery::prepare(
+        options.config.clone(),
+        options.art_root.clone(),
+        asset_settings::Collection::Jacqueline,
+    )?;
     let load_path = options
         .load
         .or_else(|| options.save.is_file().then(|| options.save.clone()));
@@ -268,31 +264,8 @@ pub fn run() -> Result<(), String> {
         Session::new(options.fixture.clone())
     };
     let save_path = load_path.unwrap_or(options.save);
-    let art_root = options.art_root.map(|path| {
-        if path.is_absolute() {
-            path
-        } else {
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(path)
-        }
-    });
-    let collection = art_root.as_deref().map(assets::inspect);
-    let status = collection.as_ref().map_or_else(
-        || "Artwork disabled for this launch; readable substitutes are active.".into(),
-        CollectionReport::summary,
-    );
-    eprintln!("Experiment: Jacqueline skill test");
-    match &art_root {
-        Some(root) => eprintln!("Artwork root: {}", root.display()),
-        None => eprintln!("Artwork root: disabled for this launch (--no-art)"),
-    }
-    eprintln!("{status}");
-    if let Some(report) = &collection {
-        for diagnostic in &report.diagnostics {
-            eprintln!("{diagnostic}");
-        }
-    }
+    let status = report.summary();
+    let collection = Some(report);
     let notice = if let Some(warning) = options.config.warning() {
         format!("Asset settings: {warning}")
     } else if resumed {
@@ -300,10 +273,7 @@ pub fn run() -> Result<(), String> {
     } else {
         "Choose freely. The rules handle the consequences.".into()
     };
-    let asset_root = art_root.as_ref().map_or_else(
-        || "local/experiment/absent-art".to_string(),
-        |p| p.to_string_lossy().into_owned(),
-    );
+    let asset_root = recovery.root().to_string_lossy().into_owned();
     let mut app = App::new();
     app.insert_resource(ClearColor(INK))
         .insert_resource(Tabletop {
@@ -319,7 +289,7 @@ pub fn run() -> Result<(), String> {
         })
         .insert_resource(Orbit::new(CameraMode::Jacqueline).with_initial_view(options.initial_view))
         .insert_resource(Actions::default())
-        .insert_resource(AssetSettings::new(options.config))
+        .insert_resource(AssetSettings::new(recovery.config()))
         .insert_resource(Capture {
             path: options.screenshot,
             quit: options.quit_after_screenshot,
@@ -399,11 +369,11 @@ pub fn run() -> Result<(), String> {
     })
     .collect();
     let reveal_image = prepared_image(server, collection.as_ref(), reveal::ART_ROLE);
-    let symbol_font = symbols::load(
-        art_root.as_deref(),
-        collection.as_ref(),
-        &mut app.world_mut().resource_mut::<Assets<Font>>(),
-    );
+    let symbol_font = collection
+        .as_ref()
+        .and_then(|report| report.verified_path("font/symbols"))
+        .map(|path| server.load(path.to_owned()))
+        .expect("the admitted collection contains its symbol font");
     let art = Art {
         handles,
         available,
@@ -413,31 +383,11 @@ pub fn run() -> Result<(), String> {
         symbol_font,
         status,
     };
-    let health_assets = HealthAssets::new(
-        art.handles
-            .iter()
-            .flatten()
-            .map(|handle| handle.id().untyped())
-            .chain(
-                art.token_handles
-                    .iter()
-                    .map(|(_, handle)| handle.id().untyped()),
-            )
-            .chain(art.reminder.iter().map(|handle| handle.id().untyped()))
-            .chain(
-                art.investigators
-                    .iter()
-                    .map(|(_, handle)| handle.id().untyped()),
-            )
-            .chain(reveal_image.iter().map(|handle| handle.id().untyped())),
-    );
-    // The Jacqueline symbol font is loaded synchronously into Assets<Font> above.
-    // Only the asynchronous AssetServer handles need to hold the readiness check.
-    app.insert_resource(health_assets)
-        .insert_resource(reveal::Artwork(reveal_image))
+    app.insert_resource(reveal::Artwork(reveal_image))
         .insert_resource(art);
     scene::install(&mut app);
-    exit_result(app.run())
+    recovery.install(&mut app, collection.as_ref().expect("verified collection"));
+    recovery.finish(app.run())
 }
 
 fn prepared_image(
@@ -896,20 +846,12 @@ enum Run<'a> {
 // Plain-English labels remain available even when the displayed text uses glyphs.
 fn symbol_text(
     parent: &mut ChildSpawnerCommands,
-    font: &Option<Handle<Font>>,
+    font: &Handle<Font>,
     runs: &[Run<'_>],
     label: &str,
     size: f32,
     color: Color,
 ) {
-    let Some(font) = font else {
-        parent.spawn((
-            text(label, size, color),
-            AccessibleLabel::new(label),
-            Pickable::IGNORE,
-        ));
-        return;
-    };
     parent
         .spawn((
             text("", size, color),
@@ -1578,8 +1520,8 @@ mod harm_text_tests {
             token_handles: Vec::new(),
             reminder: None,
             investigators: Vec::new(),
-            symbol_font: Some(Handle::default()),
-            status: "Readable card substitutes.".into(),
+            symbol_font: Handle::default(),
+            status: "Synthetic presentation fixture.".into(),
         }
     }
 

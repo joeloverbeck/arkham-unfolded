@@ -35,14 +35,11 @@ fn pending_app(path: PathBuf) -> App {
 fn promise_commitment_shows_willpower_bonus_and_keeps_its_curse_consequence() {
     let directory = tempfile::tempdir().unwrap();
     for wide in [false, true] {
-        for symbols in [false, true] {
+        {
             let mut app = app_for_session(
                 Session::new(Fixture::curse()),
-                directory
-                    .path()
-                    .join(format!("promise-{wide}-{symbols}.json")),
+                directory.path().join(format!("promise-{wide}.json")),
             );
-            app.world_mut().resource_mut::<Art>().symbol_font = symbols.then(Handle::default);
             let world = app.world_mut();
             world
                 .query::<&mut Window>()
@@ -73,11 +70,7 @@ fn promise_commitment_shows_willpower_bonus_and_keeps_its_curse_consequence() {
             }
             assert_eq!(
                 visible,
-                if symbols {
-                    expected_label.replace("willpower", "\u{2060}f\u{2060}")
-                } else {
-                    expected_label.into()
-                }
+                expected_label.replace("willpower", "\u{2060}f\u{2060}")
             );
             assert!(
                 world
@@ -173,7 +166,7 @@ fn named_location_markers_keep_elsewhere_patrice_separate_from_study() {
             elsewhere
         );
         let labels: Vec<_> = world
-            .query::<(&Text, &WorldLabel, &StandeeLabel)>()
+            .query::<(&AccessibleLabel, &WorldLabel, &StandeeLabel)>()
             .iter(world)
             .map(|(text, anchor, _)| (text.0.clone(), anchor.0))
             .collect();
@@ -759,7 +752,8 @@ fn production_scene_places_test_objects_and_personal_status_on_their_surfaces() 
                 .any(|(text, anchor)| text == name && anchor.z < center.z - 7.5)
         );
         assert!(labels.iter().any(|(text, anchor)| text.contains("Horror")
-            && *anchor == tabletop_layout::investigator_harm_caption(index, true, true)));
+            && *anchor
+                == tabletop_layout::investigator_harm_caption(index, true) + Vec3::X * 0.45));
     }
     assert!(labels.iter().any(|(text, _)| text == "Horror 2/9"));
     assert!(labels.iter().any(|(text, _)| text == "Damage n/a"));
@@ -908,8 +902,8 @@ fn app_for_session_in(mut app: App, session: Session, path: PathBuf) -> App {
         token_handles: vec![],
         reminder: None,
         investigators: Vec::new(),
-        symbol_font: None,
-        status: "Readable substitutes are active.".into(),
+        symbol_font: Handle::default(),
+        status: "Synthetic presentation fixture.".into(),
     })
     .add_systems(
         Update,
@@ -998,7 +992,20 @@ fn result_text(app: &mut App) -> Vec<String> {
         .query::<&Children>()
         .query(world)
         .iter_descendants(dialog)
-        .filter_map(|entity| world.get::<Text>(entity).map(|text| text.0.clone()))
+        .filter_map(|entity| {
+            world.get::<Text>(entity).map(|text| {
+                if text.0.is_empty() {
+                    readable_text(
+                        world
+                            .get::<AccessibleLabel>(entity)
+                            .map_or("", |label| label.0.as_str())
+                            .to_owned(),
+                    )
+                } else {
+                    text.0.clone()
+                }
+            })
+        })
         .collect()
 }
 

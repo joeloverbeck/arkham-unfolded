@@ -1,7 +1,7 @@
 //! Damage, horror and skill names share a visual spelling across views.
 //!
 //! This is a display-only substitution of harm and skill words. Rules, saved
-//! history, accessible labels and the absent-font fallback keep their names.
+//! history and accessible labels keep their English names.
 
 use crate::tabletop::symbols::Skill;
 use bevy::{ecs::spawn::SpawnIter, prelude::*};
@@ -104,18 +104,17 @@ fn word_runs(value: &str) -> Vec<Run> {
     result
 }
 
-/// Spawn rich text for a panel or a projected world label. No font means plain
-/// English, including the original case and the exact amounts.
+/// Spawn rich text using the symbol font required by native admission.
 pub(crate) fn ui(
     value: impl Into<String>,
     size: f32,
     color: Color,
-    font: &Option<Handle<Font>>,
+    font: &Handle<Font>,
 ) -> impl Bundle {
     let label = value.into();
     let value = crate::tabletop::readable_text(label.clone());
     let has_icon = runs(&value).iter().any(|run| !matches!(run, Run::Words(_)));
-    let (root, spans) = if let Some(font) = font.as_ref().filter(|_| has_icon) {
+    let (root, spans) = if has_icon {
         (String::new(), spans(&value, size, color, font))
     } else {
         (value, Vec::new())
@@ -197,8 +196,10 @@ mod tests {
             .collect();
         assert_eq!(visible, "v t: Fight. u +1 h, g, j. m k q. [unknown]");
         let mut world = World::new();
-        let entity = world.spawn(ui(label, 20., Color::WHITE, &None)).id();
-        assert_eq!(world.get::<Text>(entity).unwrap().0, label);
+        let entity = world
+            .spawn(ui(label, 20., Color::WHITE, &Handle::default()))
+            .id();
+        assert_eq!(world.get::<AccessibleLabel>(entity).unwrap().0, label);
     }
 
     #[test]
@@ -206,7 +207,7 @@ mod tests {
         let mut world = World::new();
         let label = "Willpower 2 / Intellect 3 / COMBAT 5 / Agility 2. Commit +1 intellect. A willpower test; 4 wild icons; intellect_bonus unchanged.";
         let entity = world
-            .spawn(ui(label, 16.0, Color::WHITE, &Some(Handle::default())))
+            .spawn(ui(label, 16.0, Color::WHITE, &Handle::default()))
             .id();
         let visible: String = world
             .get::<Children>(entity)
@@ -219,8 +220,6 @@ mod tests {
             "\u{2060}f\u{2060} 2 / \u{2060}g\u{2060} 3 / \u{2060}h\u{2060} 5 / \u{2060}i\u{2060} 2. Commit +1 \u{2060}g\u{2060}. A \u{2060}f\u{2060} test; 4 wild icons; intellect_bonus unchanged."
         );
         assert_eq!(world.get::<AccessibleLabel>(entity).unwrap().0, label);
-        let fallback = world.spawn(ui(label, 16.0, Color::WHITE, &None)).id();
-        assert_eq!(world.get::<Text>(fallback).unwrap().0, label);
     }
 
     #[test]
@@ -263,21 +262,14 @@ mod tests {
     }
 
     #[test]
-    fn spawned_ui_keeps_accessible_english_and_plain_fallback() {
+    fn spawned_ui_keeps_accessible_english_with_symbol_glyphs() {
         let mut world = World::new();
-        let fallback = world
-            .spawn(ui("Damage 2 / Horror 1", 16.0, Color::WHITE, &None))
-            .id();
-        assert_eq!(
-            world.get::<Text>(fallback).unwrap().0,
-            "Damage 2 / Horror 1"
-        );
         let icons = world
             .spawn(ui(
                 "Damage 2 / Horror 1",
                 16.0,
                 Color::WHITE,
-                &Some(Handle::default()),
+                &Handle::default(),
             ))
             .id();
         let children = world.get::<Children>(icons).unwrap();
@@ -288,7 +280,7 @@ mod tests {
         assert_eq!(visible, "\u{2060}Q\u{2060} 2 / \u{2060}R\u{2060} 1");
         assert_eq!(
             world.get::<AccessibleLabel>(icons).unwrap().0,
-            world.get::<AccessibleLabel>(fallback).unwrap().0
+            "Damage 2 / Horror 1"
         );
     }
 }

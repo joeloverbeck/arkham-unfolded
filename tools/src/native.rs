@@ -172,10 +172,8 @@ pub struct Launch {
     experiment: Experiment,
     #[arg(long)]
     load: Option<PathBuf>,
-    #[arg(long, conflicts_with = "no_art")]
-    art_root: Option<PathBuf>,
     #[arg(long)]
-    no_art: bool,
+    art_root: Option<PathBuf>,
     /// Plain filename inside --output-dir, not a path (for example: test.png).
     /// Use --screenshot test.png --quit-after-screenshot for an automatic capture.
     #[arg(long, value_name = "FILENAME")]
@@ -685,8 +683,6 @@ fn launch(args: Launch) -> Result<u8> {
         .arg(&save);
     if let Some(root) = args.art_root {
         command.arg("--art-root").arg(resolve(&root)?);
-    } else if args.no_art {
-        command.arg("--no-art");
     }
     if let Some(path) = &screenshot {
         command.arg("--screenshot").arg(path);

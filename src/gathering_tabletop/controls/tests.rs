@@ -941,12 +941,7 @@ fn enemy_inspection_keeps_each_public_physical_state_without_showing_its_id() {
             .iter(world)
             .any(|node| node.image == image)
     );
-    let text = world
-        .query::<&Text>()
-        .iter(world)
-        .map(|text| text.0.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = super::super::tests::rendered_text(&mut app);
     for detail in [
         format!("Damage {}", expected.damage),
         format!("Doom {}", expected.doom),

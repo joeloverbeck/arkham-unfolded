@@ -432,8 +432,7 @@ mod tests {
                 (true, investigator.sanity()),
             ] {
                 let expected = format!(
-                    "{} {}/{capacity}",
-                    if horror { "Horror" } else { "Damage" },
+                    "{}/{capacity}",
                     if horror {
                         investigator.horror
                     } else {
@@ -445,7 +444,7 @@ mod tests {
                         .query::<(&WorldLabel, &Text)>()
                         .iter(world)
                         .any(|(anchor, text)| text.0 == expected
-                            && anchor.0 == layout::investigator_harm_caption(index, horror, true))
+                            && anchor.0 == layout::investigator_harm_caption(index, horror))
                 );
             }
         }

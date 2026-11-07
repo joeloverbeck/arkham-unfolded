@@ -1,5 +1,15 @@
 # Prepared Study escape attempt
 
+**Artwork contract amendment, 2026-11-07:** [ADR 0004](../adr/0004-require-artwork-for-3d-play.md)
+requires complete artwork for 3D play and a blocking startup recovery window.
+All four modes now refuse incomplete collections and wait for every required
+image and the symbol font to load before play. **Choose asset folder** selects a
+complete collection, **Retry** rechecks it, and **Quit** leaves saves unchanged.
+The removed `--no-art` option is rejected. Dated substitute-presentation evidence
+below describes earlier builds. Headless checks remain artwork-independent.
+[Issue #124's handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/124#issuecomment-6706875824)
+records verification and remaining native acceptance.
+
 Replay has been retired in all four modes. Saves from before this change are unsupported and remain untouched; use `--save` with a new path to start an attempt. New-format saves retain exact continuation, action history and applicable Undo. There is no recording export or historical reader. [Decision and scope](../adr/0003-retire-replay.md). Dated evidence below describes its original builds; references to replay in those historical reports are superseded.
 
 [Issue #55](https://github.com/joeloverbeck/arkham-unfolded/issues/55) owns this local experiment and its acceptance. It starts from an arranged position in original The Gathering on Standard. It does not implement scenario setup or a complete scenario or campaign.
@@ -9,7 +19,7 @@ Replay has been retired in all four modes. Saves from before this change are uns
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
-target/debug/arkham-tabletop --experiment party
+target/debug/arkham-tabletop --experiment party --art-root "$HOME/.cache/agent-tmp/arkham-73-assets/party-assets-v2"
 ```
 
 The window says **Prepared Study Escape**. All three investigators start in Study, with six clues on the location and none held. Each has one turn with three ordinary actions. Choose their order, Investigate, Draw, gain a Resource or end a turn early. Finish one investigator's turn before beginning another; ending early does not reserve actions for later. The named turn indicator and portrait badge remain visible while other investigators provide legal commitments or reactions, including after their own turns have ended. Supporting choices name their performing investigator. Camera focus does not select the active investigator. Card inspection and history explain the available effects and consequences.
@@ -20,7 +30,7 @@ The first fully settled action leaving six clues with the party offers a closing
 
 During tests, choose matching commitments from the testing investigator and at most one card from each other investigator at the location. Promise of Power adds four icons and one curse. Jacqueline can intervene once this round, including at an eligible later curse reveal after an earlier decline. The testing investigator keeps their own elder-sign effect. Patrice can draw Lucky!, gain its one-resource cost and use it during her last action; its Fast timing costs no action. Legal poor choices remain available.
 
-The test summary separates base skill, card bonuses, chaos contribution and current/final value. Skill names use their font symbols when available, with English substitutes otherwise. After you resolve the last token, results and cleanup continue automatically until the next real choice; Lucky!, cancellation/order choices and after-test effects still require your decisions. Ordinary tokens return visibly to the bag, while resolved curses return to the pool. Reduced motion places them immediately. A completed result stays readable without leaving returned tokens on Test, and Undo skips forced resolution/cleanup stops while retaining eligible genuine choices.
+The test summary separates base skill, card bonuses, chaos contribution and current/final value. Skill names use the required font symbols and retain English accessibility labels. After you resolve the last token, results and cleanup continue automatically until the next real choice; Lucky!, cancellation/order choices and after-test effects still require your decisions. Ordinary tokens return visibly to the bag, while resolved curses return to the pool. Reduced motion places them immediately. A completed result stays readable without leaving returned tokens on Test, and Undo skips forced resolution/cleanup stops while retaining eligible genuine choices.
 
 ## Saves and Undo
 
@@ -39,7 +49,7 @@ Send JSON lines such as `{"op":"observe"}`, then `{"op":"choose","revision":0,"i
 
 ## Artwork
 
-Party artwork has its own prepared collection and `party.toml` preference. Existing collections and settings remain intact. Missing art leaves readable substitutes; use `--no-art` explicitly or `--art-root /absolute/path/collection` for a temporary selection. The developer prepares the collection from the unchanged archive and the verified reveal-icon input:
+Party artwork has its own prepared collection and `party.toml` preference. Existing collections and settings remain intact. Incomplete or outdated collections block play; use `--art-root /absolute/path/collection` for a temporary complete selection or choose one in startup recovery. The developer prepares the collection from the unchanged archive and the verified reveal-icon input:
 
 ```sh
 scripts/dev cargo run --locked --bin arkham-assets -- prepare-party \
@@ -49,7 +59,7 @@ scripts/dev cargo run --locked --bin arkham-assets -- prepare-party \
 scripts/dev cargo run --locked --bin arkham-assets -- check-party /absolute/path/new-party-assets
 ```
 
-`resources/party-asset-selection.json` binds all 57 selected images/font inputs and their transformations, including the clue face, shaped resource counter and six class icon/background pairs. The v2 collection preserves recognition of v1's existing artwork; old collections report the new missing images and use readable substitutes. A fresh output directory is required unless its complete contents already match. Runtime reads only the prepared collection. The source PDFs and deck responses remain in the declared local evidence custody; verification of their exact bytes does not establish an independent backup.
+`resources/party-asset-selection.json` binds all 57 selected images/font inputs and their transformations, including the clue face, shaped resource counter and six class icon/background pairs. The current v2 collection is required; old collections remain available for diagnostic inspection but cannot admit play. A fresh output directory is required unless its complete contents already match. Runtime reads only the prepared collection. The source PDFs and deck responses remain in the declared local evidence custody; verification of their exact bytes does not establish an independent backup.
 
 ## Table layout and visual review
 
@@ -57,7 +67,7 @@ The scenario surface is now 18×22, extending away from Test with two-unit gaps 
 
 Wheel zoom changes camera distance proportionally: faster across the table and finer near cards. Scenario focus frames the full deeper area above the decision controls. Investigator cards sit below their permanent harm captions. Resources and clues now occupy fixed positions below the card, with class action markers in a centered row beneath them. Zero clues/resources have no token. Spent actions retain a cross; unused actions after early turn end are dimmed without a cross. Tony's separated `+` marker identifies his restricted Fight/Engage allowance; this prepared position has no eligible bounty enemy. Hand and Assets share their side margins, and Discard's right edge aligns with Assets.
 
-Successful investigation visibly carries a clue from the location to the investigator after the decision has saved. The source count falls on departure and the personal count rises on arrival; reduced motion places it immediately. Closing during movement and reopening shows the already committed totals without applying discovery again. Missing individual images retain named solid counters. [#73](https://github.com/joeloverbeck/arkham-unfolded/issues/73) owns this refinement and its owner acceptance recorded below.
+Successful investigation visibly carries a clue from the location to the investigator after the decision has saved. The source count falls on departure and the personal count rises on arrival; reduced motion places it immediately. Closing during movement and reopening shows the already committed totals without applying discovery again. Missing required images stop play. [#73](https://github.com/joeloverbeck/arkham-unfolded/issues/73) owns this refinement and its owner acceptance recorded below.
 
 After advancement, brass arrows show Hallway's two-way connections to Attic, Cellar and Parlor. Parlor's entry restriction does not change that connection. The layout places Hallway at the hub, Attic above, Cellar below and Parlor beside it, using measured card, caption and standee space. These positions are a presentation choice; the original scenario guide supplies no placement diagram. Arrows follow the displayed cards and leave their reserved space clear. See the [research and source evidence](../research/act-advancement-and-location-connections.md).
 
@@ -83,7 +93,7 @@ For the older experiments, reuse that command within the same cumulative 15 minu
 | Tony | `tony` | `"$HOME/.local/share/arkham-unfolded/tony-assets-v4"` |
 | Jacqueline | `jacqueline` | `"$HOME/.local/share/arkham-unfolded/assets-v2"` |
 
-Replace `--art-root` and its value with `--no-art` to inspect text substitutes. These paths identify this machine's prepared collections; use the corresponding verified collection if it lives elsewhere.
+The removed `--no-art` option is rejected. These paths identify this machine's prepared collections; use the corresponding verified collection if it lives elsewhere.
 
 - Visit Scenario, Test and each investigator focus. Inspect a card, dismiss its controls and use right-drag, WASD and zoom. Expected: clear gaps and labels, usable selection and camera travel, and no change of active investigator from navigation. After beginning a turn, its indicator and portrait badge should remain on that investigator even when focusing someone else or using a supporting ability.
 - Check standee bases: the card-edge gap remains visible, neighbors nearly touch without contact, and the normal Scenario view leaves the location readable. Check names outside the investigator surfaces, distinct threat/asset/hand regions, personal harm counters and deck/discard labels. A one-card hand should sit centrally; additional cards share the center.
@@ -131,7 +141,7 @@ The helper requires an unused output suffix and creates a new attempt without op
 - Before resolving a successful investigation, choose Overview to see both source and destination. The location count decreases when the token lifts; the personal total increases when it lands. Check the first gain and, if play reaches them within the allowance, later gains and the last source clue. Random failures need no restart. Camera focus remains manual.
 - Try **Motion: reduced** for immediate placement. Save/reopen must preserve totals without repeating discovery. Inspecting a location still shows its unobscured card.
 
-For the older experiments, the matching reference arguments are `--experiment tony --art-root "$HOME/.cache/agent-tmp/arkham-73-assets/tony-assets-v5"` or `--experiment jacqueline --art-root "$HOME/.cache/agent-tmp/arkham-73-assets/jacqueline-assets-v2"`, with a fresh output directory. Jacqueline retains its represented state rather than gaining invented counters. Replacing `--art-root` and its value with `--no-art` shows named substitutes. For any later authorized review, stop at its time ceiling, a broken choice, a save/reopen mismatch or a material readability problem; retain the directory and report the last action/view. Automated lifecycle checks and static native captures retain their technical limits; Joel's reported Party playthrough and explicit acceptance supply the human verdict for #73.
+For the older experiments, the matching reference arguments are `--experiment tony --art-root "$HOME/.cache/agent-tmp/arkham-73-assets/tony-assets-v5"` or `--experiment jacqueline --art-root "$HOME/.cache/agent-tmp/arkham-73-assets/jacqueline-assets-v2"`, with a fresh output directory. Jacqueline retains its represented state rather than gaining invented counters. Substitute-mode checks belong to the historical build and are retired. For any later authorized review, stop at its time ceiling, a broken choice, a save/reopen mismatch or a material readability problem; retain the directory and report the last action/view. Automated lifecycle checks and static native captures retain their technical limits; Joel's reported Party playthrough and explicit acceptance supply the human verdict for #73.
 
 ### Finite crowded-layout witness
 
@@ -145,7 +155,7 @@ scripts/tools native launch --approval "$native_approval" --binary "$PWD/target/
   --screenshot scene.png --quit-after-screenshot --timeout-seconds 60
 ```
 
-Use another fresh directory and `--initial-view tony`, `jacqueline`, `test` or `scenario` for the other finite views; `--no-art` replaces `--art-root` for named substitutes. Without capture-and-quit, Tab or 1–6 selects the six views. The three investigator surfaces show eight, nine and one hand cards respectively in single rows, twelve asset faces with an exhausted card and counters, and five threats. Selected-deck asset and threat faces repeat deliberately; unavailable threat artwork has named substitutes. The scenario contains twelve locations in three columns and four rows, alternating two card sizes, each with four standees and two clue counters, plus the act/agenda book, reference, encounter piles and victory display. The repeated standees deliberately stress clearance; the grid does not prescribe scenario connections. The Test surface contains its source, bag, six commitments and both token sections. These are geometry challenges, not legal-coexistence claims, implemented card rules or proof of full-game capacity. Developer captures do not grant an additional owner-review session.
+Use another fresh directory and `--initial-view tony`, `jacqueline`, `test` or `scenario` for the other finite views; the historical no-art variant is retired. Without capture-and-quit, Tab or 1–6 selects the six views. The three investigator surfaces show eight, nine and one hand cards respectively in single rows, twelve asset faces with an exhausted card and counters, and five threats. Selected-deck asset and threat faces repeat deliberately; the historical witness used substitutes for unavailable threat artwork; that variant is retired. The scenario contains twelve locations in three columns and four rows, alternating two card sizes, each with four standees and two clue counters, plus the act/agenda book, reference, encounter piles and victory display. The repeated standees deliberately stress clearance; the grid does not prescribe scenario connections. The Test surface contains its source, bag, six commitments and both token sections. These are geometry challenges, not legal-coexistence claims, implemented card rules or proof of full-game capacity. Developer captures do not grant an additional owner-review session.
 
 ## Owner acceptance and verification reference
 

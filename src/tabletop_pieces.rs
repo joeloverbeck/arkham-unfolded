@@ -39,7 +39,7 @@ pub(crate) fn label(
     value: impl Into<String>,
     at: Vec3,
     heading: bool,
-    symbol_font: &Option<Handle<Font>>,
+    symbol_font: &Handle<Font>,
 ) -> Entity {
     commands
         .spawn((
@@ -74,11 +74,6 @@ pub(crate) fn card(
             Name::new(title.into()),
             Mesh3d(meshes.add(card_shape::face(CARD_WIDTH, CARD_LENGTH))),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: if image.is_some() {
-                    Color::WHITE
-                } else {
-                    Color::srgb(0.34, 0.31, 0.23)
-                },
                 base_color_texture: image,
                 unlit: true,
                 ..default()
@@ -114,7 +109,7 @@ pub(crate) fn chaos_area(
     materials: &mut Assets<StandardMaterial>,
     bag_count: usize,
     curse_pool: Option<u8>,
-    symbol_font: &Option<Handle<Font>>,
+    symbol_font: &Handle<Font>,
 ) -> ChaosArea {
     let bag_at = layout::test_bag();
     let bag = commands
@@ -178,11 +173,6 @@ pub(crate) fn deck(
         .spawn((
             Mesh3d(meshes.add(card_shape::face(CARD_WIDTH, CARD_LENGTH))),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: if image.is_some() {
-                    Color::WHITE
-                } else {
-                    Color::srgb(0.12, 0.19, 0.30)
-                },
                 base_color_texture: image,
                 unlit: true,
                 ..default()
@@ -284,12 +274,8 @@ pub(crate) fn investigator_counters(
     ] {
         let at = layout::investigator_harm(panel.index, horror);
         let art = image(role);
-        let caption = layout::investigator_harm_caption(panel.index, horror, art.is_none());
-        let value = if art.is_some() {
-            format!("{amount}/{capacity}")
-        } else {
-            format!("{title} {amount}/{capacity}")
-        };
+        let caption = layout::investigator_harm_caption(panel.index, horror);
+        let value = format!("{amount}/{capacity}");
         entities.push(crate::tabletop_harm_tokens::spawn(
             commands, meshes, materials, art, at, horror,
         ));
@@ -297,6 +283,7 @@ pub(crate) fn investigator_counters(
             commands
                 .spawn((
                     Text::new(value),
+                    AccessibleLabel::new(format!("{title} {amount}/{capacity}")),
                     TextFont {
                         font_size: FontSize::Px(11.),
                         ..default()

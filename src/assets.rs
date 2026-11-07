@@ -245,7 +245,8 @@ fn is_counter_art(role: &str) -> bool {
 }
 
 /// A recognized collection can be incomplete and still supply individually verified art.
-/// An unrelated or altered manifest supplies no assets. Gameplay can use substitutes.
+/// An unrelated or altered manifest supplies no assets. Only a complete current
+/// collection can admit native play; partial inspection remains diagnostic.
 #[derive(Debug)]
 pub struct CollectionReport {
     pub recognized: bool,
@@ -253,9 +254,40 @@ pub struct CollectionReport {
     pub diagnostics: Vec<String>,
     verified: BTreeMap<String, String>,
     expected: usize,
+    manifest_failure: Option<String>,
+    file_failures: Vec<String>,
+    structure_present: bool,
 }
 
 impl CollectionReport {
+    pub fn verified_files(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.verified
+            .iter()
+            .map(|(role, path)| (role.as_str(), path.as_str()))
+    }
+
+    /// The same bounded diagnosis is used by the startup window and terminal.
+    pub fn startup_failure(&self, root: &Path) -> String {
+        if !root.is_dir() || !self.structure_present {
+            return format!(
+                "Absent or wrong prepared collection structure. Select the collection root containing manifest.json and its prepared image/font folders. {}",
+                self.manifest_failure
+                    .as_deref()
+                    .unwrap_or("The expected payload folders are absent.")
+            );
+        }
+        let mut message = self.manifest_failure.clone().unwrap_or_default();
+        if !self.file_failures.is_empty() {
+            if !message.is_empty() {
+                message.push('\n');
+            }
+            message.push_str(&bounded_failures(&self.file_failures));
+        }
+        if message.is_empty() {
+            message = "The required asset selection is empty or incomplete.".into();
+        }
+        message
+    }
     /// A relative path, verified against the application's compiled selection.
     pub fn verified_path(&self, role: &str) -> Option<&str> {
         self.verified.get(role).map(String::as_str)
@@ -278,14 +310,28 @@ impl CollectionReport {
             )
         } else if self.recognized {
             format!(
-                "Incomplete asset collection: {}/{} verified. Unavailable artwork uses readable substitutes.",
+                "Incomplete asset collection: {}/{} verified. Complete artwork is required for 3D play.",
                 self.valid_count(),
                 self.expected
             )
         } else {
-            "No compatible prepared asset collection. Using readable substitutes.".into()
+            "No compatible prepared asset collection. Complete artwork is required for 3D play."
+                .into()
         }
     }
+}
+
+pub(crate) fn bounded_failures(failures: &[String]) -> String {
+    let mut result = format!("{} required files affected:", failures.len());
+    for failure in failures.iter().take(5) {
+        result.push_str("\n  ");
+        result.push_str(failure);
+    }
+    result.push_str(&format!(
+        "\n{} additional affected files omitted.",
+        failures.len().saturating_sub(5)
+    ));
+    result
 }
 
 /// Check only the finite expected files. This never searches or falls back to an archive.
@@ -315,6 +361,13 @@ fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
         diagnostics: Vec::new(),
         verified: BTreeMap::new(),
         expected: selection.assets.len(),
+        manifest_failure: None,
+        file_failures: Vec::new(),
+        structure_present: selection.assets.iter().any(|asset| {
+            Path::new(&asset.path)
+                .parent()
+                .is_some_and(|parent| root.join(parent).is_dir())
+        }),
     };
     let read_manifest = || -> Result<Manifest, AssetError> {
         let path = regular_file(root, MANIFEST)?;
@@ -330,7 +383,7 @@ fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
         Ok(manifest) if previous_manifests(selection).contains(&manifest) => {
             report.recognized = true;
             report.diagnostics.push(
-                "Earlier collection: prepare a fresh collection for the newly selected artwork. Existing verified art remains available; missing images use readable substitutes.".into(),
+                "Obsolete manifest: prepare a fresh complete collection for the current selection. Earlier collections cannot admit 3D play.".into(),
             );
         }
         Ok(_) => report.diagnostics.push(
@@ -338,6 +391,7 @@ fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
         ),
         Err(error) => report.diagnostics.push(format!("manifest.json: {error}")),
     }
+    report.manifest_failure = report.diagnostics.first().cloned();
     if !report.recognized {
         return report;
     }
@@ -348,7 +402,11 @@ fn inspect_selection(root: &Path, selection: &Selection) -> CollectionReport {
                     .verified
                     .insert(asset.role.clone(), asset.path.clone());
             }
-            Err(error) => report.diagnostics.push(format!("{}: {error}", asset.path)),
+            Err(error) => {
+                let failure = format!("{}: {error}", asset.path);
+                report.file_failures.push(failure.clone());
+                report.diagnostics.push(failure);
+            }
         }
     }
     report.complete = current_manifest && report.verified.len() == selection.assets.len();

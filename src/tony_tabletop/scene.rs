@@ -199,7 +199,6 @@ pub(super) fn synchronize_scene(
                 size: Vec2::new(CARD_WIDTH, CARD_LENGTH),
                 thickness: CARD_THICKNESS,
                 image: art.image(&format!("card/{}", card.code)),
-                fallback: Color::srgb(0.34, 0.31, 0.23),
             },
         );
         let revision = view.revision;

@@ -209,14 +209,8 @@ pub(crate) fn investigator_harm(index: usize, horror: bool) -> Vec3 {
         + Vec3::new(-7.15 + if horror { 0.75 } else { -0.75 }, 0.14, -6.92)
 }
 
-/// Named substitutes need wider captions, without moving the physical counters.
-pub(crate) fn investigator_harm_caption(index: usize, horror: bool, named: bool) -> Vec3 {
-    let outward = if named {
-        if horror { 0.45 } else { -0.45 }
-    } else {
-        0.0
-    };
-    investigator_harm(index, horror) + Vec3::new(outward, 0.0, 0.32)
+pub(crate) fn investigator_harm_caption(index: usize, horror: bool) -> Vec3 {
+    investigator_harm(index, horror) + Vec3::new(0., 0.0, 0.32)
 }
 
 pub(crate) fn investigator_deck(index: usize) -> Vec3 {
@@ -871,7 +865,7 @@ mod tests {
             let token = investigator_harm(0, horror);
             assert!(token.z + 0.35 < card.z - 1.35 / 2.0);
             // Caption offset plus a small world-space clearance below its anchor.
-            assert!(investigator_harm_caption(0, horror, false).z + 0.3 < card.z - 1.35 / 2.0);
+            assert!(investigator_harm_caption(0, horror).z + 0.3 < card.z - 1.35 / 2.0);
             assert!(token.y - 0.14 / 2.0 > 0.0);
         }
         assert_eq!(
@@ -948,7 +942,7 @@ mod tests {
                 .looking_at(target, Vec3::Y),
             );
             let caption = camera
-                .world_to_viewport(&transform, investigator_harm_caption(0, false, false))
+                .world_to_viewport(&transform, investigator_harm_caption(0, false))
                 .unwrap();
             // Landscape investigator depth is the ordinary card width (1.35).
             let edge = camera

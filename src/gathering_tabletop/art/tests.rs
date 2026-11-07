@@ -33,29 +33,22 @@ fn hidden_location_art_never_falls_back_to_the_revealed_face() {
 }
 
 #[test]
-fn substitute_text_keeps_supported_separators_and_plain_harm_names() {
+fn artwork_text_retains_plain_english_accessible_labels() {
     let art = Art::default();
     let mut world = World::new();
     let entity = world
         .spawn(art.text("The Gathering · Damage 2 → Horror 1", 18., Color::WHITE))
         .id();
     assert_eq!(
-        world.get::<Text>(entity).unwrap().0,
-        "The Gathering  /  Damage 2 > Horror 1"
+        world.get::<AccessibleLabel>(entity).unwrap().0,
+        "The Gathering · Damage 2 → Horror 1"
     );
 }
 
 #[test]
-fn disabling_artwork_does_not_select_a_default_collection() {
-    let prepared = Prepared::new(None).unwrap();
-    assert!(prepared.root().is_none());
-    assert_eq!(prepared.status(), DISABLED);
-    assert!(prepared.collection.is_none());
-    let app = loader_app(&prepared);
-    let art = prepared.load(app.world().resource::<AssetServer>());
-    assert!(art.handles.is_empty());
-    assert!(art.symbol_font().is_none());
-    assert_eq!(art.status(), DISABLED);
+fn absent_collection_is_refused() {
+    let directory = tempfile::tempdir().unwrap();
+    assert!(Prepared::new(directory.path().join("absent")).is_err());
 }
 
 #[test]
@@ -65,21 +58,7 @@ fn unknown_collection_does_not_admit_an_existing_card_file() {
     std::fs::write(directory.path().join("cards/01111.png"), b"not verified").unwrap();
     std::fs::write(directory.path().join("manifest.json"), b"{}").unwrap();
 
-    let prepared = Prepared::new(Some(directory.path().to_owned())).unwrap();
-    assert_eq!(prepared.root(), Some(directory.path()));
-    let collection = prepared.collection.as_ref().unwrap();
-    assert!(!collection.recognized);
-    assert_eq!(collection.verified_path("card-01111"), None);
-    assert!(
-        prepared
-            .status()
-            .contains("No compatible prepared asset collection")
-    );
-    let app = loader_app(&prepared);
-    let art = prepared.load(app.world().resource::<AssetServer>());
-    assert!(art.handles.is_empty());
-    assert_eq!(art.card("01111", false), None);
-    assert!(art.symbol_font().is_none());
+    assert!(Prepared::new(directory.path().to_owned()).is_err());
     assert_eq!(
         std::fs::read(directory.path().join("cards/01111.png")).unwrap(),
         b"not verified"
@@ -95,18 +74,15 @@ fn real_collection_loads_every_verified_image_and_symbol_font() {
 
     let root = std::env::var_os("ARKHAM_GATHERING_TEST_ASSETS")
         .expect("set ARKHAM_GATHERING_TEST_ASSETS to the prepared collection");
-    let prepared = Prepared::new(Some(root.into())).unwrap();
-    let report = prepared.collection.as_ref().unwrap();
-    assert!(report.complete, "{}", prepared.status());
+    let prepared = Prepared::new(root.into()).unwrap();
+    let report = &prepared.collection;
+    assert!(report.complete, "{}", prepared.status);
     let expected = report.valid_count();
 
     let mut app = loader_app(&prepared);
     let art = prepared.load(app.world().resource::<AssetServer>());
-    assert_eq!(
-        art.handles.len() + usize::from(art.symbol_font.is_some()),
-        expected
-    );
-    let font = art.symbol_font.as_ref().expect("verified symbol font");
+    assert_eq!(art.handles.len() + 1, expected);
+    let font = &art.symbol_font;
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         app.update();

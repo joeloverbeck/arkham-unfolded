@@ -12,7 +12,7 @@ use bevy::{
         renderer::{RenderQueue, render_system},
         view::window::ExtractedWindow,
     },
-    window::WindowOccluded,
+    window::{WindowCloseRequested, WindowOccluded},
     winit::{UpdateMode, WinitSettings},
 };
 use std::{
@@ -65,6 +65,10 @@ pub(crate) struct RenderHealth {
 }
 
 impl RenderHealth {
+    pub(crate) fn stop(&mut self, reason: String) {
+        self.phase = Phase::Failed(reason);
+    }
+
     pub(crate) fn allows_play(&self) -> bool {
         matches!(self.phase, Phase::Ready)
     }
@@ -241,9 +245,18 @@ impl Plugin for TabletopHealthPlugin {
             .init_resource::<HealthEnvironment>()
             .init_resource::<GpuProgress>()
             .add_message::<WindowOccluded>()
+            .add_message::<WindowCloseRequested>()
             .add_message::<AppExit>()
             .add_systems(Startup, show_checking_overlay)
-            .add_systems(PreUpdate, (observe_environment, monitor_rendering).chain())
+            .add_systems(
+                PreUpdate,
+                (
+                    observe_environment,
+                    monitor_rendering,
+                    refuse_unadmitted_close,
+                )
+                    .chain(),
+            )
             .add_systems(Update, update_checking_overlay)
             .add_systems(Last, keep_checking_active.in_set(RequestRedraw))
             .add_systems(Last, refresh_watchdog.after(SelectCadence));
@@ -273,14 +286,20 @@ struct HealthEnvironment {
     foreground: bool,
     active: bool,
     loaded: bool,
+    asset_failure: Option<String>,
+    pending_assets: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn observe_environment(
     windows: Query<(Entity, &Window)>,
     mut events: MessageReader<WindowOccluded>,
     settings: Option<Res<WinitSettings>>,
     assets: Res<HealthAssets>,
     server: Option<Res<AssetServer>>,
+    images: Option<Res<Assets<Image>>>,
+    fonts: Option<Res<Assets<Font>>>,
+    mut font_context: Option<ResMut<bevy::text::FontCx>>,
     mut occluded: Local<HashSet<Entity>>,
     mut environment: ResMut<HealthEnvironment>,
 ) {
@@ -300,21 +319,78 @@ fn observe_environment(
     });
     environment.active =
         settings.is_none_or(|settings| matches!(settings.focused_mode, UpdateMode::Continuous));
-    environment.loaded = server.is_none_or(|server| {
-        assets.0.iter().all(|id| {
-            !matches!(
-                server.get_load_state(*id),
-                Some(LoadState::Loading | LoadState::NotLoaded)
-            ) && !matches!(
-                server.get_recursive_dependency_load_state(*id),
-                Some(
-                    RecursiveDependencyLoadState::Loading | RecursiveDependencyLoadState::NotLoaded
-                )
-            )
-        })
-    });
+    environment.loaded = false;
+    environment.asset_failure = None;
+    environment.pending_assets.clear();
+    if assets.0.is_empty() {
+        environment.asset_failure =
+            Some("The required artwork set is empty. Play cannot start.".into());
+        return;
+    }
+    let Some(server) = server else {
+        environment.pending_assets = "The required artwork loader is unavailable.".into();
+        return;
+    };
+    let mut loaded = true;
+    let mut failures = Vec::new();
+    let mut pending = Vec::new();
+    for id in &assets.0 {
+        let path = server.get_path(*id).map_or_else(
+            || "unregistered required asset".into(),
+            |path| path.to_string(),
+        );
+        let state = server.get_load_state(*id);
+        let dependencies = server.get_recursive_dependency_load_state(*id);
+        let failure = match (&state, &dependencies) {
+            (Some(LoadState::Failed(error)), _)
+            | (_, Some(RecursiveDependencyLoadState::Failed(error))) => {
+                Some(format!("{path}: {error}"))
+            }
+            _ => None,
+        };
+        if let Some(failure) = failure {
+            failures.push(failure);
+        }
+        let mut present = false;
+        if id.type_id() == std::any::TypeId::of::<Image>() {
+            present = images
+                .as_ref()
+                .is_some_and(|images| images.contains(id.typed::<Image>()));
+        } else if id.type_id() == std::any::TypeId::of::<Font>()
+            && let Some(font) = fonts
+                .as_ref()
+                .and_then(|fonts| fonts.get(id.typed::<Font>()))
+            && let Some(context) = font_context.as_mut()
+            && !font.alias.is_empty()
+        {
+            // FontLoader only reads bytes. Require the renderer's font database
+            // to have decoded/registered this exact asset, not a fallback font.
+            present = context
+                .collection
+                .family_by_name(&font.alias)
+                .is_some_and(|family| !family.fonts().is_empty());
+            if !present {
+                failures.push(format!("{path}: symbol font could not be decoded"));
+            }
+        }
+        let ready = present
+            && matches!(state, Some(LoadState::Loaded))
+            && matches!(dependencies, Some(RecursiveDependencyLoadState::Loaded));
+        if !ready {
+            pending.push(format!("{path}: asset or dependencies have not loaded"));
+        }
+        loaded &= ready;
+    }
+    environment.loaded = loaded;
+    if !pending.is_empty() {
+        environment.pending_assets = crate::assets::bounded_failures(&pending);
+    }
+    if !failures.is_empty() {
+        environment.asset_failure = Some(crate::assets::bounded_failures(&failures));
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn monitor_rendering(
     mut health: ResMut<RenderHealth>,
     clock: Res<HealthClock>,
@@ -322,10 +398,16 @@ fn monitor_rendering(
     progress: Res<GpuProgress>,
     mut exit: MessageWriter<AppExit>,
     mut diagnostic: Local<Option<(HealthConditions, Duration)>>,
+    recovery: Option<Res<crate::tabletop_startup::Recovery>>,
 ) {
     let was_checking = health.is_checking();
     let was_warming = health.warmup_elapsed < WARMUP;
     let was_failed = matches!(health.phase, Phase::Failed(_));
+    if let Some(reason) = &environment.asset_failure {
+        health.phase = Phase::Failed(reason.clone());
+    } else if health.allows_play() && !environment.loaded {
+        health.phase = Phase::Failed("Required artwork became unavailable. Gameplay has stopped; the last committed save is unchanged.".into());
+    }
     let now = clock.now();
     let conditions = HealthConditions {
         foreground: environment.foreground,
@@ -354,6 +436,17 @@ fn monitor_rendering(
         loaded,
         completed: progress.completed(),
     });
+    if !was_failed
+        && matches!(health.phase, Phase::Failed(_))
+        && environment.asset_failure.is_none()
+        && !environment.loaded
+    {
+        health.phase = Phase::Failed(format!(
+            "{}\n{}",
+            health.status(),
+            environment.pending_assets
+        ));
+    }
     if reset {
         // Expire callbacks and take the next baseline together: a callback that races
         // the boundary must not be credited to both adjacent sampling intervals.
@@ -387,6 +480,20 @@ fn monitor_rendering(
             health.status()
         );
         eprintln!("{}", health.status());
+        if let Some(recovery) = recovery {
+            recovery.refuse(health.status());
+        }
+        exit.write(AppExit::error());
+    }
+}
+
+fn refuse_unadmitted_close(
+    health: Res<RenderHealth>,
+    mut close: MessageReader<WindowCloseRequested>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if close.read().next().is_some() && !health.allows_play() {
+        eprintln!("Startup closed before admission; saves are unchanged.");
         exit.write(AppExit::error());
     }
 }
@@ -451,7 +558,7 @@ fn show_checking_overlay(mut commands: Commands) {
                 ..default()
             },
             GlobalZIndex(10_000),
-            BackgroundColor(Color::srgba(0.02, 0.03, 0.03, 0.65)),
+            BackgroundColor(Color::srgb(0.02, 0.03, 0.03)),
             Pickable::default(),
         ))
         .with_children(|parent| {
@@ -744,9 +851,68 @@ mod tests {
         }
     }
 
+    #[derive(Resource)]
+    struct Fixture {
+        root: tempfile::TempDir,
+        _image: Handle<Image>,
+        _font: Handle<Font>,
+    }
+
     fn app_with_window() -> (App, Entity) {
+        use bevy::image::{CompressedImageFormats, ImageLoader, ImagePlugin};
+        let root = tempfile::tempdir().unwrap();
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]))
+            .save(root.path().join("image.png"))
+            .unwrap();
+        std::fs::write(root.path().join("font.ttf"), bevy::text::DEFAULT_FONT_DATA).unwrap();
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, TabletopHealthPlugin));
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin {
+                file_path: root.path().to_string_lossy().into_owned(),
+                ..default()
+            },
+            ImagePlugin::default(),
+        ))
+        .register_asset_loader(ImageLoader::new(CompressedImageFormats::NONE))
+        .init_asset::<Font>()
+        .init_asset_loader::<bevy::text::FontLoader>()
+        .init_resource::<bevy::text::FontCx>()
+        .add_systems(
+            PostUpdate,
+            bevy::text::load_font_assets_into_font_collection,
+        );
+        let image = app
+            .world()
+            .resource::<AssetServer>()
+            .load::<Image>("image.png");
+        let font = app
+            .world()
+            .resource::<AssetServer>()
+            .load::<Font>("font.ttf");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            app.update();
+            let server = app.world().resource::<AssetServer>();
+            if server.is_loaded_with_dependencies(image.id())
+                && server.is_loaded_with_dependencies(font.id())
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "synthetic artwork did not load");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        app.insert_resource(HealthAssets::new([
+            image.id().untyped(),
+            font.id().untyped(),
+        ]));
+        app.insert_resource(Fixture {
+            root,
+            _image: image,
+            _font: font,
+        });
+        app.add_plugins(TabletopHealthPlugin);
+        app.world_mut().run_schedule(Startup);
         app.insert_resource(WinitSettings::continuous());
         let window = app.world_mut().spawn(Window::default()).id();
         (app, window)
@@ -761,6 +927,93 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires all four private prepared collections; no desktop or GPU access"]
+    fn complete_private_collections_decode_through_the_production_admission_gate() {
+        use crate::tabletop::asset_settings::Collection;
+        use bevy::image::{CompressedImageFormats, ImageLoader, ImagePlugin};
+        for (collection, variable) in [
+            (Collection::Jacqueline, "ARKHAM_JACQUELINE_TEST_ASSETS"),
+            (Collection::Tony, "ARKHAM_TONY_TEST_ASSETS"),
+            (Collection::Party, "ARKHAM_PARTY_TEST_ASSETS"),
+            (Collection::Gathering, "ARKHAM_GATHERING_TEST_ASSETS"),
+        ] {
+            let root = std::path::PathBuf::from(std::env::var_os(variable).expect(variable));
+            let settings = tempfile::tempdir().unwrap();
+            let config = crate::asset_config::AssetConfig::load_at(
+                settings.path().join("settings"),
+                root.clone(),
+            );
+            let (recovery, report) =
+                crate::tabletop_startup::Recovery::prepare(config, root.clone(), collection)
+                    .unwrap();
+            let mut app = App::new();
+            app.add_plugins((
+                MinimalPlugins,
+                AssetPlugin {
+                    file_path: root.to_string_lossy().into_owned(),
+                    ..default()
+                },
+                ImagePlugin::default(),
+            ))
+            .register_asset_loader(ImageLoader::new(CompressedImageFormats::NONE))
+            .init_asset::<Font>()
+            .init_asset_loader::<bevy::text::FontLoader>()
+            .init_resource::<bevy::text::FontCx>()
+            .add_systems(
+                PostUpdate,
+                bevy::text::load_font_assets_into_font_collection,
+            );
+            recovery.install(&mut app, &report);
+            assert_eq!(
+                app.world().resource::<HealthAssets>().0.len(),
+                report.expected_count()
+            );
+            assert!(report.expected_count() > 0);
+            app.add_plugins(TabletopHealthPlugin);
+            app.world_mut().run_schedule(Startup);
+            app.insert_resource(WinitSettings::continuous());
+            app.world_mut().spawn(Window::default());
+            let deadline = Instant::now() + Duration::from_secs(30);
+            loop {
+                app.update();
+                let environment = app.world().resource::<HealthEnvironment>();
+                assert!(
+                    environment.asset_failure.is_none(),
+                    "{}: {:?}",
+                    collection.name(),
+                    environment.asset_failure
+                );
+                if environment.loaded {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "{}: {}",
+                    collection.name(),
+                    environment.pending_assets
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            // Only GPU completion is simulated. Collection selection, preload,
+            // image decoding, dependencies and font registration are production.
+            app.world()
+                .resource::<GpuProgress>()
+                .0
+                .pipelines_pending
+                .store(false, Ordering::Release);
+            for frame in 0..=360 {
+                update_at(&mut app, sample(frame).now, true);
+            }
+            assert!(
+                app.world().resource::<RenderHealth>().allows_play(),
+                "{}",
+                collection.name()
+            );
+            assert!(!settings.path().join("settings").exists());
+        }
+    }
+
+    #[test]
     fn real_progress_is_required_before_play_is_admitted() {
         let mut health = RenderHealth::default();
         assert!(!health.allows_play());
@@ -768,6 +1021,97 @@ mod tests {
             health.observe(sample(frame));
         }
         assert!(health.allows_play());
+    }
+
+    #[test]
+    fn missing_required_assets_revoke_admission_before_another_decision() {
+        let (mut app, _) = app_with_window();
+        app.world()
+            .resource::<GpuProgress>()
+            .0
+            .pipelines_pending
+            .store(false, Ordering::Release);
+        for frame in 0..=360 {
+            update_at(&mut app, sample(frame).now, true);
+        }
+        assert!(app.world().resource::<RenderHealth>().allows_play());
+        let id = app.world().resource::<HealthAssets>().0[0].typed::<Image>();
+        app.world_mut().resource_mut::<Assets<Image>>().remove(id);
+        update_at(&mut app, sample(361).now, true);
+        assert!(!app.world().resource::<RenderHealth>().allows_play());
+    }
+
+    #[test]
+    fn registered_native_gate_refuses_an_empty_required_asset_set() {
+        let (mut app, _) = app_with_window();
+        app.world()
+            .resource::<GpuProgress>()
+            .0
+            .pipelines_pending
+            .store(false, Ordering::Release);
+        app.insert_resource(HealthAssets::default());
+        for frame in 0..=420 {
+            update_at(&mut app, Duration::from_secs_f64(frame as f64 / 60.), true);
+        }
+        assert!(!app.world().resource::<RenderHealth>().allows_play());
+    }
+
+    #[test]
+    fn native_gate_refuses_image_and_font_decoding_failures() {
+        for font in [false, true] {
+            let (mut app, _) = app_with_window();
+            let path = if font { "broken.ttf" } else { "broken.png" };
+            std::fs::write(
+                app.world().resource::<Fixture>().root.path().join(path),
+                b"not an image or font",
+            )
+            .unwrap();
+            let server = app.world().resource::<AssetServer>();
+            let handle = if font {
+                server.load::<Font>(path).untyped()
+            } else {
+                server.load::<Image>(path).untyped()
+            };
+            app.insert_resource(HealthAssets::new([handle.id()]));
+            app.world()
+                .resource::<GpuProgress>()
+                .0
+                .pipelines_pending
+                .store(false, Ordering::Release);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while app.world().resource::<RenderHealth>().is_checking() {
+                app.update();
+                assert!(
+                    Instant::now() < deadline,
+                    "decoder failure was not surfaced"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let health = app.world().resource::<RenderHealth>();
+            assert!(!health.allows_play());
+            assert!(health.status().contains(path), "{}", health.status());
+            assert!(health.status().contains("1 required files affected"));
+        }
+    }
+
+    #[test]
+    fn unknown_loading_state_times_out_without_admission() {
+        let (mut app, _) = app_with_window();
+        app.insert_resource(HealthAssets::new([Handle::<Image>::default()
+            .id()
+            .untyped()]));
+        app.world()
+            .resource::<GpuProgress>()
+            .0
+            .pipelines_pending
+            .store(false, Ordering::Release);
+        for frame in 0..=1860 {
+            update_at(&mut app, sample(frame).now, true);
+        }
+        let health = app.world().resource::<RenderHealth>();
+        assert!(!health.allows_play());
+        assert!(!health.is_checking());
+        assert!(health.status().contains("30 seconds"));
     }
 
     #[test]
@@ -1020,14 +1364,12 @@ mod tests {
         use crate::tabletop_pacing::TabletopPacingPlugin;
         use bevy::window::WindowEvent;
 
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins)
-            .add_message::<WindowEvent>()
+        let (mut app, _) = app_with_window();
+        app.add_message::<WindowEvent>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ButtonInput<MouseButton>>()
-            .add_plugins((TabletopPacingPlugin, TabletopHealthPlugin))
+            .add_plugins(TabletopPacingPlugin)
             .insert_resource(RenderHealth::ready_for_test());
-        app.world_mut().spawn(Window::default());
         app.update();
         let progress = app.world().resource::<GpuProgress>().clone();
         assert!(progress.0.armed.load(Ordering::Acquire));

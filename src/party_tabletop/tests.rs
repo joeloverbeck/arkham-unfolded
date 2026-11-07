@@ -156,7 +156,8 @@ fn production_harm_captions_clear_cards_and_each_other_after_text_layout() {
     let directory = tempfile::tempdir().unwrap();
     for size in [Vec2::new(1280.0, 720.0), Vec2::new(1600.0, 1000.0)] {
         for scale in [1.0, 2.0] {
-            for artwork in [false, true] {
+            {
+                let artwork = true;
                 let (mut app, _) = selection_lifecycle::production_app(
                     directory
                         .path()
@@ -164,8 +165,7 @@ fn production_harm_captions_clear_cards_and_each_other_after_text_layout() {
                     RenderHealth::ready_for_test(),
                 );
                 if artwork {
-                    // Only artwork presence is needed to select numeric captions.
-                    // Caption font/layout and production registration remain real.
+                    // Synthetic images retain the ordinary counter presentation.
                     for role in ["token/damage", "token/horror"] {
                         app.world_mut()
                             .resource_mut::<Art>()
@@ -177,7 +177,7 @@ fn production_harm_captions_clear_cards_and_each_other_after_text_layout() {
                     let mut table = app.world_mut().resource_mut::<Table>();
                     table.reduced_motion = true;
                 }
-                // A normal decision rebuilds the scene with the selected artwork branch.
+                // A normal decision rebuilds the scene.
                 choose(&mut app, "select:tony");
                 heading_checks::viewport::<MainCamera>(&mut app, size, scale);
                 for who in [
@@ -205,11 +205,7 @@ fn production_harm_captions_clear_cards_and_each_other_after_text_layout() {
                         ("Horror", investigator.horror, investigator.sanity),
                     ]
                     .map(|(title, amount, capacity)| {
-                        let expected = if artwork {
-                            format!("{amount}/{capacity}")
-                        } else {
-                            format!("{title} {amount}/{capacity}")
-                        };
+                        let expected = format!("{amount}/{capacity}");
                         let matches: Vec<_> = world
                             .query::<(Entity, &WorldLabel, &Text)>()
                             .iter(world)
@@ -653,8 +649,11 @@ fn rendered_button(app: &mut App, label: &str) -> Entity {
                 .iter()
                 .any(|child| {
                     world
-                        .get::<Text>(child)
-                        .is_some_and(|text| text.0 == rendered)
+                        .get::<AccessibleLabel>(child)
+                        .is_some_and(|text| text.0 == label)
+                        || world
+                            .get::<Text>(child)
+                            .is_some_and(|text| text.0 == rendered)
                 })
                 .then_some(entity)
         })
@@ -684,9 +683,18 @@ fn render_app_in(app: App, path: PathBuf) -> App {
 fn visible_text(app: &mut App) -> Vec<String> {
     let world = app.world_mut();
     world
-        .query::<&Text>()
+        .query::<(&Text, Option<&AccessibleLabel>)>()
         .iter(world)
-        .map(|text| text.0.clone())
+        // Glyph spelling is asserted separately; semantic assertions retain English.
+        .map(|(text, label)| {
+            if text.0.is_empty() {
+                crate::tabletop::readable_text(
+                    label.map_or("", |label| label.0.as_str()).to_owned(),
+                )
+            } else {
+                text.0.clone()
+            }
+        })
         .collect()
 }
 
@@ -718,10 +726,10 @@ fn physical_harm_totals_include_zeroes_and_survive_scene_replacement_and_reopen(
             .map(|(text, at)| (text.0.clone(), at.0))
             .collect();
         for (index, damage, horror) in [(0, "0/9", "0/5"), (1, "0/7", "0/7"), (2, "0/6", "2/9")] {
-            for (is_horror, kind, total) in [(false, "Damage", damage), (true, "Horror", horror)] {
+            for (is_horror, total) in [(false, damage), (true, horror)] {
                 assert!(captions.contains(&(
-                    format!("{kind} {total}"),
-                    layout::investigator_harm_caption(index, is_horror, true),
+                    total.to_owned(),
+                    layout::investigator_harm_caption(index, is_horror),
                 )));
             }
         }
@@ -862,7 +870,7 @@ fn completed_attempt(advance: Option<bool>) -> Session {
 }
 
 #[test]
-fn substitutes_name_the_book_assets_and_each_honest_endpoint() {
+fn ordinary_labels_name_the_book_assets_and_each_honest_endpoint() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = render_app(dir.path().join("party.json"));
     app.update();
@@ -877,7 +885,7 @@ fn substitutes_name_the_book_assets_and_each_honest_endpoint() {
     ] {
         assert!(
             text.contains(expected),
-            "missing readable substitute: {expected}"
+            "missing ordinary label: {expected}"
         );
     }
     for (advance, expected) in [
@@ -900,7 +908,7 @@ fn substitutes_name_the_book_assets_and_each_honest_endpoint() {
 }
 
 #[test]
-fn discard_substitute_names_the_top_card() {
+fn discard_caption_names_the_top_card() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = render_app(dir.path().join("cards.json"));
     for id in [

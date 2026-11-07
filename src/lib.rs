@@ -46,6 +46,8 @@ mod tabletop_standee_checks;
 #[cfg(feature = "tabletop")]
 mod tabletop_standees;
 #[cfg(feature = "tabletop")]
+mod tabletop_startup;
+#[cfg(feature = "tabletop")]
 mod tabletop_tokens;
 #[cfg(feature = "tabletop")]
 mod tabletop_ui;

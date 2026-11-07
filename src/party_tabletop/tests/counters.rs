@@ -27,15 +27,9 @@ fn installed_party_scene_uses_totals_and_preserves_unused_restricted_allowance()
         bonus.subdued,
         "Party has no enemy qualifying for Tony's unused allowance"
     );
-    assert!(
-        world
-            .query::<&Text>()
-            .iter(world)
-            .any(|text| text.0 == "Clues 6")
-    );
+    assert!(world.query::<&Text>().iter(world).any(|text| text.0 == "6"));
 
-    // Supply just resource artwork. A card/class or other token image is not a
-    // prerequisite for displaying this component, nor proof that clue art exists.
+    // The synthetic fixture exercises the ordinary numeric counter presentation.
     app.world_mut()
         .resource_mut::<Art>()
         .handles
@@ -49,12 +43,7 @@ fn installed_party_scene_uses_totals_and_preserves_unused_restricted_allowance()
     assert!(view.investigators[0].turn_finished);
     let world = app.world_mut();
     assert!(world.query::<&Text>().iter(world).any(|text| text.0 == "1"));
-    assert!(
-        world
-            .query::<&Text>()
-            .iter(world)
-            .any(|text| text.0 == "Clues 6")
-    );
+    assert!(world.query::<&Text>().iter(world).any(|text| text.0 == "6"));
     assert!(
         !world
             .query::<&Text>()
@@ -100,7 +89,7 @@ fn glyph_bounds(
 }
 
 #[test]
-fn installed_personal_fallback_captions_have_separate_rendered_text_bounds() {
+fn installed_personal_count_captions_have_separate_rendered_text_bounds() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, _) = selection_lifecycle::production_app(
         directory.path().join("caption-layout.json"),
@@ -130,7 +119,7 @@ fn installed_personal_fallback_captions_have_separate_rendered_text_bounds() {
                 app.update();
             }
             let world = app.world_mut();
-            for (horror, title) in [(false, "Damage 0/9"), (true, "Horror 0/5")] {
+            for (horror, title) in [(false, "0/9"), (true, "0/5")] {
                 let caption = world
                     .query::<(&Text, &ComputedNode, &TextLayoutInfo, &UiGlobalTransform)>()
                     .iter(world)
@@ -167,16 +156,10 @@ fn installed_personal_fallback_captions_have_separate_rendered_text_bounds() {
             .iter(world)
             .all(|text| text.0 != "Fight / Engage\nEnemy with bounty")
     );
-    for title in [
-        "Resources 1",
-        "Clues 1",
-        "Actions",
-        "Damage 0/9",
-        "Horror 0/5",
-    ] {
+    for title in ["Resources 1", "Clues 1", "Damage 0/9", "Horror 0/5"] {
         let rectangle = world
             .query::<(
-                &Text,
+                &AccessibleLabel,
                 &ComputedNode,
                 &TextLayoutInfo,
                 &UiGlobalTransform,

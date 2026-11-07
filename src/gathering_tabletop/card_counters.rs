@@ -48,7 +48,7 @@ pub(super) fn count(
         CounterVisual {
             kind,
             amount,
-            image: context.art.loaded_image(kind.image_role()),
+            image: context.art.image(kind.image_role()),
             at: at + offset,
             scale: 1.,
         },
@@ -99,7 +99,7 @@ pub(super) fn harm(
     horror: bool,
     offset: Vec3,
 ) {
-    let image = context.art.loaded_image(if horror {
+    let image = context.art.image(if horror {
         "token/horror"
     } else {
         "token/damage"
@@ -108,31 +108,16 @@ pub(super) fn harm(
         "{amount}/{}",
         capacity.map_or_else(|| "?".into(), |max| max.to_string())
     );
-    let has_art = image.is_some();
-    let caption = if has_art {
-        value
-    } else {
-        format!("{}\n{value}", if horror { "Horror" } else { "Damage" })
-    };
+    let accessible = format!("{} {value}", if horror { "Horror" } else { "Damage" });
     let token =
         crate::tabletop_harm_tokens::spawn(commands, meshes, materials, image, at + offset, horror);
     commands
         .entity(token)
         .insert((ScenePiece, Attached(card, offset)));
-    let label = scene::label(commands, context, caption, at + offset, false);
+    let label = scene::label(commands, context, value, at + offset, false);
     commands.entity(label).insert((
-        motion::CardLabel(
-            token,
-            Vec3::new(
-                if has_art || offset.x == 0. {
-                    0.
-                } else {
-                    offset.x.signum() * 0.42
-                },
-                0.10,
-                0.16,
-            ),
-        ),
+        AccessibleLabel::new(accessible),
+        motion::CardLabel(token, Vec3::new(0., 0.10, 0.16)),
         enemy_board::PersistentLabel,
         TextLayout::justify(Justify::Center).with_no_wrap(),
         Node {

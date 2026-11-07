@@ -802,7 +802,7 @@ fn story_reading(commands: &mut Commands, art: &art::Art, size: Vec2, card: stor
     };
     let width = (size.x * 0.94).min(1200.);
     let image = art.card(card.code(), true);
-    let columns = width >= 900. && image.is_some();
+    let columns = width >= 900.;
     let content_width = width - 56.;
     reading::panel(
         commands,
@@ -1140,11 +1140,6 @@ mod tests {
                         "card-01106-back"
                     };
                     app.insert_resource(art::Art::with_images_for_test([(role, image)]));
-                    // Art is normally admitted before the reading is rendered.
-                    let world = app.world_mut();
-                    world.resource_scope(|world, mut art: Mut<art::Art>| {
-                        art.refresh_loaded(world.resource::<Assets<Image>>());
-                    });
                 }
                 app.world_mut().resource_mut::<Table>().dirty = false;
                 app.world_mut()

@@ -57,18 +57,6 @@ pub(crate) fn spawn(
                 Transform::from_xyz(0.0, 0.09, 0.0),
                 Pickable::IGNORE,
             ));
-            let Some(image) = image else {
-                // The caller retains the investigator's name and state label.
-                standee.spawn((
-                    Name::new("Investigator substitute; portrait unavailable"),
-                    Mesh3d(meshes.add(Capsule3d::new(0.25, 0.72))),
-                    MeshMaterial3d(base),
-                    Transform::from_xyz(0.0, 0.75, 0.0),
-                    Pickable::IGNORE,
-                ));
-                return;
-            };
-
             const WIDTH: f32 = 1.0;
             const HEIGHT: f32 = WIDTH * 744.0 / 484.0;
             const BOTTOM: f32 = 0.20;
@@ -89,7 +77,7 @@ pub(crate) fn spawn(
 
             let face = meshes.add(Rectangle::new(WIDTH, HEIGHT));
             let portrait = materials.add(StandardMaterial {
-                base_color_texture: Some(image.clone()),
+                base_color_texture: image.cloned(),
                 unlit: true,
                 ..default()
             });

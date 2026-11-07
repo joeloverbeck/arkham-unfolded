@@ -28,7 +28,7 @@ The existing Python tools and tests are migration debt, not qualifying exception
 
 ## One product and its boundary
 
-The product takes prepared, revision-bound campaign and deck inputs plus player decisions; its rules authority produces game consequences, presentation, saved state and action history. Joel consumes and accepts the playing experience. An invalid or unsupported preparation must fail visibly before play; missing artwork must remain playable through readable substitutes. Development, release, parking and abandonment belong to this one product.
+The product takes prepared, revision-bound campaign and deck inputs plus player decisions; its rules authority produces game consequences, presentation, saved state and action history. Joel consumes and accepts the playing experience. An invalid or unsupported preparation must fail visibly before play. On 2026-11-07, Joel selected [complete artwork as a prerequisite for 3D play](../adr/0004-require-artwork-for-3d-play.md), replacing the earlier readable-substitute requirement. The headless player driver and engineering checks remain independent of artwork. Development, release, parking and abandonment belong to this one product.
 
 Deck import, rules execution, tabletop presentation, save/load and agent access are internal parts of that product. They do not authorize a general game engine, card editor, asset-management platform, autonomous rules interpreter, shared service or separate content-production pipeline. ArkhamDB remains the deck editor. The existing resource archive remains externally owned preparation input; the application consumes its own selected, portable presentation assets under the [source contract](sources-and-verification.md#presentation-asset-preparation).
 

@@ -1,5 +1,14 @@
 # Arkham Unfolded
 
+**Complete artwork is required for 3D play.** Every retained mode verifies its
+whole prepared collection, loads its images and symbol font, then checks rendering
+readiness before enabling decisions. Missing or damaged assets open a blocking
+window with **Choose asset folder**, **Retry** and **Quit**; the terminal shows the
+same diagnosis. Failed startup leaves saves unchanged. The headless player driver
+and engineering checks remain artwork-independent. [ADR 0004](docs/adr/0004-require-artwork-for-3d-play.md)
+records the decision; [#124's handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/124#issuecomment-6706875824)
+records verification and remaining native acceptance.
+
 **Development saves:** replay-era saves are unsupported, and the current Gathering changes can also invalidate older attempts. If startup rejects a save, [start with an unused `--save` path](#start-fresh-after-an-incompatible-save). Existing files are preserved; no migration is provided. See [the replay decision](docs/adr/0003-retire-replay.md) and [the current compatibility boundary](docs/research/gathering-results-tokens-and-slots.md#local-implementation-result--2026-11-06).
 
 An English-language Arkham Horror: The Card Game application for Ubuntu, planned with a Rust rules core and an animated 3D tabletop.
@@ -113,9 +122,9 @@ target/debug/arkham-tabletop \
   --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/tony-assets-v5
 ```
 
-The `--experiment tony` option selects the prepared turn. The explicit artwork path above uses this machine's new counter collection; use your own prepared folder elsewhere. Omitting `--art-root` uses Tony's saved artwork preference or its preserved v4 default. The terminal reports the experiment, resolved artwork folder and completeness at startup. If artwork has not been prepared, use the preparation instructions below; missing artwork leaves readable substitutes. Joel accepted the shared counter refinement under [#73](https://github.com/joeloverbeck/arkham-unfolded/issues/73) on 2026-11-01 after playing the complete prepared Party attempt through Act advancement and checking the recent visuals. This does not claim a separate Tony or Jacqueline playthrough of that refinement.
+The `--experiment tony` option selects the prepared turn. The explicit artwork path above uses this machine's new counter collection; use your own prepared folder elsewhere. Omitting `--art-root` uses Tony's saved artwork preference or its preserved v4 default. The terminal reports the experiment, resolved artwork folder and completeness at startup. If artwork has not been prepared, use the preparation instructions below; missing artwork blocks play and offers folder selection, Retry and Quit. Joel accepted the shared counter refinement under [#73](https://github.com/joeloverbeck/arkham-unfolded/issues/73) on 2026-11-01 after playing the complete prepared Party attempt through Act advancement and checking the recent visuals. This does not claim a separate Tony or Jacqueline playthrough of that refinement.
 
-All three native experiments check rendering before enabling play. Keep the window visible and focused while **Checking graphics...** is shown. A healthy scene normally needs several seconds; startup refuses play if it cannot become ready within 30 seconds of visible foreground operation. A later sustained rendering failure also stops play and exits unsuccessfully. The terminal records the reason, and the last saved decision remains intact. This checks observed progress; it does not repair or certify the graphics driver. See the [graphics investigation and evidence limits](docs/research/nvidia-mapping-and-startup-health.md).
+All four native modes check rendering before enabling play. Keep the window visible and focused while **Checking graphics...** is shown. A healthy scene normally needs several seconds; startup refuses play if it cannot become ready within 30 seconds of visible foreground operation. A later sustained rendering failure also stops play and exits unsuccessfully. The terminal records the reason, and the last saved decision remains intact. This checks observed progress; it does not repair or certify the graphics driver. See the [graphics investigation and evidence limits](docs/research/nvidia-mapping-and-startup-health.md).
 
 On Linux/Vulkan with the observed NVIDIA RTX 2080 Ti, internal upload buffers use system memory to avoid a measured stall when the CPU writes into GPU BAR memory. This [small patch to the pinned renderer dependency](vendor/wgpu-hal/ARKHAM_PATCH.md) applies automatically to all three experiments; use the ordinary launch commands below.
 
@@ -161,15 +170,15 @@ scripts/dev cargo run --locked --bin arkham-assets -- check-tony \
   "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
 ```
 
-This prepares 42 selected images and one symbol font, including the player-card back, damage/horror counters, clue/resource faces, six class icon/background pairs and reveal icon. Preparation verifies the exact downloaded icon before creating output; ordinary play needs no download. Earlier collections retain their verified artwork and use readable substitutes for new missing images. Select the fresh folder with `--art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v5"` or **Choose asset folder**. The source archive and existing collections stay intact. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
+This prepares 42 selected images and one symbol font, including the player-card back, damage/horror counters, clue/resource faces, six class icon/background pairs and reveal icon. Preparation verifies the exact downloaded icon before creating output; ordinary play needs no download. Earlier collections are preserved for inspection but cannot admit play when incomplete or outdated. Select the fresh folder with `--art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v5"` or **Choose asset folder**. The source archive and existing collections stay intact. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
 
 These folder versions preserve earlier prepared files during development; they do not select different game rules. Preparing v5 changes neither saved preferences nor the existing v4 default. Select the fresh folder explicitly with `--art-root` for one launch or **Choose asset folder** to save that selection. An older explicit path continues to select its original folder.
 
 **Choose asset folder** in Tony's **Menu**, or Jacqueline's side panel, checks a prepared folder and saves its location for the next launch of that experiment. Scroll the controls if needed. The native folder dialog uses Ubuntu's `zenity` package. Settings are separate: Tony uses `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml`; Jacqueline retains `config.toml` in the same directory. The normal configuration directory is `~/.config/arkham-unfolded`. Existing `config.toml` contents remain unchanged and apply only to Jacqueline.
 
-Without a command-line override or saved preference, Tony uses `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v4` and Jacqueline uses `$XDG_DATA_HOME/arkham-unfolded/assets-v2`. The normal data directory is `~/.local/share`; relative XDG overrides are ignored. Preparation examples above use that normal location; with a custom `XDG_DATA_HOME`, prepare there or save the actual folder through the app.
+Without a command-line override or saved preference, Tony uses `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v4` and Jacqueline uses `$XDG_DATA_HOME/arkham-unfolded/assets-v2`. These preserved older defaults cannot admit play unless their contents satisfy the current selection; prepare and select a complete collection. The normal data directory is `~/.local/share`; relative XDG overrides are ignored. Preparation examples above use that normal location; with a custom `XDG_DATA_HOME`, prepare there or save the actual folder through the app.
 
-A temporary `--art-root PATH` overrides the saved setting for that launch. Replace that option and its path with `--no-art` to use readable substitutes. Copy the whole prepared folder, including `manifest.json`, to relocate it:
+A temporary `--art-root PATH` overrides the saved setting for that launch. The removed `--no-art` option is rejected. A valid folder selected in the startup recovery window replaces a failing override for that startup; **Retry** checks it again. A later launch's explicit override still takes precedence. Cancellation, incomplete selections and failed settings writes preserve the previous preference. **Quit**, or closing recovery, exits unsuccessfully without creating or modifying an attempt. Copy the whole prepared folder, including `manifest.json`, to relocate it:
 
 ```sh
 scripts/dev cargo run --locked --bin arkham-assets -- check-tony /absolute/path/to/copied-assets
@@ -186,7 +195,7 @@ The no-argument application mode retains the earlier Jacqueline skill-test exper
 
 ```sh
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
-target/debug/arkham-tabletop
+target/debug/arkham-tabletop --art-root "$HOME/.cache/agent-tmp/arkham-124-jacqueline-assets"
 ```
 
 Its saves use `local/experiment/curse.session.json`. See the [Jacqueline guide](docs/experiments/jacqueline-curse.md#build-and-run) for the first clicks, alternate case and legacy asset preparation. Tony and Jacqueline records use separate readers; there is no automatic migration.
@@ -229,7 +238,7 @@ Content support follows the owner's actual use. Starting decks, campaign content
 
 ### Local builds and checks
 
-The built experiment runs offline. A clean clone needs no artwork or credentials for the checks or readable tabletop substitutes. Run `scripts/check` for tracked-file hygiene, formatting, strict Clippy, and the Rust tool, rules, continuity and tabletop tests. Rustup uses the compiler and components in `rust-toolchain.toml`. The Ubuntu PR workflow runs the same phase launchers as named steps without a display or private assets; the portal transport tests start a private `dbus-daemon`. CI compiles its small Rust toolchain-preparation entry point directly with `rustc` before restoring Cargo's cache; the full tools package builds afterward.
+The built experiment runs offline. A clean clone needs no artwork or credentials for headless engineering checks. Complete prepared artwork and successful decoding are required for 3D play. Run `scripts/check` for tracked-file hygiene, formatting, strict Clippy, and the Rust tool, rules, continuity and tabletop tests. Rustup uses the compiler and components in `rust-toolchain.toml`. The Ubuntu PR workflow runs the same phase launchers as named steps without a display or private assets; the portal transport tests start a private `dbus-daemon`. CI compiles its small Rust toolchain-preparation entry point directly with `rustc` before restoring Cargo's cache; the full tools package builds afterward.
 
 On Linux x86_64 and aarch64, the file-replacement lock test uses `ptrace` to observe its own driver child. The test environment must permit this child tracing. If a restricted agent or container sandbox denies it with `Operation not permitted`, rerun the unchanged check in an authorized environment that permits child tracing. Successful verification requires the tracing test to execute and pass.
 
@@ -299,7 +308,7 @@ Require a finished, successful baseline record before returning to the candidate
 
 Repository helpers live in the independent `arkham-tools` Cargo package. `scripts/tools --help` lists the bounded reader, Git-index guard, native verification and profiling commands; building these helpers does not compile Bevy. The launcher isolates its build artifacts from application compilation so context reads can proceed during a build, while Cargo still rebuilds changed helper sources. Its invocation parameters leave the caller's build-directory environment available to commands such as `record-check`. The index guard rejects generated caches and recognizable non-Rust executable source/template filenames, including force-added files. Inline code, templates and invocation-only shell remain subject to review under the [implementation-language contract](docs/foundation/mission.md#implementation-language). See the experiment guide for [native verification](docs/experiments/jacqueline-curse.md#developer-native-verification), external inputs, records and evidence limits.
 
-The application reads a separately configured prepared asset collection. Image and font bytes are not included in Git. Gameplay remains usable with readable English substitutes when artwork is absent; absent or unsupported rules behavior must be identified before play. The [source contract](docs/foundation/sources-and-verification.md#presentation-asset-preparation) requires deliberate selection, copying/conversion and verification whenever development introduces a new asset dependency. The original archive's layout and source identities belong to that preparation step.
+The application reads a separately configured prepared asset collection. Image and font bytes are not included in Git. The [selected artwork contract](docs/adr/0004-require-artwork-for-3d-play.md) requires complete artwork and successful loading before 3D play, with informative refusal and recovery instead of substitutes. Absent or unsupported rules behavior must also be identified before play. The [source contract](docs/foundation/sources-and-verification.md#presentation-asset-preparation) requires deliberate selection, copying/conversion and verification whenever development introduces a new asset dependency. The original archive's layout and source identities belong to that preparation step.
 
 Once required game data is imported, gameplay and saves work offline. ArkhamDB remains the deck editor; imports and update checks require network access. Personal saves, captures, and credentials remain local and outside Git.
 

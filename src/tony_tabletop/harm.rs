@@ -153,11 +153,6 @@ pub(super) fn harm_scene(
     for (index, investigator) in view.investigators.iter().enumerate() {
         for horror in [false, true] {
             let at = layout::investigator_harm(index, horror);
-            let role = if horror {
-                "token/horror"
-            } else {
-                "token/damage"
-            };
             let kind = if horror { "Horror" } else { "Damage" };
             let total = if horror {
                 Some((investigator.horror, investigator.sanity))
@@ -168,10 +163,7 @@ pub(super) fn harm_scene(
                 None
             };
             let text = match total {
-                Some((amount, capacity)) if art.image(role).is_some() => {
-                    format!("{amount}/{capacity}")
-                }
-                Some((amount, capacity)) => format!("{kind} {amount}/{capacity}"),
+                Some((amount, capacity)) => format!("{amount}/{capacity}"),
                 None => "Damage n/a".to_owned(),
             };
             let arriving = index == 0
@@ -184,15 +176,16 @@ pub(super) fn harm_scene(
                         }
                 });
             counter(commands, meshes, materials, art, at, horror, arriving);
-            counter_total(
-                commands,
-                text,
-                layout::investigator_harm_caption(
-                    index,
-                    horror,
-                    total.is_none() || art.image(role).is_none(),
-                ),
-            );
+            let mut caption = layout::investigator_harm_caption(index, horror);
+            let accessible = if total.is_some() {
+                format!("{kind} {text}")
+            } else {
+                // Unrepresented companion damage retains its named-caption
+                // clearance even with the complete artwork collection.
+                caption.x -= 0.45;
+                text.clone()
+            };
+            counter_total(commands, accessible, text, caption);
         }
     }
     if view.ghoul.alive && view.ghoul.damage > 0 {
@@ -207,12 +200,8 @@ pub(super) fn harm_scene(
             false,
             hit.is_some_and(|hit| hit.recipient == HarmRecipient::Ghoul && hit.damage > 0),
         );
-        let text = if art.image("token/damage").is_some() {
-            format!("{}/2", view.ghoul.damage)
-        } else {
-            format!("Damage\n{}/2", view.ghoul.damage)
-        };
-        counter_total(commands, text, at + Vec3::Z * 0.5);
+        let text = format!("{}/2", view.ghoul.damage);
+        counter_total(commands, format!("Damage {text}"), text, at + Vec3::Z * 0.5);
     }
     let Some(hit) = hit else {
         return;
@@ -268,9 +257,10 @@ pub(super) fn harm_scene(
     );
 }
 
-fn counter_total(commands: &mut Commands, text: String, at: Vec3) {
+fn counter_total(commands: &mut Commands, accessible: String, text: String, at: Vec3) {
     commands.spawn((
         Text::new(text),
+        AccessibleLabel::new(accessible),
         TextFont {
             font_size: FontSize::Px(11.0),
             ..default()
@@ -325,7 +315,7 @@ mod tests {
             } else {
                 BTreeMap::new()
             },
-            symbol_font: None,
+            symbol_font: Handle::default(),
             status: String::new(),
         })
         .init_resource::<Assets<Mesh>>()
@@ -415,8 +405,8 @@ mod tests {
     }
 
     #[test]
-    fn absent_harm_artwork_has_named_substitutes_instead_of_unlabelled_rectangles() {
-        let mut app = counters(1, 1, false);
+    fn ordinary_harm_counters_keep_fractions_accessible_names_and_unsupported_damage() {
+        let mut app = counters(1, 1, true);
         let world = app.world_mut();
         assert_eq!(
             world
@@ -424,22 +414,39 @@ mod tests {
                 .iter(world)
                 .count(),
             6,
-            "missing artwork must retain the actual physical counters"
+            "each investigator retains both physical counters"
         );
         let labels: Vec<_> = world
             .query::<&Text>()
             .iter(world)
             .map(|text| text.0.as_str())
             .collect();
-        assert!(
-            labels.iter().any(|label| label.contains("Damage")),
-            "damage needs a readable substitute"
-        );
-        assert!(
-            labels.iter().any(|label| label.contains("Horror")),
-            "horror needs a readable substitute"
-        );
-        assert!(labels.contains(&"Horror 2/9"));
+        assert!(labels.contains(&"2/9"));
         assert!(labels.contains(&"Damage n/a"));
+        let unsupported: Vec<_> = world
+            .query::<(&Text, &AccessibleLabel, &WorldLabel)>()
+            .iter(world)
+            .filter(|(text, _, _)| text.0 == "Damage n/a")
+            .map(|(_, accessible, anchor)| {
+                assert_eq!(accessible.0, "Damage n/a");
+                anchor.0
+            })
+            .collect();
+        assert_eq!(unsupported.len(), 2);
+        for index in [1, 2] {
+            // Baseline named-caption clearance applies to unsupported damage,
+            // including with complete artwork; it is not a missing-art branch.
+            assert!(
+                unsupported.contains(
+                    &(layout::investigator_harm(index, false) + Vec3::new(-0.45, 0., 0.32))
+                )
+            );
+        }
+        assert!(
+            world
+                .query::<&AccessibleLabel>()
+                .iter(world)
+                .any(|label| label.0 == "Horror 2/9")
+        );
     }
 }
