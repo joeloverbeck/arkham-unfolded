@@ -25,6 +25,7 @@ pub(super) fn use_counter(kind: Option<UseKind>) -> Option<CounterKind> {
         UseKind::Bounty => Some(CounterKind::Bounty),
         UseKind::Supply => Some(CounterKind::Supply),
         UseKind::Key => Some(CounterKind::Key),
+        UseKind::Resource => Some(CounterKind::Resource),
         _ => None,
     }
 }
@@ -41,7 +42,7 @@ pub(super) fn count(
     kind: CounterKind,
     amount: u8,
 ) {
-    if let Some((token, label)) = counters::spawn_count(
+    if let Some((token, label)) = counters::spawn_asset_count(
         commands,
         meshes,
         materials,

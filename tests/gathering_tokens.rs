@@ -42,6 +42,12 @@ fn arbiter_cannot_repeat_jacquelines_reaction_on_her_own_pending_reveal() {
     let mut reopened = continuity::load_session(&path).unwrap();
     assert_eq!(reopened.observe(), session.observe());
     let pending = reopened.observe();
+    assert_eq!(
+        pending.play.as_ref().unwrap().players[2]
+            .presentation
+            .round_ability_spent,
+        Some(false)
+    );
     assert!(
         !pending
             .choices

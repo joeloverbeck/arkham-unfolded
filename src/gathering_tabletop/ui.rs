@@ -310,47 +310,6 @@ fn turn_heading(view: &Observation) -> String {
     "Setup · no investigator turn in progress".into()
 }
 
-fn investigator_summary(view: &Observation) -> String {
-    if let Some(play) = &view.play {
-        return play
-            .players
-            .iter()
-            .map(|player| {
-                format!(
-                    "{}: {} resources · {} clues · {} actions{}",
-                    short_name(player.investigator),
-                    player.resources,
-                    player.clues,
-                    play.actions_remaining[player.investigator.index()],
-                    if player.presentation.turn_finished {
-                        " (turn ended)"
-                    } else {
-                        ""
-                    }
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("     |     ");
-    }
-    view.investigators
-        .iter()
-        .map(|player| {
-            format!(
-                "{}: {} resources · {} cards in hand{}",
-                short_name(player.investigator),
-                player.resources,
-                player.hand.len(),
-                if player.mulligan_complete {
-                    " · mulligan finished"
-                } else {
-                    ""
-                }
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("     |     ")
-}
-
 fn test_summary(play: &crate::gathering::PlayObservation) -> Option<String> {
     use crate::{gathering::Skill, tabletop_support::symbols::Skill as Symbol};
     let test = play.test.as_ref()?;
@@ -545,7 +504,6 @@ pub(super) fn render(
         ));
         let prefix = { "" };
         p.spawn(art.text(format!("{prefix}{}", turn_heading(view)), 18., PAPER));
-        p.spawn(art.text(investigator_summary(view), 13., PAPER));
     });
     screen::menu_button(commands, Panel, |p| {
         button(art, p, "Menu", Action::Utilities);

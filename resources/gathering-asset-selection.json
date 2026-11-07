@@ -2574,6 +2574,20 @@
       }
     },
     {
+      "bytes": 7983,
+      "evidence": "Owner-supplied inner-spark glyph; docs/adr/0002-persistent-table-areas.md#gathering-ability-markers-available-choices-and-compact-assets. Unchanged transparent PNG; class background is applied at runtime.",
+      "path": "tokens/investigator-ability.png",
+      "role": "token/investigator-ability",
+      "sha256": "1ebce6f1238b0b19351d4ef6d3fc0150f034614a5d22cadc76cadf6550f216c0",
+      "source": {
+        "bytes": 7983,
+        "input": "ability_icon",
+        "path": "investigator-ability-inner-spark-glyph.png",
+        "sha256": "1ebce6f1238b0b19351d4ef6d3fc0150f034614a5d22cadc76cadf6550f216c0"
+      },
+      "transform": { "kind": "copy" }
+    },
+    {
       "attribution": {
         "creator": "Lorc",
         "download_url": "https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png",
@@ -2599,7 +2613,7 @@
       }
     }
   ],
-  "collection": "arkham-unfolded-gathering-v3",
+  "collection": "arkham-unfolded-gathering-v4",
   "deck_projection_sha256": "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb",
   "format_version": 1,
   "scenario_binding_sha256": "635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0",

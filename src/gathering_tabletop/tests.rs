@@ -1,6 +1,115 @@
 use super::*;
 
 #[test]
+fn personal_resource_and_clue_counters_do_not_offer_investigator_actions() {
+    use crate::tabletop_counters::Counter;
+
+    let dir = tempfile::tempdir().unwrap();
+    let session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
+    let mut app = host_with_table(Table::new(session, dir.path().join("counters.json")), false);
+    let world = app.world_mut();
+    let mut seen = 0;
+    for (entity, at) in world
+        .query_filtered::<(Entity, &Transform), With<Counter>>()
+        .iter(world)
+    {
+        if (0..3).any(|index| {
+            at.translation == layout::investigator_resource(index)
+                || at.translation == layout::investigator_clue(index)
+        }) {
+            seen += 1;
+            assert!(
+                world.get::<ContextTarget>(entity).is_none(),
+                "Personal totals are not investigator action targets"
+            );
+            assert!(
+                world.get::<CardFeedback>(entity).is_none(),
+                "Personal totals must not inherit investigator availability"
+            );
+        }
+    }
+    assert_eq!(
+        seen, 6,
+        "Exercise each investigator's resource and clue counters"
+    );
+}
+
+#[test]
+fn gameplay_cues_follow_current_windows_on_cards_models_and_the_bag() {
+    let mut session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::JacquelineCancellation);
+    let dir = tempfile::tempdir().unwrap();
+    for at_reveal in [false, true] {
+        if at_reveal {
+            for _ in 0..8 {
+                let view = session.observe();
+                if view
+                    .choices
+                    .iter()
+                    .any(|choice| choice.id == "tokens:jacqueline")
+                {
+                    break;
+                }
+                let id = ["window:pass", "test:confirm"]
+                    .into_iter()
+                    .find(|id| view.choices.iter().any(|choice| choice.id == *id))
+                    .expect("route to reveal");
+                session.choose(view.revision, id).unwrap();
+            }
+        }
+        let mut app = host_with_table(
+            Table::new(session.clone(), dir.path().join("availability.json")),
+            false,
+        );
+        for _ in 0..3 {
+            app.update();
+        }
+        let view = app.world().resource::<Table>().view();
+        let world = app.world_mut();
+        let mut jacqueline = 0;
+        let mut bag = 0;
+        for (target, cue) in world.query::<(&ContextTarget, &CardFeedback)>().iter(world) {
+            assert_eq!(
+                cue.opportunity,
+                !controls::source_choices(&view, &target.source).is_empty(),
+                "{:?}",
+                target.source
+            );
+            if target.source == controls::Source::Investigator(Investigator::Jacqueline) {
+                assert_eq!(cue.opportunity, at_reveal);
+                jacqueline += 1;
+            }
+            if target.source == controls::Source::Bag {
+                assert_eq!(cue.opportunity, at_reveal);
+                bag += 1;
+            }
+        }
+        assert!(jacqueline >= 2, "card and standee must agree");
+        assert_eq!(bag, 1);
+        app.world_mut().resource_mut::<Table>().history_open = true;
+        app.update();
+        assert!(
+            app.world_mut()
+                .query::<&CardFeedback>()
+                .iter(app.world())
+                .all(|cue| !cue.opportunity)
+        );
+        app.world_mut().resource_mut::<Table>().history_open = false;
+        app.world_mut()
+            .resource_mut::<RenderHealth>()
+            .stop("test admission failure".into());
+        app.update();
+        assert!(
+            app.world_mut()
+                .query::<&CardFeedback>()
+                .iter(app.world())
+                .all(|cue| !cue.opportunity)
+        );
+    }
+}
+
+#[test]
 fn selection_new_refuses_a_collision_and_open_requires_an_existing_attempt() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("attempt.json");
@@ -181,7 +290,6 @@ fn player_window_explains_and_marks_the_playable_card_without_auto_passing() {
         draws::tick(&mut app, 0.1);
     }
     let text = rendered_text(&mut app);
-    assert!(text.contains("Available now"), "{text}");
     assert!(text.contains("Jacqueline") && text.contains("Premonition"));
     let world = app.world_mut();
     assert!(
@@ -193,7 +301,7 @@ fn player_window_explains_and_marks_the_playable_card_without_auto_passing() {
                     && children.iter().any(|child| {
                         world
                             .get::<Name>(child)
-                            .is_some_and(|name| name.as_str() == "Card available opportunity")
+                            .is_some_and(|name| name.as_str() == "Available gameplay choices")
                             && world.get::<Visibility>(child) == Some(&Visibility::Inherited)
                     })
             })
@@ -843,10 +951,13 @@ fn ordinary_setup_tab_navigation_survives_graphics_admission() {
 }
 
 #[test]
-fn production_world_labels_follow_party_projection_without_pinning_to_viewport_edges() {
+fn dynamic_world_labels_follow_projection_without_pinning_to_viewport_edges() {
     for scale in [1., 2.] {
         let directory = tempfile::tempdir().unwrap();
         let mut app = host(directory.path().join("projected-labels.json"));
+        app.world_mut()
+            .resource_mut::<Orbit>()
+            .focus(layout::focus(Area::Investigator(0)));
         let size = Vec2::new(1600., 1000.);
         crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, scale);
         for _ in 0..3 {
@@ -857,9 +968,9 @@ fn production_world_labels_follow_party_projection_without_pinning_to_viewport_e
             .query::<(Entity, &WorldLabel, &Text)>()
             .iter(world)
             .find_map(|(entity, label, text)| {
-                (label.1 && text.0.starts_with("Tony Morgan")).then_some(entity)
+                (!label.1 && text.0.ends_with(" cards")).then_some(entity)
             })
-            .expect("The production renderer supplies Tony's heading");
+            .expect("The production renderer supplies a changing deck count");
         for (point, visible) in [
             (Vec2::new(-20., 500.), true),
             (Vec2::new(1620., 500.), true),

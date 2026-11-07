@@ -285,7 +285,7 @@ fn setup(
         label(
             &mut commands,
             format!("{name} · {} hand cards", [8, 9, 1][index]),
-            layout::investigator_heading(index),
+            layout::investigator_center(index, 3) + Vec3::new(0., 0.05, -8.15),
             210.0,
         );
         for (name, at) in layout::zone_labels(index) {
@@ -348,7 +348,13 @@ fn setup(
         }
         for slot in 0..12 {
             let (code, title) = ASSETS[slot % ASSETS.len()];
-            let at = layout::investigator_asset(index, slot);
+            // This historical capacity witness includes larger 1.8 × 2.52 cards.
+            let at = layout::investigator_center(index, 3)
+                + Vec3::new(
+                    -6.5 + (slot % 6) as f32 * 2.6,
+                    0.05,
+                    -1.5 + (slot / 6) as f32 * 3.0,
+                );
             card(
                 &mut commands,
                 &mut meshes,
@@ -428,7 +434,7 @@ fn setup(
     label(
         &mut commands,
         "Scenario / twelve-location fit",
-        layout::scenario_heading(),
+        Vec3::new(0., 0.1, layout::SCENARIO_FAR_EDGE - 0.65),
         240.0,
     );
     for (slot, center) in location_witness_positions().into_iter().enumerate() {
@@ -529,10 +535,8 @@ fn setup(
             label(&mut commands, title, caption, 135.0);
         }
     }
-    let test_heading = label(&mut commands, "Test area", layout::test_heading(), 180.0);
-    commands
-        .entity(test_heading)
-        .insert(layout::TestAreaHeading);
+    let test_heading = label(&mut commands, "Test area", Vec3::new(0., 0., 2.), 180.0);
+    commands.entity(test_heading).insert(TestAreaHeading);
     for (name, at) in layout::test_zone_labels() {
         label(&mut commands, name, at, 180.0);
     }
@@ -672,14 +676,14 @@ fn position_labels(
     mut labels: Query<(
         &Label,
         &ComputedNode,
-        Has<layout::TestAreaHeading>,
+        Has<TestAreaHeading>,
         &mut Node,
         &mut Visibility,
     )>,
 ) {
     for (label, computed, test_heading, mut node, mut visible) in &mut labels {
         let point = if test_heading {
-            layout::test_heading_screen_position(camera.0, camera.1, computed)
+            test_heading_screen_position(camera.0, camera.1, computed)
         } else {
             camera.0.world_to_viewport(camera.1, label.0).ok()
         };
@@ -691,6 +695,30 @@ fn position_labels(
             *visible = Visibility::Hidden;
         }
     }
+}
+
+// This historical diagnostic keeps its original overlay geometry. Gathering's
+// permanent names now use printed mat surfaces instead.
+#[derive(Component)]
+struct TestAreaHeading;
+
+fn test_heading_screen_position(
+    camera: &Camera,
+    transform: &GlobalTransform,
+    node: &ComputedNode,
+) -> Option<Vec2> {
+    let height = node.size().y * node.inverse_scale_factor;
+    let scenario_edge = camera
+        .world_to_viewport(transform, Vec3::new(0., 0., 1.))
+        .ok()?;
+    let test_edge = camera
+        .world_to_viewport(transform, Vec3::new(0., 0., 3.))
+        .ok()?;
+    if height <= 0. || test_edge.y - scenario_edge.y < height + 2. {
+        return None;
+    }
+    let clearance = (test_edge.y - scenario_edge.y - height) / 2.;
+    Some(test_edge - Vec2::Y * (height + clearance))
 }
 
 fn capture(

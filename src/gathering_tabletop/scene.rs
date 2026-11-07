@@ -65,6 +65,15 @@ pub(super) fn deck(
     commands
         .entity(deck.top)
         .insert((ScenePiece, shuffle::DeckSurface(deck_source)));
+    feedback::attach_card_feedback(
+        commands,
+        meshes,
+        materials,
+        deck.top,
+        pieces::CARD_WIDTH,
+        pieces::CARD_LENGTH,
+        0.0,
+    );
     bind_source(
         commands,
         context,
@@ -102,26 +111,6 @@ pub(super) fn render(
     context: &CardRender<'_>,
 ) {
     let view = context.view;
-    let scenario_heading = label(
-        commands,
-        context,
-        "Scenario",
-        layout::scenario_heading(),
-        true,
-    );
-    commands
-        .entity(scenario_heading)
-        .insert(layout::ScenarioAreaHeading);
-    for (name, at) in layout::scenario_zone_labels() {
-        label(commands, context, name, at, false);
-    }
-    let heading = label(commands, context, "Test area", layout::test_heading(), true);
-    commands.entity(heading).insert(layout::TestAreaHeading);
-    // Token groups supply their own headings; an ordinary Jacqueline reveal
-    // shares one row instead of implying a separate protected original draw.
-    for (name, at) in layout::test_zone_labels().into_iter().take(1) {
-        label(commands, context, name, at, false);
-    }
     for (index, investigator) in view.investigators.iter().enumerate() {
         let who = investigator.investigator;
         let code = match who {
@@ -129,16 +118,6 @@ pub(super) fn render(
             Investigator::Patrice => "06005",
             Investigator::Jacqueline => "60401",
         };
-        label(
-            commands,
-            context,
-            who.name(),
-            layout::investigator_heading(index),
-            true,
-        );
-        for (name, at) in layout::zone_labels(index) {
-            label(commands, context, name, at, false);
-        }
         card(
             commands,
             meshes,
@@ -151,6 +130,27 @@ pub(super) fn render(
         );
         let player = view.play.as_ref().map(|play| &play.players[index]);
         let projection = player.map(|player| &player.presentation);
+        if let Some(spent) = projection.and_then(|status| status.round_ability_spent) {
+            let class = layout::investigator_class(index);
+            let token = crate::tabletop_counters::spawn_ability_marker(
+                commands,
+                meshes,
+                materials,
+                crate::tabletop_counters::ActionRow {
+                    investigator: index,
+                    turn_ended: false,
+                    additional: None,
+                    additional_eligible: false,
+                    class,
+                    icon: context.art.image("token/investigator-ability"),
+                    background: context
+                        .art
+                        .image(&format!("class/{}/background", class.asset_name())),
+                },
+                spent,
+            );
+            commands.entity(token).insert(ScenePiece);
+        }
         let panel = pieces::InvestigatorCounters {
             index,
             resources: player.map_or(investigator.resources, |player| player.resources),
@@ -175,21 +175,8 @@ pub(super) fn render(
         let counters = pieces::investigator_counters(commands, meshes, materials, panel, |role| {
             context.art.image(role)
         });
-        for entity in counters.entities {
+        for entity in counters {
             commands.entity(entity).insert(ScenePiece);
-        }
-        for entity in counters.counters {
-            bind_source(
-                commands,
-                context,
-                entity,
-                controls::Selection {
-                    source: controls::Source::Investigator(who),
-                    at: layout::investigator_card(index),
-                    title: who.name().into(),
-                    inspect_code: code.into(),
-                },
-            );
         }
         for (slot, held) in investigator.hand.iter().enumerate() {
             // Upkeep ordering keeps cards in their rules zone until the whole
@@ -451,8 +438,11 @@ mod tests {
             .query::<(&WorldLabel, &Text, &Node, Option<&BackgroundColor>)>()
             .iter(world)
             .collect::<Vec<_>>();
-        assert!(labels.iter().any(|(_, text, _, _)| text.0 == "Scenario"));
-        assert!(labels.iter().any(|(_, text, _, _)| text.0 == "Test area"));
+        assert!(
+            !labels
+                .iter()
+                .any(|(_, text, _, _)| text.0 == "Scenario" || text.0 == "Test area")
+        );
         for source in [
             controls::Source::Location("01111".into()),
             controls::Source::Agenda,

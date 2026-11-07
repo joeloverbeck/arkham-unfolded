@@ -181,6 +181,9 @@ pub struct PlayerPresentation {
     pub ordinary_action_allowance: u8,
     pub ordinary_actions_spent: u8,
     pub tony_bonus: Option<TonyBonusPresentation>,
+    /// Round allowance accounting, independent of current trigger legality.
+    #[serde(default)]
+    pub round_ability_spent: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1015,6 +1018,8 @@ impl Game {
                                 eligible: tony_eligible,
                             },
                         ),
+                        round_ability_spent: (p.investigator == Investigator::Jacqueline)
+                            .then_some(self.jacqueline_uses > 0),
                     },
                 })
                 .collect(),
