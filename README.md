@@ -7,9 +7,9 @@ window with **Choose asset folder**, **Retry** and **Quit**; the terminal shows 
 same diagnosis. Failed startup leaves saves unchanged. The headless player driver
 and engineering checks remain artwork-independent. [ADR 0004](docs/adr/0004-require-artwork-for-3d-play.md)
 records the decision; [#124's handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/124#issuecomment-6706875824)
-records verification and remaining native acceptance.
+records verification and bounded owner acceptance.
 
-**Development saves:** replay-era saves are unsupported, and the current Gathering changes can also invalidate older attempts. If startup rejects a save, [start with an unused `--save` path](#start-fresh-after-an-incompatible-save). Existing files are preserved; no migration is provided. See [the replay decision](docs/adr/0003-retire-replay.md) and [the current compatibility boundary](docs/research/gathering-results-tokens-and-slots.md#local-implementation-result--2026-11-06).
+**Development saves:** replay-era saves are unsupported, and later Gathering changes can also invalidate older attempts, including format-3 saves. If startup rejects a save, [start with an unused `--save` path](#start-fresh-after-an-incompatible-save). Removing `--save` loads a different default save; it does not reset the game. Existing files are preserved; no migration is provided. See [the replay decision](docs/adr/0003-retire-replay.md) and [the latest compatibility notes](docs/research/gathering-wagers-keys-and-token-layout.md#implementation-and-verification).
 
 An English-language Arkham Horror: The Card Game application for Ubuntu, planned with a Rust rules core and an animated 3D tabletop.
 
@@ -23,6 +23,14 @@ The owner-accepted [prepared Study escape attempt](docs/experiments/study-escape
 
 ## Launch and resume The Gathering
 
+Choose the save path before launching:
+
+- **Start a new attempt:** use a filename that does not exist. The command below
+  uses `local/gathering/session-2026-11-07.json`; choose another name if it already
+  contains an attempt you do not want to resume.
+- **Resume:** use the exact `--save` path from your previous launch. An existing
+  compatible file reopens that attempt; it does not start setup again.
+
 On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
 
 ```sh
@@ -30,13 +38,13 @@ cd /home/joeloverbeck/src/arkham-unfolded
 mkdir -p local/gathering
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
 target/debug/arkham-tabletop \
-  --experiment gathering --save local/gathering/session.json
+  --experiment gathering --save local/gathering/session-2026-11-07.json
 ```
 
-The `--save` path selects the attempt: an unused path starts setup; an existing
-file is loaded. Omitting `--save` instead selects
-`local/gathering/setup.session.json`. Rebuilding does not reset that save. If an
-older attempt prevents startup, use the [fresh-start command below](#start-fresh-after-an-incompatible-save).
+Omitting `--save` selects `local/gathering/setup.session.json`, which can contain
+another older attempt. Neither rebuilding nor removing `--save` clears a saved
+game. If either launch reports an incompatible save, follow
+[Start fresh after an incompatible save](#start-fresh-after-an-incompatible-save).
 
 Gathering reads its installed artwork from `~/.local/share/arkham-unfolded/gathering-assets`
 by default. Artwork updates replace the verified contents at that stable location;
@@ -47,7 +55,7 @@ for installation and updates, including custom XDG data locations.
 
 This starts original **The Gathering on Standard**, using the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine decks and the prepared artwork on this machine. Keep the terminal open and the window visible and focused during **Checking graphics...**. On a new save, the heading says **The Gathering · Standard · Setup**: click an investigator card and choose them as lead from its contextual menu. Click individual hand cards for mulligan choices, then confirm each investigator's hand to begin ordinary scenario play.
 
-Every decision autosaves to `local/gathering/session.json`. Run the same command to resume. To start over, choose **Menu → Restart The Gathering... → Restart**. This returns to setup with fresh shuffles and archives the previous attempt beside the save; its exact path appears on screen and in the terminal. **Cancel** or Escape keeps the current attempt. **Reopen saved attempt** resumes the new attempt after a restart. See the [recovery instructions](docs/experiments/gathering-setup.md#restart-and-recover-an-attempt) to resume an archive. The `local/` directory is ignored by Git. The first build can take several minutes; subsequent launches reuse it.
+Every decision autosaves to the selected `--save` path (`local/gathering/session-2026-11-07.json` in this example). Run the same command to resume. To start over, choose **Menu → Restart The Gathering... → Restart**. This returns to setup with fresh shuffles and archives the previous attempt beside the save; its exact path appears on screen and in the terminal. **Cancel** or Escape keeps the current attempt. **Reopen saved attempt** resumes the new attempt after a restart. See the [recovery instructions](docs/experiments/gathering-setup.md#restart-and-recover-an-attempt) to resume an archive. The `local/` directory is ignored by Git. The first build can take several minutes; subsequent launches reuse it.
 
 Skill tests pause at a detailed result panel until **Continue**. Optional effects such as Quick Thinking then offer explicit use-or-decline choices. **Menu → History** retains recorded breakdowns; see [skill test results](docs/experiments/gathering-setup.md#read-a-skill-test-result) for timing and reopening.
 
@@ -72,17 +80,28 @@ Gathering shows unengaged enemies individually on a navy board left of the map, 
 
 ### Start fresh after an incompatible save
 
-If startup reports `Gathering setup does not match its recorded decisions and pinned inputs.`,
-the saved attempt cannot be resumed by this build. Early development prioritizes
-the current implementation over compatibility with older saves. Start a new
-attempt at an unused path, for example:
+These two startup errors require a new save path with the current build:
+
+| Startup error | Meaning |
+| --- | --- |
+| `Unsupported save (format 1, …). Pre-removal saves and recordings are unsupported.` | The file predates replay retirement. The current format is 3; pre-removal saves have no migration. |
+| `Gathering setup does not match its recorded decisions and pinned inputs.` | The saved state differs from what the current build reconstructs from its recorded choices. This can affect format-3 saves too: validation compares history wording as well as game state, so changed choice captions alone can cause this refusal. |
+
+The first error can come from `local/gathering/session.json`, while launching
+without `--save` can produce the second by loading
+`local/gathering/setup.session.json`. Neither command requests a fresh attempt
+when its selected file already exists.
+
+Early development prioritizes the current implementation over compatibility
+with older saves. To play again, use an unused path. This starts over without
+transferring progress from the rejected attempt:
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
 mkdir -p local/gathering
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
 target/debug/arkham-tabletop \
-  --experiment gathering --save local/gathering/session-wagers-keys-2026-11-06.json
+  --experiment gathering --save local/gathering/session-2026-11-07.json
 ```
 
 Choose another filename if that path already contains an older attempt. Keep
