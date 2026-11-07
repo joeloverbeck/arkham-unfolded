@@ -56,6 +56,145 @@ fn manifest(output: &Path) -> Value {
     serde_json::from_slice(&fs::read(output.join("manifest.json")).unwrap()).unwrap()
 }
 
+#[test]
+fn all_changed_captures_both_rename_paths_and_mixed_working_changes_with_explicit_exclusions() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    git(&root, &["mv", "selected.txt", "renamed.txt"]);
+    git(&root, &["commit", "--quiet", "-m", "rename"]);
+    fs::write(root.join("context.txt"), "staged\n").unwrap();
+    git(&root, &["add", "context.txt"]);
+    fs::write(root.join("renamed.txt"), "unstaged\n").unwrap();
+    fs::write(root.join("untracked space.txt"), "new\n").unwrap();
+    fs::write(root.join("unrelated.txt"), "leave alone\n").unwrap();
+    let index = fs::read(root.join(".git/index")).unwrap();
+    let output_dir = directory.path().join("snapshot");
+    let result = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .current_dir(&root)
+        .args([
+            "review-snapshot",
+            "--base",
+            &base,
+            "--all-changed",
+            "--exclude",
+            "unrelated.txt",
+            "--output-dir",
+        ])
+        .arg(&output_dir)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    let record = manifest(&output_dir);
+    assert_eq!(
+        record["selected_paths"],
+        serde_json::json!([
+            "context.txt",
+            "renamed.txt",
+            "selected.txt",
+            "untracked space.txt"
+        ])
+    );
+    assert_eq!(
+        record["excluded_paths"],
+        serde_json::json!(["unrelated.txt"])
+    );
+    assert!(!output_dir.join("candidate/selected.txt").exists());
+    assert!(!output_dir.join("candidate/unrelated.txt").exists());
+    assert_eq!(
+        fs::read_to_string(output_dir.join("candidate/renamed.txt")).unwrap(),
+        "unstaged\n"
+    );
+    assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+}
+
+#[test]
+fn refresh_refuses_accidental_scope_contraction_but_accepts_an_explicit_exclusion() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("selected.txt"), "changed\n").unwrap();
+    fs::write(root.join("context.txt"), "changed\n").unwrap();
+    let first = directory.path().join("first");
+    assert!(
+        snapshot(&root, &base, &first, &["selected.txt", "context.txt"], None)
+            .status
+            .success()
+    );
+    let omitted = directory.path().join("omitted");
+    let result = snapshot(&root, &base, &omitted, &["selected.txt"], Some(&first));
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("scope contraction"));
+    assert!(!omitted.exists());
+    let excluded = directory.path().join("excluded");
+    let result = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .current_dir(&root)
+        .args([
+            "review-snapshot",
+            "--base",
+            &base,
+            "--all-changed",
+            "--exclude",
+            "context.txt",
+            "--previous",
+        ])
+        .arg(&first)
+        .arg("--output-dir")
+        .arg(&excluded)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(
+        manifest(&excluded)["excluded_paths"],
+        serde_json::json!(["context.txt"])
+    );
+}
+
+#[test]
+fn delta_only_summary_keeps_verification_but_omits_unchanged_scope() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("selected.txt"), "first\n").unwrap();
+    fs::write(root.join("context.txt"), "first\n").unwrap();
+    let first = directory.path().join("first");
+    assert!(
+        snapshot(&root, &base, &first, &["selected.txt", "context.txt"], None)
+            .status
+            .success()
+    );
+    assert!(
+        !summary(&first, &manifest_digest(&first), &["--delta-only"])
+            .status
+            .success()
+    );
+    fs::write(root.join("selected.txt"), "second\n").unwrap();
+    let second = directory.path().join("second");
+    assert!(
+        snapshot(
+            &root,
+            &base,
+            &second,
+            &["selected.txt", "context.txt"],
+            Some(&first)
+        )
+        .status
+        .success()
+    );
+    let hash = manifest_digest(&second);
+    let output = summary(&second, &hash, &["--delta-only"]);
+    assert!(output.status.success(), "{output:?}");
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("Selected paths: 2"));
+    assert!(text.contains("Changes since previous snapshot: 1"));
+    assert!(text.contains("modified \"selected.txt\""));
+    assert!(!text.contains("context.txt"));
+    fs::write(second.join("candidate/context.txt"), "tampered\n").unwrap();
+    let refused = summary(&second, &hash, &["--delta-only"]);
+    assert!(!refused.status.success());
+    assert!(refused.stdout.is_empty());
+}
+
 fn manifest_digest(snapshot: &Path) -> String {
     use sha2::{Digest, Sha256};
     format!(

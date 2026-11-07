@@ -387,6 +387,44 @@ fn summary_reports_success_and_child_failure_without_shortening_the_manifest() {
 }
 
 #[test]
+fn summary_exposes_the_earliest_shutdown_and_its_limit() {
+    for (timeout, limit) in [("5", "app_timeout"), ("3600", "approval_cleanup_reserve")] {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("run");
+        let child = launch(&support::fixture().join("child"), &directory)
+            .args(["--output-format", "summary", "--timeout-seconds", timeout])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let metadata = running(&directory);
+        fs::write(directory.join("finish"), "").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let first: Value = serde_json::from_str(
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        let timing = &first["timing"];
+        assert_eq!(timing, &metadata["timing"]);
+        assert_eq!(timing["limiting_condition"], limit);
+        assert_eq!(first["launch_purpose"], "interactive");
+        let shutdown = timing["shutdown_unix_seconds"].as_f64().unwrap();
+        let started = timing["started_unix_seconds"].as_f64().unwrap();
+        let approval_end = metadata["approval_deadline_unix_seconds"].as_f64().unwrap();
+        assert!(shutdown <= approval_end - 15.0);
+        if limit == "app_timeout" {
+            assert!((shutdown - started - 5.0).abs() < 0.01);
+        } else {
+            assert!((shutdown - (approval_end - 15.0)).abs() < 0.01);
+        }
+    }
+}
+
+#[test]
 fn launch_records_allowlisted_inherited_and_effective_conditions_before_exit() {
     use std::{ffi::OsString, os::unix::ffi::OsStringExt};
 

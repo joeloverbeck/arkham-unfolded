@@ -110,7 +110,7 @@ pub fn run() -> Result<(), String> {
         if let Some(root) = &root {
             args.extend(["--art-root".into(), root.into()]);
         }
-        return replace(args);
+        return replace(command(args)?);
     }
     crate::tabletop_health::exit_result(exit)
 }
@@ -125,6 +125,10 @@ fn install(app: &mut App) {
 }
 
 pub(crate) fn return_to_selection(root: Option<&Path>, notice: Option<&str>) -> Result<(), String> {
+    replace(return_command(root, notice)?)
+}
+
+pub(crate) fn return_command(root: Option<&Path>, notice: Option<&str>) -> Result<Command, String> {
     let mut args: Vec<OsString> = vec!["--entry".into(), "selection".into()];
     if let Some(root) = root {
         args.extend(["--art-root".into(), root.into()]);
@@ -132,13 +136,17 @@ pub(crate) fn return_to_selection(root: Option<&Path>, notice: Option<&str>) -> 
     if let Some(notice) = notice {
         args.extend(["--selection-notice".into(), notice.into()]);
     }
-    replace(args)
+    command(args)
 }
 
-fn replace(args: Vec<OsString>) -> Result<(), String> {
-    let error = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
-        .args(args)
-        .exec();
+fn command(args: Vec<OsString>) -> Result<Command, String> {
+    let mut command = Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
+    command.args(args);
+    Ok(command)
+}
+
+pub(crate) fn replace(mut command: Command) -> Result<(), String> {
+    let error = command.exec();
     Err(format!("Could not open the requested screen: {error}"))
 }
 
@@ -365,6 +373,28 @@ mod tests {
         app.insert_resource(state).init_resource::<Time>();
         install(&mut app);
         app
+    }
+
+    #[test]
+    fn selection_captions_use_supported_glyphs_without_prepared_artwork() {
+        for selected in [false, true] {
+            let mut app = crate::tabletop_layout::heading_checks::app();
+            app.insert_resource(Selection {
+                selected,
+                ..default()
+            })
+            .init_resource::<Time>();
+            install(&mut app);
+            app.update();
+            let world = app.world_mut();
+            assert!(
+                world
+                    .query::<&Text>()
+                    .iter(world)
+                    .any(|text| text.0.starts_with("The Gathering"))
+            );
+            crate::tabletop_layout::font_checks::assert_supported(world);
+        }
     }
 
     #[test]

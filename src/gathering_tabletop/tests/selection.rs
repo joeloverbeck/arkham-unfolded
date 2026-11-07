@@ -1,6 +1,47 @@
 use super::*;
 
 #[test]
+fn outgoing_return_command_preserves_recovered_overrides_and_refreshable_preferences() {
+    use std::ffi::OsString;
+    let directory = tempfile::tempdir().unwrap();
+    let settings = directory.path().join("gathering.toml");
+    let recovered = directory.path().join("recovered assets");
+    let changed_preference = directory.path().join("new preference");
+    let mut config = AssetConfig::load_at(settings.clone(), recovered.clone());
+    config.save_root(&recovered).unwrap();
+    let before = std::fs::read(&settings).unwrap();
+    let original =
+        ["app", "--experiment", "gathering", "--art-root", "/missing"].map(str::to_owned);
+    let command = return_selection_command(&original, &recovered).unwrap();
+    assert_eq!(command.get_program(), std::env::current_exe().unwrap());
+    assert_eq!(
+        command.get_args().map(OsString::from).collect::<Vec<_>>(),
+        vec![
+            "--entry".into(),
+            "selection".into(),
+            "--art-root".into(),
+            recovered.clone().into_os_string()
+        ]
+    );
+    assert_eq!(std::fs::read(&settings).unwrap(), before);
+
+    let ordinary = ["app", "--experiment", "gathering"].map(str::to_owned);
+    let command = return_selection_command(&ordinary, &recovered).unwrap();
+    assert_eq!(
+        command.get_args().collect::<Vec<_>>(),
+        ["--entry", "selection"]
+    );
+    config.save_root(&changed_preference).unwrap();
+    let next = Options::parse(
+        AssetConfig::load_at(settings, recovered),
+        ["--experiment", "gathering"].map(str::to_owned).into_iter(),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(next.art_root, changed_preference);
+}
+
+#[test]
 fn pending_artwork_picker_blocks_navigation_and_game_actions_until_it_finishes() {
     let directory = tempfile::tempdir().unwrap();
     let save = directory.path().join("attempt.json");

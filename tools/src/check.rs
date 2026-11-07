@@ -1,5 +1,6 @@
 //! Record one check invocation so its result survives a lost tool session.
 
+mod inputs;
 mod resources;
 mod source;
 pub mod summary;
@@ -25,7 +26,15 @@ pub struct CheckArgs {
     /// Capture host pressure/memory and the child's visible cgroup once per second.
     #[arg(long)]
     resources: bool,
-    /// Noninteractive check executable and arguments, using the current directory and environment.
+    /// Snapshot a regular file (at most 16 MiB) as child stdin; otherwise stdin is null.
+    /// Piped input and shell heredocs are never inherited.
+    #[arg(long)]
+    stdin_file: Option<PathBuf>,
+    /// Require a fresh, nonempty regular output file after success (repeatable).
+    /// Relative paths use the command's cwd. This does not validate file contents.
+    #[arg(long = "expect-file")]
+    expected_files: Vec<PathBuf>,
+    /// Noninteractive command in the current directory/environment; stdin defaults to null.
     #[arg(last = true, required = true, num_args = 1.., value_name = "COMMAND")]
     command: Vec<String>,
 }
@@ -54,6 +63,8 @@ struct Record {
     #[serde(skip_serializing_if = "Option::is_none")]
     resources: Option<resources::Report>,
     source: source::Report,
+    stdin: inputs::Input,
+    expected_files: Vec<inputs::ExpectedFile>,
 }
 
 fn now() -> Result<u128> {
@@ -83,6 +94,12 @@ pub fn run(args: CheckArgs) -> Result<u8> {
         error: None,
         resources: None,
         source: source::Report::default(),
+        stdin: inputs::Input::default(),
+        expected_files: args
+            .expected_files
+            .iter()
+            .map(|path| inputs::ExpectedFile::new(path))
+            .collect::<Result<_>>()?,
     };
     fs::create_dir(&args.output_dir).with_context(|| {
         format!(
@@ -99,14 +116,24 @@ pub fn run(args: CheckArgs) -> Result<u8> {
     // Opening this once and cloning the handle preserves both streams in one file.
     let result: Result<u8> = (|| {
         record.source = source::Report::start(&record.cwd, &directory)?;
+        for file in &record.expected_files {
+            file.require_absent()?;
+        }
+        let (input, stdin) = inputs::prepare(args.stdin_file.as_deref(), &directory)?;
+        record.stdin = input;
         save(&directory, &record)?;
-        let code = capture(&directory, &mut record, &mut resources)?;
+        let code = capture(&directory, &mut record, &mut resources, stdin)?;
         record.source.finish(&directory)?;
         if record.source.changed() {
             record.status = Status::Invalidated;
             record.error =
                 Some("Source changed during the check; rerun on a stable candidate".into());
             return Ok(if code == 0 { 1 } else { code });
+        }
+        if code == 0 {
+            for file in &mut record.expected_files {
+                file.verify()?;
+            }
         }
         Ok(code)
     })();
@@ -183,12 +210,13 @@ fn capture(
     directory: &Path,
     record: &mut Record,
     resources: &mut Option<resources::Capture>,
+    stdin: Stdio,
 ) -> Result<u8> {
     let log = File::create_new(directory.join("check.log"))?;
     let mut command = Command::new(&record.command[0]);
     command
         .args(&record.command[1..])
-        .stdin(Stdio::null())
+        .stdin(stdin)
         .stdout(log.try_clone()?)
         .stderr(log.try_clone()?);
     let mut child = OwnedChild::spawn(&mut command)

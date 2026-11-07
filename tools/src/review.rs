@@ -5,7 +5,7 @@ use clap::Args as ClapArgs;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     ffi::{CString, OsStr},
     fs,
     os::unix::{
@@ -29,8 +29,14 @@ pub struct Args {
     /// Earlier snapshot directory; verify its files before reporting the candidate delta.
     #[arg(long)]
     previous: Option<PathBuf>,
+    /// Capture every base-relative working change, including untracked files and both rename paths.
+    #[arg(long, conflicts_with = "paths")]
+    all_changed: bool,
+    /// Explicit unrelated changed path to omit from --all-changed (repeatable).
+    #[arg(long = "exclude", requires = "all_changed")]
+    excluded_paths: Vec<String>,
     /// Exact repository-relative file paths; directories and ignored new files are refused.
-    #[arg(required = true, num_args = 1..)]
+    #[arg(required_unless_present = "all_changed", num_args = 1..)]
     paths: Vec<String>,
 }
 
@@ -72,6 +78,8 @@ struct Manifest {
     base: String,
     head: String,
     selected_paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    excluded_paths: Vec<String>,
     files: Inventory,
     changes: Vec<Change>,
     diff_command: Vec<String>,
@@ -104,6 +112,33 @@ fn git_text(root: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8(git(root, args)?)?
         .trim_end_matches('\n')
         .into())
+}
+
+fn changed_paths(root: &Path, base: &str) -> Result<BTreeSet<String>> {
+    let tracked = git(
+        root,
+        &[
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            base,
+            "--",
+        ],
+    )?;
+    let untracked = git(root, &["ls-files", "--others", "--exclude-standard", "-z"])?;
+    tracked
+        .split(|byte| *byte == 0)
+        .chain(untracked.split(|byte| *byte == 0))
+        .filter(|path| !path.is_empty())
+        .map(|path| {
+            let path = std::str::from_utf8(path).context("snapshot paths must be UTF-8")?;
+            check_path(path)?;
+            Ok(path.to_owned())
+        })
+        .collect()
 }
 
 fn check_path(path: &str) -> Result<()> {
@@ -455,7 +490,27 @@ pub fn run(args: Args) -> Result<u8> {
     )?;
     let available: std::collections::BTreeSet<_> = listed.split(|byte| *byte == 0).collect();
     let mut candidate = before.clone();
-    let mut selected_paths = args.paths;
+    let changed = args
+        .all_changed
+        .then(|| changed_paths(&root, &base))
+        .transpose()?;
+    let mut excluded_paths = args.excluded_paths;
+    excluded_paths.sort();
+    excluded_paths.dedup();
+    for path in &excluded_paths {
+        check_path(path)?;
+        ensure!(
+            changed.as_ref().is_some_and(|paths| paths.contains(path)),
+            "excluded path is not changed: {path:?}"
+        );
+    }
+    let mut selected_paths = changed.as_ref().map_or(args.paths, |paths| {
+        paths
+            .iter()
+            .filter(|path| !excluded_paths.contains(path))
+            .cloned()
+            .collect()
+    });
     selected_paths.sort();
     selected_paths.dedup();
     for path in &selected_paths {
@@ -479,6 +534,26 @@ pub fn run(args: Args) -> Result<u8> {
         .map(previous_snapshot)
         .transpose()
         .context("verify previous snapshot")?;
+    if let Some((previous, _)) = &previous {
+        ensure!(
+            previous.base == base && previous.fixed_point == fixed_point,
+            "previous snapshot must use the same fixed point and base"
+        );
+        let current_changes = changed_paths(&root, &base)?;
+        let omitted: Vec<_> = previous
+            .selected_paths
+            .iter()
+            .filter(|path| {
+                current_changes.contains(*path)
+                    && !selected_paths.contains(path)
+                    && !excluded_paths.contains(path)
+            })
+            .collect();
+        ensure!(
+            omitted.is_empty(),
+            "unexpected scope contraction: {omitted:?}; retain these changed paths or use --all-changed with explicit --exclude paths"
+        );
+    }
     let delta = previous
         .as_ref()
         .map(|(manifest, _)| changes(&manifest.files, &files));
@@ -515,6 +590,7 @@ pub fn run(args: Args) -> Result<u8> {
         base,
         head: head.clone(),
         selected_paths,
+        excluded_paths,
         files,
         changes: selected_changes,
         diff_command: diff_command.map(str::to_owned).to_vec(),
@@ -533,6 +609,12 @@ pub fn run(args: Args) -> Result<u8> {
         git_text(&root, &["rev-parse", "HEAD"])? == head,
         "HEAD changed during capture"
     );
+    if let Some(changed) = changed {
+        ensure!(
+            changed_paths(&root, &manifest.base)? == changed,
+            "changed-path inventory changed during capture"
+        );
+    }
     let bytes = serde_json::to_vec_pretty(&manifest)?;
     fs::write(staging.path().join("manifest.json"), &bytes)?;
     publish(staging.path(), &output)?;

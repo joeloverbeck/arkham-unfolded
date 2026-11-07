@@ -33,6 +33,131 @@ fn metadata(output: &Path) -> Value {
 }
 
 #[test]
+fn declared_stdin_is_retained_and_produces_the_expected_file() {
+    use sha2::{Digest, Sha256};
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("commands.jsonl");
+    let artifact = root.path().join("produced.json");
+    let directory = root.path().join("record");
+    let bytes = b"{\"op\":\"save\"}\n{\"op\":\"quit\"}\n";
+    fs::write(&input, bytes).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .current_dir(root.path())
+        .args(["record-check", "--output-dir"])
+        .arg(&directory)
+        .arg("--stdin-file")
+        .arg(&input)
+        .arg("--expect-file")
+        .arg(&artifact)
+        .arg("--")
+        .arg(support::fixture().join("child"))
+        .args(["--fixture-record-check", "stdin"])
+        .env("ARKHAM_FIXTURE_STDIN_OUTPUT", &artifact)
+        .env("ARKHAM_FIXTURE_REPLACE_STDIN_SOURCE", &input)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(fs::read(&artifact).unwrap(), bytes);
+    assert_eq!(fs::read(directory.join("stdin.bin")).unwrap(), bytes);
+    let record = metadata(&directory);
+    assert_eq!(record["status"], "finished");
+    assert_eq!(record["stdin"]["mode"], "file");
+    assert_eq!(
+        record["stdin"]["sha256"],
+        format!("{:x}", Sha256::digest(bytes))
+    );
+    assert_eq!(
+        record["expected_files"][0]["sha256"],
+        record["stdin"]["sha256"]
+    );
+}
+
+#[test]
+fn missing_outputs_fail_without_hiding_the_child_status_and_stale_outputs_refuse_before_spawn() {
+    for (stale, child_exit) in [(false, 0), (false, 42), (true, 0)] {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("record");
+        let artifact = root.path().join("missing.json");
+        let marker = root.path().join("started");
+        let piped = root.path().join("ignored-input");
+        fs::write(&piped, "save command that must not be inherited").unwrap();
+        if stale {
+            fs::write(&artifact, "preserved").unwrap();
+        }
+        let output = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .current_dir(root.path())
+            .args(["record-check", "--output-dir"])
+            .arg(&directory)
+            .arg("--expect-file")
+            .arg(&artifact)
+            .arg("--")
+            .arg(support::fixture().join("child"))
+            .args(["--fixture-record-check", "stdin"])
+            .stdin(fs::File::open(&piped).unwrap())
+            .env("ARKHAM_FIXTURE_STDIN_OUTPUT", &artifact)
+            .env("ARKHAM_FIXTURE_STARTED", &marker)
+            .env("ARKHAM_FIXTURE_EXIT_CODE", child_exit.to_string())
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(if child_exit == 42 { 42 } else { 1 })
+        );
+        let record = metadata(&directory);
+        assert_eq!(record["stdin"]["mode"], "null");
+        assert_eq!(
+            record["status"],
+            if child_exit == 42 {
+                "finished"
+            } else {
+                "incomplete"
+            }
+        );
+        if stale {
+            assert!(!marker.exists());
+            assert!(record["exit_code"].is_null());
+            assert_eq!(fs::read_to_string(&artifact).unwrap(), "preserved");
+        } else {
+            assert!(marker.exists());
+            assert!(!artifact.exists());
+            assert_eq!(record["exit_code"], child_exit);
+        }
+    }
+}
+
+#[test]
+fn invalid_declared_input_is_refused_before_spawning() {
+    let root = tempfile::tempdir().unwrap();
+    let huge = root.path().join("huge");
+    fs::File::create(&huge)
+        .unwrap()
+        .set_len(16 * 1024 * 1024 + 1)
+        .unwrap();
+    for (index, input) in [root.path().join("absent"), root.path().to_owned(), huge]
+        .iter()
+        .enumerate()
+    {
+        let directory = root.path().join(format!("record-{index}"));
+        let marker = root.path().join("started");
+        let output = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .current_dir(root.path())
+            .args(["record-check", "--output-dir"])
+            .arg(&directory)
+            .arg("--stdin-file")
+            .arg(input)
+            .arg("--")
+            .arg(support::fixture().join("child"))
+            .args(["--fixture-record-check", "0"])
+            .env("ARKHAM_FIXTURE_STARTED", &marker)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(!marker.exists());
+        assert_eq!(metadata(&directory)["status"], "incomplete");
+    }
+}
+
+#[test]
 fn failure_automatically_shows_bounded_diagnostics_without_changing_the_record() {
     let root = tempfile::tempdir().unwrap();
     let directory = root.path().join("record");

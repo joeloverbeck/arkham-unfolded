@@ -14,6 +14,17 @@ fn main() -> ExitCode {
             fs::write("descendant.pid", child.id().to_string()).unwrap();
         }
         println!("RECORD_CHECK_READY");
+        if args.get(1).is_some_and(|arg| arg == "stdin") {
+            if let Some(path) = env::var_os("ARKHAM_FIXTURE_REPLACE_STDIN_SOURCE") {
+                fs::write(path, "replaced after launch").unwrap();
+            }
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut std::io::stdin(), &mut bytes).unwrap();
+            if !bytes.is_empty() {
+                fs::write(env::var_os("ARKHAM_FIXTURE_STDIN_OUTPUT").unwrap(), bytes).unwrap();
+            }
+            return ExitCode::from(env::var("ARKHAM_FIXTURE_EXIT_CODE").unwrap_or_else(|_| "0".into()).parse::<u8>().unwrap());
+        }
         if let Some(log) = env::var_os("ARKHAM_FIXTURE_REMOVE_LOG") { fs::remove_file(log).unwrap(); }
         if env::var_os("ARKHAM_FIXTURE_LARGE_FAILURE").is_some() {
             println!("error: RETAINED_FAILURE_DIAGNOSTIC");

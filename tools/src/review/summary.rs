@@ -14,6 +14,9 @@ pub struct Args {
     /// Complete stdout limit in UTF-8 bytes, including identities and continuation.
     #[arg(long, default_value_t = 6000, value_parser = clap::value_parser!(u32).range(512..=12000))]
     max_bytes: u32,
+    /// Show only changes since --previous, while still verifying the complete snapshot.
+    #[arg(long)]
+    delta_only: bool,
 }
 
 pub fn run(args: Args) -> Result<u8> {
@@ -22,7 +25,11 @@ pub fn run(args: Args) -> Result<u8> {
         hash == args.snapshot.sha256,
         "snapshot manifest does not match the recorded SHA256"
     );
-    let rows = rows(&manifest);
+    ensure!(
+        !args.delta_only || manifest.delta.is_some(),
+        "--delta-only requires a snapshot captured with --previous"
+    );
+    let rows = rows(&manifest, args.delta_only);
     ensure!(
         (1..=rows.len()).contains(&args.start),
         "start must select a summary row within 1..={}",
@@ -35,8 +42,9 @@ pub fn run(args: Args) -> Result<u8> {
     );
     let next = |start| {
         format!(
-            "\nNEXT --start {start} --max-bytes {} --sha256 {hash}\n",
-            args.max_bytes
+            "\nNEXT --start {start} --max-bytes {} --sha256 {hash}{}\n",
+            args.max_bytes,
+            if args.delta_only { " --delta-only" } else { "" }
         )
     };
     let reserve = next(rows.len() + 1).len();
@@ -63,7 +71,7 @@ pub fn run(args: Args) -> Result<u8> {
     Ok(0)
 }
 
-fn rows(manifest: &Manifest) -> Vec<String> {
+fn rows(manifest: &Manifest, delta_only: bool) -> Vec<String> {
     let mut rows = vec![
         format!("Fixed point: {}", manifest.fixed_point),
         format!("Base: {}", manifest.base),
@@ -82,13 +90,25 @@ fn rows(manifest: &Manifest) -> Vec<String> {
             manifest.changes.len()
         ),
     ];
-    for path in &manifest.selected_paths {
+    for path in manifest.selected_paths.iter().filter(|_| !delta_only) {
         let kind = manifest
             .changes
             .iter()
             .find(|change| change.path == *path)
             .map_or("unchanged", |change| change.kind.as_str());
         rows.push(format!("{kind} {path:?}"));
+    }
+    if !manifest.excluded_paths.is_empty() {
+        rows.push(format!(
+            "Explicit exclusions: {}",
+            manifest.excluded_paths.len()
+        ));
+        rows.extend(
+            manifest
+                .excluded_paths
+                .iter()
+                .map(|path| format!("excluded {path:?}")),
+        );
     }
     if let Some(delta) = &manifest.delta {
         rows.push(format!("Changes since previous snapshot: {}", delta.len()));
