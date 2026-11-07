@@ -24,7 +24,7 @@ mod tabletop_layout;
 #[path = "../src/tabletop_standees.rs"]
 mod tabletop_standees;
 
-use tabletop_camera::{CameraMode, FrameInput, Orbit, parse_initial_view};
+use tabletop_camera::{FrameInput, Orbit, parse_initial_view};
 use tabletop_layout::{self as layout, Area};
 
 const ASSETS: [(&str, &str); 4] = [
@@ -116,13 +116,7 @@ fn main() -> ExitCode {
         eprintln!("--quit-after-screenshot requires --screenshot");
         return ExitCode::FAILURE;
     }
-    let reports = root.as_ref().map(|root| {
-        [
-            assets::inspect_party(root),
-            assets::inspect_tony(root),
-            assets::inspect(root),
-        ]
-    });
+    let report = root.as_ref().map(|root| assets::inspect_gathering(root));
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -171,17 +165,18 @@ fn main() -> ExitCode {
             .map(str::to_owned),
         );
     for role in roles {
-        if let Some(path) = reports.as_ref().and_then(|reports| {
-            reports
-                .iter()
-                .find_map(|report| report.verified_path(&role))
-        }) {
+        if let Some(path) = report
+            .as_ref()
+            .and_then(|report| report.verified_path(&role))
+        {
             art.0.insert(role, server.load(path.to_owned()));
         }
     }
+    let mut orbit = Orbit::new();
+    orbit.focus(layout::focus(initial));
     app.insert_resource(ClearColor(Color::srgb(0.025, 0.045, 0.055)))
         .insert_resource(art)
-        .insert_resource(Orbit::new(CameraMode::Jacqueline).with_initial_view(Some(initial)))
+        .insert_resource(orbit)
         .insert_resource(Capture {
             path: screenshot,
             quit,
@@ -264,7 +259,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     art: Res<Art>,
 ) {
-    layout::spawn_surfaces(&mut commands, &mut meshes, &mut materials);
+    layout::spawn_gathering_surfaces(&mut commands, &mut meshes, &mut materials);
     commands.spawn((Camera3d::default(), Transform::default()));
     commands.spawn((
         DirectionalLight {
@@ -668,7 +663,6 @@ fn navigate(
             scroll_y: scroll.delta.y,
             dt: time.delta_secs(),
             capture: default(),
-            reduced_motion: true,
         })
         .transform;
 }

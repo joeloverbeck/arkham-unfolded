@@ -47,7 +47,7 @@ enum Command {
     PrepareCiToolchain,
     /// Build and supervise isolated native verification runs.
     #[command(
-        after_help = "Procedure for all experiments: docs/experiments/jacqueline-curse.md#developer-native-verification"
+        after_help = "Native verification: docs/agents/native-verification.md#developer-native-verification"
     )]
     Native {
         #[command(subcommand)]

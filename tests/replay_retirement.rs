@@ -98,24 +98,6 @@ macro_rules! current_save_contract {
     };
 }
 current_save_contract!(
-    jacqueline,
-    arkham_unfolded_experiment,
-    mode::Session::new(mode::Fixture::curse()),
-    "commit-promise"
-);
-current_save_contract!(
-    tony,
-    arkham_unfolded_experiment::tony,
-    mode::Session::new().unwrap(),
-    "injury"
-);
-current_save_contract!(
-    party,
-    arkham_unfolded_experiment::party,
-    mode::Session::new().unwrap(),
-    "select:tony"
-);
-current_save_contract!(
     gathering,
     arkham_unfolded_experiment::gathering,
     mode::Session::with_seed(89),

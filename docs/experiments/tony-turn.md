@@ -1,5 +1,7 @@
 # Tony's prepared Gathering turn
 
+**Retired 2026-11-07.** [ADR 0005](../adr/0005-retire-experiments-and-select-scenarios.md) removes this standalone experiment. Commands, source paths and observations below describe the [pre-retirement revision](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/docs/experiments/tony-turn.md); they are historical evidence, not current launch instructions or continuing support obligations. Use [scenario selection](../../README.md#launch-and-resume-the-gathering) for current play and the [native-verification runbook](../agents/native-verification.md) for shared developer procedures.
+
 **Artwork contract amendment, 2026-11-07:** [ADR 0004](../adr/0004-require-artwork-for-3d-play.md)
 requires complete artwork for 3D play and a blocking startup recovery window.
 All four modes now refuse incomplete collections and wait for every required
@@ -79,7 +81,7 @@ Joel accepted this refinement with #22 on 2026-10-31. It was offered under **one
 
 1. In Tony's live turn, reach a reveal while viewing his investigator area. Click the lower-left shortcut: expect one token, Test focus and removal of the shortcut. Check the reduced-motion setting if the transition is uncomfortable. When no reveal is legal, click the bag and expect its scenario-reference inspection directly.
 2. Inspect removed Internal Injury in Tony's discard. If it is the only card, expect immediate inspection; with several cards, expect a chooser. Inspect a defeated Ghoul in the encounter discard after its final damage stage, using an already reached or supplied position. Check that reopening preserves the destination.
-3. In [Jacqueline's case](jacqueline-curse.md#build-and-run), open the shortcut's normal/reaction chooser and dismiss it without revealing. Reopen it, choose a route, and check Test focus and any legal cancellations. After the revelation completes, return to the table and inspect Rotting Remains in the encounter discard. Judge whether these controls and destinations are clear; technical rule and persistence checks remain the developer's responsibility.
+3. In [Jacqueline's case](../agents/native-verification.md#build-and-run), open the shortcut's normal/reaction chooser and dismiss it without revealing. Reopen it, choose a route, and check Test focus and any legal cancellations. After the revelation completes, return to the table and inspect Rotting Remains in the encounter discard. Judge whether these controls and destinations are clear; technical rule and persistence checks remain the developer's responsibility.
 
 ## External artwork and source custody
 
@@ -117,11 +119,11 @@ target/debug/arkham-driver --experiment tony --save /tmp/new-tony-turn.json
 
 The JSON-line protocol supports `observe`, `choose` with current `revision` and offered `id`, `save` and `quit`. Use `--load PATH` in another process to resume. Observations omit future card order and random state; deterministic token injection is a privileged test facility, never a player command. The UI and driver submit to the same rules and persistence authority.
 
-Run `scripts/check`. Decision tests use #22's independent witnesses, including additional-action spending, opportunity attacks, all Standard faces, commitment restrictions and reveal barriers. Continuity tests cover failed-save retry, save refusal, restart archives and fresh-process continuation. Native inspection follows the existing [checked capture/input procedure](jacqueline-curse.md#developer-native-verification), using isolated saves/settings and complete prepared artwork. Screenshots establish inspected rendering only; interaction and human acceptance require their own evidence.
+Run `scripts/check`. Decision tests use #22's independent witnesses, including additional-action spending, opportunity attacks, all Standard faces, commitment restrictions and reveal barriers. Continuity tests cover failed-save retry, save refusal, restart archives and fresh-process continuation. Native inspection follows the existing [checked capture/input procedure](../agents/native-verification.md#developer-native-verification), using isolated saves/settings and complete prepared artwork. Screenshots establish inspected rendering only; interaction and human acceptance require their own evidence.
 
 ### Reproduce a visual state
 
-Use legal driver choices to reach a state, then pass its save to the immutable native launcher. Obtain `native_approval` through the [shared desktop procedure](jacqueline-curse.md#launch-capture-and-interact) before launching. This example produces an opportunity attack's combined damage/horror counters and a held random chaos token:
+Use legal driver choices to reach a state, then pass its save to the immutable native launcher. Obtain `native_approval` through the [shared desktop procedure](../agents/native-verification.md#launch-capture-and-interact) before launching. This example produces an opportunity attack's combined damage/horror counters and a held random chaos token:
 
 ```sh
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop --bin arkham-driver
@@ -142,6 +144,6 @@ scripts/tools native launch \
 
 Inspect the driver's returned observations for successful choices and `render/held.png` for the actual result. The launcher copies the save and preserves the original. For a lone damage counter, use a new driver save and only `{"op":"choose","revision":0,"id":"end_turn"}`; Internal Injury deals one damage. For startup refusal, use a missing folder with another isolated save and expect the recovery window without game progress.
 
-Reopening captures the committed state; it does not resume an interrupted live animation. To check motion, use a fresh live run and the checked native input path. Compare shared objects with the [existing visual behavior](jacqueline-curse.md#visual-and-wording-review) and record any unavailable interaction separately. For intermittent camera lag, use the [bounded profiling procedure](jacqueline-curse.md#capture-a-laggy-camera) while the symptom is present.
+Reopening captures the committed state; it does not resume an interrupted live animation. To check motion, use a fresh live run and the checked native input path. Compare shared objects with the [existing visual behavior](../agents/native-verification.md#visual-and-wording-review) and record any unavailable interaction separately. For intermittent camera lag, use the [bounded profiling procedure](../agents/native-verification.md#capture-a-laggy-camera) while the symptom is present.
 
 Joel's two sessions have a combined ceiling of 40 minutes including retries: one threat-removal turn and one that evades or accepts opportunity costs for another benefit, with interruption and review of action history. Only Joel judges clarity, pacing, control burden and whether the turn is worth playing. This experiment does not establish a playable scenario, campaign, reusable engine or recurrent fitness.

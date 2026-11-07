@@ -681,7 +681,7 @@ fn assert_tokens_and_headings_are_separate(session: Session, ordinary: bool) {
         .unwrap()
         .reveal_groups()
         .into_iter()
-        .map(|group| crate::tabletop::readable_text(group.source))
+        .map(|group| crate::tabletop_support::readable_text(group.source))
         .collect();
     let dir = tempfile::tempdir().unwrap();
     let mut app = host_with_table(Table::new(session, dir.path().join("tokens.json")), true);

@@ -929,12 +929,12 @@ mod tests {
     #[test]
     #[ignore = "requires all four private prepared collections; no desktop or GPU access"]
     fn complete_private_collections_decode_through_the_production_admission_gate() {
-        use crate::tabletop::asset_settings::Collection;
+        use crate::tabletop_support::asset_settings::Collection;
         use bevy::image::{CompressedImageFormats, ImageLoader, ImagePlugin};
         for (collection, variable) in [
-            (Collection::Jacqueline, "ARKHAM_JACQUELINE_TEST_ASSETS"),
-            (Collection::Tony, "ARKHAM_TONY_TEST_ASSETS"),
-            (Collection::Party, "ARKHAM_PARTY_TEST_ASSETS"),
+            (Collection::Gathering, "ARKHAM_JACQUELINE_TEST_ASSETS"),
+            (Collection::Gathering, "ARKHAM_TONY_TEST_ASSETS"),
+            (Collection::Gathering, "ARKHAM_PARTY_TEST_ASSETS"),
             (Collection::Gathering, "ARKHAM_GATHERING_TEST_ASSETS"),
         ] {
             let root = std::path::PathBuf::from(std::env::var_os(variable).expect(variable));

@@ -184,7 +184,6 @@ pub(crate) fn deck(
 }
 
 pub(crate) struct ActionState {
-    pub remaining: u8,
     pub allowance: u8,
     pub spent: u8,
     pub turn_ended: bool,
@@ -256,7 +255,6 @@ pub(crate) fn investigator_counters(
             materials,
             counters::ActionRow {
                 investigator: panel.index,
-                remaining: actions.remaining,
                 turn_ended: actions.turn_ended,
                 additional: actions.additional,
                 additional_eligible: actions.additional_eligible,

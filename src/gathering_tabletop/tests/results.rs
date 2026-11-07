@@ -111,7 +111,7 @@ fn activate_source_choice(app: &mut App, source: controls::Source, id: &str) {
     let view = app.world().resource::<Table>().view();
     let choices = controls::source_choices(&view, &source);
     let choice = choices.iter().find(|choice| choice.id == id).unwrap();
-    let label = crate::tabletop::readable_text(ui::choice_label(choice).to_owned());
+    let label = crate::tabletop_support::readable_text(ui::choice_label(choice).to_owned());
     let entity = button_with_label(app, &label).expect("The card's menu must offer its reaction");
     app.world_mut().trigger(Activate { entity });
     app.update();
@@ -349,8 +349,10 @@ fn lita_and_if_it_bleeds_offer_direct_use_and_explicit_decline() {
             .iter()
             .find(|choice| choice.id.starts_with(use_prefix))
             .unwrap();
-        let label =
-            crate::tabletop::readable_text(controls::display_history(&view, &use_effect.label));
+        let label = crate::tabletop_support::readable_text(controls::display_history(
+            &view,
+            &use_effect.label,
+        ));
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("optional.json");
         continuity::save_session(&path, &session).unwrap();

@@ -11,10 +11,6 @@ pub(crate) fn radius_for(card_size: Vec2) -> f32 {
     card_size.y * 0.21
 }
 
-pub(crate) fn height_for(card_size: Vec2) -> f32 {
-    (0.20 + 744.0 / 484.0 + 0.0125) * radius_for(card_size) / BASE_RADIUS_UNSCALED
-}
-
 pub(crate) fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,

@@ -59,7 +59,7 @@ impl Initial {
             .arg("--output-dir")
             .arg(&directory)
             .args([
-                "--experiment",
+                "--entry",
                 mode,
                 "--timeout-seconds",
                 "3",
@@ -111,10 +111,11 @@ impl Initial {
 }
 
 #[test]
-fn restart_restores_each_modes_settings_and_save_with_a_new_supervised_identity() {
-    for mode in ["jacqueline", "tony", "party", "gathering"] {
+fn restart_restores_gathering_settings_and_save_with_a_new_supervised_identity() {
+    for legacy_presence in [false, true] {
+        let mode = "gathering";
         let initial = Initial::new(mode, true);
-        if mode == "jacqueline" {
+        if legacy_presence {
             // Existing saves from manifests predating presence metadata still resume.
             let mut legacy = metadata(&initial.directory);
             legacy
@@ -154,12 +155,8 @@ fn restart_restores_each_modes_settings_and_save_with_a_new_supervised_identity(
         }
         let argv = restarted["argv"].as_array().unwrap();
         assert!(!argv.iter().any(|arg| arg == "--art-root"));
-        assert!(argv.iter().any(|arg| arg
-            == if mode == "gathering" {
-                "--save"
-            } else {
-                "--load"
-            }));
+        assert!(argv.iter().any(|arg| arg == "--save"));
+        assert_eq!(restarted["entry_target"], "gathering");
         assert_eq!(
             restarted["restart_of"]["run"],
             initial.directory.join("run.json").to_str().unwrap()
@@ -295,20 +292,22 @@ fn restarted_process_retains_timeout_cleanup_and_excludes_concurrent_restarts() 
 
 #[test]
 fn restart_supports_folder_persistence_before_a_game_has_been_saved() {
-    for mode in ["jacqueline", "tony", "party", "gathering"] {
+    for mode in ["selection", "gathering"] {
         let initial = Initial::new(mode, false);
         assert!(!initial.directory.join("session.json").exists());
         let (mut command, directory) = initial.restart("restart");
         command.stdout(Stdio::null()).stderr(Stdio::inherit());
         let mut child = OwnedChild::spawn(&mut command).unwrap();
         let restarted = running(&directory);
-        assert!(
+        assert_eq!(
             restarted["argv"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|arg| arg == "--save")
+                .any(|arg| arg == "--save"),
+            mode == "gathering"
         );
+        assert_eq!(restarted["entry_target"], mode);
         completed(&mut child, &initial.directory);
         assert!(!initial.directory.join("session.json").exists());
         assert_eq!(metadata(&directory)["status"], "exited");
@@ -319,5 +318,59 @@ fn restart_supports_folder_persistence_before_a_game_has_been_saved() {
                 .unwrap()
                 .contains("RESTORED_SETTINGS_AND_SAVE")
         );
+    }
+}
+
+#[test]
+fn historical_or_conflicting_entry_targets_are_refused_without_staging() {
+    for fault in ["missing", "retired", "conflicting"] {
+        let initial = Initial::new("selection", false);
+        let mut previous = metadata(&initial.directory);
+        match fault {
+            "missing" => {
+                previous.as_object_mut().unwrap().remove("entry_target");
+            }
+            "retired" => previous["entry_target"] = serde_json::json!("jacqueline"),
+            "conflicting" => previous["entry_target"] = serde_json::json!("gathering"),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&previous).unwrap();
+        fs::write(initial.directory.join("run.json"), &bytes).unwrap();
+        let (mut command, directory) = initial.restart("refused");
+        let output = command.output().unwrap();
+        assert!(!output.status.success(), "{fault}");
+        assert!(!directory.exists(), "{fault}");
+        assert!(!initial.directory.join("session.json").exists());
+        assert!(!initial.directory.join("restart.lock").exists());
+        assert_eq!(fs::read(initial.directory.join("run.json")).unwrap(), bytes);
+    }
+}
+
+#[test]
+fn a_matching_selector_does_not_admit_an_ambiguous_invocation() {
+    for mode in ["selection", "gathering"] {
+        for extra in [
+            vec!["--experiment", "gathering"],
+            vec!["--experiment", "jacqueline"],
+            vec!["--entry", "selection"],
+            vec!["--entry=selection"],
+            vec!["--experiment"],
+        ] {
+            let initial = Initial::new(mode, false);
+            let mut previous = metadata(&initial.directory);
+            previous["argv"]
+                .as_array_mut()
+                .unwrap()
+                .extend(extra.iter().map(|arg| serde_json::json!(arg)));
+            let bytes = serde_json::to_vec(&previous).unwrap();
+            fs::write(initial.directory.join("run.json"), &bytes).unwrap();
+            let (mut command, directory) = initial.restart("refused");
+            let output = command.output().unwrap();
+            assert!(!output.status.success(), "{mode}: {extra:?}");
+            assert!(!directory.exists(), "{mode}: {extra:?}");
+            assert!(!initial.directory.join("restart.lock").exists());
+            assert!(!initial.directory.join("session.json").exists());
+            assert_eq!(fs::read(initial.directory.join("run.json")).unwrap(), bytes);
+        }
     }
 }

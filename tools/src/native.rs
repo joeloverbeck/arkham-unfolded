@@ -140,10 +140,8 @@ pub struct Build {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum Experiment {
-    Jacqueline,
-    Tony,
-    Party,
+enum Entry {
+    Selection,
     Gathering,
 }
 
@@ -171,8 +169,8 @@ pub struct Launch {
     binary: PathBuf,
     #[arg(long)]
     output_dir: PathBuf,
-    #[arg(long, value_enum, default_value_t = Experiment::Jacqueline)]
-    experiment: Experiment,
+    #[arg(long, alias = "experiment", value_enum, default_value_t = Entry::Selection)]
+    entry: Entry,
     #[arg(long)]
     load: Option<PathBuf>,
     #[arg(long)]
@@ -626,8 +624,8 @@ fn isolated_directories(directory: &Path) -> std::collections::BTreeMap<&str, Pa
 fn launch(args: Launch) -> Result<u8> {
     let approval = approval::Approval::admit(args.approval.as_deref())?;
     ensure!(
-        args.initial_view.as_deref() != Some("resolve") || args.experiment == Experiment::Gathering,
-        "--initial-view resolve requires --experiment gathering"
+        (args.initial_view.is_none() && args.load.is_none()) || args.entry == Entry::Gathering,
+        "--load and --initial-view require --entry gathering"
     );
     let directory = resolve(&args.output_dir)?;
     let binary = args.binary.canonicalize()?;
@@ -669,27 +667,16 @@ fn launch(args: Launch) -> Result<u8> {
         fs::create_dir(path)?;
     }
     let mut command = Process::new(&staged);
-    match args.experiment {
-        Experiment::Tony => {
-            command.args(["--experiment", "tony"]);
+    match args.entry {
+        Entry::Selection => {
+            command.args(["--entry", "selection"]);
         }
-        Experiment::Party => {
-            command.args(["--experiment", "party"]);
+        Entry::Gathering => {
+            command
+                .args(["--experiment", "gathering", "--save"])
+                .arg(&save);
         }
-        Experiment::Gathering => {
-            command.args(["--experiment", "gathering"]);
-        }
-        Experiment::Jacqueline => {}
     }
-    command
-        .arg(
-            if source_save.is_some() && args.experiment != Experiment::Gathering {
-                "--load"
-            } else {
-                "--save"
-            },
-        )
-        .arg(&save);
     if let Some(root) = args.art_root {
         command.arg("--art-root").arg(resolve(&root)?);
     }
@@ -707,6 +694,7 @@ fn launch(args: Launch) -> Result<u8> {
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     let mut metadata = json!({"status":"staged", "source_binary":binary, "binary":staged, "sha256":hash,
+    "entry_target": match args.entry { Entry::Selection => "selection", Entry::Gathering => "gathering" },
     "argv":argv, "cwd":directory, "environment":isolated, "save":save, "source_save":source_save,
     "source_save_sha256":save_hash, "log":directory.join("app.log"), "timeout_seconds":args.timeout_seconds,
     "initial_view":args.initial_view,
@@ -715,7 +703,7 @@ fn launch(args: Launch) -> Result<u8> {
         "environment": launch_environment(&isolated),
         "supervisor_cwd": environment_value(Some(std::env::current_dir()?.as_os_str())),
         "executable_staging": "verified-read-only-copy",
-        "save_staging": if source_save.is_some() { "verified-copy" } else { "fresh" },
+        "save_staging": if args.entry == Entry::Selection { "none" } else if source_save.is_some() { "verified-copy" } else { "fresh" },
         "stdin": "null",
         "stdout": directory.join("app.log"),
         "stderr": directory.join("app.log"),

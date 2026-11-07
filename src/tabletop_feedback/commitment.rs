@@ -1,6 +1,6 @@
 //! Project a readable commitment badge above the actual card's upper edge.
 use super::{CardFeedback, GOLD, TEAL};
-use crate::{tabletop::symbols::Skill, tabletop_harm_text};
+use crate::{tabletop_harm_text, tabletop_support::symbols::Skill};
 use bevy::prelude::*;
 
 #[derive(Clone, Copy)]

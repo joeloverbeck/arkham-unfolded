@@ -10,29 +10,6 @@ impl Plugin for CounterPlugin {
     }
 }
 
-/// The finite artwork vocabulary consumed by this shared presentation.
-pub(crate) fn asset_roles() -> impl Iterator<Item = String> {
-    ["token/clue", "token/resource"]
-        .into_iter()
-        .map(str::to_owned)
-        .chain(
-            [
-                InvestigatorClass::Guardian,
-                InvestigatorClass::Seeker,
-                InvestigatorClass::Rogue,
-                InvestigatorClass::Mystic,
-                InvestigatorClass::Survivor,
-                InvestigatorClass::Neutral,
-            ]
-            .into_iter()
-            .flat_map(|class| {
-                ["icon", "background"]
-                    .into_iter()
-                    .map(move |layer| format!("class/{}/{layer}", class.asset_name()))
-            }),
-        )
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CounterKind {
     Clue,
@@ -321,24 +298,12 @@ pub(crate) struct ActionMarker {
 
 pub(crate) struct ActionRow {
     pub investigator: usize,
-    pub remaining: u8,
     pub turn_ended: bool,
     pub additional: Option<bool>,
     pub additional_eligible: bool,
     pub class: InvestigatorClass,
     pub icon: Option<Handle<Image>>,
     pub background: Option<Handle<Image>>,
-}
-
-/// Returns every separately owned root/caption, for the caller's scene lifetime.
-pub(crate) fn spawn_actions(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    row: ActionRow,
-) -> Vec<Entity> {
-    let spent = 3_u8.saturating_sub(row.remaining);
-    spawn_actions_with_allowance(commands, meshes, materials, row, 3, spent)
 }
 
 pub(crate) fn spawn_actions_with_allowance(
@@ -658,13 +623,12 @@ mod tests {
         let mut queue = CommandQueue::default();
         let mut meshes = Assets::<Mesh>::default();
         let mut materials = Assets::<StandardMaterial>::default();
-        spawn_actions(
+        spawn_actions_with_allowance(
             &mut Commands::new(&mut queue, &world),
             &mut meshes,
             &mut materials,
             ActionRow {
                 investigator: 0,
-                remaining: 2,
                 turn_ended: true,
                 additional: Some(true),
                 additional_eligible: false,
@@ -672,6 +636,8 @@ mod tests {
                 icon: None,
                 background: None,
             },
+            3,
+            1,
         );
         queue.apply(&mut world);
         let markers: Vec<_> = world.query::<&ActionMarker>().iter(&world).collect();
@@ -707,7 +673,6 @@ mod tests {
             &mut materials,
             ActionRow {
                 investigator: 0,
-                remaining: 2,
                 turn_ended: false,
                 additional: Some(true),
                 additional_eligible: false,

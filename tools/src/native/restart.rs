@@ -18,6 +18,7 @@ pub struct Restart {
 #[derive(Deserialize)]
 struct Previous {
     status: String,
+    entry_target: String,
     #[serde(rename = "returncode")]
     _returncode: i32,
     binary: PathBuf,
@@ -118,14 +119,24 @@ pub fn run(args: Restart) -> Result<u8> {
             "Isolated settings directory changed"
         );
     }
-    let experiment = match previous.argv.iter().position(|arg| arg == "--experiment") {
-        Some(index) => Experiment::from_str(
-            previous.argv.get(index + 1).context("Missing experiment")?,
-            false,
-        )
-        .map_err(anyhow::Error::msg)?,
-        None => Experiment::Jacqueline,
+    let entry = Entry::from_str(&previous.entry_target, false).map_err(anyhow::Error::msg)?;
+    let expected_selector = match entry {
+        Entry::Selection => ["--entry", "selection"],
+        Entry::Gathering => ["--experiment", "gathering"],
     };
+    ensure!(
+        previous
+            .argv
+            .windows(2)
+            .any(|pair| pair == expected_selector)
+            && previous
+                .argv
+                .iter()
+                .filter(|arg| matches!(arg.split('=').next(), Some("--entry" | "--experiment")))
+                .count()
+                == 1,
+        "Recorded entry target disagrees with invocation"
+    );
     // Serialize restarts that share settings/save, even from the same old manifest.
     let lock = OpenOptions::new()
         .write(true)
@@ -146,19 +157,10 @@ pub fn run(args: Restart) -> Result<u8> {
     fresh_directory(&directory)?;
 
     let mut command = Process::new(&previous.binary);
-    if experiment != Experiment::Jacqueline {
-        command.args([
-            "--experiment",
-            experiment.to_possible_value().unwrap().get_name(),
-        ]);
+    command.args(expected_selector);
+    if entry == Entry::Gathering {
+        command.arg("--save").arg(&previous.save);
     }
-    command
-        .arg(if has_save && experiment != Experiment::Gathering {
-            "--load"
-        } else {
-            "--save"
-        })
-        .arg(&previous.save);
     command.current_dir(&cwd).envs(&expected);
     let argv: Vec<_> = std::iter::once(command.get_program())
         .chain(command.get_args())
@@ -166,6 +168,7 @@ pub fn run(args: Restart) -> Result<u8> {
         .collect();
     let metadata = json!({
         "status":"staged", "source_binary":previous.binary, "binary":previous.binary, "sha256":previous.sha256,
+        "entry_target":previous.entry_target,
         "argv":argv, "cwd":cwd, "environment":expected, "save":previous.save,
         "source_save":null, "source_save_sha256":null, "log":directory.join("app.log"),
         "timeout_seconds":previous.timeout_seconds, "initial_view":null,

@@ -3,13 +3,13 @@
 use crate::{
     asset_config::AssetConfig,
     gathering::{Investigator, Observation, PresentationMoment, Session, continuity},
-    tabletop::asset_settings::AssetSettings,
-    tabletop_camera::{CameraMode, Capture, FrameInput, Orbit, parse_initial_view},
+    tabletop_camera::{Capture, FrameInput, Orbit, parse_initial_view},
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
     tabletop_health::{RenderHealth, TabletopHealthPlugin},
     tabletop_layout::{self as layout, Area},
     tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin},
     tabletop_pieces::WorldLabel,
+    tabletop_support::asset_settings::AssetSettings,
 };
 use bevy::{
     input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
@@ -65,6 +65,7 @@ enum Action {
     AssetFolder,
     Inspect(String, String),
     Save,
+    ReturnToSelection,
     Reopen,
     Restart(u64),
     ConfirmRestart(u64),
@@ -84,6 +85,7 @@ struct Table {
     session: Session,
     save_path: PathBuf,
     initial_save_pending: bool,
+    leaving: bool,
     notice: String,
     inspection: Option<(String, String)>,
     history_open: bool,
@@ -106,6 +108,10 @@ impl Table {
         if save_path.exists() {
             return Self::open_existing(save_path);
         }
+        Self::fresh(save_path)
+    }
+
+    fn fresh(save_path: PathBuf) -> Result<Self, String> {
         let session = Session::new().map_err(|error| error.to_string())?;
         let mut table = Self::new(session, save_path);
         table.initial_save_pending = true;
@@ -132,6 +138,7 @@ impl Table {
             session,
             save_path,
             initial_save_pending: false,
+            leaving: false,
             notice: String::new(),
             inspection: None,
             history_open: false,
@@ -172,7 +179,7 @@ impl Table {
     }
 
     fn presentation_blocked(&self) -> bool {
-        self.modal() || self.menu_open || self.context.is_open()
+        self.leaving || self.modal() || self.menu_open || self.context.is_open()
     }
 
     fn motion_blocked(&self) -> bool {
@@ -321,6 +328,7 @@ struct Options {
     screenshot: Option<PathBuf>,
     quit_after_screenshot: bool,
     initial_view: Option<InitialView>,
+    attempt: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -339,6 +347,7 @@ impl Options {
         let mut screenshot = None;
         let mut quit_after_screenshot = false;
         let mut initial_view = None;
+        let mut attempt = None;
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--experiment" => {
@@ -347,6 +356,13 @@ impl Options {
                     }
                 }
                 "--save" => save = args.next().ok_or("--save needs a path")?.into(),
+                "--attempt" => {
+                    let intent = args.next().ok_or("--attempt needs new or open")?;
+                    if !matches!(intent.as_str(), "new" | "open") {
+                        return Err("--attempt needs new or open".into());
+                    }
+                    attempt = Some(intent);
+                }
                 "--art-root" => {
                     root = Some(PathBuf::from(args.next().ok_or("--art-root needs a path")?))
                 }
@@ -383,10 +399,24 @@ impl Options {
             screenshot,
             quit_after_screenshot,
             initial_view,
+            attempt,
         }))
     }
 
     fn open_table(&self) -> Result<Table, String> {
+        if self.attempt.as_deref() == Some("open") {
+            return Table::open_existing(self.save.clone());
+        }
+        if self.attempt.as_deref() == Some("new") {
+            match std::fs::symlink_metadata(&self.save) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.to_string()),
+                Ok(_) => return Err("The new attempt path is already occupied.".into()),
+            }
+            // Never reopen here: another process may occupy the path after the
+            // preflight. Admission's exclusive create owns the final decision.
+            return Table::fresh(self.save.clone());
+        }
         if matches!(self.initial_view, Some(InitialView::Resolve)) {
             Table::open_existing(self.save.clone()).map_err(|error| {
                 format!("Cannot open the saved resolution for --initial-view resolve: {error}")
@@ -397,8 +427,7 @@ impl Options {
     }
 
     fn configure_diagnostics(&self, app: &mut App) -> Result<(), String> {
-        let mut orbit =
-            Orbit::new(CameraMode::Jacqueline).with_home(enemy_board::focus(Area::Overview));
+        let mut orbit = Orbit::new().with_home(enemy_board::focus(Area::Overview));
         match self.initial_view {
             Some(InitialView::Area(area)) => orbit.focus(enemy_board::focus(area)),
             Some(InitialView::Resolve) => {
@@ -427,6 +456,32 @@ impl Options {
 }
 
 pub fn run() -> Result<(), String> {
+    let selected = std::env::args().any(|arg| arg == "--attempt");
+    let result = run_gathering();
+    if selected && let Err(error) = &result {
+        let args: Vec<_> = std::env::args().collect();
+        let root = args
+            .windows(2)
+            .find(|p| p[0] == "--art-root")
+            .map(|p| std::path::Path::new(&p[1]));
+        return crate::scenario_selection::return_to_selection(root, Some(error));
+    }
+    result
+}
+
+#[derive(Resource)]
+struct RememberAttempt {
+    reference: PathBuf,
+    pending: bool,
+}
+
+#[derive(Clone, Default, Resource)]
+struct Navigation {
+    returning: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    created: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+fn run_gathering() -> Result<(), String> {
     let Some(options) = Options::parse(AssetConfig::load_gathering()?, std::env::args().skip(1))?
     else {
         return Ok(());
@@ -434,7 +489,7 @@ pub fn run() -> Result<(), String> {
     let (recovery, collection) = crate::tabletop_startup::Recovery::prepare(
         options.config.clone(),
         options.art_root.clone(),
-        crate::tabletop::asset_settings::Collection::Gathering,
+        crate::tabletop_support::asset_settings::Collection::Gathering,
     )?;
     let prepared = art::Prepared::new(recovery.root().to_owned())?;
     let mut app = App::new();
@@ -443,6 +498,12 @@ pub fn run() -> Result<(), String> {
         table.notice = format!("Asset settings: {warning}");
     }
     app.insert_resource(table);
+    if options.attempt.is_some() {
+        app.insert_resource(RememberAttempt {
+            reference: crate::attempts::reference_path()?,
+            pending: true,
+        });
+    }
     options.configure_diagnostics(&mut app)?;
     app.insert_resource(ClearColor(INK))
         .insert_resource(AssetSettings::new_gathering(recovery.config()))
@@ -465,7 +526,25 @@ pub fn run() -> Result<(), String> {
     app.insert_resource(art);
     install(&mut app);
     recovery.install(&mut app, &collection);
-    recovery.finish(app.run())
+    let navigation = app.world().resource::<Navigation>().clone();
+    let exit = app.run();
+    if navigation
+        .returning
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        let args: Vec<_> = std::env::args().collect();
+        let root = args
+            .windows(2)
+            .find(|p| p[0] == "--art-root")
+            .map(|p| std::path::Path::new(&p[1]));
+        return crate::scenario_selection::return_to_selection(root, None);
+    }
+    recovery.finish(
+        exit,
+        navigation
+            .created
+            .load(std::sync::atomic::Ordering::Relaxed),
+    )
 }
 
 /// The same registration is used by the native app and headless input tests.
@@ -473,6 +552,7 @@ fn install(app: &mut App) {
     capture::install(app);
     controls::install(app);
     app.init_resource::<Actions>()
+        .init_resource::<Navigation>()
         .init_resource::<consequences::State>()
         .init_resource::<art::Art>()
         .add_plugins(feedback::FeedbackPlugin)
@@ -482,7 +562,7 @@ fn install(app: &mut App) {
         .add_systems(
             Update,
             (
-                (poll_settings, save_initial_decision).chain(),
+                (poll_settings, save_initial_decision, remember_attempt).chain(),
                 advance_framework,
                 handle_actions,
                 consequences::advance,
@@ -512,18 +592,42 @@ fn save_initial_decision(
     mut table: ResMut<Table>,
     mut health: ResMut<RenderHealth>,
     mut exit: MessageWriter<AppExit>,
+    navigation: Res<Navigation>,
 ) {
     if !table.initial_save_pending || !health.allows_play() {
         return;
     }
-    match continuity::save_session(&table.save_path, &table.session) {
-        Ok(()) => table.initial_save_pending = false,
+    match crate::saved_state::create(&table.save_path, &table.session) {
+        Ok(()) => {
+            table.initial_save_pending = false;
+            navigation
+                .created
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         Err(error) => {
             let reason = format!("Could not save the initial Gathering decision: {error}");
             eprintln!("{reason}");
             health.stop(reason);
             exit.write(AppExit::error());
         }
+    }
+}
+
+fn remember_attempt(
+    mut selected: Option<ResMut<RememberAttempt>>,
+    mut table: ResMut<Table>,
+    health: Res<RenderHealth>,
+) {
+    let Some(selected) = selected.as_mut() else {
+        return;
+    };
+    if !selected.pending || table.initial_save_pending || !health.allows_play() {
+        return;
+    }
+    selected.pending = false;
+    if let Err(error) = crate::attempts::remember(&selected.reference, &table.save_path) {
+        table.notice = format!("Attempt opened, but Continue could not be updated: {error}");
+        table.dirty = true;
     }
 }
 
@@ -545,7 +649,13 @@ fn handle_actions(
     mut settings: Option<ResMut<AssetSettings>>,
     mut shortcut: ResMut<crate::tabletop_reveal::Shortcut>,
     mut consequences: ResMut<consequences::State>,
+    mut exit: MessageWriter<AppExit>,
+    navigation: Res<Navigation>,
 ) {
+    if table.leaving {
+        actions.0.clear();
+        return;
+    }
     let revision = table
         .last_rendered
         .as_ref()
@@ -795,6 +905,24 @@ fn handle_actions(
                     Err(error) => format!("Save failed: {error}"),
                 };
                 table.dirty = true;
+            }
+            Action::ReturnToSelection => {
+                match continuity::save_session(&table.save_path, &table.session) {
+                    Ok(()) => {
+                        table.leaving = true;
+                        navigation
+                            .returning
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        table.context.reset();
+                        shortcut.dismiss();
+                        exit.write(AppExit::Success);
+                        break;
+                    }
+                    Err(error) => {
+                        table.notice = format!("Could not return to selection: {error}");
+                        table.dirty = true;
+                    }
+                }
             }
             Action::Reopen => {
                 match continuity::load_session(&table.save_path) {
@@ -1326,7 +1454,6 @@ fn camera_controls(
             pan: Some(blocked),
             wheel: blocked || table.context.is_open() || shortcut.is_open() || over_ui,
         },
-        reduced_motion: table.reduced_motion,
     });
     **camera = step.transform;
     if step.manual_navigation && table.context.is_open() {
@@ -1474,13 +1601,17 @@ fn contextual_feedback(
                 bonus,
                 skill: match test.skill {
                     crate::gathering::Skill::Willpower => {
-                        crate::tabletop::symbols::Skill::Willpower
+                        crate::tabletop_support::symbols::Skill::Willpower
                     }
                     crate::gathering::Skill::Intellect => {
-                        crate::tabletop::symbols::Skill::Intellect
+                        crate::tabletop_support::symbols::Skill::Intellect
                     }
-                    crate::gathering::Skill::Combat => crate::tabletop::symbols::Skill::Combat,
-                    crate::gathering::Skill::Agility => crate::tabletop::symbols::Skill::Agility,
+                    crate::gathering::Skill::Combat => {
+                        crate::tabletop_support::symbols::Skill::Combat
+                    }
+                    crate::gathering::Skill::Agility => {
+                        crate::tabletop_support::symbols::Skill::Agility
+                    }
                 },
             });
         }

@@ -1,8 +1,10 @@
 # Gathering candidate
 
+**Current entry, 2026-11-07:** ordinary launch opens [scenario selection](../../README.md#launch-and-resume-the-gathering). Select The Gathering for **New attempt**, **Continue** or **Open saved attempt**. **Menu → Save and return to scenario selection** saves before leaving and keeps the game active on failure. The explicit `--experiment gathering --save PATH` commands below remain diagnostic paths. [ADR 0005](../adr/0005-retire-experiments-and-select-scenarios.md) retires the three earlier standalone experiments; this does not establish the full native playthrough or owner acceptance under #89.
+
 **Artwork contract amendment, 2026-11-07:** [ADR 0004](../adr/0004-require-artwork-for-3d-play.md)
 requires complete artwork for 3D play and a blocking startup recovery window.
-All four modes now refuse incomplete collections and wait for every required
+Gathering refuses incomplete collections and wait for every required
 image and the symbol font to load before play. **Choose asset folder** selects a
 complete collection, **Retry** rechecks it, and **Quit** leaves saves unchanged.
 The removed `--no-art` option is rejected. Dated substitute-presentation evidence
@@ -337,7 +339,7 @@ times in the compact handoff before launch:
 These are cutoffs, not permission to extend a step. If startup, consent or a real
 decision consumes the budget, skip optional work and report what was not tested.
 The helper's fifteen-second command allowance plus fifteen-second cleanup reserve
-remains controlling. Use the [single-click capture option](jacqueline-curse.md#launch-capture-and-interact)
+remains controlling. Use the [single-click capture option](../agents/native-verification.md#launch-capture-and-interact)
 for still observations; keep short window recordings for motion. Never switch
 targets without re-verifying process/window identity. No interval is active merely
 because these saves and instructions exist.
@@ -523,7 +525,7 @@ glyphs against both actual page meshes; it failed before this correction and
 passed afterwards (`/tmp/gathering-heading-native-regression/run.json`, exit 101;
 `/tmp/gathering-heading-native-fixed/run.json`, exit 0). The owner-authorized
 follow-up below checks this repair, the expanded map and the dedicated Test view
-under the [desktop-interval procedure](jacqueline-curse.md#launch-capture-and-interact).
+under the [desktop-interval procedure](../agents/native-verification.md#launch-capture-and-interact).
 Owner acceptance remains separate. The compact Victory caption places count and
 points on two lines beneath its named footprint; the encounter footprints use
 Deck and Discard, as investigator areas do.
@@ -691,7 +693,7 @@ the confirmation. Cancel and resolve that reason before retrying; the current
 live attempt and active save are retained.
 Headless tests exercise the actual menu controls and save and restart protections.
 
-For a static layout capture, use the [isolated native diagnostics](jacqueline-curse.md#launch-capture-and-interact)
+For a static layout capture, use the [isolated native diagnostics](../agents/native-verification.md#launch-capture-and-interact)
 with `--experiment gathering --initial-view scenario --screenshot scenario.png --quit-after-screenshot`
 and the prepared artwork root above. The capture waits
 for graphics readiness and exits after writing the image. This checks rendering;

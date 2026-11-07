@@ -128,6 +128,10 @@ _Avoid_: Fresh campaign, scripted outcome
 One play of a scenario, with its own starting state, player decisions and random outcomes. Reopening continues the same attempt; restarting begins a new one.
 _Avoid_: Replay when referring to a new attempt
 
+**Scenario**:
+A named adventure from Arkham Horror: The Card Game, such as The Gathering. A scenario is distinct from a particular attempt to play it.
+_Avoid_: Experiment, mode
+
 **Source archive**:
 The externally owned Arkham Horror LCG resource collection from which material is selected for this application. It remains intact when selected assets are prepared for use.
 _Avoid_: Installed assets, prepared asset collection

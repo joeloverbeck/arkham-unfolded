@@ -3,22 +3,10 @@ fn main() {
         .collect::<Vec<_>>()
         .windows(2)
         .any(|pair| pair == ["--experiment", "gathering"]);
-    let party = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .any(|pair| pair == ["--experiment", "party"]);
-    let tony = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .any(|pair| pair == ["--experiment", "tony"]);
     let result = if gathering {
         arkham_unfolded_experiment::gathering_tabletop::run()
-    } else if party {
-        arkham_unfolded_experiment::party_tabletop::run()
-    } else if tony {
-        arkham_unfolded_experiment::tony_tabletop::run()
     } else {
-        arkham_unfolded_experiment::tabletop::run()
+        arkham_unfolded_experiment::scenario_selection::run()
     };
     if let Err(error) = result {
         eprintln!("{error}");

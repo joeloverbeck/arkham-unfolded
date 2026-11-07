@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn selection_new_refuses_a_collision_and_open_requires_an_existing_attempt() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("attempt.json");
+    let config = AssetConfig::load_at(
+        directory.path().join("settings.toml"),
+        directory.path().join("art"),
+    );
+    let options = |intent: &str| {
+        Options::parse(
+            config.clone(),
+            [
+                "--experiment",
+                "gathering",
+                "--attempt",
+                intent,
+                "--save",
+                path.to_str().unwrap(),
+            ]
+            .map(str::to_owned)
+            .into_iter(),
+        )
+        .unwrap()
+        .unwrap()
+    };
+    assert!(options("open").open_table().is_err());
+    assert!(!path.exists());
+    let fresh = options("new").open_table().unwrap();
+    assert!(!path.exists());
+    continuity::save_session(&path, &fresh.session).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    assert!(options("new").open_table().is_err());
+    assert_eq!(options("open").open_table().unwrap().session, fresh.session);
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
 fn opening_a_fresh_native_table_does_not_save_before_artwork_admission() {
     let directory = tempfile::tempdir().unwrap();
     let save = directory.path().join("attempt.json");
@@ -41,6 +77,7 @@ mod navigation;
 mod restart;
 mod results;
 mod review_saves;
+mod selection;
 mod slots;
 mod token_guidance;
 mod trays;
@@ -236,6 +273,14 @@ fn assert_initial_table(app: &mut App) {
             .count(),
         3
     );
+    crate::tabletop_standee_checks::assert_standees(
+        world,
+        &[
+            (layout::InvestigatorClass::Rogue, None),
+            (layout::InvestigatorClass::Survivor, None),
+            (layout::InvestigatorClass::Mystic, None),
+        ],
+    );
 }
 
 #[test]
@@ -289,9 +334,7 @@ fn host_with_table(table: Table, raw_window_events: bool) -> App {
         .init_resource::<art::Art>()
         .insert_resource(table)
         .insert_resource(RenderHealth::ready_for_test())
-        .insert_resource(
-            Orbit::new(CameraMode::Jacqueline).with_home(enemy_board::focus(Area::Overview)),
-        );
+        .insert_resource(Orbit::new().with_home(enemy_board::focus(Area::Overview)));
     app.world_mut().spawn((
         Window {
             resolution: (1600, 1000).into(),
@@ -386,7 +429,7 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
         .unwrap();
     assert_eq!(
         app.world().resource::<Orbit>().pose(),
-        Orbit::new(CameraMode::Jacqueline)
+        Orbit::new()
             .with_home(enemy_board::focus(Area::Overview))
             .pose()
     );
@@ -587,10 +630,9 @@ fn button_with_label(app: &mut App, label: &str) -> Option<Entity> {
             children
                 .iter()
                 .any(|child| {
-                    world
-                        .get::<AccessibleLabel>(child)
-                        .is_some_and(|text| crate::tabletop::readable_text(text.0.clone()) == label)
-                        || world.get::<Text>(child).is_some_and(|text| text.0 == label)
+                    world.get::<AccessibleLabel>(child).is_some_and(|text| {
+                        crate::tabletop_support::readable_text(text.0.clone()) == label
+                    }) || world.get::<Text>(child).is_some_and(|text| text.0 == label)
                 })
                 .then_some(entity)
         })
@@ -1311,7 +1353,7 @@ pub(super) fn rendered_text(app: &mut App) -> String {
         .iter(world)
         .map(|(text, label)| {
             if text.0.is_empty() {
-                crate::tabletop::readable_text(
+                crate::tabletop_support::readable_text(
                     label.map_or("", |label| label.0.as_str()).to_owned(),
                 )
             } else {

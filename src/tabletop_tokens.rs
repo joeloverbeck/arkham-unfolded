@@ -3,7 +3,7 @@
 //! Callers own placement, reveal motion and lifetime. The face is parented to
 //! the disk so it follows the caller's transform throughout an animation.
 
-use crate::{TokenFace, TokenStatus, tabletop::readable_text};
+use crate::{TokenFace, TokenStatus, tabletop_support::readable_text};
 use bevy::prelude::*;
 
 pub(crate) struct TokenVisual {

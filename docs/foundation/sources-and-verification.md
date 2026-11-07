@@ -16,6 +16,8 @@ The three starting ArkhamDB deck identities are recorded in [the play contract](
 
 ## Presentation asset preparation
 
+After [experiment retirement on 2026-11-07](../adr/0005-retire-experiments-and-select-scenarios.md), `resources/gathering-asset-selection.json` is the maintained complete 144-file recipe. Its identity, the default `gathering-assets` installation and `gathering.toml` preference are preserved. Earlier recipes and launch observations are historical; retirement does not mutate private artwork or settings. Scenario selection itself does not require prepared assets.
+
 The source archive, currently `/home/joeloverbeck/Pictures/Arkham Horror LCG Resources`, remains externally owned and unchanged. When accepted development first requires a presentation asset, the developer or agent selects its exact source identity and variant, assigns an application-relative destination, copies or performs the necessary bounded conversion, and verifies the prepared result before introducing the runtime dependency. Selection distinguishes edition, language, face and artwork variant where relevant. Source directories describe provenance; they do not dictate the application's layout.
 
 Keep the selected input/output identities, hashes and any transformation evidence in the repository's preparation recipe and supporting evidence. Preserve original source bytes and historical observations. Image and font payloads live in the external prepared collection; its manifest identifies the selected contents without requiring the source archive. A converted file needed for offline play, such as an extracted font, belongs in that collection. Links back to the source archive do not make a self-contained collection.

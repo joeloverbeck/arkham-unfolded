@@ -1,6 +1,6 @@
 # Mission and founding boundary
 
-This document records the founding product scope. The repository is at the foundation stage; the intended application is not implemented or verified. The next assessment is a proposal, separate from the founding commitment.
+This document records the founding product scope and subsequent accepted boundary changes. The initial assessment below is historical; [README](../../README.md) records implemented status, and GitHub owns active work. The full intended campaign remains incomplete.
 
 ## Decisions established in the interview
 
@@ -36,7 +36,9 @@ Human acceptance must inspect actual play, readability, pacing and control burde
 
 Joel accepted [complete replay retirement](../adr/0003-retire-replay.md) on 2026-11-04 because he will not use it. The replacement may redesign persistence and treats every pre-removal save and recording as unsupported. The [implementation report](../research/replay-removal.md#implementation-result) records the local removal and its evidence separately from owner acceptance.
 
-## Proposed initial work and stopping boundary
+Joel selected [experiment retirement and scenario selection](../adr/0005-retire-experiments-and-select-scenarios.md) on 2026-11-07. The maintained entry offers only original The Gathering on Standard with the three selected starting decks, marked in development. Browsing selection needs no game session or artwork. Retired experiment evidence remains historical; this choice does not complete the campaign or accept #89's full native playing experience.
+
+## Founding proposal and stopping boundary (historical)
 
 The founding commitment is this repository bootstrap, three foundation documents and one proposed feasibility issue, with no gameplay implementation or paid services. The active bottleneck is understanding and bounding the rules obligations of this exact campaign and party, including chosen upgrades and weaknesses. There is no accepted estimate for completing the full campaign implementation.
 

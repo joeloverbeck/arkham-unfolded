@@ -352,7 +352,7 @@ fn investigator_summary(view: &Observation) -> String {
 }
 
 fn test_summary(play: &crate::gathering::PlayObservation) -> Option<String> {
-    use crate::{gathering::Skill, tabletop::symbols::Skill as Symbol};
+    use crate::{gathering::Skill, tabletop_support::symbols::Skill as Symbol};
     let test = play.test.as_ref()?;
     let skill = match test.skill {
         Skill::Willpower => Symbol::Willpower,
@@ -728,6 +728,12 @@ pub(super) fn render(
             {
                 button(art, p, "Save live attempt", Action::Save);
                 button(art, p, "Reopen saved attempt", Action::Reopen);
+                button(
+                    art,
+                    p,
+                    "Save and return to scenario selection",
+                    Action::ReturnToSelection,
+                );
                 button(
                     art,
                     p,

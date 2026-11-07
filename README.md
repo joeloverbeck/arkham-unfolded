@@ -1,223 +1,51 @@
 # Arkham Unfolded
 
-**Complete artwork is required for 3D play.** Every retained mode verifies its
-whole prepared collection, loads its images and symbol font, then checks rendering
-readiness before enabling decisions. Missing or damaged assets open a blocking
-window with **Choose asset folder**, **Retry** and **Quit**; the terminal shows the
-same diagnosis. Failed startup leaves saves unchanged. The headless player driver
-and engineering checks remain artwork-independent. [ADR 0004](docs/adr/0004-require-artwork-for-3d-play.md)
-records the decision; [#124's handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/124#issuecomment-6706875824)
-records verification and bounded owner acceptance.
+An English-language Arkham Horror: The Card Game application for Ubuntu, implemented in Rust with a 3D tabletop.
 
-**Development saves:** replay-era saves are unsupported, and later Gathering changes can also invalidate older attempts, including format-3 saves. If startup rejects a save, [start with an unused `--save` path](#start-fresh-after-an-incompatible-save). Removing `--save` loads a different default save; it does not reset the game. Existing files are preserved; no migration is provided. See [the replay decision](docs/adr/0003-retire-replay.md) and [the latest compatibility notes](docs/research/gathering-wagers-keys-and-token-layout.md#implementation-and-verification).
-
-An English-language Arkham Horror: The Card Game application for Ubuntu, planned with a Rust rules core and an animated 3D tabletop.
-
-**Status: bounded Rust/3D experiments. The campaign is not playable yet.** The original Jacqueline/Patrice skill-test mode remains available. Tony mode offers an owner-accepted complete turn from a prepared Gathering position under [#22](https://github.com/joeloverbeck/arkham-unfolded/issues/22).
-
-The [Gathering candidate](docs/experiments/gathering-setup.md) under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89) continues from actual selected decks, scenario assembly and mulligans into ordinary scenario play. Driver checks exercise a full first round and all following mythos draws, including fresh-process reopening. The runtime includes selected card effects, phases, resolutions, safe Undo and live intermediate events. Difficult token compositions use documented source-derived interpretations. The corrected presentation reuses Party's production interface and pieces. Targeted native checks confirmed the setup layout, captions and automatic return to play; see the [current verification status](docs/experiments/gathering-setup.md#presentation-correction-verification) for evidence and remaining checks. A full native scenario playthrough and owner acceptance remain outstanding. [Launch Gathering](#launch-and-resume-the-gathering) using the command below.
-
-See the [Tony guide](docs/experiments/tony-turn.md) for the prepared position, saves, undo and player driver, including the [two-session verification walkthrough](docs/experiments/tony-turn.md#owner-verification).
-
-The owner-accepted [prepared Study escape attempt](docs/experiments/study-escape.md) under [#55](https://github.com/joeloverbeck/arkham-unfolded/issues/55) adds coordinated turns for all three investigators and an Act 1 closing decision. Investigators take complete turns in your chosen order. A persistent turn indicator and portrait badge identify whose turn it is, while supporting choices name the investigator performing them. Camera focus remains independent. Spending six clues reveals Act 1's story before Continue applies its effects and exposes the connected four-room map. Joel accepted the implementation on 2026-11-01 after using all three investigators to collect clues and advance the Act. This remains the prepared attempt, with play stopping at that endpoint. Use the [party launch command](#launch-and-resume-the-party-experiment) below.
+**The Gathering is in development; the campaign is not complete.** Scenario selection offers only original The Gathering on Standard with the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine starting decks. Full native scenario play and owner acceptance remain outstanding under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). The [Gathering guide](docs/experiments/gathering-setup.md) records implemented behavior and its evidence limits.
 
 ## Launch and resume The Gathering
 
-Choose the save path before launching:
-
-- **Start a new attempt:** use a filename that does not exist. The command below
-  uses `local/gathering/session-2026-11-07.json`; choose another name if it already
-  contains an attempt you do not want to resume.
-- **Resume:** use the exact `--save` path from your previous launch. An existing
-  compatible file reopens that attempt; it does not start setup again.
-
-On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
+From this checkout:
 
 ```sh
-cd /home/joeloverbeck/src/arkham-unfolded
-mkdir -p local/gathering
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
-target/debug/arkham-tabletop \
-  --experiment gathering --save local/gathering/session-2026-11-07.json
+target/debug/arkham-tabletop
 ```
 
-Omitting `--save` selects `local/gathering/setup.session.json`, which can contain
-another older attempt. Neither rebuilding nor removing `--save` clears a saved
-game. If either launch reports an incompatible save, follow
-[Start fresh after an incompatible save](#start-fresh-after-an-incompatible-save).
+The first build can take several minutes. Ordinary launch opens **Scenario selection** without loading a game or requiring prepared artwork. Select **The Gathering** to choose:
 
-Gathering reads its installed artwork from `~/.local/share/arkham-unfolded/gathering-assets`
-by default. Artwork updates replace the verified contents at that stable location;
-the launch command does not change. Remove old `--art-root` arguments from saved
-commands. A folder deliberately chosen in the artwork settings still takes precedence
-over the default. See [artwork preparation and selection](docs/experiments/gathering-setup.md#artwork-preparation-and-selection)
-for installation and updates, including custom XDG data locations.
+- **New attempt:** allocates a distinct unused save path. It creates the attempt only after complete artwork and rendering admission, preserving existing saves.
+- **Continue:** opens the exact most recently successfully admitted attempt, remembered across application launches. With no remembered attempt, the screen explains this and keeps New/Open available.
+- **Open saved attempt:** choose an existing file with the native file picker. Cancellation keeps the previous Continue reference. Missing, corrupt, incompatible or wrong-scenario records are refused unchanged.
 
-This starts original **The Gathering on Standard**, using the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine decks and the prepared artwork on this machine. Keep the terminal open and the window visible and focused during **Checking graphics...**. On a new save, the heading says **The Gathering · Standard · Setup**: click an investigator card and choose them as lead from its contextual menu. Click individual hand cards for mulligan choices, then confirm each investigator's hand to begin ordinary scenario play.
+New saves live under `${XDG_DATA_HOME:-$HOME/.local/share}/arkham-unfolded/attempts/`. The remembered path is separate from game state, beside `gathering.toml` in the user's configuration directory. **Menu → Save and return to scenario selection** saves the pending decision before leaving; a failed save keeps the game active with its recovery controls.
 
-Every decision autosaves to the selected `--save` path (`local/gathering/session-2026-11-07.json` in this example). Run the same command to resume. To start over, choose **Menu → Restart The Gathering... → Restart**. This returns to setup with fresh shuffles and archives the previous attempt beside the save; its exact path appears on screen and in the terminal. **Cancel** or Escape keeps the current attempt. **Reopen saved attempt** resumes the new attempt after a restart. See the [recovery instructions](docs/experiments/gathering-setup.md#restart-and-recover-an-attempt) to resume an archive. The `local/` directory is ignored by Git. The first build can take several minutes; subsequent launches reuse it.
+**Complete artwork is required for 3D play.** Gathering verifies all 144 required files, loads its images and symbol font, then checks rendering before enabling decisions. Missing or damaged artwork offers **Choose asset folder**, **Retry** and **Quit**, with the diagnosis repeated in the terminal. Startup refusal preserves existing saves and creates no new attempt. Headless rules and engineering checks remain independent of artwork. [ADR 0004](docs/adr/0004-require-artwork-for-3d-play.md) records that contract.
 
-Skill tests pause at a detailed result panel until **Continue**. Optional effects such as Quick Thinking then offer explicit use-or-decline choices. **Menu → History** retains recorded breakdowns; see [skill test results](docs/experiments/gathering-setup.md#read-a-skill-test-result) for timing and reopening.
+Gathering uses `~/.local/share/arkham-unfolded/gathering-assets` by default, or the corresponding XDG data location. Its saved folder preference takes precedence; `--art-root PATH` is a temporary override. The complete existing Gathering collection and `gathering.toml` remain usable without migration. See [artwork preparation and selection](docs/experiments/gathering-setup.md#artwork-preparation-and-selection).
 
-Selecting **Watch this!** now opens an explicit wager choice, including **0 · icons
-only**, before confirming commitments. **Old Keyring** shows a Keys counter and
-automatically removes a key after an ordinary successful use, discarding the
-empty asset. Consequential result ordering remains a direct choice. Jacqueline's
-ordinary three-token reveal shares one compact row with a selection count.
-Chaos tokens fill one lower Test region; artwork replaces routine numbered
-captions, while missing art keeps readable names. **Reveal tokens** executes the
-visible plan directly. Use the separate ability controls first to add Olive or
-Jacqueline; active abilities remain listed before the draw. See the
-[token-readability notes](docs/research/gathering-olive-and-token-readability.md#local-implementation-and-verification)
-and [earlier implementation notes](docs/research/gathering-wagers-keys-and-token-layout.md#implementation-and-verification)
-for verification and the development-save compatibility boundary.
+Keep the window visible and focused during **Checking graphics...**. New play begins at **The Gathering · Standard · Setup**. Click an investigator card to choose the lead, then select mulligan cards and confirm each hand. Decisions autosave to the attempt's path. Card and pile menus provide Inspect and available actions; the portrait rail moves the camera independently of the current investigator. Tab/Shift+Tab and Enter/Space navigate buttons; hold WASD to pan outside blocking dialogs.
 
-During play, click cards, locations, decks and tokens for their contextual actions. Choose **Inspect** for enlarged artwork and effective rules; piles offer their individual cards. The portrait rail moves the camera, and **TURN** identifies the current investigator independently of camera focus. **Menu** at the upper right contains history, motion settings, save/reopen and artwork settings. The bottom panel holds the current decision and table-wide choices. Gathering's artwork collection includes all 94 card identities needed by the selected decks and original scenario, with the necessary card backs and shared tokens. It is separate from Party's smaller collection.
+**Menu → Restart The Gathering... → Restart** archives a valid predecessor beside its save and starts fresh shuffles at that same path. Cancel or Escape preserves the current attempt. Restart is separate from New's distinct save and cannot repair an unreadable record. Manual Save, Reopen saved attempt, History and artwork settings remain available. See [restart and recovery](docs/experiments/gathering-setup.md#restart-and-recover-an-attempt).
 
-Hold **WASD** to pan, including when an ordinary button has keyboard focus. Panning dismisses an open card-action list without choosing an action. Inspect, Menu and other blocking dialogs suspend camera input; closing them restores it without clicking the table. Tab/Shift+Tab and Enter/Space continue to navigate and activate buttons.
+### Direct diagnostic launch
 
-Gathering shows unengaged enemies individually on a navy board left of the map, linked by matching location markers. The enemy board matches the map board's depth, and labels retain their ordinary text sizes. Ammo, spell charges and bounties use counters; every enemy shows damage/max health above its card. Actual shuffles split, interleave and settle before subsequent draws. Reduced motion skips the movement. Joel accepted this presentation increment on 2026-11-05 after testing the app with the consolidated artwork installation. Caption-overlap tuning remains deferred. The [Gathering guide](docs/experiments/gathering-setup.md#counter-shuffle-and-enemy-board-verification-2026-11-05) records verification, acceptance and the remaining full-scenario boundary.
+An explicit Gathering launch remains available for a known checkpoint:
+
+```sh
+target/debug/arkham-tabletop --experiment gathering --save /absolute/path/to/attempt.json
+```
+
+Here an existing compatible file resumes; an unused path starts setup. Omitting `--save` on this direct command selects `local/gathering/setup.session.json`. Ordinary launch without `--experiment gathering` opens selection instead. The headless driver also retains Gathering's player choices, persistence and diagnostics; use `scripts/dev cargo run --locked --bin arkham-driver -- --help` for its interface.
 
 ### Start fresh after an incompatible save
 
-These two startup errors require a new save path with the current build:
+Select **New attempt**. Keep the rejected file; no migration or repair is performed. Replay-era format-1 records are unsupported, and older format-3 records can already be incompatible with the current Gathering implementation. The error `Gathering setup does not match its recorded decisions and pinned inputs` means validation could not reconstruct that record, including its recorded history. This retirement change preserves saves loadable at its baseline; it does not repair previously incompatible records. See [replay retirement](docs/adr/0003-retire-replay.md) and [earlier compatibility notes](docs/research/gathering-wagers-keys-and-token-layout.md#implementation-and-verification).
 
-| Startup error | Meaning |
-| --- | --- |
-| `Unsupported save (format 1, …). Pre-removal saves and recordings are unsupported.` | The file predates replay retirement. The current format is 3; pre-removal saves have no migration. |
-| `Gathering setup does not match its recorded decisions and pinned inputs.` | The saved state differs from what the current build reconstructs from its recorded choices. This can affect format-3 saves too: validation compares history wording as well as game state, so changed choice captions alone can cause this refusal. |
+### Retired experiments
 
-The first error can come from `local/gathering/session.json`, while launching
-without `--save` can produce the second by loading
-`local/gathering/setup.session.json`. Neither command requests a fresh attempt
-when its selected file already exists.
-
-Early development prioritizes the current implementation over compatibility
-with older saves. To play again, use an unused path. This starts over without
-transferring progress from the rejected attempt:
-
-```sh
-cd /home/joeloverbeck/src/arkham-unfolded
-mkdir -p local/gathering
-scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
-target/debug/arkham-tabletop \
-  --experiment gathering --save local/gathering/session-2026-11-07.json
-```
-
-Choose another filename if that path already contains an older attempt. Keep
-using this exact `--save` path to resume the new game; every decision autosaves
-there. The previous save is left untouched. **Menu → Restart The Gathering...**
-is available once a compatible attempt opens; it cannot recover a save that
-prevents startup.
-
-## Launch and resume the party experiment
-
-On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
-
-```sh
-cd /home/joeloverbeck/src/arkham-unfolded
-scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
-target/debug/arkham-tabletop \
-  --experiment party \
-  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/party-assets-v2 \
-  --save /home/joeloverbeck/.cache/agent-tmp/arkham-55-owner-8a08cc9.session.json
-```
-
-This reopens the existing party session with its prepared artwork. Decisions autosave to the specified file; run the same command to resume after closing the window. These artwork and save paths belong to this machine's prepared experiment; use your own paths on another machine and retain this save to keep your progress.
-
-Keep the terminal open and the app window visible and focused during **Checking graphics...**. Once play is enabled, the heading inside must say **Prepared Study escape · The Gathering · Standard**. The graphics workaround described below applies automatically. See the [Study escape guide](docs/experiments/study-escape.md) for the prepared position, controls, acceptance record and verification reference.
-
-In all three experiments, contextual actions now appear as a compact vertical list with wrapped details. The scenario reference stays at the upper-left of **Test**, including between tests. During a commitment opportunity, a steady teal edge and `+N` tested-skill badge identify cards that can legally be added; gold corners and **Selected** distinguish staged cards. If a supporting investigator already has a selected card, unselect it before choosing another. Ineligible cards remain inspectable. These [#77](https://github.com/joeloverbeck/arkham-unfolded/issues/77) refinements retain explicit confirmation and printed wild icons. Joel accepted them on 2026-11-01 after running the Party experiment.
-
-## Launch and play the Tony turn
-
-On this Ubuntu machine, open **Terminal** (`Ctrl` + `Alt` + `T`) and paste:
-
-```sh
-cd /home/joeloverbeck/src/arkham-unfolded
-scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
-target/debug/arkham-tabletop \
-  --experiment tony \
-  --art-root /home/joeloverbeck/.cache/agent-tmp/arkham-73-assets/tony-assets-v5
-```
-
-The `--experiment tony` option selects the prepared turn. The explicit artwork path above uses this machine's new counter collection; use your own prepared folder elsewhere. Omitting `--art-root` uses Tony's saved artwork preference or its preserved v4 default. The terminal reports the experiment, resolved artwork folder and completeness at startup. If artwork has not been prepared, use the preparation instructions below; missing artwork blocks play and offers folder selection, Retry and Quit. Joel accepted the shared counter refinement under [#73](https://github.com/joeloverbeck/arkham-unfolded/issues/73) on 2026-11-01 after playing the complete prepared Party attempt through Act advancement and checking the recent visuals. This does not claim a separate Tony or Jacqueline playthrough of that refinement.
-
-All four native modes check rendering before enabling play. Keep the window visible and focused while **Checking graphics...** is shown. A healthy scene normally needs several seconds; startup refuses play if it cannot become ready within 30 seconds of visible foreground operation. A later sustained rendering failure also stops play and exits unsuccessfully. The terminal records the reason, and the last saved decision remains intact. This checks observed progress; it does not repair or certify the graphics driver. See the [graphics investigation and evidence limits](docs/research/nvidia-mapping-and-startup-health.md).
-
-On Linux/Vulkan with the observed NVIDIA RTX 2080 Ti, internal upload buffers use system memory to avoid a measured stall when the CPU writes into GPU BAR memory. This [small patch to the pinned renderer dependency](vendor/wgpu-hal/ARKHAM_PATCH.md) applies automatically to all three experiments; use the ordinary launch commands below.
-
-If your checkout is elsewhere, replace the directory in the first line. This requires Rust/Cargo 1.97.1 or later and an Ubuntu graphics session with X11/XWayland and Vulkan. The first launch downloads and compiles dependencies, which can take several minutes. Later launches reuse the build. Keep the terminal open while playing. The native window retains the title **Arkham Unfolded — Scripted Rules Experiment**; the heading inside must say **Tony turn / The Gathering / Standard**.
-
-The scenario surface holds the map and scenario components. A separate **Test** table between it and the investigator row holds the chaos bag, committed cards, and labeled revealed/canceled token sections. Tony, Patrice and Jacqueline each have a compact scenario-width personal surface: permanent raised harm counters above the upper-left investigator card, a five-card threat band separate from central assets, deck and discard at upper right, and one centered hand row along the near edge. Muted labeled regions identify those spaces. The portrait buttons focus each investigator; **Scenario**, **Test** and **Overview** move between the shared areas and the whole table. Focusing an investigator does not change who is acting. The current actor, decision and test stay visible while you navigate.
-
-In **Scenario** view, the agenda and act stand together at the far center as an open book, with the agenda on the left. Larger investigator standees sit beside their location, with two positions along each side, a narrow gap between neighboring bases and retained clearance from the card. The earlier Jacqueline experiment uses named Study and Hallway markers for its supplied locations. Full card inspection remains available; manual orbit can naturally place figures in front of cards from some angles. The deeper scenario surface and equal gaps around Test are owner-accepted refinements recorded in [ADR 0002](docs/adr/0002-persistent-table-areas.md#turn-ownership-and-scenario-depth).
-
-In a fresh turn:
-
-1. Tony has three ordinary actions and an available bonus Fight/Engage action. A ready Ghoul Minion is engaged with him; Internal Injury is in his threat area. Left-click a component to open its nearby labeled actions, then click the action to perform it. Selecting the component alone changes no game state. Actions that provoke show an amber **Attack of opportunity** warning with the source and amounts before you choose them.
-2. When a skill test has legal card commitments, select the exact hand cards, then choose **Commit selected**, or choose **Commit no cards**. Commitment controls show **+N** followed by the tested skill's symbol (or its readable name when the font is unavailable). With no legal commitments, the empty prompt is skipped; Tony's Evade proceeds to **Reveal token**, with **Undo** still available before revealing. Click **Reveal chaos token** at the lower left from any camera view. It reveals through the same rules as the physical bag and focuses **Test** after the decision saves successfully. Then select the revealed token and choose **Resolve test**. Results are random. Use **Action history and rules reasons** to inspect costs and consequences.
-3. Each harm event has one visible stage: an attack dealing damage and horror shows both together. **Finish animation** completes the current stage; later harm events still appear; **Motion: reduced** retains readable stages without motion.
-
-Choose **Inspect** from a card's contextual controls for the existing enlarged artwork and readable rules; **Close** or `Esc` returns to the table. `Esc` or clicking empty space dismisses contextual actions without choosing one. Scroll the utility panel or card inspection when needed. Hold unmodified `W`/`A`/`S`/`D` to pan forward/left/back/right across the table relative to the camera; release to stop. Right-drag or use the arrow keys to orbit; the wheel or `+`/`-` zooms, and `Home` resets the camera. Manual camera movement overrides automatic following. Camera keys are suspended while a menu or modal captures keyboard input.
-
-**Menu** at the upper right opens history, motion settings, save/reopen and artwork settings.
-
-In a contextual menu, the yellow outline marks keyboard focus. **Tab** moves to the next option, **Shift+Tab** moves to the previous option, **Enter** or **Space** activates it, and **Esc** closes the menu. Arrow keys do not navigate these menus; camera keys are suspended while the menu has focus.
-
-In both experiments, clicking a card or component opens inspection immediately when **Inspect** is its only option. A single discarded card opens directly; several cards retain their chooser. Tony's idle chaos bag opens its scenario-reference inspection. Otherwise nearby actions share the same resting color, brighten on hover and show keyboard focus with a separate outline. Inspectable cards gain a brief fading hover frame; it clears when the pointer leaves. A short blue marker remains while that card's menu is open, and gold corner marks identify pending commitments or token cancellations. **Motion: reduced** in Tony and **Card feedback motion: reduced** in Jacqueline make the hover frame static and suppress reveal-button motion. These are the interaction conventions for future experiments and the full game as those consumers are implemented.
-
-The encounter discard starts empty in both prepared experiments. Defeated Ghoul Minion and fully resolved Rotting Remains appear face up in its scenario-area pile and remain inspectable through reopening. Internal Injury goes to Tony's own discard. The reveal shortcut appears only at a legal reveal decision; in Jacqueline it first offers normal reveal or her reaction when that choice remains available. The physical bag controls remain usable.
-
-**Close and resume:** decisions autosave to `local/experiment/tony.session.json`. Close the window and run the same command to resume. **Save live turn** also saves at a pending choice, including before resolving a revealed token. **Reopen saved turn** reloads the save. At the end, **Start another Tony turn** archives the previous run. **End Tony's turn** is available at an action boundary; it cannot skip a pending test.
-
-Joel [accepted the experiment and its final refinements on 2026-10-31](https://github.com/joeloverbeck/arkham-unfolded/issues/22#issuecomment-6536278638). The [owner verification walkthrough](docs/experiments/tony-turn.md#owner-verification) remains available as a reference for the exercised playing paths.
-
-## Prepare the Tony artwork
-
-The developer/agent prepares the selected files once; ordinary play needs only the resulting folder. From this checkout, with the original archive available:
-
-```sh
-curl --fail --location \
-  https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png \
-  --output /tmp/arkham-reveal-icon.png
-scripts/dev cargo run --locked --bin arkham-assets -- prepare-tony \
-  --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
-  --reveal-icon /tmp/arkham-reveal-icon.png \
-  --output "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
-scripts/dev cargo run --locked --bin arkham-assets -- check-tony \
-  "$HOME/.local/share/arkham-unfolded/tony-assets-v5"
-```
-
-This prepares 42 selected images and one symbol font, including the player-card back, damage/horror counters, clue/resource faces, six class icon/background pairs and reveal icon. Preparation verifies the exact downloaded icon before creating output; ordinary play needs no download. Earlier collections are preserved for inspection but cannot admit play when incomplete or outdated. Select the fresh folder with `--art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v5"` or **Choose asset folder**. The source archive and existing collections stay intact. Preparation requires a fresh destination; repeating it with an identical complete collection is a no-op. Conflicting, incomplete or unknown destination contents are preserved and reported.
-
-These folder versions preserve earlier prepared files during development; they do not select different game rules. Preparing v5 changes neither saved preferences nor the existing v4 default. Select the fresh folder explicitly with `--art-root` for one launch or **Choose asset folder** to save that selection. An older explicit path continues to select its original folder.
-
-**Choose asset folder** in Tony's **Menu**, or Jacqueline's side panel, checks a prepared folder and saves its location for the next launch of that experiment. Scroll the controls if needed. The native folder dialog uses Ubuntu's `zenity` package. Settings are separate: Tony uses `$XDG_CONFIG_HOME/arkham-unfolded/tony.toml`; Jacqueline retains `config.toml` in the same directory. The normal configuration directory is `~/.config/arkham-unfolded`. Existing `config.toml` contents remain unchanged and apply only to Jacqueline.
-
-Without a command-line override or saved preference, Tony uses `$XDG_DATA_HOME/arkham-unfolded/tony-assets-v4` and Jacqueline uses `$XDG_DATA_HOME/arkham-unfolded/assets-v2`. These preserved older defaults cannot admit play unless their contents satisfy the current selection; prepare and select a complete collection. The normal data directory is `~/.local/share`; relative XDG overrides are ignored. Preparation examples above use that normal location; with a custom `XDG_DATA_HOME`, prepare there or save the actual folder through the app.
-
-A temporary `--art-root PATH` overrides the saved setting for that launch. The removed `--no-art` option is rejected. A valid folder selected in the startup recovery window replaces a failing override for that startup; **Retry** checks it again. A later launch's explicit override still takes precedence. Cancellation, incomplete selections and failed settings writes preserve the previous preference. **Quit**, or closing recovery, exits unsuccessfully without creating or modifying an attempt. Copy the whole prepared folder, including `manifest.json`, to relocate it:
-
-```sh
-scripts/dev cargo run --locked --bin arkham-assets -- check-tony /absolute/path/to/copied-assets
-scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
-target/debug/arkham-tabletop \
-  --experiment tony --art-root /absolute/path/to/copied-assets
-```
-
-The check reports missing or changed files and exits unsuccessfully for an incomplete collection. Personal saves, external captures, research and configuration remain separate. Asset portability does not expand supported game content or authorize redistribution of third-party material.
-
-## Earlier Jacqueline experiment
-
-The no-argument application mode retains the earlier Jacqueline skill-test experiment, its records and its own artwork preference:
-
-```sh
-scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
-target/debug/arkham-tabletop --art-root "$HOME/.cache/agent-tmp/arkham-124-jacqueline-assets"
-```
-
-Its saves use `local/experiment/curse.session.json`. See the [Jacqueline guide](docs/experiments/jacqueline-curse.md#build-and-run) for the first clicks, alternate case and legacy asset preparation. Tony and Jacqueline records use separate readers; there is no automatic migration.
+The standalone Jacqueline, Tony and prepared Study escape experiments were retired on 2026-11-07 under [#127](https://github.com/joeloverbeck/arkham-unfolded/issues/127) and [ADR 0005](docs/adr/0005-retire-experiments-and-select-scenarios.md). Their selectors and save readers are unavailable. Personal files remain untouched; their [Jacqueline](docs/experiments/jacqueline-curse.md), [Tony](docs/experiments/tony-turn.md) and [Study escape](docs/experiments/study-escape.md) observations remain historical evidence. Shared verification instructions now live in the [native-verification runbook](docs/agents/native-verification.md).
 
 ## Project aim
 
@@ -233,9 +61,9 @@ Play the original **Night of the Zealot** campaign from beginning to end on **St
 | Patrice Hathaway | [5391062](https://arkhamdb.com/deck/view/5391062) |
 | Jacqueline Fine | [5389418](https://arkhamdb.com/deck/view/5389418) |
 
-The delivery includes normal campaign consequences and progression, upgrades made in ArkhamDB, save/resume, and inspectable action history. Smaller experiments will investigate feasibility; they will not count as delivering this campaign.
+The delivery includes normal campaign consequences and progression, upgrades made in ArkhamDB, save/resume, and inspectable action history. Bounded investigations can establish feasibility; they do not count as delivering this campaign. The earlier standalone experiments are retired.
 
-Replay has been removed from all four modes, including playback controls, driver commands, recording APIs and stored historical observation tapes. Saves from pre-removal builds are unsupported: choose a new path with `--save` to start an attempt. Old personal files remain untouched. New saves retain exact continuation, action history, result details, safe Undo and restart archives. See [ADR 0003](docs/adr/0003-retire-replay.md) and the [implementation evidence](docs/research/replay-removal.md#implementation-result). Gathering retains a private compact decision journal for validation and safe Undo; it has no playback interface.
+Replay was removed before experiment retirement, including playback controls, driver commands, recording APIs and stored historical observation tapes. Saves from pre-removal builds are unsupported: select **New attempt** to start again. Old personal files remain untouched. New saves retain exact continuation, action history, result details, safe Undo and restart archives. See [ADR 0003](docs/adr/0003-retire-replay.md) and the [implementation evidence](docs/research/replay-removal.md#implementation-result). Gathering retains a private compact decision journal for validation and safe Undo; it has no playback interface.
 
 Content support follows the owner's actual use. Starting decks, campaign content, and selected upgrades and weaknesses must work before a play session begins. This is not a promise to support the entire published card pool. Public development and possible YouTube session recordings do not change that scope.
 
@@ -247,8 +75,9 @@ Content support follows the owner's actual use. Starting decks, campaign content
 - [Prepared asset collection decision](docs/adr/0001-prepared-runtime-assets.md)
 - [Tabletop presentation contract](docs/adr/0002-persistent-table-areas.md#test-area-and-resolution-trays) — skill tests belong in Test; other temporary card and token resolution uses investigator trays. Joel accepted this presentation change after checking the live app on 2026-11-05.
 - [Issue #1 feasibility assessment](docs/research/issue-1-assessment.md) — accepted source baseline and evidence for the selected bounded experiment
-- [Run the Tony turn and verify its native experience](docs/experiments/tony-turn.md) — prepared turn under [issue #22](https://github.com/joeloverbeck/arkham-unfolded/issues/22)
-- [Run the earlier Jacqueline skill-test experiment](docs/experiments/jacqueline-curse.md) — native tabletop, player-equivalent driver, save/reopen under [issue #2](https://github.com/joeloverbeck/arkham-unfolded/issues/2)
+- [Gathering play and verification](docs/experiments/gathering-setup.md) — current scenario under [issue #89](https://github.com/joeloverbeck/arkham-unfolded/issues/89)
+- [Scenario selection and experiment retirement](docs/adr/0005-retire-experiments-and-select-scenarios.md)
+- [Native verification](docs/agents/native-verification.md) — shared launch, consent, capture and evidence procedure
 - [Repository principles](docs/principles/principles-for-repos.md)
 
 [GitHub Issues](https://github.com/joeloverbeck/arkham-unfolded/issues) and pull requests are the work-control plane. Foundations record the intended product and accepted decisions; they are not a second work queue. `CLAUDE.md` contains the agent bootstrap; both `AGENTS.md` and `AGENT.md` link to it.
@@ -257,7 +86,7 @@ Content support follows the owner's actual use. Starting decks, campaign content
 
 ### Local builds and checks
 
-The built experiment runs offline. A clean clone needs no artwork or credentials for headless engineering checks. Complete prepared artwork and successful decoding are required for 3D play. Run `scripts/check` for tracked-file hygiene, formatting, strict Clippy, and the Rust tool, rules, continuity and tabletop tests. Rustup uses the compiler and components in `rust-toolchain.toml`. The Ubuntu PR workflow runs the same phase launchers as named steps without a display or private assets; the portal transport tests start a private `dbus-daemon`. CI compiles its small Rust toolchain-preparation entry point directly with `rustc` before restoring Cargo's cache; the full tools package builds afterward.
+The built application runs offline. A clean clone needs no artwork or credentials for headless engineering checks. Complete prepared artwork and successful decoding are required for 3D play. Run `scripts/check` for tracked-file hygiene, formatting, strict Clippy, and the Rust tool, rules, continuity and tabletop tests. Rustup uses the compiler and components in `rust-toolchain.toml`. The Ubuntu PR workflow runs the same phase launchers as named steps without a display or private assets; the portal transport tests start a private `dbus-daemon`. CI compiles its small Rust toolchain-preparation entry point directly with `rustc` before restoring Cargo's cache; the full tools package builds afterward.
 
 On Linux x86_64 and aarch64, the file-replacement lock test uses `ptrace` to observe its own driver child. The test environment must permit this child tracing. If a restricted agent or container sandbox denies it with `Operation not permitted`, rerun the unchanged check in an authorized environment that permits child tracing. Successful verification requires the tracing test to execute and pass.
 
@@ -327,7 +156,7 @@ scripts/tools record-check --output-dir /tmp/baseline-checks/baseline -- \
 
 Require a finished, successful baseline record before returning to the candidate. Run the same command with a fresh output directory and without `--manifest-path` and `--config` to check the original checkout. Inspect Cargo's retained `compiler-artifact` records and their `fresh` fields for the renderer dependencies; a shared path is not a cache-hit guarantee. The first baseline build may still recompile them. Keep these large JSON records on disk and use bounded reads rather than printing whole artifact lines. This comparison establishes the selected tests' behavior and observed cache reuse; it does not replace the candidate's required checks or native acceptance.
 
-Repository helpers live in the independent `arkham-tools` Cargo package. `scripts/tools --help` lists the bounded reader, Git-index guard, native verification and profiling commands; building these helpers does not compile Bevy. The launcher isolates its build artifacts from application compilation so context reads can proceed during a build, while Cargo still rebuilds changed helper sources. Its invocation parameters leave the caller's build-directory environment available to commands such as `record-check`. The index guard rejects generated caches and recognizable non-Rust executable source/template filenames, including force-added files. Inline code, templates and invocation-only shell remain subject to review under the [implementation-language contract](docs/foundation/mission.md#implementation-language). See the experiment guide for [native verification](docs/experiments/jacqueline-curse.md#developer-native-verification), external inputs, records and evidence limits.
+Repository helpers live in the independent `arkham-tools` Cargo package. `scripts/tools --help` lists the bounded reader, Git-index guard, native verification and profiling commands; building these helpers does not compile Bevy. The launcher isolates its build artifacts from application compilation so context reads can proceed during a build, while Cargo still rebuilds changed helper sources. Its invocation parameters leave the caller's build-directory environment available to commands such as `record-check`. The index guard rejects generated caches and recognizable non-Rust executable source/template filenames, including force-added files. Inline code, templates and invocation-only shell remain subject to review under the [implementation-language contract](docs/foundation/mission.md#implementation-language). See the experiment guide for [native verification](docs/agents/native-verification.md#developer-native-verification), external inputs, records and evidence limits.
 
 The application reads a separately configured prepared asset collection. Image and font bytes are not included in Git. The [selected artwork contract](docs/adr/0004-require-artwork-for-3d-play.md) requires complete artwork and successful loading before 3D play, with informative refusal and recovery instead of substitutes. Absent or unsupported rules behavior must also be identified before play. The [source contract](docs/foundation/sources-and-verification.md#presentation-asset-preparation) requires deliberate selection, copying/conversion and verification whenever development introduces a new asset dependency. The original archive's layout and source identities belong to that preparation step.
 

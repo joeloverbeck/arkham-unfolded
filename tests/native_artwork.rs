@@ -5,24 +5,10 @@ use std::{fs, path::Path, process::Command};
 #[path = "support/native_process.rs"]
 mod native_process;
 
-const MODES: [(&str, &str); 4] = [
-    (
-        "jacqueline",
-        include_str!("../resources/asset-selection.json"),
-    ),
-    (
-        "tony",
-        include_str!("../resources/tony-asset-selection.json"),
-    ),
-    (
-        "party",
-        include_str!("../resources/party-asset-selection.json"),
-    ),
-    (
-        "gathering",
-        include_str!("../resources/gathering-asset-selection.json"),
-    ),
-];
+const MODES: [(&str, &str); 1] = [(
+    "gathering",
+    include_str!("../resources/gathering-asset-selection.json"),
+)];
 
 fn native(directory: &Path, mode: &str, root: &Path, save: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_arkham-tabletop"));

@@ -1,12 +1,9 @@
 //! Headless measurement of text spawned and positioned by the tabletops.
 
-use super::{Area, TestAreaHeading, focus};
+use super::Area;
 use crate::tabletop_camera::{Capture, FrameInput, Orbit};
 use bevy::{
-    camera::{
-        CameraProjection, ComputedCameraValues, RenderTarget, RenderTargetInfo,
-        primitives::MeshAabb,
-    },
+    camera::{ComputedCameraValues, RenderTarget, RenderTargetInfo, primitives::MeshAabb},
     prelude::*,
     text::TextLayoutInfo,
     window::{PrimaryWindow, WindowRef},
@@ -114,87 +111,6 @@ pub(crate) fn asset_hand_gap(index: usize) -> Rect {
             center.z + super::HAND_REGION_Z - super::HAND_REGION_SIZE.y / 2.,
         ),
     )
-}
-
-pub(crate) fn assert_harm_captions<C: Component>(
-    app: &mut App,
-    captions: [Entity; 2],
-    card: Entity,
-    size: Vec2,
-    scale: f32,
-) {
-    let world = app.world_mut();
-    let (camera, camera_transform) = world
-        .query_filtered::<(&Camera, &GlobalTransform), With<C>>()
-        .single(world)
-        .unwrap();
-    let mesh = world.get::<Mesh3d>(card).unwrap();
-    let bounds = world
-        .resource::<Assets<Mesh>>()
-        .get(mesh)
-        .unwrap()
-        .get_aabb()
-        .unwrap();
-    let card_transform = world.get::<GlobalTransform>(card).unwrap();
-    let mut card_top = f32::INFINITY;
-    for x in [-1.0, 1.0] {
-        for z in [-1.0, 1.0] {
-            let local =
-                Vec3::from(bounds.center) + Vec3::from(bounds.half_extents) * Vec3::new(x, 1.0, z);
-            card_top = card_top.min(
-                camera
-                    .world_to_viewport(camera_transform, card_transform.transform_point(local))
-                    .unwrap()
-                    .y,
-            );
-        }
-    }
-    let rectangles = captions.map(|entity| {
-        let text = world.get::<Text>(entity).unwrap();
-        let computed = world.get::<ComputedNode>(entity).unwrap();
-        let layout = world.get::<TextLayoutInfo>(entity).unwrap();
-        let transform = world.get::<UiGlobalTransform>(entity).unwrap();
-        let visible = world.get::<InheritedVisibility>(entity).unwrap();
-        let context = format!("{} at {size:?}, {scale}x", text.0);
-        assert!(visible.get(), "{context}: caption must be visible");
-        assert!(
-            !layout.glyphs.is_empty(),
-            "{context}: real font glyphs must be laid out"
-        );
-        assert!(
-            layout.glyphs.iter().all(|glyph| glyph.line_index == 0),
-            "{context}: caption must fit on one line"
-        );
-        let content_origin = computed.content_box().min;
-        let mut rendered = Rect {
-            min: Vec2::splat(f32::INFINITY),
-            max: Vec2::splat(f32::NEG_INFINITY),
-        };
-        // Match the renderer's glyph rectangles inside the computed content box.
-        // The node width includes empty space; it is not the visible text width.
-        for glyph in &layout.glyphs {
-            let half = glyph.atlas_info.rect.size() / 2.0;
-            let min = transform.transform_point2(content_origin + glyph.position - half) / scale;
-            let max = transform.transform_point2(content_origin + glyph.position + half) / scale;
-            rendered.min = rendered.min.min(min);
-            rendered.max = rendered.max.max(max);
-        }
-        let bottom = transform.transform_point2(computed.size() / 2.0).y / scale;
-        let gap = card_top - rendered.max.y;
-        assert!(
-            (0.5..=computed.size().y / scale).contains(&gap),
-            "{context}: rendered glyphs must leave a positive card gap no larger than one caption line, got {gap}px (line-box gap {}px)", card_top - bottom,
-        );
-        assert!(
-            rendered.min.cmpge(Vec2::ZERO).all() && rendered.max.cmple(size).all(),
-            "{context}: complete caption must fit in the viewport: {rendered:?}"
-        );
-        rendered
-    });
-    assert!(
-        rectangles[0].max.x + 0.5 <= rectangles[1].min.x,
-        "harm captions must not overlap at {size:?}, {scale}x: {rectangles:?}"
-    );
 }
 
 pub(crate) fn app() -> App {
@@ -323,7 +239,6 @@ pub(crate) fn assert_sideways_caption_wrapping(app: &mut App, captions: &[Entity
         scroll_y: 0.,
         dt: std::f32::consts::FRAC_PI_2,
         capture: Capture::default(),
-        reduced_motion: true,
     });
     for pitch in [1., 0.45] {
         if pitch < 1. {
@@ -339,7 +254,6 @@ pub(crate) fn assert_sideways_caption_wrapping(app: &mut App, captions: &[Entity
                 scroll_y: 0.,
                 dt: (1. - pitch) / 0.7,
                 capture: Capture::default(),
-                reduced_motion: true,
             });
         }
         for _ in 0..5 {
@@ -362,135 +276,5 @@ pub(crate) fn assert_sideways_caption_wrapping(app: &mut App, captions: &[Entity
                 text.0
             );
         }
-    }
-}
-
-pub(crate) fn assert_heading<C: Component>(app: &mut App, camera_marker: C, scale: f32) {
-    let world = app.world_mut();
-    let window = world
-        .query_filtered::<Entity, With<Window>>()
-        .iter(world)
-        .next()
-        .unwrap_or_else(|| world.spawn(Window::default()).id());
-    world.entity_mut(window).insert(PrimaryWindow);
-    let physical_size = UVec2::new((1600.0 * scale) as u32, (1000.0 * scale) as u32);
-    {
-        let mut window = world.get_mut::<Window>(window).unwrap();
-        window.resolution.set_scale_factor_override(Some(scale));
-        window
-            .resolution
-            .set_physical_resolution(physical_size.x, physical_size.y);
-    }
-    let mut projection = PerspectiveProjection::default();
-    projection.update(1600.0, 1000.0);
-    let camera = world
-        .spawn((
-            camera_marker,
-            Camera {
-                computed: ComputedCameraValues {
-                    clip_from_view: projection.get_clip_from_view(),
-                    target_info: Some(RenderTargetInfo {
-                        physical_size,
-                        scale_factor: scale,
-                    }),
-                    ..default()
-                },
-                ..default()
-            },
-            RenderTarget::Window(WindowRef::Entity(window)),
-            Transform::default(),
-        ))
-        .id();
-    app.finish();
-    app.cleanup();
-
-    for area in [Area::Overview, Area::Scenario, Area::Test] {
-        let window_state = app.world().get::<Window>(window).unwrap().clone();
-        let mut orbit = app.world_mut().resource_mut::<Orbit>();
-        orbit.focus(focus(area));
-        let transform = orbit
-            .step(FrameInput {
-                keys: &ButtonInput::default(),
-                buttons: &ButtonInput::default(),
-                window: &window_state,
-                scroll_y: 0.0,
-                dt: 0.0,
-                capture: Capture::default(),
-                reduced_motion: true,
-            })
-            .transform;
-        app.world_mut()
-            .entity_mut(camera)
-            .insert((transform, GlobalTransform::from(transform)));
-        // Text layout runs after projection. Allow the actual font/layout,
-        // label placement and propagated UI rectangle to settle in that order.
-        for _ in 0..5 {
-            app.update();
-        }
-        let world = app.world_mut();
-        let (text, computed, text_layout, ui_transform, visible) = world
-            .query_filtered::<(
-                &Text,
-                &ComputedNode,
-                &TextLayoutInfo,
-                &UiGlobalTransform,
-                &InheritedVisibility,
-            ), With<TestAreaHeading>>()
-            .single(world)
-            .expect("the production scene has exactly one Test area heading");
-        assert!(
-            !text_layout.glyphs.is_empty(),
-            "{area:?} at {scale}x: {} must be measured from real font glyphs",
-            text.0,
-        );
-        assert!(
-            visible.get(),
-            "{area:?} at {scale}x: {} must remain visible after text layout (size {:?})",
-            text.0,
-            computed.size(),
-        );
-        let half_size = computed.size() / 2.0;
-        let rectangle = Rect::from_corners(
-            ui_transform.transform_point2(-half_size) / scale,
-            ui_transform.transform_point2(half_size) / scale,
-        );
-        let camera = world.get::<Camera>(camera).unwrap();
-        // Accepted table edges, independently of the heading placement helper.
-        let scenario_edge = camera
-            .world_to_viewport(&GlobalTransform::from(transform), Vec3::new(0.0, 0.0, 1.0))
-            .unwrap();
-        let test_edge = camera
-            .world_to_viewport(&GlobalTransform::from(transform), Vec3::new(0.0, 0.0, 3.0))
-            .unwrap();
-        assert!(
-            rectangle.min.y >= scenario_edge.y.min(test_edge.y) + 0.5
-                && rectangle.max.y <= scenario_edge.y.max(test_edge.y) - 0.5,
-            "{area:?} at {scale}x: full heading rectangle {rectangle:?} must clear the projected edges {scenario_edge:?} and {test_edge:?}",
-        );
-        assert!(
-            rectangle.min.x >= 0.0 && rectangle.max.x <= 1600.0,
-            "{area:?} at {scale}x: the complete heading stays inside the viewport",
-        );
-        let test_gap = test_edge.y - rectangle.max.y;
-        let scenario_edge = camera
-            .world_to_viewport(
-                &GlobalTransform::from(transform),
-                Vec3::new(0.0, 0.0, -21.0),
-            )
-            .unwrap();
-        let (computed, transform, visible) = world
-            .query_filtered::<(&ComputedNode, &UiGlobalTransform, &InheritedVisibility),
-                With<super::ScenarioAreaHeading>>().single(world)
-            .expect("the production scene marks its Scenario heading");
-        assert!(
-            visible.get(),
-            "Scenario heading must remain visible at {area:?}"
-        );
-        let bottom = transform.transform_point2(computed.size() / 2.0).y / scale;
-        assert!(
-            ((scenario_edge.y - bottom) - test_gap).abs() <= 1.0,
-            "{area:?} at {scale}x: Scenario and Test heading gaps must match: {} vs {test_gap}",
-            scenario_edge.y - bottom
-        );
     }
 }
