@@ -111,7 +111,7 @@ Run `scripts/check`. Decision tests use #22's independent witnesses, including a
 
 ### Reproduce a visual state
 
-Use legal driver choices to reach a state, then pass its save to the immutable native launcher. This example produces an opportunity attack's combined damage/horror counters and a held random chaos token:
+Use legal driver choices to reach a state, then pass its save to the immutable native launcher. Obtain `native_approval` through the [shared desktop procedure](jacqueline-curse.md#launch-capture-and-interact) before launching. This example produces an opportunity attack's combined damage/horror counters and a held random chaos token:
 
 ```sh
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop --bin arkham-driver
@@ -123,6 +123,7 @@ target/debug/arkham-driver --experiment tony --save "$tony_review/held.json" \
 {"op":"choose","revision":2,"id":"reveal"}
 CHOICES
 scripts/tools native launch \
+  --approval "$native_approval" \
   --binary target/debug/arkham-tabletop --output-dir "$tony_review/render" \
   --experiment tony --load "$tony_review/held.json" \
   --art-root "$HOME/.local/share/arkham-unfolded/tony-assets-v4" \

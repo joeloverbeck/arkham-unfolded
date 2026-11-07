@@ -258,3 +258,127 @@ fn crlf_missing_final_newline_and_shell_characters_remain_literal() {
     let literal = success(search(&path, &["--find", "'$(literal)`"]));
     assert_eq!(rows(&literal), [(2, "needle '$(literal)` value")]);
 }
+
+#[test]
+fn multiple_files_and_terms_share_a_budget_and_never_duplicate_overlapping_lines() {
+    let directory = tempfile::tempdir().unwrap();
+    let paths: Vec<_> = ["one", "two", "empty"]
+        .map(|name| directory.path().join(name))
+        .into();
+    for (index, path) in paths.iter().enumerate() {
+        let source = if index == 2 {
+            "unrelated\n".into()
+        } else {
+            (1..=12)
+                .map(|n| {
+                    format!(
+                        "file{index} line{n} {} {}\n",
+                        if n % 2 == 0 { "alpha beta" } else { "beta" },
+                        "x".repeat(35)
+                    )
+                })
+                .collect::<String>()
+        };
+        fs::write(path, source).unwrap();
+    }
+    let mut next = "--max-bytes 512".to_owned();
+    let mut observed = Vec::new();
+    let mut no_matches = false;
+    for _ in 0..50 {
+        let result = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .arg("search-context")
+            .args(&paths)
+            .args(["--find", "alpha", "--find", "beta", "--context", "1"])
+            .args(next.split_whitespace())
+            .output()
+            .unwrap();
+        assert!(result.stdout.len() <= 512);
+        let text = success(result);
+        observed.extend(rows(&text).into_iter().map(|(_, line)| line.to_owned()));
+        no_matches |= text.contains("NO MATCHES");
+        if let Some(more) = text.lines().find_map(|line| line.strip_prefix("NEXT ")) {
+            next = more.into();
+        } else {
+            assert!(text.ends_with("\nEND\n"));
+            assert_eq!(observed.len(), 24);
+            assert_eq!(
+                observed
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>()
+                    .len(),
+                24
+            );
+            assert!(observed[0].starts_with("file0 line1 "));
+            assert!(observed[23].starts_with("file1 line12 "));
+            assert!(no_matches);
+            return;
+        }
+    }
+    panic!("multi-file search did not finish");
+}
+
+#[test]
+fn multi_file_continuation_binds_unread_sources_path_order_and_every_term() {
+    let directory = tempfile::tempdir().unwrap();
+    let a = directory.path().join("a");
+    let b = directory.path().join("b");
+    fs::write(&a, "alpha beta\n".repeat(50)).unwrap();
+    fs::write(&b, "alpha\n").unwrap();
+    let invoke = |paths: &[&Path], terms: &[&str], next: &str| {
+        Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .arg("search-context")
+            .args(paths)
+            .args(terms)
+            .args(next.split_whitespace())
+            .output()
+            .unwrap()
+    };
+    let terms = ["--find", "alpha", "--find", "beta"];
+    let first = success(invoke(&[&a, &b], &terms, "--max-bytes 512"));
+    let next = first
+        .lines()
+        .find_map(|line| line.strip_prefix("NEXT "))
+        .unwrap();
+    for result in [
+        invoke(&[&b, &a], &terms, next),
+        invoke(&[&a, &b], &["--find", "alpha"], next),
+    ] {
+        assert_eq!(result.status.code(), Some(2));
+        assert!(result.stdout.is_empty());
+    }
+    fs::write(&b, "changed unread source\n").unwrap();
+    let result = invoke(&[&a, &b], &terms, next);
+    assert_eq!(result.status.code(), Some(2));
+    assert!(result.stdout.is_empty());
+}
+
+#[test]
+fn multiple_no_matches_and_oversized_following_file_remain_bounded() {
+    let root = tempfile::tempdir().unwrap();
+    let a = root.path().join("a");
+    let b = root.path().join("b");
+    fs::write(&a, "unrelated\n").unwrap();
+    fs::write(&b, "").unwrap();
+    let invoke = |next: &str| {
+        Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .arg("search-context")
+            .args([&a, &b])
+            .args(["--find", "hit"])
+            .args(next.split_whitespace())
+            .output()
+            .unwrap()
+    };
+    let text = success(invoke("--max-bytes 6000"));
+    assert_eq!(text.matches("NO MATCHES").count(), 2);
+    fs::write(&b, format!("hit {}", "x".repeat(13000))).unwrap();
+    let first = success(invoke("--max-bytes 512"));
+    assert!(first.len() <= 512);
+    let next = first
+        .lines()
+        .find_map(|line| line.strip_prefix("NEXT "))
+        .unwrap();
+    let refused = invoke(next);
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(refused.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("cannot fit"));
+}

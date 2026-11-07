@@ -1,4 +1,5 @@
 use crate::process::{Completion, Identity, OwnedChild};
+mod approval;
 use crate::{
     desktop::X11,
     interaction::{self, Desktop},
@@ -26,6 +27,11 @@ use std::{
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Prepare, inspect or close a desktop approval without touching the desktop.
+    Approval {
+        #[command(subcommand)]
+        command: approval::Command,
+    },
     /// Stage an immutable executable and supervise an isolated run.
     Launch(Launch),
     /// Build an instrumented source copy with isolated Cargo package artifacts.
@@ -65,6 +71,8 @@ fn window_id(value: &str) -> std::result::Result<u32, String> {
 
 #[derive(Args)]
 pub struct Capture {
+    #[arg(long)]
+    approval: Option<String>,
     #[command(flatten)]
     client: Client,
     #[arg(long)]
@@ -75,7 +83,8 @@ pub struct Capture {
 #[command(
     after_long_help = r#"JSON actions (one per line; wait for each terminal result):
   click: x, y; optional capture_after: {name, delay_ms} (delay defaults to 0; max 12000)
-  wheel: x, y, steps (signed vertical steps, -10..=-1 or 1..=10)
+  scroll: x, y, direction (up or down), steps (positive, 1..=10)
+  wheel: legacy signed steps (positive down, negative up, magnitude 1..=10)
   right-drag: x, y, dx, dy, duration_seconds (default 0.6; range 0.2..=2)
   capture: name (fresh .png filename)
   focus, calibrate, stop
@@ -85,7 +94,7 @@ verified client, focus, calibrated mapping and no held buttons or modifiers.
 Add "focus":true to reacquire focus before a guarded operation.
 
 Example after verifying the target coordinates:
-  {"action":"wheel","focus":true,"x":400,"y":300,"steps":1}
+  {"action":"scroll","focus":true,"x":400,"y":300,"direction":"down","steps":1}
   {"action":"capture","focus":true,"name":"after-wheel.png"}
   {"action":"click","focus":true,"x":400,"y":300,"capture_after":{"name":"after-click.png","delay_ms":250}}
   {"action":"stop"}
@@ -98,6 +107,8 @@ interval and pointer-only portal consent. Each command needs 15 seconds before
 the final 15-second cleanup reserve. Acknowledgements never renew that budget."#
 )]
 pub struct Session {
+    #[arg(long)]
+    approval: Option<String>,
     #[command(flatten)]
     client: Client,
     #[arg(long)]
@@ -108,7 +119,7 @@ pub struct Session {
     /// Maximum consent/startup wait, bounded by the original session deadline.
     #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=120))]
     consent_timeout_seconds: u32,
-    /// Previously agreed UTC end time, in Unix seconds; startup never extends it.
+    /// Optional earlier end time; cannot extend the approval's original deadline.
     #[arg(long)]
     deadline_unix_seconds: Option<u64>,
 }
@@ -151,6 +162,8 @@ fn default_binary() -> PathBuf {
 
 #[derive(Args)]
 pub struct Launch {
+    #[arg(long)]
+    approval: Option<String>,
     #[arg(long, default_value_os_t = default_binary())]
     binary: PathBuf,
     #[arg(long)]
@@ -173,7 +186,7 @@ pub struct Launch {
     /// Leaves the app's Home behavior unchanged.
     #[arg(long, value_parser = ["overview", "scenario", "test", "tony", "patrice", "jacqueline", "resolve"])]
     initial_view: Option<String>,
-    /// App lifetime for owner review, independent of any desktop-control grant.
+    /// App lifetime, capped by the original desktop approval.
     #[arg(long, default_value_t = 1800.0)]
     timeout_seconds: f64,
     /// Stdout events only; run.json always retains the complete manifest.
@@ -183,14 +196,24 @@ pub struct Launch {
 
 pub fn run(command: Command) -> Result<u8> {
     match command {
+        Command::Approval { command } => approval::run(command),
         Command::Launch(args) => launch(args),
         Command::Build(args) => build(args),
         Command::Capture(args) => {
+            let approval = approval::Approval::admit(args.approval.as_deref())?;
+            ensure!(
+                approval.remaining()? >= Duration::from_secs(30),
+                "Insufficient desktop-control time for capture"
+            );
             ensure!(
                 fs::symlink_metadata(&args.output).is_err(),
                 "Capture already exists; choose a new filename"
             );
-            let mut desktop = X11::new(args.client.pid, args.client.window)?;
+            let mut desktop = approval::Desktop {
+                approval: &approval,
+                inner: X11::new(args.client.pid, args.client.window)?,
+            };
+            approval.check()?;
             desktop.focus()?;
             let output = std::path::absolute(&args.output)?;
             fs::create_dir_all(
@@ -198,6 +221,7 @@ pub fn run(command: Command) -> Result<u8> {
                     .parent()
                     .context("Capture needs a parent directory")?,
             )?;
+            approval.check()?;
             emit(&desktop.capture(&output)?)?;
             Ok(0)
         }
@@ -224,18 +248,28 @@ fn session(args: Session) -> Result<u8> {
         now: &Instant::now,
     };
     timing.admit()?;
+    let approval = Arc::new(approval::Approval::admit(args.approval.as_deref())?);
+    let deadline = deadline.min(Instant::now() + approval.remaining()?);
+    let timing = interaction::SessionTiming { deadline, ..timing };
+    timing.admit()?;
     let input_deadline = timing.input_deadline();
-    let mut desktop = X11::new(args.client.pid, args.client.window)?;
+    let mut desktop = approval::Desktop {
+        approval: &approval,
+        inner: X11::new(args.client.pid, args.client.window)?,
+    };
     let directory = resolve(&args.output_dir)?;
     fresh_directory(&directory)?;
     let mut log = new_file(&directory.join("events.jsonl"))?;
     let (receive, input) = input_lines(std::io::BufReader::new(std::io::stdin()));
+    let active_approval = approval.clone();
+    input.set_guard(move || active_approval.check())?;
     let mut portal = DesktopPortal::connect(
         input_deadline,
         input.clone(),
         Duration::from_secs(args.consent_timeout_seconds.into()),
     )?;
     let check = || -> Result<()> {
+        approval.check()?;
         crate::process::check_interrupt()?;
         input.check()?;
         ensure!(
@@ -266,7 +300,8 @@ fn session(args: Session) -> Result<u8> {
         emit(&value)
     };
     event(
-        json!({"status":"session-budget", "deadline_unix_seconds":(wall_now + remaining).as_secs_f64(),
+        json!({"status":"session-budget", "approval":args.approval, "approval_deadline_unix_seconds":approval.deadline_unix_seconds,
+        "deadline_unix_seconds":(wall_now + remaining).as_secs_f64().min(approval.deadline_unix_seconds),
         "cleanup_reserve_seconds":interaction::CLEANUP_RESERVE.as_secs(),
         "remaining_ms":deadline.saturating_duration_since(Instant::now()).as_millis(),
         "consent_timeout_seconds":args.consent_timeout_seconds}),
@@ -576,6 +611,7 @@ fn launch_environment(overrides: &std::collections::BTreeMap<&str, PathBuf>) -> 
 }
 
 fn launch(args: Launch) -> Result<u8> {
+    let approval = approval::Approval::admit(args.approval.as_deref())?;
     ensure!(
         args.initial_view.as_deref() != Some("resolve") || args.experiment == Experiment::Gathering,
         "--initial-view resolve requires --experiment gathering"
@@ -690,6 +726,13 @@ fn launch(args: Launch) -> Result<u8> {
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);
+    approval.check()?;
+    metadata["approval"] = json!(args.approval);
+    metadata["approval_deadline_unix_seconds"] = json!(approval.deadline_unix_seconds);
+    let runtime = approval
+        .remaining()?
+        .checked_sub(interaction::CLEANUP_RESERVE)
+        .context("Insufficient desktop-control time to launch and clean up")?;
     let mut child = OwnedChild::spawn(&mut command)?;
     metadata["pid"] = json!(child.id());
     let outcome = (|| -> Result<u8> {
@@ -705,7 +748,10 @@ fn launch(args: Launch) -> Result<u8> {
             LaunchOutput::Json => emit(&metadata)?,
             LaunchOutput::Summary => emit_launch_summary(&directory, &metadata, None)?,
         }
-        match child.wait(Duration::from_secs_f64(args.timeout_seconds))? {
+        match child.wait_checked(
+            Duration::from_secs_f64(args.timeout_seconds).min(runtime),
+            || approval.check(),
+        )? {
             Completion::Exited(status) => {
                 metadata["status"] = json!("exited");
                 Ok(status

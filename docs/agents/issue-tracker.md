@@ -95,11 +95,32 @@ scripts/tools search-context /path/to/MEMORY.md \
 
 Choose literal terms for the current task. Read matching passages in context and follow relevant evidence links. Widen the search only when the scoped lookup has no relevant result or the task requires another repository's history. For structured records such as saves, inspect keys/counts first and select the fields needed for the current question; retain the full record on disk.
 
-`search-context` accepts a nonempty, case-sensitive `--find` string, an optional inclusive `--start`/`--end` range and an optional exact `--heading` line. It recognizes `#`–`######` headings outside backtick/tilde fenced blocks; a section ends at the next heading of the same or higher level. Setext headings are not section selectors. Missing or ambiguous headings fail explicitly; narrow the line range to select a repeated heading. `--context N` adds neighboring lines clipped to the selected scope and merges overlapping excerpts.
+`search-context` accepts 1–32 explicit file paths and one or more nonempty,
+case-sensitive `--find` strings. A line matching any term appears once. One
+shared byte budget covers every file and all metadata:
+
+```sh
+scripts/tools search-context tools/src/native.rs tools/src/interaction.rs \
+  --find 'deadline' --find 'scroll' --context 3 --max-bytes 6000
+```
+
+The optional inclusive `--start`/`--end` range and exact `--heading` line apply
+to each file. The command recognizes `#`–`######` headings outside
+backtick/tilde fenced blocks; a section ends at the next heading of the same or
+higher level. Setext headings are not section selectors. Missing or ambiguous
+headings fail explicitly; narrow the line range to select a repeated heading.
+`--context N` adds neighboring lines clipped to the selected scope and merges
+overlapping excerpts. For different ranges per file, use `read-context-batch`.
 
 The complete search output defaults to 6,000 bytes, adjustable with `--max-bytes` (512–12,000). Whole source lines and their original numbers are preserved; `...` marks omitted gaps. `MATCHES` counts matching lines in the whole selected scope. `NO MATCHES` with `END` is a completed empty result. An oversized next line is refused without silently shortening or skipping it.
 
-For a search `NEXT`, repeat the same path and query/scope options and replace the previous continuation arguments with the printed `--next-line`, `--max-bytes` and `--sha256`. The hash binds the complete source, query, heading, line bounds and context size. A changed source or search refuses continuation before emitting source text. Follow pages through `END` before treating the results as fully read.
+For a search `NEXT`, repeat the same ordered paths and query/scope options and
+replace the previous continuation arguments with all printed arguments,
+including `--next-file` for multiple files. Its one-based index and line zero
+mean start that file's results; other line numbers name the first unread source
+line. The hash binds every full source (including unread files), ordered paths,
+terms, heading, line bounds and context size. Changed inputs refuse continuation
+before source text. Follow through `END`; `END FILE` finishes only that file.
 
 For a whole file, omit the range; to read from a known line through EOF, supply only `--start`:
 
@@ -120,7 +141,7 @@ The reader prints verbatim source lines with number prefixes and caps the whole 
 
 Use the same reader on saved issue bodies (`gh api ... --jq .body > /tmp/issue-body.md`). `--max-bytes` accepts 512–12,000; a line that cannot fit is explicitly refused, never shortened or skipped. Budget the combined output of a batch against the outer tool limit as well. If the outer tool truncates a page, lower the byte limit and reread that page before continuing. The helper reads UTF-8 files only and never modifies them.
 
-For several excerpts, put 1–32 requests in a JSON file and use one shared page budget. Do this before issuing the reads; several individually bounded calls in one response can still exceed the outer limit. Use `scripts/tools read-context-batch --help` when uncertain about arguments. For example, `/tmp/context-requests.json`:
+For several excerpts, including saved check logs and decoded GitHub bodies, put 1–32 requests in a JSON file and use one shared page budget. Do this before issuing the reads; several individually bounded calls in one response can still exceed the outer limit. Use `scripts/tools read-context-batch --help` when uncertain about arguments. For example, `/tmp/context-requests.json`:
 
 ```json
 [

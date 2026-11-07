@@ -535,8 +535,8 @@ fn wheel_targets_the_verified_client_in_both_directions_without_holding_a_button
         &mut Grant(state.clone()),
         directory.path(),
         &mut [
-            Ok(r#"{"action":"wheel","x":300,"y":200,"steps":-3}"#.into()),
-            Ok(r#"{"action":"wheel","x":600,"y":400,"steps":2}"#.into()),
+            Ok(r#"{"action":"scroll","x":300,"y":200,"direction":"up","steps":3}"#.into()),
+            Ok(r#"{"action":"scroll","x":600,"y":400,"direction":"down","steps":2}"#.into()),
         ]
         .into_iter(),
         &mut |event| {
@@ -710,6 +710,10 @@ fn malformed_nonfinite_and_unsafe_requests_do_not_move_or_press() {
         r#"{"action":"click","x":true,"y":20}"#,
         r#"{"action":"click","x":NaN,"y":20}"#,
         r#"{"action":"wheel","x":400,"y":300,"steps":0}"#,
+        r#"{"action":"scroll","x":400,"y":300,"direction":"down","steps":-1}"#,
+        r#"{"action":"scroll","x":400,"y":300,"direction":"up","steps":0}"#,
+        r#"{"action":"scroll","x":400,"y":300,"direction":"down","steps":11}"#,
+        r#"{"action":"scroll","x":400,"y":300,"direction":"sideways","steps":1}"#,
         r#"{"action":"wheel","x":400,"y":300,"steps":11}"#,
         r#"{"action":"wheel","x":400,"y":300,"steps":-11}"#,
         r#"{"action":"wheel","x":400,"y":300,"steps":-2147483648}"#,

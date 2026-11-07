@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn native_olive_scope_labels_can_be_scrolled_fully_into_view() {
+fn olive_scope_label_geometry_fits_at_selected_scroll_offsets() {
     use crate::tabletop_layout::heading_checks::{rendered_text_bounds, viewport};
     let (_, session) = super::review_saves::olive_review::checkpoints().remove(1);
     let view = session.observe();
@@ -30,18 +30,19 @@ fn native_olive_scope_labels_can_be_scrolled_fully_into_view() {
             for _ in 0..4 {
                 app.update();
             }
-            // The native portal check exercises physical wheel input. Here the
-            // scroll offset checks every label's complete rendered bounds.
+            // Geometry only; the window-event test below owns input coverage.
             for label in &labels {
                 let button = choice_button(&mut app, label).unwrap();
                 let world = app.world_mut();
                 let text = world.get::<Children>(button).unwrap()[0];
                 let mut scroller = button;
-                while world.get::<ScrollPosition>(scroller).is_none() {
+                // ScrollPosition is a required Node component, including on
+                // buttons. The marker identifies the production scroll owner.
+                while world.get::<ScrollablePanel>(scroller).is_none() {
                     scroller = world.get::<ChildOf>(scroller).unwrap().parent();
                 }
                 let node = world.get::<ComputedNode>(scroller).unwrap();
-                let maximum = (node.content_size().y - node.size().y).max(0.);
+                let maximum = (node.content_size().y - node.size().y).max(0.) / scale;
                 let top = world
                     .get::<UiGlobalTransform>(scroller)
                     .unwrap()
@@ -51,7 +52,7 @@ fn native_olive_scope_labels_can_be_scrolled_fully_into_view() {
                 let text_top = rendered_text_bounds(world, text, scale).min.y;
                 let current = world.get::<ScrollPosition>(scroller).unwrap().y;
                 world.get_mut::<ScrollPosition>(scroller).unwrap().y =
-                    (current + (text_top - top - 2.) * scale).clamp(0., maximum);
+                    (current + text_top - top - 2.).clamp(0., maximum);
                 app.update();
                 let world = app.world_mut();
                 let node = world.get::<ComputedNode>(scroller).unwrap();
@@ -67,6 +68,107 @@ fn native_olive_scope_labels_can_be_scrolled_fully_into_view() {
                 );
             }
             assert_eq!(app.world().resource::<Table>().view(), view);
+        }
+    }
+}
+
+#[test]
+fn native_window_wheel_scrolls_olive_options_without_changing_game_or_camera() {
+    use bevy::{
+        input::mouse::{MouseScrollUnit, MouseWheel},
+        picking::{hover::HoverMap, pointer::PointerId},
+        window::{CursorMoved, WindowEvent},
+    };
+    for scale in [1., 2.] {
+        let (_, session) = super::review_saves::olive_review::checkpoints().remove(1);
+        let view = session.observe();
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = host_with_table(Table::new(session, dir.path().join("wheel.json")), true);
+        let disclosure = choice_button(&mut app, "▸ Use Jacqueline · show").unwrap();
+        app.world_mut().trigger(Activate { entity: disclosure });
+        crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+            &mut app,
+            Vec2::new(1280., 720.),
+            scale,
+        );
+        for _ in 0..5 {
+            app.update();
+        }
+        let world = app.world_mut();
+        let window = world
+            .query_filtered::<Entity, With<Window>>()
+            .single(world)
+            .unwrap();
+        let scroller = world
+            .query_filtered::<Entity, With<ScrollablePanel>>()
+            .iter(world)
+            .find(|entity| {
+                world
+                    .get::<ComputedNode>(*entity)
+                    .is_some_and(|node| node.content_size().y > node.size().y + 1.)
+            })
+            .expect("overflowing options");
+        let position = world
+            .get::<UiGlobalTransform>(scroller)
+            .unwrap()
+            .translation
+            / scale;
+        let camera = world
+            .query_filtered::<&Transform, With<MainCamera>>()
+            .single(world)
+            .unwrap()
+            .to_owned();
+        world.write_message(WindowEvent::CursorMoved(CursorMoved {
+            window,
+            position,
+            delta: None,
+        }));
+        app.update();
+        let hits = &app.world().resource::<HoverMap>()[&PointerId::Mouse];
+        assert!(
+            hits.keys().any(|entity| {
+                let mut at = *entity;
+                loop {
+                    if at == scroller {
+                        return true;
+                    }
+                    let Some(parent) = app.world().get::<ChildOf>(at) else {
+                        return false;
+                    };
+                    at = parent.parent();
+                }
+            }),
+            "wheel must target the overflowing options panel: {hits:?}"
+        );
+        let before = app.world().get::<ScrollPosition>(scroller).unwrap().y;
+        for (y, down) in [(-4., true), (4., false)] {
+            app.world_mut()
+                .write_message(WindowEvent::MouseWheel(MouseWheel {
+                    unit: MouseScrollUnit::Line,
+                    x: 0.,
+                    y,
+                    window,
+                    phase: bevy::input::touch::TouchPhase::Moved,
+                }));
+            app.update();
+            let scroll = app.world().get::<ScrollPosition>(scroller).unwrap().y;
+            if down {
+                assert!(
+                    scroll > before,
+                    "down must move options: {scroll} <= {before}"
+                );
+            } else {
+                assert!((scroll - before).abs() < 0.01, "up must restore offset");
+            }
+            assert_eq!(app.world().resource::<Table>().view(), view);
+            let world = app.world_mut();
+            assert_eq!(
+                *world
+                    .query_filtered::<&Transform, With<MainCamera>>()
+                    .single(world)
+                    .unwrap(),
+                camera
+            );
         }
     }
 }

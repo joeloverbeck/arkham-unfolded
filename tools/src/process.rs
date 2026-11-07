@@ -155,8 +155,17 @@ impl OwnedChild {
     }
 
     pub fn wait(&mut self, timeout: Duration) -> Result<Completion> {
+        self.wait_checked(timeout, || Ok(()))
+    }
+
+    pub fn wait_checked(
+        &mut self,
+        timeout: Duration,
+        check: impl Fn() -> Result<()>,
+    ) -> Result<Completion> {
         let deadline = Instant::now() + timeout;
         loop {
+            check()?;
             if interrupted() {
                 return Ok(Completion::Interrupted);
             }

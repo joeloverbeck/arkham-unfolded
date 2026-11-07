@@ -48,9 +48,15 @@ pub const CLEANUP_RESERVE: Duration = Duration::from_secs(15);
 pub(crate) struct CommandInput {
     ended: AtomicBool,
     stopped: AtomicBool,
+    guard: std::sync::OnceLock<Box<dyn Fn() -> Result<()> + Send + Sync>>,
 }
 
 impl CommandInput {
+    pub fn set_guard(&self, guard: impl Fn() -> Result<()> + Send + Sync + 'static) -> Result<()> {
+        self.guard
+            .set(Box::new(guard))
+            .map_err(|_| anyhow::anyhow!("Input guard already installed"))
+    }
     pub fn observe(&self, line: &str) {
         if matches!(
             serde_json::from_str::<Request>(line),
@@ -68,6 +74,9 @@ impl CommandInput {
     }
 
     pub fn check(&self) -> Result<()> {
+        if let Some(check) = self.guard.get() {
+            check()?;
+        }
         ensure!(!self.stopped.load(Ordering::SeqCst), StopRequested);
         ensure!(
             !self.ended.load(Ordering::SeqCst),
@@ -203,6 +212,23 @@ pub fn run_session(
                         controller.wheel([x, y], steps)?;
                         json!({"status":"wheeled", "client":[x, y], "steps":steps})
                     }
+                    Action::Scroll {
+                        x,
+                        y,
+                        direction,
+                        steps,
+                    } => {
+                        ensure!(
+                            (1..=10).contains(&steps),
+                            "Scroll requires 1–10 positive steps"
+                        );
+                        let signed = match direction {
+                            ScrollDirection::Up => -steps,
+                            ScrollDirection::Down => steps,
+                        };
+                        controller.wheel([x, y], signed)?;
+                        json!({"status":"wheeled", "client":[x, y], "direction":direction, "steps":signed})
+                    }
                     Action::RightDrag {
                         x,
                         y,
@@ -322,6 +348,12 @@ enum Action {
         y: f64,
         steps: i32,
     },
+    Scroll {
+        x: f64,
+        y: f64,
+        direction: ScrollDirection,
+        steps: i32,
+    },
     RightDrag {
         x: f64,
         y: f64,
@@ -330,6 +362,13 @@ enum Action {
         #[serde(default = "drag_duration")]
         duration_seconds: f64,
     },
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ScrollDirection {
+    Up,
+    Down,
 }
 
 #[derive(Deserialize)]

@@ -330,7 +330,7 @@ pub(super) fn export_review_saves(output: &std::path::Path, points: &[(&str, &Se
             .collect::<Vec<_>>()
             .join(" ");
         recipes.push_str(&format!(
-            "## {name}\n\n```sh\nscripts/tools native launch --binary target/debug/arkham-tabletop --output-dir FRESH_RUN {quoted}\n```\n\n"
+            "## {name}\n\n```sh\nscripts/tools native launch --approval \"$native_approval\" --binary target/debug/arkham-tabletop --output-dir FRESH_RUN {quoted}\n```\n\n"
         ));
         launches.push(serde_json::json!({
             "checkpoint": name,

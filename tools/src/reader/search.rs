@@ -7,11 +7,12 @@ use std::{fs, path::PathBuf};
     after_help = "For NEXT, repeat the same path and query/scope options; replace only the previous continuation arguments with those printed after NEXT."
 )]
 pub struct Args {
-    /// UTF-8 file to search; never modified.
-    path: PathBuf,
+    /// Explicit UTF-8 files to search in order; never modified (at most 32).
+    #[arg(required = true, num_args = 1..=32)]
+    path: Vec<PathBuf>,
     /// Nonempty, case-sensitive literal text on one line (not a regular expression).
-    #[arg(long, allow_hyphen_values = true)]
-    find: String,
+    #[arg(long, required = true, allow_hyphen_values = true)]
+    find: Vec<String>,
     /// Inclusive first line of the search scope.
     #[arg(long, default_value_t = 1)]
     start: usize,
@@ -30,23 +31,43 @@ pub struct Args {
     /// First unread result line from NEXT; repeat the original search options.
     #[arg(long, requires = "sha256")]
     next_line: Option<usize>,
+    /// One-based file index from NEXT. Line zero starts that file's results.
+    #[arg(long, requires = "next_line")]
+    next_file: Option<usize>,
     /// Expected hash of the source, literal query and scope from the preceding page.
     #[arg(long)]
     sha256: Option<String>,
 }
 
 pub fn page(args: Args) -> Result<String, String> {
-    if args.find.is_empty() || args.find.contains(['\r', '\n']) {
+    if args
+        .find
+        .iter()
+        .any(|term| term.is_empty() || term.contains(['\r', '\n']))
+    {
         return Err("--find must contain nonempty literal text on one line".into());
     }
-    let data = fs::read(&args.path).map_err(|e| format!("{}: {e}", args.path.display()))?;
-    let source = std::str::from_utf8(&data).map_err(|e| format!("invalid UTF-8: {e}"))?;
-    let lines: Vec<_> = source.split_inclusive('\n').collect();
-    let end = args.end.unwrap_or(lines.len());
+    let sources: Vec<_> = args
+        .path
+        .iter()
+        .map(|path| fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display())))
+        .collect::<Result<_, _>>()?;
+    let identities: Vec<_> = args
+        .path
+        .iter()
+        .zip(&sources)
+        .map(|(path, source)| {
+            Ok((
+                path,
+                path.canonicalize().map_err(|e| e.to_string())?,
+                format!("{:x}", Sha256::digest(source.as_bytes())),
+            ))
+        })
+        .collect::<Result<_, String>>()?;
     let identity = serde_json::to_vec(&(
-        format!("{:x}", Sha256::digest(&data)),
+        identities,
         args.start,
-        end,
+        args.end,
         &args.find,
         &args.heading,
         args.context,
@@ -60,6 +81,23 @@ pub fn page(args: Args) -> Result<String, String> {
     {
         return Err("source or search options changed; restart the search".into());
     }
+    // Validate every scope before emitting even the first file's results.
+    let files: Vec<_> = sources
+        .iter()
+        .map(|source| selected(source, &args))
+        .collect::<Result<_, _>>()?;
+    render(&args, &files, &digest)
+}
+
+struct Selected<'a> {
+    lines: Vec<&'a str>,
+    numbers: Vec<usize>,
+    header: String,
+}
+
+fn selected<'a>(source: &'a str, args: &Args) -> Result<Selected<'a>, String> {
+    let lines: Vec<_> = source.split_inclusive('\n').collect();
+    let end = args.end.unwrap_or(lines.len());
     let empty = lines.is_empty() && args.start == 1 && args.end.is_none();
     if !empty && (args.start == 0 || args.start > end || end > lines.len()) {
         return Err(format!(
@@ -72,59 +110,120 @@ pub fn page(args: Args) -> Result<String, String> {
         None => (args.start, end),
     };
     let matches: Vec<_> = (start..=end)
-        .filter(|number| lines[number - 1].contains(&args.find))
+        .filter(|number| {
+            args.find
+                .iter()
+                .any(|term| lines[number - 1].contains(term))
+        })
         .collect();
     let numbers = context_lines(&matches, args.context, start, end);
-    let first = match args.next_line {
-        Some(number) => numbers
-            .binary_search(&number)
-            .map_err(|_| "continuation line is outside the search results")?,
-        None => 0,
-    };
     let scope = if empty {
         "EMPTY FILE".to_owned()
     } else {
         format!("SELECTED {start}..{end} of {} lines", lines.len())
     };
-    let mut output = format!(
-        "SEARCH SHA256 {digest}\n{scope}\nMATCHES {}\n",
-        matches.len()
+    let header = format!(
+        "{scope}\nMATCHES {}\n{}",
+        matches.len(),
+        if matches.is_empty() {
+            "NO MATCHES\n"
+        } else {
+            ""
+        }
     );
-    let next = |number| {
+    Ok(Selected {
+        lines,
+        numbers,
+        header,
+    })
+}
+
+fn render(args: &Args, files: &[Selected<'_>], digest: &str) -> Result<String, String> {
+    let multiple = files.len() > 1;
+    let first_file = args
+        .next_file
+        .unwrap_or(1)
+        .checked_sub(1)
+        .filter(|index| *index < files.len())
+        .ok_or("continuation file is outside the search results")?;
+    let first_row = match args.next_line {
+        Some(0) if multiple => 0,
+        Some(number) => files[first_file]
+            .numbers
+            .binary_search(&number)
+            .map_err(|_| "continuation line is outside the search results")?,
+        None => 0,
+    };
+    let next = |file: usize, number: usize| {
+        let file = if multiple {
+            format!("--next-file {} ", file + 1)
+        } else {
+            String::new()
+        };
         format!(
-            "\nNEXT --next-line {number} --max-bytes {} --sha256 {digest}\n",
+            "\nNEXT {file}--next-line {number} --max-bytes {} --sha256 {digest}\n",
             args.max_bytes
         )
     };
-    let reserved = next(end).len();
-    let mut previous = None;
-    for &number in &numbers[first..] {
-        let gap = if previous.is_some_and(|last| number != last + 1) {
-            "...\n"
+    let reserved = next(
+        files.len() - 1,
+        files.iter().map(|file| file.lines.len()).max().unwrap_or(0),
+    )
+    .len()
+    .max(40);
+    let mut output = format!("SEARCH SHA256 {digest}\n");
+    let mut progressed = false;
+    for (index, file) in files.iter().enumerate().skip(first_file) {
+        let first = if index == first_file { first_row } else { 0 };
+        let mut header = if multiple {
+            format!(
+                "FILE {} {}\n",
+                index + 1,
+                serde_json::to_string(&args.path[index]).map_err(|e| e.to_string())?
+            )
         } else {
-            ""
+            String::new()
         };
-        let row = format!("{gap}{number:6} | {}", lines[number - 1]);
-        if output.len() + row.len() + reserved > args.max_bytes as usize {
-            if previous.is_none() {
-                return Err(format!(
-                    "line {number} cannot fit; raise --max-bytes (up to 12000); no source text was emitted"
-                ));
+        header.push_str(&file.header);
+        let minimum = file.numbers.get(first).map_or(0, |number| {
+            format!("{number:6} | {}", file.lines[number - 1]).len()
+        });
+        if output.len() + header.len() + minimum + reserved > args.max_bytes as usize {
+            if !progressed {
+                return Err("next file header or line cannot fit; raise --max-bytes (up to 12000); no source text was emitted".into());
             }
-            output.push_str(&next(number));
+            output.push_str(&next(index, 0));
             return Ok(output);
         }
-        output.push_str(&row);
-        previous = Some(number);
+        output.push_str(&header);
+        let mut previous = None;
+        for &number in &file.numbers[first..] {
+            let gap = if previous.is_some_and(|last| number != last + 1) {
+                "...\n"
+            } else {
+                ""
+            };
+            let row = format!("{gap}{number:6} | {}", file.lines[number - 1]);
+            if output.len() + row.len() + reserved > args.max_bytes as usize {
+                output.push_str(&next(index, number));
+                return Ok(output);
+            }
+            output.push_str(&row);
+            previous = Some(number);
+        }
+        let missing_newline = previous.is_some_and(|n| !file.lines[n - 1].ends_with('\n'));
+        if multiple {
+            if missing_newline {
+                output.push('\n');
+            }
+            output.push_str("END FILE\n");
+        } else if missing_newline {
+            output.push_str("\nEND (source has no final newline)\n");
+            return Ok(output);
+        }
+        progressed = true;
     }
-    if matches.is_empty() {
-        output.push_str("NO MATCHES\n");
-    }
-    output.push_str(if previous.is_some_and(|n| !lines[n - 1].ends_with('\n')) {
-        "\nEND (source has no final newline)\n"
-    } else {
-        "\nEND\n"
-    });
+    output.push_str("\nEND\n");
     Ok(output)
 }
 
