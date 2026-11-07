@@ -198,19 +198,19 @@ fn spawn_body(
     // Resize the mesh rather than the root: traveling counters animate their
     // root scale independently and must retain the same physical token size.
     let size = kind.size();
-    let mut root = commands.spawn((
-        Name::new(kind.name()),
-        Mesh3d(meshes.add(mesh.scaled_by(Vec3::splat(size)))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: color,
-            perceptual_roughness: 0.7,
-            ..default()
-        })),
-        Transform::from_translation(at).with_scale(Vec3::splat(scale)),
-        Pickable::IGNORE,
-    ));
+    let root = unfolded_tabletop::token::spawn_body(
+        commands,
+        meshes,
+        materials,
+        unfolded_tabletop::token::Body {
+            name: kind.name().into(),
+            mesh: mesh.scaled_by(Vec3::splat(size)),
+            color,
+            transform: Transform::from_translation(at).with_scale(Vec3::splat(scale)),
+        },
+    );
     if kind == CounterKind::Charge {
-        root.with_child((
+        commands.entity(root).with_child((
             Mesh3d(meshes.add(Cylinder::new(0.285 * size, 0.008 * size))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: Color::srgb(0.17, 0.06, 0.29),
@@ -240,36 +240,37 @@ fn spawn_body(
                 Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
             ),
         };
-        root.with_child((
-            Mesh3d(meshes.add(face.scaled_by(Vec3::splat(size)))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(image),
-                unlit: true,
+        unfolded_tabletop::token::add_face(
+            commands,
+            meshes,
+            materials,
+            root,
+            unfolded_tabletop::token::Face {
+                mesh: face.scaled_by(Vec3::splat(size)),
+                image,
                 // The selected clue atlas stores zero alpha through its
                 // emblem, not a usable transparency mask. Preserve that RGB;
                 // the circular mesh clips the square image's white corners.
-                alpha_mode: match kind {
+                alpha: match kind {
                     CounterKind::Resource | CounterKind::Supply | CounterKind::Charge => {
                         AlphaMode::Blend
                     }
                     _ => AlphaMode::Opaque,
                 },
-                ..default()
-            })),
-            Transform::from_xyz(
-                0.0,
-                if kind == CounterKind::Charge {
-                    0.07
-                } else {
-                    0.062
-                } * size,
-                0.0,
-            )
-            .with_rotation(rotation),
-            Pickable::IGNORE,
-        ));
+                transform: Transform::from_xyz(
+                    0.0,
+                    if kind == CounterKind::Charge {
+                        0.07
+                    } else {
+                        0.062
+                    } * size,
+                    0.0,
+                )
+                .with_rotation(rotation),
+            },
+        );
     }
-    root.id()
+    root
 }
 
 // The resource is a shaped crate, not a circular coin. Coordinates follow the

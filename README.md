@@ -131,16 +131,9 @@ ps -p RECORDED_PID -o pid,etime,stat,comm
 
 A live PID shows process presence, not check success. Use a finished `run.json` even when the tool session's terminal status was lost; losing that status alone does not justify rerunning unchanged work. If the process has gone away without a finished record, retain the result as incomplete.
 
-For a behavior-preserving refactor, run focused characterizations before moving production code. If a later comparison needs a temporary baseline tree, record its revision and the test/helper files copied onto it. Moving the tree also moves its vendored renderer dependency; sharing `target/` alone does not preserve that dependency's source identity.
+For a behavior-preserving refactor, run focused characterizations before moving production code. If a later comparison needs a temporary baseline tree, record its revision and the test/helper files copied onto it. The application and renderer patch now use immutable Git revisions from `unfolded-tabletop`; `scripts/check-renderer` locates that exact package through locked Cargo metadata and runs its Vulkan regression tests.
 
-When the dependency inputs are identical, the baseline can use the original checkout's renderer path. First require `git diff --exit-code BASE CANDIDATE -- Cargo.toml Cargo.lock .cargo/config.toml rust-toolchain.toml vendor/wgpu-hal` to exit zero with no differences, and verify the temporary tree retains those inputs. If any differ, use the baseline's own dependencies and a separate target directory. Keep the toolchain, features and profile consistent with the comparison being made.
-
-For the unchanged-dependency case, create `/tmp/baseline-checks/` and put this override in `/tmp/baseline-checks/canonical-renderer.toml`, replacing the checkout path if needed:
-
-```toml
-[patch.crates-io]
-wgpu-hal = { path = "/home/joeloverbeck/src/arkham-unfolded/vendor/wgpu-hal" }
-```
+When the dependency inputs are identical, first require `git diff --exit-code BASE CANDIDATE -- Cargo.toml Cargo.lock .cargo/config.toml rust-toolchain.toml` to exit zero with no differences, and verify the temporary tree retains those inputs. Both builds then consume the same immutable renderer source without a local path override. If any differ, or the baseline predates shared extraction, use the baseline's own dependencies and a separate target directory. Keep the toolchain, features and profile consistent with the comparison being made.
 
 Run from the original checkout so both builds use its launcher lock. Replace the temporary baseline path and test filter with the prepared tree and focused characterizations; use fresh record directories for each attempt:
 
@@ -149,7 +142,6 @@ scripts/tools record-check --output-dir /tmp/baseline-checks/baseline -- \
   scripts/dev cargo test --locked --offline \
   --manifest-path /tmp/caption-baseline/Cargo.toml \
   --target-dir /home/joeloverbeck/src/arkham-unfolded/target \
-  --config /tmp/baseline-checks/canonical-renderer.toml \
   --features tabletop --lib gathering_tabletop::tests::cards \
   --message-format=json-render-diagnostics
 ```

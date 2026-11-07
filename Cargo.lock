@@ -248,6 +248,7 @@ dependencies = [
  "swash",
  "tempfile",
  "toml",
+ "unfolded-tabletop",
 ]
 
 [[package]]
@@ -4940,6 +4941,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "unfolded-tabletop"
+version = "0.1.0"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=8f709f71d34e7193ca096f71d7810d1a494b43a8#8f709f71d34e7193ca096f71d7810d1a494b43a8"
+dependencies = [
+ "bevy",
+ "image",
+ "rustix 1.1.6",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5246,6 +5259,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "30.0.1"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=8f709f71d34e7193ca096f71d7810d1a494b43a8#8f709f71d34e7193ca096f71d7810d1a494b43a8"
 dependencies = [
  "android_system_properties",
  "arrayvec",

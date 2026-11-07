@@ -211,7 +211,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
         "fmt --all -- --check",
         "clippy --locked --workspace --features tabletop --all-targets -- -D warnings",
         "test --locked -p arkham-unfolded-experiment --features tabletop",
-        "test --locked --manifest-path vendor/wgpu-hal/Cargo.toml --lib --no-default-features --features vulkan vulkan::upload_memory::tests",
+        "run --quiet --locked -p arkham-tools -- check-renderer",
     ];
     assert!(run("check", 0, false).status.success());
     assert_eq!(
