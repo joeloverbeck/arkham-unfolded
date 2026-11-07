@@ -361,14 +361,12 @@ fn pending_sealed_reveal_keeps_card_and_tokens_visible_then_moves_them_before_di
     let reveal = choice_button(&mut app, "Resolve tokens").unwrap();
     app.world_mut().trigger(Activate { entity: reveal });
     app.update();
-    // Voice of Ra still has legal modifiers for its fresh positions: the first
-    // press opens their chooser, and this press selects the announced reveal.
+    // Optional modifiers remain in the panel; Resolve executes the current plan.
     assert!(
-        app.world()
+        !app.world()
             .resource::<crate::tabletop_reveal::Shortcut>()
             .is_open()
     );
-    activate_choice(&mut app, "test:reveal");
     assert!(
         app.world()
             .resource::<Table>()

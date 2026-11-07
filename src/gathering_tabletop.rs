@@ -851,7 +851,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    layout::spawn_surfaces(&mut commands, &mut meshes, &mut materials);
+    layout::spawn_gathering_surfaces(&mut commands, &mut meshes, &mut materials);
     commands.spawn((
         DirectionalLight {
             illuminance: 7000.,
@@ -1395,7 +1395,7 @@ fn world_labels(
             }
             let width = match node.width {
                 Val::Px(width) => width,
-                _ => 190.,
+                _ => computed.size().x * computed.inverse_scale_factor,
             };
             node.left = px(match book_side {
                 Some(layout::ScenarioBookSide::Agenda) => point.x - width,

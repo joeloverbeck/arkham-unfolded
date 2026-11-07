@@ -10,6 +10,55 @@ presentation, supported save/resume, Undo, inspection and camera decisions remai
 in force. Dated implementation and verification records below remain historical
 evidence; the retirement decision does not claim its implementation is complete.
 
+## Gathering harm fractions and planned token reveals
+
+On 2026-11-07, Joel accepted all three recommendations from the
+[Olive and token-readability investigation](../research/gathering-olive-and-token-readability.md),
+answering "as you recommend" to Q1, Q2 and Q3. The inspected source fixed point
+is `1021b927562cadf444a1b258610a4e3fc408b235`; the decisions support
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89).
+
+- **Harm fractions:** keep light text at the lower edge of card-mounted Damage
+  and Horror tokens, with a compact, nearly opaque black badge fitted to the text.
+  Use small padding and restrained corner rounding. Preserve accrued harm over
+  effective capacity, zero counts, capacity omissions, readable missing-art names
+  and attachment to the card. This replaces the unbacked fraction treatment.
+- **Chaos-token arrangement:** replace the two lower Test regions with one region
+  as wide as the commitment region immediately above. Fill from the upper-left
+  in the normal Test view, left-to-right with small comfortable gaps, wrapping
+  within the region. Include selection marks in the occupied footprint; tokens
+  must not spill into the investigator area. Preserve meaningful nested groups
+  with compact cues rather than reserving a whole row for every source. Current
+  selection scope must remain clear even when it crosses provenance groups.
+- **Token captions:** remove routine face-name and ordinal captions when artwork
+  is available. Preserve readable English substitutes for missing or unreadable
+  artwork, distinct physical targets for duplicate faces, and clear selected,
+  canceled and ignored states using more than color alone. Keep the current
+  instruction and selection progress; names remain available in inspection and
+  the decision panel. This supersedes the earlier routine numbered-caption
+  requirement while preserving meaningful group and state information.
+- **Ability interaction:** show the declared plan, for example **Olive active —
+  reveal 3, resolve 2**, and keep **Use Jacqueline…** separately visible when
+  available. The main Reveal control executes the displayed plan directly,
+  forgoing unused optional abilities; it does not reopen their chooser. Adding
+  an ability updates the plan before any faces are revealed. Explain materially
+  different combinations by their consequences, preserving legal costs, scopes
+  and ordering. Then guide Jacqueline's cancellation and Olive's selection at
+  their actual stages. Opening or closing a chooser does not itself activate or
+  undo an ability. Preserve pre-reveal Undo, supported save/resume and rejection
+  of stale actions. This supersedes the earlier Reveal-shortcut reminder menu
+  for Gathering. Simplifying genuinely equivalent choices still requires evidence
+  that their legal continuations are preserved.
+
+The saved sequence documents one Olive activation followed by Jacqueline; it
+does not demonstrate a second activation of exhausted Olive. The investigation
+retains the combined-rules interpretation and its evidence limits. These are
+accepted design decisions, not a claim of implementation, runtime verification or
+owner acceptance of the resulting play. The existing glossary needs no new term.
+Consulted: `AUTH-1`–`AUTH-3`, `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`,
+`EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`, `REP-1`–`REP-3`, `AGENT-5`,
+`OPS-1`–`OPS-7`, and `GOV-1`–`GOV-3`.
+
 ## Gathering wagers, keys and chaos-token spacing
 
 On 2026-11-06, Joel accepted the following `grill-with-docs` decisions for

@@ -621,12 +621,13 @@ impl Painter<'_, '_, '_> {
 
     fn token(
         &mut self,
-        at: Vec3,
+        placement: Transform,
         face: crate::TokenFace,
         state: ShownTokenState,
         ordinal: usize,
         active: bool,
     ) {
+        let at = placement.translation;
         if matches!(
             state,
             ShownTokenState::Available | ShownTokenState::Selected
@@ -644,7 +645,7 @@ impl Painter<'_, '_, '_> {
                     unlit: true,
                     ..default()
                 })),
-                Transform::from_translation(at - Vec3::Y * 0.065),
+                Transform::from_translation(at - Vec3::Y * 0.065).with_scale(placement.scale),
                 Pickable::IGNORE,
             ));
         }
@@ -653,6 +654,11 @@ impl Painter<'_, '_, '_> {
             ShownTokenState::Resolved => crate::TokenStatus::Resolved,
             _ => crate::TokenStatus::Pending,
         };
+        let image = self
+            .context
+            .art
+            .loaded_image(crate::tabletop_tokens::image_role(face));
+        let has_art = image.is_some();
         let (disk, label) = crate::tabletop_tokens::spawn(
             self.commands,
             self.meshes,
@@ -660,12 +666,9 @@ impl Painter<'_, '_, '_> {
             crate::tabletop_tokens::TokenVisual {
                 face,
                 status,
-                ordinal: Some(ordinal),
-                image: self
-                    .context
-                    .art
-                    .image(crate::tabletop_tokens::image_role(face)),
-                transform: Transform::from_translation(at),
+                ordinal: None,
+                image,
+                transform: placement,
                 label_offset: Vec3::Z * 0.55,
             },
         );
@@ -676,9 +679,6 @@ impl Painter<'_, '_, '_> {
                 destination: at,
             },
         ));
-        self.commands
-            .entity(label)
-            .insert(crate::tabletop_tokens::Follow(disk, Vec3::Z * 0.55));
         let title = format!("Token {ordinal} · {}\n{}", face.label(), state.label());
         if active {
             self.selectable(
@@ -701,26 +701,76 @@ impl Painter<'_, '_, '_> {
                     ..default()
                 })));
         }
-        let caption = match state {
-            ShownTokenState::Available | ShownTokenState::Revealed => {
-                format!("{ordinal}: {}", face.label())
-            }
-            _ => format!("{ordinal}: {}\n{}", face.label(), state.label()),
+        // Marks stay attached to the physical disk during reveal/return motion.
+        // A check means selected, one slash ignored, and the shared disk draws X
+        // for cancelled. The dark outline keeps marks visible on pale artwork.
+        let strokes: &[(f32, f32, f32, f32)] = match state {
+            ShownTokenState::Selected => &[
+                (-0.12, 0.30, 0.24, -std::f32::consts::FRAC_PI_4),
+                (0.10, 0.26, 0.42, std::f32::consts::FRAC_PI_4),
+            ],
+            ShownTokenState::Ignored => &[(0., 0., 0.78, std::f32::consts::FRAC_PI_4)],
+            _ => &[],
         };
-        self.commands.entity(label).insert((
-            ScenePiece,
-            Text::new(crate::tabletop::readable_text(caption)),
-        ));
+        for &(x, z, length, angle) in strokes {
+            for (height, width, color) in [(0.09, 0.10, Color::BLACK), (0.105, 0.045, PAPER)] {
+                self.commands.entity(disk).with_child((
+                    Mesh3d(self.meshes.add(Cuboid::new(length, 0.015, width))),
+                    MeshMaterial3d(self.materials.add(StandardMaterial {
+                        base_color: color,
+                        unlit: true,
+                        ..default()
+                    })),
+                    Transform::from_xyz(x, height, z).with_rotation(Quat::from_rotation_y(angle)),
+                    Pickable::IGNORE,
+                ));
+            }
+        }
+        if has_art {
+            self.commands.entity(label).despawn();
+        } else {
+            let caption = match state {
+                ShownTokenState::Selected
+                | ShownTokenState::Ignored
+                | ShownTokenState::Cancelled => format!("{}\n{}", face.label(), state.label()),
+                _ => face.label().into(),
+            };
+            self.commands.entity(label).insert((
+                ScenePiece,
+                Text::new(crate::tabletop::readable_text(caption)),
+                crate::tabletop_tokens::Follow(disk, Vec3::Z * 0.55),
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: px(52),
+                    padding: UiRect::axes(px(2), px(2)),
+                    border_radius: BorderRadius::all(px(3)),
+                    ..default()
+                },
+            ));
+        }
     }
 }
 
-fn test_token(slot: usize) -> Vec3 {
-    layout::TEST_CENTER
-        + Vec3::new(
-            -3.5 + (slot % 3) as f32 * 3.5,
-            0.15,
-            3.0 + (slot / 3) as f32 * 3.0,
-        )
+#[cfg(test)]
+#[test]
+fn crowded_test_tokens_include_their_rings_inside_the_region_without_overlapping() {
+    for count in [1, 5, 10, 11, 20, 21, 40] {
+        let placements: Vec<_> = (0..count)
+            .map(|slot| layout::gathering_test_token(slot, count))
+            .collect();
+        for (index, placement) in placements.iter().enumerate() {
+            let radius = 0.58 * placement.scale.x;
+            let at = placement.translation;
+            assert!(at.x - radius >= -6.7 && at.x + radius <= 6.7);
+            assert!(at.z - radius >= 9.6 && at.z + radius <= 12.7);
+            if count <= 20 {
+                assert!(placement.scale.abs_diff_eq(Vec3::ONE, 0.0001));
+            }
+            for other in &placements[..index] {
+                assert!(at.distance(other.translation) > radius + 0.58 * other.scale.x);
+            }
+        }
+    }
 }
 
 pub(super) fn render_setup_pieces(
@@ -1219,19 +1269,24 @@ pub(super) fn render(
         let groups = tokens.reveal_groups();
         // The decision panel already names a single skill-test reveal. Keep
         // the space below committed cards clear; nested groups still need labels.
-        let label_groups = !tokens.is_skill_test() || groups.len() > 1;
+        let label_groups = !tokens.is_skill_test();
         for group in groups {
             let position = |slot| {
                 if tokens.is_skill_test() {
-                    test_token(slot)
+                    layout::gathering_test_token(slot, tokens.revealed.len())
                 } else {
-                    tray.as_ref()
-                        .expect("Non-test tokens have an owner")
-                        .token(slot)
+                    Transform::from_translation(
+                        tray.as_ref()
+                            .expect("Non-test tokens have an owner")
+                            .token(slot),
+                    )
                 }
             };
             if label_groups {
-                paint.caption(position(row_start + 1) - Vec3::Z * 2.5, group.source);
+                paint.caption(
+                    position(row_start + 1).translation - Vec3::Z * 2.5,
+                    group.source,
+                );
             }
             for (offset, slot) in group.members.iter().copied().enumerate() {
                 let token = tokens.revealed[slot];
@@ -1246,9 +1301,64 @@ pub(super) fn render(
                 } else {
                     ShownTokenState::Revealed
                 };
-                paint.token(position(row_start + offset), token, state, slot + 1, true);
+                let placement = position(if tokens.is_skill_test() {
+                    slot
+                } else {
+                    row_start + offset
+                });
+                paint.token(placement, token, state, slot + 1, true);
             }
-            row_start += group.members.len().div_ceil(columns) * columns;
+            row_start += if tokens.is_skill_test() {
+                group.members.len()
+            } else {
+                group.members.len().div_ceil(columns) * columns
+            };
+        }
+        if tokens.is_skill_test() {
+            let groups: Vec<_> = context
+                .view
+                .choices
+                .iter()
+                .filter_map(|choice| {
+                    let position = ["tokens:position:", "tokens:cancel-position:"]
+                        .into_iter()
+                        .find_map(|prefix| choice.id.strip_prefix(prefix))?
+                        .parse::<usize>()
+                        .ok()?;
+                    Some((position + 1, tokens.choice_members(&choice.id)))
+                })
+                .collect();
+            // Only actual grouped decisions receive relationship badges. Physical
+            // provenance alone must never suggest that tokens are chosen together.
+            if groups.iter().any(|(_, members)| members.len() > 1) {
+                for (group, members) in groups {
+                    for member in members {
+                        let at = layout::gathering_test_token(member, tokens.revealed.len())
+                            .translation
+                            - Vec3::Z * 0.4;
+                        let label = scene::label(
+                            paint.commands,
+                            context,
+                            format!("Group {group}"),
+                            at,
+                            false,
+                        );
+                        paint.commands.entity(label).insert((
+                            TextFont {
+                                font_size: FontSize::Px(10.),
+                                ..default()
+                            },
+                            TextLayout::no_wrap(),
+                            Node {
+                                position_type: PositionType::Absolute,
+                                padding: UiRect::axes(px(2), px(1)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(0.015, 0.02, 0.02, 0.96)),
+                        ));
+                    }
+                }
+            }
         }
     }
     if !play
@@ -1257,9 +1367,10 @@ pub(super) fn render(
         .is_some_and(|tokens| tokens.is_skill_test())
         && let Some(test) = &play.test
     {
+        let count = test.revealed.len() + test.ignored_tokens.len() + test.cancelled_tokens.len();
         for (slot, token) in test.revealed.iter().enumerate() {
             paint.token(
-                test_token(slot),
+                layout::gathering_test_token(slot, count),
                 *token,
                 if test.resolved {
                     ShownTokenState::Resolved
@@ -1282,7 +1393,7 @@ pub(super) fn render(
             .enumerate()
         {
             paint.token(
-                test_token(test.revealed.len().div_ceil(3) * 3 + slot),
+                layout::gathering_test_token(test.revealed.len() + slot, count),
                 *token,
                 state,
                 slot + 1,
@@ -1312,7 +1423,12 @@ pub(super) fn render(
         });
         for (slot, token) in sealed.faces.iter().enumerate() {
             paint.token(
-                trays::sealed_token(play, sealed.controller, slot, sealed.faces.len()),
+                Transform::from_translation(trays::sealed_token(
+                    play,
+                    sealed.controller,
+                    slot,
+                    sealed.faces.len(),
+                )),
                 *token,
                 ShownTokenState::Selected,
                 slot + 1,

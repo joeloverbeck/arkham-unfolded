@@ -38,6 +38,9 @@ fn offered(view: &Observation) -> Vec<crate::Choice> {
         return vec![];
     }
     controls::source_choices(view, &controls::Source::Bag)
+        .into_iter()
+        .filter(|choice| choice.id == "test:reveal")
+        .collect()
 }
 
 pub(super) fn refresh(
@@ -335,34 +338,15 @@ mod tests {
     }
 
     #[test]
-    fn reveal_chooser_keyboard_focus_and_escape_preserve_camera_and_decision() {
+    fn optional_ability_disclosure_preserves_camera_and_decision() {
         use bevy::input::keyboard::Key;
         let directory = tempfile::tempdir().unwrap();
-        let session = ordinary_reveal();
-        let label = session
-            .observe()
-            .choices
-            .iter()
-            .find(|choice| choice.id == "test:reveal")
-            .unwrap()
-            .label
-            .clone();
+        let session = declared_reveal();
         let mut app = host(session.clone(), directory.path().join("keyboard.json"));
         let camera = app.world().resource::<Orbit>().pose();
-        click(&mut app, "Reveal tokens");
-        let first = button(&mut app, &label).unwrap();
-        let focused = app.world().resource::<InputFocus>().get();
-        assert_eq!(
-            focused,
-            Some(first),
-            "Focused control: {:?}",
-            focused.and_then(|entity| app.world().get::<AccessibleLabel>(entity))
-        );
-        key(&mut app, KeyCode::Tab, Key::Tab, true);
-        assert_ne!(app.world().resource::<InputFocus>().get(), Some(first));
-        key(&mut app, KeyCode::Tab, Key::Tab, false);
-        key(&mut app, KeyCode::Home, Key::Home, true);
-        key(&mut app, KeyCode::Home, Key::Home, false);
+        click(&mut app, "▸ Use Jacqueline · show");
+        assert_eq!(app.world().resource::<Table>().session, session);
+        click(&mut app, "▾ Use Jacqueline · hide");
         assert_eq!(app.world().resource::<Orbit>().pose(), camera);
         key(&mut app, KeyCode::Escape, Key::Escape, true);
         key(&mut app, KeyCode::Escape, Key::Escape, false);
@@ -372,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn held_pan_preserves_the_reveal_button_and_dismisses_only_an_open_chooser() {
+    fn held_pan_preserves_the_reveal_button_and_keyboard_reveal_executes_it() {
         use bevy::input::keyboard::Key;
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("pan.json");
@@ -402,15 +386,55 @@ mod tests {
         key(&mut app, KeyCode::KeyW, Key::Character("w".into()), false);
         key(&mut app, KeyCode::Enter, Key::Enter, true);
         key(&mut app, KeyCode::Enter, Key::Enter, false);
-        assert!(app.world().resource::<Shortcut>().is_open());
-        key(&mut app, KeyCode::KeyW, Key::Character("w".into()), true);
         assert!(!app.world().resource::<Shortcut>().is_open());
-        key(&mut app, KeyCode::KeyW, Key::Character("w".into()), false);
-        assert_eq!(app.world().resource::<Table>().session, session);
+        let after = &app.world().resource::<Table>().session;
+        assert_eq!(after.observe().revision, session.observe().revision + 1);
+        assert_eq!(&continuity::load_session(path).unwrap(), after);
+    }
+
+    #[test]
+    fn active_olive_reveals_once_without_reopening_ability_selection() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("olive.json");
+        let mut session = declared_reveal();
+        let view = session.observe();
+        let olive = view
+            .choices
+            .iter()
+            .find(|choice| choice.id.starts_with("tokens:olive:"))
+            .unwrap();
+        session.choose(view.revision, &olive.id).unwrap();
+        let before = session.observe();
         assert!(
-            !path.exists(),
-            "Opening/dismissing a chooser cannot reveal a token"
+            !before
+                .choices
+                .iter()
+                .any(|choice| choice.id.starts_with("tokens:olive:"))
         );
+        let mut app = host(session, path.clone());
+        assert!(
+            app.world_mut()
+                .query::<&Text>()
+                .iter(app.world())
+                .any(|text| text.0.contains(&crate::tabletop::readable_text(
+                    "Olive active — reveal 3, resolve 2".into()
+                )))
+        );
+        let entity = button(&mut app, "Reveal tokens").unwrap();
+        app.world_mut().trigger(Activate { entity });
+        app.world_mut().trigger(Activate { entity });
+        app.update();
+        let after = app.world().resource::<Table>().session.clone();
+        assert_eq!(after.observe().revision, before.revision + 1);
+        assert_eq!(
+            after.observe().play.unwrap().tokens.unwrap().revealed.len(),
+            3
+        );
+        assert!(!app.world().resource::<Shortcut>().is_open());
+        assert_eq!(continuity::load_session(&path).unwrap(), after);
+        click(&mut app, "Menu");
+        click(&mut app, "Reopen saved attempt");
+        assert_eq!(app.world().resource::<Table>().session, after);
     }
 
     #[test]
@@ -425,25 +449,23 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_reveal_records_the_offered_replacement_id() {
+    fn keyboard_ability_control_records_the_offered_replacement_id() {
         use bevy::input::keyboard::Key;
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("replacement.json");
         let session = ordinary_reveal();
-        let choices = offered(&session.observe());
+        let choices = session.observe().choices;
         let selected = choices
             .iter()
             .position(|choice| choice.id.starts_with("tokens:jacqueline"))
             .expect("Jacqueline is eligible in this ordinary investigation");
         let revision = session.observe().revision;
         let mut app = host(session, path.clone());
-        click(&mut app, "Reveal tokens");
-        for _ in 0..selected {
-            key(&mut app, KeyCode::Tab, Key::Tab, true);
-            key(&mut app, KeyCode::Tab, Key::Tab, false);
-        }
-        let chosen = button(&mut app, &choices[selected].label).unwrap();
-        assert_eq!(app.world().resource::<InputFocus>().get(), Some(chosen));
+        let chosen = button(&mut app, "Use Jacqueline — reveal 3 tokens").unwrap();
+        let camera = app.world().resource::<Orbit>().pose();
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(chosen, bevy::input_focus::FocusCause::Navigated);
         key(&mut app, KeyCode::Enter, Key::Enter, true);
         key(&mut app, KeyCode::Enter, Key::Enter, false);
         let table = app.world().resource::<Table>();
@@ -454,10 +476,7 @@ mod tests {
             record["decisions"].as_array().unwrap().last().unwrap(),
             choices[selected].id.as_str()
         );
-        assert_eq!(
-            app.world().resource::<Orbit>().pose().target,
-            layout::focus(Area::Test).0
-        );
+        assert_eq!(app.world().resource::<Orbit>().pose(), camera);
     }
 
     #[test]
@@ -467,19 +486,8 @@ mod tests {
         let session = ordinary_reveal();
         continuity::save_session(&path, &session).unwrap();
         let before = session.observe();
-        let label = before
-            .choices
-            .iter()
-            .find(|choice| choice.id == "test:reveal")
-            .unwrap()
-            .label
-            .clone();
         let mut app = host(session.clone(), path.clone());
-        let camera = app.world().resource::<Orbit>().pose();
-        click(&mut app, "Reveal tokens");
-        assert_eq!(app.world().resource::<Table>().session, session);
-        assert_eq!(app.world().resource::<Orbit>().pose(), camera);
-        let entity = button(&mut app, &label).unwrap();
+        let entity = button(&mut app, "Reveal tokens").unwrap();
         app.world_mut().trigger(Activate { entity });
         app.world_mut().trigger(Activate { entity });
         app.update();
@@ -508,18 +516,9 @@ mod tests {
     fn rendered_reveal_failed_save_and_a_queued_modal_preserve_session_and_camera() {
         let directory = tempfile::tempdir().unwrap();
         let session = ordinary_reveal();
-        let label = session
-            .observe()
-            .choices
-            .iter()
-            .find(|choice| choice.id == "test:reveal")
-            .unwrap()
-            .label
-            .clone();
         let mut app = host(session.clone(), directory.path().to_owned());
         let camera = app.world().resource::<Orbit>().pose();
         click(&mut app, "Reveal tokens");
-        click(&mut app, &label);
         assert_eq!(app.world().resource::<Table>().session, session);
         assert_eq!(app.world().resource::<Orbit>().pose(), camera);
         assert!(
@@ -528,8 +527,7 @@ mod tests {
                 .notice
                 .contains("not committed")
         );
-        click(&mut app, "Reveal tokens");
-        let entity = button(&mut app, &label).unwrap();
+        let entity = button(&mut app, "Reveal tokens").unwrap();
         app.world_mut().trigger(Activate { entity });
         app.world_mut()
             .resource_mut::<Actions>()
@@ -545,12 +543,10 @@ mod tests {
     fn declared_reveal_keeps_every_current_replacement_id_and_bag_label() {
         let session = declared_reveal();
         let view = session.observe();
-        let offers = offered(&view);
-        assert_eq!(
-            offers,
-            controls::source_choices(&view, &controls::Source::Bag)
-        );
-        assert!(offers.iter().any(|choice| choice.id == "test:reveal"));
+        let direct = offered(&view);
+        assert_eq!(direct.len(), 1);
+        assert_eq!(direct[0].id, "test:reveal");
+        let offers = controls::source_choices(&view, &controls::Source::Bag);
         assert!(
             offers
                 .iter()

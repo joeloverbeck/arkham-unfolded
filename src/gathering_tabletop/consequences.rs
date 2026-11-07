@@ -16,7 +16,7 @@ struct Clue {
 struct Departure {
     face: crate::TokenFace,
     status: crate::TokenStatus,
-    start: Vec3,
+    start: Transform,
     end: Vec3,
 }
 
@@ -90,11 +90,13 @@ impl State {
             && result.difficulty == test.difficulty
             && Some(result.success) == test.would_succeed
         {
+            let token_count =
+                test.revealed.len() + test.ignored_tokens.len() + test.cancelled_tokens.len();
             for (slot, face) in test.revealed.iter().enumerate() {
                 self.departures.push(Departure {
                     face: *face,
                     status: crate::TokenStatus::Resolved,
-                    start: layout::test_token(false, slot),
+                    start: layout::gathering_test_token(slot, token_count),
                     end: if *face == crate::TokenFace::Curse {
                         layout::test_curse_pool()
                     } else {
@@ -116,7 +118,7 @@ impl State {
                 self.departures.push(Departure {
                     face: *face,
                     status,
-                    start: layout::test_token(true, slot),
+                    start: layout::gathering_test_token(test.revealed.len() + slot, token_count),
                     end: layout::test_bag(),
                 });
             }
@@ -231,14 +233,15 @@ pub(super) fn advance(
                 status: departure.status,
                 ordinal: None,
                 image: art.image(tokens::image_role(departure.face)),
-                transform: Transform::from_translation(departure.start),
+                transform: departure.start,
                 label_offset: Vec3::ZERO,
             },
         );
         commands.entity(label).despawn();
         commands.entity(root).insert((
             Owned,
-            tokens::ReturningToken::new(departure.start, departure.end),
+            tokens::ReturningToken::new(departure.start.translation, departure.end)
+                .with_scale(departure.start.scale),
         ));
         state.returning += 1;
     }

@@ -924,6 +924,15 @@ fn result_decline(choice: &Choice) -> bool {
 // observations. Their existing "(copy N)" annotations are unnecessary on screen.
 fn display_choice(view: &Observation, choice: &Choice) -> Choice {
     let mut shown = choice.clone();
+    if let Some(label) = view
+        .play
+        .as_ref()
+        .and_then(|play| play.tokens.as_ref())
+        .and_then(|tokens| tokens.ability_label(choice))
+    {
+        shown.label = label;
+        return shown;
+    }
     if choice.id == "test:reveal"
         && let Some(label) = reveal::announcement(view)
     {

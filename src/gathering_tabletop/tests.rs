@@ -1360,7 +1360,7 @@ fn card_counters_show_typed_uses_and_undamaged_enemy_capacity_without_art() {
     ));
     let mut app = host_with_table(Table::new(session, PathBuf::new()), false);
     let text = rendered_text(&mut app);
-    for expected in ["Ammo 3", "Bounties 5", "Bounties 1", "Damage 0/2"] {
+    for expected in ["Ammo 3", "Bounties 5", "Bounties 1", "Damage\n0/2"] {
         assert!(text.contains(expected), "Missing {expected:?}: {text}");
     }
     assert!(!text.contains("Uses 3"));

@@ -1,6 +1,374 @@
 use super::*;
 
 #[test]
+fn native_olive_scope_labels_can_be_scrolled_fully_into_view() {
+    use crate::tabletop_layout::heading_checks::{rendered_text_bounds, viewport};
+    let (_, session) = super::review_saves::olive_review::checkpoints().remove(1);
+    let view = session.observe();
+    let labels: Vec<_> = view
+        .choices
+        .iter()
+        .filter_map(|choice| {
+            view.play
+                .as_ref()
+                .unwrap()
+                .tokens
+                .as_ref()
+                .unwrap()
+                .ability_label(choice)
+        })
+        .collect();
+    assert_eq!(labels.len(), 5);
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("labels.json")), true);
+    let disclosure = choice_button(&mut app, "▸ Use Jacqueline · show").unwrap();
+    app.world_mut().trigger(Activate { entity: disclosure });
+    app.update();
+    for size in [Vec2::new(1280., 720.), Vec2::new(1600., 1000.)] {
+        for scale in [1., 2.] {
+            viewport::<MainCamera>(&mut app, size, scale);
+            for _ in 0..4 {
+                app.update();
+            }
+            // The native portal check exercises physical wheel input. Here the
+            // scroll offset checks every label's complete rendered bounds.
+            for label in &labels {
+                let button = choice_button(&mut app, label).unwrap();
+                let world = app.world_mut();
+                let text = world.get::<Children>(button).unwrap()[0];
+                let mut scroller = button;
+                while world.get::<ScrollPosition>(scroller).is_none() {
+                    scroller = world.get::<ChildOf>(scroller).unwrap().parent();
+                }
+                let node = world.get::<ComputedNode>(scroller).unwrap();
+                let maximum = (node.content_size().y - node.size().y).max(0.);
+                let top = world
+                    .get::<UiGlobalTransform>(scroller)
+                    .unwrap()
+                    .transform_point2(-node.size() / 2.)
+                    .y
+                    / scale;
+                let text_top = rendered_text_bounds(world, text, scale).min.y;
+                let current = world.get::<ScrollPosition>(scroller).unwrap().y;
+                world.get_mut::<ScrollPosition>(scroller).unwrap().y =
+                    (current + (text_top - top - 2.) * scale).clamp(0., maximum);
+                app.update();
+                let world = app.world_mut();
+                let node = world.get::<ComputedNode>(scroller).unwrap();
+                let at = world.get::<UiGlobalTransform>(scroller).unwrap();
+                let region = Rect::from_corners(
+                    at.transform_point2(-node.size() / 2.) / scale,
+                    at.transform_point2(node.size() / 2.) / scale,
+                );
+                let glyphs = rendered_text_bounds(world, text, scale);
+                assert!(
+                    glyphs.min.y >= region.min.y - 1. && glyphs.max.y <= region.max.y + 1.,
+                    "{size:?}/{scale}: {label}: {glyphs:?} outside {region:?}; scroll maximum {maximum}"
+                );
+            }
+            assert_eq!(app.world().resource::<Table>().view(), view);
+        }
+    }
+}
+
+#[test]
+fn olive_tokens_return_from_their_displayed_positions_after_the_result() {
+    let (_, session) = super::review_saves::olive_review::checkpoints()
+        .into_iter()
+        .find(|(name, _)| *name == "olive-two-kept")
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("return.json")), true);
+    activate_choice(&mut app, "tokens:confirm");
+    finish_presentation(&mut app);
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_some()
+    );
+    let mut displayed = Vec::new();
+    let world = app.world_mut();
+    displayed.extend(
+        world
+            .query::<(&sealed::Piece, &Transform)>()
+            .iter(world)
+            .map(|(_, at)| *at),
+    );
+    assert_eq!(displayed.len(), 5);
+    let button = choice_button(&mut app, "Continue").unwrap();
+    app.world_mut().trigger(Activate { entity: button });
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(std::time::Duration::from_millis(100));
+    for _ in 0..50 {
+        app.update();
+        let world = app.world_mut();
+        let returning: Vec<_> = world
+            .query_filtered::<&Transform, With<crate::tabletop_tokens::ReturningToken>>()
+            .iter(world)
+            .copied()
+            .collect();
+        if !returning.is_empty() {
+            assert_eq!(returning.len(), displayed.len());
+            for at in returning {
+                assert!(
+                    displayed
+                        .iter()
+                        .any(|shown| shown.translation.abs_diff_eq(at.translation, 0.001)
+                            && shown.scale.abs_diff_eq(at.scale, 0.001)),
+                    "Departure {at:?} is absent from {displayed:?}"
+                );
+            }
+            return;
+        }
+        let latest: Vec<_> = world
+            .query::<(&sealed::Piece, &Transform)>()
+            .iter(world)
+            .map(|(_, at)| *at)
+            .collect();
+        if !latest.is_empty() {
+            displayed = latest;
+        }
+    }
+    panic!("Completing the test must return its five tokens");
+}
+
+#[test]
+fn olive_with_dark_prophecy_never_promises_five_when_jacqueline_will_reveal_nine() {
+    let mut session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tokens(
+        crate::gathering::TokenFixture::ProphecyOlive,
+    ));
+    for _ in 0..4 {
+        let view = session.observe();
+        if view.choices.iter().any(|choice| choice.id == "test:reveal") {
+            break;
+        }
+        let id = if view
+            .choices
+            .iter()
+            .any(|choice| choice.id == "commit:confirm")
+        {
+            "commit:confirm"
+        } else {
+            "window:pass"
+        };
+        session.choose(view.revision, id).unwrap();
+    }
+    for prefix in ["tokens:olive:", "tokens:prophecy:0.0:"] {
+        let view = session.observe();
+        let choice = view
+            .choices
+            .iter()
+            .find(|choice| choice.id.starts_with(prefix))
+            .unwrap();
+        session.choose(view.revision, &choice.id).unwrap();
+    }
+    let view = session.observe();
+    assert_eq!(
+        view.play
+            .as_ref()
+            .unwrap()
+            .tokens
+            .as_ref()
+            .unwrap()
+            .fresh_reveal_count(),
+        Some(7)
+    );
+    let shown = controls::source_choices(&view, &controls::Source::Bag);
+    let choice = shown
+        .iter()
+        .find(|choice| choice.id == "tokens:jacqueline:at:0")
+        .unwrap();
+    assert!(!choice.label.contains("reveal 5"), "{}", choice.label);
+    assert!(choice.label.contains("add 2"));
+    session.choose(view.revision, &choice.id).unwrap();
+    assert_eq!(
+        session
+            .observe()
+            .play
+            .unwrap()
+            .tokens
+            .unwrap()
+            .fresh_reveal_count(),
+        Some(9)
+    );
+}
+
+#[test]
+fn olive_activation_undo_and_stale_input_preserve_exhaustion_and_the_saved_plan() {
+    let (_, session) = super::review_saves::olive_review::checkpoints().remove(0);
+    let original = session.observe();
+    let olive = original
+        .choices
+        .iter()
+        .find(|choice| choice.id.starts_with("tokens:olive:"))
+        .unwrap()
+        .id
+        .clone();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("olive.json");
+    let mut app = host_with_table(Table::new(session, path.clone()), true);
+    let button = choice_button(&mut app, "Use Olive — reveal 3, resolve 2").unwrap();
+    app.world_mut().trigger(Activate { entity: button });
+    app.update();
+    let after = app.world().resource::<Table>().session.clone();
+    assert_eq!(
+        after
+            .observe()
+            .play
+            .unwrap()
+            .tokens
+            .unwrap()
+            .fresh_reveal_count(),
+        Some(3)
+    );
+    assert!(
+        !after.observe().play.unwrap().players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.code == "04197")
+            .unwrap()
+            .ready
+    );
+    let mut rejected = after.clone();
+    assert!(rejected.choose(after.observe().revision, &olive).is_err());
+    assert_eq!(rejected, after);
+    let epoch = app.world().resource::<Table>().epoch;
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Choose(epoch, original.revision, olive.clone()));
+    app.update();
+    assert_eq!(app.world().resource::<Table>().session, after);
+    assert_eq!(continuity::load_session(&path).unwrap(), after);
+    activate_choice(&mut app, "undo");
+    let undone = app.world().resource::<Table>().session.clone();
+    assert!(
+        undone
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == olive)
+    );
+    assert!(
+        undone.observe().play.unwrap().players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.code == "04197")
+            .unwrap()
+            .ready
+    );
+    assert_eq!(
+        undone
+            .observe()
+            .play
+            .unwrap()
+            .tokens
+            .unwrap()
+            .fresh_reveal_count(),
+        Some(1)
+    );
+    assert_eq!(continuity::load_session(&path).unwrap(), undone);
+}
+
+#[test]
+fn olive_optional_jacqueline_controls_preserve_every_legal_scope() {
+    let (_, session) = super::review_saves::olive_review::checkpoints().remove(1);
+    let before = session.observe();
+    let choices: Vec<_> = before
+        .choices
+        .iter()
+        .filter(|choice| choice.id.starts_with("tokens:jacqueline"))
+        .collect();
+    assert!(choices.len() >= 3);
+    let mut labels = std::collections::HashSet::new();
+    for choice in choices {
+        let label = before
+            .play
+            .as_ref()
+            .unwrap()
+            .tokens
+            .as_ref()
+            .unwrap()
+            .ability_label(choice)
+            .unwrap();
+        assert!(
+            labels.insert(label.clone()),
+            "Different scopes need distinct labels"
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scope.json");
+        let mut app = host_with_table(Table::new(session.clone(), path.clone()), true);
+        let disclosure = choice_button(&mut app, "▸ Use Jacqueline · show").unwrap();
+        app.world_mut().trigger(Activate { entity: disclosure });
+        app.update();
+        assert_eq!(app.world().resource::<Table>().session, session);
+        let button = choice_button(&mut app, &label).unwrap();
+        app.world_mut().trigger(Activate { entity: button });
+        app.update();
+        let mut expected = session.clone();
+        expected.choose(before.revision, &choice.id).unwrap();
+        assert_eq!(app.world().resource::<Table>().session, expected);
+        assert_eq!(continuity::load_session(path).unwrap(), expected);
+        assert!(
+            expected
+                .observe()
+                .play
+                .unwrap()
+                .tokens
+                .unwrap()
+                .revealed
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn nested_group_badges_identify_current_choice_members_without_including_ignored_tokens() {
+    let (_, mut session) = super::review_saves::olive_review::checkpoints().remove(1);
+    for id in [
+        "tokens:jacqueline",
+        "test:reveal",
+        "tokens:keep:0",
+        "tokens:keep:1",
+        "tokens:confirm",
+    ] {
+        session.choose(session.observe().revision, id).unwrap();
+    }
+    let view = session.observe();
+    let tokens = view.play.as_ref().unwrap().tokens.as_ref().unwrap();
+    assert_eq!(
+        tokens.choice_members("tokens:cancel-position:0"),
+        vec![0, 1]
+    );
+    assert!(tokens.ignored.contains(&2));
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("groups.json")), true);
+    finish_presentation(&mut app);
+    let world = app.world_mut();
+    let badges: Vec<_> = world
+        .query::<(&Text, &WorldLabel)>()
+        .iter(world)
+        .filter(|(text, _)| text.0.starts_with("Group "))
+        .map(|(text, _)| text.0.clone())
+        .collect();
+    assert_eq!(
+        badges
+            .iter()
+            .filter(|text| text.as_str() == "Group 1")
+            .count(),
+        2
+    );
+    assert_eq!(
+        badges.len(),
+        4,
+        "Only four retained tokens belong to the cancellation choices"
+    );
+}
+
+#[test]
 fn curse_followup_offers_one_new_jacqueline_declaration_while_prior_tokens_stay_held() {
     let mut session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tokens(
         crate::gathering::TokenFixture::ArbiterCurse,
@@ -60,6 +428,131 @@ fn curse_followup_offers_one_new_jacqueline_declaration_while_prior_tokens_stay_
         "Declaring never releases or redraws held tokens"
     );
     assert_eq!(tokens.fresh_reveal_count(), Some(3));
+}
+
+#[test]
+fn olive_and_jacquelines_five_tokens_fit_compactly_inside_test() {
+    let mut session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tokens(
+        crate::gathering::TokenFixture::JacquelineOlive,
+    ));
+    for _ in 0..4 {
+        let view = session.observe();
+        if view.choices.iter().any(|choice| choice.id == "test:reveal") {
+            break;
+        }
+        let id = if view
+            .choices
+            .iter()
+            .any(|choice| choice.id == "commit:confirm")
+        {
+            "commit:confirm"
+        } else {
+            "window:pass"
+        };
+        session.choose(view.revision, id).unwrap();
+    }
+    let olive = session
+        .observe()
+        .choices
+        .into_iter()
+        .find(|choice| choice.id.starts_with("tokens:olive:"))
+        .unwrap()
+        .id;
+    for id in [olive.as_str(), "tokens:jacqueline:at:0", "test:reveal"] {
+        session.choose(session.observe().revision, id).unwrap();
+    }
+    assert_eq!(
+        session
+            .observe()
+            .play
+            .unwrap()
+            .tokens
+            .unwrap()
+            .revealed
+            .len(),
+        5
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("olive.json")), true);
+    finish_presentation(&mut app);
+    let world = app.world_mut();
+    let mut tokens: Vec<_> = world
+        .query::<(&ContextTarget, &Transform)>()
+        .iter(world)
+        .filter_map(|(target, transform)| match target.source {
+            controls::Source::Token(index) => Some((index, transform.translation)),
+            _ => None,
+        })
+        .collect();
+    tokens.sort_by_key(|(index, _)| *index);
+    assert_eq!(tokens.len(), 5);
+    for (_, at) in &tokens {
+        // Accepted lower region: x +/-6.7, z 9.6..12.7. Include the .58 ring.
+        assert!(at.x - 0.58 >= -6.7 && at.x + 0.58 <= 6.7, "{at:?}");
+        assert!(at.z - 0.58 >= 9.6 && at.z + 0.58 <= 12.7, "{at:?}");
+    }
+    assert!(tokens[0].1.x < -5., "Start at the upper left");
+    for pair in tokens.windows(2) {
+        assert!((pair[0].1.z - pair[1].1.z).abs() < 0.001);
+        let gap = pair[1].1.x - pair[0].1.x - 1.16;
+        assert!((0.1..=0.35).contains(&gap), "Comfortable small gap: {gap}");
+    }
+}
+
+#[test]
+fn chaos_identity_captions_require_missing_or_undecoded_art() {
+    let session = super::review_saves::resolution_review::checkpoints()
+        .unwrap()
+        .into_iter()
+        .find(|point| point.name == "jacqueline-three")
+        .unwrap()
+        .session;
+    let faces = session.observe().play.unwrap().tokens.unwrap().revealed;
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(Table::new(session, dir.path().join("art.json")), true);
+    let handle = app
+        .world_mut()
+        .resource_mut::<Assets<Image>>()
+        .add(Image::default());
+    app.insert_resource(art::Art::with_images_for_test(
+        faces
+            .iter()
+            .map(|face| (crate::tabletop_tokens::image_role(*face), handle.clone())),
+    ));
+    for loaded in [true, false] {
+        if !loaded {
+            app.world_mut()
+                .resource_mut::<Assets<Image>>()
+                .remove(handle.id());
+        }
+        app.world_mut().resource_mut::<Table>().dirty = true;
+        for _ in 0..4 {
+            app.update();
+        }
+        finish_presentation(&mut app);
+        let world = app.world_mut();
+        let captions: Vec<_> = world
+            .query::<(&Text, &crate::tabletop_tokens::Follow)>()
+            .iter(world)
+            .map(|(text, _)| text.0.clone())
+            .collect();
+        if loaded {
+            assert!(
+                captions.is_empty(),
+                "Artwork supplies token identity: {captions:?}"
+            );
+        } else {
+            assert_eq!(captions.len(), faces.len());
+            for face in &faces {
+                assert!(
+                    captions
+                        .iter()
+                        .any(|text| *text == crate::tabletop::readable_text(face.label().into())),
+                    "Missing face name for {face:?}: {captions:?}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -251,7 +744,7 @@ fn jacqueline_cost_disclosure_is_flat_aligned_and_does_not_execute_a_choice() {
     let before = session.clone();
     let dir = tempfile::tempdir().unwrap();
     let mut app = host_with_table(Table::new(session, dir.path().join("tokens.json")), true);
-    let disclosure = choice_button(&mut app, "▸ Jacqueline's ability options · show").unwrap();
+    let disclosure = choice_button(&mut app, "▸ Use Jacqueline · show").unwrap();
     crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
     assert_eq!(
         app.world().get::<BackgroundColor>(disclosure).unwrap().0,
@@ -260,7 +753,7 @@ fn jacqueline_cost_disclosure_is_flat_aligned_and_does_not_execute_a_choice() {
     app.world_mut().trigger(Activate { entity: disclosure });
     app.update();
     assert_eq!(app.world().resource::<Table>().session, before);
-    let expanded = choice_button(&mut app, "▾ Jacqueline's ability options · hide").unwrap();
+    let expanded = choice_button(&mut app, "▾ Use Jacqueline · hide").unwrap();
     crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
     let ordinary = choice_button(&mut app, "Use Jacqueline — spend round use").unwrap();
     let arbiter = choice_button(&mut app, "Use Jacqueline + Arbiter — preserve round use").unwrap();
