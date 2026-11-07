@@ -161,14 +161,14 @@ Human route, when the owner operates the game:
 Route, highest-risk unverified behavior first:
   exact JSON command -> expected visible result -> required camera view/objects
   capture command -> what to inspect; mark unknown coordinates for the first capture
-Time: original absolute UTC/Unix deadline; route checkpoints; fresh-process reopening
+Time: approval ID and original absolute UTC/Unix deadline; route checkpoints; fresh-process reopening
   allowance; final 15-second cleanup reserve (each command needs 15 seconds before it).
 Recovery: app PID/start identity and window; supervisor and helper tool session IDs;
   pending request or last terminal result and inspected capture; remaining route;
   exact stop/cleanup commands with the same process visibility as launch.
 ```
 
-Copy the selected JSON examples from the interaction procedure below into the route, including capture and stop, so resumption needs no source lookup. Resolve target coordinates from an inspected client capture; examples are not preapproved click locations. Fill runtime identities as they become available and record the absolute deadline when the interval starts. Preparation grants no desktop access: launch, focus, consent and interaction stay inside the allowance actually authorized, including startup when that is part of the accepted interval. Keep the app's owner-review lifetime separate from the short control interval.
+Copy the selected JSON examples from the interaction procedure below into the route, including capture and stop, so resumption needs no source lookup. Resolve target coordinates from an inspected client capture; examples are not preapproved click locations. Fill runtime identities as they become available. Preparation grants no desktop access: diagnostic launch, focus, consent and interaction stay inside the approved interval. The owner's ordinary direct application launch remains separate from these diagnostic commands.
 
 For Gathering artwork claims, use the [launch-configuration check](gathering-setup.md#artwork-preparation-and-selection) with the handoff's environment and artwork flags. A complete staging collection alone does not establish what this launch will load.
 
@@ -193,6 +193,45 @@ This runs offline, locked Cargo with a separate target and intermediate build di
 
 ### Launch, capture and interact
 
+Prepare the desktop question with the local helper before asking the user:
+
+```sh
+scripts/tools native approval request \
+  --session-log /absolute/path/to/current-codex-session.jsonl \
+  --minutes 8 --purpose 'check the Gathering controls using disposable saves'
+```
+
+The source must be the active `CODEX_THREAD_ID` session for this repository.
+Use the returned `request` object unchanged with `request_user_input_async`,
+and retain the returned approval ID as `native_approval`. After the user selects
+the affirmative answer, read and announce its original deadline:
+
+```sh
+scripts/tools native approval status --approval "$native_approval"
+```
+
+This reads the original question call and matching user reply, including the
+reply's host-recorded timestamp and user provenance. The finite accepted reply
+is the generated affirmative option; unrestricted prose and old questions are
+not interpreted. Unsupported or missing source metadata fails closed. Request,
+status, close and help commands do not access the desktop. Keep the original
+source log and local state under `${XDG_STATE_HOME:-$HOME/.local/state}/arkham-unfolded/native-approvals/`.
+They are trusted, user-writable local inputs: this guards accidental reuse,
+not deliberate tampering by a process with the same filesystem access.
+
+Pass that ID to every diagnostic launch, capture and session. All derive the
+same deadline from the original reply; helper restarts, portal grants and later
+CLI deadlines cannot renew it. A new interval requires a new question and user
+reply. When the interval is finished, permanently close its ID:
+
+```sh
+scripts/tools native approval close --approval "$native_approval"
+```
+
+Closure is idempotent and survives restarts. Running helpers observe closure
+at cooperative checks, release their resources and stop their owned app groups.
+Native calls already in progress retain their bounded-call/cleanup limits.
+
 For a reported physical-input failure, establish the failing boundary before repeating gestures or changing camera code:
 
 1. Check whether the **same physical button or key** works in another application. Reuse an observation already supplied by the owner; otherwise ask for one brief comparison. A working left button does not establish that right-button presses reach Arkham. A failure elsewhere identifies a wider input problem, without deciding whether its cause is hardware or desktop software.
@@ -208,6 +247,7 @@ scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop
 mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
 review_dir=$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/arkham-native.XXXXXX")
 scripts/tools native launch \
+  --approval "$native_approval" \
   --binary target/debug/arkham-tabletop --output-dir "$review_dir/run" \
   --experiment jacqueline --no-art
 ```
@@ -263,7 +303,7 @@ When a capture stalls, read `app.log` alongside the terminal status in `run.json
 
 Each executable/save copy reaches its final path only after verification. A failed copy removes its own temporary bytes and reports the destination, attempted size and underlying error; source files and earlier runs remain intact. Use a disk-backed destination with sufficient space and user quota: debug executables can be gigabytes, and filesystem free space alone does not establish quota availability. The example uses the user's cache directory; verify its backing filesystem if that location is customized.
 
-The command stays open until the window closes and stops its own process group after 1800 seconds (30 minutes; override with `--timeout-seconds`, maximum 3600), or on interruption. This longer default leaves time to read an owner checklist and inspect results; it grants no desktop-control permission. Set a shorter explicit timeout for automated startup runs. Its first JSON output and `run/run.json` identify the app PID, process start, staged executable hash and exact arguments. In another terminal set `review_dir` to the printed run directory (the directory ending in `/run`) and `native_pid` to the recorded **app** PID. A background launch command's `$!` is the supervisor PID, not the app PID.
+The command stays open until the window closes, its requested timeout elapses, or the approval closes or reaches its cleanup reserve. The approval always caps `--timeout-seconds`; staging also consumes its time. Its first JSON output and `run/run.json` identify the original approval deadline, app PID, process start, staged executable hash and exact arguments. In another terminal set `review_dir` to the printed run directory (the directory ending in `/run`) and `native_pid` to the recorded **app** PID. A background launch command's `$!` is the supervisor PID, not the app PID.
 
 Add `--output-format summary` to print compact JSON events with status, exit code, process and executable identity, and artifact paths. The exit code is `null` while running. The complete manifest remains in `run.json`; default `--output-format json` preserves full JSON output. Use the summary when reading launch results interactively, and consult the manifest for arguments and launch conditions.
 
@@ -277,24 +317,25 @@ To focus the verified client and capture its buffer, run the following within th
 
 ```sh
 timeout 10s scripts/tools native capture \
+  --approval "$native_approval" \
   --pid "$native_pid" --window "$native_window" --output "$review_dir/client.png"
 ```
 
 This captures the client buffer through X11 `GetImage`, independently of the app's screenshot path. Inspect the image and reported pixel size. A new filename, timestamp or pixel hash does not establish the expected state: F12 produced new files with stale table contents during #14. Use independent captures before and after a visible transition, and inspect the actual result. Startup `--screenshot` remains a rendering check only.
 
-For interaction, keep one helper process and its input open for the entire diagnostic. After coordinating the interval, set and announce its absolute end time once. This example begins a three-minute interval now:
+For interaction, keep one helper process and its input open for the diagnostic,
+using the same approval ID as launch:
 
 ```sh
-deadline_unix=$(date -u -d '+3 minutes' +%s)
-date -u -d "@$deadline_unix" '+Desktop control ends at %H:%M:%S UTC'
 scripts/tools native session \
+  --approval "$native_approval" \
   --pid "$native_pid" --window "$native_window" --output-dir "$review_dir/interaction" \
-  --deadline-unix-seconds "$deadline_unix" --consent-timeout-seconds 30
+  --consent-timeout-seconds 30
 ```
 
 Use an interactive terminal or a tool invocation with a persistent PTY (`tty: true` for `exec_command`), then send commands through that process's returned session ID. A pipe is suitable only while its writer remains open. Starting the helper with closed stdin cancels consent and input; reopening stdin requires a new helper and grant.
 
-The earlier of the absolute deadline and `--timeout-seconds` applies. Startup, consent and idle input all consume this same budget. Keep the original `deadline_unix` if a helper restart is necessary within the agreed interval. The helper's `session-budget` event records its effective end time and remaining time. The final 15 seconds are reserved for releasing buttons and closing the grant; each operation needs its full 15-second allowance before that reserve. Late startup or consent closes the helper without further calibration or input. A late command is refused before optional focus acquisition or input. `stop` remains available without a new operation allowance. `command-started` includes `session_remaining_ms` alongside the request number.
+The earliest of the approval deadline, optional `--deadline-unix-seconds` cap and `--timeout-seconds` applies. Startup, consent and idle input consume this same budget. A helper restart reuses the original approval ID and deadline. The helper's `session-budget` event records the approval and effective end time. The final 15 seconds are reserved for releasing buttons and closing the portal grant; each operation needs its full 15-second allowance before that reserve. Late startup or consent closes the helper without further calibration or input. A late command is refused before optional focus acquisition or input. `stop` remains available without a new operation allowance. It closes that portal session; `native approval close` ends the whole interval, including other helpers. `command-started` includes `session_remaining_ms` alongside the request number.
 
 The output directory must be new. The helper saves `initial.png` before requesting consent. In GNOME's dialog, select the monitor containing Arkham, enable **Allow Remote Interaction**, and click **Share**. One nonpersistent, pointer-only grant covers the run. The total session limit is 600 seconds, including consent and idle input; `--timeout-seconds` can shorten it. Keep Arkham covering the monitor's central 10%. Keep the keyboard and pointer idle throughout calibration and gestures. The helper measures the portal-to-X11 mapping and checks it at an independent point; it does not reuse a previous monitor's scale. Wait for `ready`, then inspect `initial.png` before choosing a target. Coordinates are pixels relative to the captured client, not a resized image in the conversation. A calibration refusal retains the session for the bounded recovery below unless its time budget expired.
 
@@ -351,11 +392,11 @@ For an orbit check, choose a start and end on exposed table space in the inspect
 For a menu-overflow check, target the visible menu's scroll area in the inspected capture, then send a small vertical wheel input. After verifying these example coordinates:
 
 ```text
-{"action":"wheel","focus":true,"x":400,"y":300,"steps":1}
+{"action":"scroll","focus":true,"x":400,"y":300,"direction":"down","steps":1}
 {"action":"capture","focus":true,"name":"after-wheel.png"}
 ```
 
-`steps` is a nonzero signed integer from -10 to 10, passed as discrete vertical portal steps. Start with one step and inspect the visible direction and result before sending more; reverse the sign to reverse the requested direction. The helper validates the target and rechecks the pointer, focus, identity, geometry, held buttons/modifiers and deadline before sending the wheel event. It does not press or hold a button for wheel input.
+Use `direction: "up"` or `"down"` with 1–10 positive `steps`. The helper translates down to positive portal steps and up to negative steps. The legacy `wheel` action still accepts signed steps with those meanings. Start with one step and inspect the result. The helper validates the target and rechecks the pointer, focus, identity, geometry, held buttons/modifiers and deadline before sending input; it holds no button while scrolling.
 
 Apply the same numbered acknowledgement and capture sequence to orbit and wheel checks. Compare the captures to establish the intended movement or scrolling. The helper checks process identity, focus, unchanged geometry and the measured client pointer position immediately before each press or wheel event. It refuses off-window, off-monitor and mismapped targets. It releases an attempted press even when interrupted.
 
@@ -387,6 +428,7 @@ Recheck the client and focus through the existing guarded capture:
 
 ```sh
 timeout 10s scripts/tools native capture \
+  --approval "$native_approval" \
   --pid "$native_pid" --window "$native_window" --output "$review_dir/motion-before.png"
 ```
 

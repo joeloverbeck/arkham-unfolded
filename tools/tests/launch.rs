@@ -1,3 +1,5 @@
+#[path = "support/approval.rs"]
+mod approval;
 mod support;
 use serde_json::Value;
 use std::{
@@ -15,6 +17,7 @@ fn launch(binary: &Path, output: &Path) -> Command {
         .arg(binary)
         .arg("--output-dir")
         .arg(output);
+    approval::grant(&mut command, output.parent().unwrap());
     command
 }
 
@@ -34,6 +37,42 @@ fn running(directory: &Path) -> Value {
         );
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+#[test]
+fn closing_original_approval_stops_an_already_running_owned_process() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().join("run");
+    let mut command = launch(&support::fixture().join("child"), &directory);
+    let state = command
+        .get_envs()
+        .find_map(|(key, value)| (key == "XDG_STATE_HOME").then(|| value.unwrap().to_owned()))
+        .unwrap();
+    let child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let metadata = running(&directory);
+    let close = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .args([
+            "native",
+            "approval",
+            "close",
+            "--approval",
+            metadata["approval"].as_str().unwrap(),
+        ])
+        .env("XDG_STATE_HOME", state)
+        .output()
+        .unwrap();
+    assert!(close.status.success());
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("approval is closed"));
+    let completed: Value =
+        serde_json::from_slice(&fs::read(directory.join("run.json")).unwrap()).unwrap();
+    assert_eq!(completed["status"], "interrupted-or-failed");
+    assert!(!Path::new(&format!("/proc/{}", metadata["pid"])).exists());
 }
 
 #[test]
@@ -362,9 +401,15 @@ fn launch_records_allowlisted_inherited_and_effective_conditions_before_exit() {
     let directory = root.path().join("run");
     let owner_cache = root.path().join("owner-cache");
     let non_utf8 = OsString::from_vec(b"/driver/\xff.json".to_vec());
-    let child = launch(&support::fixture().join("child"), &directory)
+    let mut command = launch(&support::fixture().join("child"), &directory);
+    let approval_state = command
+        .get_envs()
+        .find_map(|(key, value)| (key == "XDG_STATE_HOME").then(|| value.unwrap().to_owned()))
+        .unwrap();
+    let child = command
         .current_dir(root.path())
         .env_clear()
+        .env("XDG_STATE_HOME", approval_state)
         .env("WGPU_BACKEND", "vulkan")
         .env("WGPU_ADAPTER_NAME", "")
         .env("VK_DRIVER_FILES", &non_utf8)

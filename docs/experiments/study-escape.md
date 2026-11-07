@@ -63,13 +63,13 @@ After advancement, brass arrows show Hallway's two-way connections to Attic, Cel
 
 The shared layout applies the same arrangement to Party, Tony and Jacqueline: larger off-card standees; a separate Test surface between the scenario and investigator row; and compact 18×15 investigator surfaces as wide as the scenario surface. Permanent thick Damage/Horror counters sit above the upper-left investigator card, including zero totals. Party's Jacqueline starts at 2/9 horror. Deck/discard sit at upper right, a distinct upper band fits five threats, assets retain the broad central region, and centered hands use one shallow row along the near edge. Muted class tints, boundaries and labels identify the regions. Test navigation and the reveal shortcut use the separate Test surface, with its bag and revealed/canceled-token sections.
 
-Joel accepted the turn-indicator and deeper-scenario follow-up's visuals and gameplay on 2026-11-01, then accepted the later zoom, investigator spacing, test/token, Act reveal and map-connection corrections. His final acceptance reports using all three investigators to collect clues and advance Act 1, and authorizes publication and #55 closeout as warranted. The original visual-review allowance was **one session of at most 15 minutes, including retries**; acceptance does not renew it or #55's separate gameplay allowance. The walkthrough below remains a reference for affected checks, not a request to repeat accepted observations. From the prepared local build, launch a fresh isolated Party attempt:
+Joel accepted the turn-indicator and deeper-scenario follow-up's visuals and gameplay on 2026-11-01, then accepted the later zoom, investigator spacing, test/token, Act reveal and map-connection corrections. His final acceptance reports using all three investigators to collect clues and advance Act 1, and authorizes publication and #55 closeout as warranted. The original visual-review allowance was **one session of at most 15 minutes, including retries**; acceptance does not renew it or #55's separate gameplay allowance. The walkthrough below remains a reference for affected checks, not a request to repeat accepted observations. For a later diagnostic run, obtain `native_approval` through the [shared desktop procedure](jacqueline-curse.md#launch-capture-and-interact); it caps all example timeouts below. From the prepared local build, launch a fresh isolated Party attempt:
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
 ARKHAM_ART_ROOT="$HOME/.cache/agent-tmp/arkham-55-assets/party-assets-v1"
 ARKHAM_LAYOUT_REVIEW="$HOME/.cache/agent-tmp/arkham-layout-owner-review-01"
-scripts/tools native launch --binary "$PWD/target/debug/arkham-tabletop" \
+scripts/tools native launch --approval "$native_approval" --binary "$PWD/target/debug/arkham-tabletop" \
   --experiment party --output-dir "$ARKHAM_LAYOUT_REVIEW" \
   --art-root "$ARKHAM_ART_ROOT" --initial-view overview --timeout-seconds 900
 ```
@@ -117,7 +117,7 @@ The review had a separate ceiling of **15 minutes total, including retries**, in
 
 ```sh
 cd /home/joeloverbeck/src/arkham-unfolded
-scripts/tools native launch --binary "$PWD/target/debug/arkham-tabletop" \
+scripts/tools native launch --approval "$native_approval" --binary "$PWD/target/debug/arkham-tabletop" \
   --experiment party \
   --output-dir "$HOME/.cache/agent-tmp/arkham-73-owner-review-02" \
   --art-root "$HOME/.cache/agent-tmp/arkham-73-assets/party-assets-v2" \
@@ -139,7 +139,7 @@ The developer witness is a standalone Rust example importing the unchanged produ
 
 ```sh
 scripts/dev cargo build --locked --features tabletop --example layout_capacity
-scripts/tools native launch --binary "$PWD/target/debug/examples/layout_capacity" \
+scripts/tools native launch --approval "$native_approval" --binary "$PWD/target/debug/examples/layout_capacity" \
   --output-dir "$HOME/.cache/agent-tmp/arkham-layout-fixture-01" \
   --art-root "$ARKHAM_ART_ROOT" --initial-view patrice \
   --screenshot scene.png --quit-after-screenshot --timeout-seconds 60

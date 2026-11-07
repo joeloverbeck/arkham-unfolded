@@ -559,3 +559,34 @@ fn consent_has_its_own_budget_without_shortening_a_granted_session() {
     portal.move_to([50., 50.]).unwrap();
     portal.close().unwrap();
 }
+
+#[test]
+fn approval_guard_cancels_pending_consent_and_closes_without_pointer_motion() {
+    let bus = Bus::new("timeout");
+    let mut portal = bus.portal(3.0);
+    let shared = bus.shared.clone();
+    portal
+        .input
+        .set_guard(move || {
+            anyhow::ensure!(
+                !shared
+                    .lock()
+                    .unwrap()
+                    .calls
+                    .iter()
+                    .any(|call| call == "start"),
+                "Desktop approval is closed"
+            );
+            Ok(())
+        })
+        .unwrap();
+    let start = Instant::now();
+    let error = portal.start(&mut |_| Ok(())).unwrap_err();
+    portal.close().unwrap();
+    assert!(format!("{error:#}").contains("approval is closed"));
+    assert!(start.elapsed() < Duration::from_secs(1));
+    let calls = &bus.shared.lock().unwrap().calls;
+    assert!(calls.iter().any(|call| call == "request-close"));
+    assert_eq!(calls.last().unwrap(), "session-close");
+    assert!(!calls.iter().any(|call| call.starts_with("move:")));
+}
