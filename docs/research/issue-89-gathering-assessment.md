@@ -550,7 +550,7 @@ separately identified Gathering record contract; do not reinterpret them or
 promise migration. No personal save was opened or changed during this assessment.
 
 Retain [ADR 0001](../adr/0001-prepared-runtime-assets.md) and
-[ADR 0002](../adr/0002-persistent-table-areas.md): prepared assets outside Git;
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md): prepared assets outside Git;
 readable English substitutes; persistent scenario/investigator/Test areas;
 camera focus independent of actor; inspection without game actions; explicit
 commitments; contextual costs and opportunity warnings; distinct hover, focus,

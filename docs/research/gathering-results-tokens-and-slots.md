@@ -7,7 +7,7 @@ Research for Joel's `grill-with-docs` interview under
 still owns complete Gathering play and acceptance. This note supports that work;
 it is not a separate queue or implementation activation. Joel accepted all three
 interface recommendations on 2026-11-06. The
-[presentation ADR](../adr/0002-persistent-table-areas.md#compact-results-guided-token-groups-and-visible-asset-capacity)
+[presentation ADR](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#compact-results-guided-token-groups-and-visible-asset-capacity)
 records the selected design; this note retains its research and evidence limits.
 
 The implemented increment received [owner playtest acceptance and publication
@@ -74,7 +74,7 @@ source context, and aligned contribution rows. Omit empty groups; retain every
 meaningful contribution and every revealed token, including zero modifiers and
 separate canceled/ignored states. Use words as well as color. Full detail remains
 visible by default, as already accepted in
-[ADR 0002](../adr/0002-persistent-table-areas.md#gathering-presentation-and-skill-test-feedback).
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-presentation-and-skill-test-feedback).
 
 Example content from the actual screenshot:
 
@@ -201,7 +201,7 @@ This proposal refines the accepted physical tray instead of introducing a token
 modal or moving non-test effects into Test. A label-only repair is cheaper but
 leaves the player hunting for legal targets. A separate modal offers an explicit
 list but weakens the physical continuity selected in
-[ADR 0002](../adr/0002-persistent-table-areas.md#test-area-and-resolution-trays).
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#test-area-and-resolution-trays).
 
 ## Asset capacity and replacement
 

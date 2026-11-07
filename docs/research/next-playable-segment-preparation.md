@@ -226,7 +226,7 @@ cultist is minus one, while tablet is minus two. The cultist arithmetic above
 corrects a preparation typo; the selected behavior and scope are unchanged.
 
 Retain [ADR 0001](../adr/0001-prepared-runtime-assets.md) and
-[ADR 0002](../adr/0002-persistent-table-areas.md). Prepare and verify selected new
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md). Prepare and verify selected new
 assets outside Git, preserving the source archive and earlier collections.
 No source-archive access is allowed at runtime.
 

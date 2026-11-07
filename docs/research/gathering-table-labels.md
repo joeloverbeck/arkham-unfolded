@@ -8,7 +8,7 @@ This source investigation supports the owner's `grill-with-docs` request under
 Scenario heading attached to its area and delegated the design judgment about
 making permanent area labels look printed on the playmat. This note recommends
 the rendering boundary; the accepted design belongs in
-[ADR 0002](../adr/0002-persistent-table-areas.md), and GitHub remains the active
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md), and GitHub remains the active
 work-control plane. No application changes or native observations were made for
 this investigation.
 
@@ -29,7 +29,7 @@ The source history identifies the shared helper's introduction in
 Gathering.” The existing design calls for restrained playmat shading, borders
 and readable zone names, and distinguishes orientation in Overview from readable
 play in focused views. It does not require screen-facing permanent names.
-[ADR 0002](../adr/0002-persistent-table-areas.md), “Roomier table arrangement,”
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md), “Roomier table arrangement,”
 records those requirements. Constant-size, upright letters provide a readability
 advantage during orbit; that advantage is an inference from the implementation,
 not a documented reason for choosing it.

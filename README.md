@@ -73,7 +73,7 @@ Content support follows the owner's actual use. Starting decks, campaign content
 - [Play contract](docs/foundation/play-contract.md)
 - [Sources and verification](docs/foundation/sources-and-verification.md)
 - [Prepared asset collection decision](docs/adr/0001-prepared-runtime-assets.md)
-- [Tabletop presentation contract](docs/adr/0002-persistent-table-areas.md#test-area-and-resolution-trays) — skill tests belong in Test; other temporary card and token resolution uses investigator trays. Joel accepted this presentation change after checking the live app on 2026-11-05.
+- [Tabletop presentation contract](docs/tabletop-presentation.md) — current layout, interaction, resolution and animation requirements; [ADR 0002](docs/adr/0002-persistent-table-areas.md) explains the spatial decisions.
 - [Issue #1 feasibility assessment](docs/research/issue-1-assessment.md) — accepted source baseline and evidence for the selected bounded experiment
 - [Gathering play and verification](docs/experiments/gathering-setup.md) — current scenario under [issue #89](https://github.com/joeloverbeck/arkham-unfolded/issues/89)
 - [Scenario selection and experiment retirement](docs/adr/0005-retire-experiments-and-select-scenarios.md)

@@ -2,6 +2,10 @@
 
 **Current entry, 2026-11-07:** ordinary launch opens [scenario selection](../../README.md#launch-and-resume-the-gathering). Select The Gathering for **New attempt**, **Continue** or **Open saved attempt**. **Menu → Save and return to scenario selection** saves before leaving and keeps the game active on failure. The explicit `--experiment gathering --save PATH` commands below remain diagnostic paths. [ADR 0005](../adr/0005-retire-experiments-and-select-scenarios.md) retires the three earlier standalone experiments; this does not establish the full native playthrough or owner acceptance under #89.
 
+The [tabletop presentation contract](../tabletop-presentation.md) owns current
+display and interaction requirements. ADR links in the dated records below pin
+their original evidence rather than defining a second current contract.
+
 **Artwork contract amendment, 2026-11-07:** [ADR 0004](../adr/0004-require-artwork-for-3d-play.md)
 requires complete artwork for 3D play and a blocking startup recovery window.
 Gathering refuses incomplete collections and wait for every required
@@ -75,7 +79,7 @@ of the entire scenario under #89. Publication consulted `AUTH-1`–`AUTH-3` and 
 
 The 2026-11-06 local implementation against
 `f24111eb975ed5ac659d02698b747759bc7404bc` implements the
-[accepted follow-up design](../adr/0002-persistent-table-areas.md#supplies-asset-harm-player-windows-and-persistent-premonition).
+[accepted follow-up design](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#supplies-asset-harm-player-windows-and-persistent-premonition).
 Supplies retain the shaped resource counter at zero and are named explicitly in
 context and inspection. Tennessee Sour Mash is the supplies card in the selected
 starting decks. Asset Damage/Horror counters show zero/current damage or horror
@@ -134,7 +138,7 @@ and [earlier presentation verification](#presentation-correction-verification)
 distinguish completed checks from the remaining native playthrough and owner acceptance.
 
 Joel accepted the [setup visibility, automatic live presentation and Scenario
-layout refinement](../adr/0002-persistent-table-areas.md#gathering-setup-visibility-and-automatic-live-presentation)
+layout refinement](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-setup-visibility-and-automatic-live-presentation)
 on 2026-11-03, including a victory-pile caption with its card count and summed
 Victory points, and then authorized implementation. The local candidate now
 shows the initial Scenario and Test arrangement before lead selection and
@@ -165,7 +169,7 @@ visible in the observation. Original ArkhamDB snapshots remain unchanged.
 
 The local candidate on `feat/gathering-counters-and-shuffling` starts at
 `92ad202b052105bc88a69bdafd317c03363f41c3`. It implements the
-[accepted contract](../adr/0002-persistent-table-areas.md#gathering-card-counters-and-shuffling).
+[accepted contract](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-card-counters-and-shuffling).
 Before the post-native layout changes, `scripts/check` completed with exit 0, retained at
 `/tmp/gathering-implementation-checks/final-check-2/run.json`; the normal app and
 asset tools build completed with exit 0 at `final-build/run.json` in that same
@@ -374,7 +378,7 @@ Current status belongs in the [handoff](https://github.com/joeloverbeck/arkham-u
 
 The 2026-11-04 correction is local on `fix/gathering-test-feedback`, based on
 `8852b2937e748c5260111ee573ec7ab24419eccf`. It implements the accepted
-[result-reading and six-defect scope](../adr/0002-persistent-table-areas.md#gathering-presentation-and-skill-test-feedback).
+[result-reading and six-defect scope](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-presentation-and-skill-test-feedback).
 
 | Evidence | Result |
 | --- | --- |
@@ -657,7 +661,7 @@ The same correction uses a supported Restart label, clearance around confirmatio
 button focus outlines, rounded physical cards and inspection images, and the
 prepared font for recognized bracketed card-text symbols. The original artwork
 and absent-font English remain intact. The accepted design and scope are in
-[ADR 0002](../adr/0002-persistent-table-areas.md#gathering-presentation-and-skill-test-feedback).
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-presentation-and-skill-test-feedback).
 The [targeted native check](#native-feedback-check-2026-11-04) covers the exercised
 reading, choice and inspection paths. Its remaining checks and complete player
 journey are distinct from owner acceptance.
@@ -1017,7 +1021,7 @@ The accepted decisions are:
    and folder-selection dialogs capture camera input explicitly. Closing them
    restores WASD without a background click. Joel selected this over keeping
    card-action lists blocking WASD.
-   [ADR 0002](../adr/0002-persistent-table-areas.md#keyboard-focus-and-camera-input)
+   [ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#keyboard-focus-and-camera-input)
    owns the refined camera-input contract;
    the glossary's camera focus continues to mean the area framed for viewing.
 2. **Q2 — Restart meaning:** add **Restart The Gathering…** in the live

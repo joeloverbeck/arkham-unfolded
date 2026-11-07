@@ -29,7 +29,7 @@ ordinary `control` builder. The first dispatches `TokenOptions`, which only open
 or closes the category; the second dispatches a revision-bound game choice.
 The appearance therefore obscures a real interaction distinction.
 
-The current [accepted ADR](../adr/0002-persistent-table-areas.md#gathering-reveal-cue-and-story-panel-refinements)
+The current [accepted ADR](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-reveal-cue-and-story-panel-refinements)
 deliberately retained every offered scope, including the singleton case, pending
 semantic evidence. Its rationale came from the
 [earlier controls investigation](gathering-reveal-and-story-controls.md#meaning-and-rules-evidence).
@@ -359,7 +359,7 @@ from every changed enemy location.
 The existing **enemy-presence marker** belongs to a location, carries its stable
 identity, and counts that location's sideboard group. It is not an individual
 enemy. This is explicit in the [glossary](../../GLOSSARY.md) and
-[accepted sideboard decision](../adr/0002-persistent-table-areas.md#enemy-sideboard),
+[accepted sideboard decision](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#enemy-sideboard),
 and implemented in `enemy_board.rs:36–80`. Moving the whole marker when one Hunter
 leaves would falsely imply movement of the group and carry the wrong room identity.
 
@@ -429,7 +429,7 @@ No new glossary terms are necessary; **reveal group**, **location standee slot**
 and **enemy-presence marker** already make the important distinctions. Record an
 accepted refinement in the existing table-area ADR when the design settles.
 
-The [existing table-area ADR](../adr/0002-persistent-table-areas.md#gathering-movement-location-revelation-and-jacqueline-controls)
+The [existing table-area ADR](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-movement-location-revelation-and-jacqueline-controls)
 records the accepted design. Following the original request to fix the reported
 behavior and acceptance of all three design choices, local implementation proceeds
 from the inspected fixed point. The existing Session observation/choice/continuity

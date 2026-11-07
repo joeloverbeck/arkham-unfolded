@@ -206,7 +206,7 @@ Joel accepted Q1–Q4 during this interview: explicit wagers, a unified ordinary
 Jacqueline row, automatic Keyring bookkeeping with direct consequential choices,
 and the local neutral key art. His original report requests the single-enemy
 Inspect simplification. These decisions are recorded in
-[ADR 0002](../adr/0002-persistent-table-areas.md#gathering-wagers-keys-and-chaos-token-spacing).
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-wagers-keys-and-chaos-token-spacing).
 Keys are named separately from charges in the glossary. GitHub #89 remains the
 active work and acceptance surface; this document is supporting evidence.
 

@@ -4,7 +4,7 @@ Research and design recommendation for [#55](https://github.com/joeloverbeck/ark
 
 The immediate outcome is to make the existing Act 1 endpoint understandable without revealing its reverse early, and make the resulting four-location map readable. The incumbent offers the reverse prematurely, applies advancement in one transition, and draws manually positioned locations without links. Research closes with a source-backed implementation recommendation; aesthetic acceptance still needs the actual native result. No generalized story engine, graph-layout framework, new dependency or full-scenario continuation is proposed.
 
-Joel subsequently accepted these recommendations and instructed proceeding. The [implementation activation in ADR 0002](../adr/0002-persistent-table-areas.md#act-reveal-and-location-connections) records the bounded candidate and verification scope; the research findings below remain the source evidence for that work.
+Joel subsequently accepted these recommendations and instructed proceeding. The [implementation activation in ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#act-reveal-and-location-connections) records the bounded candidate and verification scope; the research findings below remain the source evidence for that work.
 
 Consulted: `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`, `EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`, `REP-1`–`REP-3`, `AGENT-1`–`AGENT-5`, `OPS-1`–`OPS-7`, and `GOV-1`–`GOV-3`. The existing bounded-work and acceptance limits remain in force; this note is supporting evidence, not a second work queue.
 
