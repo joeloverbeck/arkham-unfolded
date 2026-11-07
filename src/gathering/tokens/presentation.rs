@@ -216,6 +216,20 @@ impl TokenResolution {
             .filter_map(|(path, policy, jacqueline)| {
                 let source = policy_label(policy);
                 (source.is_some() || jacqueline).then(|| {
+                    if policy == Policy::Olive {
+                        if self.root.at(&path).children.iter().any(|child| child.policy != Policy::Draw) {
+                            return format!("Olive active — resolve affected draws first, then choose 2 results · {}", self.target_label(&path));
+                        }
+                        return format!(
+                            "Olive active — reveal {}, resolve 2{}",
+                            if jacqueline { 5 } else { 3 },
+                            if jacqueline {
+                                "; Jacqueline cancels first"
+                            } else {
+                                ""
+                            }
+                        );
+                    }
                     format!(
                         "{}{}",
                         self.target_label(&path),
@@ -228,6 +242,56 @@ impl TokenResolution {
                 })
             })
             .collect()
+    }
+
+    /// Consequences for the common Olive-first combination. Keep engine labels
+    /// and saved choice identities untouched; more elaborate trees retain their
+    /// explicit path descriptions.
+    pub fn ability_label(&self, choice: &crate::Choice) -> Option<String> {
+        if self.root.policy != Policy::All
+            || self.root.children.len() != 1
+            || self.root.children[0].policy != Policy::Olive
+            || self.root.children[0]
+                .children
+                .iter()
+                .any(|child| child.policy != Policy::Draw)
+        {
+            return None;
+        }
+        let (id, arbiter) = choice
+            .id
+            .split_once(":arbiter:")
+            .map_or((choice.id.as_str(), false), |(id, _)| (id, true));
+        let consequence = match id {
+            "tokens:jacqueline" => {
+                "around Olive — choose Olive's 2 first; then cancel whole results".to_owned()
+            }
+            "tokens:jacqueline:at:0" => {
+                "on Olive's whole draw — reveal 5; cancel first, then choose 2".to_owned()
+            }
+            _ => {
+                let path: Vec<usize> = id
+                    .strip_prefix("tokens:jacqueline:at:")?
+                    .split('.')
+                    .map(|part| part.parse().ok())
+                    .collect::<Option<_>>()?;
+                let [0, draw] = path.as_slice() else {
+                    return None;
+                };
+                format!(
+                    "on Olive's draw {} — cancel within this draw first",
+                    draw + 1
+                )
+            }
+        };
+        Some(format!(
+            "Use Jacqueline {consequence}{}",
+            if arbiter {
+                "; exhaust Arbiter, preserve round use"
+            } else {
+                "; spend round use"
+            }
+        ))
     }
 
     fn purpose_label(&self) -> &'static str {

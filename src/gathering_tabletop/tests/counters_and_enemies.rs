@@ -21,7 +21,8 @@ fn render_with_counter_art(view: Observation, loaded: bool) -> App {
         ("token/charge", image.clone()),
         ("token/key", image.clone()),
         ("token/resource", image.clone()),
-        ("token/damage", image),
+        ("token/damage", image.clone()),
+        ("token/horror", image),
     ]);
     if loaded {
         art.refresh_loaded(app.world().resource::<Assets<Image>>());
@@ -151,6 +152,105 @@ fn empty_asset_counters_keep_their_type_owner_and_upright_count_with_or_without_
 }
 
 #[test]
+fn native_olive_harm_badges_stay_separate_with_or_without_art() {
+    use crate::tabletop_layout::heading_checks::{rendered_text_bounds, viewport};
+    for (_, session) in super::review_saves::olive_review::checkpoints()
+        .into_iter()
+        .take(2)
+    {
+        for loaded in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut app = host_with_table(
+                Table::new(session.clone(), dir.path().join("harm.json")),
+                true,
+            );
+            if loaded {
+                let image = app
+                    .world_mut()
+                    .resource_mut::<Assets<Image>>()
+                    .add(Image::default());
+                app.insert_resource(art::Art::with_images_for_test([
+                    ("token/damage", image.clone()),
+                    ("token/horror", image),
+                ]));
+            }
+            app.world_mut()
+                .resource_mut::<Orbit>()
+                .focus(layout::focus(Area::Investigator(2)));
+            for size in [Vec2::new(1280., 720.), Vec2::new(1600., 1000.)] {
+                for scale in [1., 2.] {
+                    viewport::<MainCamera>(&mut app, size, scale);
+                    for _ in 0..5 {
+                        app.update();
+                    }
+                    let world = app.world_mut();
+                    let labels: Vec<_> = world
+                        .query::<(Entity, &motion::CardLabel)>()
+                        .iter(world)
+                        .filter(|(_, label)| {
+                            world
+                                .get::<card_counters::Attached>(label.0)
+                                .and_then(|attached| world.get::<motion::PhysicalCard>(attached.0))
+                                .is_some_and(|card| card.0 == 209)
+                        })
+                        .map(|(entity, _)| entity)
+                        .collect();
+                    assert_eq!(labels.len(), 2);
+                    let first = rendered_text_bounds(world, labels[0], scale).inflate(3.);
+                    let second = rendered_text_bounds(world, labels[1], scale).inflate(3.);
+                    assert!(
+                        first.intersect(second).is_empty(),
+                        "{size:?}/{scale}, loaded={loaded}: {first:?} overlaps {second:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn olive_harm_fractions_have_tightly_fitted_dark_backing() {
+    for loaded in [false, true] {
+        let view = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tokens(
+            crate::gathering::TokenFixture::JacquelineOlive,
+        ))
+        .observe();
+        let mut app = render_with_counter_art(view, loaded);
+        for _ in 0..4 {
+            app.update();
+        }
+        let world = app.world_mut();
+        for expected in if loaded {
+            ["0/1", "0/3"]
+        } else {
+            ["Damage\n0/1", "Horror\n0/3"]
+        } {
+            let (entity, computed, background) = world
+                .query::<(Entity, &Text, &ComputedNode, Option<&BackgroundColor>)>()
+                .iter(world)
+                .find_map(|(entity, text, computed, background)| {
+                    (text.0 == expected).then_some((entity, computed, background))
+                })
+                .unwrap_or_else(|| panic!("Missing {expected}"));
+            let color = background
+                .expect("Fractions need their own dark backing")
+                .0
+                .to_srgba();
+            assert!(
+                color.red < 0.05 && color.green < 0.05 && color.blue < 0.05 && color.alpha >= 0.9
+            );
+            let width = computed.size().x * computed.inverse_scale_factor;
+            let glyphs =
+                crate::tabletop_layout::heading_checks::rendered_text_bounds(world, entity, 1.);
+            assert!(
+                (4.0..=12.0).contains(&(width - glyphs.width())),
+                "{expected}: backing {width}, glyphs {glyphs:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn asset_harm_tokens_show_only_real_capacities_including_zero_and_story_allies() {
     let mut view = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
         crate::gathering::TonyEffectFixture::GregoryCigarette,
@@ -160,9 +260,9 @@ fn asset_harm_tokens_show_only_real_capacities_including_zero_and_story_allies()
     let template = play.players[0].assets[0].clone();
     play.players[0].assets.clear();
     for (index, code, expected) in [
-        (0, "02033", vec!["Damage 0/1", "Horror 0/2"]),
-        (1, "60412", vec!["Damage 0/2"]),
-        (2, "01117", vec!["Damage 0/3", "Horror 0/3"]),
+        (0, "02033", vec!["Damage\n0/1", "Horror\n0/2"]),
+        (1, "60412", vec!["Damage\n0/2"]),
+        (2, "01117", vec!["Damage\n0/3", "Horror\n0/3"]),
         (3, "05117", vec![]),
     ] {
         let mut single = view.clone();
@@ -181,7 +281,7 @@ fn asset_harm_tokens_show_only_real_capacities_including_zero_and_story_allies()
         let labels: Vec<_> = world
             .query::<(&Text, &motion::CardLabel)>()
             .iter(world)
-            .filter(|(text, _)| text.0.starts_with("Damage ") || text.0.starts_with("Horror "))
+            .filter(|(text, _)| text.0.starts_with("Damage\n") || text.0.starts_with("Horror\n"))
             .filter(|(_, label)| {
                 world
                     .get::<card_counters::Attached>(label.0)
@@ -191,6 +291,12 @@ fn asset_harm_tokens_show_only_real_capacities_including_zero_and_story_allies()
             .collect();
         assert_eq!(labels.len(), expected.len());
         for (_, label) in labels {
+            if expected.len() == 1 {
+                assert_eq!(
+                    label.1.x, 0.,
+                    "A single harm badge stays centered on its token"
+                );
+            }
             let attached = world
                 .get::<card_counters::Attached>(label.0)
                 .expect("Harm token follows card");
@@ -512,6 +618,10 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                     );
                     let mut rich_labels = 0;
                     for label in labels {
+                        let anchor = world.get::<motion::CardLabel>(label).unwrap();
+                        if world.get::<card_counters::Attached>(anchor.0).is_some() {
+                            assert_eq!(anchor.1.x, 0., "Enemy damage stays centered on its token");
+                        }
                         assert_eq!(
                             world.get::<TextFont>(label).unwrap().font_size,
                             FontSize::Px(13.)

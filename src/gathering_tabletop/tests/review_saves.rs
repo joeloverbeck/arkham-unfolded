@@ -6,6 +6,35 @@ mod draw_review;
 #[path = "../../../tests/support/gathering_resolution_review.rs"]
 pub(super) mod resolution_review;
 
+#[path = "../../../tests/support/gathering_olive_review.rs"]
+pub(super) mod olive_review;
+
+#[test]
+fn olive_review_saves_open_through_normal_startup_and_preserve_the_pending_choice() {
+    for (name, session) in olive_review::checkpoints() {
+        let (_, app) = open_review_save_in_view(&session, Some("test")).unwrap();
+        assert_eq!(
+            app.world().resource::<Table>().view(),
+            session.observe(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "exports ordinary review saves to ARKHAM_OLIVE_REVIEW_DIR"]
+fn export_olive_review_saves() {
+    let output = PathBuf::from(
+        std::env::var_os("ARKHAM_OLIVE_REVIEW_DIR").expect("Set a fresh output directory"),
+    );
+    let points = olive_review::checkpoints();
+    let launches: Vec<_> = points
+        .iter()
+        .map(|(name, session)| (*name, session, "test"))
+        .collect();
+    export_review_saves(&output, &launches);
+}
+
 #[test]
 fn patrice_upkeep_orders_one_physical_hand_in_her_drawer_and_reopens_there() {
     use super::draws::{physical, tick};
@@ -509,12 +538,7 @@ fn reveal_and_story_review_saves() -> Vec<(
     assert!(agenda.live_state().new_story.contains("01105"));
     vec![
         ("ordinary-reveal", ordinary, "Reveal tokens", None),
-        (
-            "arbiter-reveal",
-            arbiter,
-            "▸ Jacqueline's ability options · show",
-            None,
-        ),
+        ("arbiter-reveal", arbiter, "▸ Use Jacqueline · show", None),
         ("sealed-reveal", sealed, "Resolve tokens", None),
         (
             "act-reading",

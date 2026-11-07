@@ -25,6 +25,7 @@ pub(crate) struct Follow(pub Entity, pub Vec3);
 #[derive(Component)]
 pub(crate) struct ReturningToken {
     start: Vec3,
+    initial_scale: Vec3,
     pub destination: Vec3,
     elapsed: f32,
 }
@@ -33,9 +34,15 @@ impl ReturningToken {
     pub(crate) fn new(start: Vec3, destination: Vec3) -> Self {
         Self {
             start,
+            initial_scale: Vec3::ONE,
             destination,
             elapsed: 0.,
         }
+    }
+
+    pub(crate) fn with_scale(mut self, scale: Vec3) -> Self {
+        self.initial_scale = scale;
+        self
     }
 
     /// Returns true at arrival. The caller owns entity cleanup.
@@ -49,7 +56,7 @@ impl ReturningToken {
         let eased = fraction * fraction * (3. - 2. * fraction);
         transform.translation = self.start.lerp(self.destination, eased)
             + Vec3::Y * (std::f32::consts::PI * fraction).sin() * 0.5;
-        transform.scale = Vec3::splat(1. - fraction * 0.9);
+        transform.scale = self.initial_scale * (1. - fraction * 0.9);
         fraction >= 1.
     }
 }
@@ -163,7 +170,11 @@ pub(crate) fn position_labels(
             anchor.0 = at.translation + follow.1;
         }
         if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor.0) {
-            node.left = px(point.x - 42.0);
+            let width = match node.width {
+                Val::Px(width) => width,
+                _ => 84.,
+            };
+            node.left = px(point.x - width / 2.);
             node.top = px(point.y - 16.0);
             *visibility = Visibility::Visible;
         } else {
@@ -195,6 +206,17 @@ pub(crate) fn image_role(face: crate::TokenFace) -> &'static str {
 mod tests {
     use super::*;
     use bevy::{ecs::world::CommandQueue, mesh::VertexAttributeValues};
+
+    #[test]
+    fn dense_tokens_keep_their_scale_when_return_motion_starts() {
+        let start = Vec3::new(-3., 0.15, 10.);
+        let mut motion = ReturningToken::new(start, Vec3::ZERO).with_scale(Vec3::splat(0.6));
+        let mut transform = Transform::from_translation(start).with_scale(Vec3::splat(0.6));
+        assert!(!motion.advance(&mut transform, 0., false));
+        assert_eq!(transform.scale, Vec3::splat(0.6));
+        assert!(!motion.advance(&mut transform, 0.3, false));
+        assert!(transform.scale.abs_diff_eq(Vec3::splat(0.33), 0.0001));
+    }
 
     #[test]
     fn shared_return_path_lifts_then_arrives_and_reduced_motion_finishes_immediately() {

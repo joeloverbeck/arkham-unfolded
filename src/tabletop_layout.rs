@@ -386,6 +386,58 @@ pub(crate) fn spawn_surfaces(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
 ) {
+    spawn_surfaces_with_token_region(commands, meshes, materials, false);
+}
+
+/// Gathering keeps all held test tokens in one region, independent of their state.
+pub(crate) fn gathering_token_region() -> Rect {
+    Rect::from_corners(
+        Vec2::new(-6.7, TEST_CENTER.z + 1.6),
+        Vec2::new(6.7, TEST_CENTER.z + 4.7),
+    )
+}
+
+pub(crate) fn spawn_gathering_surfaces(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) {
+    spawn_surfaces_with_token_region(commands, meshes, materials, true);
+}
+
+/// Shared by Gathering's settled tokens and their departure animations.
+pub(crate) fn gathering_test_token(slot: usize, count: usize) -> Transform {
+    let bounds = gathering_token_region();
+    let inset = 0.18;
+    let available = bounds.size() - Vec2::splat(inset * 2.);
+    let mut columns = ((available.x - 1.16) / 1.32).floor() as usize + 1;
+    let mut rows = count.max(1).div_ceil(columns);
+    // Keep normal tokens at their established size; only dense reveals shrink.
+    if rows as f32 * 1.32 > available.y {
+        columns = ((count as f32 * available.x / available.y).sqrt().ceil() as usize).max(1);
+        rows = count.max(1).div_ceil(columns);
+    }
+    let footprint = Vec2::new(
+        (columns - 1) as f32 * 1.32 + 1.16,
+        (rows - 1) as f32 * 1.32 + 1.16,
+    );
+    let scale = (available / footprint).min_element().min(1.);
+    let pitch = 1.32 * scale;
+    let first = bounds.min + Vec2::splat(inset + 0.58 * scale);
+    Transform::from_xyz(
+        first.x + (slot % columns) as f32 * pitch,
+        0.15,
+        first.y + (slot / columns) as f32 * pitch,
+    )
+    .with_scale(Vec3::splat(scale))
+}
+
+fn spawn_surfaces_with_token_region(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    unified_tokens: bool,
+) {
     surface(
         commands,
         meshes,
@@ -418,14 +470,23 @@ pub(crate) fn spawn_surfaces(
         TEST_SIZE,
         Color::srgb(0.28, 0.23, 0.17),
     );
-    for (center, size) in [
-        (TEST_CENTER, Vec2::new(13.4, 3.2)),
-        (
-            TEST_CENTER + Vec3::new(-3.3, 0.0, 3.15),
-            Vec2::new(6.2, 3.1),
-        ),
-        (TEST_CENTER + Vec3::new(3.3, 0.0, 3.15), Vec2::new(6.2, 3.1)),
-    ] {
+    let mut test_regions = vec![(TEST_CENTER, Vec2::new(13.4, 3.2))];
+    if unified_tokens {
+        let bounds = gathering_token_region();
+        test_regions.push((
+            Vec3::new(bounds.center().x, 0., bounds.center().y),
+            bounds.size(),
+        ));
+    } else {
+        test_regions.extend([
+            (
+                TEST_CENTER + Vec3::new(-3.3, 0.0, 3.15),
+                Vec2::new(6.2, 3.1),
+            ),
+            (TEST_CENTER + Vec3::new(3.3, 0.0, 3.15), Vec2::new(6.2, 3.1)),
+        ]);
+    }
+    for (center, size) in test_regions {
         region(
             commands,
             meshes,

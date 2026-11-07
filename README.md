@@ -46,8 +46,13 @@ Selecting **Watch this!** now opens an explicit wager choice, including **0 · i
 only**, before confirming commitments. **Old Keyring** shows a Keys counter and
 automatically removes a key after an ordinary successful use, discarding the
 empty asset. Consequential result ordering remains a direct choice. Jacqueline's
-ordinary three-token reveal shares one row with numbered captions and a selection
-count. See the [implementation notes](docs/research/gathering-wagers-keys-and-token-layout.md#implementation-and-verification)
+ordinary three-token reveal shares one compact row with a selection count.
+Chaos tokens fill one lower Test region; artwork replaces routine numbered
+captions, while missing art keeps readable names. **Reveal tokens** executes the
+visible plan directly. Use the separate ability controls first to add Olive or
+Jacqueline; active abilities remain listed before the draw. See the
+[token-readability notes](docs/research/gathering-olive-and-token-readability.md#local-implementation-and-verification)
+and [earlier implementation notes](docs/research/gathering-wagers-keys-and-token-layout.md#implementation-and-verification)
 for verification and the development-save compatibility boundary.
 
 During play, click cards, locations, decks and tokens for their contextual actions. Choose **Inspect** for enlarged artwork and effective rules; piles offer their individual cards. The portrait rail moves the camera, and **TURN** identifies the current investigator independently of camera focus. **Menu** at the upper right contains history, motion settings, save/reopen and artwork settings. The bottom panel holds the current decision and table-wide choices. Gathering's artwork collection includes all 94 card identities needed by the selected decks and original scenario, with the necessary card backs and shared tokens. It is separate from Party's smaller collection.

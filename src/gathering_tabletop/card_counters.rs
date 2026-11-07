@@ -108,10 +108,11 @@ pub(super) fn harm(
         "{amount}/{}",
         capacity.map_or_else(|| "?".into(), |max| max.to_string())
     );
-    let caption = if image.is_some() {
+    let has_art = image.is_some();
+    let caption = if has_art {
         value
     } else {
-        format!("{} {value}", if horror { "Horror" } else { "Damage" })
+        format!("{}\n{value}", if horror { "Horror" } else { "Damage" })
     };
     let token =
         crate::tabletop_harm_tokens::spawn(commands, meshes, materials, image, at + offset, horror);
@@ -120,8 +121,27 @@ pub(super) fn harm(
         .insert((ScenePiece, Attached(card, offset)));
     let label = scene::label(commands, context, caption, at + offset, false);
     commands.entity(label).insert((
-        motion::CardLabel(token, Vec3::new(0., 0.10, 0.16)),
+        motion::CardLabel(
+            token,
+            Vec3::new(
+                if has_art || offset.x == 0. {
+                    0.
+                } else {
+                    offset.x.signum() * 0.42
+                },
+                0.10,
+                0.16,
+            ),
+        ),
         enemy_board::PersistentLabel,
+        TextLayout::justify(Justify::Center).with_no_wrap(),
+        Node {
+            position_type: PositionType::Absolute,
+            padding: UiRect::axes(px(3.), px(1.)),
+            border_radius: BorderRadius::all(px(2.)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.015, 0.02, 0.02, 0.96)),
     ));
 }
 

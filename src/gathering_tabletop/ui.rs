@@ -36,7 +36,11 @@ fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
     ));
     if !tokens.revealed.is_empty() {
         p.spawn((
-            art.text("Gold ring: selected · blue ring: available now", 12., MUTED),
+            art.text(
+                "Check: selected · slash: ignored · X: canceled · blue ring: available now",
+                12.,
+                MUTED,
+            ),
             Node {
                 flex_shrink: 0.,
                 ..default()
@@ -127,6 +131,11 @@ fn token_options_body(
         })
         .collect();
     let direct = plain && jacqueline.len() == 1;
+    let olive: Vec<_> = view
+        .choices
+        .iter()
+        .filter(|choice| choice.id.starts_with("tokens:olive:"))
+        .collect();
     // A curse opens another declaration while earlier tokens remain held.
     let declaring = view.choices.iter().any(|choice| choice.id == "test:reveal");
     if declaring {
@@ -141,6 +150,11 @@ fn token_options_body(
             |count| format!("Planned draw: {count} physical token(s)"),
         );
         p.spawn(art.text(count, 14., PAPER));
+        p.spawn(art.text(
+            "Reveal tokens executes this plan. Use optional abilities before revealing.",
+            13.,
+            MUTED,
+        ));
         if !tokens.is_skill_test()
             && play.players[tokens.revealer.index()]
                 .assets
@@ -155,11 +169,20 @@ fn token_options_body(
         }
         screen::controls(p, |row| {
             for (prefix, name) in [
-                ("tokens:jacqueline", "Jacqueline's ability"),
+                ("tokens:jacqueline", "Jacqueline"),
                 ("tokens:prophecy:", "Dark Prophecy"),
                 ("tokens:olive:", "Olive McBride"),
                 ("tokens:katarina:", "Katarina Sojka"),
             ] {
+                if prefix == "tokens:olive:" && olive.len() == 1 {
+                    control(
+                        art,
+                        row,
+                        "Use Olive — reveal 3, resolve 2",
+                        Action::Choose(table.epoch, view.revision, olive[0].id.clone()),
+                    );
+                    continue;
+                }
                 if prefix == "tokens:jacqueline" && direct {
                     control(
                         art,
@@ -179,7 +202,7 @@ fn token_options_body(
                         art,
                         row,
                         &format!(
-                            "{} {name} options · {}",
+                            "{} Use {name} · {}",
                             if expanded { "▾" } else { "▸" },
                             if expanded { "hide" } else { "show" }
                         ),
@@ -221,6 +244,9 @@ fn token_options_body(
     }
     screen::controls(p, |p| {
         for choice in &view.choices {
+            if declaring && olive.len() == 1 && choice.id.starts_with("tokens:olive:") {
+                continue;
+            }
             if declaring
                 && choice.id.starts_with("tokens:jacqueline")
                 && (direct || !jacqueline.iter().any(|shown| shown.id == choice.id))
@@ -237,7 +263,10 @@ fn token_options_body(
                 choice.id.starts_with("tokens:") && choice.id != "tokens:confirm"
             };
             if visible {
-                let label = if plain && choice.id.starts_with("tokens:jacqueline") {
+                let ability_label = tokens.ability_label(choice);
+                let label = if let Some(label) = &ability_label {
+                    label.as_str()
+                } else if plain && choice.id.starts_with("tokens:jacqueline") {
                     if choice.id.contains(":arbiter:") {
                         "Use Jacqueline + Arbiter — preserve round use"
                     } else {
