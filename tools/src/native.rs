@@ -1,5 +1,6 @@
 use crate::process::{Completion, Identity, OwnedChild};
 mod approval;
+mod restart;
 use crate::{
     desktop::X11,
     interaction::{self, Desktop},
@@ -34,6 +35,8 @@ pub enum Command {
     },
     /// Stage an immutable executable and supervise an isolated run.
     Launch(Launch),
+    /// Restart an isolated run under its original approval and deadline.
+    Restart(restart::Restart),
     /// Build an instrumented source copy with isolated Cargo package artifacts.
     ///
     /// Uses offline, locked Cargo with fresh external target and intermediate
@@ -196,6 +199,7 @@ pub fn run(command: Command) -> Result<u8> {
     match command {
         Command::Approval { command } => approval::run(command),
         Command::Launch(args) => launch(args),
+        Command::Restart(args) => restart::run(args),
         Command::Build(args) => build(args),
         Command::Capture(args) => {
             let approval = approval::Approval::admit(args.approval.as_deref())?;
@@ -608,6 +612,17 @@ fn launch_environment(overrides: &std::collections::BTreeMap<&str, PathBuf>) -> 
     Value::Object(environment)
 }
 
+fn isolated_directories(directory: &Path) -> std::collections::BTreeMap<&str, PathBuf> {
+    [
+        ("XDG_CONFIG_HOME", "config"),
+        ("XDG_DATA_HOME", "data"),
+        ("XDG_CACHE_HOME", "cache"),
+    ]
+    .into_iter()
+    .map(|(name, child)| (name, directory.join(child)))
+    .collect()
+}
+
 fn launch(args: Launch) -> Result<u8> {
     let approval = approval::Approval::admit(args.approval.as_deref())?;
     ensure!(
@@ -649,15 +664,9 @@ fn launch(args: Launch) -> Result<u8> {
         .as_ref()
         .map(|source| copy_verified(source, &save))
         .transpose()?;
-    let mut isolated = std::collections::BTreeMap::new();
-    for (name, child) in [
-        ("XDG_CONFIG_HOME", "config"),
-        ("XDG_DATA_HOME", "data"),
-        ("XDG_CACHE_HOME", "cache"),
-    ] {
-        let path = directory.join(child);
-        fs::create_dir(&path)?;
-        isolated.insert(name, path);
+    let isolated = isolated_directories(&directory);
+    for path in isolated.values() {
+        fs::create_dir(path)?;
     }
     let mut command = Process::new(&staged);
     match args.experiment {
@@ -714,17 +723,41 @@ fn launch(args: Launch) -> Result<u8> {
         "quit_after_screenshot": args.quit_after_screenshot,
         "verify_executable_hash_after_spawn": true
     }});
-    record(&directory, &metadata)?;
+    metadata["approval"] = json!(args.approval);
+    metadata["approval_deadline_unix_seconds"] = json!(approval.deadline_unix_seconds);
+    command.current_dir(&directory).envs(&isolated);
+    supervise(
+        &directory,
+        command,
+        metadata,
+        approval,
+        Duration::from_secs_f64(args.timeout_seconds),
+        args.output_format,
+    )
+}
+
+fn supervise(
+    directory: &Path,
+    mut command: Process,
+    mut metadata: Value,
+    approval: approval::Approval,
+    timeout: Duration,
+    output_format: LaunchOutput,
+) -> Result<u8> {
+    let staged = PathBuf::from(command.get_program());
+    let save = PathBuf::from(
+        metadata["save"]
+            .as_str()
+            .context("Missing isolated save path")?,
+    );
+    metadata["save_existed_at_start"] = json!(save.try_exists().ok());
+    record(directory, &metadata)?;
     let log = new_file(&directory.join("app.log"))?;
     command
-        .current_dir(&directory)
-        .envs(&isolated)
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);
     approval.check()?;
-    metadata["approval"] = json!(args.approval);
-    metadata["approval_deadline_unix_seconds"] = json!(approval.deadline_unix_seconds);
     let runtime = approval
         .remaining()?
         .checked_sub(interaction::CLEANUP_RESERVE)
@@ -739,15 +772,16 @@ fn launch(args: Launch) -> Result<u8> {
         metadata["executable"] = json!(identity.executable);
         metadata["executable_sha256"] =
             json!(digest(&PathBuf::from(format!("/proc/{}/exe", child.id())))?);
-        record(&directory, &metadata)?;
-        match args.output_format {
+        ensure!(
+            metadata["executable_sha256"] == metadata["sha256"],
+            "Staged executable changed after verification"
+        );
+        record(directory, &metadata)?;
+        match output_format {
             LaunchOutput::Json => emit(&metadata)?,
-            LaunchOutput::Summary => emit_launch_summary(&directory, &metadata, None)?,
+            LaunchOutput::Summary => emit_launch_summary(directory, &metadata, None)?,
         }
-        match child.wait_checked(
-            Duration::from_secs_f64(args.timeout_seconds).min(runtime),
-            || approval.check(),
-        )? {
+        match child.wait_checked(timeout.min(runtime), || approval.check())? {
             Completion::Exited(status) => {
                 metadata["status"] = json!("exited");
                 Ok(status
@@ -761,8 +795,9 @@ fn launch(args: Launch) -> Result<u8> {
             Completion::Interrupted => bail!("Launch interrupted"),
         }
     })();
-    if outcome.is_err() {
+    if let Err(error) = &outcome {
         metadata["status"] = json!("interrupted-or-failed");
+        metadata["error"] = json!(format!("{error:#}"));
     }
     let cleanup = child.cleanup();
     if let Ok(Some(status)) = &cleanup {
@@ -772,9 +807,10 @@ fn launch(args: Launch) -> Result<u8> {
                 .unwrap_or_else(|| -status.signal().unwrap_or(0))
         );
     }
-    record(&directory, &metadata)?;
+    metadata["save_exists_at_exit"] = json!(save.try_exists().ok());
+    record(directory, &metadata)?;
     let result = cleanup.and(outcome);
-    match args.output_format {
+    match output_format {
         LaunchOutput::Json => {
             let code = result?;
             emit(&metadata)?;
@@ -788,7 +824,7 @@ fn launch(args: Launch) -> Result<u8> {
                     1
                 }
             });
-            emit_launch_summary(&directory, &metadata, Some(code))?;
+            emit_launch_summary(directory, &metadata, Some(code))?;
             result
         }
     }

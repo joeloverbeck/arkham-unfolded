@@ -97,7 +97,7 @@ pub fn run(args: CheckArgs) -> Result<u8> {
     record.resources = resources.as_ref().map(|capture| capture.report.clone());
     save(&directory, &record)?;
     // Opening this once and cloning the handle preserves both streams in one file.
-    let result = (|| {
+    let result: Result<u8> = (|| {
         record.source = source::Report::start(&record.cwd, &directory)?;
         save(&directory, &record)?;
         let code = capture(&directory, &mut record, &mut resources)?;
@@ -112,9 +112,6 @@ pub fn run(args: CheckArgs) -> Result<u8> {
     })();
     if let Some(mut capture) = resources {
         capture.finish();
-        if let Some(error) = &capture.report.error {
-            eprintln!("Resource capture incomplete: {error}");
-        }
         record.resources = Some(capture.report);
     }
     record.finished_unix_ms = Some(now()?);
@@ -123,9 +120,45 @@ pub fn run(args: CheckArgs) -> Result<u8> {
         record.error = Some(format!("{error:#}"));
     }
     save(&directory, &record).context("Persist check completion")?;
-    eprintln!("Check output: {}", directory.join("check.log").display());
-    eprintln!("Check result: {}", directory.join("run.json").display());
-    result
+    let code = result.unwrap_or_else(|_| {
+        if crate::process::interrupted() {
+            130
+        } else {
+            1
+        }
+    });
+    let mut heading = format!(
+        "Check output: {}\nCheck result: {}\n",
+        directory.join("check.log").display(),
+        directory.join("run.json").display()
+    );
+    if let Some(error) = &record.error {
+        heading.push_str(&format!("Check diagnostic: {error}\n"));
+    }
+    if let Some(error) = record
+        .resources
+        .as_ref()
+        .and_then(|report| report.error.as_ref())
+    {
+        heading.push_str(&format!("Resource capture incomplete: {error}\n"));
+    }
+    // Paths and recorder errors share the same output budget as log excerpts.
+    if heading.len() > 5000 {
+        heading.truncate(heading.floor_char_boundary(5000));
+        heading.push_str(" … [metadata truncated; inspect output directory]\n");
+    }
+    let text = if code == 0 {
+        heading
+    } else {
+        heading.push_str("Diagnostic excerpts only; consult run.json for status.\n");
+        fs::File::open(directory.join("check.log"))
+            .map_err(anyhow::Error::from)
+            .and_then(|file| summary::summarize(std::io::BufReader::new(file), &heading, 6000))
+            .unwrap_or_else(|_| format!("{heading}Diagnostic excerpts unavailable; inspect the retained record and log.\n"))
+    };
+    // A diagnostic-output failure must not replace the recorded command result.
+    let _ = std::io::stderr().write_all(text.as_bytes());
+    Ok(code)
 }
 
 fn reject_nested_runner(command: &[String]) -> Result<()> {
