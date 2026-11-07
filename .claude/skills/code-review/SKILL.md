@@ -25,13 +25,16 @@ Select the candidate mode from the request or handoff:
 
 Record the base and head identities, diff command, and commit list (`git log <fixed-point>..HEAD --oneline`). Keep unrelated pre-existing edits outside the selected candidate and name those exclusions. Capture the selected diff and in-scope new files in a temporary snapshot without staging or modifying the checkout; preserve file modes and symlink targets where relevant. Both reviewers receive that same snapshot and its content identity. Use the checkout for context, not as a moving replacement for the captured candidate. If reviewed files change, refresh the affected review before relying on it.
 
-For working-tree review, capture explicit repository-relative file paths with the
-Rust helper; include every in-scope new or deleted file:
+For working-tree review, capture every changed path with the Rust helper:
 
 ```sh
-scripts/tools review-snapshot --base FIXED_POINT --output-dir /tmp/review-v1 -- \
-  path/to/changed.rs path/to/new.rs path/to/deleted.rs
+scripts/tools review-snapshot --base FIXED_POINT --output-dir /tmp/review-v1 --all-changed
 ```
+
+`--all-changed` includes both sides of renames, deletions and nonignored untracked
+files. Name unrelated changed paths with repeatable `--exclude PATH`; exclusions
+are retained in the manifest and summary. For a deliberately partial candidate,
+explicit repository-relative paths after `--` remain available instead.
 
 The helper captures whole working files, including staged and unstaged edits,
 over the merge-base; unselected files retain their base contents. It creates
@@ -40,7 +43,9 @@ outside the checkout. The manifest records revisions, selected paths, file modes
 and SHA-256 identities; the command prints its digest. Treat this capture as
 immutable review input. Supply `--previous /tmp/review-v1` with a fresh output
 directory for a refresh: it verifies the previous candidate and patch against
-their manifest and reports the change count. Invalid inputs and failed captures
+their manifest and reports the change count. A refresh refuses omitted paths
+that are still changed unless explicitly excluded. Reverted paths may disappear.
+Invalid inputs and failed captures
 exit nonzero without publishing a snapshot. Use `--help` for supported inputs.
 
 Use the printed manifest digest to read the compact identity and scope summary:
@@ -56,6 +61,11 @@ revisions, digests, selected paths and changes since the preceding snapshot.
 The full context-file inventory stays in `manifest.json`; review the captured
 files and patch for their contents. A summary is navigation, not a code review
 or staged verification; the latter is described below.
+
+After reading the initial complete scope, use `review-summary --delta-only` on a
+refresh to inspect changes since its previous snapshot. This still verifies all
+candidate files and the patch, and keeps explicit exclusions visible. Preserve
+`--delta-only` when following its `NEXT` pages.
 
 Confirm the fixed point resolves and the complete selected candidate is non-empty before spawning reviewers. A new-file-only candidate is valid even when `git diff` is empty.
 

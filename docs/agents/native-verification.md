@@ -31,6 +31,15 @@ with it. The real-asset test is optional for source-only checks and requires a
 complete external collection; CI remains independent of private artwork. Carry
 forward successful records when later changes do not invalidate their evidence.
 
+For fixture builders that read commands, use `record-check --stdin-file PATH`;
+the default is null stdin, including when the caller supplies a pipe or heredoc.
+The helper retains the exact input and its hash. Add `--expect-file PATH` for each
+new fixture output: an existing path is refused before execution, and a missing,
+empty or non-file result makes an otherwise successful command incomplete.
+Use fresh paths outside the checkout. Inspect the command's responses and load
+the result through the production startup check below; file presence and a hash
+do not establish that a save is usable.
+
 Before returning an implementation for owner play, check the owner's normal
 launch command, including its working directory, settings and resolved save
 path. After an intentional save-compatibility break, provide a tested fresh-start
@@ -53,12 +62,15 @@ Prepared saves: input identity/revision; production-startup check/result;
 Authority: accepted journey, total allowance and stop conditions.
 Capabilities: helper revision; supported actions needed by this route and limits.
 Human route, when the owner operates the game:
-  numbered action -> expected visible result; agreed capture pauses; close deadline
+  numbered action -> expected visible result; exact copyable picker paths;
+  agreed capture pauses; effective app close deadline
   one report after closing: passed / failed / not tested for each item
 Route, highest-risk unverified behavior first:
   exact JSON command -> expected visible result -> required camera view/objects
   capture command -> what to inspect; mark unknown coordinates for the first capture
-Time: approval ID and original absolute UTC/Unix deadline; route checkpoints; fresh-process reopening
+Time: operator (owner or agent); interactive or automatic capture;
+  approval ID and original absolute UTC/Unix deadline; effective app shutdown and limiting condition;
+  route checkpoints; fresh-process reopening
   allowance; final 15-second cleanup reserve (each command needs 15 seconds before it).
 Recovery: app PID/start identity and window; supervisor and helper tool session IDs;
   pending request or last terminal result and inspected capture; remaining route;
@@ -72,6 +84,16 @@ For Gathering artwork claims, use the [launch-configuration check](../experiment
 Before scheduling a capture from a prepared save, load it through the production startup path in the headless UI host and check the expected visible controls and blocking dialogs, alongside the game state. A save containing expanded locations may reopen on an Act story panel; location membership alone does not establish capture readiness. Preserve that reading barrier and prepare an ordinary later decision when the route requires an unobscured map. Record the result in the handoff above. Gathering's `gathering_tabletop::tests::review_saves` checks the seed-89 initial, Hard Knocks and expanded-map inputs, including the obstructing story transition; its retained result is in the [current verification status](../experiments/gathering-setup.md#presentation-correction-verification). These checks do not establish GPU rendering or native readability.
 
 When the owner supplies physical input, present the complete human route, expected results, capture pauses and stopping conditions before starting the timer or opening the game. Once the agreed interval begins, announce the absolute close deadline and let the owner follow that route without switching back to chat for routine instructions or intermediate answers. Request one combined report after the window closes, including anything untested. Interrupt during the run only for a planned capture pause, a failure, a stop condition or a necessary deadline reminder. The existing allowance and cleanup reserve still apply; delivering instructions late does not extend them.
+
+Choose the operator while preparing the route. For interactive review, normally
+omit `native launch --timeout-seconds` so the original approval supplies the cap;
+use a shorter explicit cap for a bounded automatic capture. Check the first
+launch event's `timing.shutdown_unix_seconds` before handing over. If an app cap
+ends sooner, announce that earlier time and reduce the route. Restarts inherit
+their original app timeout as well as the approval deadline, so a short capture
+run is unsuitable as the starting point for an interactive restart. An owner-run
+ordinary launch can instead use a prepared isolated command without a diagnostic
+timer; this supplies no agent desktop access.
 
 For an animation change, prepare the [short recording recipe](#record-a-short-motion-clip) before the desktop timer starts. Put the loop, reduced-motion and relevant focus-loss/resume cases early in the route, before repeating static layouts. Frame both the moving object and its stationary neighbors, with relevant labels visible; inspect the clip after cleanup when possible. Reserve time for affected fresh-process reopening checks. At a context interruption, recover only the handoff, run manifest and last acknowledged event/capture, retaining the original deadline. An acknowledgement without a terminal result can hide partial input: inspect the existing helper's events before deciding whether any retry is safe. If the remaining budget cannot fit the next operation and cleanup, stop and leave that observation pending. The deadline and cleanup rules below remain controlling.
 
@@ -202,7 +224,7 @@ Each executable/save copy reaches its final path only after verification. A fail
 
 The command stays open until the window closes, its requested timeout elapses, or the approval closes or reaches its cleanup reserve. The approval always caps `--timeout-seconds`; staging also consumes its time. Its first JSON output and `run/run.json` identify the original approval deadline, app PID, process start, staged executable hash and exact arguments. In another terminal set `review_dir` to the printed run directory (the directory ending in `/run`) and `native_pid` to the recorded **app** PID. A background launch command's `$!` is the supervisor PID, not the app PID.
 
-Add `--output-format summary` to print compact JSON events with status, exit code, process and executable identity, and artifact paths. The exit code is `null` while running. The complete manifest remains in `run.json`; default `--output-format json` preserves full JSON output. Use the summary when reading launch results interactively, and consult the manifest for arguments and launch conditions.
+Add `--output-format summary` to print compact JSON events with status, exit code, process and executable identity, artifact paths, `launch_purpose` and `timing`. Timing includes the effective shutdown, original approval deadline, cleanup reserve and limiting condition (`app_timeout` or `approval_cleanup_reserve`). Staging consumes the approval budget; verification after spawn consumes the advertised app lifetime. Shutdown is the planned start of cleanup, not a guarantee that a blocked OS call has completed. The exit code is `null` while running. The complete manifest remains in `run.json`; default `--output-format json` preserves full JSON output. Use the summary when reading launch results interactively, and consult the manifest for arguments and launch conditions.
 
 The manifest's `environment` field retains the XDG overrides. `launch_conditions` records the helper's setup actions and allowlisted inherited/effective environment settings; `null` means unset, a string preserves the exact UTF-8 value, and `unix_bytes` preserves non-UTF-8 bytes. These settings are captured before spawn and describe the helper's launch, not a previous owner process. Capture the ordinary baseline separately while it is available, and keep unknown conditions explicit.
 

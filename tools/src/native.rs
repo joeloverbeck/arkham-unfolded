@@ -185,7 +185,8 @@ pub struct Launch {
     /// Leaves the app's Home behavior unchanged.
     #[arg(long, value_parser = ["overview", "scenario", "test", "tony", "patrice", "jacqueline", "resolve"])]
     initial_view: Option<String>,
-    /// App lifetime, capped by the original desktop approval.
+    /// App lifetime, capped by the approval minus cleanup time. For interactive
+    /// review, omit this to use the approval budget; short values suit captures.
     #[arg(long, default_value_t = 1800.0)]
     timeout_seconds: f64,
     /// Stdout events only; run.json always retains the complete manifest.
@@ -553,6 +554,8 @@ fn emit_launch_summary(directory: &Path, metadata: &Value, exit_code: Option<u8>
         "log": metadata["log"],
         "save": metadata["save"],
         "screenshot": metadata["launch_conditions"]["screenshot"],
+        "launch_purpose": metadata["launch_purpose"],
+        "timing": metadata["timing"],
     }))
 }
 
@@ -750,6 +753,35 @@ fn supervise(
         .remaining()?
         .checked_sub(interaction::CLEANUP_RESERVE)
         .context("Insufficient desktop-control time to launch and clean up")?;
+    let started = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs_f64();
+    let approval_end = approval.deadline_unix_seconds - interaction::CLEANUP_RESERVE.as_secs_f64();
+    let shutdown = (started + timeout.min(runtime).as_secs_f64()).min(approval_end);
+    ensure!(
+        shutdown > started,
+        "Insufficient desktop-control time to launch and clean up"
+    );
+    let deadline = Instant::now() + Duration::from_secs_f64(shutdown - started);
+    metadata["launch_purpose"] = json!(if metadata["launch_conditions"]["quit_after_screenshot"]
+        == true
+    {
+        "automatic_capture"
+    } else {
+        "interactive"
+    });
+    metadata["timing"] = json!({
+        "started_unix_seconds": started,
+        "shutdown_unix_seconds": shutdown,
+        "approval_deadline_unix_seconds": approval.deadline_unix_seconds,
+        "cleanup_reserve_seconds": interaction::CLEANUP_RESERVE.as_secs_f64(),
+        "app_timeout_seconds": timeout.as_secs_f64(),
+        "runtime_budget_seconds": shutdown - started,
+        "limiting_condition": if timeout < runtime && started + timeout.as_secs_f64() < approval_end {
+            "app_timeout"
+        } else {
+            "approval_cleanup_reserve"
+        }
+    });
+    record(directory, &metadata)?;
     let mut child = OwnedChild::spawn(&mut command)?;
     metadata["pid"] = json!(child.id());
     let outcome = (|| -> Result<u8> {
@@ -769,7 +801,11 @@ fn supervise(
             LaunchOutput::Json => emit(&metadata)?,
             LaunchOutput::Summary => emit_launch_summary(directory, &metadata, None)?,
         }
-        match child.wait_checked(timeout.min(runtime), || approval.check())? {
+        // Identity verification and output consume the same lifetime; neither
+        // may move the advertised shutdown beyond the original approval.
+        match child.wait_checked(deadline.saturating_duration_since(Instant::now()), || {
+            approval.check()
+        })? {
             Completion::Exited(status) => {
                 metadata["status"] = json!("exited");
                 Ok(status

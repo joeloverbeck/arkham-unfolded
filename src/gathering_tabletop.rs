@@ -533,11 +533,10 @@ fn run_gathering() -> Result<(), String> {
         .load(std::sync::atomic::Ordering::Relaxed)
     {
         let args: Vec<_> = std::env::args().collect();
-        let root = args
-            .windows(2)
-            .find(|p| p[0] == "--art-root")
-            .map(|_| recovery.root());
-        return crate::scenario_selection::return_to_selection(root, None);
+        return crate::scenario_selection::replace(return_selection_command(
+            &args,
+            recovery.root(),
+        )?);
     }
     recovery.finish(
         exit,
@@ -545,6 +544,19 @@ fn run_gathering() -> Result<(), String> {
             .created
             .load(std::sync::atomic::Ordering::Relaxed),
     )
+}
+
+/// Construct the actual outgoing process command before replacing the renderer.
+/// Recovery changes an existing override; ordinary launches keep using preferences.
+fn return_selection_command(
+    args: &[String],
+    recovered_root: &std::path::Path,
+) -> Result<std::process::Command, String> {
+    let root = args
+        .windows(2)
+        .find(|p| p[0] == "--art-root")
+        .map(|_| recovered_root);
+    crate::scenario_selection::return_command(root, None)
 }
 
 /// The same registration is used by the native app and headless input tests.
