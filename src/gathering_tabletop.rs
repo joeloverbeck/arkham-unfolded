@@ -536,7 +536,7 @@ fn run_gathering() -> Result<(), String> {
         let root = args
             .windows(2)
             .find(|p| p[0] == "--art-root")
-            .map(|p| std::path::Path::new(&p[1]));
+            .map(|_| recovery.root());
         return crate::scenario_selection::return_to_selection(root, None);
     }
     recovery.finish(

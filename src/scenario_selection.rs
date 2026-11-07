@@ -255,11 +255,11 @@ fn render(mut commands: Commands, state: Res<Selection>, panels: Query<Entity, W
             TextColor(Color::srgb(0.86, 0.69, 0.37)),
         ));
         p.spawn((
-            Text::new("The Gathering · In development"),
+            Text::new("The Gathering / In development"),
             TextFont::from_font_size(26.),
         ));
         p.spawn((
-            Text::new("Standard · Tony Morgan · Patrice Hathaway · Jacqueline Fine\nFixed starting decks"),
+            Text::new("Standard / Tony Morgan / Patrice Hathaway / Jacqueline Fine\nFixed starting decks"),
             TextFont::from_font_size(18.),
         ));
         if state.selected {
