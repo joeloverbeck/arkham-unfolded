@@ -20,6 +20,14 @@ _Avoid_: Active investigator, investigator activation
 A tabletop reminder representing one action allowance and whether it has been spent. It is a presentation component, not an additional rules-defined token or a guarantee that a particular action is currently legal.
 _Avoid_: Chaos token, action button
 
+**Investigator ability marker**:
+A tabletop reminder showing whether an investigator's once-per-round ability allowance has been spent in the current round. It does not indicate whether that ability can legally be used at the current moment.
+_Avoid_: Action marker, ability button
+
+**Gameplay availability cue**:
+A visual indication that a tabletop component currently offers at least one available gameplay choice. It does not imply that the choice costs an action, recommend a strategy, or advertise an ability whose triggering opportunity has not occurred.
+_Avoid_: Action allowance, selection marker
+
 **Restricted additional action**:
 An extra action whose use is limited by the effect that grants it, distinct from the investigator's ordinary action allowance.
 _Avoid_: Ordinary action when referring to a restricted allowance

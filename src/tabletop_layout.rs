@@ -100,72 +100,6 @@ fn personal(index: usize, x: f32, z: f32) -> Vec3 {
     investigator_center(index, 3) + Vec3::new(x, 0.05, z)
 }
 
-pub(crate) fn investigator_heading(index: usize) -> Vec3 {
-    personal(index, 0.0, -8.15)
-}
-
-pub(crate) fn scenario_heading() -> Vec3 {
-    Vec3::new(0.0, 0.1, SCENARIO_FAR_EDGE - 0.65)
-}
-
-pub(crate) fn test_heading() -> Vec3 {
-    Vec3::new(0.0, 0.0, 2.0)
-}
-
-#[derive(Component)]
-pub(crate) struct TestAreaHeading;
-
-#[derive(Component)]
-pub(crate) struct ScenarioAreaHeading;
-
-/// Equal logical-pixel clearance includes the full text node, not just its anchor.
-pub(crate) fn scenario_heading_screen_position(
-    camera: &Camera,
-    transform: &GlobalTransform,
-    node: &ComputedNode,
-) -> Option<Vec2> {
-    let height = node.size().y * node.inverse_scale_factor;
-    let test_heading = test_heading_screen_position(camera, transform, node)?;
-    let test_edge = camera
-        .world_to_viewport(
-            transform,
-            Vec3::new(0.0, 0.0, TEST_CENTER.z - TEST_SIZE.y / 2.0),
-        )
-        .ok()?;
-    let clearance = test_edge.y - test_heading.y - height;
-    let edge = camera
-        .world_to_viewport(transform, Vec3::new(0.0, 0.0, SCENARIO_FAR_EDGE))
-        .ok()?;
-    Some(edge - Vec2::Y * (height + clearance))
-}
-
-/// Center the full heading, including UI padding, between the two surfaces.
-/// At an extreme angle or zoom there may be no readable space for a heading.
-pub(crate) fn test_heading_screen_position(
-    camera: &Camera,
-    transform: &GlobalTransform,
-    node: &ComputedNode,
-) -> Option<Vec2> {
-    let height = node.size().y * node.inverse_scale_factor;
-    let scenario_edge = camera
-        .world_to_viewport(
-            transform,
-            Vec3::new(0.0, 0.0, SCENARIO_CENTER.z + SCENARIO_SIZE.y / 2.0),
-        )
-        .ok()?;
-    let test_edge = camera
-        .world_to_viewport(
-            transform,
-            Vec3::new(0.0, 0.0, TEST_CENTER.z - TEST_SIZE.y / 2.0),
-        )
-        .ok()?;
-    if height <= 0.0 || test_edge.y - scenario_edge.y < height + 2.0 {
-        return None;
-    }
-    let clearance = (test_edge.y - scenario_edge.y - height) / 2.0;
-    Some(test_edge - Vec2::Y * (height + clearance))
-}
-
 pub(crate) fn investigator_card(index: usize) -> Vec3 {
     personal(index, -7.15, -5.37)
 }
@@ -224,8 +158,8 @@ pub(crate) fn investigator_threat(index: usize, slot: usize) -> Vec3 {
 pub(crate) fn investigator_asset(index: usize, slot: usize) -> Vec3 {
     personal(
         index,
-        -6.5 + (slot % 6) as f32 * 2.6,
-        -1.5 + (slot / 6) as f32 * 3.0,
+        -7.45 + (slot % 6) as f32 * 2.2,
+        -1.35 + (slot / 6) as f32 * 3.0,
     )
 }
 
@@ -272,7 +206,7 @@ pub(crate) fn test_token(canceled: bool, slot: usize) -> Vec3 {
 
 pub(crate) fn zone_labels(index: usize) -> [(&'static str, Vec3); 5] {
     [
-        ("Threats", personal(index, -UPPER_GROUP_SHIFT, -7.15)),
+        ("Threats", personal(index, -UPPER_GROUP_SHIFT, -7.2)),
         ("Assets", personal(index, 0.0, -3.03)),
         ("Hand", personal(index, 0.0, 7.15)),
         ("Deck", investigator_deck(index) - Vec3::Z * 1.7),
@@ -633,15 +567,13 @@ mod tests {
     }
 
     #[test]
-    fn shared_surfaces_leave_matching_gaps_and_room_for_the_test_heading() {
+    fn shared_surfaces_leave_matching_gaps() {
         let scenario_near = SCENARIO_CENTER.z + SCENARIO_SIZE.y / 2.0;
         let test_far = TEST_CENTER.z - TEST_SIZE.y / 2.0;
         let test_near = TEST_CENTER.z + TEST_SIZE.y / 2.0;
         let investigator_far = investigator_center(1, 3).z - INVESTIGATOR_SIZE.y / 2.0;
         assert_eq!(test_far - scenario_near, 2.0);
         assert_eq!(investigator_far - test_near, 2.0);
-        assert!(test_heading().z > scenario_near + 0.5);
-        assert!(test_heading().z < test_far - 0.5);
         assert_eq!(SCENARIO_SIZE, Vec2::new(18.0, 22.0));
         assert_eq!(TEST_CENTER, Vec3::new(0.0, 0.0, 8.0));
         assert_eq!(investigator_center(1, 3), Vec3::new(0.0, 0.0, 22.5));
@@ -659,61 +591,6 @@ mod tests {
         }
         assert!(SCENARIO_REFERENCE.x + half.x < test_source().x - half.x);
         assert!(test_source().x + half.x < test_bag().x - 1.0);
-    }
-
-    #[test]
-    fn area_headings_keep_equal_edge_clearance_and_fit_between_surfaces() {
-        use bevy::camera::{CameraProjection, RenderTargetInfo};
-
-        for scale in [1.0, 2.0] {
-            let mut projection = PerspectiveProjection::default();
-            projection.update(1600.0, 1000.0);
-            let mut camera = Camera::default();
-            camera.computed.clip_from_view = projection.get_clip_from_view();
-            camera.computed.target_info = Some(RenderTargetInfo {
-                physical_size: UVec2::new((1600.0 * scale) as u32, (1000.0 * scale) as u32),
-                scale_factor: scale,
-            });
-            for area in [Area::Overview, Area::Scenario, Area::Test] {
-                let (target, distance) = focus(area);
-                let transform = GlobalTransform::from(
-                    Transform::from_translation(
-                        target + Vec3::new(0.0, 1.0_f32.sin(), 1.0_f32.cos()) * distance,
-                    )
-                    .looking_at(target, Vec3::Y),
-                );
-                // A full single-line 18px heading, or 13/14px text with reduced padding.
-                let node = ComputedNode {
-                    size: Vec2::new(190.0, 22.0) * scale,
-                    inverse_scale_factor: 1.0 / scale,
-                    ..default()
-                };
-                let heading = test_heading_screen_position(&camera, &transform, &node)
-                    .expect("normal views must retain the heading");
-                let far = camera
-                    .world_to_viewport(&transform, Vec3::new(0.0, 0.0, 1.0))
-                    .unwrap();
-                let near = camera
-                    .world_to_viewport(&transform, Vec3::new(0.0, 0.0, 3.0))
-                    .unwrap();
-                assert!(heading.y >= far.y.min(near.y) + 1.0);
-                assert!(heading.y + 22.0 <= far.y.max(near.y) - 1.0);
-                let scenario =
-                    scenario_heading_screen_position(&camera, &transform, &node).unwrap();
-                let scenario_edge = camera
-                    .world_to_viewport(&transform, Vec3::new(0.0, 0.0, SCENARIO_FAR_EDGE))
-                    .unwrap();
-                assert!(
-                    ((scenario_edge.y - scenario.y - 22.0) - (near.y - heading.y - 22.0)).abs()
-                        < 0.001
-                );
-                let crowded = ComputedNode {
-                    size: Vec2::new(190.0, 1000.0) * scale,
-                    ..node
-                };
-                assert!(test_heading_screen_position(&camera, &transform, &crowded).is_none());
-            }
-        }
     }
 
     #[test]
@@ -884,13 +761,25 @@ mod tests {
             // orientations, while reserving the counter band above its border.
             for slot in 0..12 {
                 let at = investigator_asset(index, slot);
-                for size in [Vec2::new(1.85, 2.6), Vec2::new(2.6, 1.85)] {
+                let face = Vec2::new(
+                    crate::tabletop_pieces::CARD_WIDTH,
+                    crate::tabletop_pieces::CARD_LENGTH,
+                );
+                for size in [face, Vec2::new(face.y, face.x)] {
                     assert!((at.x - center.x).abs() + size.x / 2.0 < ASSET_REGION_SIZE.x / 2.0);
                     assert!(
                         (at.z - center.z - ASSET_REGION_Z).abs() + size.y / 2.0
                             < ASSET_REGION_SIZE.y / 2.0
                     );
                 }
+                if slot % 6 != 5 {
+                    assert!(investigator_asset(index, slot + 1).x - at.x > face.y + 0.25);
+                }
+                // The ready card has the furthest harm-token edge.
+                assert!(
+                    at.z - face.y / 2. - 0.275 - 0.17
+                        > center.z + ASSET_REGION_Z - ASSET_REGION_SIZE.y / 2.
+                );
             }
             assert_eq!(
                 investigator_harm(index, false),

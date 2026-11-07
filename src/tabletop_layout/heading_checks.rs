@@ -184,12 +184,7 @@ pub(crate) fn assert_chaos_captions(
     area: Area,
 ) {
     let world = app.world_mut();
-    let captions = [
-        "Curse pool\n10 tokens",
-        "Chaos bag\n16 tokens",
-        "Committed cards",
-    ]
-    .map(|expected| {
+    let captions = ["Curse pool\n10 tokens", "Chaos bag\n16 tokens"].map(|expected| {
         world
             .query_filtered::<(Entity, &Text), With<crate::tabletop_pieces::WorldLabel>>()
             .iter(world)
@@ -199,7 +194,7 @@ pub(crate) fn assert_chaos_captions(
     let panel_node = world.get::<ComputedNode>(decision_panel).unwrap();
     let panel_transform = world.get::<UiGlobalTransform>(decision_panel).unwrap();
     let panel_top = panel_transform.transform_point2(-panel_node.size() / 2.).y / scale;
-    let rectangles = captions.map(|entity| {
+    let mut rectangles = captions.map(|entity| {
         let rect = rendered_text_bounds(world, entity, scale);
         if area == Area::Test {
             assert!(rect.max.y + 0.5 <= panel_top, "chaos caption {rect:?} must clear panel top {panel_top} at {area:?}, {size:?}, {scale}x");
@@ -207,7 +202,19 @@ pub(crate) fn assert_chaos_captions(
                 "Test focus must show the complete chaos caption: {rect:?} at {size:?}, {scale}x");
         }
         rect
-    });
+    }).to_vec();
+    let printed = world
+        .query::<(Entity, &Name)>()
+        .iter(world)
+        .find_map(|(entity, name)| {
+            (name.as_str() == "Printed area label: Committed cards").then_some(entity)
+        })
+        .expect("Committed cards is printed on the test mat");
+    let (camera, camera_at) = world
+        .query_filtered::<(&Camera, &GlobalTransform), With<Camera3d>>()
+        .single(world)
+        .unwrap();
+    rectangles.push(mesh_bounds(world, camera, camera_at, printed));
     assert!(
         (rectangles[0].min.y - rectangles[1].min.y).abs() < 0.5
             && (rectangles[0].max.y - rectangles[1].max.y).abs() < 0.5,

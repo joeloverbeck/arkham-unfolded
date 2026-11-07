@@ -202,20 +202,14 @@ pub(crate) struct InvestigatorCounters {
     pub actions: Option<ActionState>,
 }
 
-pub(crate) struct InvestigatorPieces {
-    pub entities: Vec<Entity>,
-    pub counters: Vec<Entity>,
-}
-
 pub(crate) fn investigator_counters(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     panel: InvestigatorCounters,
     image: impl Fn(&str) -> Option<Handle<Image>>,
-) -> InvestigatorPieces {
+) -> Vec<Entity> {
     let mut entities = Vec::new();
-    let mut selectable = Vec::new();
     for (kind, amount, role, at) in [
         (
             counters::CounterKind::Resource,
@@ -243,7 +237,6 @@ pub(crate) fn investigator_counters(
             },
         ) {
             entities.extend([token, caption]);
-            selectable.push(token);
         }
     }
     if let Some(actions) = panel.actions {
@@ -299,10 +292,7 @@ pub(crate) fn investigator_counters(
                 .id(),
         );
     }
-    InvestigatorPieces {
-        entities,
-        counters: selectable,
-    }
+    entities
 }
 
 #[cfg(test)]

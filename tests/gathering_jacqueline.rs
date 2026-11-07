@@ -87,11 +87,29 @@ fn jacqueline_renews_at_the_next_round_after_real_play_and_reopen() {
     choose(&mut session, "turn:tony");
     choose(&mut session, "action:ordinary:investigate");
     reveal(&mut session);
+    assert_eq!(
+        session.observe().play.unwrap().players[2]
+            .presentation
+            .round_ability_spent,
+        Some(false)
+    );
     choose(&mut session, "tokens:jacqueline");
+    assert_eq!(
+        session.observe().play.unwrap().players[2]
+            .presentation
+            .round_ability_spent,
+        Some(true)
+    );
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("used-reaction.json");
     continuity::save_session(&path, &session).unwrap();
     session = continuity::load_session(&path).unwrap();
+    assert_eq!(
+        session.observe().play.unwrap().players[2]
+            .presentation
+            .round_ability_spent,
+        Some(true)
+    );
     for _ in 0..40 {
         let view = session.observe();
         if view.choices.iter().any(|choice| choice.id == "turn:end") {
@@ -118,6 +136,12 @@ fn jacqueline_renews_at_the_next_round_after_real_play_and_reopen() {
             continuity::save_session(&path, &session).unwrap();
             let reopened = continuity::load_session(&path).unwrap();
             assert_eq!(reopened.observe(), view);
+            assert_eq!(
+                view.play.as_ref().unwrap().players[2]
+                    .presentation
+                    .round_ability_spent,
+                Some(false)
+            );
             assert!(
                 view.choices
                     .iter()

@@ -418,7 +418,7 @@ fn monitor_rendering(
     if diagnostic.as_ref().is_none_or(|(previous, emitted)| {
         *previous != conditions && now.saturating_sub(*emitted) >= Duration::from_secs(1)
     }) {
-        info!(
+        debug!(
             elapsed_seconds = now.as_secs_f64(),
             foreground = conditions.foreground,
             active = conditions.active,
@@ -456,19 +456,19 @@ fn monitor_rendering(
         }
     }
     if let Some((updates, completions)) = health.last_rates.take() {
-        info!(
+        debug!(
             "Graphics health: {updates:.1} main updates/s; {completions:.1} completed GPU submissions/s; checking={}",
             health.is_checking()
         );
     }
     if was_warming && health.warmup_elapsed >= WARMUP {
-        info!(
+        debug!(
             elapsed_seconds = now.as_secs_f64(),
             "Graphics health: scene warmup complete; sampling foreground rendering progress."
         );
     }
     if health.just_became_ready() {
-        info!(
+        debug!(
             elapsed_seconds = now.as_secs_f64(),
             "Graphics health admitted play after three healthy foreground samples."
         );
@@ -792,6 +792,7 @@ mod tests {
 
         let log = tempfile::NamedTempFile::new().unwrap();
         let subscriber = tracing_subscriber::fmt()
+            .with_max_level(bevy::log::tracing::Level::DEBUG)
             .without_time()
             .with_ansi(false)
             .with_target(false)

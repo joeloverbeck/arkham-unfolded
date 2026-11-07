@@ -30,6 +30,7 @@ mod map_motion;
 mod motion;
 mod play;
 mod presentation;
+mod printed;
 mod reading;
 mod results;
 mod reveal;
@@ -1112,21 +1113,6 @@ fn card(
             }
         });
     if let Some(source) = spec.source {
-        if controls::window_opportunities(context.view)
-            .iter()
-            .any(|(available, _)| available == &source)
-        {
-            let label = scene::label(
-                commands,
-                context,
-                "Available now",
-                at + Vec3::new(0., 0.15, -1.45),
-                false,
-            );
-            commands
-                .entity(label)
-                .insert(motion::CardLabel(entity, Vec3::new(0., 0.15, -1.45)));
-        }
         context.bind(commands, entity, source);
     }
     if let Some(id) = spec.physical_id {
@@ -1232,7 +1218,7 @@ fn render(
     health: Res<RenderHealth>,
     art: Res<art::Art>,
     mut images: ResMut<Assets<Image>>,
-    mut slot_surfaces: Local<slots::Surfaces>,
+    mut surfaces: Local<(slots::Surfaces, printed::Surfaces)>,
     ui_scale: Res<UiScale>,
     mut previous_ui: Local<(Vec2, [bool; 3])>,
     mut consequences: ResMut<consequences::State>,
@@ -1313,7 +1299,15 @@ fn render(
         consequences: &consequences,
     };
     scene::render(&mut commands, &mut meshes, &mut materials, &context);
-    slot_surfaces.render(
+    surfaces.0.render(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &mut images,
+        &context,
+        ui_scale.0,
+    );
+    surfaces.1.render(
         &mut commands,
         &mut meshes,
         &mut materials,
@@ -1487,8 +1481,6 @@ fn world_labels(
         &WorldLabel,
         Option<&motion::CardLabel>,
         &ComputedNode,
-        Has<layout::TestAreaHeading>,
-        Has<layout::ScenarioAreaHeading>,
         Has<crate::tabletop_pieces::CardCaption>,
         Has<enemy_board::Caption>,
         Has<enemy_board::PersistentLabel>,
@@ -1502,8 +1494,6 @@ fn world_labels(
         label,
         card,
         computed,
-        test_heading,
-        scenario_heading,
         card_caption,
         enemy_caption,
         persistent,
@@ -1532,13 +1522,7 @@ fn world_labels(
                     .map(|transform| transform.translation + card.1)
             })
             .unwrap_or(label.0);
-        let point = if test_heading {
-            layout::test_heading_screen_position(camera.0, camera.1, computed)
-        } else if scenario_heading {
-            layout::scenario_heading_screen_position(camera.0, camera.1, computed)
-        } else {
-            camera.0.world_to_viewport(camera.1, anchor).ok()
-        };
+        let point = camera.0.world_to_viewport(camera.1, anchor).ok();
         if let Some(point) = point {
             if enemy_caption {
                 if let Some(width) = enemy_board::caption_width(camera.0, camera.1, anchor) {
@@ -1569,12 +1553,22 @@ fn world_labels(
 
 fn contextual_feedback(
     table: Res<Table>,
+    health: Res<RenderHealth>,
+    settings: Option<Res<AssetSettings>>,
+    consequences: Res<consequences::State>,
     mut cards: Query<(&ContextTarget, &mut CardFeedback)>,
     buttons: Query<(Entity, &bevy::picking::hover::Hovered, &AccessibleLabel), With<Button>>,
     focus: Option<Res<InputFocus>>,
 ) {
     let view = table.view();
-    let opportunities = controls::window_opportunities(&view);
+    let choices_enabled = !table.leaving
+        && !table.modal()
+        && !table.menu_open
+        && !table.is_presenting()
+        && !consequences.active()
+        && health.allows_play()
+        && !health.just_became_ready()
+        && !settings.as_ref().is_some_and(|settings| settings.is_busy());
     let test = view.play.as_ref().and_then(|play| play.test.as_ref());
     let preview: Vec<_> = view
         .choices
@@ -1595,11 +1589,10 @@ fn contextual_feedback(
             || (!table.modal()
                 && !table.is_presenting()
                 && matches!(target.source, controls::Source::Card(id) if preview.contains(&id)));
-        feedback.opportunity = !table.modal()
-            && !table.is_presenting()
-            && opportunities
-                .iter()
-                .any(|(source, _)| source == &target.source);
+        feedback.opportunity = choices_enabled
+            && target.epoch == table.epoch
+            && target.revision == view.revision
+            && !controls::source_choices(&view, &target.source).is_empty();
         feedback.commitment = None;
         if !table.modal()
             && !table.is_presenting()

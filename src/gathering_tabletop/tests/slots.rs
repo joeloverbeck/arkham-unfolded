@@ -1,6 +1,51 @@
 use super::*;
 
 #[test]
+fn permanent_names_stay_flat_on_their_mats_through_camera_changes() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host(directory.path().join("printed-names.json"));
+    let initial: Vec<_> = app
+        .world_mut()
+        .query_filtered::<(Entity, &Name, &Transform), With<printed::PrintedLabel>>()
+        .iter(app.world())
+        .map(|(entity, name, at)| (entity, name.to_string(), *at))
+        .collect();
+    assert_eq!(initial.len(), 25);
+    for (entity, _, at) in &initial {
+        assert_eq!(at.rotation, Quat::IDENTITY);
+        assert!((at.translation.y - 0.071).abs() < 0.001);
+        assert!(app.world().get::<WorldLabel>(*entity).is_none());
+        assert!(app.world().get::<Node>(*entity).is_none());
+    }
+    for area in [
+        Area::Scenario,
+        Area::Test,
+        Area::Investigator(2),
+        Area::Overview,
+    ] {
+        app.world_mut()
+            .resource_mut::<Orbit>()
+            .focus(layout::focus(area));
+        for _ in 0..3 {
+            app.update();
+        }
+        for (entity, name, at) in &initial {
+            assert_eq!(app.world().get::<Transform>(*entity), Some(at), "{name}");
+        }
+    }
+    let world = app.world_mut();
+    assert!(
+        !world
+            .query::<(&WorldLabel, &Text)>()
+            .iter(world)
+            .any(
+                |(_, text)| ["Scenario", "Test area", "Assets", "Hand", "Committed cards"]
+                    .contains(&text.0.as_str())
+            )
+    );
+}
+
+#[test]
 fn capacity_is_printed_on_the_mat_and_restricted_capacity_updates_after_play() {
     use crate::gathering::{AssetFixture, HostileFixture};
     use crate::tabletop_layout::heading_checks;

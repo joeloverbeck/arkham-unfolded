@@ -20,6 +20,137 @@ presentation, supported save/resume, Undo, inspection and camera decisions remai
 in force. Dated implementation and verification records below remain historical
 evidence; the retirement decision does not claim its implementation is complete.
 
+## Gathering ability markers, available choices and compact assets
+
+During the 2026-11-07 `grill-with-docs` interview for
+[#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89), against
+`21127d0e87a85b00c7b38c2eba98e2e25739c19c`, Joel requested seven presentation
+corrections and settled the following requirements. He delegated palette,
+geometry and the comparison of printed versus floating area names. This section
+records those choices. Joel confirmed the shared understanding in Q6, authorizing
+the bounded local implementation. Native verification and acceptance of the
+resulting play remain separate; no publication or desktop-control interval is
+authorized by that confirmation.
+
+- **Investigator ability marker:** place Jacqueline's spark to the right of her
+  investigator card, centered along its right edge with a clear gap. Use the same
+  diameter and physical treatment as action markers, the investigator's class
+  background, and the same spent cross. The marker is a noninteractive reminder of
+  the round allowance, not an assertion of present ability legality. Preserve its
+  state outside her turn; ordinary use spends it, an Arbiter-assisted use that
+  preserves the round allowance does not, and the rules' new-round reset restores
+  it. Use the supplied transparent `investigator-ability-inner-spark-glyph.png`
+  (SHA-256 `1ebce6f1238b0b19351d4ef6d3fc0150f034614a5d22cadc76cadf6550f216c0`)
+  from the external `investigator-ability-inner-spark/inner-spark` package.
+  Prepare it through the existing asset recipe and collection contract; image
+  bytes remain outside Git. This supplies the selected convention for supported
+  once-per-round investigator abilities, without adding unselected investigators.
+- **Gregory Gry:** show his resource uses with one existing shaped resource token
+  and its count, including zero while the card remains in play. Remove only the
+  redundant uses caption. Reduce the count as soon as wager resources are spent,
+  without waiting for the test result.
+- **Asset placement:** fill from the upper-left of the Assets region with modest
+  margins and compact gaps. Reserve space for actual ready and exhausted card
+  footprints, Damage/Horror tokens, use counters and readable wrapped names.
+  Exhaustion does not rearrange neighboring cards. Placement must account for the
+  full visible contents rather than reducing center spacing alone.
+- **Availability meaning:** a cue means that clicking this component offers a
+  gameplay choice available at this exact moment. It includes present reactions,
+  commitment/removal and token choices as well as actions that spend an action
+  allowance. A possible later timing window, a reaction whose trigger is absent,
+  unused allowance or matching printed icon is insufficient. Inspection and
+  dismissal alone never qualify. Derive the cue from the same current choices
+  offered by the component's contextual interaction, with the same activation
+  guards. Blocking dialogs, admission and consequence/presentation intervals must
+  not advertise unavailable choices. An ordinary contextual menu can retain the
+  cue. Investigator cards and their standees agree.
+- **Delegated visual treatment:** use a faint, slowly breathing teal edge for
+  available cards and a matching footprint/rim halo for models, piles and tokens.
+  Keep a visible low-intensity baseline through the cycle. Reduced motion uses a
+  steady cue. Retain brighter pale hover feedback, blue menu-source identification,
+  gold selected marks, commitment contribution badges, and distinct ignored,
+  canceled and spent marks. This consolidates the narrower purple player-window
+  bar, teal commitment edge and blue token-availability ring into one availability
+  language; it does not merge availability with selection. Preserve current
+  gameplay decisions and require native assessment of intensity and readability.
+- **Permanent area names:** following Joel's delegated comparison, select flat
+  playmat printing for Scenario, Test, investigator names and permanent zone
+  labels such as Assets, Hand, Threats, Deck, Discard, Map, Victory display and
+  Committed cards. Use fixed positions and orientation on their own surfaces,
+  reserving header/border bands clear of ordinary card and counter placement.
+  They follow the table's perspective and natural occlusion; they do not face
+  the camera, pin to the window edge, or move in response to another area's
+  projected gap. Keep changing counts, card captions, interactive enemy-group
+  headings and decision controls in their current readable presentation.
+  Reuse the existing printed asset-slot technique locally. This supersedes the
+  special projected-clearance placement of the Scenario and Test headings.
+  Focused-view readability and Overview orientation remain requirements; constant
+  pixel size at every zoom is not the selected behavior. The linked investigation
+  compares the fixed-edge overlay alternative and records the verification limits.
+- **Redundant HUD line:** remove the investigator resource/clue/action totals
+  beneath the turn heading. Keep the turn heading and ensure setup/mulligan
+  progress remains understandable through its actual prompts.
+- **Quiet diagnostics:** retain the initial graphics-check notice and actionable
+  failures. Move routine health conditions, sampling rates, warmup and successful
+  admission details to opt-in debug logging. Monitoring and play-admission behavior
+  remain active.
+
+The area-label comparison and its source evidence are recorded in
+[the table-label investigation](../research/gathering-table-labels.md). The
+reported Scenario title movement has a suspect projection path but was not
+reproduced during that source investigation. The implementation removes that
+projection path and renders the permanent names on fixed world-space planes.
+The existing Reduced motion control supplies a steady availability cue, consistent
+with [XAG 117](https://learn.microsoft.com/en-us/xbox/accessibility/xbox-accessibility-guidelines/117)'s
+guidance on controlling nonessential animation. That source informs the design;
+it does not establish native usability or general accessibility compliance.
+
+Consulted for this refinement: `AUTH-2`–`AUTH-3`, `PURP-1`–`PURP-6`,
+`WORK-1`–`WORK-6`, `EVID-1`–`EVID-10`, `SEM-1`–`SEM-2`, `REP-1`–`REP-3`,
+`AGENT-5`, `OPS-1`–`OPS-7`, and `GOV-1`–`GOV-3`.
+
+### Owner playtest corrections, 2026-11-07
+
+Joel launched the local candidate and requested three follow-ups. Personal
+resource and clue counters are passive totals; investigator actions and their
+availability cue belong to the investigator card and standee. Investigator names
+are printed above their mats with a clear border gap, and Threats shares the
+Deck/Discard heading line.
+
+After another live check, Joel also requested Test and Scenario above their own
+upper mat borders, matching the investigator titles' gap. Their printed planes
+sit 0.65 units beyond the border, leaving 0.39 units clear with the existing
+0.52-unit label height. The mats, cards and camera anchors stay fixed.
+
+After Read the Signs completes its test and all genuine response choices, the
+tabletop automatically commits the existing event-cleanup decision. That step
+moves the resolved event to discard; it does not offer another gameplay choice.
+Use the existing guarded automatic-bookkeeping path so result reading, optional
+reactions, autosave and already-recorded decisions retain their behavior. This
+includes resuming a save waiting at that cleanup step and preserves the existing
+rules transition and save format. Local fixes and headless verification are authorized;
+native acceptance and publication remain separate.
+
+Reconsulted `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`, `AGENT-5`, `OPS-1`–`OPS-7`,
+`EVID-3`–`EVID-4`, `EVID-6` and `REP-2` for these reported defects and their proof.
+
+### Owner acceptance and publication authorization, 2026-11-07
+
+After testing the live app and checking the final Test/Scenario title placement,
+Joel stated: "Alright, it's good. I consider this implementation done. I authorize
+publication, creating PR, merging PR, pulling from main." This accepts the seven
+presentation corrections above and their recorded playtest follow-ups. The final
+tested executable has SHA-256
+`cbb4fdabeaa8cf191f8fe30c1264172fc3c520a6673162f7f67e2669a9e5f20f`.
+The separate second-copy Read the Signs report was traced to zero resources after
+paying for Read the Signs and Sign Magick; it required no rules change.
+
+This authorizes publication of this bounded implementation and synchronization of
+the checkout. It does not close #89's broader complete-Gathering acceptance scope.
+Owner playtest evidence is distinct from agent native verification: no agent
+desktop capture was performed for this iteration. Consulted `AUTH-1`–`AUTH-3` and
+`PUB-1` for publication, with the earlier implementation consultations retained.
+
 ## Gathering harm fractions and planned token reveals
 
 On 2026-11-07, Joel accepted all three recommendations from the

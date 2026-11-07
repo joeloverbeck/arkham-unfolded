@@ -1,5 +1,114 @@
 use super::*;
+use crate::tabletop_pieces as pieces;
 use bevy::ecs::system::RunSystemOnce;
+
+#[test]
+fn ability_marker_sits_right_of_jacqueline_and_tracks_only_round_usage() {
+    use crate::tabletop_counters::AbilityMarker;
+    let mut session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::JacquelineCancellation);
+    loop {
+        let view = session.observe();
+        if view
+            .choices
+            .iter()
+            .any(|choice| choice.id == "tokens:jacqueline")
+        {
+            break;
+        }
+        let next = ["window:pass", "test:confirm"]
+            .into_iter()
+            .find(|id| view.choices.iter().any(|choice| choice.id == *id))
+            .expect("route to reveal");
+        session.choose(view.revision, next).unwrap();
+    }
+    let dir = tempfile::tempdir().unwrap();
+    for spent in [false, true] {
+        if spent {
+            session
+                .choose(session.observe().revision, "tokens:jacqueline")
+                .unwrap();
+        }
+        let mut app = host_with_table(
+            Table::new(session.clone(), dir.path().join("ability.json")),
+            false,
+        );
+        let world = app.world_mut();
+        let (entity, at, label) = world
+            .query_filtered::<(Entity, &Transform, &AccessibleLabel), With<AbilityMarker>>()
+            .single(world)
+            .unwrap();
+        let card = layout::investigator_card(2);
+        assert_eq!(at.translation.y, layout::investigator_action(2, 0, false).y);
+        assert!((at.translation.z - card.z).abs() < 0.001);
+        assert!(
+            (at.translation.x - 0.21 - (card.x + pieces::CARD_LENGTH / 2.) - 0.18).abs() < 0.001
+        );
+        assert_eq!(
+            label.0,
+            if spent {
+                "Round ability spent"
+            } else {
+                "Round ability unused"
+            }
+        );
+        assert!(world.get::<ContextTarget>(entity).is_none());
+        assert!(world.get::<CardFeedback>(entity).is_none());
+    }
+}
+
+#[test]
+fn compact_asset_names_do_not_overlap_ready_or_exhausted_neighbors() {
+    use crate::tabletop_layout::heading_checks::{rendered_text_bounds, viewport};
+    let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+        crate::gathering::TonyEffectFixture::GregoryCigarette,
+    ));
+    for ready in [true, false] {
+        let mut play = session.observe().play.unwrap();
+        let template = play.players[0].assets[0].clone();
+        play.players[0].assets = (0..12)
+            .map(|slot| {
+                let mut asset = template.clone();
+                asset.card.id = 60000 + slot;
+                asset.card.title = "Tennessee Sour Mash".into();
+                asset.ready = ready;
+                asset
+            })
+            .collect();
+        let mut app = super::cards::at_public_moment(session.clone(), play, PathBuf::new(), false);
+        app.world_mut()
+            .resource_mut::<Orbit>()
+            .focus(layout::focus(Area::Investigator(0)));
+        for size in [Vec2::new(1280., 720.), Vec2::new(1600., 1000.)] {
+            for scale in [1., 2.] {
+                viewport::<MainCamera>(&mut app, size, scale);
+                for _ in 0..5 {
+                    app.update();
+                }
+                let world = app.world_mut();
+                let names: Vec<_> = world
+                    .query_filtered::<(Entity, &motion::CardLabel), With<pieces::CardCaption>>()
+                    .iter(world)
+                    .filter(|(_, caption)| {
+                        world
+                            .get::<motion::PhysicalCard>(caption.0)
+                            .is_some_and(|card| (60000..60012).contains(&card.0))
+                    })
+                    .map(|(entity, _)| rendered_text_bounds(world, entity, scale))
+                    .collect();
+                assert_eq!(names.len(), 12);
+                for (i, name) in names.iter().enumerate() {
+                    for other in &names[i + 1..] {
+                        assert!(
+                            name.intersect(*other).is_empty(),
+                            "ready={ready}, {size:?}, {scale}x: {name:?} / {other:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
 
 fn render_observation(view: Observation) -> App {
     let mut app = crate::tabletop_layout::heading_checks::app();
@@ -92,6 +201,7 @@ fn empty_asset_counters_keep_their_type_owner_and_upright_count() {
         (1, "06011", "Tony's .38 Long Colt"),
         (2, "60407", "Azure Flame"),
         (3, "05117", "Tennessee Sour Mash"),
+        (4, "06162", "Gregory Gry"),
     ] {
         let mut asset = template.clone();
         asset.card.id = 60000 + index;
@@ -124,6 +234,7 @@ fn empty_asset_counters_keep_their_type_owner_and_upright_count() {
         (60000, CounterKind::Bounty),
         (60001, CounterKind::Ammo),
         (60002, CounterKind::Charge),
+        (60004, CounterKind::Resource),
     ] {
         assert!(counters.contains(&(id, kind, 0, Quat::IDENTITY)));
     }
@@ -136,7 +247,13 @@ fn empty_asset_counters_keep_their_type_owner_and_upright_count() {
                 && *rotation == Quat::IDENTITY)
     );
     let text = rendered_text(&mut app);
-    for caption in ["Bounties 0", "Ammo 0", "Charges 0", "Supplies 0"] {
+    for caption in [
+        "Bounties 0",
+        "Ammo 0",
+        "Charges 0",
+        "Supplies 0",
+        "Resources 0",
+    ] {
         assert!(
             !text.contains(caption),
             "The counter displays its quantity: {caption}"

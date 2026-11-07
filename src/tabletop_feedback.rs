@@ -46,6 +46,7 @@ pub(crate) struct FeedbackSettings {
 /// Add only to currently clickable faces. Inspection counts as interaction.
 #[derive(Component, Default)]
 pub(crate) struct CardFeedback {
+    /// Current contextual gameplay choices, supplied by the rules adapter.
     pub opportunity: bool,
     pub menu_source: bool,
     pub pending_choice: bool,
@@ -59,7 +60,6 @@ enum Mark {
     Hover,
     MenuSource,
     PendingChoice,
-    AvailableCommitment,
 }
 
 #[derive(Component)]
@@ -119,11 +119,10 @@ pub(crate) fn attach_card_feedback(
             "Card menu source",
         ),
         (Mark::PendingChoice, GOLD, "Card pending choice"),
-        (Mark::AvailableCommitment, TEAL, "Card available commitment"),
         (
             Mark::AvailableOpportunity,
-            Color::srgb(0.70, 0.48, 0.88),
-            "Card available opportunity",
+            TEAL,
+            "Available gameplay choices",
         ),
     ] {
         let material = materials.add(StandardMaterial {
@@ -147,10 +146,18 @@ pub(crate) fn attach_card_feedback(
             ))
             .id();
         commands.entity(card).add_child(marker);
-        if matches!(kind, Mark::Hover) {
+        if matches!(kind, Mark::Hover | Mark::AvailableOpportunity) {
+            let padding = if kind == Mark::AvailableOpportunity {
+                0.10
+            } else {
+                0.0
+            };
             let segment = commands
                 .spawn((
-                    Mesh3d(meshes.add(crate::tabletop_pieces::card_shape::outline(width, length))),
+                    Mesh3d(meshes.add(crate::tabletop_pieces::card_shape::outline(
+                        width + padding,
+                        length + padding,
+                    ))),
                     MeshMaterial3d(material.clone()),
                     Transform::from_translation(Vec3::Y * 0.018),
                     Pickable::IGNORE,
@@ -173,17 +180,48 @@ pub(crate) fn attach_card_feedback(
     }
 }
 
+/// A model's rim follows its local transform, including scale and presentation motion.
+pub(crate) fn attach_model_feedback(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    model: Entity,
+    radius: f32,
+    height: f32,
+) {
+    commands
+        .entity(model)
+        .insert(CardFeedback::default())
+        .with_children(|parent| {
+            parent.spawn((
+                Name::new("Available gameplay choices"),
+                CardMark {
+                    card: model,
+                    kind: Mark::AvailableOpportunity,
+                    opacity: 0.0,
+                },
+                Mesh3d(meshes.add(Annulus::new(radius + 0.025, radius + 0.07))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: TEAL,
+                    alpha_mode: AlphaMode::Blend,
+                    unlit: true,
+                    ..default()
+                })),
+                Transform::from_xyz(0., height, 0.)
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+                Visibility::Hidden,
+                Pickable::IGNORE,
+            ));
+        });
+}
+
 fn segments(kind: Mark, width: f32, length: f32) -> Vec<(Vec3, Vec3)> {
     // All marks lie just outside and above the card face. They never cover text.
     let x = width * 0.5 + 0.045;
     let z = length * 0.5 + 0.045;
     let y = 0.018;
     match kind {
-        Mark::AvailableOpportunity => vec![(
-            Vec3::new(0., y, -z - 0.10),
-            Vec3::new(width * 0.65, 0.035, 0.075),
-        )],
-        Mark::Hover => vec![], // The continuous rounded outline has its own mesh.
+        Mark::Hover | Mark::AvailableOpportunity => vec![], // Continuous rounded outlines.
         Mark::MenuSource => vec![(
             Vec3::new(0.0, y, z + 0.09),
             Vec3::new(width * 0.42, 0.035, 0.055),
@@ -207,16 +245,6 @@ fn segments(kind: Mark, width: f32, length: f32) -> Vec<(Vec3, Vec3)> {
             }
             bars
         }
-        Mark::AvailableCommitment => vec![
-            (
-                Vec3::new(-x - 0.06, y, 0.0),
-                Vec3::new(0.055, 0.035, length * 0.65),
-            ),
-            (
-                Vec3::new(x + 0.06, y, 0.0),
-                Vec3::new(0.055, 0.035, length * 0.65),
-            ),
-        ],
     }
 }
 
@@ -285,16 +313,23 @@ fn card_feedback(
             .any(|window| window.focused && window.cursor_position().is_some())
         && !hits.is_some_and(|hits| hits.keys().any(|entity| ui.contains(*entity)));
     let dt = time.as_ref().map_or(0.0, |time| time.delta_secs());
+    let breathe = !settings.reduced_motion && windows.iter().any(|window| window.focused);
+    let elapsed = time.as_ref().map_or(0.0, |time| time.elapsed_secs());
     for (mut mark, material, mut visibility) in &mut marks {
         let wanted = cards.get(mark.card).is_ok_and(|card| match mark.kind {
             Mark::Hover => available && hits.is_some_and(|hits| hits.contains_key(&mark.card)),
             Mark::MenuSource => card.menu_source,
             Mark::PendingChoice => card.pending_choice,
-            Mark::AvailableCommitment => card.commitment.is_some() && !card.pending_choice,
             Mark::AvailableOpportunity => card.opportunity,
         });
         let opacity = if !wanted {
             0.0
+        } else if mark.kind == Mark::AvailableOpportunity {
+            if breathe {
+                0.46 + 0.18 * (elapsed * std::f32::consts::TAU / 3.2).sin()
+            } else {
+                0.46
+            }
         } else if mark.kind != Mark::Hover || settings.reduced_motion {
             1.0
         } else {
@@ -312,7 +347,8 @@ fn card_feedback(
             }
         }
         if wanted
-            && opacity < 1.0
+            && ((mark.kind == Mark::Hover && opacity < 1.0)
+                || (mark.kind == Mark::AvailableOpportunity && breathe))
             && let Some(redraw) = redraw.as_mut()
         {
             redraw.request();
@@ -411,7 +447,7 @@ mod tests {
     }
 
     #[test]
-    fn commitment_availability_is_steady_and_selected_has_distinct_marks() {
+    fn availability_breathes_without_hiding_and_selection_keeps_distinct_marks() {
         let (mut app, window) = test_app();
         let card = add_card(&mut app);
         app.world_mut()
@@ -425,8 +461,17 @@ mod tests {
             bonus: 4,
             skill: crate::tabletop_support::symbols::Skill::Willpower,
         });
+        app.world_mut()
+            .get_mut::<CardFeedback>(card)
+            .unwrap()
+            .opportunity = true;
         app.update();
-        assert_eq!(opacity(&mut app, Mark::AvailableCommitment), 1.0);
+        assert!((opacity(&mut app, Mark::AvailableOpportunity) - 0.46).abs() < 0.001);
+        app.world_mut()
+            .resource_mut::<PresentationTime>()
+            .advance_by(Duration::from_millis(800));
+        app.update();
+        assert!((opacity(&mut app, Mark::AvailableOpportunity) - 0.64).abs() < 0.001);
         assert_eq!(opacity(&mut app, Mark::Hover), 0.0);
         assert_eq!(opacity(&mut app, Mark::PendingChoice), 0.0);
         assert!(
@@ -440,7 +485,7 @@ mod tests {
             .unwrap()
             .pending_choice = true;
         app.update();
-        assert_eq!(opacity(&mut app, Mark::AvailableCommitment), 0.0);
+        assert!(opacity(&mut app, Mark::AvailableOpportunity) > 0.0);
         assert_eq!(opacity(&mut app, Mark::PendingChoice), 1.0);
         assert!(
             app.world_mut()
@@ -452,8 +497,12 @@ mod tests {
             .get_mut::<CardFeedback>(card)
             .unwrap()
             .commitment = None;
+        app.world_mut()
+            .get_mut::<CardFeedback>(card)
+            .unwrap()
+            .opportunity = false;
         app.update();
-        assert_eq!(opacity(&mut app, Mark::AvailableCommitment), 0.0);
+        assert_eq!(opacity(&mut app, Mark::AvailableOpportunity), 0.0);
         assert_eq!(opacity(&mut app, Mark::PendingChoice), 1.0);
         app.world_mut().despawn(card);
         assert_eq!(
@@ -509,9 +558,19 @@ mod tests {
         app.world_mut()
             .resource_mut::<FeedbackSettings>()
             .reduced_motion = true;
+        app.world_mut()
+            .get_mut::<CardFeedback>(card)
+            .unwrap()
+            .opportunity = true;
         point_at(&mut app, card);
         app.update();
         assert_eq!(opacity(&mut app, Mark::Hover), 1.0);
+        assert_eq!(opacity(&mut app, Mark::AvailableOpportunity), 0.46);
+        app.world_mut()
+            .resource_mut::<PresentationTime>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+        assert_eq!(opacity(&mut app, Mark::AvailableOpportunity), 0.46);
         let ui = app.world_mut().spawn(Node::default()).id();
         point_at(&mut app, ui);
         app.update();
@@ -539,7 +598,7 @@ mod tests {
         let card = add_card(&mut app);
         app.update();
         let marker_entities = app.world().get::<Children>(card).unwrap().to_vec();
-        assert_eq!(marker_entities.len(), 5);
+        assert_eq!(marker_entities.len(), 4);
         let pose = Transform::from_xyz(3.0, 1.0, -2.0).with_rotation(Quat::from_rotation_x(1.4));
         app.world_mut().entity_mut(card).insert(pose);
         point_at(&mut app, card);

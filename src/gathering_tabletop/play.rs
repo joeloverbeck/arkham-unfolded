@@ -496,6 +496,14 @@ impl Painter<'_, '_, '_> {
         for entity in chaos.entities {
             self.commands.entity(entity).insert(ScenePiece);
         }
+        feedback::attach_model_feedback(
+            self.commands,
+            self.meshes,
+            self.materials,
+            chaos.bag,
+            0.75,
+            0.285,
+        );
         self.selectable(
             chaos.bag,
             controls::Selection {
@@ -537,6 +545,14 @@ impl Painter<'_, '_, '_> {
                 world.entity_mut(child).remove::<Pickable>();
             }
         });
+        feedback::attach_model_feedback(
+            self.commands,
+            self.meshes,
+            self.materials,
+            entity,
+            0.52,
+            0.09,
+        );
         self.selectable(
             entity,
             controls::Selection {
@@ -584,6 +600,14 @@ impl Painter<'_, '_, '_> {
             },
         ) {
             self.commands.entity(token).insert(ScenePiece);
+            feedback::attach_model_feedback(
+                self.commands,
+                self.meshes,
+                self.materials,
+                token,
+                0.27,
+                0.065,
+            );
             if kind == crate::tabletop_counters::CounterKind::Clue
                 && let Source::Location(code) = &source
             {
@@ -628,20 +652,12 @@ impl Painter<'_, '_, '_> {
         active: bool,
     ) {
         let at = placement.translation;
-        if matches!(
-            state,
-            ShownTokenState::Available | ShownTokenState::Selected
-        ) {
-            let color = if matches!(state, ShownTokenState::Selected) {
-                GOLD
-            } else {
-                Color::srgb(0.25, 0.75, 0.95)
-            };
+        if matches!(state, ShownTokenState::Selected) {
             self.commands.spawn((
                 ScenePiece,
                 Mesh3d(self.meshes.add(Cylinder::new(0.58, 0.025))),
                 MeshMaterial3d(self.materials.add(StandardMaterial {
-                    base_color: color,
+                    base_color: GOLD,
                     unlit: true,
                     ..default()
                 })),
@@ -683,6 +699,14 @@ impl Painter<'_, '_, '_> {
             .entity(disk)
             .insert(AccessibleLabel::new(title.clone()));
         if active {
+            feedback::attach_model_feedback(
+                self.commands,
+                self.meshes,
+                self.materials,
+                disk,
+                0.53,
+                0.07,
+            );
             self.selectable(
                 disk,
                 controls::Selection {

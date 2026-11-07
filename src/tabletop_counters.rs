@@ -83,7 +83,29 @@ pub(crate) fn spawn_count(
     materials: &mut Assets<StandardMaterial>,
     visual: CounterVisual,
 ) -> Option<(Entity, Entity)> {
+    spawn_count_inner(commands, meshes, materials, visual, false)
+}
+
+/// Card-owned resources remain visible at zero, independently of personal totals.
+pub(crate) fn spawn_asset_count(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    visual: CounterVisual,
+) -> Option<(Entity, Entity)> {
+    let retain_zero = visual.kind == CounterKind::Resource;
+    spawn_count_inner(commands, meshes, materials, visual, retain_zero)
+}
+
+fn spawn_count_inner(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    visual: CounterVisual,
+    retain_zero: bool,
+) -> Option<(Entity, Entity)> {
     if visual.amount == 0
+        && !retain_zero
         && !matches!(
             visual.kind,
             CounterKind::Ammo | CounterKind::Charge | CounterKind::Bounty | CounterKind::Supply
@@ -306,6 +328,43 @@ pub(crate) struct ActionRow {
     pub background: Option<Handle<Image>>,
 }
 
+#[derive(Component, Debug)]
+pub(crate) struct AbilityMarker;
+
+pub(crate) fn spawn_ability_marker(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    row: ActionRow,
+    spent: bool,
+) -> Entity {
+    let at = layout::investigator_card(row.investigator)
+        .with_y(layout::investigator_action(row.investigator, 0, false).y)
+        + Vec3::X * (crate::tabletop_pieces::CARD_LENGTH / 2. + 0.21 + 0.18);
+    let token = spawn_allowance_marker(
+        commands,
+        meshes,
+        materials,
+        &row,
+        ActionMarker {
+            spent,
+            subdued: spent,
+            additional: false,
+        },
+        at,
+    );
+    commands.entity(token).insert((
+        Name::new("Investigator ability marker"),
+        AbilityMarker,
+        AccessibleLabel::new(if spent {
+            "Round ability spent"
+        } else {
+            "Round ability unused"
+        }),
+    ));
+    token
+}
+
 pub(crate) fn spawn_actions_with_allowance(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -339,83 +398,93 @@ pub(crate) fn spawn_actions_with_allowance(
             layout::investigator_action(row.investigator, 1, false)
                 + Vec3::X * (-span / 2. + slot as f32 * 0.48 + if additional { 0.15 } else { 0. })
         };
-        let mut root = commands.spawn((
-            Name::new(if additional {
-                "Restricted additional action"
-            } else {
-                "Ordinary action"
-            }),
-            marker,
-            Mesh3d(meshes.add(Cylinder::new(0.21, 0.10))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: if marker.subdued {
-                    row.class.color().mix(&Color::BLACK, 0.6)
-                } else {
-                    row.class.color()
-                },
-                perceptual_roughness: 0.65,
-                ..default()
-            })),
-            Transform::from_translation(at),
-            Pickable::IGNORE,
-        ));
-        for (layer, image) in [&row.background, &row.icon].into_iter().enumerate() {
-            if let Some(image) = image {
-                root.with_child((
-                    Mesh3d(meshes.add(Circle::new(0.21))),
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: if marker.subdued {
-                            Color::srgb(0.35, 0.35, 0.35)
-                        } else {
-                            Color::WHITE
-                        },
-                        base_color_texture: Some(image.clone()),
-                        alpha_mode: AlphaMode::Blend,
-                        unlit: true,
-                        ..default()
-                    })),
-                    Transform::from_xyz(0.0, 0.052 + layer as f32 * 0.002, 0.0)
-                        .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
-                    Pickable::IGNORE,
-                ));
-            }
-        }
-        if marker.spent {
-            let material = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.92, 0.55, 0.49),
-                unlit: true,
-                ..default()
-            });
-            for angle in [-std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_4] {
-                root.with_child((
-                    Mesh3d(meshes.add(Cuboid::new(0.35, 0.018, 0.035))),
-                    MeshMaterial3d(material.clone()),
-                    Transform::from_xyz(0.0, 0.063, 0.0)
-                        .with_rotation(Quat::from_rotation_y(angle)),
-                    Pickable::IGNORE,
-                ));
-            }
-        }
-        if marker.additional {
-            let material = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.94, 0.87, 0.61),
-                unlit: true,
-                ..default()
-            });
-            for angle in [0.0, std::f32::consts::FRAC_PI_2] {
-                root.with_child((
-                    Mesh3d(meshes.add(Cuboid::new(0.14, 0.02, 0.035))),
-                    MeshMaterial3d(material.clone()),
-                    Transform::from_xyz(0.16, 0.075, -0.16)
-                        .with_rotation(Quat::from_rotation_y(angle)),
-                    Pickable::IGNORE,
-                ));
-            }
-        }
-        let token = root.id();
+        let token = spawn_allowance_marker(commands, meshes, materials, &row, marker, at);
+        commands.entity(token).insert(marker);
         entities.push(token);
     }
     entities
+}
+
+fn spawn_allowance_marker(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    row: &ActionRow,
+    marker: ActionMarker,
+    at: Vec3,
+) -> Entity {
+    let additional = marker.additional;
+    let mut root = commands.spawn((
+        Name::new(if additional {
+            "Restricted additional action"
+        } else {
+            "Ordinary action"
+        }),
+        Mesh3d(meshes.add(Cylinder::new(0.21, 0.10))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: if marker.subdued {
+                row.class.color().mix(&Color::BLACK, 0.6)
+            } else {
+                row.class.color()
+            },
+            perceptual_roughness: 0.65,
+            ..default()
+        })),
+        Transform::from_translation(at),
+        Pickable::IGNORE,
+    ));
+    for (layer, image) in [&row.background, &row.icon].into_iter().enumerate() {
+        if let Some(image) = image {
+            root.with_child((
+                Mesh3d(meshes.add(Circle::new(0.21))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: if marker.subdued {
+                        Color::srgb(0.35, 0.35, 0.35)
+                    } else {
+                        Color::WHITE
+                    },
+                    base_color_texture: Some(image.clone()),
+                    alpha_mode: AlphaMode::Blend,
+                    unlit: true,
+                    ..default()
+                })),
+                Transform::from_xyz(0.0, 0.052 + layer as f32 * 0.002, 0.0)
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+                Pickable::IGNORE,
+            ));
+        }
+    }
+    if marker.spent {
+        let material = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.92, 0.55, 0.49),
+            unlit: true,
+            ..default()
+        });
+        for angle in [-std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_4] {
+            root.with_child((
+                Mesh3d(meshes.add(Cuboid::new(0.35, 0.018, 0.035))),
+                MeshMaterial3d(material.clone()),
+                Transform::from_xyz(0.0, 0.063, 0.0).with_rotation(Quat::from_rotation_y(angle)),
+                Pickable::IGNORE,
+            ));
+        }
+    }
+    if marker.additional {
+        let material = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.94, 0.87, 0.61),
+            unlit: true,
+            ..default()
+        });
+        for angle in [0.0, std::f32::consts::FRAC_PI_2] {
+            root.with_child((
+                Mesh3d(meshes.add(Cuboid::new(0.14, 0.02, 0.035))),
+                MeshMaterial3d(material.clone()),
+                Transform::from_xyz(0.16, 0.075, -0.16).with_rotation(Quat::from_rotation_y(angle)),
+                Pickable::IGNORE,
+            ));
+        }
+    }
+    root.id()
 }
 
 fn spawn_label(

@@ -2,6 +2,118 @@ use super::*;
 use crate::gathering::{HostileFixture, TonyEffectFixture};
 
 #[test]
+fn read_the_signs_finishes_without_a_cleanup_click_and_resumes_that_pending_step() {
+    use crate::gathering::SpellEventFixture;
+
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::SpellEvents(SpellEventFixture::ReadSigns));
+    let before = session.observe().play.unwrap();
+    let event = before.players[2]
+        .hand
+        .iter()
+        .find(|card| card.code == "06117")
+        .unwrap()
+        .id;
+    let play = session
+        .observe()
+        .choices
+        .into_iter()
+        .find(|choice| {
+            choice
+                .id
+                .starts_with(&format!("action:ordinary:play:tony:{event}:06117"))
+        })
+        .unwrap();
+    session
+        .choose(session.observe().revision, &play.id)
+        .unwrap();
+    reach_reveal(&mut session);
+
+    // Retain the existing rules decision so older saves at this exact boundary
+    // still load. The tabletop must commit it without asking the player.
+    let mut pending = session.clone();
+    for _ in 0..12 {
+        let view = pending.observe();
+        if view
+            .choices
+            .iter()
+            .any(|choice| choice.id == "search:finish-event")
+        {
+            break;
+        }
+        let id = ["test:reveal", "after-test:pass"]
+            .into_iter()
+            .find(|id| view.choices.iter().any(|choice| choice.id == *id))
+            .unwrap();
+        pending.choose(view.revision, id).unwrap();
+    }
+    assert!(
+        pending
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == "search:finish-event")
+    );
+    assert!(
+        controls::global_choices(&pending.observe())
+            .iter()
+            .all(|choice| choice.id != "search:finish-event")
+    );
+    assert_eq!(
+        pending.observe().play.unwrap().players[2].clues,
+        before.players[2].clues + 2
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let pending_path = directory.path().join("pending-cleanup.json");
+    continuity::save_session(&pending_path, &pending).unwrap();
+
+    for (candidate, path, live) in [
+        (session, directory.path().join("live.json"), true),
+        (
+            continuity::load_session(&pending_path).unwrap(),
+            pending_path,
+            false,
+        ),
+    ] {
+        let mut app = host_with_table(Table::new(candidate, path.clone()), false);
+        if live {
+            activate_choice(&mut app, "test:reveal");
+        }
+        finish_presentation(&mut app);
+        if button_with_label(&mut app, "Continue").is_some() {
+            acknowledge_result(&mut app);
+        }
+        finish_presentation(&mut app);
+        for _ in 0..4 {
+            app.update();
+        }
+        let view = app.world().resource::<Table>().view();
+        assert!(
+            !view
+                .choices
+                .iter()
+                .any(|choice| choice.id == "search:finish-event"),
+            "Event cleanup must not wait for another click"
+        );
+        let after = view.play.unwrap();
+        assert_eq!(after.players[2].clues, before.players[2].clues + 2);
+        assert_eq!(after.actions_remaining[2], before.actions_remaining[2] - 1);
+        assert_eq!(
+            after.players[2]
+                .discard
+                .iter()
+                .filter(|card| card.id == event)
+                .count(),
+            1
+        );
+        assert!(button_with_label(&mut app, "Finish resolving Read the Signs").is_none());
+        let saved = continuity::load_session(&path).unwrap();
+        assert_eq!(saved, app.world().resource::<Table>().session);
+        saved.validate().unwrap();
+    }
+}
+
+#[test]
 fn chaos_report_rows_keep_each_token_without_repeating_numeric_contributions() {
     use crate::{
         TokenFace,
@@ -215,7 +327,8 @@ fn small_favor_defeat_keeps_reactions_usable_without_reopening_a_previous_test()
             .any(|card| card.id == bleeds)
     );
     activate_choice(&mut app, "defeat:done");
-    activate_choice(&mut app, "search:finish-event");
+    finish_presentation(&mut app);
+    app.update();
     finish_presentation(&mut app);
     assert!(!rendered_text(&mut app).contains("Chaos tokens"));
     assert!(

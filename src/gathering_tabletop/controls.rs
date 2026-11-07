@@ -718,8 +718,10 @@ pub(super) fn source_choices(view: &Observation, source: &Source) -> Vec<Choice>
 }
 
 pub(super) fn global_choices(view: &Observation) -> Vec<Choice> {
+    let automatic = automatic_choice(view);
     view.choices
         .iter()
+        .filter(|choice| Some(choice.id.as_str()) != automatic)
         .filter(|choice| route(view, &choice.id) == Route::Global)
         .map(|choice| display_choice(view, choice))
         .collect()
@@ -748,6 +750,7 @@ pub(super) fn automatic_choice(view: &Observation) -> Option<&str> {
             | "enemy:attack-complete"
             | "enemy:end"
             | "phase-window:pass"
+            | "search:finish-event"
     )
     .then_some(choice.id.as_str())
 }
