@@ -4,12 +4,11 @@ use crate::tabletop_camera::{
     CameraMode, Capture as CameraCapture, FrameInput, Orbit, parse_initial_view,
 };
 use crate::tabletop_feedback::{self as feedback, CardFeedback, ContextButton, FeedbackSettings};
-use crate::tabletop_health::{HealthAssets, RenderHealth, TabletopHealthPlugin, exit_result};
+use crate::tabletop_health::{RenderHealth, TabletopHealthPlugin};
 use crate::tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin};
 use crate::{
     TokenFace,
     asset_config::AssetConfig,
-    assets,
     tabletop::asset_settings::AssetSettings,
     tabletop_layout::{self as layout, Area},
     tony::{Harm, Observation, Session, Stage, continuity},
@@ -136,7 +135,7 @@ const CARDS: &[Card] = &[
 struct Options {
     save: PathBuf,
     load: Option<PathBuf>,
-    art_root: Option<PathBuf>,
+    art_root: PathBuf,
     config: AssetConfig,
     screenshot: Option<PathBuf>,
     quit_after_screenshot: bool,
@@ -155,7 +154,7 @@ impl Options {
         let mut result = Self {
             save: "local/experiment/tony.session.json".into(),
             load: None,
-            art_root: Some(config.root().to_path_buf()),
+            art_root: config.root().to_path_buf(),
             config,
             screenshot: None,
             quit_after_screenshot: false,
@@ -172,14 +171,13 @@ impl Options {
                 }
                 "--save" => result.save = value()?.into(),
                 "--load" => result.load = Some(value()?.into()),
-                "--art-root" => result.art_root = Some(value()?.into()),
-                "--no-art" => result.art_root = None,
+                "--art-root" => result.art_root = value()?.into(),
                 "--screenshot" => result.screenshot = Some(value()?.into()),
                 "--quit-after-screenshot" => result.quit_after_screenshot = true,
                 "--initial-view" => result.initial_view = Some(parse_initial_view(&value()?)?),
                 "--help" | "-h" => {
                     println!(
-                        "Arkham Unfolded — Tony turn\n\n--experiment tony\n--save PATH\n--load PATH\n--art-root PATH\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline  Diagnostic startup framing; Home is unchanged\n\nRight drag / arrows: orbit. Wheel / +/-: zoom. Home: reset. F12: capture."
+                        "Arkham Unfolded — Tony turn\n\n--experiment tony\n--save PATH\n--load PATH\n--art-root PATH\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline  Diagnostic startup framing; Home is unchanged\n\nRight drag / arrows: orbit. Wheel / +/-: zoom. Home: reset. F12: capture."
                     );
                     return Ok(None);
                 }
@@ -260,7 +258,7 @@ impl Table {
 #[derive(Resource)]
 struct Art {
     handles: BTreeMap<String, Handle<Image>>,
-    symbol_font: Option<Handle<Font>>,
+    symbol_font: Handle<Font>,
     status: String,
 }
 impl Art {
@@ -330,6 +328,11 @@ pub fn run() -> Result<(), String> {
     let Some(options) = Options::parse()? else {
         return Ok(());
     };
+    let (recovery, report) = crate::tabletop_startup::Recovery::prepare(
+        options.config.clone(),
+        options.art_root.clone(),
+        crate::tabletop::asset_settings::Collection::Tony,
+    )?;
     let load = options
         .load
         .or_else(|| options.save.is_file().then(|| options.save.clone()));
@@ -339,24 +342,8 @@ pub fn run() -> Result<(), String> {
         Session::new().map_err(|e| e.to_string())?
     };
     let save_path = load.unwrap_or(options.save);
-    let root = options.art_root.map(|p| {
-        if p.is_absolute() {
-            p
-        } else {
-            std::env::current_dir().unwrap_or_default().join(p)
-        }
-    });
-    let collection = root.as_deref().map(assets::inspect_tony);
-    let status = collection.as_ref().map_or_else(
-        || "Artwork disabled; readable substitutes are active.".into(),
-        |r| r.summary(),
-    );
-    eprintln!("Experiment: Tony turn (--experiment tony)");
-    match &root {
-        Some(root) => eprintln!("Artwork root: {}", root.display()),
-        None => eprintln!("Artwork root: disabled for this launch (--no-art)"),
-    }
-    eprintln!("{status}");
+    let status = report.summary();
+    let collection = Some(report);
     let notice = options.config.warning().map_or_else(
         || "Choose your actions. Every committed decision is saved.".into(),
         |w| format!("Asset settings: {w}"),
@@ -376,7 +363,7 @@ pub fn run() -> Result<(), String> {
         })
         .insert_resource(Actions::default())
         .insert_resource(Orbit::new(CameraMode::Tony).with_initial_view(options.initial_view))
-        .insert_resource(AssetSettings::new_tony(options.config))
+        .insert_resource(AssetSettings::new_tony(recovery.config()))
         .insert_resource(Capture {
             path: options.screenshot,
             quit: options.quit_after_screenshot,
@@ -394,10 +381,7 @@ pub fn run() -> Result<(), String> {
                     ..default()
                 })
                 .set(AssetPlugin {
-                    file_path: root.map_or_else(
-                        || "local/experiment/absent-art".into(),
-                        |p| p.to_string_lossy().into_owned(),
-                    ),
+                    file_path: recovery.root().to_string_lossy().into_owned(),
                     ..default()
                 }),
         )
@@ -415,7 +399,8 @@ pub fn run() -> Result<(), String> {
     let symbol_font = collection
         .as_ref()
         .and_then(|r| r.verified_path("font/symbols"))
-        .map(|path| server.load(path.to_owned()));
+        .map(|path| server.load(path.to_owned()))
+        .expect("the admitted collection contains its symbol font");
     let reveal_image = collection
         .as_ref()
         .and_then(|r| r.verified_path(reveal::ART_ROLE))
@@ -425,17 +410,10 @@ pub fn run() -> Result<(), String> {
         symbol_font,
         status,
     };
-    let health_assets = HealthAssets::new(
-        art.handles
-            .values()
-            .map(|handle| handle.id().untyped())
-            .chain(art.symbol_font.iter().map(|handle| handle.id().untyped()))
-            .chain(reveal_image.iter().map(|handle| handle.id().untyped())),
-    );
-    app.insert_resource(health_assets)
-        .insert_resource(reveal::Artwork(reveal_image))
+    app.insert_resource(reveal::Artwork(reveal_image))
         .insert_resource(art);
-    exit_result(app.run())
+    recovery.install(&mut app, collection.as_ref().expect("verified collection"));
+    recovery.finish(app.run())
 }
 
 fn image_asset_roles() -> impl Iterator<Item = String> {
@@ -808,7 +786,10 @@ fn synchronize_feedback(
         marks.commitment = table
             .context
             .contribution(&view, !table.presenting(), source.0);
-        marks.symbol_font = art.as_ref().and_then(|art| art.symbol_font.clone());
+        marks.symbol_font = art
+            .as_ref()
+            .map(|art| art.symbol_font.clone())
+            .unwrap_or_default();
     }
 }
 
@@ -826,11 +807,7 @@ fn card_mesh(
     let card = &CARDS[index];
     let image = art.image(&format!("card/{}", card.code));
     let material = materials.add(StandardMaterial {
-        base_color: if image.is_some() {
-            Color::WHITE
-        } else {
-            Color::srgb(0.34, 0.31, 0.23)
-        },
+        base_color: Color::WHITE,
         base_color_texture: image,
         unlit: true,
         ..default()
@@ -910,11 +887,7 @@ fn deck_mesh(
                 CARD_LENGTH,
             ))),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: if image.is_some() {
-                    Color::WHITE
-                } else {
-                    Color::srgb(0.12, 0.19, 0.30)
-                },
+                base_color: Color::WHITE,
                 base_color_texture: image,
                 unlit: true,
                 depth_bias: 1.0,

@@ -58,7 +58,7 @@ pub(crate) struct CardFeedback {
     pub menu_source: bool,
     pub pending_choice: bool,
     pub commitment: Option<Contribution>,
-    pub symbol_font: Option<Handle<Font>>,
+    pub symbol_font: Handle<Font>,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]

@@ -141,7 +141,7 @@ fn label(
     value: impl Into<String>,
     point: Vec3,
     color: Color,
-    font: &Option<Handle<Font>>,
+    font: &Handle<Font>,
 ) -> Entity {
     commands
         .spawn((
@@ -369,9 +369,10 @@ fn synchronize(
                     width: px(80.0),
                     ..default()
                 },
-                WorldLabel(tabletop_layout::investigator_harm_caption(
-                    index, horror, true,
-                )),
+                WorldLabel(
+                    tabletop_layout::investigator_harm_caption(index, horror)
+                        + Vec3::X * if horror { 0.45 } else { -0.45 },
+                ),
                 HarmCaption,
                 LabelDisplay::Detail,
                 TransientScene,
@@ -474,11 +475,6 @@ fn synchronize(
             0.0
         });
         let material = materials.add(StandardMaterial {
-            base_color: if art.handles[i].is_some() {
-                Color::WHITE
-            } else {
-                card.color
-            },
             base_color_texture: art.handles[i].clone(),
             perceptual_roughness: 0.9,
             unlit: true,
@@ -605,7 +601,6 @@ fn synchronize(
                 size: Vec2::new(1.80, 2.52),
                 thickness: 0.07,
                 image: art.handles[card_index].clone(),
-                fallback: CARDS[card_index].color,
             },
         );
         commands

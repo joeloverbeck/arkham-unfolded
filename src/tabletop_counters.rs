@@ -85,16 +85,6 @@ pub(crate) struct Counter {
     pub amount: u8,
 }
 
-impl Counter {
-    fn caption(&self, artwork: bool) -> String {
-        if artwork {
-            self.amount.to_string()
-        } else {
-            format!("{} {}", self.kind.name(), self.amount)
-        }
-    }
-}
-
 pub(crate) struct CounterVisual {
     pub kind: CounterKind,
     pub amount: u8,
@@ -128,7 +118,8 @@ pub(crate) fn spawn_count(
         kind: visual.kind,
         amount: visual.amount,
     };
-    let caption = counter.caption(visual.image.is_some());
+    let caption = counter.amount.to_string();
+    let accessible = format!("{} {}", counter.kind.name(), counter.amount);
     let token = spawn_body(
         commands,
         meshes,
@@ -154,7 +145,7 @@ pub(crate) fn spawn_count(
         None,
     );
     commands.entity(label).insert((
-        AccessibleLabel::new(format!("{} {}", visual.kind.name(), visual.amount)),
+        AccessibleLabel::new(accessible),
         Node {
             position_type: PositionType::Absolute,
             padding: UiRect::axes(px(3.0), px(1.0)),
@@ -458,15 +449,6 @@ pub(crate) fn spawn_actions_with_allowance(
         }
         let token = root.id();
         entities.push(token);
-        if !additional && slot == 1 && (row.icon.is_none() || row.background.is_none()) {
-            entities.push(spawn_label(
-                commands,
-                token,
-                "Actions".into(),
-                Vec3::new(0.0, 0.0, 0.20),
-                Some(72.0),
-            ));
-        }
     }
     entities
 }
@@ -605,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn totals_hide_zero_and_fall_back_independently_of_other_artwork() {
+    fn totals_hide_zero_and_keep_numeric_captions_with_accessible_names() {
         let mut world = World::new();
         let mut queue = CommandQueue::default();
         let mut meshes = Assets::<Mesh>::default();
@@ -656,7 +638,11 @@ mod tests {
         .unwrap();
         queue.apply(&mut world);
         assert_eq!(world.get::<Text>(resource_label).unwrap().0, "5");
-        assert_eq!(world.get::<Text>(clue_label).unwrap().0, "Clues 2");
+        assert_eq!(world.get::<Text>(clue_label).unwrap().0, "2");
+        assert_eq!(
+            world.get::<AccessibleLabel>(clue_label).unwrap().0,
+            "Clues 2"
+        );
         assert_eq!(
             world.get::<Counter>(resource).unwrap().kind,
             CounterKind::Resource
@@ -705,7 +691,7 @@ mod tests {
                 .iter(&world)
                 .filter(|text| text.0 == "Actions")
                 .count(),
-            1
+            0
         );
     }
 

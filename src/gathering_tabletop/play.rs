@@ -657,8 +657,7 @@ impl Painter<'_, '_, '_> {
         let image = self
             .context
             .art
-            .loaded_image(crate::tabletop_tokens::image_role(face));
-        let has_art = image.is_some();
+            .image(crate::tabletop_tokens::image_role(face));
         let (disk, label) = crate::tabletop_tokens::spawn(
             self.commands,
             self.meshes,
@@ -680,6 +679,9 @@ impl Painter<'_, '_, '_> {
             },
         ));
         let title = format!("Token {ordinal} · {}\n{}", face.label(), state.label());
+        self.commands
+            .entity(disk)
+            .insert(AccessibleLabel::new(title.clone()));
         if active {
             self.selectable(
                 disk,
@@ -726,28 +728,7 @@ impl Painter<'_, '_, '_> {
                 ));
             }
         }
-        if has_art {
-            self.commands.entity(label).despawn();
-        } else {
-            let caption = match state {
-                ShownTokenState::Selected
-                | ShownTokenState::Ignored
-                | ShownTokenState::Cancelled => format!("{}\n{}", face.label(), state.label()),
-                _ => face.label().into(),
-            };
-            self.commands.entity(label).insert((
-                ScenePiece,
-                Text::new(crate::tabletop::readable_text(caption)),
-                crate::tabletop_tokens::Follow(disk, Vec3::Z * 0.55),
-                Node {
-                    position_type: PositionType::Absolute,
-                    width: px(52),
-                    padding: UiRect::axes(px(2), px(2)),
-                    border_radius: BorderRadius::all(px(3)),
-                    ..default()
-                },
-            ));
-        }
+        self.commands.entity(label).despawn();
     }
 }
 

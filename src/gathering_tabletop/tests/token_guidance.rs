@@ -602,7 +602,7 @@ fn olive_and_jacquelines_five_tokens_fit_compactly_inside_test() {
 }
 
 #[test]
-fn chaos_identity_captions_require_missing_or_undecoded_art() {
+fn chaos_art_supplies_identity_and_disks_keep_accessible_names() {
     let session = super::review_saves::resolution_review::checkpoints()
         .unwrap()
         .into_iter()
@@ -621,44 +621,33 @@ fn chaos_identity_captions_require_missing_or_undecoded_art() {
             .iter()
             .map(|face| (crate::tabletop_tokens::image_role(*face), handle.clone())),
     ));
-    for loaded in [true, false] {
-        if !loaded {
-            app.world_mut()
-                .resource_mut::<Assets<Image>>()
-                .remove(handle.id());
-        }
-        app.world_mut().resource_mut::<Table>().dirty = true;
-        for _ in 0..4 {
-            app.update();
-        }
-        finish_presentation(&mut app);
-        let world = app.world_mut();
-        let captions: Vec<_> = world
-            .query::<(&Text, &crate::tabletop_tokens::Follow)>()
-            .iter(world)
-            .map(|(text, _)| text.0.clone())
-            .collect();
-        if loaded {
-            assert!(
-                captions.is_empty(),
-                "Artwork supplies token identity: {captions:?}"
-            );
-        } else {
-            assert_eq!(captions.len(), faces.len());
-            for face in &faces {
-                assert!(
-                    captions
-                        .iter()
-                        .any(|text| *text == crate::tabletop::readable_text(face.label().into())),
-                    "Missing face name for {face:?}: {captions:?}"
-                );
-            }
-        }
+    app.world_mut().resource_mut::<Table>().dirty = true;
+    for _ in 0..4 {
+        app.update();
+    }
+    finish_presentation(&mut app);
+    let world = app.world_mut();
+    let captions: Vec<_> = world
+        .query::<(&Text, &crate::tabletop_tokens::Follow)>()
+        .iter(world)
+        .map(|(text, _)| text.0.clone())
+        .collect();
+    assert!(
+        captions.is_empty(),
+        "Artwork supplies token identity: {captions:?}"
+    );
+    for face in &faces {
+        assert!(
+            world
+                .query_filtered::<&AccessibleLabel, With<sealed::Piece>>()
+                .iter(world)
+                .any(|label| label.0.contains(face.label()))
+        );
     }
 }
 
 #[test]
-fn jacquelines_three_tokens_share_one_row_and_have_separate_readable_captions() {
+fn jacquelines_three_tokens_share_one_row_and_clear_meaningful_headings() {
     let session = super::review_saves::resolution_review::checkpoints()
         .unwrap()
         .into_iter()
@@ -674,16 +663,16 @@ fn jacquelines_three_tokens_share_one_row_and_have_separate_readable_captions() 
         .reveal_groups();
     assert_eq!(groups.len(), 1, "The original draw has no special status");
     assert_eq!(groups[0].members.len(), 3);
-    assert_token_captions_are_separate(session, true);
+    assert_tokens_and_headings_are_separate(session, true);
 }
 
 #[test]
-fn voice_of_ra_nested_tokens_have_separate_readable_captions() {
-    assert_token_captions_are_separate(voice_ra_selection(), false);
+fn voice_of_ra_nested_tokens_clear_their_group_headings() {
+    assert_tokens_and_headings_are_separate(voice_ra_selection(), false);
 }
 
-fn assert_token_captions_are_separate(session: Session, ordinary: bool) {
-    use crate::tabletop_layout::heading_checks::{rendered_text_bounds, viewport};
+fn assert_tokens_and_headings_are_separate(session: Session, ordinary: bool) {
+    use crate::tabletop_layout::heading_checks::{mesh_bounds, rendered_text_bounds, viewport};
     let group_names: Vec<_> = session
         .observe()
         .play
@@ -712,27 +701,40 @@ fn assert_token_captions_are_separate(session: Session, ordinary: bool) {
                 app.update();
             }
             let world = app.world_mut();
-            let labels: Vec<_> = world
-                .query::<(Entity, &crate::tabletop_tokens::Follow)>()
+            let tokens: Vec<_> = world
+                .query_filtered::<(Entity, &AccessibleLabel), With<sealed::Piece>>()
                 .iter(world)
-                .map(|(entity, follow)| (entity, follow.0))
+                .map(|(entity, label)| (entity, label.0.clone()))
                 .collect();
-            assert_eq!(labels.len(), if ordinary { 3 } else { 9 });
+            assert_eq!(tokens.len(), if ordinary { 3 } else { 9 });
             if ordinary {
-                let z = world.get::<Transform>(labels[0].1).unwrap().translation.z;
-                assert!(labels.iter().all(|(_, token)| {
+                let z = world.get::<Transform>(tokens[0].0).unwrap().translation.z;
+                assert!(tokens.iter().all(|(token, _)| {
                     (world.get::<Transform>(*token).unwrap().translation.z - z).abs() < 0.001
                 }));
             }
-            let mut captions: Vec<_> = labels
+            let (camera, camera_at) = world
+                .query_filtered::<(&Camera, &GlobalTransform), With<MainCamera>>()
+                .single(world)
+                .unwrap();
+            let token_bounds: Vec<_> = tokens
                 .iter()
-                .map(|(entity, _)| {
+                .map(|(entity, label)| {
                     (
-                        world.get::<Text>(*entity).unwrap().0.clone(),
-                        rendered_text_bounds(world, *entity, scale),
+                        label.clone(),
+                        mesh_bounds(world, camera, camera_at, *entity),
                     )
                 })
                 .collect();
+            // Retain the existing physical-token geometry. This check previously
+            // measured routine captions; only group/card captions remain now.
+            for (name, bounds) in token_bounds {
+                assert!(
+                    bounds.min.cmpge(Vec2::ZERO).all() && bounds.max.cmple(size).all(),
+                    "{name}: {bounds:?}"
+                );
+            }
+            let mut captions = Vec::new();
             let headings: Vec<_> = world
                 .query::<(Entity, &WorldLabel, &Text)>()
                 .iter(world)

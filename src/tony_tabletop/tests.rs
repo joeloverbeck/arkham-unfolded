@@ -76,7 +76,7 @@ fn launch_uses_configured_root_without_creating_a_preference() {
     )
     .unwrap()
     .unwrap();
-    assert_eq!(options.art_root, Some(default_root));
+    assert_eq!(options.art_root, default_root);
     assert!(!settings.exists());
 }
 
@@ -91,12 +91,11 @@ fn launch_overrides_leave_saved_tony_preference_unchanged() {
     let saved_bytes = std::fs::read(&settings).unwrap();
 
     for (args, expected) in [
-        (vec!["--experiment", "tony"], Some(chosen_root.clone())),
+        (vec!["--experiment", "tony"], chosen_root.clone()),
         (
             vec!["--experiment", "tony", "--art-root", "temporary-art"],
-            Some(PathBuf::from("temporary-art")),
+            PathBuf::from("temporary-art"),
         ),
-        (vec!["--experiment", "tony", "--no-art"], None),
     ] {
         let options = Options::parse_from(
             args.into_iter().map(str::to_owned),
@@ -108,6 +107,7 @@ fn launch_overrides_leave_saved_tony_preference_unchanged() {
         assert_eq!(options.config.root(), chosen_root);
         assert_eq!(std::fs::read(&settings).unwrap(), saved_bytes);
     }
+    assert!(Options::parse_from(["--no-art"].map(str::to_owned), config).is_err());
 }
 
 fn presentation_app(path: PathBuf) -> App {
@@ -237,9 +237,18 @@ mod reveal_shortcut;
 fn visible_text(app: &mut App) -> Vec<String> {
     let world = app.world_mut();
     world
-        .query::<&Text>()
+        .query::<(&Text, Option<&AccessibleLabel>)>()
         .iter(world)
-        .map(|t| t.0.clone())
+        // Glyph spelling is asserted separately; semantic assertions retain English.
+        .map(|(text, label)| {
+            if text.0.is_empty() {
+                crate::tabletop::readable_text(
+                    label.map_or("", |label| label.0.as_str()).to_owned(),
+                )
+            } else {
+                text.0.clone()
+            }
+        })
         .collect()
 }
 
@@ -406,10 +415,8 @@ fn risky_actions_show_the_attack_before_the_player_commits() {
 fn commitment_controls_show_the_tested_skill_and_keep_the_last_selection_pending() {
     let directory = tempfile::tempdir().unwrap();
     for (action, skill, glyph) in [("fight", "combat", "h"), ("investigate", "intellect", "g")] {
-        for symbols in [false, true] {
-            let mut app =
-                presentation_app(directory.path().join(format!("{action}-{symbols}.json")));
-            app.world_mut().resource_mut::<Art>().symbol_font = symbols.then(Handle::default);
+        {
+            let mut app = presentation_app(directory.path().join(format!("{action}.json")));
             choose(&mut app, action);
             act(&mut app, Action::FinishAnimation);
             let before = app.world().resource::<Table>().view();
@@ -435,11 +442,7 @@ fn commitment_controls_show_the_tested_skill_and_keep_the_last_selection_pending
                 }
                 assert_eq!(rendered, visible);
             };
-            let contribution = if symbols {
-                format!("\u{2060}{glyph}\u{2060}")
-            } else {
-                skill.into()
-            };
+            let contribution = format!("\u{2060}{glyph}\u{2060}");
             assert_label(
                 &mut app,
                 &format!("Select to commit +1 {skill}"),
@@ -464,12 +467,12 @@ fn commitment_controls_show_the_tested_skill_and_keep_the_last_selection_pending
 fn harm_symbols_reach_warnings_counts_stages_card_text_and_history() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = presentation_app(directory.path().join("turn.json"));
-    app.world_mut().resource_mut::<Art>().symbol_font = Some(Handle::default());
+    app.world_mut().resource_mut::<Art>().symbol_font = Handle::default();
     app.update();
     fn check(app: &mut App, label_contains: &str, damage: bool, horror: bool) {
         let world = app.world_mut();
         let (_, children) = world
-            .query::<(&AccessibleLabel, &Children)>()
+            .query_filtered::<(&AccessibleLabel, &Children), With<Text>>()
             .iter(world)
             .find(|(label, _)| label.0.contains(label_contains))
             .unwrap_or_else(|| panic!("missing readable label: {label_contains}"));
@@ -876,7 +879,7 @@ fn scene_app_in(mut app: App) -> (App, Handle<Image>) {
     })
     .insert_resource(Art {
         handles: [("card-back/player".into(), back.clone())].into(),
-        symbol_font: None,
+        symbol_font: Handle::default(),
         status: String::new(),
     })
     .init_resource::<Assets<Mesh>>()
@@ -1139,7 +1142,12 @@ fn focused_button_label(app: &App) -> Option<&str> {
     app.world()
         .get::<Children>(entity)?
         .iter()
-        .find_map(|child| app.world().get::<Text>(child).map(|text| text.0.as_str()))
+        .find_map(|child| {
+            app.world()
+                .get::<AccessibleLabel>(child)
+                .map(|label| label.0.as_str())
+                .or_else(|| app.world().get::<Text>(child).map(|text| text.0.as_str()))
+        })
 }
 
 #[test]
@@ -1242,8 +1250,11 @@ fn keyboard_menu_inspection_preserves_staged_copies_until_explicit_confirmation(
                 .iter()
                 .any(|child| {
                     app.world()
-                        .get::<Text>(child)
-                        .is_some_and(|text| text.0 == "Commit selected  /  +2 combat")
+                        .get::<AccessibleLabel>(child)
+                        .is_some_and(|text| {
+                            crate::tabletop::readable_text(text.0.clone())
+                                == "Commit selected  /  +2 combat"
+                        })
                 })
                 .then_some(entity)
         })

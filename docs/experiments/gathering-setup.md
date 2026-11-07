@@ -1,5 +1,15 @@
 # Gathering candidate
 
+**Artwork contract amendment, 2026-11-07:** [ADR 0004](../adr/0004-require-artwork-for-3d-play.md)
+requires complete artwork for 3D play and a blocking startup recovery window.
+All four modes now refuse incomplete collections and wait for every required
+image and the symbol font to load before play. **Choose asset folder** selects a
+complete collection, **Retry** rechecks it, and **Quit** leaves saves unchanged.
+The removed `--no-art` option is rejected. Dated substitute-presentation evidence
+below describes earlier builds. Headless checks remain artwork-independent.
+[Issue #124's handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/124#issuecomment-6706875824)
+records verification and remaining native acceptance.
+
 ## Retrospective verification improvements — 2026-11-06
 
 Joel authorized the four retrospective recommendations after PR #112, based on
@@ -758,8 +768,8 @@ The finite recipe contains 144 roles: 94 card identities, 11 reverse/unrevealed
 sides, card backs, investigator standees, token/class artwork, reveal icon and
 symbol font, including bounty, ammo, the Spell charge motif and the neutral key.
 An earlier v2 collection lacks the key; v1 also lacks bounty, ammo and charge
-artwork. Verified existing artwork remains available, with named substitutes for
-the missing roles. Old Keyring's counter is named **Keys**.
+artwork. Older collections remain available for diagnostic inspection but cannot
+admit play. Old Keyring's counter is named **Keys**.
 Location roles explicitly distinguish unrevealed and revealed
 faces. Preparation preserves source bytes and the archive; an identical complete
 destination is reusable, while conflicting or incomplete output is refused.
@@ -788,22 +798,18 @@ If the launch includes `--art-root PATH`, pass that same option and path to this
 check. It shares Gathering's saved-preference/default and relative-path resolution,
 prints the selected absolute root, and reports configuration warnings and asset
 completeness without opening a window or changing settings, saves or artwork.
-An incomplete collection exits nonzero; `--no-art` also exits nonzero and explicitly
-reports that completeness was not checked. This does not change the game's
-readable-substitute behavior. Retain the resolved root and result in the handoff;
+An incomplete collection exits nonzero; the removed `--no-art` option is rejected. Native startup also refuses incomplete collections and requires successful decoding before play. Retain the resolved root and result in the handoff;
 `check-gathering PATH` remains the check for an explicitly named staging collection.
 
-`--art-root PATH` selects a folder for that launch. **Choose asset folder** saves
-the next-launch preference in `$XDG_CONFIG_HOME/arkham-unfolded/gathering.toml`
+`--art-root PATH` selects a folder for that launch. **Choose asset folder** validates and saves
+the preference; startup recovery uses it immediately with **Retry**. It is stored in `$XDG_CONFIG_HOME/arkham-unfolded/gathering.toml`
 (normally `~/.config/arkham-unfolded/gathering.toml`). Without an override or saved
 preference, Gathering uses the stable installation above. Remove obsolete
 `--art-root` arguments from saved launch commands. An explicit saved choice still
 takes precedence; it is not silently rewritten. Other experiments' settings and
 distinct finite content selections remain separate. With a custom `XDG_DATA_HOME`,
 install in that data directory or explicitly select the installed folder.
-`--no-art` is available for diagnostic substitute mode.
-Startup reports the chosen folder and verified coverage; absent or corrupt roles
-use readable substitutes rather than an unchecked image.
+Startup reports the chosen folder and verified coverage. Absent, corrupt or undecodable required roles block play and offer **Choose asset folder**, **Retry** and **Quit**. A valid recovery selection applies to this startup; in-game selection still applies on restart.
 
 On 2026-11-05 Joel confirmed that the compact enemy board looked good, then found
 missing bounty art when launching the old cache collection. Direct inspection

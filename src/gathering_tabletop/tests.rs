@@ -1,5 +1,38 @@
 use super::*;
 
+#[test]
+fn opening_a_fresh_native_table_does_not_save_before_artwork_admission() {
+    let directory = tempfile::tempdir().unwrap();
+    let save = directory.path().join("attempt.json");
+    let table = Table::open(save.clone()).unwrap();
+    assert!(
+        !save.exists(),
+        "checking artwork must not create an attempt"
+    );
+    assert_eq!(table.session.observe().revision, 0);
+}
+
+#[test]
+fn registered_table_saves_its_initial_decision_only_after_admission() {
+    let directory = tempfile::tempdir().unwrap();
+    let save = directory.path().join("attempt.json");
+    let mut app = host(save.clone());
+    app.insert_resource(Table::open(save.clone()).unwrap());
+    app.insert_resource(RenderHealth::default());
+    app.update();
+    assert!(!save.exists());
+    app.insert_resource(RenderHealth::ready_for_test());
+    app.update();
+    assert_eq!(
+        continuity::load_session(&save).unwrap(),
+        app.world().resource::<Table>().session
+    );
+    let before = std::fs::read(&save).unwrap();
+    app.insert_resource(RenderHealth::failed_for_test());
+    app.update();
+    assert_eq!(std::fs::read(save).unwrap(), before);
+}
+
 mod cards;
 mod counters_and_enemies;
 mod draws;
@@ -498,7 +531,7 @@ fn gathering_options_enable_default_and_saved_art_without_changing_preferences()
         .unwrap()
         .unwrap()
     };
-    assert_eq!(parse().art_root.as_ref(), Some(&default_root));
+    assert_eq!(parse().art_root, default_root);
     assert!(!settings.exists());
     let saved_root = directory.path().join("selected-gathering-assets");
     AssetConfig::load_at(settings.clone(), default_root.clone())
@@ -506,7 +539,7 @@ fn gathering_options_enable_default_and_saved_art_without_changing_preferences()
         .unwrap();
     let before = std::fs::read(&settings).unwrap();
     let options = parse();
-    assert_eq!(options.art_root.as_ref(), Some(&saved_root));
+    assert_eq!(options.art_root, saved_root);
     assert_eq!(
         options.save,
         PathBuf::from("local/gathering/setup.session.json")
@@ -515,7 +548,7 @@ fn gathering_options_enable_default_and_saved_art_without_changing_preferences()
 }
 
 #[test]
-fn gathering_art_override_and_no_art_are_launch_only_options() {
+fn gathering_art_override_is_temporary_and_no_art_is_rejected() {
     let directory = tempfile::tempdir().unwrap();
     let settings = directory.path().join("gathering.toml");
     let saved_root = directory.path().join("saved-assets");
@@ -530,17 +563,17 @@ fn gathering_art_override_and_no_art_are_launch_only_options() {
         vec!["--no-art"],
     ] {
         let no_art = args.contains(&"--no-art");
-        let options = Options::parse(
+        let result = Options::parse(
             AssetConfig::load_at(settings.clone(), directory.path().join("unused-default")),
             args.into_iter().map(str::to_owned),
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(
-            options.art_root,
-            (!no_art).then(|| PathBuf::from("/tmp/gathering-override"))
         );
-        assert_eq!(options.config.root(), saved_root);
+        if no_art {
+            assert!(result.is_err());
+        } else {
+            let options = result.unwrap().unwrap();
+            assert_eq!(options.art_root, PathBuf::from("/tmp/gathering-override"));
+            assert_eq!(options.config.root(), saved_root);
+        }
         assert_eq!(std::fs::read(&settings).unwrap(), before);
     }
 }
@@ -553,7 +586,12 @@ fn button_with_label(app: &mut App, label: &str) -> Option<Entity> {
         .find_map(|(entity, children)| {
             children
                 .iter()
-                .any(|child| world.get::<Text>(child).is_some_and(|text| text.0 == label))
+                .any(|child| {
+                    world
+                        .get::<AccessibleLabel>(child)
+                        .is_some_and(|text| crate::tabletop::readable_text(text.0.clone()) == label)
+                        || world.get::<Text>(child).is_some_and(|text| text.0 == label)
+                })
                 .then_some(entity)
         })
 }
@@ -563,9 +601,13 @@ fn button_with_label(app: &mut App, label: &str) -> Option<Entity> {
 pub(super) fn click_source(app: &mut App, source: controls::Source) {
     let world = app.world_mut();
     let entity = world
-        .query::<(Entity, &ContextTarget)>()
+        .query::<(Entity, &ContextTarget, Option<&Mesh3d>)>()
         .iter(world)
-        .find_map(|(entity, target)| (target.source == source).then_some(entity))
+        .find_map(|(entity, target, mesh)| {
+            (target.source == source
+                && (!matches!(source, controls::Source::Location(_)) || mesh.is_some()))
+            .then_some(entity)
+        })
         .unwrap_or_else(|| panic!("The production scene must render {source:?}"));
     click_mesh_observer(app, entity);
 }
@@ -1260,12 +1302,22 @@ fn party_utilities_stay_in_menu_instead_of_the_live_decision_panel() {
     }
 }
 
-fn rendered_text(app: &mut App) -> String {
+pub(super) fn rendered_text(app: &mut App) -> String {
     let world = app.world_mut();
-    let mut query = world.query::<&Text>();
+    // Semantic text assertions read the English label of rich-text glyph runs.
+    // Dedicated symbol tests separately check the actual spans and font handles.
+    let mut query = world.query::<(&Text, Option<&AccessibleLabel>)>();
     query
         .iter(world)
-        .map(|text| text.0.as_str())
+        .map(|(text, label)| {
+            if text.0.is_empty() {
+                crate::tabletop::readable_text(
+                    label.map_or("", |label| label.0.as_str()).to_owned(),
+                )
+            } else {
+                text.0.clone()
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -1354,15 +1406,22 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
 }
 
 #[test]
-fn card_counters_show_typed_uses_and_undamaged_enemy_capacity_without_art() {
+fn card_counters_keep_typed_accessible_uses_and_undamaged_enemy_capacity() {
     let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
         crate::gathering::TonyEffectFixture::GregoryCigarette,
     ));
     let mut app = host_with_table(Table::new(session, PathBuf::new()), false);
     let text = rendered_text(&mut app);
-    for expected in ["Ammo 3", "Bounties 5", "Bounties 1", "Damage\n0/2"] {
-        assert!(text.contains(expected), "Missing {expected:?}: {text}");
+    for expected in ["Ammo 3", "Bounties 5", "Bounties 1", "Damage 0/2"] {
+        assert!(
+            app.world_mut()
+                .query::<&AccessibleLabel>()
+                .iter(app.world())
+                .any(|label| label.0 == expected),
+            "Missing {expected:?}"
+        );
     }
+    assert!(text.contains("0/2"));
     assert!(!text.contains("Uses 3"));
     assert!(!text.contains("Damage 0  /  Doom"));
 }

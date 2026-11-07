@@ -3,29 +3,25 @@
 //! Preparation owns archive selection. This module only consumes paths admitted
 //! by the compiled Gathering collection and never searches the source archive.
 
-use crate::{assets, tabletop_health::HealthAssets};
+use crate::assets;
 use bevy::{asset::AssetPlugin, prelude::*};
-use std::{
-    collections::{BTreeMap, HashSet},
-    path::{Path, PathBuf},
-};
-
-const DISABLED: &str = "Readable substitutes active; artwork disabled.";
+use std::{collections::BTreeMap, path::PathBuf};
 
 pub(super) struct Prepared {
-    root: Option<PathBuf>,
-    collection: Option<assets::CollectionReport>,
+    root: PathBuf,
+    collection: assets::CollectionReport,
     status: String,
 }
 
 impl Prepared {
     /// Resolve the already-selected root without changing the saved preference.
-    pub(super) fn new(root: Option<PathBuf>) -> Result<Self, String> {
-        let root = root.map(crate::asset_config::resolve_root).transpose()?;
-        let collection = root.as_deref().map(assets::inspect_gathering);
-        let status = collection
-            .as_ref()
-            .map_or_else(|| DISABLED.to_owned(), assets::CollectionReport::summary);
+    pub(super) fn new(root: PathBuf) -> Result<Self, String> {
+        let root = crate::asset_config::resolve_root(root)?;
+        let collection = assets::inspect_gathering(&root);
+        if !collection.complete {
+            return Err(collection.startup_failure(&root));
+        }
+        let status = collection.summary();
         Ok(Self {
             root,
             collection,
@@ -33,20 +29,9 @@ impl Prepared {
         })
     }
 
-    pub(super) fn root(&self) -> Option<&Path> {
-        self.root.as_deref()
-    }
-
-    pub(super) fn status(&self) -> &str {
-        &self.status
-    }
-
     pub(super) fn asset_plugin(&self) -> AssetPlugin {
         AssetPlugin {
-            file_path: self.root.as_ref().map_or_else(
-                || "local/gathering/absent-art".to_owned(),
-                |root| root.to_string_lossy().into_owned(),
-            ),
+            file_path: self.root.to_string_lossy().into_owned(),
             ..default()
         }
     }
@@ -56,9 +41,7 @@ impl Prepared {
             status: self.status.clone(),
             ..default()
         };
-        let Some(collection) = &self.collection else {
-            return art;
-        };
+        let collection = &self.collection;
         for role in assets::gathering_image_roles() {
             if let Some(path) = collection.verified_path(role) {
                 art.handles
@@ -67,7 +50,8 @@ impl Prepared {
         }
         art.symbol_font = collection
             .verified_path("font/symbols")
-            .map(|path| server.load(path.to_owned()));
+            .map(|path| server.load(path.to_owned()))
+            .expect("the admitted collection contains its symbol font");
         art
     }
 }
@@ -75,8 +59,7 @@ impl Prepared {
 #[derive(Resource)]
 pub(super) struct Art {
     handles: BTreeMap<String, Handle<Image>>,
-    loaded: HashSet<AssetId<Image>>,
-    symbol_font: Option<Handle<Font>>,
+    symbol_font: Handle<Font>,
     status: String,
 }
 
@@ -84,9 +67,8 @@ impl Default for Art {
     fn default() -> Self {
         Self {
             handles: BTreeMap::new(),
-            loaded: HashSet::new(),
-            symbol_font: None,
-            status: DISABLED.to_owned(),
+            symbol_font: Handle::default(),
+            status: "Artwork has not loaded.".to_owned(),
         }
     }
 }
@@ -95,7 +77,7 @@ impl Art {
     #[cfg(test)]
     pub(super) fn with_symbol_font_for_test(font: Handle<Font>) -> Self {
         Self {
-            symbol_font: Some(font),
+            symbol_font: font,
             ..default()
         }
     }
@@ -117,33 +99,13 @@ impl Art {
         self.handles.get(role).cloned()
     }
 
-    pub(super) fn refresh_loaded(&mut self, images: &Assets<Image>) -> bool {
-        let loaded = self
-            .handles
-            .values()
-            .filter(|image| images.contains(image.id()))
-            .map(Handle::id)
-            .collect();
-        if self.loaded == loaded {
-            return false;
-        }
-        self.loaded = loaded;
-        true
-    }
-
-    /// Captions disappear only after the replacement image has decoded.
-    pub(super) fn loaded_image(&self, role: &str) -> Option<Handle<Image>> {
-        self.image(role)
-            .filter(|image| self.loaded.contains(&image.id()))
-    }
-
     /// `back` means the reverse or hidden presentation side, not an archive
     /// filename. Location fronts are their revealed sides in the collection.
     pub(super) fn card(&self, code: &str, back: bool) -> Option<Handle<Image>> {
         self.image(&format!("card-{code}{}", if back { "-back" } else { "" }))
     }
 
-    pub(super) fn symbol_font(&self) -> &Option<Handle<Font>> {
+    pub(super) fn symbol_font(&self) -> &Handle<Font> {
         &self.symbol_font
     }
 
@@ -153,15 +115,6 @@ impl Art {
 
     pub(super) fn text(&self, value: impl Into<String>, size: f32, color: Color) -> impl Bundle {
         crate::tabletop_harm_text::ui(value, size, color, &self.symbol_font)
-    }
-
-    pub(super) fn health_assets(&self) -> HealthAssets {
-        HealthAssets::new(
-            self.handles
-                .values()
-                .map(|handle| handle.id().untyped())
-                .chain(self.symbol_font.iter().map(|handle| handle.id().untyped())),
-        )
     }
 }
 

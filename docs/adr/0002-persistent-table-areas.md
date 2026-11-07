@@ -4,6 +4,14 @@ status: accepted
 
 # Persistent table areas with focused camera views
 
+On 2026-11-07, [ADR 0004](0004-require-artwork-for-3d-play.md) superseded all
+missing-art substitute presentation and dual artwork/substitute verification
+requirements throughout this decision. Complete artwork is required for 3D play;
+ordinary captions, effective text, counts, selection cues and legitimate empty
+components remain. Headless engineering checks remain available. Dated evidence
+below retains its original scope and does not establish implementation of this
+removal.
+
 On 2026-11-04, [ADR 0003](0003-retire-replay.md) superseded the replay and
 pre-removal-record compatibility obligations throughout this decision. The live
 presentation, supported save/resume, Undo, inspection and camera decisions remain

@@ -5,9 +5,9 @@ fn assert_summary(app: &mut App, expected: &str) {
     let world = app.world_mut();
     assert!(
         world
-            .query::<&Text>()
+            .query_filtered::<&AccessibleLabel, With<Text>>()
             .iter(world)
-            .any(|text| text.0.contains(&expected))
+            .any(|text| readable_text(text.0.clone()).contains(&expected))
     );
 }
 

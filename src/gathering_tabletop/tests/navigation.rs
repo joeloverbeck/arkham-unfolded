@@ -5,6 +5,9 @@ use std::time::Duration;
 fn focused_label(app: &App) -> Option<String> {
     let world = app.world();
     let entity = world.resource::<InputFocus>().get()?;
+    if let Some(label) = world.get::<AccessibleLabel>(entity) {
+        return Some(label.0.clone());
+    }
     world
         .get::<Children>(entity)?
         .iter()

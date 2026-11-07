@@ -136,7 +136,7 @@ pub(crate) fn utilities(
 
 pub(crate) fn button(
     parent: &mut ChildSpawnerCommands,
-    font: &Option<Handle<Font>>,
+    font: &Handle<Font>,
     label: &str,
 ) -> Entity {
     parent
@@ -165,7 +165,7 @@ pub(crate) fn button(
 
 pub(crate) fn portrait(
     parent: &mut ChildSpawnerCommands,
-    font: &Option<Handle<Font>>,
+    font: &Handle<Font>,
     name: &str,
     image: Option<&(Handle<Image>, Vec2)>,
     current_turn: bool,
@@ -182,7 +182,7 @@ pub(crate) fn portrait(
             TabIndex(0),
             AccessibleLabel::new(label),
             Node {
-                width: dimensions.map_or(percent(100), |size| px(size.x + 10.)),
+                width: px(dimensions.map_or(108., |size| size.x) + 10.),
                 min_height: px(38),
                 padding: UiRect::all(px(5)),
                 align_self: AlignSelf::Center,
@@ -204,11 +204,6 @@ pub(crate) fn portrait(
                         height: px(size.y),
                         ..default()
                     },
-                    Pickable::IGNORE,
-                ));
-            } else {
-                p.spawn((
-                    crate::tabletop_harm_text::ui(name, 14., PAPER, font),
                     Pickable::IGNORE,
                 ));
             }
@@ -308,7 +303,7 @@ pub(crate) fn inspection(
     commands: &mut Commands,
     marker: impl Bundle,
     body_marker: impl Bundle,
-    font: &Option<Handle<Font>>,
+    font: &Handle<Font>,
     size: Vec2,
     title: &str,
     close: impl FnOnce(&mut ChildSpawnerCommands),
@@ -393,7 +388,6 @@ pub(crate) fn story_reading(
     marker: impl Bundle,
     body_marker: impl Bundle,
     size: Vec2,
-    has_art: bool,
     accessible_title: &str,
     heading: impl FnOnce(&mut ChildSpawnerCommands),
     picture: impl FnOnce(&mut ChildSpawnerCommands, f32),
@@ -401,7 +395,7 @@ pub(crate) fn story_reading(
     footer: impl FnOnce(&mut ChildSpawnerCommands),
 ) {
     let width = (size.x * 0.94).min(1200.);
-    let columns = width >= 900. && has_art;
+    let columns = width >= 900.;
     commands
         .spawn((
             Node {

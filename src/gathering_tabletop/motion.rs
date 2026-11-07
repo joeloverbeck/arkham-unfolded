@@ -235,11 +235,7 @@ pub(super) fn attach_reverse(
         Name::new(name),
         Mesh3d(meshes.add(card_shape::face(CARD_WIDTH, CARD_LENGTH))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: if image.is_some() {
-                Color::WHITE
-            } else {
-                Color::srgb(0.12, 0.19, 0.30)
-            },
+            base_color: Color::WHITE,
             base_color_texture: image,
             unlit: true,
             ..default()

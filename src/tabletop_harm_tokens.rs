@@ -9,7 +9,7 @@ pub(crate) const RADIUS: f32 = 0.248;
 const HEIGHT: f32 = 0.096;
 const ART_SCALE: f32 = RADIUS / 0.35;
 
-/// The caller owns totals, readable substitutes, scene lifetime and any animation.
+/// The caller owns totals, accessible names, scene lifetime and any animation.
 pub(crate) fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,

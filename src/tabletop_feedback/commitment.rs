@@ -21,7 +21,7 @@ pub(super) struct CardBadges(Vec<Entity>);
 #[derive(Component)]
 pub(super) struct Badge {
     anchor: Vec3,
-    shown: Option<(String, Option<Handle<Font>>)>,
+    shown: Option<(String, Handle<Font>)>,
 }
 
 pub(super) fn attach(commands: &mut Commands, card: Entity, anchor: Vec3) {

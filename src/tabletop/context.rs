@@ -62,7 +62,10 @@ pub(super) fn feedback(
             bonus: 4,
             skill: symbols::Skill::Willpower,
         });
-        mark.symbol_font = art.as_ref().and_then(|art| art.symbol_font.clone());
+        mark.symbol_font = art
+            .as_ref()
+            .map(|art| art.symbol_font.clone())
+            .unwrap_or_default();
     }
 }
 

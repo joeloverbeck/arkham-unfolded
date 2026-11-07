@@ -20,7 +20,7 @@ pub(crate) enum Item<A> {
 
 /// The existing adapters use different action text sizes and picking targets.
 pub(crate) struct MenuText<'a> {
-    pub symbol_font: &'a Option<Handle<Font>>,
+    pub symbol_font: &'a Handle<Font>,
     pub action_size: f32,
     pub action_pickable: Pickable,
 }
@@ -238,8 +238,7 @@ mod tests {
                 ),
                 BackgroundColor(Color::BLACK),
                 MenuText {
-                    // Absent symbol art must retain readable English glyphs.
-                    symbol_font: &None,
+                    symbol_font: &Handle::default(),
                     action_size,
                     action_pickable: if adapter == "party" {
                         Pickable::IGNORE

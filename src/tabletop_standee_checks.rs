@@ -36,14 +36,11 @@ pub(super) fn assert_standees(
                 Some(image) => parts
                     .iter()
                     .any(|(_, material, _, _)| material.base_color_texture.as_ref() == Some(image)),
-                None => parts.iter().any(|(_, material, _, name)| {
-                    material.base_color == class.color()
-                        && name.is_some_and(|name| name.as_str().contains("portrait unavailable"))
-                }),
+                None => parts
+                    .iter()
+                    .any(|(_, material, _, _)| material.base_color == class.color()),
             })
-            .unwrap_or_else(|| {
-                panic!("{class:?} must have its own rendered standee or substitute")
-            });
+            .unwrap_or_else(|| panic!("{class:?} must have its own rendered standee"));
 
         assert!(
             parts.iter().any(|(mesh, material, transform, _)| {
@@ -73,20 +70,6 @@ pub(super) fn assert_standees(
             }),
             "{class:?} needs a thick rounded base in its class color"
         );
-
-        let Some(image) = portrait else {
-            assert!(
-                parts.iter().any(|(mesh, material, _, name)| {
-                    let bounds = mesh.get_aabb().unwrap();
-                    material.base_color == class.color()
-                        && name.is_some_and(|name| name.as_str().contains("portrait unavailable"))
-                        && bounds.half_extents.y > bounds.half_extents.x
-                        && bounds.half_extents.z > 0.0
-                }),
-                "missing art must retain a dimensional investigator substitute"
-            );
-            continue;
-        };
 
         assert!(
             parts.iter().any(|(mesh, material, transform, _)| {
@@ -124,7 +107,7 @@ pub(super) fn assert_standees(
                         return false;
                     };
                     let normal = transform.rotation * Vec3::Z;
-                    material.base_color_texture.as_ref() == Some(image)
+                    material.base_color_texture.as_ref() == portrait.as_ref()
                         && bounds.half_extents.x > 0.0
                         && bounds.half_extents.y > bounds.half_extents.x
                         && bounds.half_extents.z.abs() < 0.0001

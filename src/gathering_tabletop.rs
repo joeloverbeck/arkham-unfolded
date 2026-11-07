@@ -6,7 +6,7 @@ use crate::{
     tabletop::asset_settings::AssetSettings,
     tabletop_camera::{CameraMode, Capture, FrameInput, Orbit, parse_initial_view},
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
-    tabletop_health::{RenderHealth, TabletopHealthPlugin, exit_result},
+    tabletop_health::{RenderHealth, TabletopHealthPlugin},
     tabletop_layout::{self as layout, Area},
     tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin},
     tabletop_pieces::WorldLabel,
@@ -83,6 +83,7 @@ struct Table {
     sealed: sealed::State,
     session: Session,
     save_path: PathBuf,
+    initial_save_pending: bool,
     notice: String,
     inspection: Option<(String, String)>,
     history_open: bool,
@@ -106,8 +107,9 @@ impl Table {
             return Self::open_existing(save_path);
         }
         let session = Session::new().map_err(|error| error.to_string())?;
-        continuity::save_session(&save_path, &session).map_err(|error| error.to_string())?;
-        Ok(Self::new(session, save_path))
+        let mut table = Self::new(session, save_path);
+        table.initial_save_pending = true;
+        Ok(table)
     }
 
     fn open_existing(save_path: PathBuf) -> Result<Self, String> {
@@ -129,6 +131,7 @@ impl Table {
             sealed: sealed::State::default(),
             session,
             save_path,
+            initial_save_pending: false,
             notice: String::new(),
             inspection: None,
             history_open: false,
@@ -313,7 +316,7 @@ impl CardRender<'_> {
 
 struct Options {
     save: PathBuf,
-    art_root: Option<PathBuf>,
+    art_root: PathBuf,
     config: AssetConfig,
     screenshot: Option<PathBuf>,
     quit_after_screenshot: bool,
@@ -333,7 +336,6 @@ impl Options {
     ) -> Result<Option<Self>, String> {
         let mut save = PathBuf::from("local/gathering/setup.session.json");
         let mut root = None;
-        let mut no_art = false;
         let mut screenshot = None;
         let mut quit_after_screenshot = false;
         let mut initial_view = None;
@@ -348,7 +350,6 @@ impl Options {
                 "--art-root" => {
                     root = Some(PathBuf::from(args.next().ok_or("--art-root needs a path")?))
                 }
-                "--no-art" => no_art = true,
                 "--screenshot" => {
                     screenshot = Some(args.next().ok_or("--screenshot needs a path")?.into())
                 }
@@ -365,7 +366,7 @@ impl Options {
                 }
                 "--help" | "-h" => {
                     println!(
-                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline|resolve\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged. The resolve view requires an active resolution drawer."
+                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline|resolve\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged. The resolve view requires an active resolution drawer."
                     );
                     return Ok(None);
                 }
@@ -377,7 +378,7 @@ impl Options {
         }
         Ok(Some(Self {
             save,
-            art_root: (!no_art).then(|| config.launch_root(root)).transpose()?,
+            art_root: config.launch_root(root)?,
             config,
             screenshot,
             quit_after_screenshot,
@@ -430,23 +431,21 @@ pub fn run() -> Result<(), String> {
     else {
         return Ok(());
     };
+    let (recovery, collection) = crate::tabletop_startup::Recovery::prepare(
+        options.config.clone(),
+        options.art_root.clone(),
+        crate::tabletop::asset_settings::Collection::Gathering,
+    )?;
+    let prepared = art::Prepared::new(recovery.root().to_owned())?;
     let mut app = App::new();
     let mut table = options.open_table()?;
-    let prepared = art::Prepared::new(options.art_root.clone())?;
-    eprintln!(
-        "Experiment: The Gathering (--experiment gathering)\nArtwork root: {}\n{}",
-        prepared
-            .root()
-            .map_or_else(|| "disabled".into(), |path| path.display().to_string()),
-        prepared.status()
-    );
     if let Some(warning) = options.config.warning() {
         table.notice = format!("Asset settings: {warning}");
     }
     app.insert_resource(table);
     options.configure_diagnostics(&mut app)?;
     app.insert_resource(ClearColor(INK))
-        .insert_resource(AssetSettings::new_gathering(options.config))
+        .insert_resource(AssetSettings::new_gathering(recovery.config()))
         .add_plugins(
             DefaultPlugins
                 .set(WindowPlugin {
@@ -463,10 +462,10 @@ pub fn run() -> Result<(), String> {
         .add_plugins(TabletopPacingPlugin)
         .add_plugins(TabletopHealthPlugin);
     let art = prepared.load(app.world().resource::<AssetServer>());
-    app.insert_resource(art.health_assets())
-        .insert_resource(art);
+    app.insert_resource(art);
     install(&mut app);
-    exit_result(app.run())
+    recovery.install(&mut app, &collection);
+    recovery.finish(app.run())
 }
 
 /// The same registration is used by the native app and headless input tests.
@@ -483,7 +482,7 @@ fn install(app: &mut App) {
         .add_systems(
             Update,
             (
-                poll_settings,
+                (poll_settings, save_initial_decision).chain(),
                 advance_framework,
                 handle_actions,
                 consequences::advance,
@@ -507,6 +506,25 @@ fn install(app: &mut App) {
                 .chain(),
         )
         .add_systems(Last, request_redraw.in_set(RequestRedraw));
+}
+
+fn save_initial_decision(
+    mut table: ResMut<Table>,
+    mut health: ResMut<RenderHealth>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if !table.initial_save_pending || !health.allows_play() {
+        return;
+    }
+    match continuity::save_session(&table.save_path, &table.session) {
+        Ok(()) => table.initial_save_pending = false,
+        Err(error) => {
+            let reason = format!("Could not save the initial Gathering decision: {error}");
+            eprintln!("{reason}");
+            health.stop(reason);
+            exit.write(AppExit::error());
+        }
+    }
 }
 
 fn poll_settings(mut settings: Option<ResMut<AssetSettings>>, mut table: ResMut<Table>) {
@@ -1072,7 +1090,7 @@ fn render(
     mut commands: Commands,
     mut table: ResMut<Table>,
     health: Res<RenderHealth>,
-    mut art: ResMut<art::Art>,
+    art: Res<art::Art>,
     mut images: ResMut<Assets<Image>>,
     mut slot_surfaces: Local<slots::Surfaces>,
     ui_scale: Res<UiScale>,
@@ -1099,7 +1117,7 @@ fn render(
         size,
         ui::portraits(&art, &images).map(|portrait| portrait.is_some()),
     );
-    let ui_changed = *previous_ui != ui_state || art.refresh_loaded(&images);
+    let ui_changed = *previous_ui != ui_state;
     *previous_ui = ui_state;
     if !table.dirty && !health_changed && !ui_changed {
         return;

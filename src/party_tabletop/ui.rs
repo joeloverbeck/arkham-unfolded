@@ -340,7 +340,6 @@ fn advancement(
         Panel,
         (),
         size,
-        art.image(card.role).is_some(),
         "Act advances · The Door on the Floor",
         |panel| {
             panel.spawn(art.text("Act advances", 16., MUTED));

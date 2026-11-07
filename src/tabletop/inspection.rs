@@ -18,8 +18,7 @@ pub(super) fn show(commands: &mut Commands, art: &Art, index: usize, viewport: V
     let padding = if width < 600.0 { 16.0 } else { 24.0 };
     let content_width = (width - 2.0 * padding).max(1.0);
     let preferred_art_width = if card.landscape { 780.0 } else { 500.0 };
-    let has_image = art.handles[index].is_some();
-    let side_by_side = has_image && content_width >= preferred_art_width + 24.0 + 280.0;
+    let side_by_side = content_width >= preferred_art_width + 24.0 + 280.0;
     let art_width = preferred_art_width.min(content_width);
     let art_height = art_width * if card.landscape { 5.0 / 7.0 } else { 7.0 / 5.0 };
     let text_width = if side_by_side {

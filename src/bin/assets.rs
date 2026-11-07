@@ -16,13 +16,13 @@ arkham-assets prepare-party --source PATH --reveal-icon PATH --output PATH
 arkham-assets check-party PATH
 arkham-assets prepare-gathering --source PATH --reveal-icon PATH --output PATH
 arkham-assets check-gathering PATH
-arkham-assets check-gathering-launch [--art-root PATH] [--no-art]
+arkham-assets check-gathering-launch [--art-root PATH]
 
 Preparation copies only the selected assets into a fresh external directory.
 The reveal icon is the pinned Lorc Swap bag PNG; preparation never downloads it.
 It never changes the source archive or overwrites an existing collection.
 Launch checking uses Gathering's saved/default folder and temporary artwork flags.
-It writes no files and exits nonzero for an incomplete collection or disabled artwork.";
+It writes no files and exits nonzero for an incomplete collection.";
 
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
@@ -84,24 +84,18 @@ fn run() -> Result<(), String> {
         }
         Some("check-gathering-launch") => {
             let mut override_root = None;
-            let mut no_art = false;
             while let Some(arg) = args.next() {
                 match arg.as_str() {
                     "--art-root" => {
                         override_root =
                             Some(PathBuf::from(args.next().ok_or("--art-root needs a path")?));
                     }
-                    "--no-art" => no_art = true,
                     _ => return Err(format!("Unknown Gathering artwork option: {arg}")),
                 }
             }
             let config = AssetConfig::load_gathering()?;
             if let Some(warning) = config.warning() {
                 eprintln!("Asset settings: {warning}");
-            }
-            if no_art {
-                println!("Artwork root: disabled (--no-art)");
-                return Err("Artwork is disabled; completeness was not checked.".into());
             }
             let root = config.launch_root(override_root)?;
             println!("Artwork root: {}", root.display());

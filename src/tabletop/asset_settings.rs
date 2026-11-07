@@ -16,11 +16,30 @@ pub(crate) struct AssetSettings {
 }
 
 #[derive(Clone, Copy)]
-enum Collection {
+pub(crate) enum Collection {
     Jacqueline,
     Tony,
     Party,
     Gathering,
+}
+
+impl Collection {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Jacqueline => "Jacqueline",
+            Self::Tony => "Tony",
+            Self::Party => "Party / Study escape",
+            Self::Gathering => "Gathering",
+        }
+    }
+    pub(crate) fn inspect(self, path: &Path) -> assets::CollectionReport {
+        match self {
+            Self::Jacqueline => assets::inspect(path),
+            Self::Tony => assets::inspect_tony(path),
+            Self::Party => assets::inspect_party(path),
+            Self::Gathering => assets::inspect_gathering(path),
+        }
+    }
 }
 
 struct SelectionResult {
@@ -127,7 +146,7 @@ fn select_folder_with(
     select_folder_with_mode(config, dialog, Collection::Jacqueline)
 }
 
-fn select_folder_with_mode(
+pub(crate) fn select_folder_with_mode(
     config: &mut AssetConfig,
     dialog: &mut impl FnMut(&[&str]) -> Result<Output, String>,
     collection: Collection,
@@ -162,33 +181,27 @@ fn select_folder_with_mode(
     if !path.is_absolute() || !path.is_dir() {
         return Err("Choose an existing folder using an absolute path.".into());
     }
-    let report = match collection {
-        Collection::Jacqueline => assets::inspect(&path),
-        Collection::Tony => assets::inspect_tony(&path),
-        Collection::Party => assets::inspect_party(&path),
-        Collection::Gathering => assets::inspect_gathering(&path),
-    };
-    if !report.recognized {
-        let message = "This folder is not a recognized prepared asset collection. Choose the folder containing the prepared collection's manifest. Your setting is unchanged.";
+    let report = collection.inspect(&path);
+    if !report.complete {
+        let message = format!(
+            "{}\n{}\nYour setting is unchanged.",
+            path.display(),
+            report.startup_failure(&path)
+        );
         let _ = dialog(&[
             "--error",
             "--no-markup",
             "--title=Arkham Unfolded — Asset folder not recognized",
             &format!("--text={message}"),
         ]);
-        return Err(message.into());
+        return Err(message);
     }
-    let status = if report.complete {
-        format!("All {} expected assets are ready.", report.expected_count())
-    } else {
-        format!(
-            "{} of {} expected assets are ready. Missing or changed artwork will use readable substitutes. This folder is incomplete.",
-            report.valid_count(),
-            report.expected_count()
-        )
-    };
+    let status = format!(
+        "All {} expected files verified. Images and font must still load before play.",
+        report.expected_count()
+    );
     let message = format!(
-        "{}\n\n{status}\n\nSave this asset folder for the next launch? Restart the app to apply the change. Your current game is unchanged.",
+        "{}\n\n{status}\n\nSave this asset folder? Return to startup and Retry, or restart an open game to apply it. Your current game is unchanged.",
         path.display()
     );
     let confirmation = dialog(&[
@@ -207,7 +220,7 @@ fn select_folder_with_mode(
     Ok(Some(path))
 }
 
-fn zenity(arguments: &[&str]) -> Result<Output, String> {
+pub(crate) fn zenity(arguments: &[&str]) -> Result<Output, String> {
     Command::new("zenity")
         .args(arguments)
         .output()
@@ -261,12 +274,14 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_collection_warns_and_saves_only_after_confirmation() {
+    fn incomplete_collection_is_refused_and_preserves_the_saved_preference() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("prepared");
         incomplete_collection(&root);
         let file = dir.path().join("config.toml");
         let mut config = AssetConfig::load_at(file.clone(), dir.path().join("default"));
+        config.save_root(&dir.path().join("prior")).unwrap();
+        let before = fs::read(&file).unwrap();
         for confirm in [false, true] {
             let mut round = 0;
             let result = select_folder_with(&mut config, &mut |args| {
@@ -275,30 +290,20 @@ mod tests {
                     1 => Ok(response(0, &format!("{}\n", root.display()))),
                     2 => {
                         let message = args.iter().find(|arg| arg.starts_with("--text=")).unwrap();
-                        assert!(message.contains("This folder is incomplete"));
-                        assert!(message.contains("readable substitutes"));
-                        assert!(message.contains("Restart"));
+                        assert!(args.contains(&"--error"));
+                        assert!(message.contains("unchanged"));
                         Ok(response(if confirm { 0 } else { 1 }, ""))
                     }
                     _ => panic!("Unexpected extra dialog"),
                 }
-            })
-            .unwrap();
-            if confirm {
-                assert_eq!(result, Some(root.clone()));
-                assert_eq!(
-                    AssetConfig::load_at(file.clone(), dir.path().into()).root(),
-                    root
-                );
-            } else {
-                assert!(result.is_none());
-                assert!(!file.exists());
-            }
+            });
+            assert!(result.is_err());
+            assert_eq!(fs::read(&file).unwrap(), before);
         }
     }
 
     #[test]
-    fn gathering_folder_selection_uses_its_own_collection_and_preserves_canceled_settings() {
+    fn gathering_folder_selection_refuses_missing_payloads_and_preserves_settings() {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join("gathering-art");
         assets::write_gathering_manifest_without_payloads(&root);
@@ -318,30 +323,21 @@ mod tests {
                         1 => Ok(response(0, &format!("{}\n", root.display()))),
                         2 => {
                             assert!(
-                                args.contains(&"--question"),
-                                "A Gathering manifest must be recognized by Gathering's selector"
+                                args.contains(&"--error"),
+                                "A manifest without its required payloads cannot be selected"
                             );
                             let message =
                                 args.iter().find(|arg| arg.starts_with("--text=")).unwrap();
-                            assert!(message.contains("This folder is incomplete"));
+                            assert!(message.contains("unchanged"));
                             Ok(response(if confirm { 0 } else { 1 }, ""))
                         }
                         _ => panic!("Unexpected additional dialog"),
                     }
                 },
                 settings.collection,
-            )
-            .unwrap();
-            if confirm {
-                assert_eq!(result, Some(root.clone()));
-                assert_eq!(
-                    AssetConfig::load_at(file.clone(), prior.clone()).root(),
-                    root
-                );
-            } else {
-                assert!(result.is_none());
-                assert_eq!(fs::read(&file).unwrap(), before);
-            }
+            );
+            assert!(result.is_err());
+            assert_eq!(fs::read(&file).unwrap(), before);
         }
     }
 

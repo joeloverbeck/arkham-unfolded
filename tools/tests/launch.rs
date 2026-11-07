@@ -187,8 +187,6 @@ fn gathering_launch_uses_its_save_contract_for_fresh_and_copied_sessions() {
         let art_root = root.path().join("prepared-art");
         if artwork {
             command.arg("--art-root").arg(&art_root);
-        } else {
-            command.arg("--no-art");
         }
         if reopen {
             command.arg("--load").arg(&source);
@@ -215,8 +213,6 @@ fn gathering_launch_uses_its_save_contract_for_fresh_and_copied_sessions() {
         ];
         if artwork {
             expected.extend(["--art-root".into(), art_root]);
-        } else {
-            expected.push("--no-art".into());
         }
         assert_eq!(metadata["argv"], serde_json::json!(expected));
         assert_eq!(
@@ -415,7 +411,7 @@ fn launch_records_allowlisted_inherited_and_effective_conditions_before_exit() {
         .env("VK_DRIVER_FILES", &non_utf8)
         .env("XDG_CACHE_HOME", &owner_cache)
         .env("ARKHAM_TEST_SECRET", "private-test-marker")
-        .args(["--timeout-seconds", "5", "--no-art"])
+        .args(["--timeout-seconds", "5"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -590,13 +586,7 @@ fn timeout_cleans_resistant_owned_group_and_leaves_unrelated_process_alive() {
         .spawn()
         .unwrap();
     let output = launch(&binary, &directory)
-        .args([
-            "--timeout-seconds",
-            "0.3",
-            "--no-art",
-            "--output-format",
-            "summary",
-        ])
+        .args(["--timeout-seconds", "0.3", "--output-format", "summary"])
         .env("ARKHAM_FIXTURE_IGNORE_TERM", "1")
         .env("ARKHAM_FIXTURE_DESCENDANT", "1")
         .output()

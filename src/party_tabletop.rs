@@ -1,7 +1,6 @@
 //! Native presentation of the prepared Study escape attempt. Rules stay at the player seam.
 use crate::{
     asset_config::AssetConfig,
-    assets,
     party::{Investigator, Observation, Session, continuity},
     tabletop::asset_settings::AssetSettings,
     tabletop_camera::{
@@ -9,7 +8,7 @@ use crate::{
     },
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
     tabletop_gathering_map as location_map,
-    tabletop_health::{HealthAssets, RenderHealth, TabletopHealthPlugin, exit_result},
+    tabletop_health::{RenderHealth, TabletopHealthPlugin},
     tabletop_layout::{self as layout, Area},
     tabletop_pacing::{PresentationTime, Redraw, RequestRedraw, TabletopPacingPlugin},
     tabletop_reveal as reveal,
@@ -42,7 +41,7 @@ const CARD_LENGTH: f32 = 1.89;
 struct Options {
     save: PathBuf,
     load: Option<PathBuf>,
-    art_root: Option<PathBuf>,
+    art_root: PathBuf,
     config: AssetConfig,
     screenshot: Option<PathBuf>,
     quit: bool,
@@ -59,7 +58,7 @@ impl Options {
         let mut result = Self {
             save: "local/experiment/party.session.json".into(),
             load: None,
-            art_root: Some(config.root().into()),
+            art_root: config.root().into(),
             config,
             screenshot: None,
             quit: false,
@@ -76,14 +75,13 @@ impl Options {
                 }
                 "--save" => result.save = value()?.into(),
                 "--load" => result.load = Some(value()?.into()),
-                "--art-root" => result.art_root = Some(value()?.into()),
-                "--no-art" => result.art_root = None,
+                "--art-root" => result.art_root = value()?.into(),
                 "--screenshot" => result.screenshot = Some(value()?.into()),
                 "--quit-after-screenshot" => result.quit = true,
                 "--initial-view" => result.initial_view = Some(parse_initial_view(&value()?)?),
                 "--help" | "-h" => {
                     println!(
-                        "Arkham Unfolded — Prepared Study escape attempt\n--experiment party\n--save PATH\n--load PATH\n--art-root PATH\n--no-art\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline"
+                        "Arkham Unfolded — Prepared Study escape attempt\n--experiment party\n--save PATH\n--load PATH\n--art-root PATH\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline"
                     );
                     return Ok(None);
                 }
@@ -144,7 +142,7 @@ impl Table {
 #[derive(Resource, Default)]
 struct Art {
     handles: BTreeMap<String, Handle<Image>>,
-    symbol_font: Option<Handle<Font>>,
+    symbol_font: Handle<Font>,
     status: String,
 }
 impl Art {
@@ -201,6 +199,11 @@ pub fn run() -> Result<(), String> {
     let Some(options) = Options::parse()? else {
         return Ok(());
     };
+    let (recovery, report) = crate::tabletop_startup::Recovery::prepare(
+        options.config.clone(),
+        options.art_root.clone(),
+        crate::tabletop::asset_settings::Collection::Party,
+    )?;
     let load = options
         .load
         .or_else(|| options.save.exists().then(|| options.save.clone()));
@@ -209,23 +212,8 @@ pub fn run() -> Result<(), String> {
             .map_err(|e| format!("Could not reopen party attempt: {e}"))?,
         None => Session::new().map_err(|e| e.to_string())?,
     };
-    let root = options.art_root.map(|p| {
-        if p.is_absolute() {
-            p
-        } else {
-            std::env::current_dir().unwrap_or_default().join(p)
-        }
-    });
-    let collection = root.as_deref().map(assets::inspect_party);
-    let status = collection.as_ref().map_or_else(
-        || "Readable substitutes active; artwork disabled.".into(),
-        |r| r.summary(),
-    );
-    eprintln!(
-        "Experiment: Prepared Study escape attempt (--experiment party)\nArtwork root: {}\n{status}",
-        root.as_ref()
-            .map_or_else(|| "disabled".into(), |p| p.display().to_string())
-    );
+    let status = report.summary();
+    let collection = Some(report);
     let mut table = Table::new(session, load.unwrap_or(options.save));
     if let Some(warning) = options.config.warning() {
         table.notice = format!("Asset settings: {warning}");
@@ -234,7 +222,7 @@ pub fn run() -> Result<(), String> {
     app.insert_resource(ClearColor(INK))
         .insert_resource(table)
         .insert_resource(Orbit::new(CameraMode::Jacqueline).with_initial_view(options.initial_view))
-        .insert_resource(AssetSettings::new_party(options.config))
+        .insert_resource(AssetSettings::new_party(recovery.config()))
         .insert_resource(Capture {
             path: options.screenshot,
             quit: options.quit,
@@ -252,10 +240,7 @@ pub fn run() -> Result<(), String> {
                     ..default()
                 })
                 .set(AssetPlugin {
-                    file_path: root.map_or_else(
-                        || "local/experiment/absent-art".into(),
-                        |p| p.to_string_lossy().into_owned(),
-                    ),
+                    file_path: recovery.root().to_string_lossy().into_owned(),
                     ..default()
                 }),
         )
@@ -276,17 +261,12 @@ pub fn run() -> Result<(), String> {
     art.symbol_font = collection
         .as_ref()
         .and_then(|r| r.verified_path("font/symbols"))
-        .map(|p| server.load(p.to_owned()));
-    let health_assets = HealthAssets::new(
-        art.handles
-            .values()
-            .map(|handle| handle.id().untyped())
-            .chain(art.symbol_font.iter().map(|handle| handle.id().untyped())),
-    );
-    app.insert_resource(health_assets)
-        .insert_resource(reveal::Artwork(art.image(reveal::ART_ROLE)))
+        .map(|p| server.load(p.to_owned()))
+        .expect("the admitted collection contains its symbol font");
+    app.insert_resource(reveal::Artwork(art.image(reveal::ART_ROLE)))
         .insert_resource(art);
-    exit_result(app.run())
+    recovery.install(&mut app, collection.as_ref().expect("verified collection"));
+    recovery.finish(app.run())
 }
 
 fn image_asset_roles() -> impl Iterator<Item = String> {
@@ -622,7 +602,10 @@ fn synchronize_feedback(
         mark.menu_source = table.context.is_menu_source(source.0);
         mark.pending_choice = table.context.is_pending(source.0);
         mark.commitment = table.context.contribution(&view, source.0);
-        mark.symbol_font = art.as_ref().and_then(|art| art.symbol_font.clone());
+        mark.symbol_font = art
+            .as_ref()
+            .map(|art| art.symbol_font.clone())
+            .unwrap_or_default();
     }
 }
 #[allow(clippy::too_many_arguments)]

@@ -17,7 +17,6 @@ pub(crate) struct Appearance {
     pub size: Vec2,
     pub thickness: f32,
     pub image: Option<Handle<Image>>,
-    pub fallback: Color,
 }
 
 pub(crate) fn spawn_card(
@@ -29,11 +28,6 @@ pub(crate) fn spawn_card(
     appearance: Appearance,
 ) -> Entity {
     let face = materials.add(StandardMaterial {
-        base_color: if appearance.image.is_some() {
-            Color::WHITE
-        } else {
-            appearance.fallback
-        },
         base_color_texture: appearance.image,
         unlit: true,
         ..default()
