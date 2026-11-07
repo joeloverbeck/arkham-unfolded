@@ -64,8 +64,9 @@ pub use runtime::{
     TestResult, TestView, TonyBonusPresentation,
 };
 
-pub use crate::party::Investigator;
+mod investigator;
 use crate::{Choice, RuleError, TokenFace};
+pub use investigator::Investigator;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, io::Read};

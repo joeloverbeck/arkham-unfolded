@@ -360,9 +360,9 @@ has been verified, and a later download must match the hash or undergo new revie
 
 | Family | Existing inspected evidence | Missing or unproved for this scope |
 | --- | --- | --- |
-| Preparation | [`src/party.rs`](../../src/party.rs) reads full slot inventory | Constructs one chosen hand card, zero resources and fixed three-card draw prefixes; no real setup, consumption of the explicit weakness bindings or full deck support check |
+| Preparation | [`src/party.rs`](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/src/party.rs) reads full slot inventory | Constructs one chosen hand card, zero resources and fixed three-card draw prefixes; no real setup, consumption of the explicit weakness bindings or full deck support check |
 | Cooperative decisions | Party decision tests exercise turn order, commits, Promise, Jacqueline, elders, Lucky! and Act closing | Only one prepared turn per investigator; Party card view has intellect icons only and validation fixes test difficulty 2 with bounded harm/locations |
-| Enemy/actions | [`src/tony.rs`](../../src/tony.rs), [Tony tests](../../tests/tony_decisions.rs): one Ghoul, bounty action, opportunity attacks, Internal Injury | No integrated multi-investigator enemies, enemy phase, general allocation or scenario defeat |
+| Enemy/actions | [`src/tony.rs`](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/src/tony.rs), [Tony tests](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/tests/tony_decisions.rs): one Ghoul, bounty action, opportunity attacks, Internal Injury | No integrated multi-investigator enemies, enemy phase, general allocation or scenario defeat |
 | Map/scenario | Act reverse reading, six-clue spend and connected map persist | Party explicitly refuses move/fight/evade/engage and stops at Act 1 or before enemy phase; map visibility is not playable movement |
 | Deck lifecycle | Known commitment discard and Patrice elder-sign shuffle | Unknown tails refuse draws; no opening hands, normal upkeep, Watcher, exhaustion, searches or general retrieval |
 | Continuity/UI | Shared persistence and installed production UI checks; see section 5 | No full scenario pending continuations, offline campaign/replay run or populated native gameplay evidence |
@@ -515,9 +515,9 @@ that the current Study state model fits a full scenario:
 
 `observe_for_play → choose(revision, id) → persist candidate → install consequences`.
 
-Both [player driver](../../src/bin/driver/party.rs) and
-[native UI](../../src/party_tabletop.rs) call
-[`party::continuity::commit_choice`](../../src/party/continuity.rs), which clones,
+Both [player driver](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/src/bin/driver/party.rs) and
+[native UI](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/src/party_tabletop.rs) call
+[`party::continuity::commit_choice`](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/src/party/continuity.rs), which clones,
 applies the offered choice, saves, then installs. Native animation begins after
 success. Retain that ordering. Extend observations locally for preparation,
 phase, decision owner, instances/zones, legal targets and allocation/order
@@ -525,11 +525,11 @@ choices as demanded by the source cases. No generic rules engine or new test
 framework is justified. The implementer can choose module shapes within this
 boundary without another architecture interview.
 
-The current [Party decision tests](../../tests/party_decisions.rs) establish
+The current [Party decision tests](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/tests/party_decisions.rs) establish
 selected cooperative commitments, curse continuation, Lucky!, elders and Act 1
-closing. [Continuity tests](../../tests/party_continuity.rs) exercise pending
+closing. [Continuity tests](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/tests/party_continuity.rs) exercise pending
 cancellation, failed saves, competing writers, corrupt/wrong-experiment refusal,
-restart archival and recorded replay. [Driver tests](../../tests/party_driver.rs)
+restart archival and recorded replay. [Driver tests](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/tests/party_driver.rs)
 spawn a real process and reopen pending choices without exposing hidden data.
 Comparison with another run of the same implementation is useful continuity
 evidence; it is not an independent rules oracle.

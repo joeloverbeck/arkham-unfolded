@@ -16,9 +16,9 @@ The application already compiles mode-specific selections from four committed re
 
 | Native mode | Current recipe | Required files |
 | --- | --- | ---: |
-| Jacqueline | [`asset-selection.json`](../../resources/asset-selection.json), collection v3 | 15 |
-| Tony | [`tony-asset-selection.json`](../../resources/tony-asset-selection.json), collection v5 | 43 |
-| Study escape | [`party-asset-selection.json`](../../resources/party-asset-selection.json), collection v2 | 57 |
+| Jacqueline | [`asset-selection.json`](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/resources/asset-selection.json), collection v3 | 15 |
+| Tony | [`tony-asset-selection.json`](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/resources/tony-asset-selection.json), collection v5 | 43 |
+| Study escape | [`party-asset-selection.json`](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/resources/party-asset-selection.json), collection v2 | 57 |
 | Gathering | [`gathering-asset-selection.json`](../../resources/gathering-asset-selection.json), collection v3 | 144 |
 
 Gathering's recipe declares 149,472,011 payload bytes: 105 card faces/reverses, two card backs, 20 tokens, 12 class images, three standees, one symbol font and one reveal image. Its existing coverage test independently compares selected deck/scenario identities and required reverses against the recipe ([`src/assets.rs:840`][coverage]). Preserve and extend this inventory check when supported content changes; a rendered starting hand cannot establish full scenario coverage.

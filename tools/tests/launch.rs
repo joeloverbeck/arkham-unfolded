@@ -85,7 +85,7 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
     fs::write(&save, "owner pending decision").unwrap();
     let directory = root.path().join("run");
     let child = launch(&binary, &directory)
-        .args(["--experiment", "tony", "--load"])
+        .args(["--entry", "gathering", "--load"])
         .arg(&save)
         .arg("--art-root")
         .arg(root.path().join("art"))
@@ -161,8 +161,8 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
         serde_json::json!([
             directory.join("arkham-tabletop"),
             "--experiment",
-            "tony",
-            "--load",
+            "gathering",
+            "--save",
             directory.join("session.json"),
             "--art-root",
             root.path().join("art"),
@@ -303,7 +303,7 @@ fn gathering_launch_forwards_static_capture_options_to_its_isolated_save() {
 }
 
 #[test]
-fn resolution_view_refuses_other_experiments_before_staging() {
+fn retired_experiments_are_refused_before_staging() {
     let root = tempfile::tempdir().unwrap();
     for experiment in ["jacqueline", "tony", "party"] {
         let directory = root.path().join(experiment);
@@ -312,10 +312,7 @@ fn resolution_view_refuses_other_experiments_before_staging() {
             .output()
             .unwrap();
         assert!(!output.status.success());
-        assert!(
-            String::from_utf8_lossy(&output.stderr)
-                .contains("--initial-view resolve requires --experiment gathering")
-        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("invalid value"));
         assert!(!directory.exists());
     }
 }
@@ -473,7 +470,7 @@ fn launch_records_allowlisted_inherited_and_effective_conditions_before_exit() {
     );
     assert_eq!(conditions["supervisor_cwd"], root.path().to_str().unwrap());
     assert_eq!(conditions["executable_staging"], "verified-read-only-copy");
-    assert_eq!(conditions["save_staging"], "fresh");
+    assert_eq!(conditions["save_staging"], "none");
     assert_eq!(conditions["stdin"], "null");
     assert_eq!(
         conditions["stdout"],
@@ -586,6 +583,7 @@ fn timeout_cleans_resistant_owned_group_and_leaves_unrelated_process_alive() {
         .spawn()
         .unwrap();
     let output = launch(&binary, &directory)
+        .args(["--entry", "gathering"])
         .args(["--timeout-seconds", "0.3", "--output-format", "summary"])
         .env("ARKHAM_FIXTURE_IGNORE_TERM", "1")
         .env("ARKHAM_FIXTURE_DESCENDANT", "1")

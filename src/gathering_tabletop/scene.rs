@@ -162,7 +162,6 @@ pub(super) fn render(
             horror: player.map_or(investigator.horror, |player| player.horror),
             sanity: projection.map_or_else(|| investigator.sanity(), |status| status.sanity),
             actions: projection.map(|status| pieces::ActionState {
-                remaining: view.play.as_ref().unwrap().actions_remaining[index],
                 allowance: status.ordinary_action_allowance,
                 spent: status.ordinary_actions_spent,
                 turn_ended: status.turn_finished,

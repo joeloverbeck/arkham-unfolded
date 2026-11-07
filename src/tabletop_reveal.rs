@@ -7,10 +7,7 @@ use crate::{
 };
 use bevy::{
     input::mouse::MouseScrollUnit,
-    input_focus::{
-        AutoFocus,
-        tab_navigation::{TabGroup, TabIndex},
-    },
+    input_focus::tab_navigation::TabIndex,
     picking::hover::Hovered,
     prelude::*,
     ui_widgets::{Activate, Button},
@@ -30,41 +27,22 @@ pub(crate) struct Artwork(pub Option<Handle<Image>>);
 struct Offer {
     epoch: u64,
     revision: u64,
-    routes: Routes,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Routes {
-    Legacy { reaction: bool },
-    Offered(Vec<Choice>),
+    choices: Vec<Choice>,
 }
 
 impl Offer {
     fn needs_chooser(&self) -> bool {
-        match &self.routes {
-            Routes::Legacy { reaction } => *reaction,
-            Routes::Offered(choices) => choices.len() > 1,
-        }
+        self.choices.len() > 1
     }
-
-    fn choice(&self, route: Route) -> Option<Cow<'static, str>> {
-        match (&self.routes, route) {
-            (Routes::Legacy { .. }, Route::Normal) => Some(Cow::Borrowed("reveal")),
-            (Routes::Legacy { reaction: true }, Route::Jacqueline) => {
-                Some(Cow::Borrowed("use-jacqueline"))
-            }
-            (Routes::Offered(choices), Route::Offered(index)) => choices
-                .get(index)
-                .map(|choice| Cow::Owned(choice.id.clone())),
-            _ => None,
-        }
+    fn choice(&self, Route::Offered(index): Route) -> Option<Cow<'static, str>> {
+        self.choices
+            .get(index)
+            .map(|choice| Cow::Owned(choice.id.clone()))
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Route {
-    Normal,
-    Jacqueline,
     Offered(usize),
 }
 
@@ -126,27 +104,10 @@ impl Shortcut {
             (available && !choices.is_empty()).then(|| Offer {
                 epoch,
                 revision,
-                routes: Routes::Offered(choices.to_vec()),
+                choices: choices.to_vec(),
             }),
             reduced_motion,
         );
-    }
-    /// The offered choices are authoritative; a presentation-stage name is not.
-    pub(crate) fn sync(
-        &mut self,
-        revision: u64,
-        choices: &[Choice],
-        available: bool,
-        reduced_motion: bool,
-    ) {
-        let offer = (available && choices.iter().any(|c| c.id == "reveal")).then(|| Offer {
-            epoch: 0,
-            revision,
-            routes: Routes::Legacy {
-                reaction: choices.iter().any(|c| c.id == "use-jacqueline"),
-            },
-        });
-        self.set_offer(offer, reduced_motion);
     }
 
     fn set_offer(&mut self, offer: Option<Offer>, reduced_motion: bool) {
@@ -187,10 +148,7 @@ impl Shortcut {
                 Some(Accepted::Opened)
             }
             Request::Press(_) => {
-                let route = match &offer.routes {
-                    Routes::Legacy { .. } => Route::Normal,
-                    Routes::Offered(_) => Route::Offered(0),
-                };
+                let route = Route::Offered(0);
                 let id = offer.choice(route)?;
                 self.dismiss();
                 Some(Accepted::Choice(offer.revision, id))
@@ -338,19 +296,6 @@ fn fade_text(commands: &mut Commands, root: Entity, opacity: f32) {
     });
 }
 
-fn label(parent: &mut ChildSpawnerCommands, value: &str, size: f32, color: Color, opacity: f32) {
-    parent.spawn((
-        Text::new(crate::tabletop::readable_text(value.into())),
-        TextFont {
-            font_size: FontSize::Px(size),
-            ..default()
-        },
-        TextColor(color.with_alpha(opacity)),
-        FadeColor(color),
-        Pickable::IGNORE,
-    ));
-}
-
 fn button(
     parent: &mut ChildSpawnerCommands,
     value: &str,
@@ -446,13 +391,7 @@ pub(crate) fn render(
         .map_or(Vec2::new(1280., 720.), |window| {
             Vec2::new(window.width(), window.height())
         });
-    if shortcut.chooser
-        && matches!(
-            shortcut.offer.as_ref().map(|offer| &offer.routes),
-            Some(Routes::Offered(_))
-        )
-        && shortcut.viewport != Some(viewport)
-    {
+    if shortcut.chooser && shortcut.offer.is_some() && shortcut.viewport != Some(viewport) {
         shortcut.viewport = Some(viewport);
         shortcut.dirty = true;
     }
@@ -498,13 +437,7 @@ pub(crate) fn render(
         }
         let generation = shortcut.generation;
         let opacity = shortcut.opacity;
-        let offered = shortcut
-            .offer
-            .as_ref()
-            .and_then(|offer| match &offer.routes {
-                Routes::Offered(choices) => Some(choices),
-                Routes::Legacy { .. } => None,
-            });
+        let offered = shortcut.offer.as_ref().map(|offer| &offer.choices);
         if shortcut.chooser
             && let Some(choices) = offered
         {
@@ -542,54 +475,6 @@ pub(crate) fn render(
                 },
             ))
             .with_children(|parent| {
-                if shortcut.chooser && offered.is_none() {
-                    parent
-                        .spawn((
-                            Node {
-                                flex_direction: FlexDirection::Column,
-                                row_gap: px(6),
-                                padding: UiRect::all(px(12)),
-                                max_width: px(410),
-                                border_radius: BorderRadius::all(px(8)),
-                                ..default()
-                            },
-                            BackgroundColor(INK.with_alpha(opacity)),
-                            FadeColor(INK),
-                            TabGroup::modal(),
-                        ))
-                        .with_children(|parent| {
-                            label(parent, "Choose how to reveal", 17.0, TEAL, opacity);
-                            let first = button(
-                                parent,
-                                "Reveal 1 · decline Jacqueline for this reveal",
-                                Request::Choose(generation, Route::Normal),
-                                None,
-                                opacity,
-                                &shortcut.symbol_font,
-                                false,
-                            );
-                            parent.commands().entity(first).insert(AutoFocus);
-                            button(
-                                parent,
-                                "Use Jacqueline · reveal 3 tokens",
-                                Request::Choose(generation, Route::Jacqueline),
-                                None,
-                                opacity,
-                                &shortcut.symbol_font,
-                                false,
-                            );
-                            button(
-                                parent,
-                                "Cancel",
-                                Request::Dismiss(generation),
-                                None,
-                                opacity,
-                                &shortcut.symbol_font,
-                                false,
-                            );
-                            label(parent, feedback::KEYBOARD_HINT, 12.0, PAPER, opacity);
-                        });
-                }
                 if shortcut.attention_cue
                     && let Some(image) = artwork.0.clone()
                 {

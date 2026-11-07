@@ -47,6 +47,5 @@ fn production_drivers_hold_the_same_sidecar_through_both_installations() {
             contender.try_lock().unwrap();
         }};
     }
-    check!(tony, "injury");
-    check!(party, "select:tony");
+    check!(gathering, "lead:tony");
 }

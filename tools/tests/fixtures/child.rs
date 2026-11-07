@@ -129,25 +129,24 @@ fn main() -> ExitCode {
         eprintln!("UNEXPECTED_LATER_CHECK");
         return ExitCode::from(97);
     }
-    if args.iter().any(|arg| arg == "--save" || arg == "--load") {
+    if args.iter().any(|arg| arg == "--save") || args.windows(2).any(|pair| pair == ["--entry", "selection"]) {
         if env::var_os("ARKHAM_FIXTURE_DESCENDANT").is_some() {
             let child = Command::new(env::current_exe().unwrap()).arg("--fixture-descendant").spawn().unwrap();
             fs::write("descendant.pid", child.id().to_string()).unwrap();
         }
-        let position = args.iter().position(|arg| arg == "--save" || arg == "--load").unwrap();
+        let save = args.iter().position(|arg| arg == "--save").map(|position| &args[position + 1]);
         let fresh = env::var_os("ARKHAM_FIXTURE_UNSAVED").is_some();
-        if fresh {
-            assert_eq!(args[position], "--save");
-            assert!(!std::path::Path::new(&args[position + 1]).exists());
+        if let Some(save) = save.filter(|_| fresh) {
+            assert!(!std::path::Path::new(save).exists());
         }
         if env::var_os("ARKHAM_FIXTURE_EXPECT_RESTART").is_some() {
             assert!(!args.iter().any(|arg| arg == "--art-root"));
-            if !fresh { assert_eq!(fs::read_to_string(&args[position + 1]).unwrap(), "pending decision"); }
+            if let Some(save) = save.filter(|_| !fresh) { assert_eq!(fs::read_to_string(save).unwrap(), "pending decision"); }
             let config = std::path::PathBuf::from(env::var_os("XDG_CONFIG_HOME").unwrap());
             assert_eq!(fs::read_to_string(config.join("chosen-folder")).unwrap(), "persisted-art-root");
             println!("RESTORED_SETTINGS_AND_SAVE");
         }
-        if !fresh { fs::write(&args[position + 1], "autosaved copy").unwrap(); }
+        if let Some(save) = save.filter(|_| !fresh) { fs::write(save, "autosaved copy").unwrap(); }
         for name in ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] {
             println!("{name}={}", env::var(name).unwrap());
         }

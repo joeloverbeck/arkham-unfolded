@@ -280,7 +280,7 @@ including a smaller window, and Continue once. Stop on a failed interaction
 after at most one bounded diagnosis, or at the deadline. Source checks,
 preparation and implementation permission do not grant a desktop-control
 interval; that interval is still pending under the
-[native verification procedure](../experiments/jacqueline-curse.md#launch-capture-and-interact).
+[native verification procedure](../agents/native-verification.md#launch-capture-and-interact).
 
 The owning work remains [#89's current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060).
 This local implementation neither closes full-scenario acceptance nor includes

@@ -1,4 +1,6 @@
 ---
+
+**Current scope, 2026-11-07:** [ADR 0005](0005-retire-experiments-and-select-scenarios.md) retires the standalone Jacqueline, Tony and Party experiments. Gathering retains the applicable asset, presentation and admission contracts. References below to earlier modes, commands and observations retain their historical meaning; they do not require maintaining those modes or establish current native acceptance.
 status: accepted
 ---
 

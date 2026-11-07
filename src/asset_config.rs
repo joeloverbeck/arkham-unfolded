@@ -27,26 +27,11 @@ struct Settings {
 
 #[derive(Clone, Copy)]
 enum Experiment {
-    Jacqueline,
-    Tony,
-    Party,
     Gathering,
 }
 
 impl AssetConfig {
-    pub fn load() -> Result<Self, String> {
-        Self::load_for(Experiment::Jacqueline)
-    }
-
-    /// Tony has a separate preference so choosing its collection preserves Jacqueline's.
-    pub fn load_tony() -> Result<Self, String> {
-        Self::load_for(Experiment::Tony)
-    }
-
-    pub fn load_party() -> Result<Self, String> {
-        Self::load_for(Experiment::Party)
-    }
-
+    /// Load Gathering's existing preference without touching retired settings.
     pub fn load_gathering() -> Result<Self, String> {
         Self::load_for(Experiment::Gathering)
     }
@@ -181,11 +166,8 @@ fn locations(
             .ok_or_else(|| "Set an absolute HOME or XDG configuration and data directories.".into())
     };
     let (settings_file, collection_folder) = match experiment {
-        Experiment::Jacqueline => ("config.toml", "assets-v2"),
         // Advance app-owned defaults only after the fresh collections verify.
         // An explicit saved choice always takes precedence and is never migrated here.
-        Experiment::Tony => ("tony.toml", "tony-assets-v4"),
-        Experiment::Party => ("party.toml", "party-assets-v1"),
         Experiment::Gathering => ("gathering.toml", "gathering-assets"),
     };
     Ok((
@@ -238,100 +220,69 @@ mod tests {
     fn xdg_locations_use_absolute_overrides_and_ignore_relative_ones() {
         let home = Some(OsString::from("/home/player"));
         assert_eq!(
-            locations(Experiment::Jacqueline, home.clone(), None, None).unwrap(),
+            locations(Experiment::Gathering, home.clone(), None, None).unwrap(),
             (
-                PathBuf::from("/home/player/.config/arkham-unfolded/config.toml"),
-                PathBuf::from("/home/player/.local/share/arkham-unfolded/assets-v2")
+                PathBuf::from("/home/player/.config/arkham-unfolded/gathering.toml"),
+                PathBuf::from("/home/player/.local/share/arkham-unfolded/gathering-assets")
             )
         );
         assert_eq!(
             locations(
-                Experiment::Jacqueline,
+                Experiment::Gathering,
                 home.clone(),
                 Some("relative".into()),
                 Some("/disk/data".into())
             )
             .unwrap(),
             (
-                PathBuf::from("/home/player/.config/arkham-unfolded/config.toml"),
-                PathBuf::from("/disk/data/arkham-unfolded/assets-v2")
+                PathBuf::from("/home/player/.config/arkham-unfolded/gathering.toml"),
+                PathBuf::from("/disk/data/arkham-unfolded/gathering-assets")
             )
         );
         assert_eq!(
             locations(
-                Experiment::Tony,
+                Experiment::Gathering,
                 home,
                 Some("/disk/settings".into()),
                 Some("relative".into())
             )
             .unwrap(),
             (
-                PathBuf::from("/disk/settings/arkham-unfolded/tony.toml"),
-                PathBuf::from("/home/player/.local/share/arkham-unfolded/tony-assets-v4")
+                PathBuf::from("/disk/settings/arkham-unfolded/gathering.toml"),
+                PathBuf::from("/home/player/.local/share/arkham-unfolded/gathering-assets")
             )
         );
     }
 
     #[test]
-    fn experiment_preferences_are_independent_and_saved_roots_outrank_defaults() {
+    fn gathering_preferences_preserve_retired_files_and_saved_roots_outrank_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        let load = |experiment| {
-            let (path, root) = locations(
-                experiment,
-                Some(dir.path().as_os_str().to_owned()),
-                None,
-                None,
-            )
-            .unwrap();
-            AssetConfig::load_at(path, root)
-        };
-        let mut jacqueline = load(Experiment::Jacqueline);
-        let jacqueline_root = dir.path().join("chosen-jacqueline");
-        jacqueline.save_root(&jacqueline_root).unwrap();
-        let legacy_bytes = fs::read(jacqueline.path()).unwrap();
-
-        let mut tony = load(Experiment::Tony);
+        let (path, fallback) = locations(
+            Experiment::Gathering,
+            Some(dir.path().as_os_str().to_owned()),
+            None,
+            None,
+        )
+        .unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        for name in ["jacqueline.toml", "tony.toml", "party.toml"] {
+            fs::write(path.with_file_name(name), b"retired owner settings").unwrap();
+        }
+        let mut gathering = AssetConfig::load_at(path.clone(), fallback.clone());
+        assert_eq!(gathering.root(), fallback);
+        assert!(!path.exists(), "Loading must not create settings");
+        let selected = dir.path().join("chosen-gathering");
+        gathering.save_root(&selected).unwrap();
         assert_eq!(
-            tony.root(),
-            dir.path()
-                .join(".local/share/arkham-unfolded/tony-assets-v4")
+            AssetConfig::load_at(path.clone(), fallback).root(),
+            selected
         );
-        assert!(!tony.path().exists(), "Loading must not create settings");
-        let tony_root = dir.path().join("chosen-tony");
-        tony.save_root(&tony_root).unwrap();
-        assert_eq!(load(Experiment::Tony).root(), tony_root);
-        assert_eq!(load(Experiment::Jacqueline).root(), jacqueline_root);
-        assert_eq!(fs::read(jacqueline.path()).unwrap(), legacy_bytes);
-
-        let tony_bytes = fs::read(tony.path()).unwrap();
-        let mut party = load(Experiment::Party);
-        assert_eq!(
-            party.root(),
-            dir.path()
-                .join(".local/share/arkham-unfolded/party-assets-v1")
-        );
-        assert!(!party.path().exists());
-        let party_root = dir.path().join("chosen-party");
-        party.save_root(&party_root).unwrap();
-        assert_eq!(load(Experiment::Party).root(), party_root);
-        assert_eq!(fs::read(tony.path()).unwrap(), tony_bytes);
-        assert_eq!(fs::read(jacqueline.path()).unwrap(), legacy_bytes);
-
-        let party_bytes = fs::read(party.path()).unwrap();
-        let mut gathering = load(Experiment::Gathering);
-        assert_eq!(
-            gathering.root(),
-            dir.path()
-                .join(".local/share/arkham-unfolded/gathering-assets")
-        );
-        assert!(gathering.path().ends_with("arkham-unfolded/gathering.toml"));
-        assert!(!gathering.path().exists());
-        let gathering_root = dir.path().join("chosen-gathering");
-        gathering.save_root(&gathering_root).unwrap();
-        assert_eq!(load(Experiment::Gathering).root(), gathering_root);
-        assert_eq!(fs::read(party.path()).unwrap(), party_bytes);
-        assert_eq!(fs::read(tony.path()).unwrap(), tony_bytes);
-        assert_eq!(fs::read(jacqueline.path()).unwrap(), legacy_bytes);
+        for name in ["jacqueline.toml", "tony.toml", "party.toml"] {
+            assert_eq!(
+                fs::read(path.with_file_name(name)).unwrap(),
+                b"retired owner settings"
+            );
+        }
     }
 
     #[test]

@@ -112,7 +112,7 @@ fn ethereal_form_evades_one_enemy_disengages_others_and_preserves_its_paid_test(
     );
     assert_eq!(
         play.ethereal,
-        vec![arkham_unfolded_experiment::party::Investigator::Patrice]
+        vec![arkham_unfolded_experiment::gathering::Investigator::Patrice]
     );
     assert_eq!(
         play.players[1].location, before.players[1].location,
@@ -185,7 +185,7 @@ fn a_failed_form_pays_the_event_without_disengaging_or_becoming_ethereal() {
     assert!(!play.completed_tests[0].success);
     assert!(play.ethereal.is_empty());
     assert!(play.scenario.enemies.iter().all(|enemy| !enemy.exhausted
-        && enemy.engaged == Some(arkham_unfolded_experiment::party::Investigator::Patrice)));
+        && enemy.engaged == Some(arkham_unfolded_experiment::gathering::Investigator::Patrice)));
     assert_eq!(play.players[1].resources, 3);
     assert!(
         play.players[1]
@@ -209,12 +209,12 @@ fn other_disengaged_enemies_can_immediately_engage_another_investigator() {
         .unwrap();
     assert_eq!(
         rat.engaged,
-        Some(arkham_unfolded_experiment::party::Investigator::Tony)
+        Some(arkham_unfolded_experiment::gathering::Investigator::Tony)
     );
     assert!(!rat.exhausted);
     assert_eq!(
         play.ethereal,
-        vec![arkham_unfolded_experiment::party::Investigator::Patrice]
+        vec![arkham_unfolded_experiment::gathering::Investigator::Patrice]
     );
 }
 
@@ -272,9 +272,10 @@ fn ethereal_expires_before_at_round_end_abilities_and_ready_enemies_reengage() {
         "AT-end Voices still must resolve before the next round"
     );
     assert!(play.ethereal.is_empty());
-    assert!(play.scenario.enemies.iter().all(
-        |enemy| enemy.engaged == Some(arkham_unfolded_experiment::party::Investigator::Patrice)
-    ));
+    assert!(
+        play.scenario.enemies.iter().all(|enemy| enemy.engaged
+            == Some(arkham_unfolded_experiment::gathering::Investigator::Patrice))
+    );
     let voices = session
         .observe()
         .choices

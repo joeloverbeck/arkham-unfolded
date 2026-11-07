@@ -148,8 +148,9 @@ fn draw_review_checkpoints_open_on_visible_triggers_and_preserve_manual_framing(
     for point in checkpoints {
         let (_directory, mut app) = open_review_save(&point.session);
         let area = parse_initial_view(point.initial_view).unwrap();
-        app.world_mut()
-            .insert_resource(Orbit::new(CameraMode::Jacqueline).with_initial_view(Some(area)));
+        let mut orbit = Orbit::new();
+        orbit.focus(layout::focus(area));
+        app.world_mut().insert_resource(orbit);
         app.update();
         let pose = app.world().resource::<Orbit>().pose();
         let table = app.world().resource::<Table>();

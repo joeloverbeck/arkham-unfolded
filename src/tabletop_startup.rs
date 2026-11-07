@@ -3,8 +3,8 @@
 use crate::{
     asset_config::AssetConfig,
     assets::CollectionReport,
-    tabletop::asset_settings::{self, Collection},
     tabletop_health::HealthAssets,
+    tabletop_support::asset_settings::{self, Collection},
 };
 use bevy::{app::AppExit, asset::UntypedHandle, prelude::*};
 use std::{
@@ -89,8 +89,9 @@ impl Recovery {
 
     /// Winit's event loop is process-owned. Retry replaces this process after
     /// closing its window, preserving the original invocation except its effective
-    /// artwork root. Fresh loading and input queues cannot inherit a failed pass.
-    pub(crate) fn finish(mut self, exit: AppExit) -> Result<(), String> {
+    /// artwork root and reopening a New attempt once its guarded creation succeeded.
+    /// Fresh loading and input queues cannot inherit a failed pass.
+    pub(crate) fn finish(mut self, exit: AppExit, created_attempt: bool) -> Result<(), String> {
         let reason = self.failure.lock().expect("artwork recovery lock").take();
         if let Some(reason) = reason {
             recover(
@@ -108,7 +109,11 @@ impl Recovery {
             )?;
             let executable = std::env::current_exe().map_err(|error| error.to_string())?;
             let error = Command::new(executable)
-                .args(retry_arguments(std::env::args_os().skip(1), &self.root))
+                .args(retry_arguments(
+                    std::env::args_os().skip(1),
+                    &self.root,
+                    created_attempt,
+                ))
                 .exec();
             return Err(format!("Could not retry native startup: {error}"));
         }
@@ -116,12 +121,26 @@ impl Recovery {
     }
 }
 
-fn retry_arguments(args: impl Iterator<Item = OsString>, root: &Path) -> Vec<OsString> {
+fn retry_arguments(
+    args: impl Iterator<Item = OsString>,
+    root: &Path,
+    created_attempt: bool,
+) -> Vec<OsString> {
     let mut args = args;
     let mut result = Vec::new();
     while let Some(arg) = args.next() {
         if arg == "--art-root" {
             args.next();
+        } else if arg == "--attempt" && created_attempt {
+            let intent = args.next();
+            result.push(arg);
+            if let Some(intent) = intent {
+                result.push(if intent == "new" {
+                    OsString::from("open")
+                } else {
+                    intent
+                });
+            }
         } else {
             result.push(arg);
         }
@@ -272,7 +291,11 @@ mod tests {
             "--save",
             "/isolated/save.json",
         ];
-        let actual = retry_arguments(args.into_iter().map(OsString::from), Path::new("/chosen"));
+        let actual = retry_arguments(
+            args.into_iter().map(OsString::from),
+            Path::new("/chosen"),
+            false,
+        );
         assert_eq!(
             actual,
             [
@@ -288,94 +311,119 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires all four private prepared collections; dialog process boundary is scripted"]
-    fn private_collections_recover_from_a_bad_override_without_losing_preferences() {
-        for (collection, variable) in [
-            (Collection::Jacqueline, "ARKHAM_JACQUELINE_TEST_ASSETS"),
-            (Collection::Tony, "ARKHAM_TONY_TEST_ASSETS"),
-            (Collection::Party, "ARKHAM_PARTY_TEST_ASSETS"),
-            (Collection::Gathering, "ARKHAM_GATHERING_TEST_ASSETS"),
-        ] {
-            let chosen = PathBuf::from(std::env::var_os(variable).expect(variable));
-            let directory = tempfile::tempdir().unwrap();
-            let settings = directory.path().join("settings");
-            let prior = directory.path().join("prior");
-            let mut config = AssetConfig::load_at(settings.clone(), prior.clone());
-            config.save_root(&prior).unwrap();
-            let mut root = directory.path().join("bad-cli-override");
-            let mut calls = 0;
-            let report = require(&mut root, &mut config, collection, &mut |args| {
-                calls += 1;
-                Ok(match calls {
-                    1 => response(1, "Choose asset folder\n"),
-                    2 => {
-                        assert!(args.contains(&"--file-selection"));
-                        response(0, &format!("{}\n", chosen.display()))
-                    }
-                    3 => {
-                        assert!(args.contains(&"--ok-label=Save folder"));
-                        response(0, "")
-                    }
-                    4 => {
-                        assert!(
-                            args.iter()
-                                .any(|arg| arg.contains("Folder saved and selected"))
-                        );
-                        response(0, "")
-                    }
-                    _ => panic!("unexpected recovery dialog"),
-                })
-            })
-            .unwrap();
-            assert!(report.complete);
-            assert_eq!(calls, 4);
-            assert_eq!(root, chosen);
-            let saved = std::fs::read(&settings).unwrap();
-            let reloaded = AssetConfig::load_at(settings.clone(), prior.clone());
-            assert_eq!(reloaded.launch_root(None).unwrap(), chosen);
-            assert_eq!(reloaded.launch_root(Some(prior.clone())).unwrap(), prior);
+    fn retry_preserves_the_new_path_and_opens_it_only_after_guarded_creation() {
+        for created in [false, true] {
+            let args = [
+                "--experiment",
+                "gathering",
+                "--attempt",
+                "new",
+                "--save",
+                "/isolated/new.json",
+            ];
+            let actual = retry_arguments(
+                args.into_iter().map(OsString::from),
+                Path::new("/repaired"),
+                created,
+            );
+            let expected = [
+                "--experiment",
+                "gathering",
+                "--attempt",
+                if created { "open" } else { "new" },
+                "--save",
+                "/isolated/new.json",
+                "--art-root",
+                "/repaired",
+            ];
+            assert_eq!(actual, expected.map(OsString::from));
+        }
+    }
 
-            // Cancel after selecting a valid collection: no preference write.
-            let mut calls = 0;
-            let canceled = asset_settings::select_folder_with_mode(
+    #[test]
+    #[ignore = "requires the private Gathering collection; dialog process boundary is scripted"]
+    fn private_collection_recovers_from_a_bad_override_without_losing_preferences() {
+        let collection = Collection::Gathering;
+        let variable = "ARKHAM_GATHERING_TEST_ASSETS";
+        let chosen = PathBuf::from(std::env::var_os(variable).expect(variable));
+        let directory = tempfile::tempdir().unwrap();
+        let settings = directory.path().join("settings");
+        let prior = directory.path().join("prior");
+        let mut config = AssetConfig::load_at(settings.clone(), prior.clone());
+        config.save_root(&prior).unwrap();
+        let mut root = directory.path().join("bad-cli-override");
+        let mut calls = 0;
+        let report = require(&mut root, &mut config, collection, &mut |args| {
+            calls += 1;
+            Ok(match calls {
+                1 => response(1, "Choose asset folder\n"),
+                2 => {
+                    assert!(args.contains(&"--file-selection"));
+                    response(0, &format!("{}\n", chosen.display()))
+                }
+                3 => {
+                    assert!(args.contains(&"--ok-label=Save folder"));
+                    response(0, "")
+                }
+                4 => {
+                    assert!(
+                        args.iter()
+                            .any(|arg| arg.contains("Folder saved and selected"))
+                    );
+                    response(0, "")
+                }
+                _ => panic!("unexpected recovery dialog"),
+            })
+        })
+        .unwrap();
+        assert!(report.complete);
+        assert_eq!(calls, 4);
+        assert_eq!(root, chosen);
+        let saved = std::fs::read(&settings).unwrap();
+        let reloaded = AssetConfig::load_at(settings.clone(), prior.clone());
+        assert_eq!(reloaded.launch_root(None).unwrap(), chosen);
+        assert_eq!(reloaded.launch_root(Some(prior.clone())).unwrap(), prior);
+
+        // Cancel after selecting a valid collection: no preference write.
+        let mut calls = 0;
+        let canceled = asset_settings::select_folder_with_mode(
+            &mut config,
+            &mut |_| {
+                calls += 1;
+                Ok(if calls == 1 {
+                    response(0, &format!("{}\n", chosen.display()))
+                } else {
+                    response(1, "")
+                })
+            },
+            collection,
+        )
+        .unwrap();
+        assert!(canceled.is_none());
+        assert_eq!(std::fs::read(&settings).unwrap(), saved);
+
+        // A concurrent settings edit makes the checked write fail without
+        // overwriting either the user's new preference or our effective root.
+        let mut competing = AssetConfig::load_at(settings.clone(), prior.clone());
+        competing.save_root(&prior).unwrap();
+        let competing_bytes = std::fs::read(&settings).unwrap();
+        let mut calls = 0;
+        assert!(
+            asset_settings::select_folder_with_mode(
                 &mut config,
                 &mut |_| {
                     calls += 1;
                     Ok(if calls == 1 {
                         response(0, &format!("{}\n", chosen.display()))
                     } else {
-                        response(1, "")
+                        response(0, "")
                     })
                 },
-                collection,
+                collection
             )
-            .unwrap();
-            assert!(canceled.is_none());
-            assert_eq!(std::fs::read(&settings).unwrap(), saved);
-
-            // A concurrent settings edit makes the checked write fail without
-            // overwriting either the user's new preference or our effective root.
-            let mut competing = AssetConfig::load_at(settings.clone(), prior.clone());
-            competing.save_root(&prior).unwrap();
-            let competing_bytes = std::fs::read(&settings).unwrap();
-            let mut calls = 0;
-            assert!(
-                asset_settings::select_folder_with_mode(
-                    &mut config,
-                    &mut |_| {
-                        calls += 1;
-                        Ok(if calls == 1 {
-                            response(0, &format!("{}\n", chosen.display()))
-                        } else {
-                            response(0, "")
-                        })
-                    },
-                    collection
-                )
-                .is_err()
-            );
-            assert_eq!(root, chosen);
-            assert_eq!(std::fs::read(&settings).unwrap(), competing_bytes);
-        }
+            .is_err()
+        );
+        assert_eq!(root, chosen);
+        assert_eq!(std::fs::read(&settings).unwrap(), competing_bytes);
     }
 }

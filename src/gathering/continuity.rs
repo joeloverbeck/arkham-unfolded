@@ -1,3 +1,12 @@
+//! # File ownership
+//!
+//! A successful load or save remembers the exact file bytes in the returned or
+//! supplied Session. Replacing different contents requires that write baseline
+//! to still match disk. Saving identical state also refreshes the baseline.
+//! Cloning copies the baseline at that moment; saving a clone does not update
+//! the original. Save the instance that will continue play, or load it back.
+//! Session equality compares rules state, not file ownership. Failed writes
+//! preserve the baseline; `commit_choice` installs its candidate only after saving.
 //! Current-state persistence. Historical saves and recordings are unsupported.
 use super::{SOURCE_REVISION, Session};
 pub use crate::saved_state::Error as ContinuityError;
@@ -14,7 +23,7 @@ impl Snapshot for Session {
         Session::validate(self)
     }
 }
-/// Save current state and update only this Session's [write baseline](crate::continuity#file-ownership).
+/// Save current state and update only this Session's [write baseline](crate::gathering::continuity#file-ownership).
 pub fn save_session(path: impl AsRef<Path>, session: &Session) -> Result<(), ContinuityError> {
     saved_state::save(path, session)
 }
@@ -50,7 +59,7 @@ pub fn commit_choice_with_draws(
 }
 
 /// Archive `expected` and save a fresh `session`, updating only the fresh instance's baseline.
-/// `expected` must own the current file under the [file ownership contract](crate::continuity#file-ownership).
+/// `expected` must own the current file under the [file ownership contract](crate::gathering::continuity#file-ownership).
 pub fn restart_session(
     path: impl AsRef<Path>,
     expected: &Session,

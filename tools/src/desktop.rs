@@ -17,7 +17,7 @@ use x11rb::{
     rust_connection::RustConnection,
 };
 
-const TITLE: &[u8] = "Arkham Unfolded — Scripted Rules Experiment".as_bytes();
+const TITLE: &[u8] = "Arkham Unfolded — Scenario selection".as_bytes();
 
 pub struct X11 {
     connection: RustConnection,
@@ -77,10 +77,8 @@ impl X11 {
             .get_property(false, self.window, self.name_atom, self.utf8_atom, 0, 1024)?
             .reply()?;
         ensure!(
-            name.value == TITLE
-                || name.value == "Arkham Unfolded — Prepared Study Escape".as_bytes()
-                || name.value == "Arkham Unfolded — Gathering Setup".as_bytes(),
-            "Window is not the Arkham experiment client"
+            name.value == TITLE || name.value == "Arkham Unfolded — Gathering Setup".as_bytes(),
+            "Window is not the Arkham client"
         );
         Ok(())
     }

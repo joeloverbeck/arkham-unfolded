@@ -20,14 +20,6 @@ const TEAL: Color = Color::srgb(0.25, 0.88, 0.76);
 const HOVER_FADE_SECONDS: f32 = 0.12;
 pub(crate) const KEYBOARD_HINT: &str = "Tab / Shift+Tab: move\nEnter / Space: choose · Esc: close";
 
-/// Every meaningful menu operation participates: Some is an inspection target,
-/// None is a game operation. Never choose between targets or execute a game action.
-pub(crate) fn sole_inspection<T>(operations: impl IntoIterator<Item = Option<T>>) -> Option<T> {
-    let mut operations = operations.into_iter();
-    let target = operations.next()??;
-    operations.next().is_none().then_some(target)
-}
-
 /// Contextual choices and reveal controls share this style; utility controls retain theirs.
 #[derive(Component)]
 pub(crate) struct ContextButton;
@@ -431,7 +423,7 @@ mod tests {
             .unwrap()
             .commitment = Some(Contribution {
             bonus: 4,
-            skill: crate::tabletop::symbols::Skill::Willpower,
+            skill: crate::tabletop_support::symbols::Skill::Willpower,
         });
         app.update();
         assert_eq!(opacity(&mut app, Mark::AvailableCommitment), 1.0);

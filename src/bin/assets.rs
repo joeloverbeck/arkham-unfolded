@@ -1,19 +1,10 @@
 use arkham_unfolded_experiment::{
     asset_config::AssetConfig,
-    assets::{
-        CollectionReport, PrepareResult, inspect, inspect_gathering, inspect_party, inspect_tony,
-        prepare, prepare_gathering, prepare_party, prepare_tony,
-    },
+    assets::{CollectionReport, PrepareResult, inspect_gathering, prepare_gathering},
 };
 use std::path::PathBuf;
 
 const USAGE: &str = "\
-arkham-assets prepare --source PATH --reveal-icon PATH --output PATH
-arkham-assets check PATH
-arkham-assets prepare-tony --source PATH --reveal-icon PATH --output PATH
-arkham-assets check-tony PATH
-arkham-assets prepare-party --source PATH --reveal-icon PATH --output PATH
-arkham-assets check-party PATH
 arkham-assets prepare-gathering --source PATH --reveal-icon PATH --output PATH
 arkham-assets check-gathering PATH
 arkham-assets check-gathering-launch [--art-root PATH]
@@ -27,7 +18,7 @@ It writes no files and exits nonzero for an incomplete collection.";
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        Some(command @ ("prepare" | "prepare-tony" | "prepare-party" | "prepare-gathering")) => {
+        Some("prepare-gathering") => {
             let mut source = None;
             let mut output = None;
             let mut reveal_icon = None;
@@ -47,18 +38,8 @@ fn run() -> Result<(), String> {
             let source = source.ok_or("prepare requires --source PATH")?;
             let output = output.ok_or("prepare requires --output PATH")?;
             let reveal_icon = reveal_icon.ok_or("prepare requires --reveal-icon PATH")?;
-            let prepare = match command {
-                "prepare-tony" => prepare_tony,
-                "prepare-party" => prepare_party,
-                "prepare-gathering" => prepare_gathering,
-                _ => prepare,
-            };
-            let inspect = match command {
-                "prepare-tony" => inspect_tony,
-                "prepare-party" => inspect_party,
-                "prepare-gathering" => inspect_gathering,
-                _ => inspect,
-            };
+            let prepare = prepare_gathering;
+            let inspect = inspect_gathering;
             match prepare(&source, &output, &reveal_icon).map_err(|error| error.to_string())? {
                 PrepareResult::Created => println!("Prepared assets at {}", output.display()),
                 PrepareResult::AlreadyPresent => println!(
@@ -69,17 +50,12 @@ fn run() -> Result<(), String> {
             println!("{}", inspect(&output).summary());
             Ok(())
         }
-        Some(command @ ("check" | "check-tony" | "check-party" | "check-gathering")) => {
+        Some("check-gathering") => {
             let root = PathBuf::from(args.next().ok_or("check requires a collection path")?);
             if args.next().is_some() {
                 return Err("check accepts one collection path".into());
             }
-            let report = match command {
-                "check-tony" => inspect_tony(&root),
-                "check-party" => inspect_party(&root),
-                "check-gathering" => inspect_gathering(&root),
-                _ => inspect(&root),
-            };
+            let report = inspect_gathering(&root);
             print_check(report)
         }
         Some("check-gathering-launch") => {

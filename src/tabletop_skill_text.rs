@@ -3,7 +3,7 @@
 //! Each consumer supplies its represented facts. This formatter does not resolve
 //! tests, inspect future tokens, or change the English observations in records.
 
-use crate::tabletop::symbols::Skill;
+use crate::tabletop_support::symbols::Skill;
 
 pub(crate) struct TestSummary {
     pub skill: Skill,
@@ -18,10 +18,6 @@ pub(crate) struct TestSummary {
 }
 
 impl TestSummary {
-    pub(crate) fn label(self) -> String {
-        self.label_with_pending("Pending")
-    }
-
     pub(crate) fn label_with_pending(self, pending: &str) -> String {
         let chaos = if self.automatic_failure {
             "auto-fail".into()

@@ -122,39 +122,6 @@ impl Selection {
     }
 }
 
-fn selection() -> &'static Selection {
-    static SELECTION: OnceLock<Selection> = OnceLock::new();
-    SELECTION.get_or_init(|| {
-        let selection: Selection =
-            serde_json::from_str(include_str!("../resources/asset-selection.json"))
-                .expect("the committed asset selection must be valid");
-        let mut roles = BTreeSet::new();
-        let mut paths = BTreeSet::new();
-        for asset in &selection.assets {
-            assert!(relative_path(&asset.path).is_ok());
-            assert!(relative_path(&asset.source.path).is_ok());
-            assert!(roles.insert(&asset.role) && paths.insert(&asset.path));
-        }
-        selection
-    })
-}
-
-fn tony_selection() -> &'static Selection {
-    static SELECTION: OnceLock<Selection> = OnceLock::new();
-    SELECTION.get_or_init(|| {
-        serde_json::from_str(include_str!("../resources/tony-asset-selection.json"))
-            .expect("the committed Tony asset selection must be valid")
-    })
-}
-
-fn party_selection() -> &'static Selection {
-    static SELECTION: OnceLock<Selection> = OnceLock::new();
-    SELECTION.get_or_init(|| {
-        serde_json::from_str(include_str!("../resources/party-asset-selection.json"))
-            .expect("the committed party asset selection must be valid")
-    })
-}
-
 fn gathering_selection() -> &'static Selection {
     static SELECTION: OnceLock<Selection> = OnceLock::new();
     SELECTION.get_or_init(|| {
@@ -188,60 +155,7 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
         });
         return vec![v2, previous];
     }
-    let versions: &[u32] = match selection.collection.as_str() {
-        "arkham-unfolded-tony-turn-v3" => &[1, 2],
-        "arkham-unfolded-tony-turn-v4" => &[1, 2, 3],
-        "arkham-unfolded-tony-turn-v5" => &[1, 2, 3, 4],
-        "arkham-unfolded-jacqueline-v2" => &[1],
-        "arkham-unfolded-jacqueline-v3" => &[1, 2],
-        "arkham-unfolded-study-escape-v2" => &[1],
-        _ => return Vec::new(),
-    };
-    let tony = selection
-        .collection
-        .starts_with("arkham-unfolded-tony-turn-");
-    let jacqueline = selection
-        .collection
-        .starts_with("arkham-unfolded-jacqueline-");
-    versions
-        .iter()
-        .copied()
-        .map(|version| {
-            let mut manifest = selection.manifest();
-            manifest.collection = if tony {
-                format!("arkham-unfolded-tony-turn-v{version}")
-            } else if selection
-                .collection
-                .starts_with("arkham-unfolded-study-escape-")
-            {
-                format!("arkham-unfolded-study-escape-v{version}")
-            } else {
-                format!("arkham-unfolded-jacqueline-v{version}")
-            };
-            manifest.assets.retain(|asset| {
-                !is_counter_art(&asset.role)
-                    && (asset.role != "ui/reveal-chaos-token"
-                        || (tony && version >= 4)
-                        || (jacqueline && version >= 2)
-                        || selection
-                            .collection
-                            .starts_with("arkham-unfolded-study-escape-"))
-                    && (!tony
-                        || version >= 3
-                        || !matches!(
-                            asset.role.as_str(),
-                            "token/damage" | "token/horror" | "font/symbols"
-                        ))
-                    && (!tony || version >= 2 || asset.role != "card-back/player")
-                    && (!jacqueline || version >= 3 || asset.role != "card/01104")
-            });
-            manifest
-        })
-        .collect()
-}
-
-fn is_counter_art(role: &str) -> bool {
-    matches!(role, "token/clue" | "token/resource") || role.starts_with("class/")
+    Vec::new()
 }
 
 /// A recognized collection can be incomplete and still supply individually verified art.
@@ -335,20 +249,6 @@ pub(crate) fn bounded_failures(failures: &[String]) -> String {
 }
 
 /// Check only the finite expected files. This never searches or falls back to an archive.
-pub fn inspect(root: &Path) -> CollectionReport {
-    inspect_selection(root, selection())
-}
-
-/// Inspect the separately prepared Tony-turn collection, preserving legacy collections.
-pub fn inspect_tony(root: &Path) -> CollectionReport {
-    inspect_selection(root, tony_selection())
-}
-
-/// Inspect the prepared Study escape collection without changing earlier experiments.
-pub fn inspect_party(root: &Path) -> CollectionReport {
-    inspect_selection(root, party_selection())
-}
-
 /// Inspect Gathering's own collection without adopting an earlier experiment's subset.
 pub fn inspect_gathering(root: &Path) -> CollectionReport {
     inspect_selection(root, gathering_selection())
@@ -444,32 +344,6 @@ impl From<serde_json::Error> for AssetError {
 
 /// Prepare a fresh directory, or reuse an identical complete directory without writing it.
 /// Changed, incomplete or unknown destinations are refused. Source files are never written.
-pub fn prepare(
-    source: &Path,
-    output: &Path,
-    reveal_icon: &Path,
-) -> Result<PrepareResult, AssetError> {
-    prepare_selection_with_icon(source, output, selection(), Some(reveal_icon))
-}
-
-/// Prepare only the finite assets selected for the Tony-turn experiment.
-pub fn prepare_tony(
-    source: &Path,
-    output: &Path,
-    reveal_icon: &Path,
-) -> Result<PrepareResult, AssetError> {
-    prepare_selection_with_icon(source, output, tony_selection(), Some(reveal_icon))
-}
-
-/// Prepare the finite party selection in its own fresh collection.
-pub fn prepare_party(
-    source: &Path,
-    output: &Path,
-    reveal_icon: &Path,
-) -> Result<PrepareResult, AssetError> {
-    prepare_selection_with_icon(source, output, party_selection(), Some(reveal_icon))
-}
-
 /// Prepare the selected original Gathering artwork in a fresh portable collection.
 pub fn prepare_gathering(
     source: &Path,
@@ -827,16 +701,6 @@ fn exact_contents(root: &Path, selection: &Selection) -> Result<bool, AssetError
 }
 
 #[cfg(all(test, feature = "tabletop"))]
-pub(crate) fn write_current_manifest_without_payloads(root: &Path) {
-    fs::create_dir_all(root).unwrap();
-    fs::write(
-        root.join(MANIFEST),
-        serde_json::to_vec(&selection().manifest()).unwrap(),
-    )
-    .unwrap();
-}
-
-#[cfg(all(test, feature = "tabletop"))]
 pub(crate) fn write_gathering_manifest_without_payloads(root: &Path) {
     fs::create_dir_all(root).unwrap();
     fs::write(
@@ -893,6 +757,15 @@ pub(crate) fn assert_counter_recipe_roles_loaded(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "tabletop")]
+    #[test]
+    fn gathering_loader_retains_every_counter_and_class_asset() {
+        assert_counter_recipe_roles_loaded(
+            include_str!("../resources/gathering-asset-selection.json"),
+            gathering_image_roles().map(str::to_owned),
+        );
+    }
 
     #[test]
     fn gathering_recipe_covers_selected_decks_and_original_scenario_faces() {
@@ -1048,10 +921,10 @@ mod tests {
         assert!(report.recognized && !report.complete);
         assert_eq!(report.valid_count(), 0);
         assert!(report.verified_path("card-02039").is_none());
-        assert!(!inspect_party(directory.path()).recognized);
-        assert!(!inspect_tony(directory.path()).recognized);
         assert_eq!(fs::read(&manifest).unwrap(), bytes);
-        let prior = serde_json::to_vec(&party_selection().manifest()).unwrap();
+        let mut other = gathering_selection().manifest();
+        other.collection = "retired-study-escape".into();
+        let prior = serde_json::to_vec(&other).unwrap();
         fs::write(&manifest, &prior).unwrap();
         assert!(!inspect_gathering(directory.path()).recognized);
         assert_eq!(fs::read(&manifest).unwrap(), prior);
@@ -1218,30 +1091,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn party_missing_art_and_wrong_collection_preserve_original_bytes() {
-        let directory = tempfile::tempdir().unwrap();
-        let manifest = directory.path().join(MANIFEST);
-        let bytes = serde_json::to_vec(&party_selection().manifest()).unwrap();
-        fs::write(&manifest, &bytes).unwrap();
-        let report = inspect_party(directory.path());
-        assert!(report.recognized && !report.complete);
-        assert_eq!(report.valid_count(), 0);
-        assert!(report.verified_path("card/01112").is_none());
-        assert!(!inspect_tony(directory.path()).recognized);
-        assert!(!inspect(directory.path()).recognized);
-        assert_eq!(fs::read(&manifest).unwrap(), bytes);
-
-        let legacy = serde_json::to_vec(&tony_selection().manifest()).unwrap();
-        fs::write(&manifest, &legacy).unwrap();
-        assert!(!inspect_party(directory.path()).recognized);
-        assert_eq!(fs::read(&manifest).unwrap(), legacy);
-    }
-
-    fn tony_fixture(source: &Path) -> Selection {
+    fn gathering_fixture(source: &Path) -> Selection {
         recipe_fixture(
             source,
-            include_str!("../resources/tony-asset-selection.json"),
+            include_str!("../resources/gathering-asset-selection.json"),
         )
     }
 
@@ -1263,31 +1116,26 @@ mod tests {
     }
 
     #[test]
-    fn counter_art_corruption_preserves_other_verified_art_for_both_consumers() {
-        for recipe in [
-            include_str!("../resources/tony-asset-selection.json"),
-            include_str!("../resources/party-asset-selection.json"),
-        ] {
-            let directory = tempfile::tempdir().unwrap();
-            let source = directory.path().join("source");
-            let output = directory.path().join("assets");
-            let selected = recipe_fixture(&source, recipe);
-            prepare_selection(&source, &output, &selected).unwrap();
-            let manifest = fs::read(output.join(MANIFEST)).unwrap();
-            fs::remove_file(output.join("tokens/clue.png")).unwrap();
-            fs::write(output.join("tokens/resource.png"), b"changed").unwrap();
-            fs::remove_file(output.join("classes/rogue/icon.png")).unwrap();
-            let report = inspect_selection(&output, &selected);
-            assert!(report.recognized && !report.complete);
-            assert_eq!(report.valid_count(), selected.assets.len() - 3);
-            for missing in ["token/clue", "token/resource", "class/rogue/icon"] {
-                assert!(report.verified_path(missing).is_none(), "{missing}");
-            }
-            assert!(report.verified_path("class/rogue/background").is_some());
-            assert!(report.verified_path("class/mystic/icon").is_some());
-            assert!(report.verified_path("card/06003").is_some());
-            assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), manifest);
+    fn counter_art_corruption_preserves_other_verified_gathering_art() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let output = directory.path().join("assets");
+        let selected = gathering_fixture(&source);
+        prepare_selection(&source, &output, &selected).unwrap();
+        let manifest = fs::read(output.join(MANIFEST)).unwrap();
+        fs::remove_file(output.join("tokens/clue.png")).unwrap();
+        fs::write(output.join("tokens/resource.png"), b"changed").unwrap();
+        fs::remove_file(output.join("classes/rogue/icon.png")).unwrap();
+        let report = inspect_selection(&output, &selected);
+        assert!(report.recognized && !report.complete);
+        assert_eq!(report.valid_count(), selected.assets.len() - 3);
+        for missing in ["token/clue", "token/resource", "class/rogue/icon"] {
+            assert!(report.verified_path(missing).is_none(), "{missing}");
         }
+        assert!(report.verified_path("class/rogue/background").is_some());
+        assert!(report.verified_path("class/mystic/icon").is_some());
+        assert!(report.verified_path("card-06003").is_some());
+        assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), manifest);
     }
 
     #[test]
@@ -1297,7 +1145,7 @@ mod tests {
             let source = directory.path().join("source");
             let output = directory.path().join("assets");
             let recipe = include_str!("../resources/gathering-asset-selection.json");
-            let selected = recipe_fixture(&source, recipe);
+            let selected = gathering_fixture(&source);
             let mut earlier = recipe_fixture(&source, recipe);
             earlier.collection = format!("arkham-unfolded-gathering-{version}");
             earlier.assets.retain(|asset| {
@@ -1321,29 +1169,6 @@ mod tests {
             assert!(prepare_selection(&source, &output, &selected).is_err());
             assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), manifest);
         }
-    }
-
-    #[test]
-    fn party_previous_collection_keeps_its_art_and_requires_a_fresh_destination() {
-        let directory = tempfile::tempdir().unwrap();
-        let source = directory.path().join("source");
-        let output = directory.path().join("assets");
-        let recipe = include_str!("../resources/party-asset-selection.json");
-        let selected = recipe_fixture(&source, recipe);
-        let mut earlier = recipe_fixture(&source, recipe);
-        earlier.collection = "arkham-unfolded-study-escape-v1".into();
-        earlier.assets.retain(|asset| !is_counter_art(&asset.role));
-        prepare_selection(&source, &output, &earlier).unwrap();
-        let original = fs::read(output.join(MANIFEST)).unwrap();
-        let report = inspect_selection(&output, &selected);
-        assert!(report.recognized && !report.complete);
-        assert_eq!((report.valid_count(), report.expected_count()), (43, 57));
-        assert!(report.verified_path("card/06003").is_some());
-        assert!(report.verified_path("ui/reveal-chaos-token").is_some());
-        assert!(report.verified_path("token/clue").is_none());
-        assert!(report.verified_path("class/rogue/icon").is_none());
-        assert!(prepare_selection(&source, &output, &selected).is_err());
-        assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), original);
     }
 
     fn fixture(source: &Path) -> Selection {
@@ -1374,70 +1199,6 @@ mod tests {
             format_version: 1,
             collection: "test-only-selection".into(),
             assets,
-        }
-    }
-
-    #[test]
-    fn earlier_jacqueline_collection_keeps_verified_art_without_the_reveal_icon() {
-        let directory = tempfile::tempdir().unwrap();
-        let source = directory.path().join("source");
-        let output = directory.path().join("assets");
-        let mut earlier = fixture(&source);
-        earlier.collection = "arkham-unfolded-jacqueline-v1".into();
-        prepare_selection(&source, &output, &earlier).unwrap();
-        let original = fs::read(output.join(MANIFEST)).unwrap();
-        let mut selected = fixture(&source);
-        selected.collection = "arkham-unfolded-jacqueline-v2".into();
-        let mut icon = fixture(&source).assets.remove(0);
-        icon.role = "ui/reveal-chaos-token".into();
-        icon.path = "ui/reveal-chaos-token.png".into();
-        selected.assets.push(icon);
-
-        let report = inspect_selection(&output, &selected);
-        assert!(report.recognized && !report.complete);
-        assert_eq!(report.verified_path("first"), Some("pictures/first.png"));
-        assert!(report.verified_path("ui/reveal-chaos-token").is_none());
-        assert!(prepare_selection(&source, &output, &selected).is_err());
-        assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), original);
-    }
-
-    #[test]
-    fn jacqueline_reference_addition_preserves_both_earlier_collections() {
-        for version in [1, 2] {
-            let directory = tempfile::tempdir().unwrap();
-            let source = directory.path().join("source");
-            let output = directory.path().join("assets");
-            let mut earlier = fixture(&source);
-            earlier.collection = format!("arkham-unfolded-jacqueline-v{version}");
-            let mut reveal = fixture(&source).assets.remove(0);
-            reveal.role = "ui/reveal-chaos-token".into();
-            reveal.path = "ui/reveal-chaos-token.png".into();
-            if version == 2 {
-                earlier.assets.push(reveal);
-            }
-            prepare_selection(&source, &output, &earlier).unwrap();
-            let original = fs::read(output.join(MANIFEST)).unwrap();
-            let mut selected = fixture(&source);
-            selected.collection = "arkham-unfolded-jacqueline-v3".into();
-            let mut reveal = fixture(&source).assets.remove(0);
-            reveal.role = "ui/reveal-chaos-token".into();
-            reveal.path = "ui/reveal-chaos-token.png".into();
-            selected.assets.push(reveal);
-            let mut reference = fixture(&source).assets.remove(0);
-            reference.role = "card/01104".into();
-            reference.path = "cards/01104/face.png".into();
-            selected.assets.push(reference);
-
-            let report = inspect_selection(&output, &selected);
-            assert!(report.recognized && !report.complete);
-            assert_eq!(report.verified_path("first"), Some("pictures/first.png"));
-            assert_eq!(
-                report.verified_path("ui/reveal-chaos-token").is_some(),
-                version == 2
-            );
-            assert!(report.verified_path("card/01104").is_none());
-            assert!(prepare_selection(&source, &output, &selected).is_err());
-            assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), original);
         }
     }
 
@@ -1624,7 +1385,7 @@ mod tests {
 
     #[test]
     fn selected_sources_remain_bound_to_the_independent_experiment_evidence() {
-        let selected = selection();
+        let selected = gathering_selection();
         let mut expected = BTreeMap::new();
         let cards: serde_json::Value =
             serde_json::from_str(include_str!("../docs/research/issue-1-evidence.json")).unwrap();
@@ -1636,12 +1397,7 @@ mod tests {
         }
         let tokens: serde_json::Value =
             serde_json::from_str(include_str!("../docs/experiments/token-art.json")).unwrap();
-        for token in tokens["faces"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .chain(std::iter::once(&tokens["reaction_reminder"]))
-        {
+        for token in tokens["faces"].as_array().unwrap().iter() {
             expected.insert(
                 token["path"].as_str().unwrap().to_owned(),
                 token["sha256"].as_str().unwrap().to_owned(),
@@ -1677,12 +1433,9 @@ mod tests {
             .iter()
             .map(|asset| (asset.source.path.clone(), asset.source.sha256.clone()))
             .collect();
-        assert_eq!(actual, expected);
-        assert_eq!(selected.assets.len(), 15);
-        assert_eq!(
-            selected.assets.iter().map(|asset| asset.bytes).sum::<u64>(),
-            13_149_155
-        );
+        for (path, hash) in expected {
+            assert_eq!(actual.get(&path), Some(&hash), "{path}");
+        }
         let selected_font = selected
             .assets
             .iter()
@@ -1690,23 +1443,14 @@ mod tests {
             .unwrap();
         assert_eq!(selected_font.sha256, font["font_sha256"].as_str().unwrap());
         assert_eq!(selected_font.bytes, font["font_length"].as_u64().unwrap());
-        for image in selected
-            .assets
-            .iter()
-            .filter(|asset| asset.role != "font/symbols")
-        {
-            assert_eq!(image.sha256, image.source.sha256);
-            assert_eq!(image.bytes, image.source.bytes);
-            assert!(matches!(image.transform, Transform::Copy));
-        }
     }
 
     #[test]
-    fn tony_harm_art_and_symbols_are_verified_individually() {
+    fn gathering_harm_art_and_symbols_are_verified_individually() {
         let directory = tempfile::tempdir().unwrap();
         let source = directory.path().join("source");
         let output = directory.path().join("assets");
-        let selected = tony_fixture(&source);
+        let selected = gathering_fixture(&source);
         prepare_selection(&source, &output, &selected).unwrap();
         let report = inspect_selection(&output, &selected);
         assert_eq!(
@@ -1728,7 +1472,7 @@ mod tests {
         fs::remove_file(output.join("fonts/arkham-symbols.ttf")).unwrap();
         let report = inspect_selection(&output, &selected);
         assert!(report.recognized && !report.complete);
-        assert_eq!((report.valid_count(), report.expected_count()), (40, 43));
+        assert_eq!((report.valid_count(), report.expected_count()), (141, 144));
         assert!(report.verified_path("token/damage").is_none());
         assert!(report.verified_path("token/horror").is_none());
         assert!(report.verified_path("font/symbols").is_none());
@@ -1736,90 +1480,11 @@ mod tests {
     }
 
     #[test]
-    fn tony_prior_versions_remain_readable_without_overwriting() {
-        for (version, count) in [(1, 24), (2, 25), (3, 28), (4, 29)] {
-            let directory = tempfile::tempdir().unwrap();
-            let source = directory.path().join("source");
-            let output = directory.path().join("assets");
-            let selected = tony_fixture(&source);
-            let mut earlier = tony_fixture(&source);
-            earlier.collection = format!("arkham-unfolded-tony-turn-v{version}");
-            earlier.assets.retain(|asset| {
-                !is_counter_art(&asset.role)
-                    && (version >= 4 || asset.role != "ui/reveal-chaos-token")
-                    && (version >= 3
-                        || !matches!(
-                            asset.role.as_str(),
-                            "token/damage" | "token/horror" | "font/symbols"
-                        ))
-                    && (version >= 2 || asset.role != "card-back/player")
-            });
-            prepare_selection(&source, &output, &earlier).unwrap();
-            let original_manifest = fs::read(output.join(MANIFEST)).unwrap();
-            let report = inspect_selection(&output, &selected);
-            assert!(report.recognized && !report.complete, "Tony V{version}");
-            assert_eq!((report.valid_count(), report.expected_count()), (count, 43));
-            assert!(report.verified_path("card/06003").is_some());
-            assert_eq!(report.verified_path("token/damage").is_some(), version >= 3);
-            assert_eq!(report.verified_path("font/symbols").is_some(), version >= 3);
-            assert_eq!(
-                report.verified_path("ui/reveal-chaos-token").is_some(),
-                version >= 4
-            );
-            assert!(report.verified_path("token/clue").is_none());
-            assert!(report.verified_path("token/resource").is_none());
-            assert!(prepare_selection(&source, &output, &selected).is_err());
-            assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), original_manifest);
-        }
-    }
-
-    #[test]
-    fn tony_compatibility_is_bound_to_the_exact_prior_collection() {
-        // Independently captured from V1 at b2cbdbd and V2 at 26f283f;
-        // V3 and Jacqueline V1 from the installed manifests before this change.
-        let hashes = previous_manifests(tony_selection())
-            .iter()
-            .map(|previous| {
-                format!(
-                    "{:x}",
-                    Sha256::digest(serde_json::to_vec(previous).unwrap())
-                )
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            hashes,
-            [
-                "127d652276550b909d08b16010e1380145d6c20030a915aabb889454f353e865",
-                "106bd1fc4c107f60d9a426064009d52cebf841de0d4e22174cfcc867ef887bcc",
-                "af2750b1cd8ec1b300964c289790886d944095c5a617160e5d9f428b165c9f36",
-                "7efe62e6c5d8597f9d14278f8039a94841b2563a82d5bc25be5304cf7437bff0",
-            ]
-        );
-        // Party V1 captured from the installed collection before #73.
-        assert_eq!(
-            format!(
-                "{:x}",
-                Sha256::digest(
-                    serde_json::to_vec(&previous_manifests(party_selection())[0]).unwrap()
-                )
-            ),
-            "f8b453f912992e127c7d09833aec74309c953b1c8a952ff7d7d8c4a44b782b14"
-        );
-        assert_eq!(
-            format!(
-                "{:x}",
-                Sha256::digest(serde_json::to_vec(&previous_manifests(selection())[0]).unwrap())
-            ),
-            "20e809159119b8505be659bc2a588df008effd93a83e5f969e74efa444d518e2"
-        );
-    }
-
-    #[test]
-    fn tony_back_integrity_and_prior_collection_preserve_available_art() {
+    fn gathering_back_integrity_and_prior_collection_preserve_available_art() {
         let directory = tempfile::tempdir().unwrap();
         let source = directory.path().join("source");
         let output = directory.path().join("assets");
-        let selected = tony_fixture(&source);
+        let selected = gathering_fixture(&source);
         prepare_selection(&source, &output, &selected).unwrap();
         assert!(inspect_selection(&output, &selected).complete);
         let back = output.join("cards/player-back.png");
@@ -1832,32 +1497,35 @@ mod tests {
             }
             let report = inspect_selection(&output, &selected);
             assert!(report.recognized && !report.complete);
-            assert_eq!(report.valid_count(), 42);
-            assert_eq!(report.expected_count(), 43);
-            assert!(report.verified_path("card/06003").is_some());
+            assert_eq!(report.valid_count(), 143);
+            assert_eq!(report.expected_count(), 144);
+            assert!(report.verified_path("card-06003").is_some());
             assert!(report.verified_path("card-back/player").is_none());
         }
         fs::remove_file(&back).unwrap();
+        for later in ["key.jpg", "bounty.png", "ammo.png", "charge-motif.png"] {
+            fs::remove_file(output.join("tokens").join(later)).unwrap();
+        }
         let previous = serde_json::to_vec(&previous_manifests(&selected)[1]).unwrap();
         fs::write(output.join(MANIFEST), &previous).unwrap();
         let report = inspect_selection(&output, &selected);
         assert!(report.recognized && !report.complete);
-        assert_eq!((report.valid_count(), report.expected_count()), (42, 43));
+        assert_eq!((report.valid_count(), report.expected_count()), (139, 144));
         assert!(prepare_selection(&source, &output, &selected).is_err());
         assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), previous);
 
         // Adding bytes cannot upgrade an earlier manifest or permit overwriting it.
         fs::write(&back, original).unwrap();
         let report = inspect_selection(&output, &selected);
-        assert_eq!(report.valid_count(), 43);
+        assert_eq!(report.valid_count(), 140);
         assert!(!report.complete);
         assert!(prepare_selection(&source, &output, &selected).is_err());
     }
 
     #[test]
-    fn tony_compatibility_does_not_accept_other_manifest_changes() {
+    fn gathering_compatibility_does_not_accept_other_manifest_changes() {
         let directory = tempfile::tempdir().unwrap();
-        let selected = tony_fixture(&directory.path().join("source"));
+        let selected = gathering_fixture(&directory.path().join("source"));
         for previous in previous_manifests(&selected) {
             let original = serde_json::to_value(previous).unwrap();
             let mut missing = original.clone();
@@ -1867,7 +1535,7 @@ mod tests {
             let mut redirected = original.clone();
             redirected["assets"][0]["path"] = serde_json::json!("../../other.png");
             let mut renamed = original;
-            renamed["collection"] = serde_json::json!("arkham-unfolded-tony-turn-v5");
+            renamed["collection"] = serde_json::json!("arkham-unfolded-gathering-v3");
             for manifest in [missing, altered, redirected, renamed] {
                 fs::write(
                     directory.path().join(MANIFEST),

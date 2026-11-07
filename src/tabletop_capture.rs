@@ -28,6 +28,22 @@ pub(crate) fn save_to_disk_and_exit(
     }
 }
 
+/// Selection has no playable table or artwork admission gate. A completed
+/// capture proves its UI rendered; successful exit still requires a saved file.
+pub(crate) fn save_selection_and_exit(
+    path: PathBuf,
+    elapsed: Duration,
+) -> impl FnMut(On<ScreenshotCaptured>, MessageWriter<AppExit>) {
+    let mut write = writer(path, elapsed);
+    move |captured, mut exit| {
+        exit.write(if write(&captured.image).is_ok() {
+            AppExit::Success
+        } else {
+            AppExit::error()
+        });
+    }
+}
+
 fn writer(path: PathBuf, elapsed: Duration) -> impl FnMut(&Image) -> Result<(), String> {
     let requested = Instant::now();
     info!(elapsed_seconds = elapsed.as_secs_f64(), path = %path.display(), "Screenshot requested");

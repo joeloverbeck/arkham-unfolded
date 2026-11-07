@@ -1,4 +1,4 @@
-//! Camera lifecycle shared by the two tabletop adapters. No rules or choices live here.
+//! Gathering camera lifecycle. No rules or choices live here.
 
 use bevy::{input::mouse::AccumulatedMouseScroll, prelude::*};
 
@@ -20,21 +20,6 @@ pub(crate) fn parse_initial_view(value: &str) -> Result<Area, String> {
         _ => Err(
             "--initial-view must be overview, scenario, test, tony, patrice or jacqueline".into(),
         ),
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum CameraMode {
-    Jacqueline,
-    Tony,
-}
-
-impl CameraMode {
-    fn home(self) -> (Vec3, f32) {
-        layout::focus(match self {
-            Self::Jacqueline => Area::Overview,
-            Self::Tony => Area::Investigator(0),
-        })
     }
 }
 
@@ -86,7 +71,6 @@ pub(crate) struct FrameInput<'a> {
     pub scroll_y: f32,
     pub dt: f32,
     pub capture: Capture,
-    pub reduced_motion: bool,
 }
 
 pub(crate) struct CameraStep {
@@ -97,7 +81,6 @@ pub(crate) struct CameraStep {
 
 #[derive(Resource)]
 pub(crate) struct Orbit {
-    mode: CameraMode,
     home: (Vec3, f32),
     pose: Pose,
     desired_target: Vec3,
@@ -107,11 +90,11 @@ pub(crate) struct Orbit {
 }
 
 impl Orbit {
-    pub(crate) fn new(mode: CameraMode) -> Self {
-        let pose = Pose::at(mode.home());
+    pub(crate) fn new() -> Self {
+        let home = layout::focus(Area::Overview);
+        let pose = Pose::at(home);
         Self {
-            mode,
-            home: mode.home(),
+            home,
             pose,
             desired_target: pose.target,
             desired_distance: pose.distance,
@@ -126,14 +109,6 @@ impl Orbit {
         self
     }
 
-    /// A diagnostic launch changes the starting pose, never the mode's Home pose.
-    pub(crate) fn with_initial_view(mut self, view: Option<Area>) -> Self {
-        if let Some(view) = view {
-            self.focus(layout::focus(view));
-        }
-        self
-    }
-
     pub(crate) fn pose(&self) -> Pose {
         self.pose
     }
@@ -144,8 +119,7 @@ impl Orbit {
 
     pub(crate) fn is_moving(&self) -> bool {
         !self.pose.target.abs_diff_eq(self.desired_target, 0.001)
-            || (matches!(self.mode, CameraMode::Jacqueline)
-                && (self.pose.distance - self.desired_distance).abs() >= 0.001)
+            || (self.pose.distance - self.desired_distance).abs() >= 0.001
     }
 
     pub(crate) fn set_following(&mut self, following: bool) {
@@ -159,19 +133,13 @@ impl Orbit {
     }
 
     /// Called at the existing action boundary, never derived afresh each frame.
-    /// Jacqueline freezes framing on actions while following is off; Tony may
-    /// finish converging on the last requested target after following stops.
+    /// Freeze framing on actions while following is off.
     pub(crate) fn update_follow_target(&mut self, framing: Option<(Vec3, f32)>) {
         if !self.following {
-            if matches!(self.mode, CameraMode::Jacqueline) {
-                self.freeze_framing();
-            }
+            self.freeze_framing();
         } else if let Some((target, distance)) = framing {
             self.desired_target = target;
             self.desired_distance = distance;
-            if matches!(self.mode, CameraMode::Tony) {
-                self.pose.distance = distance;
-            }
         }
     }
 
@@ -253,21 +221,13 @@ impl Orbit {
         self.pose.pitch = self.pose.pitch.clamp(0.35, 1.35);
         self.pose.distance = self.pose.distance.clamp(6.0, 90.0);
         let blend = (input.dt * 4.0).min(1.0);
-        // Retain Jacqueline's existing clamp-then-interpolate ordering.
-        if matches!(self.mode, CameraMode::Jacqueline) {
-            self.pose.distance += (self.desired_distance - self.pose.distance) * blend;
-        }
-        self.pose.target = if matches!(self.mode, CameraMode::Tony) && input.reduced_motion {
-            self.desired_target
-        } else {
-            self.pose.target.lerp(self.desired_target, blend)
-        };
+        // Preserve Gathering's clamp-then-interpolate ordering.
+        self.pose.distance += (self.desired_distance - self.pose.distance) * blend;
+        self.pose.target = self.pose.target.lerp(self.desired_target, blend);
         if self.pose.target.abs_diff_eq(self.desired_target, 0.001) {
             self.pose.target = self.desired_target;
         }
-        if matches!(self.mode, CameraMode::Jacqueline)
-            && (self.pose.distance - self.desired_distance).abs() < 0.001
-        {
+        if (self.pose.distance - self.desired_distance).abs() < 0.001 {
             self.pose.distance = self.desired_distance;
         }
         CameraStep {

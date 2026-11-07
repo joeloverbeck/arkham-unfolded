@@ -416,9 +416,11 @@ mod tests {
             app.world_mut()
                 .query::<&Text>()
                 .iter(app.world())
-                .any(|text| text.0.contains(&crate::tabletop::readable_text(
-                    "Olive active — reveal 3, resolve 2".into()
-                )))
+                .any(
+                    |text| text.0.contains(&crate::tabletop_support::readable_text(
+                        "Olive active — reveal 3, resolve 2".into()
+                    ))
+                )
         );
         let entity = button(&mut app, "Reveal tokens").unwrap();
         app.world_mut().trigger(Activate { entity });

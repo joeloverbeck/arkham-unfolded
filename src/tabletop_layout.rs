@@ -170,10 +170,6 @@ pub(crate) fn investigator_card(index: usize) -> Vec3 {
     personal(index, -7.15, -5.37)
 }
 
-pub(crate) fn investigator_status(index: usize) -> Vec3 {
-    personal(index, -7.15, -3.75)
-}
-
 /// Stable homes remain fixed when either personal total becomes zero.
 pub(crate) fn investigator_resource(index: usize) -> Vec3 {
     personal(index, -7.95, -4.35).with_y(0.14)
@@ -317,8 +313,6 @@ pub(crate) fn scenario_zone_labels() -> [(&'static str, Vec3); 4] {
 /// Presentation identity, independent of secondary deckbuilding access.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum InvestigatorClass {
-    Guardian,
-    Seeker,
     Rogue,
     Mystic,
     Survivor,
@@ -328,8 +322,6 @@ pub(crate) enum InvestigatorClass {
 impl InvestigatorClass {
     pub(crate) fn asset_name(self) -> &'static str {
         match self {
-            Self::Guardian => "guardian",
-            Self::Seeker => "seeker",
             Self::Rogue => "rogue",
             Self::Mystic => "mystic",
             Self::Survivor => "survivor",
@@ -339,8 +331,6 @@ impl InvestigatorClass {
     /// Muted class colors shared by table borders, portrait accents and standee holders.
     pub(crate) fn color(self) -> Color {
         match self {
-            Self::Guardian => Color::srgb(0.16, 0.29, 0.47),
-            Self::Seeker => Color::srgb(0.56, 0.39, 0.12),
             Self::Rogue => Color::srgb(0.12, 0.32, 0.22),
             Self::Mystic => Color::srgb(0.27, 0.19, 0.40),
             Self::Survivor => Color::srgb(0.37, 0.14, 0.19),
@@ -373,14 +363,6 @@ pub(crate) fn focus(area: Area) -> (Vec3, f32) {
         // Aim toward the near edge so the physical hand clears the decision strip.
         Area::Investigator(index) => (investigator_center(index, 3) + Vec3::Z * 0.7, 26.0),
     }
-}
-
-pub(crate) fn spawn_surfaces(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-) {
-    spawn_surfaces_with_token_region(commands, meshes, materials, false);
 }
 
 /// Gathering keeps all held test tokens in one region, independent of their state.

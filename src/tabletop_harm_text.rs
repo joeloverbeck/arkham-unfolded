@@ -3,7 +3,7 @@
 //! This is a display-only substitution of harm and skill words. Rules, saved
 //! history and accessible labels keep their English names.
 
-use crate::tabletop::symbols::Skill;
+use crate::tabletop_support::symbols::Skill;
 use bevy::{ecs::spawn::SpawnIter, prelude::*};
 
 pub(crate) const DAMAGE_COLOR: Color = Color::srgb(1.0, 0.48, 0.38);
@@ -112,7 +112,7 @@ pub(crate) fn ui(
     font: &Handle<Font>,
 ) -> impl Bundle {
     let label = value.into();
-    let value = crate::tabletop::readable_text(label.clone());
+    let value = crate::tabletop_support::readable_text(label.clone());
     let has_icon = runs(&value).iter().any(|run| !matches!(run, Run::Words(_)));
     let (root, spans) = if has_icon {
         (String::new(), spans(&value, size, color, font))
@@ -143,7 +143,7 @@ pub(crate) fn spans(
         .into_iter()
         .map(|run| match run {
             Run::Words(words) => (
-                TextSpan::new(crate::tabletop::readable_text(words)),
+                TextSpan::new(crate::tabletop_support::readable_text(words)),
                 TextFont {
                     font_size: FontSize::Px(size),
                     ..default()

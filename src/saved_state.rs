@@ -126,17 +126,33 @@ pub(crate) fn load<T: Snapshot>(path: impl AsRef<Path>) -> Result<T, Error> {
     decode(&record_replacement::read(path.as_ref(), MAX_BYTES, Error)?)
 }
 pub(crate) fn save<T: Snapshot>(path: impl AsRef<Path>, session: &T) -> Result<(), Error> {
+    save_with_policy(path.as_ref(), session, false)
+}
+
+#[cfg(feature = "tabletop")]
+pub(crate) fn create<T: Snapshot>(path: &Path, session: &T) -> Result<(), Error> {
+    save_with_policy(path, session, true)
+}
+
+fn save_with_policy<T: Snapshot>(path: &Path, session: &T, exclusive: bool) -> Result<(), Error> {
     let bytes = encode(session)?;
     let mut saved_bytes = bytes.clone();
     record_replacement::replace(
-        path.as_ref(),
+        path,
         &bytes,
         MAX_BYTES,
         Error,
         |existing| {
             let Some(existing) = existing else {
-                return Ok(Replacement::Replace);
+                return Ok(if exclusive {
+                    Replacement::Create
+                } else {
+                    Replacement::Replace
+                });
             };
+            if exclusive {
+                return Err(Error("The new attempt path is already occupied. No existing attempt was opened or replaced.".into()));
+            }
             let committed: T = decode(existing)?;
             if serde_json::to_value(&committed)? == serde_json::to_value(session)? {
                 saved_bytes = existing.to_vec();

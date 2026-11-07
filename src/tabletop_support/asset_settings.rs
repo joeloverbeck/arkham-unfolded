@@ -17,26 +17,17 @@ pub(crate) struct AssetSettings {
 
 #[derive(Clone, Copy)]
 pub(crate) enum Collection {
-    Jacqueline,
-    Tony,
-    Party,
     Gathering,
 }
 
 impl Collection {
     pub(crate) fn name(self) -> &'static str {
         match self {
-            Self::Jacqueline => "Jacqueline",
-            Self::Tony => "Tony",
-            Self::Party => "Party / Study escape",
             Self::Gathering => "Gathering",
         }
     }
     pub(crate) fn inspect(self, path: &Path) -> assets::CollectionReport {
         match self {
-            Self::Jacqueline => assets::inspect(path),
-            Self::Tony => assets::inspect_tony(path),
-            Self::Party => assets::inspect_party(path),
             Self::Gathering => assets::inspect_gathering(path),
         }
     }
@@ -57,22 +48,8 @@ impl AssetSettings {
     pub(crate) fn new(config: AssetConfig) -> Self {
         Self {
             config,
-            collection: Collection::Jacqueline,
+            collection: Collection::Gathering,
             pending: None,
-        }
-    }
-
-    pub(crate) fn new_tony(config: AssetConfig) -> Self {
-        Self {
-            collection: Collection::Tony,
-            ..Self::new(config)
-        }
-    }
-
-    pub(crate) fn new_party(config: AssetConfig) -> Self {
-        Self {
-            collection: Collection::Party,
-            ..Self::new(config)
         }
     }
 
@@ -93,10 +70,6 @@ impl AssetSettings {
         let (sender, receiver) = mpsc::channel();
         self.pending = Some(Mutex::new(receiver));
         (self, PendingSelection { _sender: sender })
-    }
-
-    pub(crate) fn configured_root(&self) -> &Path {
-        self.config.root()
     }
 
     pub(crate) fn choose(&mut self) {
@@ -143,7 +116,7 @@ fn select_folder_with(
     config: &mut AssetConfig,
     dialog: &mut impl FnMut(&[&str]) -> Result<Output, String>,
 ) -> Result<Option<PathBuf>, String> {
-    select_folder_with_mode(config, dialog, Collection::Jacqueline)
+    select_folder_with_mode(config, dialog, Collection::Gathering)
 }
 
 pub(crate) fn select_folder_with_mode(
@@ -253,9 +226,9 @@ mod tests {
     }
 
     fn incomplete_collection(root: &Path) {
-        assets::write_current_manifest_without_payloads(root);
-        assert!(assets::inspect(root).recognized);
-        assert!(!assets::inspect(root).complete);
+        assets::write_gathering_manifest_without_payloads(root);
+        assert!(assets::inspect_gathering(root).recognized);
+        assert!(!assets::inspect_gathering(root).complete);
     }
 
     #[test]
