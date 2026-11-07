@@ -74,6 +74,173 @@ fn verify_index(root: &Path, snapshot: &Path, sha256: &str) -> Output {
         .unwrap()
 }
 
+fn summary(snapshot: &Path, sha256: &str, options: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .current_dir(snapshot.parent().unwrap())
+        .args(["review-summary", "--snapshot"])
+        .arg(snapshot)
+        .args(["--sha256", sha256])
+        .args(options)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn summary_identifies_the_selected_candidate_and_delta_without_dumping_context() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("selected.txt"), "first\n").unwrap();
+    let first = directory.path().join("first");
+    assert!(
+        snapshot(&root, &base, &first, &["selected.txt"], None)
+            .status
+            .success()
+    );
+    fs::write(root.join("selected.txt"), "second\n").unwrap();
+    fs::write(root.join("new.txt"), "new\n").unwrap();
+    let second = directory.path().join("second");
+    assert!(
+        snapshot(
+            &root,
+            &base,
+            &second,
+            &["new.txt", "selected.txt"],
+            Some(&first)
+        )
+        .status
+        .success()
+    );
+    let hash = manifest_digest(&second);
+    let index = fs::read(root.join(".git/index")).unwrap();
+    let record = manifest(&second);
+    let result = summary(&second, &hash, &[]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let text = String::from_utf8(result.stdout).unwrap();
+    assert!(text.contains(&format!("Manifest SHA256: {hash}")));
+    for label in ["Fixed point", "Base", "Head"] {
+        assert!(text.contains(&format!("{label}: {base}")));
+    }
+    assert!(text.contains(record["patch_sha256"].as_str().unwrap()));
+    assert!(text.contains(&manifest_digest(&first)));
+    assert!(text.contains("Selected paths: 2"));
+    assert!(text.contains("Changes since previous snapshot: 2"));
+    assert!(text.contains("added \"new.txt\""));
+    assert!(text.contains("modified \"selected.txt\""));
+    assert!(!text.contains("context.txt"));
+    assert!(text.ends_with("END\n"));
+    assert!(text.len() <= 6000);
+    assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+    assert_eq!(manifest_digest(&second), hash);
+}
+
+#[test]
+fn summary_pages_keep_every_selected_path_under_the_byte_budget() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    let paths: Vec<_> = (0..40)
+        .map(|index| format!("{index:02} café with spaces and a long review path.txt"))
+        .collect();
+    for path in &paths {
+        fs::write(root.join(path), "candidate\n").unwrap();
+    }
+    let output = directory.path().join("review");
+    assert!(
+        snapshot(
+            &root,
+            &base,
+            &output,
+            &paths.iter().map(String::as_str).collect::<Vec<_>>(),
+            None
+        )
+        .status
+        .success()
+    );
+    let hash = manifest_digest(&output);
+    for budget in [512, 1024, 6000] {
+        let mut start = 1;
+        let mut complete = String::new();
+        loop {
+            let result = summary(
+                &output,
+                &hash,
+                &[
+                    "--start",
+                    &start.to_string(),
+                    "--max-bytes",
+                    &budget.to_string(),
+                ],
+            );
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(result.stdout.len() <= budget);
+            let page = String::from_utf8(result.stdout).unwrap();
+            complete.push_str(&page);
+            if let Some(next) = page.lines().find(|line| line.starts_with("NEXT ")) {
+                assert!(next.contains(&hash));
+                let following: usize = next.split_whitespace().nth(2).unwrap().parse().unwrap();
+                assert!(
+                    following > start && following < 100,
+                    "pagination must advance"
+                );
+                start = following;
+            } else {
+                assert!(page.ends_with("END\n"));
+                break;
+            }
+        }
+        for path in &paths {
+            assert_eq!(complete.matches(&format!("added {path:?}")).count(), 1);
+        }
+        assert!(!complete.contains("context.txt"));
+        assert!(complete.contains("no previous snapshot"));
+    }
+}
+
+#[test]
+fn summary_refuses_changed_identity_or_candidate_without_emitting_a_page() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("selected.txt"), "reviewed\n").unwrap();
+    let output = directory.path().join("review");
+    assert!(
+        snapshot(&root, &base, &output, &["selected.txt"], None)
+            .status
+            .success()
+    );
+    let hash = manifest_digest(&output);
+    let wrong = summary(&output, &"0".repeat(64), &[]);
+    assert!(!wrong.status.success());
+    assert!(wrong.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&wrong.stderr).contains("recorded SHA256"));
+
+    let manifest_path = output.join("manifest.json");
+    let original = fs::read(&manifest_path).unwrap();
+    let mut changed = original.clone();
+    changed.push(b'\n');
+    fs::write(&manifest_path, changed).unwrap();
+    let continuation = summary(&output, &hash, &["--start", "4", "--max-bytes", "512"]);
+    assert!(!continuation.status.success());
+    assert!(continuation.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&continuation.stderr).contains("recorded SHA256"));
+
+    fs::write(&manifest_path, original).unwrap();
+    fs::write(output.join("candidate/selected.txt"), "tampered\n").unwrap();
+    let tampered = summary(&output, &hash, &[]);
+    assert!(!tampered.status.success());
+    assert!(tampered.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&tampered.stderr).contains("candidate files"));
+}
+
 #[test]
 fn verifies_index_contents_despite_patch_formatting_without_changing_inputs() {
     let directory = tempfile::tempdir().unwrap();

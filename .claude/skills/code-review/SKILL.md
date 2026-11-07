@@ -40,26 +40,22 @@ outside the checkout. The manifest records revisions, selected paths, file modes
 and SHA-256 identities; the command prints its digest. Treat this capture as
 immutable review input. Supply `--previous /tmp/review-v1` with a fresh output
 directory for a refresh: it verifies the previous candidate and patch against
-their manifest and reports the changed paths. Invalid inputs and failed captures
+their manifest and reports the change count. Invalid inputs and failed captures
 exit nonzero without publishing a snapshot. Use `--help` for supported inputs.
 
-The manifest's `files` inventory covers the entire captured candidate tree;
-`selected_paths` names the review selection. Start with the helper's printed
-digest/count and read the manifest's identity/selection prefix under a byte
-budget. Follow a hash-bound `NEXT` only as needed to finish that prefix, then stop
-at `files`; locate a later field directly:
+Use the printed manifest digest to read the compact identity and scope summary:
 
 ```sh
-scripts/tools read-context /tmp/review-v1/manifest.json --max-bytes 2000
-scripts/tools search-context /tmp/review-v1/manifest.json \
-  --find '"patch_sha256"' --context 0 --max-bytes 1000
-sha256sum /tmp/review-v1/manifest.json /tmp/review-v1/changes.patch
+scripts/tools review-summary --snapshot /tmp/review-v1 \
+  --sha256 RECORDED_MANIFEST_SHA256 --max-bytes 6000
 ```
 
-Compare those digests with the recorded capture identity. Keep the full inventory
-on disk and review the captured files. The helper verifies the whole candidate
-when refreshing with `--previous`; staged verification after review is described
-below.
+Keep the snapshot argument and follow each `NEXT` through `END`. The summary
+verifies the recorded manifest identity, candidate files and patch, then lists
+revisions, digests, selected paths and changes since the preceding snapshot.
+The full context-file inventory stays in `manifest.json`; review the captured
+files and patch for their contents. A summary is navigation, not a code review
+or staged verification; the latter is described below.
 
 Confirm the fixed point resolves and the complete selected candidate is non-empty before spawning reviewers. A new-file-only candidate is valid even when `git diff` is empty.
 

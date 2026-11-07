@@ -36,9 +36,10 @@ keep one watcher:
 gh run watch RUN_ID --repo joeloverbeck/arkham-unfolded --compact --exit-status --interval 30
 ```
 
-If the tool returns a running session, poll that same session with waits short
-enough to deliver required progress updates. Use its output for intermediate
-status; a second watcher or repeated `gh run view` calls add no evidence while
+If the tool returns a running session, wait on that same session for up to
+45 seconds per call, within the required progress-update interval. Use the wait
+itself instead of alternating short polls with separate sleeps. Use its output
+for intermediate status; a second watcher or repeated `gh run view` calls add no evidence while
 it remains connected. After it exits, read the terminal run status and `headSha`
 and verify the expected revision before the guarded merge. If the connection is
 lost, inspect the run once before reconnecting; losing the watcher does not

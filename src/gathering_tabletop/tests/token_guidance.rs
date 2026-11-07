@@ -146,7 +146,16 @@ fn assert_token_captions_are_separate(session: Session, ordinary: bool) {
                 })
                 .map(|(entity, _, text)| (entity, text.0.clone()))
                 .collect();
-            if !ordinary {
+            if ordinary {
+                assert_eq!(
+                    headings
+                        .iter()
+                        .filter(|(_, text)| text.contains("Watch this!"))
+                        .count(),
+                    1,
+                    "The committed Watch this! card must keep its caption"
+                );
+            } else {
                 assert!(
                     headings.len() >= group_names.len(),
                     "Meaningful nested groups keep their headings"
