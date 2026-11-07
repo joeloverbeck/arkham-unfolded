@@ -2575,7 +2575,7 @@
     },
     {
       "bytes": 7983,
-      "evidence": "Owner-supplied inner-spark glyph; docs/adr/0002-persistent-table-areas.md#gathering-ability-markers-available-choices-and-compact-assets. Unchanged transparent PNG; class background is applied at runtime.",
+      "evidence": "Owner-supplied inner-spark glyph; https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-ability-markers-available-choices-and-compact-assets. Unchanged transparent PNG; class background is applied at runtime.",
       "path": "tokens/investigator-ability.png",
       "role": "token/investigator-ability",
       "sha256": "1ebce6f1238b0b19351d4ef6d3fc0150f034614a5d22cadc76cadf6550f216c0",
@@ -2598,7 +2598,7 @@
         "title": "Swap bag"
       },
       "bytes": 5829,
-      "evidence": "docs/adr/0002-persistent-table-areas.md#accepted-implementation-handoff",
+      "evidence": "https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#accepted-implementation-handoff",
       "path": "ui/reveal-chaos-token.png",
       "role": "ui/reveal-chaos-token",
       "sha256": "54673d4cc97a84c90cab1d0a38b46183eb182c567493de676d7124ff3d70fe3e",

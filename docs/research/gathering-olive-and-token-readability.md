@@ -8,7 +8,7 @@ This investigation supports the owner's `grill-with-docs` request under
 [current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060).
 It records screenshot observations, current source inspection and source-qualified
 rules interpretation. Joel subsequently accepted Q1–Q3, recorded in
-[ADR 0002](../adr/0002-persistent-table-areas.md#gathering-harm-fractions-and-planned-token-reveals).
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-harm-fractions-and-planned-token-reveals).
 This accepts the presentation design, not implementation, runtime verification or
 the resulting playing experience. An existing unrelated README edit was preserved.
 
@@ -260,7 +260,7 @@ were presented with recommendations during this interview:
 
 On 2026-11-07, Joel answered "as you recommend" to Q1, Q2 and Q3, accepting all
 three recommendations and settling this design frontier. The
-[accepted decision](../adr/0002-persistent-table-areas.md#gathering-harm-fractions-and-planned-token-reveals)
+[accepted decision](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-harm-fractions-and-planned-token-reveals)
 records the behavior together. Q3 supersedes Gathering's earlier Reveal-shortcut
 chooser; Q2 refines routine captions and provenance-group presentation while
 preserving meaningful nested choices. Existing glossary terms already describe

@@ -150,7 +150,7 @@ establish “one legal use.” Collapsing equivalent choices must not be inferre
 matching labels or immediate token counts. The least risky first correction keeps
 the existing offered choices and improves their explanation and layout.
 
-This refines the accepted [guided physical token groups](../adr/0002-persistent-table-areas.md#guided-physical-token-groups)
+This refines the accepted [guided physical token groups](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#guided-physical-token-groups)
 decision. It preserves the explicit decision to invoke an optional ability and
 the requirement to declare before seeing faces. Native readability, scrolling,
 pointer and keyboard interaction, and the exact reported Tony state remain
@@ -191,7 +191,7 @@ change story disclosure, saved decisions, or cause Continue to repeat effects
 This is bounded research and design for the three supplied Gathering observations,
 returning to the owner interview. It does not activate unrelated caption repairs,
 broader token-rule work, or a general modal framework. The accepted presentation
-refinements are recorded in [ADR 0002](../adr/0002-persistent-table-areas.md#gathering-reveal-cue-and-story-panel-refinements).
+refinements are recorded in [ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-reveal-cue-and-story-panel-refinements).
 The existing glossary's testing investigator and reveal group distinguish the
 relevant concepts; no new domain term is needed.
 

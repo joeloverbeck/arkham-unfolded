@@ -206,7 +206,7 @@ not authorize implementing Massive or the rest of the catalog.
 ## Selected behavior
 
 These decisions are recorded in the
-[accepted presentation contract](../adr/0002-persistent-table-areas.md#enemy-sideboard).
+[accepted presentation contract](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#enemy-sideboard).
 They govern the local implementation; native appearance remains unverified:
 
 1. Put one small enemy-group marker above the location, with a matching marker

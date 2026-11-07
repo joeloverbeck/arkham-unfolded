@@ -198,7 +198,7 @@ Keep source/rules identities and save continuity obligations that still serve
 ordinary play. External screen recording can remain outside the application;
 no replacement video-production capability is needed by this proposal.
 
-[ADR 0002](../adr/0002-persistent-table-areas.md) contains replay obligations,
+[ADR 0002](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md) contains replay obligations,
 including the latest draw handoff. Its scope notice now links ADR 0003's
 supersession while preserving the dated observations. ADR 0001's portable asset
 boundary survives; excluding old personal recordings from prepared assets does

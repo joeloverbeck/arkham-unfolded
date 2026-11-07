@@ -34,7 +34,7 @@ See [rules](../../src/gathering.rs#L711) and
 
 The existing [play contract](../foundation/play-contract.md#decisions-and-tabletop-interaction)
 already requires visible shuffling. The accepted
-[draw choreography](../adr/0002-persistent-table-areas.md#gathering-card-draws)
+[draw choreography](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md#gathering-card-draws)
 requires individual unseen-hand handling, one draw at a time, approximately
 3–4 seconds for five cards, preserved hidden information and no animation
 authority over the rules. It specifies the mulligan return but not its shuffle

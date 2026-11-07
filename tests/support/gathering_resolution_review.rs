@@ -1,4 +1,4 @@
-//! Fixed ordinary prefixes for reviewing ADR 0002's resolution surfaces.
+//! Fixed ordinary prefixes for the resolution surfaces in docs/tabletop-presentation.md.
 //! No fixture constructors, state edits, or seed search run in this helper.
 use crate::gathering::Session;
 

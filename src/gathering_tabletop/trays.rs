@@ -1,4 +1,4 @@
-//! Temporary resolution surfaces. ADR 0002 reserves Test for skill tests.
+//! Temporary resolution surfaces; see docs/tabletop-presentation.md for Test/tray ownership.
 use super::*;
 use crate::gathering::{CardView, PlayObservation};
 
