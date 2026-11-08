@@ -39,6 +39,14 @@ target/debug/arkham-tabletop --experiment gathering --save /absolute/path/to/att
 
 Here an existing compatible file resumes; an unused path starts setup. Omitting `--save` on this direct command selects `local/gathering/setup.session.json`. Ordinary launch without `--experiment gathering` opens selection instead. The headless driver also retains Gathering's player choices, persistence and diagnostics; use `scripts/dev cargo run --locked --bin arkham-driver -- --help` for its interface.
 
+To inspect an ordinary Gathering save without changing it:
+
+```sh
+scripts/dev cargo run --locked --bin arkham-driver -- --inspect /absolute/path/to/attempt.json
+```
+
+Inspection validates the save, prints one JSON response containing the player-visible observation, and exits without reading commands, autosaving, or creating lock/recovery files. Missing, incompatible, invalid and privileged verification saves are refused. `--inspect` cannot be combined with `--load` or `--save`; the driver's live mode still saves on startup and accepts JSON-line player commands.
+
 ### Start fresh after an incompatible save
 
 Select **New attempt**. Keep the rejected file; no migration or repair is performed. Replay-era format-1 records are unsupported, and older format-3 records can already be incompatible with the current Gathering implementation. The error `Gathering setup does not match its recorded decisions and pinned inputs` means validation could not reconstruct that record, including its recorded history. This retirement change preserves saves loadable at its baseline; it does not repair previously incompatible records. See [replay retirement](docs/adr/0003-retire-replay.md) and [earlier compatibility notes](docs/research/gathering-wagers-keys-and-token-layout.md#implementation-and-verification).

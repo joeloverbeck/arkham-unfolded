@@ -64,7 +64,13 @@ fn hornet_finishes_automatically_after_bounties_and_after_reopening_cleanup() {
             table.reduced_motion = reduced;
             let mut app = host_with_table(table, false);
             if live {
-                finish_presentation(&mut app);
+                let revision = app.world().resource::<Table>().session.observe().revision;
+                settle_automatic_resolution(&mut app);
+                assert_eq!(
+                    app.world().resource::<Table>().session.observe().revision,
+                    revision,
+                    "settling automatic work must preserve the genuine bounty choice"
+                );
                 assert!(
                     app.world()
                         .resource::<Table>()
@@ -75,23 +81,7 @@ fn hornet_finishes_automatically_after_bounties_and_after_reopening_cleanup() {
                 );
                 activate_choice(&mut app, &bounty);
             }
-            finish_presentation(&mut app);
-            // Automatic continuations can start another presentation after the
-            // preceding one finishes. Wait for that chain and its closing tray.
-            for _ in 0..200 {
-                tick(&mut app, 0.1);
-                let table = app.world().resource::<Table>();
-                if !table.is_presenting()
-                    && !table.trays.active()
-                    && !table
-                        .view()
-                        .choices
-                        .iter()
-                        .any(|choice| choice.id == "search:finish")
-                {
-                    break;
-                }
-            }
+            settle_automatic_resolution(&mut app);
             let view = app.world().resource::<Table>().view();
             assert!(
                 !view
@@ -121,24 +111,7 @@ fn hornet_finishes_automatically_after_bounties_and_after_reopening_cleanup() {
                     .iter(world)
                     .filter(|(name, _)| name.as_str() == "Resolution tray")
                     .all(|(_, visibility)| *visibility == Visibility::Hidden),
-                "reduced={reduced}, live={live}, pending={:?}, presenting={}, moving={}, blocked={}, drawers_active={}, rendered_pending={:?}",
-                play.pending,
-                world.resource::<Table>().is_presenting(),
-                world
-                    .query_filtered::<Entity, With<motion::CardMotion>>()
-                    .iter(world)
-                    .count(),
-                world.resource::<Table>().motion_blocked(),
-                world.resource::<Table>().trays.active(),
-                world
-                    .resource::<Table>()
-                    .last_rendered
-                    .as_ref()
-                    .unwrap()
-                    .play
-                    .as_ref()
-                    .unwrap()
-                    .pending
+                "settled trays must be hidden: reduced={reduced}, live={live}"
             );
         }
     }

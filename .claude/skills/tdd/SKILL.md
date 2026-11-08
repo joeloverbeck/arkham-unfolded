@@ -40,4 +40,8 @@ For new or corrected behavior:
 
 For a behavior-preserving refactor, establish passing characterization tests at the agreed seams before changing the structure. Use the spec and accepted behavior to identify preservation obligations; reuse existing coverage and add checks only for missing obligations. Refactor in small steps and rerun those checks afterward. A green baseline is expected. A missing-interface compiler error establishes only the interface gap. Any separately authorized behavior change uses the red → green loop above.
 
-When workers share a checkout, each finishes edits, formats its owned files, and reports the changed paths, focused check commands and results, and **files stable**. Keep those files stable until the coordinator finishes integration checks. The coordinator starts the full repository check after every contributing worker has handed off; earlier checks are provisional. If edits resume, report that immediately and repeat affected checks after a new stable handoff.
+## Running checks
+
+For single-agent work as well as shared checkouts, finish edits and formatting before starting a check. Run one protected build or check at a time and keep its source inputs unchanged until it terminates; use the wait for read-only investigation. Inspect the terminal result before editing or starting another check. Follow the [repository launchers and retained-result procedure](../../../README.md#local-builds-and-checks), including source fingerprinting and recovery when a tool session loses the exit status.
+
+When workers share a checkout, each reports the changed paths, focused check commands and results, and **files stable**. Keep those files stable until the coordinator finishes integration checks. The coordinator starts the full repository check after every contributing worker has handed off; earlier checks are provisional. If edits resume, report that immediately and repeat affected checks after a new stable handoff.
