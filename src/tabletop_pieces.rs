@@ -110,14 +110,24 @@ pub(crate) fn chaos_area(
     bag_count: usize,
     curse_pool: Option<u8>,
     symbol_font: &Handle<Font>,
+    pouch: &Handle<WorldAsset>,
 ) -> ChaosArea {
     let bag_at = layout::test_bag();
     let bag = commands
         .spawn((
-            Mesh3d(meshes.add(Cylinder::new(0.75, 0.55))),
-            MeshMaterial3d(materials.add(Color::srgb(0.22, 0.14, 0.12))),
+            Name::new("Chaos bag"),
             Transform::from_translation(bag_at),
+            Visibility::default(),
         ))
+        .with_children(|parent| {
+            // The authored origin is under the pouch body; cord tips must not
+            // influence centering. Keep the selectable/cue root unscaled.
+            parent.spawn((
+                WorldAssetRoot(pouch.clone()),
+                Transform::from_xyz(0.0, layout::MAT_TOP - bag_at.y, 0.0)
+                    .with_scale(Vec3::splat(5.0)),
+            ));
+        })
         .id();
     let bag_label = label(
         commands,

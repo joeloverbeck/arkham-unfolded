@@ -52,6 +52,7 @@ impl Prepared {
             .verified_path("font/symbols")
             .map(|path| server.load(path.to_owned()))
             .expect("the admitted collection contains its symbol font");
+        art.chaos_pouch = server.load(crate::tabletop_chaos_pouch::SCENE);
         art
     }
 }
@@ -60,6 +61,7 @@ impl Prepared {
 pub(super) struct Art {
     handles: BTreeMap<String, Handle<Image>>,
     symbol_font: Handle<Font>,
+    chaos_pouch: Handle<WorldAsset>,
     status: String,
 }
 
@@ -68,6 +70,7 @@ impl Default for Art {
         Self {
             handles: BTreeMap::new(),
             symbol_font: Handle::default(),
+            chaos_pouch: Handle::default(),
             status: "Artwork has not loaded.".to_owned(),
         }
     }
@@ -107,6 +110,10 @@ impl Art {
 
     pub(super) fn symbol_font(&self) -> &Handle<Font> {
         &self.symbol_font
+    }
+
+    pub(super) fn chaos_pouch(&self) -> &Handle<WorldAsset> {
+        &self.chaos_pouch
     }
 
     pub(super) fn status(&self) -> &str {
