@@ -4,9 +4,9 @@ set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 exec scripts/dev bash -euc '
+scripts/check-format
 scripts/check-index
 scripts/check-tools
-scripts/check-format
 scripts/check-clippy
 scripts/check-app
 scripts/check-renderer

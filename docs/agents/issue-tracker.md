@@ -69,6 +69,12 @@ Keep review results, native observations and authorization decisions as dated ev
 
 ## Bounded context reads
 
+For check or CI failures, save the complete log and inspect it with
+`scripts/tools check-summary LOG --max-bytes 6000` before reading selected ranges.
+Use `read-context-batch` below when those ranges span multiple logs or source files;
+share the byte budget across the whole tool response. Keep the complete logs as
+evidence, and use the terminal check record or CI status for the result.
+
 Start with issue metadata and the current body. Discover comments in small pages, then fetch the bodies needed to understand the decisions and current authority:
 
 ```sh
