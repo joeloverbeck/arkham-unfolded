@@ -26,7 +26,7 @@ pub(super) fn use_counter(kind: Option<UseKind>) -> Option<CounterKind> {
         UseKind::Supply => Some(CounterKind::Supply),
         UseKind::Key => Some(CounterKind::Key),
         UseKind::Resource => Some(CounterKind::Resource),
-        _ => None,
+        UseKind::Offering => Some(CounterKind::Offering),
     }
 }
 

@@ -15,6 +15,103 @@ const INTEL: &str = "05111";
 const FAVOR: &str = "05277";
 const GET_OVER_HERE: &str = "60114";
 
+#[cfg(test)]
+mod continuity_tests {
+    use super::*;
+    use crate::gathering::{HostileFixture, Session, continuity};
+
+    fn search() -> (Session, u16) {
+        let mut session =
+            Session::with_hostile_fixture(HostileFixture::Search(SearchFixture::HornetTargets));
+        let view = session.observe();
+        let card = view.play.unwrap().players[0]
+            .hand
+            .iter()
+            .find(|card| card.code == HORNET)
+            .unwrap()
+            .id;
+        session
+            .choose(view.revision, &format!("action:ordinary:play:tony:{card}"))
+            .unwrap();
+        let enemy = session
+            .observe()
+            .play
+            .unwrap()
+            .searched_encounter
+            .iter()
+            .find(|card| card.code == "01159")
+            .unwrap()
+            .id;
+        (session, enemy)
+    }
+
+    #[test]
+    fn legacy_hornet_audit_and_pending_reward_remain_loadable_without_repeating_rewards() {
+        let (mut session, enemy) = search();
+        let legacy = format!("search:enemy:{enemy}");
+        assert!(
+            session.choose(session.observe().revision, &legacy).is_err(),
+            "Live choices must use corrected timing"
+        );
+        session.choose_recorded(&legacy).unwrap();
+        assert_eq!(session.observe().play.unwrap().players[0].resources, 4);
+        // Pre-fix records have no reward_applied field.
+        let mut old = serde_json::to_value(&session).unwrap();
+        for frame in old["runtime"]["frames"].as_array_mut().unwrap() {
+            if let Some(state) = frame
+                .get_mut("EncounterSearch")
+                .and_then(|search| search.get_mut("AfterSpawn"))
+            {
+                state.as_object_mut().unwrap().remove("reward_applied");
+            }
+        }
+        session = serde_json::from_value(old).unwrap();
+        session.validate().unwrap();
+        session
+            .choose(session.observe().revision, &format!("bounty:{enemy}:0"))
+            .unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy-hornet.json");
+        continuity::save_session(&path, &session).unwrap();
+        let mut reopened = continuity::load_session(&path).unwrap();
+        reopened
+            .choose(reopened.observe().revision, "search:finish")
+            .unwrap();
+        let play = reopened.observe().play.unwrap();
+        assert_eq!((play.players[0].resources, play.players[0].clues), (5, 1));
+        continuity::save_session(&path, &reopened).unwrap();
+        assert_eq!(continuity::load_session(&path).unwrap(), reopened);
+    }
+
+    #[test]
+    fn hornet_resources_do_not_depend_on_a_clue_remaining() {
+        let (mut session, enemy) = search();
+        session
+            .runtime
+            .as_mut()
+            .unwrap()
+            .scenario
+            .location_mut("01111")
+            .unwrap()
+            .clues = 0;
+        session
+            .choose(
+                session.observe().revision,
+                &format!("search:enemy:{enemy}:then"),
+            )
+            .unwrap();
+        let play = session.observe().play.unwrap();
+        assert_eq!((play.players[0].resources, play.players[0].clues), (5, 0));
+        assert!(
+            session
+                .observe()
+                .choices
+                .iter()
+                .any(|choice| choice.id == format!("bounty:{enemy}:0"))
+        );
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SearchFixture {
     HornetTargets,
@@ -61,6 +158,9 @@ pub(super) enum SearchDecision {
     AfterSpawn {
         event: PaidEvent,
         health: u8,
+        // Older saves stopped before the reward. Never repeat it in new saves.
+        #[serde(default)]
+        reward_applied: bool,
     },
     FinishEvent {
         event: PaidEvent,
@@ -476,7 +576,11 @@ pub(super) fn choices(game: &Game, decision: &SearchDecision) -> Vec<Choice> {
                 .filter(|card| eligible(card, event))
                 .map(|card| {
                     choice(
-                        format!("search:enemy:{}", card.id),
+                        if event.card.code == HORNET && !game.legacy_hornet_search {
+                            format!("search:enemy:{}:then", card.id)
+                        } else {
+                            format!("search:enemy:{}", card.id)
+                        },
                         format!("Spawn {} engaged with you", card.title),
                     )
                 })
@@ -495,10 +599,16 @@ pub(super) fn choices(game: &Game, decision: &SearchDecision) -> Vec<Choice> {
                 choices
             }
         }
-        SearchDecision::AfterSpawn { event, health } => vec![choice(
+        SearchDecision::AfterSpawn {
+            event,
+            health,
+            reward_applied,
+        } => vec![choice(
             "search:finish".into(),
             if event.card.code == HUNT {
                 "Shuffle the encounter deck and finish On the Hunt".into()
+            } else if *reward_applied {
+                "Shuffle the encounter deck and finish Kicking the Hornet's Nest".into()
             } else {
                 format!("Discover 1 clue, gain {health} resources, and shuffle the encounter deck")
             },
@@ -518,6 +628,22 @@ fn finish(game: &mut Game, event: PaidEvent) {
     shuffle(game);
     game.players[event.owner.index()].discard.push(event.card);
     scenario::rebuild_empty_encounter(game);
+}
+
+fn hornet_reward(game: &mut Game, owner: Investigator, health: u8) {
+    let player = &mut game.players[owner.index()];
+    let location = game
+        .scenario
+        .location_mut(&player.location)
+        .expect("Active investigator location");
+    let clues = location.clues.min(1);
+    location.clues -= clues;
+    player.clues += clues;
+    player.resources += health;
+    game.capture_presentation(format!(
+        "{} discovers {clues} clue and gains {health} resources from Kicking the Hornet's Nest.",
+        owner.name()
+    ));
 }
 
 fn hunt_choices(game: &Game, owner: Investigator) -> Vec<Choice> {
@@ -668,7 +794,9 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
             let index = game
                 .encounter_deck
                 .iter()
-                .position(|card| id == format!("search:enemy:{}", card.id))
+                .position(|card| {
+                    id.strip_suffix(":then").unwrap_or(id) == format!("search:enemy:{}", card.id)
+                })
                 .expect("Validated target");
             let card = game.encounter_deck.remove(index);
             let enemy = card.id;
@@ -683,27 +811,32 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                 bounties: 0,
                 owner: None,
             });
+            // RR Then: the dependent reward precedes after-entry reactions.
+            let reward_applied = event.card.code == HORNET && id.ends_with(":then");
+            let owner = event.owner;
             game.frames
                 .push(Frame::EncounterSearch(SearchDecision::AfterSpawn {
                     event,
                     health,
+                    reward_applied,
                 }));
+            if reward_applied {
+                hornet_reward(game, owner, health);
+            }
             game.scenario_step(scenario::ScenarioStep::EnemyEntered(enemy))?;
         }
-        SearchDecision::AfterSpawn { event, health } => {
+        SearchDecision::AfterSpawn {
+            event,
+            health,
+            reward_applied,
+        } => {
             if event.card.code == HUNT {
                 finish(game, event);
                 return Ok(());
             }
-            let player = &mut game.players[event.owner.index()];
-            let location = game
-                .scenario
-                .location_mut(&player.location)
-                .expect("Active investigator location");
-            let clues = location.clues.min(1);
-            location.clues -= clues;
-            player.clues += clues;
-            player.resources += health;
+            if !reward_applied {
+                hornet_reward(game, event.owner, health);
+            }
             finish(game, event);
         }
     }

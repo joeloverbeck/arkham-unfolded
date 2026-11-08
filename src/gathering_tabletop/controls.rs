@@ -319,6 +319,7 @@ fn route(view: &Observation, id: &str) -> Route {
         | ["draw", "reveal", card]
         | ["test-card", "commit-effect" | "pendulum" | "found", card]
         | ["search", "enemy" | "play-hunt", card]
+        | ["search", "enemy", card, "then"]
         | ["backpack", "select", card]
         | ["event", "recover", card]
         | ["patrice-shuffle", "keep", card]
@@ -751,6 +752,7 @@ pub(super) fn automatic_choice(view: &Observation) -> Option<&str> {
             | "enemy:end"
             | "phase-window:pass"
             | "search:finish-event"
+            | "search:finish"
     )
     .then_some(choice.id.as_str())
 }

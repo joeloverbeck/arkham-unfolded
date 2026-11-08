@@ -46,6 +46,37 @@ fn captions(app: &mut App, card: Entity) -> Vec<String> {
 }
 
 #[test]
+fn sparrow_offerings_replace_uses_caption_and_remain_visible_at_zero() {
+    use crate::gathering::{BoostFixture, HostileFixture};
+    use crate::tabletop_counters::Counter;
+    let dir = tempfile::tempdir().unwrap();
+    for amount in [2, 1, 0] {
+        let session =
+            Session::with_hostile_fixture(HostileFixture::Boosts(BoostFixture::MaskRetry));
+        let mut play = session.observe().play.unwrap();
+        let mask = play.players[1]
+            .assets
+            .iter_mut()
+            .find(|asset| asset.card.code == "10111")
+            .unwrap();
+        mask.uses = amount;
+        let id = mask.card.id;
+        let mut app = at_public_moment(session, play, dir.path().join("mask.json"), false);
+        let card = by_source(&mut app, controls::Source::Card(id));
+        assert_eq!(captions(&mut app, card), ["Sparrow Mask"]);
+        let world = app.world_mut();
+        let counters: Vec<_> = world
+            .query::<(&Counter, &card_counters::Attached)>()
+            .iter(world)
+            .filter(|(_, attached)| attached.0 == card)
+            .map(|(counter, _)| (counter.kind.name(), counter.amount))
+            .collect();
+        assert_eq!(counters, [("Offerings", amount)]);
+        assert!(rendered_text(&mut app).contains("Mask limit: 1/1"));
+    }
+}
+
+#[test]
 fn asset_status_and_discard_keep_their_captions_and_inspection_keys_after_redraw() {
     for symbols in [false, true] {
         asset_status_and_discard(symbols);

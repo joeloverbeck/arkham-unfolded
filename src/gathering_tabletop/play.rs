@@ -65,8 +65,16 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
             .map(|slot| slot.details())
             .collect::<Vec<_>>()
             .join("\n");
+        let masks = player.masks_controlled();
+        let mask_limit = if masks == 0 {
+            String::new()
+        } else {
+            format!(
+                "\n\nMask limit: {masks}/1\nYou cannot play or take control of another Mask while you control one. This is a control limit, not an equipment slot; it does not allow slot-style replacement."
+            )
+        };
         return Some(format!(
-            "{}\n\nAsset slots\n{slots}\nCounts show occupied slot units. Slotless assets do not use these limits.",
+            "{}\n\nAsset slots\n{slots}\nCounts show occupied slot units. Slotless assets do not use these limits.{mask_limit}",
             crate::gathering::inspection::card(code)?
         ));
     }

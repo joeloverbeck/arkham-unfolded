@@ -53,7 +53,12 @@ pub fn checkpoints() -> Result<Vec<Checkpoint>, String> {
         &hornet,
     ));
     choose(&mut hornet, "action:ordinary:play:tony:30")?;
-    result.push(point("hornet-pending", "tony", "search:enemy:318", &hornet));
+    result.push(point(
+        "hornet-pending",
+        "tony",
+        "search:enemy:318:then",
+        &hornet,
+    ));
 
     let mut no_match = start(405, "turn:tony")?;
     let view = no_match.observe();
@@ -95,7 +100,7 @@ pub fn checkpoints() -> Result<Vec<Checkpoint>, String> {
     ));
 
     for id in [
-        "search:enemy:318",
+        "search:enemy:318:then",
         "bounty:318:0",
         "search:finish",
         "action:ordinary:evade:318",

@@ -50,6 +50,7 @@ enum SourceInput {
     Archive,
     RevealIcon,
     AbilityIcon,
+    OfferingIcon,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -143,8 +144,13 @@ pub fn gathering_image_roles() -> impl Iterator<Item = &'static str> {
 
 // Exact earlier selections remain useful without claiming newly selected artwork.
 fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
-    if selection.collection == "arkham-unfolded-gathering-v4" {
+    if selection.collection == "arkham-unfolded-gathering-v5" {
         let mut previous = selection.manifest();
+        previous.collection = "arkham-unfolded-gathering-v4".into();
+        previous
+            .assets
+            .retain(|asset| asset.role != "token/offering");
+        let v4 = previous.clone();
         previous.collection = "arkham-unfolded-gathering-v3".into();
         previous
             .assets
@@ -160,7 +166,7 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
                 "token/ammo" | "token/bounty" | "token/charge"
             )
         });
-        return vec![v2, previous, v3];
+        return vec![v2, previous, v3, v4];
     }
     Vec::new()
 }
@@ -336,6 +342,7 @@ pub fn prepare_gathering(
     output: &Path,
     reveal_icon: &Path,
     ability_icon: &Path,
+    offering_icon: &Path,
 ) -> Result<PrepareResult, AssetError> {
     prepare_selection_with_icons(
         source,
@@ -343,6 +350,7 @@ pub fn prepare_gathering(
         gathering_selection(),
         Some(reveal_icon),
         Some(ability_icon),
+        Some(offering_icon),
     )
 }
 
@@ -362,7 +370,7 @@ fn prepare_selection_with_icon(
     selection: &Selection,
     reveal_icon: Option<&Path>,
 ) -> Result<PrepareResult, AssetError> {
-    prepare_selection_with_icons(source, output, selection, reveal_icon, None)
+    prepare_selection_with_icons(source, output, selection, reveal_icon, None, None)
 }
 
 fn prepare_selection_with_icons(
@@ -371,6 +379,7 @@ fn prepare_selection_with_icons(
     selection: &Selection,
     reveal_icon: Option<&Path>,
     ability_icon: Option<&Path>,
+    offering_icon: Option<&Path>,
 ) -> Result<PrepareResult, AssetError> {
     if fs::symlink_metadata(output).is_ok() {
         let report = inspect_selection(output, selection);
@@ -402,10 +411,11 @@ fn prepare_selection_with_icons(
                 asset.source.bytes,
                 &asset.source.sha256,
             ),
-            SourceInput::RevealIcon | SourceInput::AbilityIcon => {
+            SourceInput::RevealIcon | SourceInput::AbilityIcon | SourceInput::OfferingIcon => {
                 let (path, flag) = match asset.source.input {
                     SourceInput::RevealIcon => (reveal_icon, "--reveal-icon"),
                     SourceInput::AbilityIcon => (ability_icon, "--ability-icon"),
+                    SourceInput::OfferingIcon => (offering_icon, "--offering-icon"),
                     SourceInput::Archive => unreachable!(),
                 };
                 let path = path.ok_or_else(|| {
@@ -999,7 +1009,7 @@ mod tests {
 
     #[test]
     fn gathering_previous_collections_keep_verified_art_without_claiming_the_key() {
-        for (version, expected) in [("v1", 140), ("v2", 143), ("v3", 144)] {
+        for (version, expected) in [("v1", 140), ("v2", 143), ("v3", 144), ("v4", 145)] {
             let directory = tempfile::tempdir().unwrap();
             let source = directory.path().join("source");
             let output = directory.path().join("assets");
@@ -1008,8 +1018,9 @@ mod tests {
             let mut earlier = recipe_fixture(&source, recipe);
             earlier.collection = format!("arkham-unfolded-gathering-{version}");
             earlier.assets.retain(|asset| {
-                asset.role != "token/investigator-ability"
-                    && (version == "v3" || asset.role != "token/key")
+                asset.role != "token/offering"
+                    && (version == "v4" || asset.role != "token/investigator-ability")
+                    && (matches!(version, "v3" | "v4") || asset.role != "token/key")
                     && (version != "v1"
                         || !matches!(
                             asset.role.as_str(),
@@ -1022,11 +1033,18 @@ mod tests {
             assert!(report.recognized && !report.complete);
             assert_eq!(
                 (report.valid_count(), report.expected_count()),
-                (expected, 145)
+                (expected, 146)
             );
             assert!(report.verified_path("card-60507").is_some());
-            assert_eq!(report.verified_path("token/key").is_some(), version == "v3");
-            assert!(report.verified_path("token/investigator-ability").is_none());
+            assert_eq!(
+                report.verified_path("token/key").is_some(),
+                matches!(version, "v3" | "v4")
+            );
+            assert_eq!(
+                report.verified_path("token/investigator-ability").is_some(),
+                version == "v4"
+            );
+            assert!(report.verified_path("token/offering").is_none());
             assert!(prepare_selection(&source, &output, &selected).is_err());
             assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), manifest);
         }
@@ -1333,7 +1351,7 @@ mod tests {
         fs::remove_file(output.join("fonts/arkham-symbols.ttf")).unwrap();
         let report = inspect_selection(&output, &selected);
         assert!(report.recognized && !report.complete);
-        assert_eq!((report.valid_count(), report.expected_count()), (142, 145));
+        assert_eq!((report.valid_count(), report.expected_count()), (143, 146));
         assert!(report.verified_path("token/damage").is_none());
         assert!(report.verified_path("token/horror").is_none());
         assert!(report.verified_path("font/symbols").is_none());
@@ -1358,8 +1376,8 @@ mod tests {
             }
             let report = inspect_selection(&output, &selected);
             assert!(report.recognized && !report.complete);
-            assert_eq!(report.valid_count(), 144);
-            assert_eq!(report.expected_count(), 145);
+            assert_eq!(report.valid_count(), 145);
+            assert_eq!(report.expected_count(), 146);
             assert!(report.verified_path("card-06003").is_some());
             assert!(report.verified_path("card-back/player").is_none());
         }
@@ -1370,6 +1388,7 @@ mod tests {
             "ammo.png",
             "charge-motif.png",
             "investigator-ability.png",
+            "offering.png",
         ] {
             fs::remove_file(output.join("tokens").join(later)).unwrap();
         }
@@ -1377,7 +1396,7 @@ mod tests {
         fs::write(output.join(MANIFEST), &previous).unwrap();
         let report = inspect_selection(&output, &selected);
         assert!(report.recognized && !report.complete);
-        assert_eq!((report.valid_count(), report.expected_count()), (139, 145));
+        assert_eq!((report.valid_count(), report.expected_count()), (139, 146));
         assert!(prepare_selection(&source, &output, &selected).is_err());
         assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), previous);
 
@@ -1402,7 +1421,7 @@ mod tests {
             let mut redirected = original.clone();
             redirected["assets"][0]["path"] = serde_json::json!("../../other.png");
             let mut renamed = original;
-            renamed["collection"] = serde_json::json!("arkham-unfolded-gathering-v4");
+            renamed["collection"] = serde_json::json!("arkham-unfolded-gathering-v5");
             for manifest in [missing, altered, redirected, renamed] {
                 fs::write(
                     directory.path().join(MANIFEST),

@@ -18,6 +18,7 @@ pub(crate) enum CounterKind {
     Key,
     Ammo,
     Charge,
+    Offering,
     Bounty,
     Doom,
 }
@@ -38,6 +39,7 @@ impl CounterKind {
             Self::Key => "Keys",
             Self::Ammo => "Ammo",
             Self::Charge => "Charges",
+            Self::Offering => "Offerings",
             Self::Bounty => "Bounties",
             Self::Doom => "Doom",
         }
@@ -49,6 +51,7 @@ impl CounterKind {
             Self::Resource | Self::Supply => "token/resource",
             Self::Ammo => "token/ammo",
             Self::Charge => "token/charge",
+            Self::Offering => "token/offering",
             Self::Key => "token/key",
             Self::Bounty => "token/bounty",
             Self::Doom => "token/doom",
@@ -108,7 +111,11 @@ fn spawn_count_inner(
         && !retain_zero
         && !matches!(
             visual.kind,
-            CounterKind::Ammo | CounterKind::Charge | CounterKind::Bounty | CounterKind::Supply
+            CounterKind::Ammo
+                | CounterKind::Charge
+                | CounterKind::Bounty
+                | CounterKind::Supply
+                | CounterKind::Offering
         )
     {
         return None;
@@ -182,6 +189,10 @@ fn spawn_body(
             Mesh::from(Cylinder::new(0.31, 0.12)),
             Color::srgb(0.48, 0.34, 0.60),
         ),
+        CounterKind::Offering => (
+            offering_body(),
+            Color::srgb(64. / 255., 86. / 255., 109. / 255.),
+        ),
         CounterKind::Bounty => (
             Mesh::from(Cylinder::new(0.31, 0.12)),
             Color::srgb(0.52, 0.37, 0.12),
@@ -223,6 +234,10 @@ fn spawn_body(
     }
     if let Some(image) = image {
         let (face, rotation) = match kind {
+            CounterKind::Offering => (
+                Plane3d::default().mesh().size(0.48, 0.48).build(),
+                Quat::IDENTITY,
+            ),
             CounterKind::Key => (
                 Plane3d::default().mesh().size(0.62, 0.62).build(),
                 Quat::IDENTITY,
@@ -252,9 +267,10 @@ fn spawn_body(
                 // emblem, not a usable transparency mask. Preserve that RGB;
                 // the circular mesh clips the square image's white corners.
                 alpha: match kind {
-                    CounterKind::Resource | CounterKind::Supply | CounterKind::Charge => {
-                        AlphaMode::Blend
-                    }
+                    CounterKind::Resource
+                    | CounterKind::Supply
+                    | CounterKind::Charge
+                    | CounterKind::Offering => AlphaMode::Blend,
                     _ => AlphaMode::Opaque,
                 },
                 transform: Transform::from_xyz(
@@ -286,6 +302,36 @@ fn resource_body() -> Mesh {
         Vec2::new(-0.29, 0.157),
         Vec2::new(-0.29, -0.157),
     ];
+    shaped_body(&outline)
+}
+
+// A continuous shield supports the untouched chalice and its separate drops.
+// Rounded shoulders and bottom distinguish it from a square or round counter.
+fn offering_body() -> Mesh {
+    shaped_body(&[
+        Vec2::new(-0.24, -0.34),
+        Vec2::new(0.24, -0.34),
+        Vec2::new(0.28, -0.33),
+        Vec2::new(0.305, -0.30),
+        Vec2::new(0.31, -0.25),
+        Vec2::new(0.30, 0.12),
+        Vec2::new(0.28, 0.23),
+        Vec2::new(0.24, 0.28),
+        Vec2::new(0.16, 0.32),
+        Vec2::new(0.08, 0.345),
+        Vec2::new(0., 0.35),
+        Vec2::new(-0.08, 0.345),
+        Vec2::new(-0.16, 0.32),
+        Vec2::new(-0.24, 0.28),
+        Vec2::new(-0.28, 0.23),
+        Vec2::new(-0.30, 0.12),
+        Vec2::new(-0.31, -0.25),
+        Vec2::new(-0.305, -0.30),
+        Vec2::new(-0.28, -0.33),
+    ])
+}
+
+fn shaped_body(outline: &[Vec2]) -> Mesh {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
     for index in 0..outline.len() {

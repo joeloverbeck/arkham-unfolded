@@ -64,6 +64,14 @@ _Avoid_: Printed capacity when referring to the modified allowance
 A card-defined type of use, such as the two uses on Old Keyring. Keys are distinct from other use types such as ammo, charges and supplies.
 _Avoid_: Charges when referring to keys
 
+**Offerings**:
+A card-defined type of use, such as those spent and replenished on Sparrow Mask. Offerings are distinct from charges and other use types.
+_Avoid_: Charges when referring to offerings
+
+**Asset control limit**:
+A restriction on how many assets of a specified kind an investigator may control, such as one Mask per investigator. It is distinct from equipment-slot capacity and does not itself permit replacing a controlled asset when playing another.
+_Avoid_: Asset slot when referring to a control limit
+
 **Test area**:
 The shared presentation space dedicated to the current skill test, its source, commitments and chaos-token resolution, with the chaos bag and scenario reference kept there between tests. It is a tabletop arrangement, not a rules-defined game zone or a general area for resolving card effects.
 _Avoid_: Threat area, investigator area, resolution tray

@@ -5,13 +5,14 @@ use arkham_unfolded_experiment::{
 use std::path::PathBuf;
 
 const USAGE: &str = "\
-arkham-assets prepare-gathering --source PATH --reveal-icon PATH --ability-icon PATH --output PATH
+arkham-assets prepare-gathering --source PATH --reveal-icon PATH --ability-icon PATH --offering-icon PATH --output PATH
 arkham-assets check-gathering PATH
 arkham-assets check-gathering-launch [--art-root PATH]
 
 Preparation copies only the selected assets into a fresh external directory.
 The reveal icon is the pinned Lorc Swap bag PNG; preparation never downloads it.
 The ability icon is the owner-supplied inner-spark transparent glyph PNG.
+The offering icon is the pinned Lorc Chalice drops transparent PNG.
 It never changes the source archive or overwrites an existing collection.
 Launch checking uses Gathering's saved/default folder and temporary artwork flags.
 It writes no files and exits nonzero for an incomplete collection.";
@@ -24,6 +25,7 @@ fn run() -> Result<(), String> {
             let mut output = None;
             let mut reveal_icon = None;
             let mut ability_icon = None;
+            let mut offering_icon = None;
             while let Some(argument) = args.next() {
                 let value = args
                     .next()
@@ -37,6 +39,9 @@ fn run() -> Result<(), String> {
                     "--ability-icon" if ability_icon.is_none() => {
                         ability_icon = Some(PathBuf::from(value))
                     }
+                    "--offering-icon" if offering_icon.is_none() => {
+                        offering_icon = Some(PathBuf::from(value))
+                    }
                     _ => return Err(format!("Unknown or repeated option: {argument}")),
                 }
             }
@@ -44,10 +49,17 @@ fn run() -> Result<(), String> {
             let output = output.ok_or("prepare requires --output PATH")?;
             let reveal_icon = reveal_icon.ok_or("prepare requires --reveal-icon PATH")?;
             let ability_icon = ability_icon.ok_or("prepare requires --ability-icon PATH")?;
+            let offering_icon = offering_icon.ok_or("prepare requires --offering-icon PATH")?;
             let prepare = prepare_gathering;
             let inspect = inspect_gathering;
-            match prepare(&source, &output, &reveal_icon, &ability_icon)
-                .map_err(|error| error.to_string())?
+            match prepare(
+                &source,
+                &output,
+                &reveal_icon,
+                &ability_icon,
+                &offering_icon,
+            )
+            .map_err(|error| error.to_string())?
             {
                 PrepareResult::Created => println!("Prepared assets at {}", output.display()),
                 PrepareResult::AlreadyPresent => println!(

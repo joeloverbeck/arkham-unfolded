@@ -120,6 +120,10 @@ commitment. Preserve genuine replacement and discard-order choices without a
 second confirmation for an already explicit single replacement. After costs or
 intervening attacks commit, do not promise a cost-free cancellation.
 
+Show `Mask limit: 1/1` beside that strip when the investigator controls a Mask.
+This is an asset control limit, not an equipment slot or replacement permission.
+Inspection explains the restriction; exhaustion does not release it.
+
 ## Component actions, inspection and availability
 
 Selecting a physical card or component normally opens its currently legal
@@ -388,6 +392,9 @@ Scenario/Map board, with distinct navy/steel-blue treatment and ordinary readabl
 text. Full text remains available through zoom/Inspect; do not hide needed names
 or counters merely because framing widens.
 
+Use the same thick table body and inset top as the other playing surfaces,
+retaining the sideboard's navy/steel-blue palette and footprint.
+
 Each nonempty group has a marker above its location, repeating stable color,
 short identifier and group count beside its sideboard heading. Identity survives
 emptying/refilling. Keep markers distinct from printed symbols/gameplay tokens,
@@ -449,6 +456,13 @@ named **Supplies** in Inspect/context; they are not resources or charges. Keys u
 the selected neutral key artwork with its entire silhouette and **Keys** name,
 not Charges. Gregory Gry shows resource uses on one shaped resource counter,
 decreasing immediately when wagers are spent rather than after the test result.
+
+Offerings use the unchanged white Chalice drops icon on a compact solid rounded
+shield in fixed slate blue (`#40566D`), independent of investigator class, with a
+separate readable count retained at zero. Remove Sparrow Mask's redundant
+`Uses N` caption while preserving its name, status and full inspection text.
+Menu → Credits provides the icon's linked Lorc/CC BY 3.0 attribution alongside
+the existing Swap bag credit; the recipe and prepared manifest retain provenance.
 
 Retain ammo, charge, Supplies, Gregory Gry and Bounty Contracts counters at zero
 while their cards remain in play. Other card-attached counters leave with their
@@ -537,6 +551,12 @@ choices, perform existing event-to-discard cleanup automatically, including a
 save resumed at that step, without repeating costs or effects. Saving failure
 preserves the committed boundary and requires safe explicit retry rather than
 an automatic retry loop.
+
+After Hornet's Nest spawns its selected enemy, award the available clue and
+enemy-health resource reward automatically before the optional Bounty Contracts
+reaction, following Then priority. Preserve that real choice and automatically
+finish remaining shuffle/discard cleanup. Retain no-match disclosure and retract
+the drawer only after motion and any other resident content have finished.
 
 ## Text, symbols and diagnostics
 

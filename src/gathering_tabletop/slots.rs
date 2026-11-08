@@ -19,13 +19,17 @@ impl Surfaces {
             return;
         };
         for player in &play.players {
-            let text = player
+            let mut entries = player
                 .slot_usage()
                 .into_iter()
                 .filter(|slot| slot.used != 0 || slot.spell_ritual != 0)
                 .map(|slot| slot.label())
-                .collect::<Vec<_>>()
-                .join(" · ");
+                .collect::<Vec<_>>();
+            let masks = player.masks_controlled();
+            if masks != 0 {
+                entries.push(format!("Mask limit: {masks}/1"));
+            }
+            let text = entries.join(" · ");
             if text.is_empty() {
                 continue;
             }
