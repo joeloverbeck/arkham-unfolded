@@ -23,6 +23,7 @@ lzma-rs = "0.3"
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 toml = "1.1"
 rustix = { version = "1", features = ["fs"] }
+zip = { version = "=9.4.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 bevy = { version = "=0.20.0", optional = true, default-features = false, features = [
   "std", "async_executor", "multi_threaded", "bevy_asset", "bevy_log",
   "bevy_winit", "3d_bevy_render", "ui_bevy_render", "bevy_ui_widgets",

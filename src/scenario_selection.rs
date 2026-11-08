@@ -24,6 +24,8 @@ enum Action {
     Continue,
     Open,
     Quit,
+    Import,
+    CancelImport,
 }
 
 #[derive(Resource, Default)]
@@ -37,6 +39,10 @@ struct Selection {
     screenshot: Option<PathBuf>,
     quit_after_screenshot: bool,
     frames: u32,
+    imported_root: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>>,
+    importing: bool,
+    quit_after_import: bool,
+    artwork_status: String,
 }
 #[derive(Component)]
 struct Panel;
@@ -83,9 +89,15 @@ pub fn run() -> Result<(), String> {
         Err(error) => state.notice = format!("{}\n{error}", state.notice),
     }
     let next = state.next.clone();
+    let artwork = crate::tabletop_support::asset_settings::AssetSettings::new_gathering(
+        crate::asset_config::AssetConfig::load_gathering()?,
+    );
+    refresh_artwork_status(&mut state, &artwork);
     let root = state.root.clone();
+    let imported_root = state.imported_root.clone();
     let mut app = App::new();
     app.insert_resource(state)
+        .insert_resource(artwork)
         .insert_resource(ClearColor(Color::srgb(0.035, 0.055, 0.065)))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -107,7 +119,12 @@ pub fn run() -> Result<(), String> {
             "--save".into(),
             save.into(),
         ];
-        if let Some(root) = &root {
+        let effective_root = imported_root
+            .lock()
+            .expect("imported artwork")
+            .clone()
+            .or(root);
+        if let Some(root) = &effective_root {
             args.extend(["--art-root".into(), root.into()]);
         }
         return replace(command(args)?);
@@ -150,7 +167,44 @@ pub(crate) fn replace(mut command: Command) -> Result<(), String> {
     Err(format!("Could not open the requested screen: {error}"))
 }
 
-fn handle(mut state: ResMut<Selection>, picker: Res<FilePicker>, mut exit: MessageWriter<AppExit>) {
+fn refresh_artwork_status(
+    state: &mut Selection,
+    artwork: &crate::tabletop_support::asset_settings::AssetSettings,
+) {
+    state.artwork_status = artwork.status();
+    if state
+        .imported_root
+        .lock()
+        .expect("imported artwork")
+        .is_none()
+        && let Some(root) = &state.root
+    {
+        state
+            .artwork_status
+            .push_str(&format!("\nTemporary launch override: {}", root.display()));
+    }
+}
+
+fn handle(
+    mut state: ResMut<Selection>,
+    picker: Res<FilePicker>,
+    mut exit: MessageWriter<AppExit>,
+    mut artwork: Option<ResMut<crate::tabletop_support::asset_settings::AssetSettings>>,
+) {
+    if let Some(artwork) = artwork.as_mut()
+        && let Some(message) = artwork.poll()
+    {
+        state.notice = message;
+        state.importing = false;
+        if let Some(root) = artwork.take_imported_root() {
+            *state.imported_root.lock().expect("imported artwork") = Some(root);
+        }
+        refresh_artwork_status(&mut state, artwork);
+        if state.quit_after_import {
+            exit.write(AppExit::Success);
+            return;
+        }
+    }
     if state.actions.is_empty() {
         return;
     }
@@ -161,7 +215,29 @@ fn handle(mut state: ResMut<Selection>, picker: Res<FilePicker>, mut exit: Messa
     if state.next.lock().expect("selection request").is_some() {
         return;
     }
+    if state.importing {
+        if matches!(action, Action::CancelImport | Action::Quit) {
+            state.quit_after_import |= matches!(action, Action::Quit);
+            if let Some(artwork) = artwork.as_ref() {
+                artwork.cancel_import();
+            }
+            state.notice = "Canceling import. Close the file picker if it is still open.".into();
+        }
+        return;
+    }
     let request = match action {
+        Action::Import => {
+            if let Some(artwork) = artwork.as_mut() {
+                artwork.import();
+                state.importing = true;
+                state.notice = format!(
+                    "Choose the {} ZIP. Importing verifies every required file; you can cancel safely.",
+                    crate::assets::package::required_collection()
+                );
+            }
+            return;
+        }
+        Action::CancelImport => return,
         Action::Select => {
             state.selected = true;
             return;
@@ -270,7 +346,9 @@ fn render(mut commands: Commands, state: Res<Selection>, panels: Query<Entity, W
             Text::new("Standard / Tony Morgan / Patrice Hathaway / Jacqueline Fine\nFixed starting decks"),
             TextFont::from_font_size(18.),
         ));
-        if state.selected {
+        if state.importing {
+            button(p, "Cancel import", Action::CancelImport, true);
+        } else if state.selected {
             button(p, "New attempt", Action::New, true);
             button(p, "Continue", Action::Continue, false);
             let remembered = state.remembered.as_ref()
@@ -281,6 +359,10 @@ fn render(mut commands: Commands, state: Res<Selection>, panels: Query<Entity, W
             button(p, "Back", Action::Back, false);
         } else {
             button(p, "Select The Gathering", Action::Select, true);
+        }
+        if !state.importing { button(p, "Import artwork", Action::Import, false); }
+        if !state.artwork_status.is_empty() {
+            p.spawn((Text::new(&state.artwork_status), TextFont::from_font_size(14.)));
         }
         if !state.notice.is_empty() {
             p.spawn((
@@ -373,6 +455,74 @@ mod tests {
         app.insert_resource(state).init_resource::<Time>();
         install(&mut app);
         app
+    }
+
+    #[test]
+    fn quit_during_import_waits_for_the_worker_then_exits() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = crate::tabletop_support::asset_settings::AssetSettings::new_gathering(
+            crate::asset_config::AssetConfig::load_at(
+                directory.path().join("settings"),
+                directory.path().join("assets"),
+            ),
+        );
+        let (settings, pending) = settings.with_pending_selection();
+        let mut app = host(Selection {
+            importing: true,
+            actions: vec![Action::Quit],
+            ..default()
+        });
+        app.insert_resource(settings);
+        app.update();
+        assert!(
+            app.world()
+                .resource::<Messages<AppExit>>()
+                .iter_current_update_messages()
+                .next()
+                .is_none()
+        );
+        drop(pending);
+        app.update();
+        assert!(
+            app.world()
+                .resource::<Messages<AppExit>>()
+                .iter_current_update_messages()
+                .any(AppExit::is_success)
+        );
+    }
+
+    #[test]
+    fn failed_import_keeps_the_effective_override_visible() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = crate::tabletop_support::asset_settings::AssetSettings::new_gathering(
+            crate::asset_config::AssetConfig::load_at(
+                directory.path().join("settings"),
+                directory.path().join("assets"),
+            ),
+        );
+        let (settings, pending) = settings.with_pending_selection();
+        let mut app = host(Selection {
+            importing: true,
+            root: Some(PathBuf::from("/temporary-artwork-override")),
+            ..default()
+        });
+        app.insert_resource(settings);
+        drop(pending);
+        app.update();
+        assert!(
+            app.world()
+                .resource::<Selection>()
+                .artwork_status
+                .contains("/temporary-artwork-override")
+        );
+        assert!(
+            app.world()
+                .resource::<Selection>()
+                .imported_root
+                .lock()
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

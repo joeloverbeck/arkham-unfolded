@@ -14,6 +14,7 @@ use std::{
 
 const MANIFEST: &str = "manifest.json";
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+pub mod package;
 pub const CHAOS_POUCH_ROLE: &str = "model/chaos-pouch";
 
 #[derive(Deserialize)]
