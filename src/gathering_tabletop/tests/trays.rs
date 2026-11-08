@@ -31,6 +31,120 @@ fn card_at(app: &mut App, id: u16) -> Vec3 {
 }
 
 #[test]
+fn hornet_finishes_automatically_after_bounties_and_after_reopening_cleanup() {
+    for reduced in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut session = hornet(SearchFixture::HornetTargets);
+        let view = session.observe();
+        let enemy = view
+            .play
+            .unwrap()
+            .searched_encounter
+            .iter()
+            .find(|card| card.code == "01159")
+            .unwrap()
+            .id;
+        session
+            .choose(view.revision, &format!("search:enemy:{enemy}:then"))
+            .unwrap();
+        let bounty = format!("bounty:{enemy}:0");
+        let mut pending = session.clone();
+        pending.choose(pending.observe().revision, &bounty).unwrap();
+        let pending_path = directory.path().join("pending.json");
+        continuity::save_session(&pending_path, &pending).unwrap();
+        for (candidate, path, live) in [
+            (session, directory.path().join("live.json"), true),
+            (
+                continuity::load_session(&pending_path).unwrap(),
+                pending_path,
+                false,
+            ),
+        ] {
+            let mut table = Table::new(candidate, path.clone());
+            table.reduced_motion = reduced;
+            let mut app = host_with_table(table, false);
+            if live {
+                finish_presentation(&mut app);
+                assert!(
+                    app.world()
+                        .resource::<Table>()
+                        .view()
+                        .choices
+                        .iter()
+                        .any(|choice| choice.id == bounty)
+                );
+                activate_choice(&mut app, &bounty);
+            }
+            finish_presentation(&mut app);
+            // Automatic continuations can start another presentation after the
+            // preceding one finishes. Wait for that chain and its closing tray.
+            for _ in 0..200 {
+                tick(&mut app, 0.1);
+                let table = app.world().resource::<Table>();
+                if !table.is_presenting()
+                    && !table.trays.active()
+                    && !table
+                        .view()
+                        .choices
+                        .iter()
+                        .any(|choice| choice.id == "search:finish")
+                {
+                    break;
+                }
+            }
+            let view = app.world().resource::<Table>().view();
+            assert!(
+                !view
+                    .choices
+                    .iter()
+                    .any(|choice| choice.id == "search:finish")
+            );
+            let play = view.play.unwrap();
+            assert_eq!((play.players[0].clues, play.players[0].resources), (1, 5));
+            assert_eq!(
+                play.players[0]
+                    .discard
+                    .iter()
+                    .filter(|card| card.code == "09068")
+                    .count(),
+                1
+            );
+            assert!(play.searched_encounter.is_empty());
+            assert_eq!(
+                continuity::load_session(&path).unwrap(),
+                app.world().resource::<Table>().session
+            );
+            let world = app.world_mut();
+            assert!(
+                world
+                    .query::<(&Name, &Visibility)>()
+                    .iter(world)
+                    .filter(|(name, _)| name.as_str() == "Resolution tray")
+                    .all(|(_, visibility)| *visibility == Visibility::Hidden),
+                "reduced={reduced}, live={live}, pending={:?}, presenting={}, moving={}, blocked={}, drawers_active={}, rendered_pending={:?}",
+                play.pending,
+                world.resource::<Table>().is_presenting(),
+                world
+                    .query_filtered::<Entity, With<motion::CardMotion>>()
+                    .iter(world)
+                    .count(),
+                world.resource::<Table>().motion_blocked(),
+                world.resource::<Table>().trays.active(),
+                world
+                    .resource::<Table>()
+                    .last_rendered
+                    .as_ref()
+                    .unwrap()
+                    .play
+                    .as_ref()
+                    .unwrap()
+                    .pending
+            );
+        }
+    }
+}
+
+#[test]
 fn hornet_search_has_a_separate_readable_home_and_keeps_its_legal_card_menu() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("search.json");

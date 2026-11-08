@@ -663,7 +663,7 @@ impl Session {
                 .get(index)
                 .filter(|decision| decision.as_str() != "undo")
                 .ok_or_else(|| RuleError("Invalid active decision in the Undo record.".into()))?;
-            restored.choose(restored.revision, decision)?;
+            restored.choose_recorded(decision)?;
         }
         // The rules position rewinds; the chronological evidence never does.
         restored.revision = self.revision;
@@ -871,10 +871,26 @@ impl Session {
         self.revision == 0 && self.decisions.is_empty()
     }
 
+    // Preserve the meaning of old audit entries without offering the obsolete
+    // Hornet timing to live players. New selections carry the explicit Then ID.
+    fn choose_recorded(&mut self, id: &str) -> Result<(), RuleError> {
+        let legacy = id
+            .strip_prefix("search:enemy:")
+            .is_some_and(|enemy| enemy.parse::<u16>().is_ok());
+        if let Some(game) = &mut self.runtime {
+            game.legacy_hornet_search = legacy;
+        }
+        let result = self.choose(self.revision, id);
+        if let Some(game) = &mut self.runtime {
+            game.legacy_hornet_search = false;
+        }
+        result
+    }
+
     pub fn validate(&self) -> Result<(), RuleError> {
         let mut reconstructed = Self::from_origin(self.seed, self.verification_fixture)?;
         for decision in &self.decisions {
-            reconstructed.choose(reconstructed.revision, decision)?;
+            reconstructed.choose_recorded(decision)?;
         }
         if &reconstructed != self {
             return Err(RuleError(

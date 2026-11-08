@@ -27,7 +27,7 @@ fn play_hornet(session: &mut Session) -> u16 {
 }
 
 #[test]
-fn hornet_offers_every_top_nine_enemy_and_overrides_spawn_before_bounties_and_reward() {
+fn hornet_rewards_have_then_priority_before_optional_bounties() {
     for (code, health) in [
         ("01118", 4),
         ("01119", 4),
@@ -71,7 +71,7 @@ fn hornet_offers_every_top_nine_enemy_and_overrides_spawn_before_bounties_and_re
             assert_eq!(reopened.observe(), session.observe());
             session = reopened;
         }
-        choose(&mut session, &format!("search:enemy:{enemy}"));
+        choose(&mut session, &format!("search:enemy:{enemy}:then"));
         let spawned = session.observe().play.unwrap();
         let target = spawned
             .scenario
@@ -84,10 +84,11 @@ fn hornet_offers_every_top_nine_enemy_and_overrides_spawn_before_bounties_and_re
             "Even Attic/Cellar spawns enter the Study"
         );
         assert_eq!(target.engaged, Some(Investigator::Tony));
-        assert_eq!(spawned.players[0].clues, 0);
+        assert_eq!(spawned.players[0].clues, 1);
         assert_eq!(
-            spawned.players[0].resources, 4,
-            "Entry reactions precede the dependent reward"
+            spawned.players[0].resources,
+            4 + health,
+            "RR Then gives the dependent reward priority over after-entry reactions"
         );
         assert_eq!(spawned.encounter_deck_count, 25);
         let bounties = health.min(3);

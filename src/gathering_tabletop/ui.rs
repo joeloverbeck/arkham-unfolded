@@ -711,6 +711,12 @@ pub(super) fn render(
             );
             p.spawn(art.text(art.status(), 12., MUTED));
             button(art, p, "Choose asset folder", Action::AssetFolder);
+            button(
+                art,
+                p,
+                "Credits",
+                Action::Inspect("Credits".into(), "credits".into()),
+            );
             button(art, p, "Close menu", Action::Dismiss);
         });
     }
@@ -855,6 +861,28 @@ fn inspection(
         },
         |body, width| {
             if let Some((_, code)) = &table.inspection {
+                if code == "credits" {
+                    body.spawn(art.text("Icon artwork by Lorc · CC BY 3.0", 22., PAPER));
+                    body.spawn(art.text("Chalice drops: artwork unchanged. The slate-blue shield is application geometry.\nSwap bag: PNG unchanged; its white silhouette may be tinted in presentation.", 18., PAPER));
+                    for (title, url) in [
+                        (
+                            "Chalice drops — source",
+                            "https://game-icons.net/1x1/lorc/chalice-drops.html",
+                        ),
+                        (
+                            "Swap bag — source",
+                            "https://game-icons.net/1x1/lorc/swap-bag.html",
+                        ),
+                        (
+                            "CC BY 3.0 — license",
+                            "https://creativecommons.org/licenses/by/3.0/",
+                        ),
+                    ] {
+                        button(art, body, title, Action::CreditLink(url));
+                        body.spawn(art.text(url, 14., MUTED));
+                    }
+                    return;
+                }
                 if let Some(image) = context.image(code) {
                     inspection_image(body, image, code, width);
                 }

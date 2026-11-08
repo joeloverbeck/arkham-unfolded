@@ -482,15 +482,15 @@ fn region(
     }
 }
 
-fn surface(
+pub(crate) fn surface(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     center: Vec3,
     size: Vec2,
     color: Color,
-) {
-    for (width, depth, y, height, tint) in [
+) -> [Entity; 2] {
+    [
         (size.x, size.y, -0.24, 0.30, color),
         (
             size.x - 0.16,
@@ -499,18 +499,21 @@ fn surface(
             0.03,
             color.mix(&Color::BLACK, 0.48),
         ),
-    ] {
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(width, height, depth))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: tint,
-                perceptual_roughness: 0.95,
-                ..default()
-            })),
-            Transform::from_translation(center + Vec3::Y * y),
-            Pickable::IGNORE,
-        ));
-    }
+    ]
+    .map(|(width, depth, y, height, tint)| {
+        commands
+            .spawn((
+                Mesh3d(meshes.add(Cuboid::new(width, height, depth))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: tint,
+                    perceptual_roughness: 0.95,
+                    ..default()
+                })),
+                Transform::from_translation(center + Vec3::Y * y),
+                Pickable::IGNORE,
+            ))
+            .id()
+    })
 }
 
 #[cfg(test)]

@@ -98,20 +98,20 @@ pub(super) fn render(
     let Some(play) = &context.view.play else {
         return;
     };
-    commands.spawn((
-        Name::new("Enemies at locations"),
-        ScenePiece,
-        Mesh3d(meshes.add(Cuboid::new(SIZE.x, 0.05, SIZE.y))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            // Navy distinguishes enemies from the teal map, brown Test area,
-            // and this party's green, red and violet investigator tables.
-            base_color: Color::srgb(0.10, 0.17, 0.31),
-            perceptual_roughness: 0.95,
-            ..default()
-        })),
-        Transform::from_translation(CENTER - Vec3::Y * 0.03),
-        Pickable::IGNORE,
-    ));
+    // The dynamic sideboard uses the ordinary table body and inset surface.
+    // Both pieces belong to this observation's scene and leave on rebuild.
+    for entity in layout::surface(
+        commands,
+        meshes,
+        materials,
+        CENTER,
+        SIZE,
+        Color::srgb(0.10, 0.17, 0.31),
+    ) {
+        commands
+            .entity(entity)
+            .insert((Name::new("Enemies at locations"), ScenePiece));
+    }
     let rim = materials.add(StandardMaterial {
         base_color: Color::srgb(0.39, 0.53, 0.71),
         perceptual_roughness: 0.65,

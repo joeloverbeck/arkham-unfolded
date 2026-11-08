@@ -65,6 +65,7 @@ enum Action {
     Motion,
     AssetFolder,
     Inspect(String, String),
+    CreditLink(&'static str),
     Save,
     ReturnToSelection,
     Reopen,
@@ -738,6 +739,11 @@ fn handle_actions(
             matches!(action, Action::Close | Action::ConfirmRestart(_))
         } else {
             matches!(action, Action::Close)
+                || matches!(action, Action::CreditLink(_))
+                    && table
+                        .inspection
+                        .as_ref()
+                        .is_some_and(|(_, code)| code == "credits")
         };
         if table.modal() && !permitted_in_modal {
             continue;
@@ -904,6 +910,15 @@ fn handle_actions(
                 table.inspection = Some((title, code));
                 table.history_open = false;
                 table.dirty = true;
+            }
+            Action::CreditLink(url) => {
+                // Only the static credit links constructed by the Credits view
+                // reach this action. Reap the opener without blocking rendering.
+                std::thread::spawn(move || {
+                    if let Err(error) = std::process::Command::new("xdg-open").arg(url).status() {
+                        eprintln!("Could not open credit link {url}: {error}");
+                    }
+                });
             }
             Action::History => {
                 table.context.reset();

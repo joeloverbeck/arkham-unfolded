@@ -497,6 +497,9 @@ pub struct PlayObservation {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct Game {
+    /// Only enabled while reconstructing an already recorded pre-fix choice.
+    #[serde(skip)]
+    pub legacy_hornet_search: bool,
     #[serde(skip)]
     pub presentation: Vec<super::moments::StepSnapshot>,
     pub ethereal: Vec<Investigator>,
@@ -600,7 +603,7 @@ impl Game {
             })
             .collect();
         Self {
-            players,lead,agenda:1,agenda_doom:0,act:1,backpacks:vec![],ethereal:vec![],presentation:vec![],
+            legacy_hornet_search:false,players,lead,agenda:1,agenda_doom:0,act:1,backpacks:vec![],ethereal:vec![],presentation:vec![],
             encounter_deck: encounters.iter().enumerate().map(|(index, code)| CardView {id:300+index as u16,code:code.clone(),title:content::title(code).expect("Encounter").into(),weakness:false}).collect(),
             encounter_discard:vec![],scenario:ScenarioState::new(),round:1,phase:Phase::Investigation,actor:None,frames:vec![],test:None,completed_tests:vec![],
             history:vec!["The first investigation phase begins directly after actual preparation; skip the first mythos phase. Investigators choose their turn order. [RR p23–24]".into()],
@@ -714,7 +717,7 @@ impl Game {
         scenario.reveal("01113");
         scenario.reveal("01114");
         let mut game = Self {
-            players, lead: Investigator::Patrice, agenda: 1, agenda_doom: 0, act: 2,
+            legacy_hornet_search:false,players, lead: Investigator::Patrice, agenda: 1, agenda_doom: 0, act: 2,
             encounter_discard: vec![], encounter_deck, scenario, round: 2, phase: Phase::Mythos, actor: None,
             frames: vec![Frame::Revelation(PendingRevelation { card: encounter, drawn_by: Investigator::Patrice, started: false, cancelled: false })],
             test: None, completed_tests: vec![], history: vec!["Privileged P1 verification state: Patrice is in Cellar, Tony in Attic, Jacqueline in Hallway; no other modifier or same-location supporting ability is active. This is not ordinary setup or evidence of complete playable Gathering.".into()],

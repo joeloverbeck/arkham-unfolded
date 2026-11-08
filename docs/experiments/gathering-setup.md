@@ -760,22 +760,26 @@ or a reason to change the installation path.
 
 For a first installation from the original local archive, obtain the pinned
 [Lorc reveal icon](https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png)
-as `/tmp/arkham-reveal-icon.png` and retain the supplied inner-spark package, then:
+as `/tmp/arkham-reveal-icon.png`, retain the supplied inner-spark package and
+the unchanged [Chalice drops icon](https://game-icons.net/icons/ffffff/transparent/1x1/lorc/chalice-drops.png)
+as `~/Downloads/Offerings.png`, then:
 
 ```sh
 scripts/dev cargo run --locked --bin arkham-assets -- prepare-gathering \
   --source "/home/joeloverbeck/Pictures/Arkham Horror LCG Resources" \
   --reveal-icon /tmp/arkham-reveal-icon.png \
   --ability-icon /home/joeloverbeck/Downloads/investigator-ability-inner-spark/inner-spark/investigator-ability-inner-spark-glyph.png \
+  --offering-icon "$HOME/Downloads/Offerings.png" \
   --output "$HOME/.local/share/arkham-unfolded/gathering-assets" &&
 scripts/dev cargo run --locked --bin arkham-assets -- check-gathering \
   "$HOME/.local/share/arkham-unfolded/gathering-assets"
 ```
 
-The finite recipe contains 145 roles: 94 card identities, 11 reverse/unrevealed
+The finite recipe contains 146 roles: 94 card identities, 11 reverse/unrevealed
 sides, card backs, investigator standees, token/class artwork, reveal icon and
 symbol font, including bounty, ammo, the Spell charge motif, the neutral key and
-the investigator ability spark. Version 3 lacks the spark;
+the investigator ability spark and offerings icon. Version 4 lacks offerings;
+version 3 also lacks the spark;
 v2 also lacks the key; v1 also lacks bounty, ammo and charge
 artwork. Older collections remain available for diagnostic inspection but cannot
 admit play. Old Keyring's counter is named **Keys**.
