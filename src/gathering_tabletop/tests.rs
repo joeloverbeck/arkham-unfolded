@@ -806,6 +806,44 @@ fn queue_mesh_click(app: &mut App, entity: Entity) {
     });
 }
 
+#[test]
+fn imported_bag_descendant_click_selects_the_logical_bag() {
+    let dir = tempfile::tempdir().unwrap();
+    let session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::JacquelineCancellation);
+    let mut app = host_with_table(Table::new(session, dir.path().join("bag.json")), false);
+    let world = app.world_mut();
+    let bag = world
+        .query::<(Entity, &ContextTarget)>()
+        .iter(world)
+        .find(|(_, target)| target.source == controls::Source::Bag)
+        .unwrap()
+        .0;
+    let visual = world
+        .get::<Children>(bag)
+        .unwrap()
+        .iter()
+        .find(|entity| world.get::<WorldAssetRoot>(*entity).is_some())
+        .unwrap();
+    let node = world.spawn(ChildOf(visual)).id();
+    let primitive = world.spawn(ChildOf(node)).id();
+    let before = world.resource::<Table>().session.clone();
+    queue_mesh_click(&mut app, primitive);
+    assert!(
+        matches!(app.world().resource::<Actions>().0.last(), Some(Action::Select(_, _, selection)) if selection.source == controls::Source::Bag)
+    );
+    app.update();
+    assert_eq!(app.world().resource::<Table>().session, before);
+    assert_eq!(
+        app.world()
+            .resource::<Table>()
+            .inspection
+            .as_ref()
+            .map(|(_, code)| code.as_str()),
+        Some("01104") // Bag inspection retains the scenario's chaos-token reference.
+    );
+}
+
 fn keyboard(app: &mut App, code: KeyCode, logical_key: bevy::input::keyboard::Key, pressed: bool) {
     let world = app.world_mut();
     let window = world

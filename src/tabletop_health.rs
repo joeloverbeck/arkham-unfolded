@@ -37,6 +37,24 @@ const EXPIRED: u8 = 2;
 #[derive(Resource, Default)]
 pub(crate) struct HealthAssets(Vec<UntypedAssetId>);
 
+#[cfg(test)]
+pub(crate) fn required_art_ready_for_test(app: &mut App) -> Result<(), String> {
+    use bevy::ecs::system::RunSystemOnce;
+    app.init_resource::<HealthEnvironment>();
+    app.world_mut()
+        .run_system_once(observe_environment)
+        .unwrap();
+    let environment = app.world().resource::<HealthEnvironment>();
+    if environment.loaded {
+        Ok(())
+    } else {
+        Err(environment
+            .asset_failure
+            .clone()
+            .unwrap_or_else(|| environment.pending_assets.clone()))
+    }
+}
+
 impl HealthAssets {
     pub(crate) fn new(ids: impl IntoIterator<Item = UntypedAssetId>) -> Self {
         Self(ids.into_iter().collect())
@@ -299,6 +317,8 @@ fn observe_environment(
     server: Option<Res<AssetServer>>,
     images: Option<Res<Assets<Image>>>,
     fonts: Option<Res<Assets<Font>>>,
+    scenes: Option<Res<Assets<WorldAsset>>>,
+    velvet: Option<Res<Assets<crate::tabletop_chaos_pouch::VelvetMaterial>>>,
     mut font_context: Option<ResMut<bevy::text::FontCx>>,
     mut occluded: Local<HashSet<Entity>>,
     mut environment: ResMut<HealthEnvironment>,
@@ -341,7 +361,21 @@ fn observe_environment(
         if id.type_id() == std::any::TypeId::of::<Image>() {
             present = images
                 .as_ref()
-                .is_some_and(|images| images.contains(id.typed::<Image>()));
+                .and_then(|images| images.get(id.typed::<Image>()))
+                .is_some_and(|image| {
+                    !path.starts_with(crate::tabletop_chaos_pouch::PATH)
+                        || crate::tabletop_chaos_pouch::texture_ready(image)
+                });
+        } else if id.type_id() == std::any::TypeId::of::<WorldAsset>() {
+            present = scenes
+                .as_ref()
+                .is_some_and(|assets| assets.contains(id.typed::<WorldAsset>()));
+        } else if id.type_id()
+            == std::any::TypeId::of::<crate::tabletop_chaos_pouch::VelvetMaterial>()
+        {
+            present = velvet.as_ref().is_some_and(|assets| {
+                assets.contains(id.typed::<crate::tabletop_chaos_pouch::VelvetMaterial>())
+            });
         } else if id.type_id() == std::any::TypeId::of::<Font>()
             && let Some(font) = fonts
                 .as_ref()

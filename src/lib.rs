@@ -16,6 +16,8 @@ mod tabletop_camera;
 #[cfg(feature = "tabletop")]
 mod tabletop_capture;
 #[cfg(feature = "tabletop")]
+mod tabletop_chaos_pouch;
+#[cfg(feature = "tabletop")]
 mod tabletop_counters;
 #[cfg(feature = "tabletop")]
 mod tabletop_feedback;

@@ -68,16 +68,26 @@ impl Recovery {
 
     pub(crate) fn install(&self, app: &mut App, report: &CollectionReport) {
         let server = app.world().resource::<AssetServer>();
-        let handles: Vec<UntypedHandle> = report
+        let mut handles: Vec<UntypedHandle> = report
             .verified_files()
             .map(|(role, path)| {
                 if role == "font/symbols" {
                     server.load::<Font>(path.to_owned()).untyped()
+                } else if role == crate::assets::CHAOS_POUCH_ROLE {
+                    server
+                        .load::<WorldAsset>(crate::tabletop_chaos_pouch::SCENE)
+                        .untyped()
                 } else {
                     server.load::<Image>(path.to_owned()).untyped()
                 }
             })
             .collect();
+        if report
+            .verified_path(crate::assets::CHAOS_POUCH_ROLE)
+            .is_some()
+        {
+            handles.extend(crate::tabletop_chaos_pouch::material_and_textures(server));
+        }
         app.insert_resource(HealthAssets::new(handles.iter().map(UntypedHandle::id)))
             .insert_resource(RequiredArtwork { _handles: handles })
             .insert_resource(self.clone());

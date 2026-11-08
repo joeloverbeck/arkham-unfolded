@@ -1,6 +1,21 @@
 {
   "assets": [
     {
+      "role": "model/chaos-pouch",
+      "path": "models/chaos-pouch.glb",
+      "bytes": 21374036,
+      "sha256": "514b48674232d76a2875a6d0b43f02afca889f3777972ecd2d3c25a9791c4483",
+      "source": {
+        "input": "chaos_pouch",
+        "path": "chaos-pouch.glb",
+        "bytes": 21374036,
+        "sha256": "514b48674232d76a2875a6d0b43f02afca889f3777972ecd2d3c25a9791c4483"
+      },
+      "transform": { "kind": "copy" },
+      "evidence": "docs/research/chaos-pouch-integration.md",
+      "provenance": "Owner-supplied petrol-blue velvet pouch, authored locally in Blender; original authoring folder remains external. GLB embeds all textures; sheen factors require runtime rendering support."
+    },
+    {
       "role": "token/doom",
       "path": "tokens/doom.png",
       "bytes": 272086,
@@ -2650,7 +2665,7 @@
       }
     }
   ],
-  "collection": "arkham-unfolded-gathering-v6",
+  "collection": "arkham-unfolded-gathering-v7",
   "deck_projection_sha256": "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb",
   "format_version": 1,
   "scenario_binding_sha256": "635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0",

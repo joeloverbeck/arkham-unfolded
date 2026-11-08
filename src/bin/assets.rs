@@ -5,7 +5,7 @@ use arkham_unfolded_experiment::{
 use std::path::PathBuf;
 
 const USAGE: &str = "\
-arkham-assets prepare-gathering --source PATH --reveal-icon PATH --ability-icon PATH --offering-icon PATH --output PATH
+arkham-assets prepare-gathering --source PATH --reveal-icon PATH --ability-icon PATH --offering-icon PATH --chaos-pouch PATH --output PATH
 arkham-assets check-gathering PATH
 arkham-assets check-gathering-launch [--art-root PATH]
 
@@ -13,6 +13,7 @@ Preparation copies only the selected assets into a fresh external directory.
 The reveal icon is the pinned Lorc Swap bag PNG; preparation never downloads it.
 The ability icon is the owner-supplied inner-spark transparent glyph PNG.
 The offering icon is the pinned Lorc Chalice drops transparent PNG.
+The chaos pouch is the selected owner-supplied GLB with embedded textures.
 It never changes the source archive or overwrites an existing collection.
 Launch checking uses Gathering's saved/default folder and temporary artwork flags.
 It writes no files and exits nonzero for an incomplete collection.";
@@ -26,6 +27,7 @@ fn run() -> Result<(), String> {
             let mut reveal_icon = None;
             let mut ability_icon = None;
             let mut offering_icon = None;
+            let mut chaos_pouch = None;
             while let Some(argument) = args.next() {
                 let value = args
                     .next()
@@ -42,6 +44,9 @@ fn run() -> Result<(), String> {
                     "--offering-icon" if offering_icon.is_none() => {
                         offering_icon = Some(PathBuf::from(value))
                     }
+                    "--chaos-pouch" if chaos_pouch.is_none() => {
+                        chaos_pouch = Some(PathBuf::from(value))
+                    }
                     _ => return Err(format!("Unknown or repeated option: {argument}")),
                 }
             }
@@ -50,6 +55,7 @@ fn run() -> Result<(), String> {
             let reveal_icon = reveal_icon.ok_or("prepare requires --reveal-icon PATH")?;
             let ability_icon = ability_icon.ok_or("prepare requires --ability-icon PATH")?;
             let offering_icon = offering_icon.ok_or("prepare requires --offering-icon PATH")?;
+            let chaos_pouch = chaos_pouch.ok_or("prepare requires --chaos-pouch PATH")?;
             let prepare = prepare_gathering;
             let inspect = inspect_gathering;
             match prepare(
@@ -58,6 +64,7 @@ fn run() -> Result<(), String> {
                 &reveal_icon,
                 &ability_icon,
                 &offering_icon,
+                &chaos_pouch,
             )
             .map_err(|error| error.to_string())?
             {

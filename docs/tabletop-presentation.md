@@ -243,6 +243,26 @@ Keep the curse supply there, aligned with the bag and its caption clear of
 Committed cards. Reference inspection remains available through its component
 and existing bag/token shortcuts.
 
+The chaos-pouch replacement selected on 2026-11-08 uses the supplied static,
+open, empty petrol-blue velvet pouch, with dark lining, ivory drawstrings and
+brass tips. Preserve the intended velvet sheen under the game's lighting;
+successful model loading or factor parsing alone does not establish that
+appearance. Compare the in-game result with the supplied intended preview.
+The [source contract](foundation/sources-and-verification.md#presentation-asset-preparation)
+owns the external artwork and preparation boundary.
+
+Anchor the model's floor origin on the table, fit it to the bag's existing home,
+and keep its cords clear of neighboring components and labels. Preserve bag
+selection, inspection, availability/hover/menu cues, labels and token reveals.
+Keep those controls separate from the authored materials. The existing
+breathing teal footprint halo appears when the pouch offers a current gameplay
+choice beyond Inspect; inspection alone leaves it off. Reduced motion keeps the
+available cue steady, and blocking dialogs suppress unavailable choices.
+The existing
+screen-fixed reveal control remains independent. This selection adds no cloth
+simulation, rigging or new bag animation and does not change game decisions or
+save continuity. In-game appearance and interaction still require verification.
+
 Use one token region as wide as the commitment region above it. Fill upper-left
 to right with comfortable compact gaps, wrapping inside the region and including
 selection marks in footprints. Tokens cannot spill onto an investigator mat.

@@ -497,6 +497,7 @@ impl Painter<'_, '_, '_> {
             bag_count,
             curse_pool,
             self.context.art.symbol_font(),
+            self.context.art.chaos_pouch(),
         );
         for entity in chaos.entities {
             self.commands.entity(entity).insert(ScenePiece);
@@ -507,7 +508,7 @@ impl Painter<'_, '_, '_> {
             self.materials,
             chaos.bag,
             0.75,
-            0.285,
+            layout::MAT_TOP + 0.015 - layout::test_bag().y,
         );
         self.selectable(
             chaos.bag,

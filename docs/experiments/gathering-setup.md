@@ -770,15 +770,20 @@ scripts/dev cargo run --locked --bin arkham-assets -- prepare-gathering \
   --reveal-icon /tmp/arkham-reveal-icon.png \
   --ability-icon /home/joeloverbeck/Downloads/investigator-ability-inner-spark/inner-spark/investigator-ability-inner-spark-glyph.png \
   --offering-icon "$HOME/Downloads/Offerings.png" \
+  --chaos-pouch "$HOME/Documents/Arkham Unfolded Assets/Chaos Bag/chaos-pouch.glb" \
   --output "$HOME/.local/share/arkham-unfolded/gathering-assets" &&
 scripts/dev cargo run --locked --bin arkham-assets -- check-gathering \
   "$HOME/.local/share/arkham-unfolded/gathering-assets"
 ```
 
-The finite recipe contains 147 roles: 94 card identities, 11 reverse/unrevealed
+The finite recipe contains 148 roles: 94 card identities, 11 reverse/unrevealed
 sides, card backs, investigator standees, token/class artwork, reveal icon and
 symbol font, including bounty, ammo, the Spell charge motif, the neutral key and
-the investigator ability spark, offerings icon and doom artwork. Version 5 lacks
+the investigator ability spark, offerings icon, doom artwork and the 3D chaos pouch.
+The pouch's GLB embeds all nine textures; its Blender source and previews remain
+in the external authoring folder. Runtime generates filtered texture levels in
+memory and renders the imported velvet sheen with a repository-owned shader.
+Version 6 lacks the pouch; version 5 lacks
 doom artwork; version 4 also lacks offerings;
 version 3 also lacks the spark;
 v2 also lacks the key; v1 also lacks bounty, ammo and charge

@@ -30,6 +30,7 @@ pub(crate) const ENCOUNTER_DISCARD: Vec3 = Vec3::new(-4.2, 0.05, SCENARIO_FAR_ED
 pub(crate) const VICTORY_DISPLAY: Vec3 = Vec3::new(6.8, 0.05, SCENARIO_FAR_EDGE + 2.5);
 pub(crate) const SCENARIO_REMOVED: Vec3 = Vec3::new(3.7, 0.05, SCENARIO_FAR_EDGE + 2.5);
 pub(crate) const TEST_CENTER: Vec3 = Vec3::new(0.0, 0.0, 8.0);
+pub(crate) const MAT_TOP: f32 = -0.06;
 /// Area focus views retain component captions; Overview suppresses this detail.
 pub(crate) const DETAIL_LABEL_DISTANCE: f32 = 40.0;
 const TEST_SIZE: Vec2 = Vec2::new(14.0, 10.0);
@@ -495,7 +496,7 @@ pub(crate) fn surface(
         (
             size.x - 0.16,
             size.y - 0.16,
-            -0.075,
+            MAT_TOP - 0.015,
             0.03,
             color.mix(&Color::BLACK, 0.48),
         ),
