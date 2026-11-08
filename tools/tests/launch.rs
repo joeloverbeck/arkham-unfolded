@@ -39,6 +39,78 @@ fn running(directory: &Path) -> Value {
     }
 }
 
+fn check_launch_stdout(stdout: &[u8], expected: [&Value; 2]) -> Result<(), String> {
+    let text = std::str::from_utf8(stdout).map_err(|error| error.to_string())?;
+    let text = text
+        .strip_suffix('\n')
+        .ok_or("stdout must end with a newline")?;
+    let mut lines = text.split('\n');
+    for (index, expected) in expected.into_iter().enumerate() {
+        let line = lines.next().ok_or("stdout must contain two manifests")?;
+        // Compare both sides after the same JSON parse, without reserializing floats.
+        let actual: Value = serde_json::from_str(line)
+            .map_err(|error| format!("manifest {} is not one JSON document: {error}", index + 1))?;
+        if &actual != expected {
+            return Err(format!(
+                "manifest {} differs:\nexpected: {expected:#}\nactual: {actual:#}",
+                index + 1
+            ));
+        }
+    }
+    if lines.next().is_some() {
+        return Err("stdout contains output after the two manifests".into());
+    }
+    Ok(())
+}
+
+#[test]
+fn launch_stdout_preserves_documents_across_timestamp_round_trips() {
+    // Values observed in the failed CI run; parsing can change their decimal spelling.
+    let running = r#"{"status":"running","started_unix":1794098585.3929045,"shutdown_unix":1794098590.3929045}"#;
+    let completed = r#"{"status":"exited","started_unix":1794098585.3929045,"shutdown_unix":1794098590.3929045}"#;
+    let expected = [
+        serde_json::from_str(running).unwrap(),
+        serde_json::from_str(completed).unwrap(),
+    ];
+    check_launch_stdout(
+        format!("{running}\n{completed}\n").as_bytes(),
+        [&expected[0], &expected[1]],
+    )
+    .unwrap();
+}
+
+#[test]
+fn launch_stdout_rejects_missing_changed_reordered_or_extra_output() {
+    let running = r#"{"status":"running","pid":7}"#;
+    let completed = r#"{"status":"exited","pid":7}"#;
+    let expected = [
+        serde_json::from_str(running).unwrap(),
+        serde_json::from_str(completed).unwrap(),
+    ];
+    for (case, stdout) in [
+        ("missing document", format!("{running}\n")),
+        ("wrong order", format!("{completed}\n{running}\n")),
+        ("extra document", format!("{running}\n{completed}\n{{}}\n")),
+        ("extra text", format!("notice\n{running}\n{completed}\n")),
+        ("extra blank line", format!("{running}\n{completed}\n\n")),
+        ("missing final newline", format!("{running}\n{completed}")),
+        ("malformed JSON", format!("{{\n{completed}\n")),
+        (
+            "missing field",
+            format!("{{\"status\":\"running\"}}\n{completed}\n"),
+        ),
+        (
+            "changed field",
+            format!("{}\n{completed}\n", running.replace('7', "8")),
+        ),
+    ] {
+        assert!(
+            check_launch_stdout(stdout.as_bytes(), [&expected[0], &expected[1]]).is_err(),
+            "accepted {case}"
+        );
+    }
+}
+
 #[test]
 fn closing_original_approval_stops_an_already_running_owned_process() {
     let root = tempfile::tempdir().unwrap();
@@ -128,11 +200,7 @@ fn launch_stages_fixed_binary_and_autosaves_only_to_its_isolated_copy() {
     );
     let completed: Value =
         serde_json::from_slice(&fs::read(directory.join("run.json")).unwrap()).unwrap();
-    assert_eq!(
-        output.stdout,
-        format!("{metadata}\n{completed}\n").as_bytes(),
-        "the default stdout contract is both complete JSON manifests"
-    );
+    check_launch_stdout(&output.stdout, [&metadata, &completed]).unwrap();
     assert_eq!(completed["status"], "exited");
     assert_eq!(completed["initial_view"], "scenario");
     assert_eq!(

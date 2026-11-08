@@ -453,6 +453,17 @@ This wrapper does not change kernel profiling settings or run a permanent servic
 
 ### Visual and wording review
 
+Before a native handoff for card or artwork presentation changes, inspect the
+affected prepared images and available renderer captures together: table lighting,
+front crop bounds, deck/installed backs and the inspection modal. Check complete
+borders without page strips or adjacent printings, intended orientation and aspect
+ratio, and rounded inspection corners consistent with the 3D card. Retain the
+images with their candidate/recipe identities and give them to reviewers alongside
+the corresponding production components. For coordinated Netrunner work, compare
+both consumers' inspection paths and shared card geometry. Hashes and successful
+uploads prove identity/loading, while these images support only the visual states
+shown; native input, readability in use and owner acceptance remain separate.
+
 Before implementing a scenario, mode or tabletop UI change, identify the accepted presentation it inherits and its revision. Account for every affected section in the existing issue or PR: investigator counters, card captions, contextual and global controls, portrait/camera navigation, inspection, and deck/pile rendering as applicable. Name the production component paths and the behavior to preserve. Reuse the established implementation where it already serves that behavior; explain a necessary local adapter or an owner-authorized difference. A new scenario alone is not a reason to redesign the player's interface. Bring proposed changes to accepted behavior to the owner with their consequences before adopting them.
 
 For repairs after a native check, retain the reference capture and its candidate identity (commit or working-tree snapshot), viewport/camera, populated state and relevant board/card/text dimensions in the existing issue handoff. Distinguish owner-accepted constraints from agent observations and deferred preferences. Supply this reference alongside the Git fixed point in later reviews, even when it comes from earlier uncommitted work in the same session. Compare repairs at comparable framing and assess tradeoffs against the owner's priorities: a passing collision check alone does not justify larger boards, smaller cards or text, or wider camera framing. An unavailable reference leaves that comparison unverified; source checks retain their narrower meaning.

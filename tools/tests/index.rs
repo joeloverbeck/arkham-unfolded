@@ -150,6 +150,7 @@ fn actual_repository_gate_stops_at_a_forbidden_index_before_later_checks() {
     copy_gate(root);
     fs::write(root.join("generated.pyc"), "fixture").unwrap();
     git(root, &[OsStr::new("add"), OsStr::new("generated.pyc")]);
+    let trace = root.join("trace");
     let bin = root.join("bin");
     fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("cargo")).unwrap();
@@ -165,13 +166,24 @@ fn actual_repository_gate_stops_at_a_forbidden_index_before_later_checks() {
             .unwrap(),
         )
         .env("ARKHAM_FIXTURE_TOOLS", env!("CARGO_BIN_EXE_arkham-tools"))
+        .env("ARKHAM_FIXTURE_CHECK", "1")
+        .env("ARKHAM_FIXTURE_TRACE", &trace)
         .current_dir(root)
         .output()
         .unwrap();
     assert_eq!(result.status.code(), Some(1));
     let errors = String::from_utf8(result.stderr).unwrap();
     assert!(errors.contains("Generated files are tracked"), "{errors}");
-    assert!(!errors.contains("UNEXPECTED_LATER_CHECK"), "{errors}");
+    assert_eq!(
+        fs::read_to_string(trace)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        [
+            "fmt --all -- --check",
+            "run --quiet --locked -p arkham-tools -- check-tracked-files",
+        ]
+    );
 }
 
 #[test]
@@ -206,9 +218,9 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
             .unwrap()
     };
     let expected = [
+        "fmt --all -- --check",
         "run --quiet --locked -p arkham-tools -- check-tracked-files",
         "test --locked -p arkham-tools",
-        "fmt --all -- --check",
         "clippy --locked --workspace --features tabletop --all-targets -- -D warnings",
         "test --locked -p arkham-unfolded-experiment --features tabletop",
         "run --quiet --locked -p arkham-tools -- check-renderer",
@@ -230,7 +242,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
         .collect();
     assert_eq!(
         phases,
-        ["index", "tools", "format", "clippy", "app", "renderer"]
+        ["format", "index", "tools", "clippy", "app", "renderer"]
     );
     fs::write(&trace, "").unwrap();
     for phase in phases {
