@@ -3,7 +3,7 @@ use super::*;
 use crate::{gathering::PlayObservation, tabletop_counters as counters};
 use bevy::{asset::RenderAssetUsages, render::render_resource::PrimitiveTopology};
 
-const ALTAR: Vec3 = Vec3::new(0., 0.3, -18.4);
+pub(super) const ALTAR: Vec3 = Vec3::new(0., 0.3, -18.4);
 const DURATION: f32 = 0.8;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -267,29 +267,16 @@ pub(super) fn render(
         commands.entity(token).insert(ScenePiece);
         commands.entity(label).insert(ScenePiece);
     }
-    let label = scene::label(
-        commands,
-        context,
-        format!(
-            "Agenda doom: {}\nTotal doom: {}/{}",
-            state.agenda(play.agenda_doom),
-            state.total(play),
-            threshold(play)
-        ),
-        // Use the same caption size as the surrounding piles. The small right
-        // offset preserves the populated discard caption's projected lane.
-        ALTAR + Vec3::new(0.8, 0., 1.4),
-        false,
-    );
-    commands
-        .entity(label)
-        .remove::<Pickable>()
-        .insert((Button, bevy::input_focus::tab_navigation::TabIndex(0)))
-        .observe(|_: On<Activate>, mut actions: ResMut<Actions>| {
-            actions
-                .0
-                .push(Action::Inspect("Total doom".into(), "total-doom".into()))
-        });
+}
+
+/// Mat lettering follows the same physical-arrival counts as the solid tokens.
+pub(super) fn readouts(context: &CardRender) -> Option<[String; 2]> {
+    let play = context.view.play.as_ref()?;
+    let state = &context.consequences.doom;
+    Some([
+        format!("Total doom: {}/{}", state.total(play), threshold(play)),
+        format!("Agenda doom: {}", state.agenda(play.agenda_doom)),
+    ])
 }
 
 #[derive(Component)]

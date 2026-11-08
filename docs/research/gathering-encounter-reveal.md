@@ -4,6 +4,16 @@ Investigated 2026-11-08 against candidate `fda03a5368775b2234b6fa5a4ec0c2b11012b
 
 ## Recommendation
 
+Joel accepted these recommendations with “Proceed as you recommend” on
+2026-11-08. The implementation follows the existing committed presentation
+snapshots. A later production-path check clarified an implementation detail below:
+`Game::settle` can resolve an encounter with no cancellation opportunity within
+the draw command itself. The reading stop therefore holds its captured draw view
+before displaying those committed consequences; it does not split the command,
+change journals, or make Continue a new rules choice. Unresolved reactions still
+wait normally. Source/test evidence and native experiential acceptance remain
+separate, as recorded in #137's current handoff.
+
 Give each actual encounter-deck draw an untimed, screen-centered reading stop: a large intact card, **Encounter card**, the drawing investigator's name, the card's title/type, and **Continue**. Darken the table behind it. Continue acknowledges reading and returns to the existing legal response/resolution path; it must not silently decline a cancellation or generically engage an enemy.
 
 Use a restrained moving surround: a few dark teal, tapered tendrils slowly bending at the screen edges behind the card. Keep the card and all readable controls still. My recommendation favors this over a rotating vortex, large fleshy tentacles or a pulsing red wash: those effects compete with reading and can make every card feel like the same monster. This is creative judgment, not a researched guarantee of tension. A static ink-and-brass surround is the simpler credible alternative and the Reduced-motion presentation.

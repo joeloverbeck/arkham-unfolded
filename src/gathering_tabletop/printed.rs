@@ -1,10 +1,10 @@
-//! Permanent names are ink on their own mats, independent of camera projection.
+//! Names and doom readouts are ink on their mats, independent of camera projection.
 use super::*;
 use bevy::{
     camera::RenderTarget, mesh::VertexAttributeValues, render::render_resource::TextureFormat,
 };
 
-const NAMES: [&str; 13] = [
+const NAMES: [&str; 15] = [
     "Scenario",
     "Test",
     "Tony Morgan",
@@ -18,6 +18,8 @@ const NAMES: [&str; 13] = [
     "Map",
     "Victory display",
     "Committed cards",
+    "Total doom",
+    "Agenda doom",
 ];
 const WIDTH: u32 = 512;
 const ROW: u32 = 64;
@@ -38,6 +40,7 @@ impl Surfaces {
         context: &CardRender,
         ui_scale: f32,
     ) {
+        let doom = doom::readouts(context);
         let image = self
             .0
             .get_or_insert_with(|| {
@@ -75,6 +78,19 @@ impl Surfaces {
             ))
             .with_children(|root| {
                 for name in NAMES {
+                    let (text, size, color) = match name {
+                        "Total doom" => (
+                            doom.as_ref().map_or("", |text| text[0].as_str()),
+                            42.,
+                            PAPER,
+                        ),
+                        "Agenda doom" => (
+                            doom.as_ref().map_or("", |text| text[1].as_str()),
+                            40.,
+                            Color::srgb(0.69, 0.58, 0.38),
+                        ),
+                        _ => (name, 40., MUTED),
+                    };
                     root.spawn((
                         Node {
                             width: px(WIDTH as f32 / ui_scale),
@@ -88,7 +104,7 @@ impl Surfaces {
                     ))
                     .with_children(|row| {
                         row.spawn((
-                            context.art.text(name, 40. / ui_scale, MUTED),
+                            context.art.text(text, size / ui_scale, color),
                             Pickable::IGNORE,
                         ));
                     });
@@ -110,6 +126,12 @@ impl Surfaces {
         ];
         labels.extend(layout::scenario_zone_labels().map(|(name, at)| (name, at, 0.34)));
         labels.push(("Committed cards", layout::test_zone_labels()[0].1, 0.34));
+        if doom.is_some() {
+            labels.extend([
+                ("Total doom", doom::ALTAR + Vec3::Z * 1.2, 0.64),
+                ("Agenda doom", doom::ALTAR + Vec3::Z * 1.85, 0.50),
+            ]);
+        }
         for (index, investigator) in context.view.investigators.iter().enumerate() {
             labels.push((
                 investigator.investigator.name(),
@@ -137,15 +159,32 @@ impl Surfaces {
                 }
             }
             at.y = 0.071;
-            commands.spawn((
-                ScenePiece,
-                PrintedLabel,
-                Name::new(format!("Printed area label: {name}")),
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(material.clone()),
-                Transform::from_translation(at),
-                Pickable::IGNORE,
-            ));
+            let entity = commands
+                .spawn((
+                    ScenePiece,
+                    PrintedLabel,
+                    Name::new(format!("Printed area label: {name}")),
+                    Mesh3d(meshes.add(mesh)),
+                    MeshMaterial3d(material.clone()),
+                    Transform::from_translation(at),
+                    Pickable::IGNORE,
+                ))
+                .id();
+            if name == "Total doom" {
+                commands
+                    .entity(entity)
+                    .remove::<Pickable>()
+                    .insert((
+                        Button,
+                        bevy::input_focus::tab_navigation::TabIndex(0),
+                        AccessibleLabel::new("Inspect total doom"),
+                    ))
+                    .observe(|_: On<Activate>, mut actions: ResMut<Actions>| {
+                        actions
+                            .0
+                            .push(Action::Inspect("Total doom".into(), "total-doom".into()));
+                    });
+            }
         }
     }
 }

@@ -769,6 +769,8 @@ pub(super) fn render(
         restart_confirmation(commands, table, art, size);
     } else if let Some(card) = table.presentation.story() {
         story_reading(commands, art, size, card);
+    } else if table.presentation.encounter().current().is_some() {
+        encounter::render(commands, table, art, size);
     } else if table.result_opportunities() {
         results::render(commands, table, view, art, size);
     } else if table.modal() {

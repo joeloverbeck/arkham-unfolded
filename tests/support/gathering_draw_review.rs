@@ -130,3 +130,18 @@ pub fn checkpoints() -> Result<Vec<Checkpoint>, String> {
     )?);
     Ok(result)
 }
+
+/// Ordinary first encounter with Jacqueline leading, for the reading/reaction route.
+#[cfg(test)]
+pub fn encounter_checkpoint(seed: u64) -> Result<Checkpoint, String> {
+    let mut session = Session::with_seed(seed);
+    for id in [
+        "lead:jacqueline",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "confirm-mulligan",
+    ] {
+        choose(&mut session, id)?;
+    }
+    before_draw(&mut session, DrawSource::Encounter, "encounter", "scenario")
+}

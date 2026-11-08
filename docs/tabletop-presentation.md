@@ -330,6 +330,31 @@ responses. A test already underway does not make a nested search/revelation
 test content: preserve the parent test while it resolves separately. A revelation
 that starts a test uses Test without duplicating its physical source.
 
+After each actual encounter-deck draw arrives, pause for an untimed reading
+overlay: dim the table, center a large upright intact card, label it **Encounter
+card**, name its actual drawer, and show its title and printed type. **Continue**
+acknowledges reading only. Preserve available cancellation/response choices and
+the existing tray/Test resolution afterward, including each enemy's own Spawn
+and engagement rules. This is a reading-only exception to the tray-based effect
+resolution selected in ADR 0002; it adds no rules window or zone.
+
+Hold the captured draw view before presenting consequences that the rules engine
+may already have committed in the same command. Never split or repeat that command
+to support reading. Bind the stop to the actual draw occurrence and physical card,
+not its title or a later response revision. An unchanged scene rebuild or in-place
+reopen retains acknowledgment. A fresh process may re-offer an unresolved,
+unstarted encounter for reading, but must not invent a draw or rewind a started
+resolution. Search candidates, selected On the Hunt enemies, and investigator-deck
+weaknesses are outside this reading surface; On the Hunt's actual fallback draw
+uses it normally.
+
+Keep card, heading, text and controls still. A few dark, low-contrast tendrils bend
+slowly in clipped side margins, clear of all reading content. Offer **Pause motion**
+and **Resume motion** within the overlay; Reduced motion uses a still surround.
+Pause decoration when unfocused and resume without catching up. Keep Continue
+outside the scrolling body and offer **Read rules** for readable effective text at
+small viewports. There is no countdown, flashing, camera movement or audio cue.
+
 Give Hornet's nine visible candidates a 3-by-3 arrangement with its event alongside,
 and Backpack's six-card search its explicit completion. Display all cards the
 search permits seeing but offer game actions only for legal candidates. Preserve
@@ -388,6 +413,13 @@ edging. Keep its surface, labels and token low enough to preserve card reading,
 selection and inspection in Scenario focus and representative oblique views.
 Exact dimensions remain native-tuning choices; the altar is presentation for
 agenda doom, not a game zone or new gameplay action.
+
+Print both doom readouts on the mat beneath the altar, centered on its axis and
+fixed in the Scenario mat's orientation. Give **Total doom: N/threshold** the
+stronger warm-ivory line and **Agenda doom: N** a smaller muted-brass line, using
+the existing readable font. Total doom remains selectable for its breakdown.
+Preserve readability and clearance in normal and oblique Scenario views, including
+populated encounter piles, Agenda/Act cards and Map controls.
 
 Standees retain rounded bases and rectangular holders, scaling as complete objects.
 Use up to four slots outside each location card, two along each long side, with

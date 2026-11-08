@@ -134,7 +134,50 @@ fn zero_doom_keeps_the_altar_and_reduced_motion_uses_the_same_committed_result()
             .iter(world)
             .any(|counter| counter.kind == CounterKind::Doom)
     );
-    assert!(rendered_text(&mut app).contains("Agenda doom: 0\nTotal doom: 0/3"));
+    assert!(rendered_text(&mut app).contains("Agenda doom: 0"));
+    assert!(rendered_text(&mut app).contains("Total doom: 0/3"));
+    let world = app.world_mut();
+    let readouts: Vec<_> = world
+        .query_filtered::<(Entity, &Name, &Transform), With<printed::PrintedLabel>>()
+        .iter(world)
+        .filter(|(_, name, _)| {
+            matches!(
+                name.as_str(),
+                "Printed area label: Total doom" | "Printed area label: Agenda doom"
+            )
+        })
+        .map(|(entity, name, transform)| (entity, name.to_string(), *transform))
+        .collect();
+    assert_eq!(
+        readouts.len(),
+        2,
+        "Both readouts must be printed on the mat"
+    );
+    for (entity, _, at) in &readouts {
+        assert_eq!(
+            at.translation.x, 0.,
+            "The lettering shares the altar's center"
+        );
+        assert!(at.translation.z > -17.5 && at.translation.z < -16.);
+        assert!((at.translation.y - 0.071).abs() < 0.001);
+        assert_eq!(at.rotation, Quat::IDENTITY);
+        assert!(world.get::<WorldLabel>(*entity).is_none());
+    }
+    let total = readouts
+        .iter()
+        .find(|(_, name, _)| name.ends_with("Total doom"))
+        .unwrap()
+        .0;
+    world.trigger(Activate { entity: total });
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<Table>()
+            .inspection
+            .as_ref()
+            .map(|(_, code)| code.as_str()),
+        Some("total-doom")
+    );
     let session =
         Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringDoomThreshold);
     let mut expected = session.clone();

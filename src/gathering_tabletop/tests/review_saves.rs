@@ -1,7 +1,7 @@
 use super::*;
 
 #[path = "../../../tests/support/gathering_draw_review.rs"]
-mod draw_review;
+pub(super) mod draw_review;
 
 #[path = "../../../tests/support/gathering_resolution_review.rs"]
 pub(super) mod resolution_review;

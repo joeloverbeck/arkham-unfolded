@@ -367,6 +367,17 @@ fn automatic_round_preserves_discard_order_and_reopens_into_a_real_mythos_choice
     let mut reopened = false;
     for _ in 0..32 {
         settle_automatic_resolution(&mut app);
+        if app
+            .world()
+            .resource::<Table>()
+            .presentation
+            .encounter()
+            .current()
+            .is_some()
+        {
+            encounter::continue_reading(&mut app);
+            continue;
+        }
         let view = app.world().resource::<Table>().session.observe();
         if view.play.as_ref().unwrap().phase == Phase::Mythos
             && view.play.as_ref().unwrap().encounter_deck_count < 26

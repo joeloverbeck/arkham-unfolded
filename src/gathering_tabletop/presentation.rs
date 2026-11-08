@@ -12,6 +12,7 @@ pub(super) struct Presentation {
     map: map_motion::Playback,
     story: story::Reading,
     results: results::Reading,
+    encounter: encounter::Reading,
     announcement: Option<phase_banner::Announcement>,
 }
 
@@ -42,6 +43,7 @@ impl Presentation {
             map: map_motion::Playback::default(),
             story: story::Reading::for_session(session),
             results: results::Reading::for_session(session),
+            encounter: encounter::Reading::for_session(session),
             announcement: None,
         }
     }
@@ -86,6 +88,18 @@ impl Presentation {
         self.story.current()
     }
 
+    pub(super) fn encounter(&self) -> &encounter::Reading {
+        &self.encounter
+    }
+
+    pub(super) fn encounter_mut(&mut self) -> &mut encounter::Reading {
+        &mut self.encounter
+    }
+
+    pub(super) fn encounter_input(&mut self, input: encounter::Input) {
+        self.encounter.input(input);
+    }
+
     pub(super) fn acknowledge_result(&mut self) {
         self.results.advance();
     }
@@ -118,6 +132,7 @@ impl Presentation {
         self.moments = session.presentation_after(before.revision).to_vec();
         self.index = 0;
         self.clock = 0.;
+        self.encounter.committed(session, &draws);
         self.draw_cues = draws;
         self.start_transitions(session, before, reduced_motion);
         if choice == "undo" {
@@ -161,6 +176,12 @@ impl Presentation {
             self.map.rendered();
         }
         if self.announcement().is_none() && !doom_moving {
+            if !self.drawing() && !self.map.active() {
+                self.encounter.arrive(
+                    view.revision,
+                    self.moments.get(self.index).map(|moment| moment.sequence),
+                );
+            }
             self.results.synchronize(&view);
         }
         let story = if let Some(moment) = self.moments.get(self.index) {

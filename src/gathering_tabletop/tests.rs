@@ -182,6 +182,7 @@ mod cards;
 mod counters_and_enemies;
 mod doom;
 mod draws;
+mod encounter;
 mod map_motion;
 mod navigation;
 mod pendulum;
@@ -1932,8 +1933,8 @@ pub(super) fn finish_presentation(app: &mut App) {
         .advance_by(std::time::Duration::ZERO);
 }
 
-/// Tick the installed production systems until automatic work and motion settle.
-/// Never choose a player option or dismiss a modal; blocked work fails with context.
+/// Tick production systems until automatic work settles or an encounter awaits
+/// reading. Never choose a player option or dismiss a reading stop.
 pub(super) fn settle_automatic_resolution(app: &mut App) {
     app.world_mut()
         .resource_mut::<PresentationTime>()
@@ -1951,12 +1952,13 @@ pub(super) fn settle_automatic_resolution(app: &mut App) {
         let automatic = controls::automatic_choice(&view);
         let consequences = world.resource::<consequences::State>().active();
         let queued = world.resource::<Actions>().0.len();
-        if !table.is_presenting()
-            && !table.trays.active()
-            && moving == 0
-            && !consequences
-            && queued == 0
-            && automatic.is_none()
+        if table.presentation.encounter().current().is_some()
+            || (!table.is_presenting()
+                && !table.trays.active()
+                && moving == 0
+                && !consequences
+                && queued == 0
+                && automatic.is_none())
         {
             world
                 .resource_mut::<PresentationTime>()

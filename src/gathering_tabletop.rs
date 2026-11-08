@@ -26,6 +26,7 @@ mod consequences;
 mod controls;
 mod doom;
 mod draws;
+mod encounter;
 mod enemy_board;
 mod map_motion;
 mod motion;
@@ -54,6 +55,7 @@ const GOLD: Color = Color::srgb(0.86, 0.69, 0.37);
 enum Action {
     ContinueStory,
     ContinueResult(u64),
+    Encounter(u64, encounter::Input),
     ResultChoice(u64, u64, String),
     Reveal(crate::tabletop_reveal::Request),
     Choose(u64, u64, String),
@@ -178,6 +180,7 @@ impl Table {
         self.presentation.result().is_some()
             || self.result_opportunities()
             || self.presentation.story().is_some()
+            || self.presentation.encounter().current().is_some()
             || self.inspection.is_some()
             || self.history_open
             || self.restart_confirmation
@@ -196,6 +199,7 @@ impl Table {
         self.presentation.announcement().is_some()
             || self.presentation.result().is_some()
             || self.presentation.story().is_some()
+            || self.presentation.encounter().current().is_some()
             || self.inspection.is_some()
             || self.history_open
             || self.restart_confirmation
@@ -594,7 +598,7 @@ fn install(app: &mut App) {
                 advance_presentation,
                 keyboard_panel_scroll,
                 camera_controls,
-                (render, phase_banner::render).chain(),
+                (render, phase_banner::render, encounter::animate).chain(),
                 controls::render,
                 contextual_feedback,
                 enemy_board::highlight,
@@ -745,6 +749,8 @@ fn handle_actions(
             matches!(action, Action::ContinueResult(_))
         } else if reading {
             matches!(action, Action::ContinueStory)
+        } else if table.presentation.encounter().current().is_some() {
+            matches!(action, Action::Encounter(..))
         } else if table.result_opportunities() {
             result_choice
         } else if table.prediction.is_some() {
@@ -783,6 +789,14 @@ fn handle_actions(
             continue;
         };
         match action {
+            Action::Encounter(epoch, input)
+                if epoch == table.epoch && table.presentation.encounter().current().is_some() =>
+            {
+                table.presentation.encounter_input(input);
+                table.epoch += 1;
+                table.dirty = true;
+            }
+            Action::Encounter(..) => {}
             Action::Prediction(..) => unreachable!("Local picker dispatch consumes its controls"),
             Action::ContinueResult(epoch) if epoch == table.epoch => {
                 table.presentation.acknowledge_result();
