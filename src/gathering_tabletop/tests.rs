@@ -1910,6 +1910,8 @@ fn choice_selector_rejects_duplicate_actions_in_the_active_menu() {
     choice_button(&mut app, "Reveal");
 }
 
+/// Wait for the current presentation to finish or reach a player-controlled pause.
+/// This does not settle later automatic choices, card motion or closing trays.
 pub(super) fn finish_presentation(app: &mut App) {
     app.world_mut()
         .resource_mut::<PresentationTime>()
@@ -1929,6 +1931,52 @@ pub(super) fn finish_presentation(app: &mut App) {
     app.world_mut()
         .resource_mut::<PresentationTime>()
         .advance_by(std::time::Duration::ZERO);
+}
+
+/// Tick the installed production systems until automatic work and motion settle.
+/// Never choose a player option or dismiss a modal; blocked work fails with context.
+pub(super) fn settle_automatic_resolution(app: &mut App) {
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(std::time::Duration::from_millis(100));
+    let mut remaining = String::new();
+    for _ in 0..200 {
+        app.update();
+        let world = app.world_mut();
+        let moving = world
+            .query_filtered::<Entity, With<motion::CardMotion>>()
+            .iter(world)
+            .count();
+        let table = world.resource::<Table>();
+        let view = table.view();
+        let automatic = controls::automatic_choice(&view);
+        let consequences = world.resource::<consequences::State>().active();
+        let queued = world.resource::<Actions>().0.len();
+        if !table.is_presenting()
+            && !table.trays.active()
+            && moving == 0
+            && !consequences
+            && queued == 0
+            && automatic.is_none()
+        {
+            world
+                .resource_mut::<PresentationTime>()
+                .advance_by(std::time::Duration::ZERO);
+            return;
+        }
+        remaining = format!(
+            "pending={:?}, presenting={}, moving={moving}, trays_active={}, consequences={consequences}, queued={queued}, automatic={automatic:?}, blocked={}, notice={:?}",
+            view.play.as_ref().map(|play| &play.pending),
+            table.is_presenting(),
+            table.trays.active(),
+            table.presentation_blocked(),
+            table.notice,
+        );
+    }
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(std::time::Duration::ZERO);
+    panic!("automatic resolution did not settle after 200 updates: {remaining}");
 }
 
 #[test]

@@ -1,9 +1,137 @@
 use serde_json::{Value, json};
 use std::{
-    io::Write,
-    path::Path,
+    io::{Seek, Write},
+    path::{Path, PathBuf},
     process::{Command, Stdio},
+    time::SystemTime,
 };
+
+fn directory_state(directory: &Path) -> Vec<(PathBuf, Vec<u8>, SystemTime)> {
+    let mut files: Vec<_> = std::fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            (
+                entry.file_name().into(),
+                std::fs::read(entry.path()).unwrap(),
+                entry.metadata().unwrap().modified().unwrap(),
+            )
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+#[test]
+fn inspection_reports_one_observation_without_writes_or_player_actions() {
+    use arkham_unfolded_experiment::gathering::{Session, continuity};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("pending.json");
+    let mut session = Session::with_seed(89);
+    session.choose(0, "lead:tony").unwrap();
+    continuity::save_session(&path, &session).unwrap();
+    std::fs::remove_file(directory.path().join("pending.json.lock")).unwrap();
+    // Leave a recovery copy as well: inspection must preserve every sibling.
+    std::fs::copy(&path, continuity::previous_path(&path)).unwrap();
+    let before = directory_state(directory.path());
+    let mut input = tempfile::tempfile().unwrap();
+    writeln!(
+        input,
+        "{}",
+        json!({"op":"choose", "revision":1, "id":"confirm-mulligan"})
+    )
+    .unwrap();
+    writeln!(input, "{}", json!({"op":"save"})).unwrap();
+    input.rewind().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_arkham-driver"))
+        .current_dir(directory.path())
+        .args(["--experiment", "gathering", "--inspect", "pending.json"])
+        .stdin(input)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    // Parsing one JSON value also rejects extra live-protocol responses.
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["ok"], true);
+    assert_eq!(response["mode"], "inspection");
+    assert_eq!(response["status"], "inspected");
+    assert_eq!(
+        response["observation"],
+        serde_json::to_value(session.observe()).unwrap()
+    );
+    assert_eq!(directory_state(directory.path()), before);
+}
+
+#[test]
+fn inspection_refuses_missing_invalid_and_privileged_saves_without_writes() {
+    use arkham_unfolded_experiment::gathering::{HostileFixture, Session, continuity};
+
+    for kind in ["missing", "malformed", "unsupported", "fixture"] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("input.json");
+        match kind {
+            "missing" => {}
+            "malformed" => std::fs::write(&path, b"{broken").unwrap(),
+            "unsupported" => {
+                continuity::save_session(&path, &Session::with_seed(89)).unwrap();
+                let mut record: Value =
+                    serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                record["format_version"] = json!(0);
+                std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+            }
+            "fixture" => continuity::save_session(
+                &path,
+                &Session::with_hostile_fixture(HostileFixture::PatriceCancellationVision),
+            )
+            .unwrap(),
+            _ => unreachable!(),
+        }
+        let before = directory_state(directory.path());
+        let output = Command::new(env!("CARGO_BIN_EXE_arkham-driver"))
+            .current_dir(directory.path())
+            .args(["--inspect", "input.json"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{kind}: {output:?}");
+        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["status"], "error");
+        assert_eq!(directory_state(directory.path()), before, "{kind}");
+    }
+}
+
+#[test]
+fn inspection_rejects_live_paths_in_either_argument_order() {
+    for live_flag in ["--load", "--save"] {
+        for inspect_first in [true, false] {
+            let directory = tempfile::tempdir().unwrap();
+            let inspect = ["--inspect", "missing.json"];
+            let live = [live_flag, "live.json"];
+            let args = if inspect_first {
+                [inspect, live]
+            } else {
+                [live, inspect]
+            };
+            let output = Command::new(env!("CARGO_BIN_EXE_arkham-driver"))
+                .current_dir(directory.path())
+                .args(args.into_iter().flatten())
+                .stdin(Stdio::null())
+                .output()
+                .unwrap();
+            assert!(!output.status.success());
+            let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert!(
+                response["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("cannot be combined")
+            );
+            assert!(directory_state(directory.path()).is_empty());
+        }
+    }
+}
 
 #[test]
 fn ordinary_player_driver_refuses_privileged_fixture_records() {

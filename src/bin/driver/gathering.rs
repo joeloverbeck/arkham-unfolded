@@ -7,17 +7,21 @@ use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-const USAGE: &str = "arkham-driver --experiment gathering [--load PATH] [--save PATH]\nJSON lines: observe; choose with revision and id; save; reopen; quit. An existing save reopens automatically. Inputs use the pinned research baseline, not a current campaign update check. Random draws are session-owned and not player-selectable.";
+const USAGE: &str = "arkham-driver --experiment gathering [--load PATH] [--save PATH]\narkham-driver --experiment gathering --inspect PATH\nInspection emits one validated player observation and exits without writing files or reading stdin; it cannot be combined with --load or --save. Live mode saves on startup. JSON lines: observe; choose with revision and id; save; reopen; quit. An existing save reopens automatically. Inputs use the pinned research baseline, not a current campaign update check. Random draws are session-owned and not player-selectable.";
 
-struct Options {
-    load: Option<PathBuf>,
-    save: PathBuf,
+enum Options {
+    Inspect(PathBuf),
+    Live {
+        load: Option<PathBuf>,
+        save: PathBuf,
+    },
 }
 impl Options {
     fn parse() -> Result<Option<Self>, String> {
         let mut args = std::env::args().skip(1);
         let mut load = None;
         let mut save = None;
+        let mut inspect = None;
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--help" | "-h" => return Ok(None),
@@ -28,8 +32,17 @@ impl Options {
                 }
                 "--load" => load = Some(PathBuf::from(args.next().ok_or("--load needs a path")?)),
                 "--save" => save = Some(PathBuf::from(args.next().ok_or("--save needs a path")?)),
+                "--inspect" => {
+                    inspect = Some(PathBuf::from(args.next().ok_or("--inspect needs a path")?));
+                }
                 _ => return Err(format!("Unknown argument: {arg}")),
             }
+        }
+        if let Some(path) = inspect {
+            if load.is_some() || save.is_some() {
+                return Err("--inspect cannot be combined with --load or --save".into());
+            }
+            return Ok(Some(Self::Inspect(path)));
         }
         let save = save
             .or_else(|| load.clone())
@@ -37,7 +50,7 @@ impl Options {
         if load.is_none() && save.try_exists().map_err(|error| error.to_string())? {
             load = Some(save.clone());
         }
-        Ok(Some(Self { load, save }))
+        Ok(Some(Self::Live { load, save }))
     }
 }
 
@@ -79,9 +92,12 @@ pub fn run() -> Result<(), String> {
             &json!({"ok": true, "status": "help", "usage": USAGE}),
         );
     };
-    let mut game = match &options.load {
-        Some(path) => load_session(path).map_err(|error| error.to_string())?,
-        None => Session::new().map_err(|e| e.to_string())?,
+    let mut game = match &options {
+        Options::Inspect(path)
+        | Options::Live {
+            load: Some(path), ..
+        } => load_session(path).map_err(|error| error.to_string())?,
+        Options::Live { load: None, .. } => Session::new().map_err(|e| e.to_string())?,
     };
     if game.is_verification_fixture() {
         return Err(
@@ -89,7 +105,13 @@ pub fn run() -> Result<(), String> {
                 .into(),
         );
     }
-    save_session(&options.save, &game).map_err(|error| error.to_string())?;
+    let Options::Live { save, .. } = options else {
+        return emit(
+            &mut output,
+            &json!({"ok": true, "mode": "inspection", "status": "inspected", "observation": game.observe()}),
+        );
+    };
+    save_session(&save, &game).map_err(|error| error.to_string())?;
 
     emit(&mut output, &response(&game, "ready", None))?;
     for line in io::stdin().lock().lines() {
@@ -111,7 +133,7 @@ pub fn run() -> Result<(), String> {
             )?,
             Request::Choose { revision, id } => {
 
-                match commit_choice(&options.save, &mut game, revision, &id) {
+                match commit_choice(&save, &mut game, revision, &id) {
                     Ok(()) => emit(&mut output, &response(&game, "chosen", None))?,
                     Err(error) => emit(
                         &mut output,
@@ -121,7 +143,7 @@ pub fn run() -> Result<(), String> {
             }
             Request::Save {} => {
 
-                match save_session(&options.save, &game) {
+                match save_session(&save, &game) {
                     Ok(()) => emit(&mut output, &response(&game, "saved", None))?,
                     Err(error) => emit(
                         &mut output,
@@ -131,7 +153,7 @@ pub fn run() -> Result<(), String> {
             }
             Request::Reopen {} => {
 
-                match load_session(&options.save) {
+                match load_session(&save) {
                     Ok(saved) if !saved.is_verification_fixture() => {
                         game = saved;
                         emit(&mut output, &response(&game, "reopened", None))?;
