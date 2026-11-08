@@ -8,6 +8,7 @@ mod portal;
 use arkham_tools::process;
 mod profile;
 mod reader;
+mod renderer;
 mod review;
 mod tracked;
 
@@ -43,6 +44,8 @@ enum Command {
     ReviewVerify(review::VerifyArgs),
     /// Reject generated files in Git's index, including force-added paths.
     CheckTrackedFiles,
+    /// Test the Vulkan staging workaround from the exact pinned shared producer.
+    CheckRenderer,
     /// Select the repository's pinned Rust override for the CI cache key.
     PrepareCiToolchain,
     /// Build and supervise isolated native verification runs.
@@ -82,6 +85,7 @@ fn main() -> ExitCode {
         Command::ReviewSummary(args) => review::summary::run(args),
         Command::ReviewVerify(args) => review::verify(args),
         Command::CheckTrackedFiles => tracked::check().map_err(anyhow::Error::msg),
+        Command::CheckRenderer => renderer::run(),
         Command::PrepareCiToolchain => ci::prepare_toolchain().map_err(anyhow::Error::msg),
         Command::Native { command } => native::run(command),
         Command::ProfileNative(args) => profile::capture(args),

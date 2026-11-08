@@ -3,7 +3,7 @@
 use crate::tabletop_pacing::{Redraw, RequestRedraw, SelectCadence};
 use bevy::{
     app::AppExit,
-    asset::{LoadState, RecursiveDependencyLoadState, UntypedAssetId},
+    asset::UntypedAssetId,
     picking::Pickable,
     prelude::*,
     render::{
@@ -331,26 +331,12 @@ fn observe_environment(
         environment.pending_assets = "The required artwork loader is unavailable.".into();
         return;
     };
-    let mut loaded = true;
     let mut failures = Vec::new();
-    let mut pending = Vec::new();
-    for id in &assets.0 {
-        let path = server.get_path(*id).map_or_else(
+    let report = unfolded_tabletop::loading::required_assets(&server, &assets.0, |id| {
+        let path = server.get_path(id).map_or_else(
             || "unregistered required asset".into(),
             |path| path.to_string(),
         );
-        let state = server.get_load_state(*id);
-        let dependencies = server.get_recursive_dependency_load_state(*id);
-        let failure = match (&state, &dependencies) {
-            (Some(LoadState::Failed(error)), _)
-            | (_, Some(RecursiveDependencyLoadState::Failed(error))) => {
-                Some(format!("{path}: {error}"))
-            }
-            _ => None,
-        };
-        if let Some(failure) = failure {
-            failures.push(failure);
-        }
         let mut present = false;
         if id.type_id() == std::any::TypeId::of::<Image>() {
             present = images
@@ -365,22 +351,16 @@ fn observe_environment(
         {
             // FontLoader only reads bytes. Require the renderer's font database
             // to have decoded/registered this exact asset, not a fallback font.
-            present = context
-                .collection
-                .family_by_name(&font.alias)
-                .is_some_and(|family| !family.fonts().is_empty());
+            present = unfolded_tabletop::loading::font_registered(font, context);
             if !present {
                 failures.push(format!("{path}: symbol font could not be decoded"));
             }
         }
-        let ready = present
-            && matches!(state, Some(LoadState::Loaded))
-            && matches!(dependencies, Some(RecursiveDependencyLoadState::Loaded));
-        if !ready {
-            pending.push(format!("{path}: asset or dependencies have not loaded"));
-        }
-        loaded &= ready;
-    }
+        present
+    });
+    let loaded = report.loaded;
+    let pending = report.pending;
+    failures.extend(report.failures);
     environment.loaded = loaded;
     if !pending.is_empty() {
         environment.pending_assets = crate::assets::bounded_failures(&pending);
