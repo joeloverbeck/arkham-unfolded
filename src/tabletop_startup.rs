@@ -66,6 +66,10 @@ impl Recovery {
         self.config.clone()
     }
 
+    pub(crate) fn complete_import(&self) -> Result<(), String> {
+        crate::assets::package::finish_admission(&self.root, &self.config)
+    }
+
     pub(crate) fn install(&self, app: &mut App, report: &CollectionReport) {
         let server = app.world().resource::<AssetServer>();
         let mut handles: Vec<UntypedHandle> = report
@@ -185,7 +189,7 @@ fn recover(
     let mut outcome = String::new();
     loop {
         let message = format!(
-            "{} cannot start play.\nArtwork folder: {}\n\nPrevious startup failure:\n{reason}\n\nChoose a complete prepared {} collection, or repair this folder and Retry. No game decision is committed while blocked.\n{outcome}",
+            "{} cannot start play.\nArtwork folder: {}\n\nPrevious startup failure:\n{reason}\n\nImport the required runtime ZIP, or choose a complete prepared {} collection and Retry. No game decision is committed while blocked.\n{outcome}",
             collection.name(),
             root.display(),
             collection.name()
@@ -199,12 +203,27 @@ fn recover(
             "--ok-label=Retry",
             "--cancel-label=Quit",
             "--extra-button=Choose asset folder",
+            "--extra-button=Import artwork",
             &format!("--text={message}"),
         ])
         .map_err(|error| format!("{message}\nCannot open startup recovery: {error}"))?;
         // Zenity extra buttons return their label and status 1; Quit/close return
         // status 1 without a label. Check the explicit choice before cancellation.
         if response
+            .stdout
+            .strip_suffix(b"\n")
+            .unwrap_or(&response.stdout)
+            == b"Import artwork"
+        {
+            match asset_settings::import_with_progress(config, dialog) {
+                Ok(Some(path)) => {
+                    *root = path;
+                    outcome = "Artwork imported. Retry checks image, font, model and rendering readiness. Previous artwork is retained until admission.".into();
+                }
+                Ok(None) => outcome = "Import canceled. Previous artwork is unchanged.".into(),
+                Err(error) => outcome = error,
+            }
+        } else if response
             .stdout
             .strip_suffix(b"\n")
             .unwrap_or(&response.stdout)

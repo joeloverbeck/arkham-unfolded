@@ -507,6 +507,7 @@ fn run_gathering() -> Result<(), String> {
         options.art_root.clone(),
         crate::tabletop_support::asset_settings::Collection::Gathering,
     )?;
+    let _artwork_use = crate::assets::package::acquire_play(&recovery.config(), recovery.root())?;
     let prepared = art::Prepared::new(recovery.root().to_owned())?;
     let mut app = App::new();
     let mut table = options.open_table()?;
@@ -545,6 +546,9 @@ fn run_gathering() -> Result<(), String> {
     recovery.install(&mut app, &collection);
     let navigation = app.world().resource::<Navigation>().clone();
     let exit = app.run();
+    // The window is closed. Recovery must be able to import a replacement after
+    // a decoder/rendering failure; it is no longer an active playing consumer.
+    drop(_artwork_use);
     if navigation
         .returning
         .load(std::sync::atomic::Ordering::Relaxed)
@@ -591,7 +595,13 @@ fn install(app: &mut App) {
         .add_systems(
             Update,
             (
-                (poll_settings, save_initial_decision, remember_attempt).chain(),
+                (
+                    poll_settings,
+                    complete_artwork_import,
+                    save_initial_decision,
+                    remember_attempt,
+                )
+                    .chain(),
                 advance_framework,
                 (pendulum::keyboard, handle_actions).chain(),
                 (consequences::advance, doom::advance).chain(),
@@ -615,6 +625,21 @@ fn install(app: &mut App) {
                 .chain(),
         )
         .add_systems(Last, request_redraw.in_set(RequestRedraw));
+}
+
+fn complete_artwork_import(
+    health: Res<RenderHealth>,
+    recovery: Option<Res<crate::tabletop_startup::Recovery>>,
+    mut table: ResMut<Table>,
+) {
+    if health.just_became_ready()
+        && let Some(recovery) = recovery
+        && let Err(error) = recovery.complete_import()
+    {
+        eprintln!("{error}");
+        table.notice = error;
+        table.dirty = true;
+    }
 }
 
 fn save_initial_decision(

@@ -8,6 +8,8 @@ const USAGE: &str = "\
 arkham-assets prepare-gathering --source PATH --reveal-icon PATH --ability-icon PATH --offering-icon PATH --chaos-pouch PATH --output PATH
 arkham-assets check-gathering PATH
 arkham-assets check-gathering-launch [--art-root PATH]
+arkham-assets package-gathering COLLECTION OUTPUT.zip
+arkham-assets import-gathering PACKAGE.zip
 
 Preparation copies only the selected assets into a fresh external directory.
 The reveal icon is the pinned Lorc Swap bag PNG; preparation never downloads it.
@@ -21,6 +23,33 @@ It writes no files and exits nonzero for an incomplete collection.";
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
+        Some("package-gathering") => {
+            let root = PathBuf::from(args.next().ok_or("Missing collection path")?);
+            let output = PathBuf::from(args.next().ok_or("Missing output ZIP path")?);
+            if args.next().is_some() {
+                return Err("Expected COLLECTION OUTPUT.zip".into());
+            }
+            println!(
+                "{}",
+                arkham_unfolded_experiment::assets::package::package_gathering(&root, &output)?
+            );
+            Ok(())
+        }
+        Some("import-gathering") => {
+            let path = PathBuf::from(args.next().ok_or("Missing ZIP path")?);
+            if args.next().is_some() {
+                return Err("Expected one ZIP path".into());
+            }
+            let mut config = AssetConfig::load_gathering()?;
+            let root =
+                arkham_unfolded_experiment::assets::package::import_gathering(&path, &mut config)?;
+            println!(
+                "Imported {} at {}. Normal rendering admission is still required; previous artwork is retained.",
+                arkham_unfolded_experiment::assets::package::required_collection(),
+                root.display()
+            );
+            Ok(())
+        }
         Some("prepare-gathering") => {
             let mut source = None;
             let mut output = None;

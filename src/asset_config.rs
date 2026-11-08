@@ -83,6 +83,20 @@ impl AssetConfig {
         &self.path
     }
 
+    /// Persistent app-owned installation area, independent of a saved external folder.
+    pub fn installation_directory(&self) -> PathBuf {
+        self.default_root.with_file_name("artwork")
+    }
+
+    pub(crate) fn ensure_unchanged(&self) -> Result<(), String> {
+        if read_existing(&self.path)? != self.original {
+            return Err(
+                "Artwork settings changed; restart before completing installation cleanup.".into(),
+            );
+        }
+        Ok(())
+    }
+
     pub fn warning(&self) -> Option<&str> {
         self.warning.as_deref()
     }

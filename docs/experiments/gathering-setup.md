@@ -751,14 +751,38 @@ native retest below does not verify the new artwork/menu path.
 
 ### Artwork preparation and selection
 
-Gathering has one installed collection at
-`$XDG_DATA_HOME/arkham-unfolded/gathering-assets`, normally
-`~/.local/share/arkham-unfolded/gathering-assets`. The normal launch command uses
-that stable location without `--art-root`. Collection version identifiers in the
-manifest describe the expected contents; they are not alternate artwork choices
-or a reason to change the installation path.
+Normal setup uses **Import artwork** from scenario selection or blocking startup
+recovery. Choose one complete runtime ZIP; the app installs and selects it under
+`$XDG_DATA_HOME/arkham-unfolded/artwork/`, normally
+`~/.local/share/arkham-unfolded/artwork/`. Later ordinary launches reuse it without
+`--art-root` or another folder selection. The required collection is
+`arkham-unfolded-gathering-v7`; code updates that retain that identity do not require
+another import. Imported files remain ordinary extracted runtime files.
 
-For a first installation from the original local archive, obtain the pinned
+For a local package from an already verified collection:
+
+```sh
+scripts/dev cargo run --locked --bin arkham-assets -- package-gathering \
+  /absolute/path/to/prepared-collection /absolute/path/to/new-gathering-v7.zip
+```
+
+The producer prints exact ZIP length and SHA-256, selects only required payloads
+and identity/attribution metadata, and refuses an existing output. It includes
+the unchanged exported pouch and embedded textures. Keep the ZIP outside Git;
+public hosting or redistribution needs separate authority. The archive's own
+checksum is an identity check, not publisher authentication.
+
+Import can be canceled from selection or its recovery progress window. Existing
+artwork and personal saves survive failure. Imports are refused while an attempt
+is open, including from another app process. Replacements retain the previous
+managed installation until normal image/font/model/material and renderer admission
+succeeds, then remove only its unchanged app-managed predecessor. External chosen
+folders and download ZIPs are retained. Insufficient space, stale settings,
+incompatible collections and malformed ZIPs explain the failure. Interrupted or
+unknown import directories remain unselected and are disclosed; importing again
+recovers a usable installation without deleting unknown remnants.
+
+For developer preparation from the original local archive, obtain the pinned
 [Lorc reveal icon](https://game-icons.net/icons/ffffff/transparent/1x1/lorc/swap-bag.png)
 as `/tmp/arkham-reveal-icon.png`, retain the supplied inner-spark package and
 the unchanged [Chalice drops icon](https://game-icons.net/icons/ffffff/transparent/1x1/lorc/chalice-drops.png)
@@ -795,16 +819,14 @@ destination is reusable, while conflicting or incomplete output is refused.
 Runtime loads only verified files from the prepared collection. Copy its whole
 folder, including `manifest.json`, to relocate it; ordinary play needs no archive.
 
-For an update, prepare and verify a fresh sibling staging folder while the
-installed collection remains intact. Close the app, replace the installed
-directory only after the staging check succeeds, and verify the installed path
-again before deleting the previous prepared copy. If installation or verification
-fails, restore the previous directory. Keep the stable path and normal launch
-command unchanged. Only remove known prepared copies whose contents have been
-accounted for; the source archive, personal saves, settings and retained research
-evidence are separate. This installation step belongs to an artwork change's
-handoff: rebuilding the executable alone does not update its external files.
-Staging folders are temporary and must not become normal launch targets.
+For an update, prepare and verify a fresh staging folder, package it, then import
+the ZIP outside play. The importer owns persistent installation and activation;
+development staging folders must not become ordinary launch targets. Rebuilding
+the executable alone does not install external artwork. The one-time original-copy
+consolidation in [#140](https://github.com/joeloverbeck/arkham-unfolded/issues/140)
+requires its exact inventory, a dated Documents backup, a full fresh restore and
+ordinary managed admission before separately authorized deletion. Source/authoring
+inputs, personal saves, settings and enclosing evidence directories are excluded.
 
 Before handing off an artwork change, check the collection selected by the actual
 launch configuration, under the same user, working directory and HOME/XDG environment:
@@ -823,14 +845,14 @@ An incomplete collection exits nonzero; the removed `--no-art` option is rejecte
 `--art-root PATH` selects a folder for that launch. **Choose asset folder** validates and saves
 the preference; startup recovery uses it immediately with **Retry**. It is stored in `$XDG_CONFIG_HOME/arkham-unfolded/gathering.toml`
 (normally `~/.config/arkham-unfolded/gathering.toml`). Without an override or saved
-preference, Gathering uses the stable installation above. Remove obsolete
+preference, Gathering retains its legacy `gathering-assets` default. Remove obsolete
 `--art-root` arguments from saved launch commands. An explicit saved choice still
 takes precedence; it is not silently rewritten. Other experiments' settings and
 distinct finite content selections remain separate. With a custom `XDG_DATA_HOME`,
 install in that data directory or explicitly select the installed folder.
-Startup reports the chosen folder and verified coverage. Absent, corrupt or undecodable required roles block play and offer **Choose asset folder**, **Retry** and **Quit**. A valid recovery selection applies to this startup; in-game selection still applies on restart.
+Startup reports the chosen folder and verified coverage. Absent, corrupt or undecodable required roles block play and offer **Import artwork**, **Choose asset folder**, **Retry** and **Quit**. A valid recovery import or selection applies to this startup; in-game folder selection still applies on restart. The equivalent engineering import is `arkham-assets import-gathering /absolute/path/to/package.zip`; it uses the same verification and persistence path and does not bypass native admission.
 
-On 2026-11-05 Joel confirmed that the compact enemy board looked good, then found
+Historical installation evidence: on 2026-11-05 Joel confirmed that the compact enemy board looked good, then found
 missing bounty art when launching the old cache collection. Direct inspection
 found 140/143 roles there and all 143 in the newer prepared collection. He
 authorized consolidation into one installed collection and cleanup of the two

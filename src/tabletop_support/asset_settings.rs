@@ -13,6 +13,8 @@ pub(crate) struct AssetSettings {
     config: AssetConfig,
     collection: Collection,
     pending: Option<Mutex<mpsc::Receiver<SelectionResult>>>,
+    cancellation: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    imported: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy)]
@@ -36,6 +38,7 @@ impl Collection {
 struct SelectionResult {
     config: AssetConfig,
     message: String,
+    imported: Option<PathBuf>,
 }
 
 /// Keeps a simulated external operation connected until the test releases it.
@@ -50,6 +53,8 @@ impl AssetSettings {
             config,
             collection: Collection::Gathering,
             pending: None,
+            cancellation: None,
+            imported: None,
         }
     }
 
@@ -62,6 +67,50 @@ impl AssetSettings {
 
     pub(crate) fn is_busy(&self) -> bool {
         self.pending.is_some()
+    }
+
+    pub(crate) fn take_imported_root(&mut self) -> Option<PathBuf> {
+        self.imported.take()
+    }
+
+    pub(crate) fn status(&self) -> String {
+        assets::package::installation_status(&self.config)
+    }
+
+    pub(crate) fn import(&mut self) {
+        if self.is_busy() {
+            return;
+        }
+        let mut config = self.config.clone();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.cancellation = Some(cancel.clone());
+        let (sender, receiver) = mpsc::channel();
+        self.pending = Some(Mutex::new(receiver));
+        std::thread::spawn(move || {
+            let mut imported = None;
+            let message = match import_with_dialog(&mut config, &mut zenity, &cancel) {
+                Ok(Some(path)) => {
+                    imported = Some(path);
+                    format!(
+                        "{} imported. Artwork loading will be checked before play. Previous artwork is retained until admission.",
+                        assets::package::required_collection()
+                    )
+                }
+                Ok(None) => "Artwork selection canceled. Your installation is unchanged.".into(),
+                Err(error) => error,
+            };
+            let _ = sender.send(SelectionResult {
+                config,
+                message,
+                imported,
+            });
+        });
+    }
+
+    pub(crate) fn cancel_import(&self) {
+        if let Some(cancel) = &self.cancellation {
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     /// Hold the external folder-selection seam without opening a desktop dialog.
@@ -90,7 +139,11 @@ impl AssetSettings {
                 Ok(None) => "Asset folder selection canceled. Your setting is unchanged.".into(),
                 Err(error) => format!("Asset folder was not saved: {error}"),
             };
-            let _ = sender.send(SelectionResult { config, message });
+            let _ = sender.send(SelectionResult {
+                config,
+                message,
+                imported: None,
+            });
         });
     }
 
@@ -99,16 +152,85 @@ impl AssetSettings {
         match result {
             Ok(result) => {
                 self.pending = None;
+                self.cancellation = None;
                 self.config = result.config;
+                self.imported = result.imported;
                 Some(result.message)
             }
             Err(mpsc::TryRecvError::Empty) => None,
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.pending = None;
+                self.cancellation = None;
                 Some("Asset folder selection stopped before completion. Check the saved setting before retrying.".into())
             }
         }
     }
+}
+
+pub(crate) fn import_with_dialog(
+    config: &mut AssetConfig,
+    dialog: &mut impl FnMut(&[&str]) -> Result<Output, String>,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Option<PathBuf>, String> {
+    let Some(path) = choose_package(dialog)? else {
+        return Ok(None);
+    };
+    assets::package::import_gathering_cancellable(&path, config, cancel).map(Some)
+}
+
+fn choose_package(
+    dialog: &mut impl FnMut(&[&str]) -> Result<Output, String>,
+) -> Result<Option<PathBuf>, String> {
+    let output = dialog(&[
+        "--file-selection",
+        "--title=Arkham Unfolded — Import artwork",
+        "--file-filter=Runtime artwork | *.zip",
+    ])?;
+    if canceled(&output)? {
+        return Ok(None);
+    }
+    let selection =
+        String::from_utf8(output.stdout).map_err(|_| "The chosen path is not valid UTF-8 text.")?;
+    let path = PathBuf::from(selection.strip_suffix('\n').unwrap_or(&selection));
+    Ok(Some(path))
+}
+
+/// Recovery has no Bevy event loop. Keep its import cancellable using a native
+/// progress window, and reap that window and finish the worker before Retry.
+pub(crate) fn import_with_progress(
+    config: &mut AssetConfig,
+    dialog: &mut impl FnMut(&[&str]) -> Result<Output, String>,
+) -> Result<Option<PathBuf>, String> {
+    let Some(path) = choose_package(dialog)? else {
+        return Ok(None);
+    };
+    let mut progress = Command::new("zenity")
+        .args([
+            "--progress",
+            "--pulsate",
+            "--title=Arkham Unfolded — Importing artwork",
+            "--text=Verifying artwork. Cancel preserves your previous installation.",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Could not open import progress: {e}"))?;
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let result = std::thread::scope(|scope| {
+        let worker =
+            scope.spawn(|| assets::package::import_gathering_cancellable(&path, config, &cancel));
+        while !worker.is_finished() {
+            if !matches!(progress.try_wait(), Ok(None)) {
+                cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        worker.join().unwrap_or_else(|_| Err("Artwork import stopped unexpectedly. Previous artwork is retained; restart to inspect the saved selection.".into()))
+    });
+    let _ = progress.kill();
+    let _ = progress.wait();
+    result.map(Some)
 }
 
 #[cfg(test)]
