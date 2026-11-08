@@ -134,7 +134,7 @@ fn zero_doom_keeps_the_altar_and_reduced_motion_uses_the_same_committed_result()
             .iter(world)
             .any(|counter| counter.kind == CounterKind::Doom)
     );
-    assert!(rendered_text(&mut app).contains("Agenda doom: 0"));
+    assert!(!rendered_text(&mut app).contains("Agenda doom:"));
     assert!(rendered_text(&mut app).contains("Total doom: 0/3"));
     let world = app.world_mut();
     let readouts: Vec<_> = world
@@ -148,11 +148,7 @@ fn zero_doom_keeps_the_altar_and_reduced_motion_uses_the_same_committed_result()
         })
         .map(|(entity, name, transform)| (entity, name.to_string(), *transform))
         .collect();
-    assert_eq!(
-        readouts.len(),
-        2,
-        "Both readouts must be printed on the mat"
-    );
+    assert_eq!(readouts.len(), 1, "Only total doom is printed on the mat");
     for (entity, _, at) in &readouts {
         assert_eq!(
             at.translation.x, 0.,

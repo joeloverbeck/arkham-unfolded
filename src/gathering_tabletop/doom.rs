@@ -269,14 +269,15 @@ pub(super) fn render(
     }
 }
 
-/// Mat lettering follows the same physical-arrival counts as the solid tokens.
-pub(super) fn readouts(context: &CardRender) -> Option<[String; 2]> {
+/// The mat total follows the same physical-arrival counts as the solid tokens.
+pub(super) fn readout(context: &CardRender) -> Option<String> {
     let play = context.view.play.as_ref()?;
     let state = &context.consequences.doom;
-    Some([
-        format!("Total doom: {}/{}", state.total(play), threshold(play)),
-        format!("Agenda doom: {}", state.agenda(play.agenda_doom)),
-    ])
+    Some(format!(
+        "Total doom: {}/{}",
+        state.total(play),
+        threshold(play)
+    ))
 }
 
 #[derive(Component)]

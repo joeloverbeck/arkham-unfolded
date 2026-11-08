@@ -495,6 +495,63 @@ fn open_reading_checkpoint(session: &Session, code: &str) -> (tempfile::TempDir,
 }
 
 #[test]
+fn encounter_drawer_closes_when_its_only_card_moves_to_test() {
+    let point = review_saves::draw_review::encounter_checkpoint(77).unwrap();
+    for reduced in [false, true] {
+        let (_directory, mut app) = open_reading_checkpoint(&point.session, "01163");
+        app.world_mut().resource_mut::<Table>().reduced_motion = reduced;
+        let card = app
+            .world()
+            .resource::<Table>()
+            .presentation
+            .encounter()
+            .current()
+            .unwrap()
+            .card
+            .id;
+        let world = app.world_mut();
+        assert!(
+            world
+                .query::<(&Name, &Visibility)>()
+                .iter(world)
+                .any(|(name, visibility)| name.as_str() == "Resolution tray"
+                    && *visibility != Visibility::Hidden),
+            "The encounter arrives in its open drawer before reading"
+        );
+
+        continue_reading(&mut app);
+        settle_automatic_resolution(&mut app);
+        let committed = app.world().resource::<Table>().session.clone();
+        let (_reopened_directory, mut reopened) = review_saves::open_review_save(&committed);
+        for current in [&mut app, &mut reopened] {
+            assert_eq!(current.world().resource::<Table>().session, committed);
+            assert!(
+                draws::physical(current, card)
+                    .translation
+                    .abs_diff_eq(layout::test_source(), 0.001)
+            );
+            assert_eq!(
+                (
+                    button_with_label(current, "Resolve").is_some(),
+                    rendered_text(current).contains("Resolving"),
+                ),
+                (false, false),
+                "An empty drawer must leave neither its navigation shortcut nor its caption"
+            );
+            let world = current.world_mut();
+            assert!(
+                world
+                    .query::<(&Name, &Visibility)>()
+                    .iter(world)
+                    .filter(|(name, _)| name.as_str() == "Resolution tray")
+                    .all(|(_, visibility)| *visibility == Visibility::Hidden),
+                "The empty investigator drawer must hide once Rotting Remains reaches Test"
+            );
+        }
+    }
+}
+
+#[test]
 fn ordinary_encounter_review_saves_preserve_reading_reactions_tests_doom_and_engagement() {
     for (_, session, code) in review_points() {
         let (_directory, mut app) = open_reading_checkpoint(&session, code);

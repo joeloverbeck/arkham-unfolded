@@ -218,6 +218,21 @@ fn searched_cards_travel_from_and_back_to_the_deck_before_the_drawer_closes() {
         "A disclosed search card starts at its deck: {start:?}"
     );
     assert!((start.rotation * Vec3::Y).y < -0.99);
+    tick(&mut app, 0.4);
+    assert!(
+        physical(&mut app, searched[0].id).translation.z < 30.,
+        "The searched card is still travelling to its drawer"
+    );
+    let world = app.world_mut();
+    assert!(
+        world
+            .query::<(&Name, &Transform, &Visibility)>()
+            .iter(world)
+            .any(|(name, at, visible)| name.as_str() == "Resolution tray"
+                && at.translation.z > 30.
+                && *visible != Visibility::Hidden),
+        "The drawer must open before the incoming search cards arrive"
+    );
     finish_presentation(&mut app);
     assert!(physical(&mut app, searched[0].id).translation.z > 30.);
     activate_choice(&mut app, "search:no-match");
@@ -344,6 +359,15 @@ fn a_revelation_keeps_its_tray_while_its_cancellation_test_uses_test() {
     finish_presentation(&mut app);
     tick(&mut app, 0.5);
     assert_eq!(card_at(&mut app, revelation), at);
+    let world = app.world_mut();
+    assert!(
+        world
+            .query::<(&Name, &Visibility)>()
+            .iter(world)
+            .any(|(name, visible)| name.as_str() == "Resolution tray"
+                && *visible != Visibility::Hidden),
+        "The parent revelation still needs its drawer during the cancellation test"
+    );
     let during = app.world().resource::<Table>().session.observe();
     let source = during
         .play

@@ -375,7 +375,12 @@ A temporary Resolve shortcut frames the tray. Opening it does not force a camera
 jump; optional Follow may frame it. Save/reopen reconstructs pending resolution
 without repeating effects; reduced motion settles immediately. Retract the tray
 after its contents reach their destinations and no resident/resolving component
-needs it. Exact dimensions and motion must support readable interaction.
+needs it. A pending effect's investigator association alone does not keep an empty
+drawer open: when its only card moves to Test, retract it after that transfer.
+Its Resolving caption and Resolve shortcut disappear with that empty content.
+Open it again for incoming content before arrival; retain any other resident
+cards or tokens, including through nested tests. Exact dimensions and motion must
+support readable interaction.
 
 Premonition and its sealed token/group remain together in the controller's open
 drawer until consumed; later temporary effects use space alongside them. Tokens
@@ -422,10 +427,11 @@ selection and inspection in Scenario focus and representative oblique views.
 Exact dimensions remain native-tuning choices; the altar is presentation for
 agenda doom, not a game zone or new gameplay action.
 
-Print both doom readouts on the mat beneath the altar, centered on its axis and
-fixed in the Scenario mat's orientation. Give **Total doom: N/threshold** the
-stronger warm-ivory line and **Agenda doom: N** a smaller muted-brass line, using
-the existing readable font. Total doom remains selectable for its breakdown.
+Print **Total doom: N/threshold** on the mat beneath the altar, centered on its
+axis and fixed in the Scenario mat's orientation, in warm ivory using the existing
+readable font. It remains selectable for its breakdown. The altar's counted token
+already shows agenda doom; omit the duplicate Agenda doom line, including at zero
+when the altar is empty.
 Preserve readability and clearance in normal and oblique Scenario views, including
 populated encounter piles, Agenda/Act cards and Map controls.
 

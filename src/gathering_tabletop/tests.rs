@@ -1494,7 +1494,7 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
     app.update();
     let text = rendered_text(&mut app);
     assert!(text.contains(&format!("Agenda {}", play.agenda)));
-    assert!(text.contains("Agenda doom") && text.contains("Total doom"));
+    assert!(text.contains("Total doom"));
     assert!(text.contains(&format!("Act {}", play.act)));
     for enemy in &play.scenario.enemies {
         assert!(text.contains(&enemy.card.title));
