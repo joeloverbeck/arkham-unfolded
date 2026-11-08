@@ -268,9 +268,15 @@ enum Route {
     Sources(Vec<Source>),
     Global,
     Pending,
+    Hidden,
 }
 
 fn route(view: &Observation, id: &str) -> Route {
+    if id.starts_with("test-card:number:") {
+        // Retain the old commands for journal reconstruction only. The native
+        // picker owns every number entry, including reopened old predictions.
+        return Route::Hidden;
+    }
     let id = id
         .strip_prefix("action:ordinary:")
         .or_else(|| id.strip_prefix("action:tony:"))
@@ -750,7 +756,22 @@ pub(super) fn automatic_choice(view: &Observation) -> Option<&str> {
             | "enemy:attacks-complete"
             | "enemy:attack-complete"
             | "enemy:end"
+            | "upkeep:ready"
+            | "upkeep:draw"
+            | "upkeep:draws-complete"
+            | "upkeep:patrice-refill"
+            | "upkeep:resources"
+            | "upkeep:next-hand"
+            | "upkeep:hand-limits-complete"
+            | "round:end"
+            | "mythos:begin"
+            | "mythos:encounters"
+            | "mythos:draw"
+            | "mythos:draws-complete"
+            | "investigation:begin"
+            | "revelation:resolve"
             | "phase-window:pass"
+            | "test-card:pass"
             | "search:finish-event"
             | "search:finish"
     )
@@ -929,6 +950,14 @@ fn result_decline(choice: &Choice) -> bool {
 // observations. Their existing "(copy N)" annotations are unnecessary on screen.
 fn display_choice(view: &Observation, choice: &Choice) -> Choice {
     let mut shown = choice.clone();
+    if choice.id == "test-card:pass" {
+        shown.label = "Skip remaining reactions".into();
+        return shown;
+    }
+    if choice.id.starts_with("test-card:pendulum:") {
+        shown.label = "Exhaust Crystal Pendulum".into();
+        return shown;
+    }
     if let Some(label) = view
         .play
         .as_ref()

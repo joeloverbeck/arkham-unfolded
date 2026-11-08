@@ -12,6 +12,7 @@ pub(super) struct Presentation {
     map: map_motion::Playback,
     story: story::Reading,
     results: results::Reading,
+    announcement: Option<phase_banner::Announcement>,
 }
 
 /// One coherent scene input, including the transfers acknowledged by this render.
@@ -41,6 +42,7 @@ impl Presentation {
             map: map_motion::Playback::default(),
             story: story::Reading::for_session(session),
             results: results::Reading::for_session(session),
+            announcement: None,
         }
     }
 
@@ -60,7 +62,16 @@ impl Presentation {
     }
 
     pub(super) fn active(&self) -> bool {
-        self.drawing() || self.map.active() || self.index < self.moments.len()
+        self.announcement.is_some()
+            || self.drawing()
+            || self.map.active()
+            || self.index < self.moments.len()
+    }
+
+    pub(super) fn announcement(&self) -> Option<&phase_banner::Announcement> {
+        self.announcement
+            .as_ref()
+            .filter(|announcement| !announcement.after_setup_draws || !self.drawing())
     }
 
     pub(super) fn drawing(&self) -> bool {
@@ -109,6 +120,9 @@ impl Presentation {
         self.clock = 0.;
         self.draw_cues = draws;
         self.start_transitions(session, before, reduced_motion);
+        if choice == "undo" {
+            self.announcement = None;
+        }
     }
 
     /// In-place reopen differs from fresh open: retain the exact ongoing reading
@@ -122,10 +136,11 @@ impl Presentation {
     fn start_transitions(&mut self, session: &Session, before: &Observation, reduced_motion: bool) {
         self.draws.clear();
         self.map.clear();
+        let target = self.base_view(session);
+        self.announcement = phase_banner::Announcement::between(before, &target);
         if reduced_motion {
             return;
         }
-        let target = self.base_view(session);
         self.map = map_motion::Playback::new(before, &target);
         let sequence = self.moments.get(self.index).map(|moment| moment.sequence);
         let batches = self
@@ -139,22 +154,26 @@ impl Presentation {
 
     /// Called only when the adapter is rebuilding the actual scene. Its view is
     /// also retained by the adapter as evidence for subsequent advancement.
-    pub(super) fn prepare(&mut self, session: &Session) -> Frame {
+    pub(super) fn prepare(&mut self, session: &Session, doom_moving: bool) -> Frame {
         let transfers = self.draws.take_transfers();
         let view = self.view(session);
         if !self.drawing() {
             self.map.rendered();
         }
-        self.results.synchronize(&view);
+        if self.announcement().is_none() && !doom_moving {
+            self.results.synchronize(&view);
+        }
         let story = if let Some(moment) = self.moments.get(self.index) {
             story::Faces::from_codes(moment.revealed_story.iter().map(String::as_str))
         } else {
             story::Faces::from_codes(session.live_state().known_story.iter().map(String::as_str))
         };
-        if view.revision == 0 {
-            self.story = story::Reading::at(story.clone());
-        } else {
-            self.story.synchronize(&story);
+        if self.announcement().is_none() && !doom_moving {
+            if view.revision == 0 {
+                self.story = story::Reading::at(story.clone());
+            } else {
+                self.story.synchronize(&story);
+            }
         }
         Frame {
             view,
@@ -180,6 +199,18 @@ impl Presentation {
         }
         let view = self.view(session);
         if last_rendered != Some(&view) {
+            return Progress::Waiting;
+        }
+        if self.announcement().is_some() {
+            if self
+                .announcement
+                .as_mut()
+                .expect("Visible announcement")
+                .advance(delta)
+            {
+                self.announcement = None;
+                return Progress::Moment;
+            }
             return Progress::Waiting;
         }
         if self.drawing() {

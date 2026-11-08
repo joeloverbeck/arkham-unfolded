@@ -144,8 +144,11 @@ pub fn gathering_image_roles() -> impl Iterator<Item = &'static str> {
 
 // Exact earlier selections remain useful without claiming newly selected artwork.
 fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
-    if selection.collection == "arkham-unfolded-gathering-v5" {
+    if selection.collection == "arkham-unfolded-gathering-v6" {
         let mut previous = selection.manifest();
+        previous.collection = "arkham-unfolded-gathering-v5".into();
+        previous.assets.retain(|asset| asset.role != "token/doom");
+        let v5 = previous.clone();
         previous.collection = "arkham-unfolded-gathering-v4".into();
         previous
             .assets
@@ -166,7 +169,7 @@ fn previous_manifests(selection: &Selection) -> Vec<Manifest> {
                 "token/ammo" | "token/bounty" | "token/charge"
             )
         });
-        return vec![v2, previous, v3, v4];
+        return vec![v2, previous, v3, v4, v5];
     }
     Vec::new()
 }
@@ -698,6 +701,7 @@ mod tests {
             "standee/06005",
             "standee/60401",
             "token/curse",
+            "token/doom",
             "token/clue",
             "token/resource",
             "token/damage",
@@ -1008,8 +1012,39 @@ mod tests {
     }
 
     #[test]
+    fn gathering_refuses_missing_or_changed_doom_without_replacing_verified_art() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let output = directory.path().join("assets");
+        let selected = gathering_fixture(&source);
+        prepare_selection(&source, &output, &selected).unwrap();
+        let manifest = fs::read(output.join(MANIFEST)).unwrap();
+        let path = output.join("tokens/doom.png");
+        for changed in [false, true] {
+            if changed {
+                fs::write(&path, b"changed doom").unwrap();
+            } else {
+                fs::remove_file(&path).unwrap();
+            }
+            let report = inspect_selection(&output, &selected);
+            assert!(report.recognized && !report.complete);
+            assert_eq!(report.valid_count(), selected.assets.len() - 1);
+            assert!(report.verified_path("token/doom").is_none());
+            assert!(report.verified_path("token/clue").is_some());
+            assert!(report.verified_path("card-06003").is_some());
+            assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), manifest);
+        }
+    }
+
+    #[test]
     fn gathering_previous_collections_keep_verified_art_without_claiming_the_key() {
-        for (version, expected) in [("v1", 140), ("v2", 143), ("v3", 144), ("v4", 145)] {
+        for (version, expected) in [
+            ("v1", 140),
+            ("v2", 143),
+            ("v3", 144),
+            ("v4", 145),
+            ("v5", 146),
+        ] {
             let directory = tempfile::tempdir().unwrap();
             let source = directory.path().join("source");
             let output = directory.path().join("assets");
@@ -1018,9 +1053,11 @@ mod tests {
             let mut earlier = recipe_fixture(&source, recipe);
             earlier.collection = format!("arkham-unfolded-gathering-{version}");
             earlier.assets.retain(|asset| {
-                asset.role != "token/offering"
-                    && (version == "v4" || asset.role != "token/investigator-ability")
-                    && (matches!(version, "v3" | "v4") || asset.role != "token/key")
+                asset.role != "token/doom"
+                    && (version == "v5" || asset.role != "token/offering")
+                    && (matches!(version, "v4" | "v5")
+                        || asset.role != "token/investigator-ability")
+                    && (matches!(version, "v3" | "v4" | "v5") || asset.role != "token/key")
                     && (version != "v1"
                         || !matches!(
                             asset.role.as_str(),
@@ -1033,18 +1070,22 @@ mod tests {
             assert!(report.recognized && !report.complete);
             assert_eq!(
                 (report.valid_count(), report.expected_count()),
-                (expected, 146)
+                (expected, 147)
             );
             assert!(report.verified_path("card-60507").is_some());
             assert_eq!(
                 report.verified_path("token/key").is_some(),
-                matches!(version, "v3" | "v4")
+                matches!(version, "v3" | "v4" | "v5")
             );
             assert_eq!(
                 report.verified_path("token/investigator-ability").is_some(),
-                version == "v4"
+                matches!(version, "v4" | "v5")
             );
-            assert!(report.verified_path("token/offering").is_none());
+            assert_eq!(
+                report.verified_path("token/offering").is_some(),
+                version == "v5"
+            );
+            assert!(report.verified_path("token/doom").is_none());
             assert!(prepare_selection(&source, &output, &selected).is_err());
             assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), manifest);
         }
@@ -1351,7 +1392,7 @@ mod tests {
         fs::remove_file(output.join("fonts/arkham-symbols.ttf")).unwrap();
         let report = inspect_selection(&output, &selected);
         assert!(report.recognized && !report.complete);
-        assert_eq!((report.valid_count(), report.expected_count()), (143, 146));
+        assert_eq!((report.valid_count(), report.expected_count()), (144, 147));
         assert!(report.verified_path("token/damage").is_none());
         assert!(report.verified_path("token/horror").is_none());
         assert!(report.verified_path("font/symbols").is_none());
@@ -1376,8 +1417,8 @@ mod tests {
             }
             let report = inspect_selection(&output, &selected);
             assert!(report.recognized && !report.complete);
-            assert_eq!(report.valid_count(), 145);
-            assert_eq!(report.expected_count(), 146);
+            assert_eq!(report.valid_count(), 146);
+            assert_eq!(report.expected_count(), 147);
             assert!(report.verified_path("card-06003").is_some());
             assert!(report.verified_path("card-back/player").is_none());
         }
@@ -1389,6 +1430,7 @@ mod tests {
             "charge-motif.png",
             "investigator-ability.png",
             "offering.png",
+            "doom.png",
         ] {
             fs::remove_file(output.join("tokens").join(later)).unwrap();
         }
@@ -1396,7 +1438,7 @@ mod tests {
         fs::write(output.join(MANIFEST), &previous).unwrap();
         let report = inspect_selection(&output, &selected);
         assert!(report.recognized && !report.complete);
-        assert_eq!((report.valid_count(), report.expected_count()), (139, 146));
+        assert_eq!((report.valid_count(), report.expected_count()), (139, 147));
         assert!(prepare_selection(&source, &output, &selected).is_err());
         assert_eq!(fs::read(output.join(MANIFEST)).unwrap(), previous);
 
@@ -1421,7 +1463,7 @@ mod tests {
             let mut redirected = original.clone();
             redirected["assets"][0]["path"] = serde_json::json!("../../other.png");
             let mut renamed = original;
-            renamed["collection"] = serde_json::json!("arkham-unfolded-gathering-v5");
+            renamed["collection"] = serde_json::json!("arkham-unfolded-gathering-v6");
             for manifest in [missing, altered, redirected, renamed] {
                 fs::write(
                     directory.path().join(MANIFEST),

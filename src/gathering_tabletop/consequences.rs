@@ -22,6 +22,7 @@ struct Departure {
 
 #[derive(Resource, Default)]
 pub(super) struct State {
+    pub(super) doom: doom::State,
     clue: Option<Clue>,
     pending_test: Option<(TestView, usize)>,
     departures: Vec<Departure>,
@@ -31,10 +32,14 @@ pub(super) struct State {
 
 impl State {
     pub(super) fn active(&self) -> bool {
-        self.clue.is_some() || !self.departures.is_empty() || self.returning > 0
+        self.doom.active()
+            || self.clue.is_some()
+            || !self.departures.is_empty()
+            || self.returning > 0
     }
 
     pub(super) fn clear(&mut self) {
+        self.doom.clear();
         self.clue = None;
         self.pending_test = None;
         self.departures.clear();
@@ -75,6 +80,7 @@ impl State {
         let Some(before_play) = before.play.as_ref() else {
             return;
         };
+        self.doom.prepare(before_play, after_play);
         if let Some(test) = before_play.test.as_ref().filter(|test| test.resolved) {
             self.pending_test = Some((test.clone(), before_play.completed_tests.len()));
         }

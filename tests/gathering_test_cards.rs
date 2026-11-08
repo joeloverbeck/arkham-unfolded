@@ -310,6 +310,225 @@ fn reach_reveal(session: &mut Session) {
 }
 
 #[test]
+fn direct_pendulum_prediction_is_atomic_unbounded_and_undoable() {
+    for number in [0u16, 3, 12, u16::MAX] {
+        let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(
+            TestCardFixture::CrystalPrediction,
+        ));
+        let before = session.clone();
+        let crystal = session.observe().play.unwrap().players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.code == "60411")
+            .unwrap()
+            .card
+            .id;
+        let revision = session.observe().revision;
+        let id = format!("test-card:predict:{crystal}:{number}");
+        session.choose(revision, &id).unwrap();
+        let named = session.clone();
+        assert_eq!(session.observe().revision, revision + 1);
+        assert!(
+            !session
+                .observe()
+                .choices
+                .iter()
+                .any(|choice| choice.id == "test-card:pass")
+        );
+        assert!(
+            !session.observe().play.unwrap().players[2]
+                .assets
+                .iter()
+                .find(|asset| asset.card.id == crystal)
+                .unwrap()
+                .ready
+        );
+        assert!(
+            session.choose(revision, &id).is_err(),
+            "Stale double activation"
+        );
+        assert!(
+            session.choose(session.observe().revision, &id).is_err(),
+            "Already exhausted"
+        );
+        assert_eq!(session, named);
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("direct.json");
+        continuity::save_session(&path, &session).unwrap();
+        assert_eq!(continuity::load_session(&path).unwrap(), session);
+        choose(&mut session, "undo");
+        assert_eq!(session.observe().play, before.observe().play);
+        session.validate().unwrap();
+    }
+}
+
+#[test]
+fn direct_prediction_preserves_another_reaction_and_the_following_commitment_window() {
+    let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(
+        TestCardFixture::CrystalWithGregory,
+    ));
+    let prompt = session.pendulum_prompts().pop().unwrap();
+    session
+        .choose(
+            session.observe().revision,
+            &format!("test-card:predict:{}:3", prompt.asset),
+        )
+        .unwrap();
+    let view = session.observe();
+    assert!(
+        view.choices
+            .iter()
+            .any(|choice| choice.id.starts_with("tony:gregory:"))
+    );
+    let with_reaction = session.clone();
+    assert!(session.choose(view.revision, "test-card:continue").is_err());
+    assert_eq!(session, with_reaction);
+    assert!(
+        view.choices
+            .iter()
+            .any(|choice| choice.id == "test-card:pass")
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("reaction.json");
+    continuity::save_session(&path, &session).unwrap();
+    session = continuity::load_session(path).unwrap();
+    let wager = session
+        .observe()
+        .choices
+        .into_iter()
+        .find(|choice| choice.id.starts_with("tony:gregory:"))
+        .unwrap()
+        .id;
+    choose(&mut session, &wager);
+    if session
+        .observe()
+        .choices
+        .iter()
+        .any(|choice| choice.id == "test-card:pass")
+    {
+        choose(&mut session, "test-card:pass");
+    }
+    if session
+        .observe()
+        .choices
+        .iter()
+        .any(|choice| choice.id == "window:pass")
+    {
+        choose(&mut session, "window:pass");
+    }
+    assert!(
+        session
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == "commit:confirm")
+    );
+    session.validate().unwrap();
+}
+
+#[test]
+fn pendulum_matches_source_derived_twelve_and_special_failure_margins_through_saved_choices() {
+    for (case, number, total, difficulty, success, failed_by) in [
+        (TestCardFixture::CrystalReadSigns, 12, 14, 2, true, 0),
+        (TestCardFixture::CrystalFloor, 3, 0, 3, false, 3),
+        (TestCardFixture::CrystalAutoFail, 3, 0, 3, false, 3),
+        (TestCardFixture::CrystalAutoFailZero, 0, 0, 0, false, 0),
+        (TestCardFixture::CrystalVisionTie, 0, 2, 2, false, 0),
+    ] {
+        let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(case));
+        let before = session.observe().play.unwrap();
+        let crystal = before.players[2]
+            .assets
+            .iter()
+            .find(|asset| asset.card.code == "60411")
+            .unwrap()
+            .card
+            .id;
+        if case == TestCardFixture::CrystalReadSigns {
+            let signs = before.players[2]
+                .hand
+                .iter()
+                .find(|card| card.code == "06117")
+                .unwrap()
+                .id;
+            choose(
+                &mut session,
+                &format!("action:ordinary:play:tony:{signs}:06117"),
+            );
+        }
+        session
+            .choose(
+                session.observe().revision,
+                &format!("test-card:predict:{crystal}:{number}"),
+            )
+            .unwrap();
+        if session
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == "window:pass")
+        {
+            choose(&mut session, "window:pass");
+        }
+        if case == TestCardFixture::CrystalReadSigns {
+            let promise = before.players[1]
+                .hand
+                .iter()
+                .find(|card| card.code == "07032")
+                .unwrap()
+                .id;
+            choose(&mut session, &format!("commit:{promise}"));
+        }
+        reach_reveal(&mut session);
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("prediction-witness.json");
+        continuity::save_session(&path, &session).unwrap();
+        session = continuity::load_session(&path).unwrap();
+        choose(&mut session, "test:reveal");
+        for _ in 0..20 {
+            let view = session.observe();
+            if view.play.as_ref().unwrap().completed_tests.len() > before.completed_tests.len() {
+                break;
+            }
+            let next = view
+                .choices
+                .iter()
+                .find(|choice| choice.id == "lucky:decline")
+                .or_else(|| {
+                    view.choices
+                        .iter()
+                        .find(|choice| choice.id.starts_with("result:"))
+                })
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{case:?}: unexpected remaining result choice {:?}",
+                        view.choices
+                    )
+                });
+            choose(&mut session, &next.id);
+        }
+        let play = session.observe().play.unwrap();
+        let result = play.completed_tests.last().expect("Actual test completes");
+        assert_eq!(
+            (
+                result.total,
+                result.difficulty,
+                result.success,
+                result.failure_margin
+            ),
+            (total, difficulty, success, failed_by),
+            "{case:?}"
+        );
+        assert_eq!(
+            play.players[2].deck_count,
+            before.players[2].deck_count - 1,
+            "Exactly the matching prediction draws: {case:?}"
+        );
+        session.validate().unwrap();
+    }
+}
+
+#[test]
 fn crystal_prediction_is_saved_before_reveal_and_only_the_exact_margin_draws() {
     for number in [2, 3] {
         let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(

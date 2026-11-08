@@ -56,7 +56,7 @@ mod test_boosts;
 mod test_cards;
 mod test_report;
 pub use test_boosts::BoostFixture;
-pub use test_cards::TestCardFixture;
+pub use test_cards::{PendulumPrompt, TestCardFixture};
 pub use test_report::{Contribution, TestBreakdown, TokenContribution};
 
 pub use runtime::{
@@ -552,6 +552,13 @@ impl Session {
         self.choose_with_draws(revision, id).map(|_| ())
     }
 
+    pub fn pendulum_prompts(&self) -> Vec<PendulumPrompt> {
+        self.runtime
+            .as_ref()
+            .map(test_cards::prediction_prompts)
+            .unwrap_or_default()
+    }
+
     /// Return visual cues only for this successfully installed decision.
     pub fn choose_with_draws(
         &mut self,
@@ -568,6 +575,11 @@ impl Session {
             .choices
             .into_iter()
             .find(|choice| choice.id == id)
+            .or_else(|| {
+                self.runtime
+                    .as_ref()
+                    .and_then(|game| test_cards::direct_choice(game, id))
+            })
             .ok_or_else(|| {
                 RuleError("That choice is not available at the current decision.".into())
             })?;
@@ -655,7 +667,12 @@ impl Session {
             ));
         }
         let mut active = self.active_decisions.clone();
-        active.pop();
+        let removed = active.pop().expect("A reversible decision");
+        // New automatic reaction closure belongs to its preceding reaction for
+        // Undo. Old explicit pass/Undo journals keep their exact interpretation.
+        if self.decisions[removed] == "test-card:continue" && active.len() > self.undo_floor {
+            active.pop();
+        }
         let mut restored = Self::from_origin(self.seed, self.verification_fixture)?;
         for &index in &active {
             let decision = self

@@ -120,9 +120,11 @@ commitment. Preserve genuine replacement and discard-order choices without a
 second confirmation for an already explicit single replacement. After costs or
 intervening attacks commit, do not promise a cost-free cancellation.
 
-Show `Mask limit: 1/1` beside that strip when the investigator controls a Mask.
+Show `Mask: 1/1` beside that strip when the investigator controls a Mask.
 This is an asset control limit, not an equipment slot or replacement permission.
 Inspection explains the restriction; exhaustion does not release it.
+Separate entries with spaced vertical bars, for example
+`Hand: 1/2 | Body: 1/1 | Mask: 1/1`, preserving slashes inside the fractions.
 
 ## Component actions, inspection and availability
 
@@ -214,11 +216,23 @@ for a choice; never silently choose zero. Pay once on confirmation, not editing.
 Player-window pauses name actually playable cards/abilities and their investigators,
 with matching card cues and explicit Pass when a genuine opportunity exists.
 An enemy phase advances automatically only when it has neither effects nor legal
-choices, displaying a brief nonblocking **Enemy phase — no activity** and a history
-entry. No enemies alone does not establish that condition. Automatically remove
+choices, retaining its phase-entry announcement and an **Enemy phase — no activity**
+history entry. No enemies alone does not establish that condition. Automatically remove
 Old Keyring's key after an ordinary success and discard the empty asset, while
 retaining genuine result-order choices directly in the result panel; Resourceful
 can make removing the last key before recovery matter.
+
+Crystal Pendulum uses a compact choice grid headed **Exhaust Crystal Pendulum**:
+direct **Predict 0** through **Predict 10** choices and **Other margin…** for direct
+numeric entry. The quick choices are not a rules cap. Selecting a number exhausts
+once and records that prediction; dismissal before selection spends nothing.
+Do not expose separate cancel-prediction or one-step increment/decrement actions.
+This local numeric picker is an exception to the ordinary full-width action rows.
+Retain supported pending predictions through save/reopen without resetting their
+number. After selection, automatically close an empty test-start reaction window.
+If legal reactions remain, name them and offer **Skip remaining reactions**.
+Continue to the next genuine decision, preserving commitments and other legal
+abilities before token reveal.
 
 ## Test area, planned reveals and results
 
@@ -367,6 +381,14 @@ Both remain landscape, almost upright and leaning slightly back, independently
 selectable/inspectable. Keep them near the far edge and clear of the flexible
 Map region, its locations, connections and standees.
 
+Center a low, broad altar in the open band in front of the Agenda/Act pair,
+leaving clear space before both the cards and the Map region. Use a rectangular
+dark-slate plinth with two shallow tiers, clipped corners and restrained brass
+edging. Keep its surface, labels and token low enough to preserve card reading,
+selection and inspection in Scenario focus and representative oblique views.
+Exact dimensions remain native-tuning choices; the altar is presentation for
+agenda doom, not a game zone or new gameplay action.
+
 Standees retain rounded bases and rectangular holders, scaling as complete objects.
 Use up to four slots outside each location card, two along each long side, with
 positive clearance from the card and narrow gaps between neighboring bases.
@@ -432,6 +454,22 @@ artwork/text and the existing flow's continuation semantics.
 
 ## Counters and allowance markers
 
+Use the owner-selected clean 512px red-and-black Doom Counter face for doom;
+the [round-flow investigation](research/gathering-round-flow-and-pendulum.md#doom-artwork-candidates)
+retains its exact source identity and comparison. Preserve the distinction
+between doom on the agenda, doom on individual enemies and total doom in play.
+Artwork selection does not change those rules-defined owners or threshold timing.
+
+Show agenda doom on the altar as one solid Doom token with a readable count and
+**Agenda doom** label. Each actual addition visibly arrives and increments the
+count on arrival; do not build a tall token stack. At zero, retain the empty altar
+and **Agenda doom: 0**, without a physical token. Enemy doom stays beside its
+bearer. Show a separate **Total doom: N/threshold** readout near the agenda, with
+an inspectable breakdown such as **2 on agenda + 1 on enemies**. This summary
+neither duplicates physical doom nor changes advancement timing. On advancement,
+remove doom at each actual display location without moving enemy doom to the
+altar. Preserve reduced-motion equivalents and nonduplicating save/reopen behavior.
+
 Use one physical counter with a separate readable number per total, retaining the
 selected artwork/emblem and unobscured full-card inspection. Clues use the intact
 green/gold emblem on a solid round token, including number `1`; locations center
@@ -493,6 +531,22 @@ This establishes the convention for supported once-per-round abilities without
 adding investigators. Artwork identities/provenance stay in the preparation recipe.
 
 ## Movement, draws, shuffling and automatic bookkeeping
+
+Announce each entered phase with a prominent navy/teal-and-brass banner carrying
+the phase name and round number. Start around two seconds total: a brief entrance,
+stationary reading interval and brief exit, with timing subject to native tuning.
+Present it before the phase's visible processing continues; it needs no click.
+Keep current round and phase clearly visible after it leaves. Reduced motion uses
+stationary text. Announce an empty Enemy phase and the first Investigation after
+setup; the first round skips Mythos. Round-end effects do not create a fifth phase.
+Prevent input through the announcement from activating an underlying control.
+
+Perform compulsory Upkeep and Mythos administration automatically with visible
+consequences, preserving genuine decisions, reactions, ordering choices, tests,
+hand-limit discards and story-reading stops. Banner timing has no rules authority:
+save/reopen, Undo, inspection and scene rebuild must neither repeat effects nor
+lose a pending choice. Between investigator turns, clearly name the remaining
+turn selection instead of claiming there is no pending player decision.
 
 Animation presents successfully committed rules consequences; it has no rules
 authority. Preserve identities, actual origins/destinations, ordering, legal

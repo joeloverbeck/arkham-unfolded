@@ -730,6 +730,8 @@ pub(super) fn prepare_fixture(game: &mut Game, fixture: HostileFixture) {
             | HostileFixture::GatheringArrival
             | HostileFixture::GatheringAgendaTwoNoGhoul
             | HostileFixture::GatheringAncientEvilsTerminal
+            | HostileFixture::GatheringDoomThreshold
+            | HostileFixture::GatheringQuarryPlacement
             | HostileFixture::GatheringGhoulMovement
     ) {
         return;
@@ -950,6 +952,40 @@ pub(super) fn prepare_fixture(game: &mut Game, fixture: HostileFixture) {
             game.frames
                 .push(Frame::Scenario(ScenarioDecision::AgendaTwoSearch));
             game.history.push("Privileged S8 witness at Agenda2 reverse: Flesh-Eater/Icy Ghoul in victory, three Minions/Ravenous Ghoul in play, Priest set aside. The twenty available cards contain no Ghoul. Search one finite pass then rebuild; this is the recorded qualified legacy interpretation. [01106b; S8]".into());
+        }
+        HostileFixture::GatheringQuarryPlacement => {
+            game.phase = Phase::Mythos;
+            game.agenda = 1;
+            game.agenda_doom = 2;
+            let quarry =
+                fixture_player_card(&mut game.players[Investigator::Tony.index()], "06012");
+            game.frames.push(Frame::Revelation(PendingRevelation {
+                card: quarry,
+                drawn_by: Investigator::Tony,
+                started: false,
+                cancelled: false,
+            }));
+            game.history.push("Privileged #137 witness: Tony draws his Quarry with two doom on Agenda 1. Its revelation places enemy doom without authorizing an agenda check. [06012; RR Doom p9]".into());
+        }
+        HostileFixture::GatheringDoomThreshold => {
+            game.phase = Phase::Mythos;
+            game.agenda = 1;
+            game.agenda_doom = 1;
+            let quarry =
+                fixture_player_card(&mut game.players[Investigator::Tony.index()], "06012");
+            game.scenario.enemies.push(EnemyState {
+                card: quarry,
+                location: ATTIC.into(),
+                engaged: None,
+                exhausted: false,
+                damage: 0,
+                doom: 1,
+                bounties: 0,
+                owner: Some(Investigator::Tony),
+            });
+            game.frames
+                .push(Frame::Phase(super::phases::PhaseDecision::MythosBegin));
+            game.history.push("Privileged #137 witness: Agenda 1 has one doom and Tony's Quarry has one. Mythos adds one, checks three total, clears both bearers, then offers Agenda 1's reverse before encounter draws. [RR pp3,9,24; 01105b; 06012]".into());
         }
         HostileFixture::GatheringAncientEvilsTerminal => {
             game.phase = Phase::Mythos;

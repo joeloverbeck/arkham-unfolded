@@ -180,12 +180,15 @@ fn registered_table_saves_its_initial_decision_only_after_admission() {
 
 mod cards;
 mod counters_and_enemies;
+mod doom;
 mod draws;
 mod map_motion;
 mod navigation;
+mod pendulum;
 mod restart;
 mod results;
 mod review_saves;
+mod round_flow;
 mod selection;
 mod slots;
 mod token_guidance;
@@ -230,15 +233,13 @@ fn empty_enemy_phase_advances_without_a_click_and_saves_its_history() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("empty-phase.json");
     let mut app = host_with_table(Table::new(session, path.clone()), false);
-    for _ in 0..40 {
-        draws::tick(&mut app, 0.1);
-    }
+    settle_automatic_resolution(&mut app);
     let session = &app.world().resource::<Table>().session;
     let view = session.observe();
     assert!(
         view.choices
             .iter()
-            .any(|choice| choice.id == "upkeep:ready"),
+            .any(|choice| choice.id.starts_with("upkeep:patrice-discard:")),
         "{:?}",
         view.choices
     );
@@ -1491,10 +1492,8 @@ fn production_renderer_consumes_live_locations_enemies_assets_and_discard_inspec
     }
     app.update();
     let text = rendered_text(&mut app);
-    assert!(text.contains(&format!(
-        "Agenda {}  /  {} doom",
-        play.agenda, play.agenda_doom
-    )));
+    assert!(text.contains(&format!("Agenda {}", play.agenda)));
+    assert!(text.contains("Agenda doom") && text.contains("Total doom"));
     assert!(text.contains(&format!("Act {}", play.act)));
     for enemy in &play.scenario.enemies {
         assert!(text.contains(&enemy.card.title));
@@ -2168,7 +2167,7 @@ fn native_automatic_reveal_is_presented_after_commit_and_cannot_accept_rules_inp
         table.dirty = true;
     }
     app.update();
-    activate_choice(&mut app, "revelation:resolve");
+    settle_automatic_resolution(&mut app);
     loop {
         finish_presentation(&mut app);
         let view = app.world().resource::<Table>().view();

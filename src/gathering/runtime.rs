@@ -18,6 +18,8 @@ pub enum HostileFixture {
     GatheringPriestDefeat,
     GatheringAgendaTwoNoGhoul,
     GatheringAncientEvilsTerminal,
+    GatheringDoomThreshold,
+    GatheringQuarryPlacement,
     GatheringGhoulMovement,
     GatheringRoundEndVoices,
     GatheringLitaDamage,
@@ -1475,7 +1477,9 @@ impl Game {
     }
 
     pub(super) fn choose(&mut self, id: &str) -> Result<(), RuleError> {
-        if !self.choices().iter().any(|choice| choice.id == id) {
+        if !self.choices().iter().any(|choice| choice.id == id)
+            && super::test_cards::direct_choice(self, id).is_none()
+        {
             return Err(RuleError(
                 "That choice is not offered by the running effect.".into(),
             ));
