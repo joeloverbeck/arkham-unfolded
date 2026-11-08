@@ -8,8 +8,8 @@ mod portal;
 use arkham_tools::process;
 mod profile;
 mod reader;
-mod review;
 mod renderer;
+mod review;
 mod tracked;
 
 use clap::{Parser, Subcommand};
