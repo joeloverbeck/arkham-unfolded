@@ -1,6 +1,20 @@
 {
   "assets": [
     {
+      "role": "token/doom",
+      "path": "tokens/doom.png",
+      "bytes": 272086,
+      "sha256": "13855822101b0a63ebbafab6f3c6a12500032c286806c70ab3cd8b93488c7301",
+      "dimensions": [512, 512],
+      "evidence": "#137 accepted doom artwork A: preserve the complete supplied PNG on solid circular counters, on the agenda altar and each doom-bearing enemy. Counts remain separate.",
+      "source": {
+        "path": "images/other/unclassified/en/sce-base-save/Doom Counter--ImageURL--21ffe1f9a4939f78d008.png",
+        "bytes": 272086,
+        "sha256": "13855822101b0a63ebbafab6f3c6a12500032c286806c70ab3cd8b93488c7301"
+      },
+      "transform": { "kind": "copy" }
+    },
+    {
       "role": "token/key",
       "path": "tokens/key.jpg",
       "bytes": 26451,
@@ -2636,7 +2650,7 @@
       }
     }
   ],
-  "collection": "arkham-unfolded-gathering-v5",
+  "collection": "arkham-unfolded-gathering-v6",
   "deck_projection_sha256": "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb",
   "format_version": 1,
   "scenario_binding_sha256": "635310d89a96652ca851904f52cc551e1eb2bbd5b332460f1509f99bf2f696b0",

@@ -601,12 +601,18 @@ fn encounter_card_leaves_its_deck_reveals_in_test_and_moves_to_its_actual_discar
     assert!((from.rotation * Vec3::Y).y < -0.99);
     let mut saw_reveal = false;
     let mut saw_departure = false;
+    let mut read = false;
     for _ in 0..80 {
         tick(&mut app, 0.1);
         let at = physical(&mut app, card.id);
         if at.translation.z > 30. && at.translation.y < 0.06 {
             saw_reveal = true;
             assert!((at.rotation * Vec3::Y).y > 0.99);
+        }
+        if !read && rendered_text(&mut app).contains("ENCOUNTER CARD") {
+            assert!(saw_reveal, "Reading follows the face-up arrival");
+            super::encounter::continue_reading(&mut app);
+            read = true;
         }
         if app
             .world()
@@ -625,7 +631,7 @@ fn encounter_card_leaves_its_deck_reveals_in_test_and_moves_to_its_actual_discar
             break;
         }
     }
-    assert!(saw_reveal && saw_departure);
+    assert!(saw_reveal && read && saw_departure);
     assert!(
         physical(&mut app, card.id)
             .translation

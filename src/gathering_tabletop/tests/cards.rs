@@ -72,7 +72,7 @@ fn sparrow_offerings_replace_uses_caption_and_remain_visible_at_zero() {
             .map(|(counter, _)| (counter.kind.name(), counter.amount))
             .collect();
         assert_eq!(counters, [("Offerings", amount)]);
-        assert!(rendered_text(&mut app).contains("Mask limit: 1/1"));
+        assert!(rendered_text(&mut app).contains("Mask: 1/1"));
     }
 }
 

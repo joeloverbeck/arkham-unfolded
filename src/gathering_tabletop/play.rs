@@ -2,7 +2,7 @@
 
 use super::controls::Source;
 use super::*;
-use crate::gathering::{CardView, Phase, PlayObservation};
+use crate::gathering::{CardView, PlayObservation};
 
 pub(super) fn location_name(code: &str) -> &str {
     match code {
@@ -54,6 +54,9 @@ fn pile_text(title: &str, cards: &[CardView]) -> String {
 /// Only faces and piles represented by this player-safe observation are inspectable.
 pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
     let play = view.play.as_ref()?;
+    if code == "total-doom" {
+        return Some(doom::inspection(play));
+    }
     if let Some(player) = play
         .players
         .iter()
@@ -362,13 +365,7 @@ pub(super) fn framing(view: &Observation) -> (Vec3, f32) {
 
 pub(super) fn status(view: &Observation) -> Option<String> {
     let play = view.play.as_ref()?;
-    let phase = match play.phase {
-        Phase::Investigation => "Investigation",
-        Phase::Enemy => "Enemy phase",
-        Phase::Upkeep => "Upkeep",
-        Phase::Mythos => "Mythos",
-        Phase::RoundEnd => "Round end",
-    };
+    let phase = phase_banner::name(play.phase);
     let actor = play.actor.map_or("No active turn", Investigator::name);
     let owner = view
         .decision_owner
@@ -824,6 +821,7 @@ pub(super) fn render(
     let view = context.view;
     let Some(play) = &view.play else { return };
     enemy_board::render(commands, meshes, materials, context);
+    doom::render(commands, meshes, materials, context);
     shuffle::held(commands, meshes, materials, context);
     let mut paint = Painter {
         commands,
@@ -966,7 +964,7 @@ pub(super) fn render(
         (
             layout::ScenarioBookSide::Agenda,
             format!("{:05}", 1104 + usize::from(play.agenda)),
-            format!("Agenda {} · {} doom", play.agenda, play.agenda_doom),
+            format!("Agenda {}", play.agenda),
             Source::Agenda,
         ),
         (
@@ -1176,7 +1174,11 @@ pub(super) fn render(
                 enemy.bounties,
                 -1.,
             ),
-            (crate::tabletop_counters::CounterKind::Doom, enemy.doom, 1.),
+            (
+                crate::tabletop_counters::CounterKind::Doom,
+                context.consequences.doom.enemy(enemy.card.id, enemy.doom),
+                1.,
+            ),
         ] {
             if amount > 0 {
                 let edge = if enemy.exhausted { 0.94 } else { 0.67 };

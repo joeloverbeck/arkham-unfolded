@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn occupied_mask_and_slot_separators_reach_the_rendered_text() {
+    use crate::gathering::{BoostFixture, HostileFixture};
+    let session = Session::with_hostile_fixture(HostileFixture::Boosts(BoostFixture::MaskRetry));
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(
+        Table::new(session, directory.path().join("mask.json")),
+        true,
+    );
+    app.update();
+    let world = app.world_mut();
+    let text = world
+        .query::<&Text>()
+        .iter(world)
+        .map(|text| text.0.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("Mask: 1/1"), "{text}");
+    assert!(!text.contains("Mask limit:"));
+    assert!(
+        text.lines()
+            .any(|line| line.contains("Mask: 1/1") && line.contains(" | ")),
+        "{text}"
+    );
+}
+
+#[test]
 fn permanent_names_stay_flat_on_their_mats_through_camera_changes() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = host(directory.path().join("printed-names.json"));

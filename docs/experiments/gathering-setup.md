@@ -775,10 +775,11 @@ scripts/dev cargo run --locked --bin arkham-assets -- check-gathering \
   "$HOME/.local/share/arkham-unfolded/gathering-assets"
 ```
 
-The finite recipe contains 146 roles: 94 card identities, 11 reverse/unrevealed
+The finite recipe contains 147 roles: 94 card identities, 11 reverse/unrevealed
 sides, card backs, investigator standees, token/class artwork, reveal icon and
 symbol font, including bounty, ammo, the Spell charge motif, the neutral key and
-the investigator ability spark and offerings icon. Version 4 lacks offerings;
+the investigator ability spark, offerings icon and doom artwork. Version 5 lacks
+doom artwork; version 4 also lacks offerings;
 version 3 also lacks the spark;
 v2 also lacks the key; v1 also lacks bounty, ammo and charge
 artwork. Older collections remain available for diagnostic inspection but cannot

@@ -2,6 +2,20 @@
 
 use super::cards;
 
+/// Printed types of the encounter cards selected for the original Gathering.
+pub(crate) fn encounter_card_type(code: &str) -> Option<&'static str> {
+    if super::scenario::enemy_definition(code).is_some() {
+        Some("Enemy")
+    } else if matches!(
+        code,
+        "01162" | "01163" | "01164" | "01165" | "01166" | "01167" | "01168"
+    ) {
+        Some("Treachery")
+    } else {
+        None
+    }
+}
+
 /// Inspect a scenario card's currently visible face. The caller supplies the
 /// observed location state; this never reveals an act or agenda reverse.
 pub fn scenario_card(code: &str, revealed: bool) -> Option<String> {

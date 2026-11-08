@@ -27,9 +27,9 @@ impl Surfaces {
                 .collect::<Vec<_>>();
             let masks = player.masks_controlled();
             if masks != 0 {
-                entries.push(format!("Mask limit: {masks}/1"));
+                entries.push(format!("Mask: {masks}/1"));
             }
-            let text = entries.join(" · ");
+            let text = entries.join(" | ");
             if text.is_empty() {
                 continue;
             }

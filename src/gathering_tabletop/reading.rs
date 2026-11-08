@@ -10,7 +10,7 @@ pub(super) fn panel(
     heading: impl FnOnce(&mut ChildSpawnerCommands),
     details: impl FnOnce(&mut ChildSpawnerCommands),
     footer: impl FnOnce(&mut ChildSpawnerCommands),
-) {
+) -> Entity {
     commands
         .spawn((
             Node {
@@ -75,5 +75,6 @@ pub(super) fn panel(
                         })
                         .with_children(footer);
                 });
-        });
+        })
+        .id()
 }

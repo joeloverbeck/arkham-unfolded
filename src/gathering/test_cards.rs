@@ -11,9 +11,17 @@ use super::{
 use crate::{Choice, RuleError, TokenFace};
 use serde::{Deserialize, Serialize};
 
+mod prediction_fixtures;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TestCardFixture {
     CrystalPrediction,
+    CrystalReadSigns,
+    CrystalFloor,
+    CrystalAutoFail,
+    CrystalAutoFailZero,
+    CrystalVisionTie,
+    CrystalWithGregory,
     PrescientResolved,
     PrescientIgnoredOnly,
     PromiseCurse,
@@ -149,6 +157,96 @@ fn pendulums(game: &Game) -> Vec<(Investigator, u16)> {
                 .map(|asset| (player.investigator, asset.card.id))
         })
         .collect()
+}
+
+/// A current legal source for the native number picker. This is derived from
+/// the running decision; opening or editing a picker never changes game state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PendulumPrompt {
+    pub owner: Investigator,
+    pub asset: u16,
+    /// A number retained by a supported save made with the former stepper.
+    pub saved_number: Option<u16>,
+}
+
+pub(super) fn prediction_prompts(game: &Game) -> Vec<PendulumPrompt> {
+    match game.frames.last() {
+        Some(Frame::TestCard(TestCardDecision::Initiation)) => pendulums(game)
+            .into_iter()
+            .map(|(owner, asset)| PendulumPrompt {
+                owner,
+                asset,
+                saved_number: None,
+            })
+            .collect(),
+        Some(Frame::TestCard(TestCardDecision::Prediction {
+            owner,
+            asset,
+            number,
+        })) => {
+            vec![PendulumPrompt {
+                owner: *owner,
+                asset: *asset,
+                saved_number: Some(*number),
+            }]
+        }
+        _ => vec![],
+    }
+}
+
+fn direct_prediction(game: &Game, id: &str) -> Option<(PendulumPrompt, u16)> {
+    let (asset, number) = id.strip_prefix("test-card:predict:")?.split_once(':')?;
+    let (asset, number) = (asset.parse::<u16>().ok()?, number.parse::<u16>().ok()?);
+    // One canonical journal spelling, including zero and the full u16 range.
+    if id != format!("test-card:predict:{asset}:{number}") {
+        return None;
+    }
+    prediction_prompts(game)
+        .into_iter()
+        .find(|prompt| prompt.asset == asset)
+        .map(|prompt| (prompt, number))
+}
+
+pub(super) fn direct_choice(game: &Game, id: &str) -> Option<Choice> {
+    if id == "test-card:continue" {
+        if !matches!(
+            game.frames.last(),
+            Some(Frame::TestCard(TestCardDecision::Initiation))
+        ) {
+            return None;
+        }
+        let remaining = choices(game);
+        return (remaining.len() == 1 && remaining[0].id == "test-card:pass")
+            .then(|| choice(id, "Continue automatically after test-begin reactions"));
+    }
+    let (prompt, number) = direct_prediction(game, id)?;
+    Some(choice(
+        id,
+        format!(
+            "{}: exhaust Crystal Pendulum and predict {number}",
+            prompt.owner.name()
+        ),
+    ))
+}
+
+fn predict(game: &mut Game, owner: Investigator, asset: u16, number: u16) {
+    game.players[owner.index()]
+        .assets
+        .iter_mut()
+        .find(|held| held.card.id == asset)
+        .expect("Eligible Pendulum")
+        .ready = false;
+    game.test
+        .as_mut()
+        .expect("Current test")
+        .card_effects
+        .predictions
+        .push(Prediction {
+            owner,
+            asset,
+            number,
+        });
+    game.history.push(format!("{} exhausts Crystal Pendulum and predicts a margin of {number} before commitments or token revelation. [60411]", owner.name()));
 }
 
 pub(super) fn begin_test(game: &mut Game) -> Result<(), RuleError> {
@@ -305,6 +403,21 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
 }
 
 pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
+    if id == "test-card:continue" {
+        if direct_choice(game, id).is_none() {
+            return Err(RuleError(
+                "A real test-begin reaction remains available.".into(),
+            ));
+        }
+        return choose(game, "test-card:pass");
+    }
+    if let Some((prompt, number)) = direct_prediction(game, id) {
+        game.frames.pop();
+        predict(game, prompt.owner, prompt.asset, number);
+        // Keep genuine remaining reactions. An empty window closes in this
+        // same transaction, so Undo returns to the meaningful prediction.
+        return begin_test(game);
+    }
     if !choices(game).iter().any(|choice| choice.id == id) {
         return Err(RuleError("This test-card decision is unavailable.".into()));
     }
@@ -396,23 +509,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                 "test-card:number:up" => number += 1,
                 "test-card:number:down" => number -= 1,
                 "test-card:number:confirm" => {
-                    game.players[owner.index()]
-                        .assets
-                        .iter_mut()
-                        .find(|held| held.card.id == asset)
-                        .expect("Pending source")
-                        .ready = false;
-                    game.test
-                        .as_mut()
-                        .expect("Current test")
-                        .card_effects
-                        .predictions
-                        .push(Prediction {
-                            owner,
-                            asset,
-                            number,
-                        });
-                    game.history.push(format!("{} exhausts Crystal Pendulum and predicts a margin of {number} before commitments or token revelation. [60411]", owner.name()));
+                    predict(game, owner, asset, number);
                 }
                 "test-card:number:cancel" => {}
                 _ => unreachable!(),
@@ -670,6 +767,18 @@ pub(super) fn choose_after_test(
 
 pub(super) fn configure_fixture(game: &mut Game, case: TestCardFixture) {
     assert!(game.test.is_none());
+    if matches!(
+        case,
+        TestCardFixture::CrystalReadSigns
+            | TestCardFixture::CrystalFloor
+            | TestCardFixture::CrystalAutoFail
+            | TestCardFixture::CrystalAutoFailZero
+            | TestCardFixture::CrystalVisionTie
+            | TestCardFixture::CrystalWithGregory
+    ) {
+        prediction_fixtures::configure(game, case);
+        return;
+    }
     game.history.clear();
     for frame in game.frames.drain(..) {
         if let Frame::Revelation(revelation) = frame {

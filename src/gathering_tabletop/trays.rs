@@ -47,7 +47,7 @@ impl<'a> Layout<'a> {
             .tokens
             .as_ref()
             .filter(|tokens| !tokens.is_skill_test());
-        Some(Self {
+        let layout = Self {
             owner,
             candidates,
             sources,
@@ -58,7 +58,15 @@ impl<'a> Layout<'a> {
                     .map(|group| group.members.len().div_ceil(3) * 3)
                     .sum()
             }),
-        })
+        };
+        // A resolution owner can persist after its only card moves to Test.
+        // Keep every drawer consumer tied to content, including a resident seal.
+        (layout.has_content()
+            || play
+                .premonition
+                .as_ref()
+                .is_some_and(|sealed| sealed.controller == owner))
+        .then_some(layout)
     }
 
     pub(super) fn candidate(&self, slot: usize) -> Vec3 {

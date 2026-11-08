@@ -14,6 +14,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn quarry_placement_waits_for_mythos_and_agenda_one_clears_every_bearer_before_encounters() {
+        use crate::gathering::{HostileFixture, Session};
+        let mut session = Session::with_hostile_fixture(HostileFixture::GatheringDoomThreshold);
+        let before = session.observe().play.unwrap();
+        session
+            .choose(session.observe().revision, "mythos:begin")
+            .unwrap();
+        let after = session.observe().play.unwrap();
+        assert_eq!(
+            after.agenda, 1,
+            "Resolve the reverse before installing Agenda 2"
+        );
+        assert_eq!(after.agenda_doom, 0);
+        assert!(after.scenario.enemies.iter().all(|enemy| enemy.doom == 0));
+        assert_eq!(after.encounter_deck_count, before.encounter_deck_count);
+        assert!(
+            session
+                .observe()
+                .choices
+                .iter()
+                .any(|choice| choice.id == "agenda:lead-horror")
+        );
+        session.validate().unwrap();
+        // Quarry's own revelation places doom but does not authorize an agenda
+        // check (06012; RR Doom). Ancient Evils explicitly does.
+        let mut session = Session::with_hostile_fixture(HostileFixture::GatheringQuarryPlacement);
+        for id in ["revelation:resolve", "quarry:01113"] {
+            session.choose(session.observe().revision, id).unwrap();
+        }
+        let play = session.observe().play.unwrap();
+        assert_eq!(play.agenda, 1);
+        assert_eq!(play.agenda_doom, 2);
+        assert_eq!(
+            play.scenario
+                .enemies
+                .iter()
+                .map(|enemy| u16::from(enemy.doom))
+                .sum::<u16>(),
+            1
+        );
+        assert!(
+            !session
+                .observe()
+                .choices
+                .iter()
+                .any(|choice| choice.id.starts_with("agenda:"))
+        );
+        session.validate().unwrap();
+    }
+
+    #[test]
     fn inactive_enemies_skip_but_exhausted_agenda_movement_does_not() {
         let session = crate::gathering::Session::with_hostile_fixture(
             crate::gathering::HostileFixture::GatheringGhoulMovement,

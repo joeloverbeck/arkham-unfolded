@@ -24,10 +24,14 @@ mod capture;
 mod card_counters;
 mod consequences;
 mod controls;
+mod doom;
 mod draws;
+mod encounter;
 mod enemy_board;
 mod map_motion;
 mod motion;
+mod pendulum;
+mod phase_banner;
 mod play;
 mod presentation;
 mod printed;
@@ -51,9 +55,12 @@ const GOLD: Color = Color::srgb(0.86, 0.69, 0.37);
 enum Action {
     ContinueStory,
     ContinueResult(u64),
+    Encounter(u64, encounter::Input),
+    EncounterChoice(u64, u64, String),
     ResultChoice(u64, u64, String),
     Reveal(crate::tabletop_reveal::Request),
     Choose(u64, u64, String),
+    Prediction(u64, u64, u16, pendulum::Input),
     Select(u64, u64, controls::Selection),
     ContextChoice(u64, u64, u64, String),
     ContextInspect(u64, u64, u64, String, String),
@@ -103,6 +110,7 @@ struct Table {
     trays: trays::State,
     context: controls::Context,
     token_options: Option<String>,
+    prediction: Option<pendulum::Picker>,
 }
 
 impl Table {
@@ -132,6 +140,7 @@ impl Table {
     }
 
     fn new(session: Session, save_path: PathBuf) -> Self {
+        let prediction = pendulum::Picker::saved(&session);
         let presentation = presentation::Presentation::new(&session);
         let mut trays = trays::State::default();
         trays.prepare(&session.observe(), true);
@@ -156,6 +165,7 @@ impl Table {
             trays,
             context: controls::Context::default(),
             token_options: None,
+            prediction,
         }
     }
 
@@ -171,9 +181,11 @@ impl Table {
         self.presentation.result().is_some()
             || self.result_opportunities()
             || self.presentation.story().is_some()
+            || self.presentation.encounter().current().is_some()
             || self.inspection.is_some()
             || self.history_open
             || self.restart_confirmation
+            || self.prediction.is_some()
     }
 
     fn result_opportunities(&self) -> bool {
@@ -185,8 +197,10 @@ impl Table {
     }
 
     fn motion_blocked(&self) -> bool {
-        self.presentation.result().is_some()
+        self.presentation.announcement().is_some()
+            || self.presentation.result().is_some()
             || self.presentation.story().is_some()
+            || self.presentation.encounter().current().is_some()
             || self.inspection.is_some()
             || self.history_open
             || self.restart_confirmation
@@ -578,14 +592,14 @@ fn install(app: &mut App) {
             (
                 (poll_settings, save_initial_decision, remember_attempt).chain(),
                 advance_framework,
-                handle_actions,
-                consequences::advance,
+                (pendulum::keyboard, handle_actions).chain(),
+                (consequences::advance, doom::advance).chain(),
                 reveal::sync,
                 crate::tabletop_reveal::render,
                 advance_presentation,
                 keyboard_panel_scroll,
                 camera_controls,
-                render,
+                (render, phase_banner::render, encounter::animate).chain(),
                 controls::render,
                 contextual_feedback,
                 enemy_board::highlight,
@@ -690,6 +704,9 @@ fn handle_actions(
         .0
         .extend(shortcut.drain().into_iter().map(Action::Reveal));
     for action in actions.0.drain(..) {
+        if table.presentation.announcement().is_some() {
+            continue;
+        }
         let mut reveal_focus = false;
         let action = match action {
             Action::Reveal(request) => {
@@ -729,12 +746,28 @@ fn handle_actions(
         let result_choice = matches!(action, Action::ResultChoice(..))
             && table.presentation.result().is_none()
             && table.result_opportunities();
+        let encounter_choice = if let Action::EncounterChoice(epoch, revision, id) = &action {
+            *epoch == table.epoch
+                && table
+                    .presentation
+                    .encounter()
+                    .accepts(&table.session, *revision, id)
+        } else {
+            false
+        };
+        if matches!(action, Action::EncounterChoice(..)) && !encounter_choice {
+            continue;
+        }
         let permitted_in_modal = if table.presentation.result().is_some() {
             matches!(action, Action::ContinueResult(_))
         } else if reading {
             matches!(action, Action::ContinueStory)
+        } else if table.presentation.encounter().current().is_some() {
+            matches!(action, Action::Encounter(..)) || encounter_choice
         } else if table.result_opportunities() {
             result_choice
+        } else if table.prediction.is_some() {
+            matches!(action, Action::Prediction(..) | Action::Close)
         } else if table.restart_confirmation {
             matches!(action, Action::Close | Action::ConfirmRestart(_))
         } else {
@@ -748,7 +781,11 @@ fn handle_actions(
         if table.modal() && !permitted_in_modal {
             continue;
         }
-        if consequences.active() && matches!(action, Action::Choose(..) | Action::ResultChoice(..))
+        if consequences.active()
+            && matches!(
+                action,
+                Action::Choose(..) | Action::ResultChoice(..) | Action::EncounterChoice(..)
+            )
         {
             continue;
         }
@@ -765,7 +802,19 @@ fn handle_actions(
         {
             continue;
         }
+        let Some(action) = pendulum::dispatch(&mut table, action) else {
+            continue;
+        };
         match action {
+            Action::Encounter(epoch, input)
+                if epoch == table.epoch && table.presentation.encounter().current().is_some() =>
+            {
+                table.presentation.encounter_input(input);
+                table.epoch += 1;
+                table.dirty = true;
+            }
+            Action::Encounter(..) => {}
+            Action::Prediction(..) => unreachable!("Local picker dispatch consumes its controls"),
             Action::ContinueResult(epoch) if epoch == table.epoch => {
                 table.presentation.acknowledge_result();
                 table.epoch += 1;
@@ -793,11 +842,27 @@ fn handle_actions(
                 }
                 table.dirty = true;
             }
-            Action::Choose(epoch, revision, id) | Action::ResultChoice(epoch, revision, id)
+            Action::Choose(epoch, revision, id)
+            | Action::ResultChoice(epoch, revision, id)
+            | Action::EncounterChoice(epoch, revision, id)
                 if epoch == table.epoch
-                    && (!table.modal() || result_choice)
-                    && !table.is_presenting() =>
+                    && (!table.modal() || result_choice || encounter_choice)
+                    && (!table.is_presenting() || encounter_choice) =>
             {
+                let id = if id == "test-card:pass"
+                    && controls::automatic_choice(&table.session.observe()) == Some(id.as_str())
+                {
+                    "test-card:continue".into()
+                } else {
+                    id
+                };
+                if let Some(asset) = id
+                    .strip_prefix("test-card:pendulum:")
+                    .and_then(|id| id.parse().ok())
+                {
+                    pendulum::open(&mut table, epoch, revision, asset);
+                    continue;
+                }
                 table.token_options = None;
                 let path = table.save_path.clone();
                 let before = table.view();
@@ -838,7 +903,7 @@ fn handle_actions(
                 };
                 table.dirty = true;
             }
-            Action::Choose(_, _, _) | Action::ResultChoice(_, _, _) => {}
+            Action::Choose(..) | Action::ResultChoice(..) | Action::EncounterChoice(..) => {}
             Action::Select(epoch, revision, selection)
                 if epoch == table.epoch && revision == table.view().revision && !table.modal() =>
             {
@@ -896,6 +961,7 @@ fn handle_actions(
                 table.dirty = true;
             }
             Action::Close => {
+                table.prediction = None;
                 table.context.reset();
                 table.epoch += 1;
                 table.inspection = None;
@@ -960,6 +1026,7 @@ fn handle_actions(
                         table.epoch += 1;
                         let table = &mut *table;
                         table.presentation.reopen(&table.session, &session);
+                        table.prediction = pendulum::Picker::saved(&session);
                         table.session = session;
                         table.inspection = None;
                         table.history_open = false;
@@ -1015,8 +1082,9 @@ fn handle_actions(
             Action::Restart(_) | Action::ConfirmRestart(_) => {}
         }
     }
-    feedback.blocked =
-        table.modal() || settings.as_ref().is_some_and(|settings| settings.is_busy());
+    feedback.blocked = table.modal()
+        || table.presentation.announcement().is_some()
+        || settings.as_ref().is_some_and(|settings| settings.is_busy());
     feedback.reduced_motion = table.reduced_motion;
 }
 
@@ -1279,6 +1347,12 @@ fn render(
         commands.entity(entity).despawn();
     }
     table.motion_origins = origins;
+    consequences.prepare(
+        table.last_rendered.as_ref(),
+        &table.view(),
+        true,
+        table.reduced_motion,
+    );
     let presentation::Frame {
         view,
         story,
@@ -1286,7 +1360,9 @@ fn render(
         map_arrivals,
     } = {
         let table = &mut *table;
-        table.presentation.prepare(&table.session)
+        table
+            .presentation
+            .prepare(&table.session, consequences.doom.active())
     };
     for transfer in transfers {
         table.motion_origins.transfer(transfer);
@@ -1294,12 +1370,6 @@ fn render(
     for (id, at) in map_arrivals {
         table.motion_origins.arrived(id, at);
     }
-    consequences.prepare(
-        table.last_rendered.as_ref(),
-        &view,
-        true,
-        table.reduced_motion,
-    );
     let previous = table.last_rendered.clone();
     let reduced = table.reduced_motion;
     table.sealed.prepare(previous.as_ref(), &view, reduced);
@@ -1409,8 +1479,8 @@ fn advance_presentation(
     moving: Query<(), With<motion::CardMotion>>,
 ) {
     if !health.allows_play()
-        || consequences.active()
-        || table.sealed.active()
+        || (consequences.active() && table.presentation.announcement().is_none())
+        || (table.sealed.active() && table.presentation.announcement().is_none())
         || table.presentation_blocked()
     {
         return;
@@ -1450,6 +1520,7 @@ fn camera_controls(
     mut shortcut: ResMut<crate::tabletop_reveal::Shortcut>,
 ) {
     let blocked = table.modal()
+        || table.presentation.announcement().is_some()
         || table.menu_open
         || settings.as_ref().is_some_and(|settings| settings.is_busy());
     let over_ui = hover

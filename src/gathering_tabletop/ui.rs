@@ -306,6 +306,19 @@ fn turn_heading(view: &Observation) -> String {
         if let Some(who) = play.actor {
             return format!("{}'s turn", short_name(who));
         }
+        let eligible = Investigator::ALL
+            .into_iter()
+            .filter(|who| {
+                view.choices
+                    .iter()
+                    .any(|choice| choice.id == format!("turn:{}", who.id()))
+            })
+            .map(short_name)
+            .collect::<Vec<_>>();
+        if !eligible.is_empty() {
+            return format!("Choose the next investigator · {}", eligible.join(", "));
+        }
+        return format!("Round {} · {}", play.round, phase_banner::name(play.phase));
     }
     "Setup · no investigator turn in progress".into()
 }
@@ -624,6 +637,34 @@ pub(super) fn render(
             }
             screen::controls(p, |row| {
                 if !table.is_presenting() && !table.modal() {
+                    if table.notice.starts_with("Decision not committed:")
+                        && let Some(id) = controls::automatic_choice(view)
+                    {
+                        control(
+                            art,
+                            row,
+                            "Retry step",
+                            Action::Choose(table.epoch, view.revision, id.into()),
+                        );
+                    }
+                    for prompt in table
+                        .session
+                        .pendulum_prompts()
+                        .into_iter()
+                        .filter(|prompt| prompt.saved_number.is_some())
+                    {
+                        control(
+                            art,
+                            row,
+                            "Exhaust Crystal Pendulum",
+                            Action::Prediction(
+                                table.epoch,
+                                view.revision,
+                                prompt.asset,
+                                pendulum::Input::Open,
+                            ),
+                        );
+                    }
                     for (index, choice) in controls::global_choices(view).into_iter().enumerate() {
                         let entity = control(
                             art,
@@ -722,10 +763,14 @@ pub(super) fn render(
     }
     if table.presentation.result().is_some() {
         results::render(commands, table, view, art, size);
+    } else if table.prediction.is_some() {
+        pendulum::render(commands, table, art);
     } else if table.restart_confirmation {
         restart_confirmation(commands, table, art, size);
     } else if let Some(card) = table.presentation.story() {
         story_reading(commands, art, size, card);
+    } else if table.presentation.encounter().current().is_some() {
+        encounter::render(commands, table, art, size);
     } else if table.result_opportunities() {
         results::render(commands, table, view, art, size);
     } else if table.modal() {
