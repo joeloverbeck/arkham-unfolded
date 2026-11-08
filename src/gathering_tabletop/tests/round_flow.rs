@@ -367,6 +367,14 @@ fn automatic_round_preserves_discard_order_and_reopens_into_a_real_mythos_choice
     let mut reopened = false;
     for _ in 0..32 {
         settle_automatic_resolution(&mut app);
+        let view = app.world().resource::<Table>().session.observe();
+        if view.play.as_ref().unwrap().phase == Phase::Mythos
+            && view.play.as_ref().unwrap().encounter_deck_count < 26
+        {
+            // Pre-revelation responses are now available on the reading screen.
+            // Continue would deliberately choose to resolve past this decision.
+            break;
+        }
         if app
             .world()
             .resource::<Table>()
@@ -377,12 +385,6 @@ fn automatic_round_preserves_discard_order_and_reopens_into_a_real_mythos_choice
         {
             encounter::continue_reading(&mut app);
             continue;
-        }
-        let view = app.world().resource::<Table>().session.observe();
-        if view.play.as_ref().unwrap().phase == Phase::Mythos
-            && view.play.as_ref().unwrap().encounter_deck_count < 26
-        {
-            break;
         }
         let choice = view
             .choices

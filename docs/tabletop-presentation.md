@@ -332,11 +332,17 @@ that starts a test uses Test without duplicating its physical source.
 
 After each actual encounter-deck draw arrives, pause for an untimed reading
 overlay: dim the table, center a large upright intact card, label it **Encounter
-card**, name its actual drawer, and show its title and printed type. **Continue**
-acknowledges reading only. Preserve available cancellation/response choices and
-the existing tray/Test resolution afterward, including each enemy's own Spawn
-and engagement rules. This is a reading-only exception to the tray-based effect
-resolution selected in ADR 0002; it adds no rules window or zone.
+card**, name its actual drawer, and show its title and printed type. When that
+encounter still awaits resolution, show its actual legal responses (such as Ward
+of Protection or A Test of Will) on this screen. Explain that **Continue** resolves
+the encounter unless a response is chosen first. Continue commits the existing
+resolution choice directly, so a mandatory test starts without another Resolve
+click in the investigator's drawer. Bind choices to the live revision and this
+physical encounter; retain the screen and display the error if saving fails.
+Already committed encounters need only reading acknowledgment. Preserve the
+existing tray/Test resolution afterward, including each enemy's own Spawn and
+engagement rules. This surface hosts reading and existing pre-revelation choices;
+actual effect resolution retains ADR 0002's surfaces, with no new rules window or zone.
 
 Hold the captured draw view before presenting consequences that the rules engine
 may already have committed in the same command. Never split or repeat that command
@@ -349,11 +355,13 @@ weaknesses are outside this reading surface; On the Hunt's actual fallback draw
 uses it normally.
 
 Keep card, heading, text and controls still. A few dark, low-contrast tendrils bend
-slowly in clipped side margins, clear of all reading content. Offer **Pause motion**
-and **Resume motion** within the overlay; Reduced motion uses a still surround.
-Pause decoration when unfocused and resume without catching up. Keep Continue
-outside the scrolling body and offer **Read rules** for readable effective text at
-small viewports. There is no countdown, flashing, camera movement or audio cue.
+slowly in clipped side margins, clear of all reading content. Joel's 2026-11-08
+feedback removes the local Pause/Resume buttons; global Reduced motion still uses
+a still surround. Pause decoration when unfocused and resume without catching up.
+Keep responses, Continue and **Read rules** outside the scrolling body, with button
+labels contained and focus outlines separated. Read rules provides readable
+effective text at small viewports. There is no countdown, flashing, camera movement
+or audio cue.
 
 Give Hornet's nine visible candidates a 3-by-3 arrangement with its event alongside,
 and Backpack's six-card search its explicit completion. Display all cards the

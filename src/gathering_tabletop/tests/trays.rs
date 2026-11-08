@@ -340,8 +340,7 @@ fn a_revelation_keeps_its_tray_while_its_cancellation_test_uses_test() {
     let mut app = host_with_table(Table::new(session, path.clone()), false);
     let at = card_at(&mut app, revelation);
     assert!(at.z > 30. && at.x.abs() < 7.);
-    encounter::continue_reading(&mut app);
-    activate_choice(&mut app, &choice);
+    encounter::respond(&mut app, &choice);
     finish_presentation(&mut app);
     tick(&mut app, 0.5);
     assert_eq!(card_at(&mut app, revelation), at);

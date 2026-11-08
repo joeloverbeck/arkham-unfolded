@@ -4,6 +4,19 @@ Investigated 2026-11-08 against candidate `fda03a5368775b2234b6fa5a4ec0c2b11012b
 
 ## Recommendation
 
+**Owner refinement after playing candidate `946c1d2`, 2026-11-08:** Joel reported
+that the encounter modal and moving tentacles look great, but asked to remove the
+overlapping Pause motion button and the extra Resolve click after Continue. The
+active presentation contract therefore removes local Pause/Resume controls and
+shows actual legal pre-revelation responses on the reading screen. Continue
+commits the existing resolution choice when that encounter remains unresolved;
+already committed consequences still need only acknowledgment. Tests and other
+meaningful decisions retain their existing surfaces. The Rotting Remains input
+has Ward of Protection available, so moving those responses alongside Continue
+preserves the choice while removing the redundant handoff. The original proposal
+below remains historical where it describes separate acknowledgment or a local
+pause button. See the [dated feedback and correction](https://github.com/joeloverbeck/arkham-unfolded/issues/137#issuecomment-6724663314).
+
 Joel accepted these recommendations with “Proceed as you recommend” on
 2026-11-08. The implementation follows the existing committed presentation
 snapshots. A later production-path check clarified an implementation detail below:

@@ -1,5 +1,5 @@
-//! An untimed reading stop over a committed encounter draw. Acknowledgment never
-//! executes rules: reactions and consequences retain their existing owners.
+//! An untimed reading stop over a committed encounter draw. Any still-pending
+//! responses use the same legal choices and commit path as the tabletop.
 use super::*;
 use crate::gathering::{CardView, DrawCue, DrawSource};
 
@@ -7,7 +7,6 @@ use crate::gathering::{CardView, DrawCue, DrawSource};
 pub(super) enum Input {
     Continue,
     Rules,
-    Motion,
 }
 
 struct Draw {
@@ -26,7 +25,6 @@ pub(super) struct Reading {
     waiting: Vec<Draw>,
     current: Option<Reveal>,
     rules: bool,
-    paused: bool,
     elapsed: f32,
 }
 
@@ -108,11 +106,32 @@ impl Reading {
         self.current.as_ref()
     }
 
+    pub(super) fn decision(&self, session: &Session) -> Option<Observation> {
+        let card = &self.current.as_ref()?.card;
+        let view = session.observe();
+        let pending = view.play.as_ref()?.pending_revelation.as_ref()?;
+        (pending.card.id == card.id
+            && !pending.started
+            && !pending.cancelled
+            && view
+                .choices
+                .iter()
+                .any(|choice| choice.id == "revelation:resolve"))
+        .then_some(view)
+    }
+
+    pub(super) fn accepts(&self, session: &Session, revision: u64, id: &str) -> bool {
+        self.decision(session).is_some_and(|view| {
+            view.revision == revision
+                && id != "undo"
+                && view.choices.iter().any(|choice| choice.id == id)
+        })
+    }
+
     pub(super) fn input(&mut self, input: Input) {
         match input {
             Input::Continue => self.current = None,
             Input::Rules => self.rules = !self.rules,
-            Input::Motion => self.paused = !self.paused,
         }
     }
 }
@@ -123,12 +142,23 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
         return;
     };
     let card = &revelation.card;
+    let decision = reading.decision(&table.session);
+    let responses = decision
+        .as_ref()
+        .map(|view| {
+            view.choices
+                .iter()
+                .filter(|choice| !matches!(choice.id.as_str(), "revelation:resolve" | "undo"))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let title = crate::gathering::inspection::encounter_card_type(&card.code).map_or_else(
         || card.title.clone(),
         |kind| format!("{} · {kind}", card.title),
     );
     let width = (size.x * 0.94).min(650.);
-    let image_width = ((size.y * 0.9 - 250.) * 5. / 7.)
+    let response_height = responses.len() as f32 * 66.;
+    let image_width = ((size.y * 0.9 - 250. - response_height) * 5. / 7.)
         .clamp(180., 430.)
         .min(width - 56.);
     let label = format!(
@@ -181,28 +211,55 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
             ));
             footer.spawn((
                 art.text(
-                    "Read the card, then continue to any available responses.",
+                    if decision.is_some() {
+                        "Continue to resolve this encounter, or choose a response first."
+                    } else {
+                        "Read the card, then continue."
+                    },
                     14.,
                     MUTED,
                 ),
                 TextLayout::justify(Justify::Center),
             ));
+            if let Some(view) = &decision {
+                for response in &responses {
+                    ui::button(
+                        art,
+                        footer,
+                        &response.label,
+                        Action::EncounterChoice(table.epoch, view.revision, response.id.clone()),
+                    );
+                }
+            }
+            if !table.notice.is_empty() {
+                footer.spawn(art.text(&table.notice, 14., PAPER));
+            }
             footer
                 .spawn(Node {
-                    justify_content: JustifyContent::Center,
+                    display: Display::Grid,
+                    grid_template_columns: vec![RepeatedGridTrack::flex(2, 1.)],
                     column_gap: px(12),
-                    flex_wrap: FlexWrap::Wrap,
+                    row_gap: px(8),
                     ..default()
                 })
                 .with_children(|row| {
-                    let continue_button = ui::control(
+                    let continue_button = ui::button(
                         art,
                         row,
                         "Continue",
-                        Action::Encounter(table.epoch, Input::Continue),
+                        decision.as_ref().map_or(
+                            Action::Encounter(table.epoch, Input::Continue),
+                            |view| {
+                                Action::EncounterChoice(
+                                    table.epoch,
+                                    view.revision,
+                                    "revelation:resolve".into(),
+                                )
+                            },
+                        ),
                     );
                     row.commands().entity(continue_button).insert(AutoFocus);
-                    ui::control(
+                    ui::button(
                         art,
                         row,
                         if reading.rules {
@@ -212,18 +269,6 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
                         },
                         Action::Encounter(table.epoch, Input::Rules),
                     );
-                    if !table.reduced_motion {
-                        ui::control(
-                            art,
-                            row,
-                            if reading.paused {
-                                "Resume motion"
-                            } else {
-                                "Pause motion"
-                            },
-                            Action::Encounter(table.epoch, Input::Motion),
-                        );
-                    }
                 });
         },
     );
@@ -346,7 +391,6 @@ pub(super) fn animate(
 ) {
     let reading = table.presentation.encounter();
     let running = reading.current().is_some()
-        && !reading.paused
         && !table.reduced_motion
         && health.allows_play()
         && windows.iter().any(|window| window.focused);

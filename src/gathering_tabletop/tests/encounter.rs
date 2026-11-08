@@ -8,6 +8,23 @@ pub(super) fn continue_reading(app: &mut App) {
     app.update();
 }
 
+pub(super) fn respond(app: &mut App, id: &str) {
+    assert!(rendered_text(app).contains("ENCOUNTER CARD"));
+    let label = app
+        .world()
+        .resource::<Table>()
+        .session
+        .observe()
+        .choices
+        .into_iter()
+        .find(|choice| choice.id == id)
+        .unwrap()
+        .label;
+    let entity = choice_button(app, &label).expect("The legal response is visible in the modal");
+    app.world_mut().trigger(Activate { entity });
+    app.update();
+}
+
 fn wait_for_reading(app: &mut App) {
     for _ in 0..100 {
         if rendered_text(app).contains("ENCOUNTER CARD") {
@@ -83,7 +100,7 @@ fn encounter_reading_waits_for_the_draw_and_continue_keeps_the_enemy_spawn_rules
 }
 
 #[test]
-fn reopening_an_unstarted_treachery_keeps_cancellation_and_acknowledgment_never_saves() {
+fn reopening_an_unstarted_treachery_can_cancel_from_the_modal_without_duplicate_costs() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("ward.json");
     let session = Session::with_hostile_fixture(HostileFixture::Harm(
@@ -115,14 +132,27 @@ fn reopening_an_unstarted_treachery_keeps_cancellation_and_acknowledgment_never_
         .push(old_choice.clone());
     draws::tick(&mut app, 30.);
     assert_eq!(app.world().resource::<Table>().session, session);
-    let entity = choice_button(&mut app, "Continue").unwrap();
+    let rules = choice_button(&mut app, "Read rules").unwrap();
+    app.world_mut().trigger(Activate { entity: rules });
+    app.update();
+    assert_eq!(app.world().resource::<Table>().session, session);
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    let label = &view
+        .choices
+        .iter()
+        .find(|choice| choice.id == ward)
+        .unwrap()
+        .label;
+    let entity = choice_button(&mut app, label).expect("Ward is available before Continue");
     app.world_mut().trigger(Activate { entity });
     app.world_mut().trigger(Activate { entity });
     app.world_mut().resource_mut::<Actions>().0.push(old_choice);
     app.update();
-    assert_eq!(app.world().resource::<Table>().session, session);
-    assert_eq!(std::fs::read(&path).unwrap(), bytes);
-    assert_eq!(app.world().resource::<Table>().view().choices, view.choices);
+    let mut expected = session;
+    expected.choose(view.revision, &ward).unwrap();
+    assert_eq!(app.world().resource::<Table>().session, expected);
+    assert_eq!(continuity::load_session(&path).unwrap(), expected);
+    finish_presentation(&mut app);
 
     // An unchanged in-place reopen and scene rebuild do not manufacture a draw.
     app.world_mut()
@@ -133,7 +163,6 @@ fn reopening_an_unstarted_treachery_keeps_cancellation_and_acknowledgment_never_
     app.world_mut().resource_mut::<Table>().dirty = true;
     app.update();
     assert!(!rendered_text(&mut app).contains("ENCOUNTER CARD"));
-    activate_choice(&mut app, &ward);
     finish_presentation(&mut app);
     assert!(rendered_text(&mut app).contains("1 horror on Jacqueline Fine"));
     assert!(!rendered_text(&mut app).contains("ENCOUNTER CARD"));
@@ -146,7 +175,72 @@ fn reopening_an_unstarted_treachery_keeps_cancellation_and_acknowledgment_never_
 }
 
 #[test]
-fn encounter_surround_can_pause_and_resumes_without_catching_up_after_focus_loss() {
+fn encounter_continue_commits_once_and_a_failed_save_keeps_the_card_and_responses() {
+    let directory = tempfile::tempdir().unwrap();
+    let session = Session::with_hostile_fixture(HostileFixture::Harm(
+        crate::gathering::HarmFixture::WardCancellation,
+    ));
+    let obstruction = directory.path().join("obstruction");
+    std::fs::write(&obstruction, "original bytes").unwrap();
+    let mut app = host_with_table(
+        Table::new(session.clone(), obstruction.join("save.json")),
+        false,
+    );
+    continue_reading(&mut app);
+    assert_eq!(app.world().resource::<Table>().session, session);
+    let text = rendered_text(&mut app);
+    assert!(text.contains("ENCOUNTER CARD"));
+    assert!(text.contains("Decision not committed"));
+    assert!(text.contains("Ward of Protection"));
+    assert_eq!(
+        std::fs::read_to_string(&obstruction).unwrap(),
+        "original bytes"
+    );
+
+    let path = directory.path().join("save.json");
+    app.world_mut().resource_mut::<Table>().save_path = path.clone();
+    let view = session.observe();
+    let old_epoch = app.world().resource::<Table>().epoch;
+    let button = choice_button(&mut app, "Continue").unwrap();
+    app.world_mut().trigger(Activate { entity: button });
+    app.world_mut().trigger(Activate { entity: button });
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::EncounterChoice(
+            old_epoch,
+            view.revision,
+            view.choices
+                .iter()
+                .find(|choice| choice.id.starts_with("ward:"))
+                .unwrap()
+                .id
+                .clone(),
+        ));
+    app.update();
+    let mut expected = session;
+    expected
+        .choose(view.revision, "revelation:resolve")
+        .unwrap();
+    assert_eq!(app.world().resource::<Table>().session, expected);
+    assert_eq!(continuity::load_session(&path).unwrap(), expected);
+    finish_presentation(&mut app);
+    assert!(!rendered_text(&mut app).contains("ENCOUNTER CARD"));
+    assert_eq!(
+        app.world()
+            .resource::<Table>()
+            .view()
+            .play
+            .unwrap()
+            .test
+            .unwrap()
+            .difficulty,
+        3
+    );
+}
+
+#[test]
+fn encounter_surround_has_no_pause_control_and_resumes_without_a_focus_time_jump() {
     let directory = tempfile::tempdir().unwrap();
     let session = Session::with_hostile_fixture(HostileFixture::Harm(
         crate::gathering::HarmFixture::WardCancellation,
@@ -155,8 +249,7 @@ fn encounter_surround_can_pause_and_resumes_without_catching_up_after_focus_loss
         Table::new(session.clone(), directory.path().join("motion.json")),
         false,
     );
-    let pause = choice_button(&mut app, "Pause motion")
-        .expect("Motion must be controllable without dismissing the card");
+    assert!(choice_button(&mut app, "Pause motion").is_none());
     let surrounds = |app: &mut App| {
         let world = app.world_mut();
         world
@@ -172,14 +265,6 @@ fn encounter_surround_can_pause_and_resumes_without_catching_up_after_focus_loss
         draws::tick(&mut app, 0.05);
     }
     assert_ne!(surrounds(&mut app), initial);
-    app.world_mut().trigger(Activate { entity: pause });
-    app.update();
-    let paused = surrounds(&mut app);
-    draws::tick(&mut app, 30.);
-    assert_eq!(surrounds(&mut app), paused);
-    let resume = choice_button(&mut app, "Resume motion").unwrap();
-    app.world_mut().trigger(Activate { entity: resume });
-    app.update();
     let window = app
         .world_mut()
         .query_filtered::<Entity, With<Window>>()
@@ -309,6 +394,76 @@ fn reduced_motion_and_small_viewports_keep_the_reading_controls_and_effective_te
     assert_eq!(app.world().resource::<Table>().session, session);
 }
 
+#[test]
+fn encounter_response_buttons_and_their_labels_fit_without_overlap() {
+    let point = review_saves::draw_review::encounter_checkpoint(77).unwrap();
+    let (_directory, mut app) = open_reading_checkpoint(&point.session, "01163");
+    for (size, scale) in [
+        (Vec2::new(1600., 1000.), 1.),
+        (Vec2::new(1280., 800.), 2.),
+        (Vec2::new(900., 600.), 1.),
+        (Vec2::new(480., 640.), 1.),
+    ] {
+        crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, scale);
+        for _ in 0..3 {
+            app.update();
+        }
+        let world = app.world_mut();
+        let buttons: Vec<_> = world
+            .query_filtered::<(Entity, &AccessibleLabel, &ComputedNode, &UiGlobalTransform), With<Button>>()
+            .iter(world)
+            .filter(|(entity, _, _, _)| {
+                let mut parent = world.get::<ChildOf>(*entity).map(ChildOf::parent);
+                while let Some(ancestor) = parent {
+                    if world.get::<TabGroup>(ancestor).is_some_and(|group| group.modal) {
+                        return true;
+                    }
+                    parent = world.get::<ChildOf>(ancestor).map(ChildOf::parent);
+                }
+                false
+            })
+            .map(|(entity, label, node, transform)| {
+                (entity, label.0.clone(), Rect {
+                    min: transform.transform_point2(-node.size() / 2.) / scale,
+                    max: transform.transform_point2(node.size() / 2.) / scale,
+                })
+            })
+            .collect();
+        assert_eq!(
+            buttons.len(),
+            4,
+            "Continue, Read rules and both legal Ward copies"
+        );
+        for (index, (entity, label, bounds)) in buttons.iter().enumerate() {
+            assert!(
+                bounds.min.cmpge(Vec2::splat(4.)).all()
+                    && bounds.max.cmple(size - Vec2::splat(4.)).all(),
+                "{label}: {bounds:?}"
+            );
+            for child in world.get::<Children>(*entity).unwrap() {
+                if world.get::<Text>(*child).is_some() {
+                    let ink = crate::tabletop_layout::heading_checks::rendered_text_bounds(
+                        world, *child, scale,
+                    );
+                    assert!(
+                        ink.min.cmpge(bounds.min).all() && ink.max.cmple(bounds.max).all(),
+                        "{label}'s text {ink:?} exceeds its button {bounds:?}"
+                    );
+                }
+            }
+            for (_, other_label, other) in &buttons[index + 1..] {
+                assert!(
+                    bounds.max.x + 8. <= other.min.x + 0.1
+                        || other.max.x + 8. <= bounds.min.x + 0.1
+                        || bounds.max.y + 8. <= other.min.y + 0.1
+                        || other.max.y + 8. <= bounds.min.y + 0.1,
+                    "{label} {bounds:?} and {other_label} {other:?} need separate focus outlines"
+                );
+            }
+        }
+    }
+}
+
 fn review_points() -> Vec<(&'static str, Session, &'static str)> {
     [
         ("rotting-remains", 77, "01163"),
@@ -360,21 +515,12 @@ fn ordinary_encounter_review_saves_preserve_reading_reactions_tests_doom_and_eng
         }
         continue_reading(&mut app);
         finish_presentation(&mut app);
-        assert_eq!(app.world().resource::<Table>().session, before);
         match code {
             "01163" => {
-                assert!(
-                    app.world()
-                        .resource::<Table>()
-                        .view()
-                        .choices
-                        .iter()
-                        .any(|choice| choice.id.starts_with("ward:"))
-                );
-                activate_choice(&mut app, "revelation:resolve");
-                finish_presentation(&mut app);
                 let play = app.world().resource::<Table>().view().play.unwrap();
-                let test = play.test.unwrap();
+                let test = play
+                    .test
+                    .expect("Continue must start the encounter test directly");
                 assert_eq!(test.tester, Investigator::Jacqueline);
                 assert_eq!(test.difficulty, 3);
                 let saved = app.world().resource::<Table>().session.clone();
@@ -382,17 +528,6 @@ fn ordinary_encounter_review_saves_preserve_reading_reactions_tests_doom_and_eng
                 assert!(!rendered_text(&mut reopened).contains("ENCOUNTER CARD"));
             }
             "01166" => {
-                assert_eq!(
-                    app.world()
-                        .resource::<Table>()
-                        .view()
-                        .play
-                        .unwrap()
-                        .agenda_doom,
-                    1
-                );
-                activate_choice(&mut app, "revelation:resolve");
-                finish_presentation(&mut app);
                 let play = app.world().resource::<Table>().view().play.unwrap();
                 assert_eq!(play.agenda_doom, 2);
                 assert_eq!(
@@ -404,6 +539,7 @@ fn ordinary_encounter_review_saves_preserve_reading_reactions_tests_doom_and_eng
                 );
             }
             "01160" => {
+                assert_eq!(app.world().resource::<Table>().session, before);
                 let play = app.world().resource::<Table>().view().play.unwrap();
                 assert!(
                     play.scenario

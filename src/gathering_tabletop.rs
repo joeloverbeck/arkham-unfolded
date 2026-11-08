@@ -56,6 +56,7 @@ enum Action {
     ContinueStory,
     ContinueResult(u64),
     Encounter(u64, encounter::Input),
+    EncounterChoice(u64, u64, String),
     ResultChoice(u64, u64, String),
     Reveal(crate::tabletop_reveal::Request),
     Choose(u64, u64, String),
@@ -745,12 +746,24 @@ fn handle_actions(
         let result_choice = matches!(action, Action::ResultChoice(..))
             && table.presentation.result().is_none()
             && table.result_opportunities();
+        let encounter_choice = if let Action::EncounterChoice(epoch, revision, id) = &action {
+            *epoch == table.epoch
+                && table
+                    .presentation
+                    .encounter()
+                    .accepts(&table.session, *revision, id)
+        } else {
+            false
+        };
+        if matches!(action, Action::EncounterChoice(..)) && !encounter_choice {
+            continue;
+        }
         let permitted_in_modal = if table.presentation.result().is_some() {
             matches!(action, Action::ContinueResult(_))
         } else if reading {
             matches!(action, Action::ContinueStory)
         } else if table.presentation.encounter().current().is_some() {
-            matches!(action, Action::Encounter(..))
+            matches!(action, Action::Encounter(..)) || encounter_choice
         } else if table.result_opportunities() {
             result_choice
         } else if table.prediction.is_some() {
@@ -768,7 +781,11 @@ fn handle_actions(
         if table.modal() && !permitted_in_modal {
             continue;
         }
-        if consequences.active() && matches!(action, Action::Choose(..) | Action::ResultChoice(..))
+        if consequences.active()
+            && matches!(
+                action,
+                Action::Choose(..) | Action::ResultChoice(..) | Action::EncounterChoice(..)
+            )
         {
             continue;
         }
@@ -825,10 +842,12 @@ fn handle_actions(
                 }
                 table.dirty = true;
             }
-            Action::Choose(epoch, revision, id) | Action::ResultChoice(epoch, revision, id)
+            Action::Choose(epoch, revision, id)
+            | Action::ResultChoice(epoch, revision, id)
+            | Action::EncounterChoice(epoch, revision, id)
                 if epoch == table.epoch
-                    && (!table.modal() || result_choice)
-                    && !table.is_presenting() =>
+                    && (!table.modal() || result_choice || encounter_choice)
+                    && (!table.is_presenting() || encounter_choice) =>
             {
                 let id = if id == "test-card:pass"
                     && controls::automatic_choice(&table.session.observe()) == Some(id.as_str())
@@ -884,7 +903,7 @@ fn handle_actions(
                 };
                 table.dirty = true;
             }
-            Action::Choose(_, _, _) | Action::ResultChoice(_, _, _) => {}
+            Action::Choose(..) | Action::ResultChoice(..) | Action::EncounterChoice(..) => {}
             Action::Select(epoch, revision, selection)
                 if epoch == table.epoch && revision == table.view().revision && !table.modal() =>
             {
