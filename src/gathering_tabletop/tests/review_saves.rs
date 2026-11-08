@@ -81,12 +81,24 @@ fn patrice_upkeep_orders_one_physical_hand_in_her_drawer_and_reopens_there() {
             .id
             .clone();
         expected.choose(view.revision, &choice).unwrap();
-        activate_choice(&mut app, &choice);
+        if view
+            .choices
+            .iter()
+            .filter(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
+            .count()
+            > 1
+        {
+            activate_choice(&mut app, &choice);
+        } else {
+            app.update();
+        }
         if expected
             .observe()
             .choices
             .iter()
-            .any(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
+            .filter(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
+            .count()
+            > 1
         {
             tick(&mut app, 0.5);
         }

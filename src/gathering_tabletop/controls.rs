@@ -749,6 +749,10 @@ pub(super) fn automatic_choice(view: &Observation) -> Option<&str> {
     if choices.next().is_some() {
         return None;
     }
+    // The sole remaining card's place in Patrice's discard order is forced.
+    if choice.id.starts_with("upkeep:patrice-discard:") {
+        return Some(choice.id.as_str());
+    }
     matches!(
         choice.id.as_str(),
         "enemy:attacks"

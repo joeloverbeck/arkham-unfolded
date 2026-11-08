@@ -278,6 +278,66 @@ fn entered_phases_are_announced_before_processing_and_block_background_choices()
 }
 
 #[test]
+fn reopening_the_last_patrice_discard_finishes_ordering_and_refills_only_once() {
+    let (_, mut session, _) = round_review_points().pop().unwrap();
+    // Recreate a pre-fix save with the final card still waiting, using ordinary
+    // driver choices rather than privileged state construction.
+    for _ in 0..5 {
+        let view = session.observe();
+        let choices = view
+            .choices
+            .iter()
+            .filter(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
+            .collect::<Vec<_>>();
+        assert!(!choices.is_empty());
+        if choices.len() == 1 {
+            break;
+        }
+        session.choose(view.revision, &choices[0].id).unwrap();
+    }
+    let before = session.observe();
+    assert_eq!(
+        before
+            .choices
+            .iter()
+            .filter(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
+            .map(|choice| choice.id.as_str())
+            .collect::<Vec<_>>(),
+        ["upkeep:patrice-discard:111"]
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("last-discard.json");
+    continuity::save_session(&path, &session).unwrap();
+    let mut app = host_with_table(Table::open_existing(path.clone()).unwrap(), false);
+    settle_automatic_resolution(&mut app);
+    let after = app.world().resource::<Table>().session.clone();
+    let view = after.observe();
+    assert!(
+        view.choices
+            .iter()
+            .all(|choice| !choice.id.starts_with("upkeep:patrice-discard:"))
+    );
+    let patrice = &view.play.as_ref().unwrap().players[1];
+    assert_eq!(
+        patrice.deck_count,
+        before.play.as_ref().unwrap().players[1].deck_count - 5
+    );
+    assert_eq!(
+        patrice
+            .discard
+            .iter()
+            .map(|card| card.id)
+            .collect::<Vec<_>>(),
+        [107, 135, 119, 121, 111]
+    );
+    assert_eq!(continuity::load_session(&path).unwrap(), after);
+    drop(app);
+    let mut reopened = host_with_table(Table::open_existing(path).unwrap(), false);
+    settle_automatic_resolution(&mut reopened);
+    assert_eq!(reopened.world().resource::<Table>().session, after);
+}
+
+#[test]
 fn automatic_round_preserves_discard_order_and_reopens_into_a_real_mythos_choice() {
     let mut session = Session::with_seed(89);
     for id in [
@@ -331,6 +391,15 @@ fn automatic_round_preserves_discard_order_and_reopens_into_a_real_mythos_choice
                 )
             });
         if let Some(id) = choice.id.strip_prefix("upkeep:patrice-discard:") {
+            assert!(
+                view.choices
+                    .iter()
+                    .filter(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
+                    .count()
+                    > 1,
+                "The last remaining card has no discard-order decision: {}",
+                choice.label
+            );
             discarded.push(id.parse::<u16>().unwrap());
         }
         activate_choice(&mut app, &choice.id);
@@ -366,13 +435,15 @@ fn automatic_round_preserves_discard_order_and_reopens_into_a_real_mythos_choice
     assert_eq!(play.players[2].deck_count, before.players[2].deck_count - 1);
     assert!(play.players.iter().all(|player| player.resources == 6));
     assert_eq!(play.actions_remaining, [3; 3]);
+    assert_eq!(discarded, [107, 135, 119, 121]);
     assert_eq!(
         &play.players[1]
             .discard
             .iter()
             .map(|card| card.id)
-            .collect::<Vec<_>>()[..discarded.len()],
-        discarded
+            .collect::<Vec<_>>()[..5],
+        [107, 135, 119, 121, 111],
+        "Rise to the Occasion is placed last without another ordering click"
     );
     assert!(view.choices.iter().any(|choice| choice.id != "undo"));
     assert_eq!(&continuity::load_session(&path).unwrap(), session);
