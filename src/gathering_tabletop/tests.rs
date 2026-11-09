@@ -195,6 +195,7 @@ mod slots;
 mod token_guidance;
 mod trays;
 mod victory;
+mod violin;
 mod wagers_keys;
 
 #[test]

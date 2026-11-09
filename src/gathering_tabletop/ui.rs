@@ -773,7 +773,7 @@ pub(super) fn render(
         encounter::render(commands, table, art, size);
     } else if table.result_opportunities() {
         results::render(commands, table, view, art, size);
-    } else if table.modal() {
+    } else if table.inspection.is_some() || table.history_open {
         inspection(commands, table, view, art, size, context);
     }
 }

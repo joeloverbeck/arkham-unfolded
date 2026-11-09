@@ -905,6 +905,110 @@ fn voice_ra_selection() -> Session {
 }
 
 #[test]
+fn selected_token_badge_is_opaque_green_and_clear_of_the_printed_face() {
+    use bevy::camera::primitives::MeshAabb;
+    let mut session = voice_ra_selection();
+    session
+        .choose(session.observe().revision, "tokens:keep:3")
+        .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(
+        Table::new(session, directory.path().join("badge.json")),
+        true,
+    );
+    finish_presentation(&mut app);
+    let world = app.world_mut();
+    let children = world
+        .query::<(&AccessibleLabel, &Children)>()
+        .iter(world)
+        .find(|(label, _)| label.0.ends_with("\nSelected"))
+        .expect("Selected token")
+        .1
+        .to_vec();
+    let materials = world.resource::<Assets<StandardMaterial>>();
+    let meshes = world.resource::<Assets<Mesh>>();
+    let mut dark_backing = false;
+    let mut green_strokes = 0;
+    for child in children {
+        let entity = world.entity(child);
+        let (Some(transform), Some(mesh), Some(material)) = (
+            entity.get::<Transform>(),
+            entity.get::<Mesh3d>(),
+            entity.get::<MeshMaterial3d<StandardMaterial>>(),
+        ) else {
+            continue;
+        };
+        if transform.translation.x < 0.25 || transform.translation.z < 0.25 {
+            continue;
+        }
+        let material = materials.get(&material.0).unwrap();
+        let color = material.base_color.to_srgba();
+        let green = color.green > 0.6 && color.green > color.red * 1.5;
+        let dark = color.red < 0.15 && color.green < 0.15 && color.blue < 0.15;
+        if !green && !dark {
+            continue;
+        }
+        assert_eq!(material.alpha_mode, AlphaMode::Opaque);
+        assert!(material.unlit);
+        assert!(
+            entity
+                .get::<Pickable>()
+                .is_some_and(|pickable| !pickable.is_hoverable)
+        );
+        let bounds = meshes.get(&mesh.0).unwrap().get_aabb().unwrap();
+        for x in [bounds.min().x, bounds.max().x] {
+            for z in [bounds.min().z, bounds.max().z] {
+                let point = transform.transform_point(Vec3::new(x, 0., z));
+                assert!(
+                    point.x <= 0.5801 && point.z <= 0.5801,
+                    "Badge must fit the existing token spacing: {point}"
+                );
+                assert!(
+                    Vec2::new(point.x, point.z).length() > 0.25,
+                    "Printed center stays clear"
+                );
+            }
+        }
+        dark_backing |= dark;
+        green_strokes += usize::from(green);
+    }
+    assert!(
+        dark_backing,
+        "Selection needs an opaque badge at the lower-right edge"
+    );
+    assert_eq!(green_strokes, 2, "Two bold green strokes form the check");
+}
+
+#[test]
+fn premonition_sealed_tokens_are_not_marked_as_selected() {
+    use crate::gathering::{HostileFixture, TokenFixture};
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::PremonitionVoice));
+    session
+        .choose(session.observe().revision, "test:reveal")
+        .unwrap();
+    assert!(session.observe().play.unwrap().premonition.is_some());
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(
+        Table::new(session, directory.path().join("sealed.json")),
+        true,
+    );
+    finish_presentation(&mut app);
+    let world = app.world_mut();
+    let labels: Vec<_> = world
+        .query::<&AccessibleLabel>()
+        .iter(world)
+        .filter(|label| label.0.starts_with("Token "))
+        .map(|label| label.0.clone())
+        .collect();
+    assert!(
+        labels.iter().any(|label| label.ends_with("\nSealed")),
+        "Sealed token must say Sealed: {labels:?}"
+    );
+    assert!(!labels.iter().any(|label| label.ends_with("\nSelected")));
+}
+
+#[test]
 fn token_progress_tracks_selection_deselection_and_the_autofail_cancellation_alternative() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = host_with_table(

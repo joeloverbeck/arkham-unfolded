@@ -463,6 +463,7 @@ enum ShownTokenState {
     Revealed,
     Available,
     Selected,
+    Sealed,
     Ignored,
     Cancelled,
     Resolved,
@@ -474,6 +475,7 @@ impl ShownTokenState {
             Self::Revealed => "Revealed",
             Self::Available => "Available now",
             Self::Selected => "Selected",
+            Self::Sealed => "Sealed",
             Self::Ignored => "Ignored",
             Self::Cancelled => "Cancelled",
             Self::Resolved => "Resolved",
@@ -733,14 +735,45 @@ impl Painter<'_, '_, '_> {
                     ..default()
                 })));
         }
-        // Marks stay attached to the physical disk during reveal/return motion.
-        // A check means selected, one slash ignored, and the shared disk draws X
-        // for cancelled. The dark outline keeps marks visible on pale artwork.
+        // The badge overlaps the lower-right edge while staying inside the
+        // existing 0.58 axis footprint, including the selection rim. Its opaque
+        // backing separates selection from artwork without covering the center.
+        // All marks remain attached to the disk during reveal/return motion.
+        if matches!(state, ShownTokenState::Selected) {
+            for (radius, height, color) in [(0.19, 0.085, PAPER), (0.18, 0.105, INK)] {
+                self.commands.entity(disk).with_child((
+                    Mesh3d(self.meshes.add(Cylinder::new(radius, 0.02))),
+                    MeshMaterial3d(self.materials.add(StandardMaterial {
+                        base_color: color,
+                        unlit: true,
+                        ..default()
+                    })),
+                    Transform::from_xyz(0.39, height, 0.39),
+                    Pickable::IGNORE,
+                ));
+            }
+            let corner = Vec2::new(0.36, 0.445);
+            for (from, to) in [
+                (Vec2::new(0.295, 0.375), corner),
+                (corner, Vec2::new(0.495, 0.31)),
+            ] {
+                let center = (from + to) * 0.5;
+                let delta = to - from;
+                self.commands.entity(disk).with_child((
+                    Mesh3d(self.meshes.add(Cuboid::new(delta.length(), 0.015, 0.045))),
+                    MeshMaterial3d(self.materials.add(StandardMaterial {
+                        base_color: Color::srgb(0.25, 0.92, 0.49),
+                        unlit: true,
+                        ..default()
+                    })),
+                    Transform::from_xyz(center.x, 0.125, center.y)
+                        .with_rotation(Quat::from_rotation_y(-delta.y.atan2(delta.x))),
+                    Pickable::IGNORE,
+                ));
+            }
+        }
+        // Ignored retains its outlined slash; the shared disk draws a cancelled X.
         let strokes: &[(f32, f32, f32, f32)] = match state {
-            ShownTokenState::Selected => &[
-                (-0.12, 0.30, 0.24, -std::f32::consts::FRAC_PI_4),
-                (0.10, 0.26, 0.42, std::f32::consts::FRAC_PI_4),
-            ],
             ShownTokenState::Ignored => &[(0., 0., 0.78, std::f32::consts::FRAC_PI_4)],
             _ => &[],
         };
@@ -1446,7 +1479,7 @@ pub(super) fn render(
                     sealed.faces.len(),
                 )),
                 *token,
-                ShownTokenState::Selected,
+                ShownTokenState::Sealed,
                 slot + 1,
                 false,
             );
