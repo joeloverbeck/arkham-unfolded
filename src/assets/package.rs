@@ -22,6 +22,20 @@ pub struct ArtworkUse {
     _installation: Option<File>,
 }
 
+#[cfg(test)]
+pub(crate) fn play_lease_fixture(config: &AssetConfig) -> ArtworkUse {
+    // A headless window fixture holds the real OS lock without claiming that
+    // synthetic artwork passed integrity or GPU admission.
+    let managed = config.installation_directory();
+    fs::create_dir_all(&managed).unwrap();
+    let play = lock_file(&managed.join("play.lock")).unwrap();
+    play.try_lock_shared().unwrap();
+    ArtworkUse {
+        _play: play,
+        _installation: None,
+    }
+}
+
 /// Pin the effective collection before opening a save or starting asynchronous loading.
 pub fn acquire_play(config: &AssetConfig, root: &Path) -> std::result::Result<ArtworkUse, String> {
     let acquire = || -> Result<ArtworkUse> {

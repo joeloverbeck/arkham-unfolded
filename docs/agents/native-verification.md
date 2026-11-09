@@ -48,10 +48,11 @@ README's launch/recovery instructions in the same handoff. Keep the existing
 save bytes intact. Prepared diagnostic checkpoints have a separate purpose and
 do not establish that the ordinary launch command works.
 
-Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. After a long implementation phase, prepare the following compact handoff in the issue's [current handoff](issue-tracker.md#current-handoff). Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from this handoff and the procedure below without reconstructing the implementation transcript.
+Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. Keep the following runnable checklist in private local evidence and link it directly to the owner in the conversation. The issue's [current handoff](issue-tracker.md#current-handoff) contains the compact public status below. Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from the private checklist and this procedure without reconstructing the implementation transcript.
 
 ```text
-Candidate: commit; executable/hash; completed check records.
+Private checklist — do not upload:
+Owning issue: URL; candidate commit and executable/hash; completed check records.
 Retention: final evidence directory; selected records and original-path mapping.
 Normal launch: owner command/cwd; resolved save; fresh or resume; startup result;
   tested replacement command and README recovery when compatibility changed.
@@ -81,6 +82,21 @@ Copy the selected JSON examples from the interaction procedure below into the ro
 
 For Gathering artwork claims, use the [launch-configuration check](../experiments/gathering-setup.md#artwork-preparation-and-selection) with the handoff's environment and artwork flags. A complete staging collection alone does not establish what this launch will load.
 
+### Public handoff preflight
+
+The public current handoff contains:
+
+```text
+Candidate: commit or snapshot digest; reviewed repository-relative file scope.
+Completed: check outcomes and dated public evidence links, with evidence limits.
+Remaining: acceptance steps and expected visible results; next boundary.
+Authority: approved scope and allowance; publication status.
+Private evidence: retained locally; runnable checklist supplied directly to owner.
+```
+
+Keep host paths, runnable commands containing them, save/artwork locations and raw environment records in the private checklist. Repository-relative source paths and public issue/PR links remain useful public evidence. Before posting a public handoff or PR body, run `scripts/tools check-public-handoff BODY_FILE` and review the intended disclosure. The command reads at most 1 MiB, reports line numbers without echoing contents, and refuses these literal forms: `/home/`, `/Users/`, `~/`, `file://`, `/tmp/`, `/run/user/`, and `local/verification/`. It never edits or publishes. Passing establishes only absence of those forms; encoded paths, other mount points, credentials and prose meaning still require review. A refusal calls for keeping the detail private, not disguising the same disclosure.
+
+### Capture preparation
 Before scheduling a capture from a prepared save, load it through the production startup path in the headless UI host and check the expected visible controls and blocking dialogs, alongside the game state. A save containing expanded locations may reopen on an Act story panel; location membership alone does not establish capture readiness. Preserve that reading barrier and prepare an ordinary later decision when the route requires an unobscured map. Record the result in the handoff above. Gathering's `gathering_tabletop::tests::review_saves` checks the seed-89 initial, Hard Knocks and expanded-map inputs, including the obstructing story transition; its retained result is in the [current verification status](../experiments/gathering-setup.md#presentation-correction-verification). These checks do not establish GPU rendering or native readability.
 
 When the owner supplies physical input, present the complete human route, expected results, capture pauses and stopping conditions before starting the timer or opening the game. Once the agreed interval begins, announce the absolute close deadline and let the owner follow that route without switching back to chat for routine instructions or intermediate answers. Request one combined report after the window closes, including anything untested. Interrupt during the run only for a planned capture pause, a failure, a stop condition or a necessary deadline reminder. The existing allowance and cleanup reserve still apply; delivering instructions late does not extend them.
@@ -171,7 +187,13 @@ scripts/tools native launch \
   --entry selection --art-root /absolute/path/to/complete-gathering-assets
 ```
 
-The launcher copies and hashes the executable before starting it. Later builds cannot replace that running copy. It creates run-local configuration, data, cache and a working directory. Selection creates no Session or save. For a direct Gathering diagnostic, use `--entry gathering`; its isolated `session.json` is created only after successful admission. Adding `--load SOURCE_SAVE` copies the supplied save before loading, because that copy is also the autosave destination. Selection rejects `--load` and `--initial-view` before staging. Original saves and settings stay untouched. The output directory must be new and outside the checkout. Use the complete Gathering collection for play and confirm completeness in `run/app.log`. To test refusal, supply a missing or partial folder with an isolated save; do not expect a playable table.
+The launcher copies and hashes the executable before starting it. Later builds cannot replace that running copy. By default it creates run-local configuration, data, cache and a working directory. Selection creates no Session or save. For a direct Gathering diagnostic, use `--entry gathering`; its isolated `session.json` is created only after successful admission. Adding `--load SOURCE_SAVE` copies the supplied save before loading, because that copy is also the autosave destination. Selection rejects `--load` and `--initial-view` before staging. Original saves and settings stay untouched in this default isolated mode. The output directory must be new and outside the checkout. Use the complete Gathering collection for play and confirm completeness in `run/app.log`. To test refusal, supply a missing or partial folder with an isolated save; do not expect a playable table.
+
+For an approved check of the actual installation, add `--installation normal` and omit `--art-root`. This mode starts selection with inherited normal configuration/data, an isolated cache, and the README checkout as its working directory (or an explicit `--working-directory`). The immutable staged executable runs directly; `run.json` records its identity, actual working directory and effective environment, including HOME for XDG fallback. The helper supplies `--verification-attempts` so older executables reject the unsupported option before opening a window or reaching personal attempts. Artwork import and settings changes affect that normal installation and must belong to the approved route.
+
+Normal mode sets `ARKHAM_VERIFICATION_ATTEMPTS_DIR` to the fresh run's `attempts/` directory. New attempts stay there; Continue and Open admit only those disposable files, protecting personal attempts during this diagnostic route. The helper captures the original reference in a private snapshot in that directory. Before updating Continue, the app checks that snapshot under the ordinary replacement lock: only the original reference or another disposable attempt from this run may be replaced. A newer owner selection remains untouched across repeated diagnostic admissions; a missing or invalid snapshot also prevents the update.
+
+Once the child and its descendants have stopped, the supervisor restores the original Continue bytes only if the current reference still names one of this run's regular disposable files and its predecessor has not drifted. A concurrent different reference is preserved and reported. If a newer owner choice is in the predecessor, both current and predecessor remain untouched for inspection rather than restoring a stale snapshot. The original reference and recovery copy are retained in the private manifest; disposable saves remain evidence. Inspect `normal_installation.continue_restoration` for `restored`, `unchanged`, `preserved-concurrent-change`, `preserved-concurrent-history`, or `failed`. The history outcome requires reconciling the newer choice before treating cleanup as complete. A killed supervisor may leave `pending`; do not infer restoration or repeat effects from an incomplete record. Repair only after confirming the process is stopped and the current reference still belongs to the run. Normal checks require a fresh launch; `native restart` remains for isolated runs and clears the diagnostic attempts override. Neither mode renews desktop consent or its deadline.
 
 Complete preparation before the desktop interval. Run Cargo/build/check jobs one
 at a time: await the producer's terminal result before starting the next job.
@@ -425,7 +447,7 @@ and the same selection should report no file-content differences. Check the
 recorded SHA-256 values for the executable and review manifest, and read the
 copied run results before claiming retention succeeded. Preserve original
 records unchanged; a small README maps their old absolute paths to retained
-copies and lists any omissions. Link this location from the current handoff.
+copies and lists any omissions. Link this location in the private runnable checklist; the public current handoff carries the candidate identity and public evidence links.
 Keep it while acceptance or later comparisons rely on it; a temporary directory,
 cache location or conversation attachment is not the sole retained copy.
 

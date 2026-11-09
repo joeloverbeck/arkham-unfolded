@@ -29,6 +29,11 @@ struct RequiredArtwork {
     _handles: Vec<UntypedHandle>,
 }
 
+pub(crate) enum WindowExit {
+    Finished(AppExit, bool),
+    Navigate(Command),
+}
+
 impl Recovery {
     pub(crate) fn prepare(
         mut config: AssetConfig,
@@ -105,33 +110,64 @@ impl Recovery {
     /// closing its window, preserving the original invocation except its effective
     /// artwork root and reopening a New attempt once its guarded creation succeeded.
     /// Fresh loading and input queues cannot inherit a failed pass.
-    pub(crate) fn finish(mut self, exit: AppExit, created_attempt: bool) -> Result<(), String> {
+    /// Own the window-to-recovery transition, including the play lease lifetime.
+    pub(crate) fn run_window(
+        self,
+        usage: crate::assets::package::ArtworkUse,
+        window: impl FnOnce(&Self) -> Result<WindowExit, String>,
+    ) -> Result<(), String> {
+        let next = self.run_window_with(
+            usage,
+            window,
+            &mut asset_settings::zenity,
+            &mut |config, dialog| asset_settings::import_with_progress(config, dialog),
+        )?;
+        if let Some(mut command) = next {
+            let error = command.exec();
+            return Err(format!("Could not continue native startup: {error}"));
+        }
+        Ok(())
+    }
+
+    fn run_window_with<D>(
+        mut self,
+        usage: crate::assets::package::ArtworkUse,
+        window: impl FnOnce(&Self) -> Result<WindowExit, String>,
+        dialog: &mut D,
+        import: &mut impl FnMut(&mut AssetConfig, &mut D) -> Result<Option<PathBuf>, String>,
+    ) -> Result<Option<Command>, String>
+    where
+        D: FnMut(&[&str]) -> Result<Output, String>,
+    {
+        let outcome = window(&self);
+        // A closed window must release play before recovery can import, or a
+        // navigation command can replace this process.
+        drop(usage);
+        let (exit, created_attempt) = match outcome? {
+            WindowExit::Navigate(command) => return Ok(Some(command)),
+            WindowExit::Finished(exit, created) => (exit, created),
+        };
         let reason = self.failure.lock().expect("artwork recovery lock").take();
         if let Some(reason) = reason {
-            recover(
+            recover_with(
                 &mut self.root,
                 &mut self.config,
                 self.collection,
                 &reason,
-                &mut asset_settings::zenity,
+                dialog,
+                import,
             )?;
-            require(
-                &mut self.root,
-                &mut self.config,
-                self.collection,
-                &mut asset_settings::zenity,
-            )?;
+            require(&mut self.root, &mut self.config, self.collection, dialog)?;
             let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-            let error = Command::new(executable)
-                .args(retry_arguments(
-                    std::env::args_os().skip(1),
-                    &self.root,
-                    created_attempt,
-                ))
-                .exec();
-            return Err(format!("Could not retry native startup: {error}"));
+            let mut command = Command::new(executable);
+            command.args(retry_arguments(
+                std::env::args_os().skip(1),
+                &self.root,
+                created_attempt,
+            ));
+            return Ok(Some(command));
         }
-        crate::tabletop_health::exit_result(exit)
+        crate::tabletop_health::exit_result(exit).map(|_| None)
     }
 }
 
@@ -186,6 +222,27 @@ fn recover(
     reason: &str,
     dialog: &mut impl FnMut(&[&str]) -> Result<Output, String>,
 ) -> Result<(), String> {
+    recover_with(
+        root,
+        config,
+        collection,
+        reason,
+        dialog,
+        &mut |config, dialog| asset_settings::import_with_progress(config, dialog),
+    )
+}
+
+fn recover_with<D>(
+    root: &mut PathBuf,
+    config: &mut AssetConfig,
+    collection: Collection,
+    reason: &str,
+    dialog: &mut D,
+    import: &mut impl FnMut(&mut AssetConfig, &mut D) -> Result<Option<PathBuf>, String>,
+) -> Result<(), String>
+where
+    D: FnMut(&[&str]) -> Result<Output, String>,
+{
     let mut outcome = String::new();
     loop {
         let message = format!(
@@ -215,7 +272,7 @@ fn recover(
             .unwrap_or(&response.stdout)
             == b"Import artwork"
         {
-            match asset_settings::import_with_progress(config, dialog) {
+            match import(config, dialog) {
                 Ok(Some(path)) => {
                     *root = path;
                     outcome = "Artwork imported. Retry checks image, font, model and rendering readiness. Previous artwork is retained until admission.".into();
@@ -264,6 +321,134 @@ mod tests {
             stdout: text.as_bytes().to_vec(),
             stderr: Vec::new(),
         }
+    }
+
+    #[test]
+    fn renderer_failure_releases_play_before_recovery_import() {
+        use std::io::Write;
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("collection");
+        let config = AssetConfig::load_at(directory.path().join("settings"), root.clone());
+        let package = directory.path().join("incompatible.zip");
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&package).unwrap());
+        zip.start_file("manifest.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        // Valid ZIP transport reaches the real import lock and then fails the
+        // independent collection check. No private artwork is needed in CI.
+        zip.write_all(br#"{"collection":"test-old","assets":[]}"#)
+            .unwrap();
+        zip.finish().unwrap();
+        let lease = assets::package::play_lease_fixture(&config);
+        let mut probe = config.clone();
+        assert!(
+            assets::package::import_gathering(&package, &mut probe)
+                .unwrap_err()
+                .contains("Close active play")
+        );
+        let recovery = Recovery {
+            root,
+            config,
+            collection: Collection::Gathering,
+            failure: Arc::default(),
+        };
+        let mut calls = 0;
+        let result = recovery.run_window_with(
+            lease,
+            |recovery| {
+                recovery.refuse("fixture decoder failure after window creation");
+                Ok(WindowExit::Finished(AppExit::error(), false))
+            },
+            &mut |args| {
+                calls += 1;
+                Ok(match calls {
+                    1 => response(1, "Import artwork\n"),
+                    2 => {
+                        assert!(args.contains(&"--file-selection"));
+                        response(0, &format!("{}\n", package.display()))
+                    }
+                    3 => {
+                        let text = args.iter().find(|s| s.starts_with("--text=")).unwrap();
+                        assert!(text.contains("Artwork import failed"), "{text}");
+                        assert!(!text.contains("Close active play"), "{text}");
+                        response(1, "")
+                    }
+                    _ => panic!("Unexpected recovery action"),
+                })
+            },
+            &mut |config, dialog| {
+                asset_settings::import_with_dialog(
+                    config,
+                    dialog,
+                    &std::sync::atomic::AtomicBool::new(false),
+                )
+            },
+        );
+        assert!(result.unwrap_err().contains("startup canceled"));
+        assert_eq!(calls, 3);
+        assert!(!directory.path().join("settings").exists());
+    }
+
+    #[test]
+    #[ignore = "requires ARKHAM_PACKAGE_ZIP; window and dialog infrastructure are headless"]
+    fn renderer_failure_imports_real_replacement_before_retry() {
+        let package =
+            PathBuf::from(std::env::var_os("ARKHAM_PACKAGE_ZIP").expect("real runtime ZIP"));
+        let directory = tempfile::tempdir().unwrap();
+        let config = AssetConfig::load_at(
+            directory.path().join("settings"),
+            directory.path().join("assets"),
+        );
+        let mut initial = config.clone();
+        let prior = assets::package::import_gathering(&package, &mut initial).unwrap();
+        let usage = assets::package::acquire_play(&initial, &prior).unwrap();
+        let recovery = Recovery {
+            root: prior.clone(),
+            config: initial,
+            collection: Collection::Gathering,
+            failure: Arc::default(),
+        };
+        let mut calls = 0;
+        let retry = recovery
+            .run_window_with(
+                usage,
+                |recovery| {
+                    // Make the current installation unsuitable so Import must replace it.
+                    std::fs::write(prior.join("manifest.json"), b"damaged after loading").unwrap();
+                    recovery.refuse("decoder failure");
+                    Ok(WindowExit::Finished(AppExit::error(), false))
+                },
+                &mut |args| {
+                    calls += 1;
+                    Ok(match calls {
+                        1 => response(1, "Import artwork\n"),
+                        2 => response(0, &format!("{}\n", package.display())),
+                        3 => {
+                            assert!(args.iter().any(|a| a.contains("Artwork imported")));
+                            response(0, "")
+                        }
+                        _ => panic!("Unexpected recovery action"),
+                    })
+                },
+                &mut |config, dialog| {
+                    asset_settings::import_with_dialog(
+                        config,
+                        dialog,
+                        &std::sync::atomic::AtomicBool::new(false),
+                    )
+                },
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(calls, 3);
+        let reloaded =
+            AssetConfig::load_at(config.path().to_owned(), directory.path().join("assets"));
+        assert_ne!(reloaded.root(), prior);
+        assert!(assets::inspect_gathering(reloaded.root()).complete);
+        assert_eq!(
+            std::fs::read(prior.join("manifest.json")).unwrap(),
+            b"damaged after loading"
+        );
+        assert!(retry.get_args().any(|arg| arg == reloaded.root()));
     }
 
     #[test]

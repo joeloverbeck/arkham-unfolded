@@ -39,6 +39,11 @@ struct Previous {
 pub fn run(args: Restart) -> Result<u8> {
     let source = args.run.canonicalize()?;
     let bytes = fs::read(&source)?;
+    let metadata: Value = serde_json::from_slice(&bytes)?;
+    ensure!(
+        metadata["installation"] != "normal",
+        "Normal-installation checks require a fresh launch and Continue snapshot"
+    );
     let previous: Previous = serde_json::from_slice(&bytes).context("Read completed native run")?;
     ensure!(
         matches!(
@@ -161,7 +166,10 @@ pub fn run(args: Restart) -> Result<u8> {
     if entry == Entry::Gathering {
         command.arg("--save").arg(&previous.save);
     }
-    command.current_dir(&cwd).envs(&expected);
+    command
+        .current_dir(&cwd)
+        .envs(&expected)
+        .env_remove("ARKHAM_VERIFICATION_ATTEMPTS_DIR");
     let argv: Vec<_> = std::iter::once(command.get_program())
         .chain(command.get_args())
         .map(|arg| arg.to_string_lossy().into_owned())
