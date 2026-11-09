@@ -138,6 +138,24 @@ fn main() -> ExitCode {
         return ExitCode::from(97);
     }
     if args.iter().any(|arg| arg == "--save") || args.windows(2).any(|pair| pair == ["--entry", "selection"]) {
+        if env::var_os("ARKHAM_FIXTURE_NORMAL_ATTEMPT").is_some() {
+            if env::var("ARKHAM_FIXTURE_NORMAL_ATTEMPT").as_deref() == Ok("legacy") && args.iter().any(|a| a == "--verification-attempts") {
+                eprintln!("Unknown selection option: --verification-attempts");
+                return ExitCode::from(2);
+            }
+            let attempts = std::path::PathBuf::from(env::var_os("ARKHAM_VERIFICATION_ATTEMPTS_DIR").unwrap());
+            let path = attempts.join("test.json");
+            fs::write(&path, "disposable attempt").unwrap();
+            let reference = std::path::PathBuf::from(env::var_os("XDG_CONFIG_HOME").unwrap()).join("arkham-unfolded/last-gathering.json");
+            if env::var("ARKHAM_FIXTURE_NORMAL_ATTEMPT").as_deref() == Ok("concurrent-before") {
+                fs::write(&reference, "\"/owner/newer-attempt.json\"").unwrap();
+            }
+            if reference.exists() { fs::copy(&reference, reference.with_extension("json.previous")).unwrap(); }
+            fs::write(&reference, format!("\"{}\"", path.display())).unwrap();
+            if env::var("ARKHAM_FIXTURE_NORMAL_ATTEMPT").as_deref() == Ok("concurrent") {
+                fs::write(reference, "\"/owner/newer-attempt.json\"").unwrap();
+            }
+        }
         if env::var_os("ARKHAM_FIXTURE_DESCENDANT").is_some() {
             let child = Command::new(env::current_exe().unwrap()).arg("--fixture-descendant").spawn().unwrap();
             fs::write("descendant.pid", child.id().to_string()).unwrap();
@@ -148,6 +166,7 @@ fn main() -> ExitCode {
             assert!(!std::path::Path::new(save).exists());
         }
         if env::var_os("ARKHAM_FIXTURE_EXPECT_RESTART").is_some() {
+            assert!(env::var_os("ARKHAM_VERIFICATION_ATTEMPTS_DIR").is_none());
             assert!(!args.iter().any(|arg| arg == "--art-root"));
             if let Some(save) = save.filter(|_| !fresh) { assert_eq!(fs::read_to_string(save).unwrap(), "pending decision"); }
             let config = std::path::PathBuf::from(env::var_os("XDG_CONFIG_HOME").unwrap());

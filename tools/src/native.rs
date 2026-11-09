@@ -1,5 +1,6 @@
 use crate::process::{Completion, Identity, OwnedChild};
 mod approval;
+mod normal;
 mod restart;
 use crate::{
     desktop::X11,
@@ -33,7 +34,7 @@ pub enum Command {
         #[command(subcommand)]
         command: approval::Command,
     },
-    /// Stage an immutable executable and supervise an isolated run.
+    /// Stage an immutable executable and supervise a bounded verification run.
     Launch(Launch),
     /// Restart an isolated run under its original approval and deadline.
     Restart(restart::Restart),
@@ -145,6 +146,12 @@ enum Entry {
     Gathering,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Installation {
+    Isolated,
+    Normal,
+}
+
 #[derive(Clone, Copy, ValueEnum)]
 enum LaunchOutput {
     Json,
@@ -169,6 +176,12 @@ pub struct Launch {
     binary: PathBuf,
     #[arg(long)]
     output_dir: PathBuf,
+    /// Normal keeps real artwork settings/data, with disposable attempts and guarded Continue restoration.
+    #[arg(long, value_enum, default_value_t = Installation::Isolated)]
+    installation: Installation,
+    /// Normal installation's working directory; defaults to the README checkout.
+    #[arg(long)]
+    working_directory: Option<PathBuf>,
     #[arg(long, alias = "experiment", value_enum, default_value_t = Entry::Selection)]
     entry: Entry,
     #[arg(long)]
@@ -574,9 +587,11 @@ fn launch_environment(overrides: &std::collections::BTreeMap<&str, PathBuf>) -> 
     // Capture only settings relevant to the native graphics comparison, never a
     // complete process environment. Null and empty values remain distinct.
     for name in [
+        "HOME",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
         "XDG_CACHE_HOME",
+        "ARKHAM_VERIFICATION_ATTEMPTS_DIR",
         "WGPU_BACKEND",
         "WGPU_POWER_PREF",
         "WGPU_ADAPTER_NAME",
@@ -598,10 +613,13 @@ fn launch_environment(overrides: &std::collections::BTreeMap<&str, PathBuf>) -> 
         "XDG_SESSION_TYPE",
     ] {
         let inherited = std::env::var_os(name);
-        let effective = overrides
+        let mut effective = overrides
             .get(name)
             .map(|path| path.as_os_str())
             .or(inherited.as_deref());
+        if name == "ARKHAM_VERIFICATION_ATTEMPTS_DIR" && !overrides.contains_key(name) {
+            effective = None;
+        }
         environment.insert(
             name.to_owned(),
             json!({
@@ -626,6 +644,15 @@ fn isolated_directories(directory: &Path) -> std::collections::BTreeMap<&str, Pa
 
 fn launch(args: Launch) -> Result<u8> {
     let approval = approval::Approval::admit(args.approval.as_deref())?;
+    ensure!(
+        args.installation == Installation::Normal || args.working_directory.is_none(),
+        "--working-directory requires --installation normal"
+    );
+    ensure!(
+        args.installation != Installation::Normal
+            || (args.entry == Entry::Selection && args.art_root.is_none()),
+        "Normal installation starts scenario selection without an artwork override"
+    );
     ensure!(
         (args.initial_view.is_none() && args.load.is_none()) || args.entry == Entry::Gathering,
         "--load and --initial-view require --entry gathering"
@@ -665,14 +692,38 @@ fn launch(args: Launch) -> Result<u8> {
         .as_ref()
         .map(|source| copy_verified(source, &save))
         .transpose()?;
-    let isolated = isolated_directories(&directory);
+    let mut isolated = isolated_directories(&directory);
+    let normal = if args.installation == Installation::Normal {
+        isolated.remove("XDG_CONFIG_HOME");
+        isolated.remove("XDG_DATA_HOME");
+        let record = normal::prepare(&directory)?;
+        isolated.insert(
+            "ARKHAM_VERIFICATION_ATTEMPTS_DIR",
+            directory.join("attempts"),
+        );
+        Some(record)
+    } else {
+        None
+    };
     for path in isolated.values() {
-        fs::create_dir(path)?;
+        fs::create_dir_all(path)?;
     }
+    let cwd = if normal.is_some() {
+        args.working_directory
+            .unwrap_or_else(repository)
+            .canonicalize()?
+    } else {
+        directory.clone()
+    };
     let mut command = Process::new(&staged);
     match args.entry {
         Entry::Selection => {
             command.args(["--entry", "selection"]);
+            if normal.is_some() {
+                // Older executables reject this option before exposing personal
+                // state, rather than silently ignoring the environment guard.
+                command.arg("--verification-attempts");
+            }
         }
         Entry::Gathering => {
             command
@@ -698,7 +749,7 @@ fn launch(args: Launch) -> Result<u8> {
         .collect();
     let mut metadata = json!({"status":"staged", "source_binary":binary, "binary":staged, "sha256":hash,
     "entry_target": match args.entry { Entry::Selection => "selection", Entry::Gathering => "gathering" },
-    "argv":argv, "cwd":directory, "environment":isolated, "save":save, "source_save":source_save,
+    "argv":argv, "cwd":cwd, "environment":isolated, "save":save, "source_save":source_save,
     "source_save_sha256":save_hash, "log":directory.join("app.log"), "timeout_seconds":args.timeout_seconds,
     "initial_view":args.initial_view,
     "launch_conditions": {
@@ -715,8 +766,17 @@ fn launch(args: Launch) -> Result<u8> {
         "verify_executable_hash_after_spawn": true
     }});
     metadata["approval"] = json!(args.approval);
+    metadata["installation"] = json!(if normal.is_some() {
+        "normal"
+    } else {
+        "isolated"
+    });
+    metadata["normal_installation"] = json!(normal);
     metadata["approval_deadline_unix_seconds"] = json!(approval.deadline_unix_seconds);
-    command.current_dir(&directory).envs(&isolated);
+    command.current_dir(&cwd).envs(&isolated);
+    if normal.is_none() {
+        command.env_remove("ARKHAM_VERIFICATION_ATTEMPTS_DIR");
+    }
     supervise(
         &directory,
         command,
@@ -832,8 +892,17 @@ fn supervise(
         );
     }
     metadata["save_exists_at_exit"] = json!(save.try_exists().ok());
+    let restoration = if metadata["normal_installation"].is_object() && cleanup.is_ok() {
+        normal::restore(&mut metadata["normal_installation"])
+    } else {
+        Ok(())
+    };
+    if let Err(error) = &restoration {
+        metadata["normal_installation"]["continue_restoration"] = json!("failed");
+        metadata["normal_installation"]["error"] = json!(format!("{error:#}"));
+    }
     record(directory, &metadata)?;
-    let result = cleanup.and(outcome);
+    let result = cleanup.and(restoration).and(outcome);
     match output_format {
         LaunchOutput::Json => {
             let code = result?;

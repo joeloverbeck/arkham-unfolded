@@ -420,6 +420,7 @@ impl Options {
     }
 
     fn open_table(&self) -> Result<Table, String> {
+        crate::attempts::verification_path(&self.save)?;
         if self.attempt.as_deref() == Some("open") {
             return Table::open_existing(self.save.clone());
         }
@@ -507,7 +508,17 @@ fn run_gathering() -> Result<(), String> {
         options.art_root.clone(),
         crate::tabletop_support::asset_settings::Collection::Gathering,
     )?;
-    let _artwork_use = crate::assets::package::acquire_play(&recovery.config(), recovery.root())?;
+    let artwork_use = crate::assets::package::acquire_play(&recovery.config(), recovery.root())?;
+    recovery.run_window(artwork_use, |recovery| {
+        run_window(&options, recovery, &collection)
+    })
+}
+
+fn run_window(
+    options: &Options,
+    recovery: &crate::tabletop_startup::Recovery,
+    collection: &crate::assets::CollectionReport,
+) -> Result<crate::tabletop_startup::WindowExit, String> {
     let prepared = art::Prepared::new(recovery.root().to_owned())?;
     let mut app = App::new();
     let mut table = options.open_table()?;
@@ -543,28 +554,24 @@ fn run_gathering() -> Result<(), String> {
     let art = prepared.load(app.world().resource::<AssetServer>());
     app.insert_resource(art);
     install(&mut app);
-    recovery.install(&mut app, &collection);
+    recovery.install(&mut app, collection);
     let navigation = app.world().resource::<Navigation>().clone();
     let exit = app.run();
-    // The window is closed. Recovery must be able to import a replacement after
-    // a decoder/rendering failure; it is no longer an active playing consumer.
-    drop(_artwork_use);
     if navigation
         .returning
         .load(std::sync::atomic::Ordering::Relaxed)
     {
         let args: Vec<_> = std::env::args().collect();
-        return crate::scenario_selection::replace(return_selection_command(
-            &args,
-            recovery.root(),
-        )?);
+        return Ok(crate::tabletop_startup::WindowExit::Navigate(
+            return_selection_command(&args, recovery.root())?,
+        ));
     }
-    recovery.finish(
+    Ok(crate::tabletop_startup::WindowExit::Finished(
         exit,
         navigation
             .created
             .load(std::sync::atomic::Ordering::Relaxed),
-    )
+    ))
 }
 
 /// Construct the actual outgoing process command before replacing the renderer.

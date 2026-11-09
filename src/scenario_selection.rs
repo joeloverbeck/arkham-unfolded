@@ -62,6 +62,10 @@ pub fn run() -> Result<(), String> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--entry" if args.next().as_deref() == Some("selection") => {}
+            "--verification-attempts" => {
+                crate::attempts::verification_directory()?
+                    .ok_or("Verification requires its disposable attempts directory.")?;
+            }
             "--art-root" => state.root = Some(args.next().ok_or("--art-root needs a path")?.into()),
             "--selection-notice" => state.notice = args.next().ok_or("Missing notice")?,
             "--screenshot" => {
@@ -262,6 +266,10 @@ fn handle(
     };
     match request {
         Ok(Some((intent, path))) => {
+            if let Err(error) = crate::attempts::verification_path(&path) {
+                state.notice = error;
+                return;
+            }
             // Validate explicit opens while selection is still available. Native
             // startup checks again; racing changes cannot become a new attempt.
             if intent == "open" {

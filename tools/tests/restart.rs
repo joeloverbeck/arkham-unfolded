@@ -102,6 +102,10 @@ impl Initial {
             .arg("--output-dir")
             .arg(&directory)
             .env("XDG_STATE_HOME", &self.state)
+            .env(
+                "ARKHAM_VERIFICATION_ATTEMPTS_DIR",
+                self._root.path().join("must-not-reach-app"),
+            )
             .env("ARKHAM_FIXTURE_EXPECT_RESTART", "1");
         if !self.has_save {
             command.env("ARKHAM_FIXTURE_UNSAVED", "1");

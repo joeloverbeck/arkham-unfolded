@@ -101,6 +101,15 @@ impl Fixture {
         let path = path.to_str().unwrap();
         for args in [
             vec!["launch", "--output-dir", path, "--binary", "/absent-binary"],
+            vec![
+                "launch",
+                "--installation",
+                "normal",
+                "--output-dir",
+                path,
+                "--binary",
+                "/absent-binary",
+            ],
             vec!["capture", "--pid", "1", "--window", "1", "--output", path],
             vec![
                 "session",
