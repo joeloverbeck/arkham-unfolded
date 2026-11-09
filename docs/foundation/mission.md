@@ -14,6 +14,8 @@ A smaller demo can investigate a risk or demonstrate progress, but cannot count 
 
 The repository is public from creation at `joeloverbeck/arkham-unfolded`. This supersedes the initial request for a private repository. Joel intends to record sessions for YouTube and may attract interest, but this project supports his own use. Public visibility creates no commitment to multiplayer, arbitrary decks, every released card, user support, hosted operation or automatic video publication. Original project code uses the MIT license; it does not relicense game content or other third-party material.
 
+On 2026-11-09, Joel clarified the intended route for interested users: build the application themselves from the public source, download a separately hosted prepared runtime artwork ZIP, and import it through the application. The intended audience can follow the build instructions. Artwork publication remains governed by the [source contract](sources-and-verification.md#presentation-asset-preparation); this clarification selects the distribution experience, not a host or a redistribution basis.
+
 Joel reports working regularly on `castkeep`, `character-relationship` and `narrative-explorer`, which he considers mainly done with occasional fixes. No other unfinished active primary artifact was identified in his response to the founding portfolio question; this does not declare unmentioned repositories parked or complete. This project's founding allocation takes discretionary development time while keeping occasional maintenance independent. The intended trade is to recover access to a favorite tabletop experience that the existing physical and digital options do not provide as desired.
 
 ## Implementation language

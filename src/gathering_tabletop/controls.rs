@@ -52,6 +52,10 @@ pub(super) enum SelectionEffect {
 }
 
 impl Context {
+    pub(super) fn selection(&self) -> Option<&Selection> {
+        self.selected.as_ref()
+    }
+
     pub fn is_open(&self) -> bool {
         self.open
     }
@@ -1194,7 +1198,15 @@ pub(super) fn render(
             PAPER,
         ));
     }
-    for choice in choices.into_iter().filter(|_| !table.is_presenting()) {
+    let mut violins = std::collections::BTreeSet::new();
+    for mut choice in choices.into_iter().filter(|_| !table.is_presenting()) {
+        if let Some(asset) = violin::asset(&choice.id) {
+            if !violins.insert(asset) {
+                continue;
+            }
+            choice.id = format!("violin:open:{asset}");
+            choice.label = "Use Patrice's Violin…".into();
+        }
         content.push(Item::Action(
             feedback::menu::label(&choice.label),
             Action::ContextChoice(

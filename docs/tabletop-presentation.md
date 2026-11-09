@@ -234,6 +234,22 @@ If legal reactions remain, name them and offer **Skip remaining reactions**.
 Continue to the next genuine decision, preserving commitments and other legal
 abilities before token reveal.
 
+Patrice's Violin offers one **Use Patrice's Violin…** entry instead of a row for
+every discard-card, recipient and benefit combination. Open one compact nearby
+panel with three independently editable groups: each eligible discard card once,
+with artwork, name and inspection; eligible investigator portraits and names; and
+**Draw 1 card** or **Gain 1 resource**. Keep all legal alternatives, including
+distinct physical copies, without choosing strategy for the player. An unusually
+large hand may scroll within the card group; never turn combinations back into
+repeated rows or require a wizard to revisit a selection.
+
+Show a short cost/result summary and an explicit **Use Violin** button. Require a
+complete legal selection before confirmation. Editing selections neither discards
+a card nor exhausts the Violin; confirmation commits the existing complete game
+choice once. Cancel/Escape spends nothing. Retain the common inspection, keyboard,
+revision and save-before-install safeguards. This is a local compound chooser,
+not a new game timing window or a replacement resolution surface.
+
 ## Test area, planned reveals and results
 
 Test is dedicated to skill tests, with a stable source, commitments and physical
@@ -272,6 +288,17 @@ cues instead of a whole row per source. Current selection scope can cross origin
 groups; distinguish it, provide one clear instruction and show selection progress.
 Do not retain separate old lower revealed/canceled regions. Canceled and ignored
 states remain clear through shape/text as well as color and preserve custody.
+
+Mark a currently selected chaos token with a bold green check on an opaque dark
+circular badge overlapping its lower-right edge. Keep the printed modifier or
+symbol unobstructed and retain the gold selection rim. The check's shape and
+contrast against its own backing must remain readable at the actual camera scale;
+color alone does not carry selection. Include the badge in the token's layout
+footprint so it neither overlaps neighboring tokens nor crosses the region edge.
+Keep availability, hover, ignored slashes and canceled X marks distinct. The
+check means selected for the current choice, not revealed, resolved or successful;
+the instruction states whether the player is choosing tokens to cancel or resolve.
+
 Duplicate faces remain distinct physical targets. Remove routine face-name and
 ordinal captions; retain meaningful group/state information, instructions and
 names through inspection and decision controls.
@@ -404,8 +431,10 @@ support readable interaction.
 
 Premonition and its sealed token/group remain together in the controller's open
 drawer until consumed; later temporary effects use space alongside them. Tokens
-remain visibly on the card after sealing animation. Announce the known sealed
-face/group on the existing reveal control with prepared symbolic glyphs or signed
+remain visibly on the card after sealing animation, with the existing **Sealed**
+caption and no selection check merely because they are sealed. Reserve checks for
+current selections. Announce the known sealed face/group on the existing reveal
+control with prepared symbolic glyphs or signed
 numeric values, and state any additional fresh draws, without another acknowledgment.
 For example, **Resolve sealed [tablet] from Premonition**. Use actual tablet and
 auto-fail glyphs, not emoji or invented numeric modifiers.

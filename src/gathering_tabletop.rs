@@ -45,6 +45,7 @@ mod slots;
 mod story;
 mod trays;
 mod ui;
+mod violin;
 
 const INK: Color = Color::srgb(0.035, 0.055, 0.065);
 const PAPER: Color = Color::srgb(0.91, 0.89, 0.81);
@@ -61,6 +62,7 @@ enum Action {
     Reveal(crate::tabletop_reveal::Request),
     Choose(u64, u64, String),
     Prediction(u64, u64, u16, pendulum::Input),
+    Violin(u64, u64, violin::Input),
     Select(u64, u64, controls::Selection),
     ContextChoice(u64, u64, u64, String),
     ContextInspect(u64, u64, u64, String, String),
@@ -111,6 +113,7 @@ struct Table {
     context: controls::Context,
     token_options: Option<String>,
     prediction: Option<pendulum::Picker>,
+    violin: Option<violin::Picker>,
 }
 
 impl Table {
@@ -166,6 +169,7 @@ impl Table {
             context: controls::Context::default(),
             token_options: None,
             prediction,
+            violin: None,
         }
     }
 
@@ -186,6 +190,7 @@ impl Table {
             || self.history_open
             || self.restart_confirmation
             || self.prediction.is_some()
+            || self.violin.is_some()
     }
 
     fn result_opportunities(&self) -> bool {
@@ -206,6 +211,7 @@ impl Table {
             || self.restart_confirmation
             || self.menu_open
             || self.context.is_open()
+            || self.violin.is_some()
     }
 }
 
@@ -618,7 +624,7 @@ fn install(app: &mut App) {
                 keyboard_panel_scroll,
                 camera_controls,
                 (render, phase_banner::render, encounter::animate).chain(),
-                controls::render,
+                (controls::render, violin::render).chain(),
                 contextual_feedback,
                 enemy_board::highlight,
                 (motion::animate, map_motion::animate).chain(),
@@ -724,11 +730,16 @@ fn handle_actions(
     let epoch = table.epoch;
 
     table.context.sync(epoch, revision);
+    violin::sync(&mut table);
     if !health.allows_play()
         || health.just_became_ready()
         || settings.as_ref().is_some_and(|settings| settings.is_busy())
     {
         table.context.reset();
+        if table.violin.take().is_some() {
+            table.epoch += 1;
+            table.dirty = true;
+        }
     }
     if keys.just_pressed(KeyCode::Escape) {
         actions.0.push(Action::Close);
@@ -799,6 +810,8 @@ fn handle_actions(
             matches!(action, Action::Encounter(..)) || encounter_choice
         } else if table.result_opportunities() {
             result_choice
+        } else if table.violin.is_some() && table.inspection.is_none() {
+            matches!(action, Action::Violin(..) | Action::Close)
         } else if table.prediction.is_some() {
             matches!(action, Action::Prediction(..) | Action::Close)
         } else if table.restart_confirmation {
@@ -838,6 +851,10 @@ fn handle_actions(
         let Some(action) = pendulum::dispatch(&mut table, action) else {
             continue;
         };
+        let violin_confirmation = matches!(&action, Action::Violin(_, _, violin::Input::Confirm));
+        let Some(action) = violin::dispatch(&mut table, action) else {
+            continue;
+        };
         match action {
             Action::Encounter(epoch, input)
                 if epoch == table.epoch && table.presentation.encounter().current().is_some() =>
@@ -848,6 +865,7 @@ fn handle_actions(
             }
             Action::Encounter(..) => {}
             Action::Prediction(..) => unreachable!("Local picker dispatch consumes its controls"),
+            Action::Violin(..) => unreachable!("Local picker dispatch consumes its controls"),
             Action::ContinueResult(epoch) if epoch == table.epoch => {
                 table.presentation.acknowledge_result();
                 table.epoch += 1;
@@ -879,7 +897,10 @@ fn handle_actions(
             | Action::ResultChoice(epoch, revision, id)
             | Action::EncounterChoice(epoch, revision, id)
                 if epoch == table.epoch
-                    && (!table.modal() || result_choice || encounter_choice)
+                    && (!table.modal()
+                        || result_choice
+                        || encounter_choice
+                        || violin_confirmation)
                     && (!table.is_presenting() || encounter_choice) =>
             {
                 let id = if id == "test-card:pass"
@@ -889,6 +910,13 @@ fn handle_actions(
                 } else {
                     id
                 };
+                if let Some(asset) = id
+                    .strip_prefix("violin:open:")
+                    .and_then(|id| id.parse().ok())
+                {
+                    violin::open(&mut table, epoch, revision, asset);
+                    continue;
+                }
                 if let Some(asset) = id
                     .strip_prefix("test-card:pendulum:")
                     .and_then(|id| id.parse().ok())
@@ -907,6 +935,7 @@ fn handle_actions(
                 ) {
                     Ok(draws) => {
                         let table = &mut *table;
+                        table.violin = None;
                         let shuffled = table.reduced_motion
                             && draws.iter().any(|cue| {
                                 cue.batch.steps.iter().any(|step| {
@@ -994,6 +1023,9 @@ fn handle_actions(
                 table.dirty = true;
             }
             Action::Close => {
+                if table.inspection.is_none() {
+                    table.violin = None;
+                }
                 table.prediction = None;
                 table.context.reset();
                 table.epoch += 1;
@@ -1060,6 +1092,7 @@ fn handle_actions(
                         let table = &mut *table;
                         table.presentation.reopen(&table.session, &session);
                         table.prediction = pendulum::Picker::saved(&session);
+                        table.violin = None;
                         table.session = session;
                         table.inspection = None;
                         table.history_open = false;
@@ -1367,6 +1400,7 @@ fn render(
     table.last_rendered_health = Some((health.allows_play(), health.status().to_owned()));
     table.dirty = false;
     if !table.context.is_open()
+        && table.violin.is_none()
         && !shortcut.is_open()
         && let Some(focus) = focus.as_mut()
     {
