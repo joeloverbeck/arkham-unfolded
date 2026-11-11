@@ -540,7 +540,12 @@ source-prescribed arrangements take precedence. No force simulation is selected.
 Location-resident enemies use an exposed physical sideboard left of Map, grouping
 cards beneath full location names in three columns with further exposed rows.
 Rows start just below their heading, leaving clearance for damage tokens above
-the cards.
+the cards. Below its last row a group reserves its cards' names (three 13px
+lines, a two-line name and "Exhausted", at the normal Scenario focus at
+1280×800), so the next group's heading and counts start below them. Both
+sideboards share this layout and then hold at most three location groups (four
+rows in all), two groups in five rows or one in six; a fourth nonempty group
+does not fit, which awaits the owner's decision.
 Keep full card size, stable group/copy ordering and clearance for exhaustion,
 harm, side counters and names. Do not collapse, overlap, scroll or continually
 shrink cards to solve crowding. Keep the compact board the same depth as the

@@ -12,6 +12,10 @@ use bevy::picking::hover::Hovered;
 const COLUMN_PITCH: f32 = 2.6;
 const ROW_PITCH: f32 = 3.;
 const GROUP_GAP: f32 = 0.65;
+/// Below a group's last row, room for its captions: three 13px lines (a
+/// two-line name and "Exhausted") at the normal Scenario focus at 1280x800,
+/// so the next group's heading and damage counts start below them.
+const CAPTION_ROOM: f32 = 3.2;
 /// The first group's top sits this far inside the board's far edge.
 const BOARD_INSET: f32 = 0.4;
 /// The heading token's center below its group's top.
@@ -130,7 +134,7 @@ impl Sideboard {
                         )
                     })
                     .collect();
-                top += GROUP_GAP + count.div_ceil(3) as f32 * ROW_PITCH;
+                top += GROUP_GAP + count.div_ceil(3) as f32 * ROW_PITCH + CAPTION_ROOM;
                 GroupLayout { heading, cards }
             })
             .collect()

@@ -816,3 +816,124 @@ fn attic_markers_leave_the_map_caption_and_its_top_edge_uncovered() {
     }
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+/// Unengaged enemies by location: (room, title, exhausted), at a public moment.
+fn board_with(enemies: &[(&str, &str, bool)]) -> App {
+    let session =
+        Session::with_hostile_fixture(HostileFixture::Tony(TonyEffectFixture::QuickThinking));
+    let mut play = session.observe().play.unwrap();
+    let template = play.scenario.enemies[0].clone();
+    play.scenario.enemies.clear();
+    for (index, &(room, title, exhausted)) in enemies.iter().enumerate() {
+        let mut enemy = template.clone();
+        enemy.card.id = 63000 + index as u16;
+        enemy.card.title = title.into();
+        enemy.engaged = None;
+        enemy.exhausted = exhausted;
+        enemy.bounties = 0;
+        enemy.doom = 0;
+        enemy.location = room.into();
+        play.scenario.enemies.push(enemy);
+    }
+    super::cards::at_public_moment(session, play, PathBuf::new(), false)
+}
+
+/// Story 54 with captions: a group's rows reserve their cards' captions, so a
+/// later group's heading, damage counts and damage tokens stay clear of them.
+/// An exhausted card's caption is three lines here.
+#[test]
+fn later_enemy_groups_clear_the_captions_of_earlier_groups() {
+    use crate::tabletop_layout::heading_checks::rendered_text_bounds;
+    let boards: [&[(&str, &str, bool)]; 2] = [
+        // The seat's play3: an exhausted Icy Ghoul above a ready Flesh-Eater.
+        &[(HALLWAY, "Icy Ghoul", true), (ATTIC, "Flesh-Eater", false)],
+        &[
+            (ATTIC, "Ghoul Minion", true),
+            (ATTIC, "Ravenous Ghoul", true),
+            (ATTIC, "Icy Ghoul", true),
+            (CELLAR, "Ghoul Minion", false),
+            (PARLOR, "Swarm of Rats", true),
+        ],
+    ];
+    let mut failures = Vec::new();
+    for size in [Vec2::new(1600., 1000.), Vec2::new(1280., 800.)] {
+        for enemies in boards {
+            let mut app = board_with(enemies);
+            crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
+            app.world_mut()
+                .resource_mut::<Orbit>()
+                .focus(sideboard::focus(Area::Scenario));
+            for _ in 0..4 {
+                app.update();
+            }
+            let rooms: Vec<_> = enemies.iter().map(|(room, ..)| *room).collect();
+            let group = |id: u16| rooms[usize::from(id - 63000)];
+            let order = |room: &str| rooms.iter().position(|r| *r == room).unwrap();
+            let world = app.world_mut();
+            // Every enemy's caption and damage count, by its group.
+            let mut captions = Vec::new();
+            let mut counts = Vec::new();
+            for (entity, label) in world
+                .query::<(Entity, &motion::CardLabel)>()
+                .iter(world)
+                .map(|(entity, label)| (entity, label.0))
+                .collect::<Vec<_>>()
+            {
+                let token = world.get::<card_counters::Attached>(label).map(|a| a.0);
+                let Some(id) = world
+                    .get::<motion::PhysicalCard>(token.unwrap_or(label))
+                    .map(|card| card.0)
+                    .filter(|id| (63000..63000 + rooms.len() as u16).contains(id))
+                else {
+                    continue;
+                };
+                let rect = rendered_text_bounds(world, entity, 1.);
+                if token.is_some() {
+                    counts.push((group(id), rect));
+                } else {
+                    captions.push((group(id), rect));
+                }
+            }
+            let mut later = counts;
+            for (label, node, computed) in world
+                .query::<(&AccessibleLabel, &Node, &ComputedNode)>()
+                .iter(world)
+            {
+                let Some(room) = rooms.iter().find(|room| {
+                    label.0
+                        == format!(
+                            "{} · {}",
+                            play::location_name(room).to_uppercase(),
+                            rooms.iter().filter(|r| r == room).count()
+                        )
+                }) else {
+                    continue;
+                };
+                let (Val::Px(left), Val::Px(top)) = (node.left, node.top) else {
+                    panic!("{} is positioned", label.0);
+                };
+                let corner = Vec2::new(left, top);
+                later.push((
+                    *room,
+                    Rect::from_corners(
+                        corner,
+                        corner + computed.size() * computed.inverse_scale_factor,
+                    ),
+                ));
+            }
+            assert_eq!(captions.len(), enemies.len());
+            for (room, caption) in &captions {
+                for (other, rect) in &later {
+                    if order(other) > order(room) && !caption.intersect(*rect).is_empty() {
+                        failures.push(format!(
+                            "{size}: {} caption {caption:?} meets {} at {rect:?}",
+                            play::location_name(room),
+                            play::location_name(other)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
