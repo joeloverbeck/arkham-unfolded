@@ -434,6 +434,26 @@ pub(super) fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) ->
 }
 
 pub(super) fn host_with_table(table: Table, raw_window_events: bool) -> App {
+    let mut app = unstarted_host(table, raw_window_events);
+    app.update();
+    app
+}
+
+/// The host with Bevy's own dialog plugins and delayed-command clock, as
+/// `DefaultPlugins` registers them natively. Advance `Time` to run the modal
+/// plugin's delayed focus.
+pub(super) fn host_with_modal_plugins(table: Table) -> App {
+    let mut app = unstarted_host(table, false);
+    app.add_plugins((
+        bevy::ui_widgets::DialogPlugin,
+        bevy::ui_widgets::ModalDialogPlugin,
+    ))
+    .add_systems(PreUpdate, bevy::time::check_delayed_command_queues);
+    app.update();
+    app
+}
+
+fn unstarted_host(table: Table, raw_window_events: bool) -> App {
     let mut app = crate::tabletop_layout::heading_checks::app();
     if raw_window_events {
         // Both are supplied by DefaultPlugins in native startup.
@@ -460,7 +480,6 @@ pub(super) fn host_with_table(table: Table, raw_window_events: bool) -> App {
     install(&mut app);
     // An assertion, not a substitute: every dialog any tabletop test opens is checked.
     app.add_systems(Last, opened_dialogs_offer_focus);
-    app.update();
     app
 }
 

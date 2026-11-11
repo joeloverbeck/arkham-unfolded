@@ -314,60 +314,65 @@ fn the_menu_button_follows_the_existing_tab_groups_and_shift_tab_reaches_it() {
     );
 }
 
-#[test]
-fn every_modal_dialog_offers_focus_when_opened() {
+const MODAL_DIALOGS: [&str; 6] = [
+    "inspection",
+    "history",
+    "credits",
+    "restart confirmation",
+    "encounter reading",
+    "group clue payment",
+];
+
+/// Opens one of `MODAL_DIALOGS` the way a player does.
+fn open_modal_dialog(name: &str, path: PathBuf, host: fn(Table) -> App) -> App {
     fn activate(app: &mut App, label: &str) {
         let entity = button_with_label(app, label).unwrap_or_else(|| panic!("{label}"));
         app.world_mut().trigger(Activate { entity });
         app.update();
     }
-    let directory = tempfile::tempdir().unwrap();
-    for name in [
-        "inspection",
-        "history",
-        "credits",
-        "restart confirmation",
-        "encounter reading",
-        "group clue payment",
-    ] {
-        let path = directory.path().join(format!("{name}.json"));
-        let mut app = if name == "encounter reading" {
-            let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Harm(
-                crate::gathering::HarmFixture::WardCancellation,
-            ));
-            host_with_table(Table::new(session, path), false)
-        } else if name == "group clue payment" {
-            let session =
-                Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
-            host_with_table(Table::new(session, path), false)
-        } else {
-            host(path)
-        };
-        match name {
-            "inspection" => {
-                click_source(&mut app, controls::Source::Investigator(Investigator::Tony));
-                activate(&mut app, "Inspect");
-            }
-            "history" | "credits" | "restart confirmation" => {
-                activate(&mut app, "Menu");
-                activate(
-                    &mut app,
-                    match name {
-                        "history" => "Action history and rules reasons",
-                        "credits" => "Credits",
-                        _ => "Restart The Gathering...",
-                    },
-                );
-            }
-            "group clue payment" => {
-                let entity =
-                    choice_button(&mut app, "Spend 9 clues as a group: advance The Barrier…")
-                        .expect("The decision bar opens the payment at round end");
-                app.world_mut().trigger(Activate { entity });
-                app.update();
-            }
-            _ => {}
+    let session = match name {
+        "encounter reading" => Session::with_hostile_fixture(
+            crate::gathering::HostileFixture::Harm(crate::gathering::HarmFixture::WardCancellation),
+        ),
+        "group clue payment" => {
+            Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd)
         }
+        _ => Session::with_seed(19),
+    };
+    let mut app = host(Table::new(session, path));
+    match name {
+        "inspection" => {
+            click_source(&mut app, controls::Source::Investigator(Investigator::Tony));
+            activate(&mut app, "Inspect");
+        }
+        "history" | "credits" | "restart confirmation" => {
+            activate(&mut app, "Menu");
+            activate(
+                &mut app,
+                match name {
+                    "history" => "Action history and rules reasons",
+                    "credits" => "Credits",
+                    _ => "Restart The Gathering...",
+                },
+            );
+        }
+        "group clue payment" => {
+            let entity = choice_button(&mut app, "Spend 9 clues as a group: advance The Barrier…")
+                .expect("The decision bar opens the payment at round end");
+            app.world_mut().trigger(Activate { entity });
+            app.update();
+        }
+        _ => {}
+    }
+    app
+}
+
+#[test]
+fn every_modal_dialog_offers_focus_when_opened() {
+    let directory = tempfile::tempdir().unwrap();
+    for name in MODAL_DIALOGS {
+        let path = directory.path().join(format!("{name}.json"));
+        let mut app = open_modal_dialog(name, path, |table| host_with_table(table, false));
         let dialogs = modal_dialogs_and_focus(&mut app);
         assert!(!dialogs.is_empty(), "{name} opens a modal dialog");
         assert!(
@@ -375,6 +380,137 @@ fn every_modal_dialog_offers_focus_when_opened() {
             "{name}: {dialogs:?}"
         );
     }
+}
+
+/// Natively, Bevy's `ModalDialogPlugin` moves focus into each dialog 0.1 s
+/// after the dialog appears, and logs "No focusable entities in modal dialog"
+/// if that dialog no longer offers focus by then. Table changes re-render the
+/// open dialog inside that delay: the stepper keys of the clue chooser, or any
+/// other change to the table.
+#[test]
+fn modal_dialogs_keep_bevys_delayed_focus_across_re_renders() {
+    use bevy::log::tracing_subscriber;
+    use bevy::ui_widgets::ModalDialog;
+
+    const CHILD: &str = "ARKHAM_MODAL_DELAYED_FOCUS_TEST_CHILD";
+    const VERIFIED: &str = "modal delayed focus assertions completed";
+    const WARNING: &str = "No focusable entities in modal dialog";
+    if std::env::var_os(CHILD).is_none() {
+        // The plugin logs from the production scheduler: a process-global
+        // subscriber in a child process sees every warning it emits.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "gathering_tabletop::tests::navigation::modal_dialogs_keep_bevys_delayed_focus_across_re_renders",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success() && String::from_utf8_lossy(&output.stdout).contains(VERIFIED),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(bevy::log::Level::WARN)
+        .without_time()
+        .with_ansi(false)
+        .with_writer(std::sync::Arc::new(log.reopen().unwrap()))
+        .finish();
+    bevy::log::tracing::subscriber::set_global_default(subscriber).unwrap();
+    let warnings = || std::fs::read_to_string(log.path()).unwrap();
+    let frame = |app: &mut App, millis: u64| {
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_millis(millis));
+        app.update();
+    };
+    let focus_inside_a_dialog = |app: &mut App| {
+        let world = app.world_mut();
+        let Some(focused) = world.resource::<InputFocus>().get() else {
+            return false;
+        };
+        let mut ancestors = world.query::<&ChildOf>();
+        let mut dialogs = world.query_filtered::<(), With<ModalDialog>>();
+        std::iter::once(focused)
+            .chain(ancestors.query(world).iter_ancestors(focused))
+            .any(|entity| dialogs.query(world).contains(entity))
+    };
+    let directory = tempfile::tempdir().unwrap();
+    for name in MODAL_DIALOGS {
+        let mut app = open_modal_dialog(
+            name,
+            directory.path().join(format!("{name}.json")),
+            host_with_modal_plugins,
+        );
+        // Any table change re-renders the open dialog.
+        for _ in 0..2 {
+            frame(&mut app, 30);
+            app.world_mut().resource_mut::<Table>().dirty = true;
+            app.update();
+        }
+        frame(&mut app, 150);
+        frame(&mut app, 16);
+        assert!(!warnings().contains(WARNING), "{name}: {}", warnings());
+        let dialogs = modal_dialogs_and_focus(&mut app);
+        assert!(
+            dialogs.len() == 1 && dialogs[0].1,
+            "{name}: one open dialog offers focus: {dialogs:?}"
+        );
+        assert!(
+            focus_inside_a_dialog(&mut app),
+            "{name}: focus is inside the dialog"
+        );
+        assert!(
+            app.world()
+                .resource::<bevy::input_focus::InputFocusVisible>()
+                .0,
+            "{name}: the plugin made focus visible"
+        );
+        if name == "history" {
+            press(&mut app, KeyCode::Escape, Key::Escape);
+            frame(&mut app, 150);
+            assert!(
+                modal_dialogs_and_focus(&mut app).is_empty(),
+                "Escape closes the history"
+            );
+        }
+    }
+    // Rapid stepper keys re-render the chooser, as the seat's 18 presses did.
+    let mut app = open_modal_dialog(
+        "group clue payment",
+        directory.path().join("chooser.json"),
+        host_with_modal_plugins,
+    );
+    for (code, logical) in [
+        (KeyCode::ArrowDown, Key::ArrowDown),
+        (KeyCode::ArrowLeft, Key::ArrowLeft),
+        (KeyCode::ArrowUp, Key::ArrowUp),
+        (KeyCode::ArrowRight, Key::ArrowRight),
+    ] {
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_millis(20));
+        press(&mut app, code, logical);
+    }
+    frame(&mut app, 150);
+    frame(&mut app, 16);
+    assert!(
+        !warnings().contains(WARNING),
+        "chooser keys: {}",
+        warnings()
+    );
+    assert!(
+        focus_inside_a_dialog(&mut app),
+        "chooser keys: focus stays in the chooser"
+    );
+    println!("{VERIFIED}");
 }
 
 #[test]

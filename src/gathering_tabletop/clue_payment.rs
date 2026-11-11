@@ -7,7 +7,7 @@ use crate::gathering::{Allocation, GroupCluePayment, counted};
 use bevy::input::{ButtonState, keyboard::KeyboardInput};
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::ui::InteractionDisabled;
-use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier, RequestClose};
+use bevy::ui_widgets::{ModalDialogBarrier, RequestClose};
 
 /// The fill of a control that cannot be used now.
 const DISABLED: Color = Color::srgb(0.10, 0.12, 0.13);
@@ -220,6 +220,7 @@ pub(super) fn render(
         return;
     }
     *previous = Some(key);
+    crate::tabletop_ui::release_dialogs_in::<Root>(&mut commands);
     for root in &roots {
         commands.entity(root).despawn();
     }
@@ -252,8 +253,9 @@ pub(super) fn render(
     let focus = chooser.focus.or(first_row.map(Input::Row));
     let barrier = commands
         .spawn((
+            // Only this renderer rebuilds the chooser: the table's rebuild
+            // leaves it open.
             Root,
-            Panel,
             GlobalZIndex(60),
             ModalDialogBarrier,
             Node {
@@ -275,7 +277,7 @@ pub(super) fn render(
     );
     commands.entity(barrier).with_children(|root| {
         root.spawn((
-            ModalDialog,
+            crate::tabletop_ui::DialogFrame,
             TabGroup::modal(),
             AccessibleLabel::new("Group clue payment"),
             BackgroundColor(INK),
@@ -294,7 +296,6 @@ pub(super) fn render(
                 ..default()
             },
         ))
-        .observe(|mut event: On<PointerClick>| event.propagate(false))
         .with_children(|panel| {
             panel.spawn(art.text(format!("Advance {}", payment.act_title), 22., GOLD));
             panel.spawn(art.text(

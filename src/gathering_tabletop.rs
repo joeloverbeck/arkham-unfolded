@@ -685,7 +685,13 @@ fn install(app: &mut App) {
                 keyboard_panel_scroll,
                 camera_controls,
                 (render, phase_banner::render, encounter::animate).chain(),
-                (controls::render, violin::render, clue_payment::render).chain(),
+                (
+                    controls::render,
+                    violin::render,
+                    clue_payment::render,
+                    crate::tabletop_ui::keep_dialog_identity,
+                )
+                    .chain(),
                 contextual_feedback,
                 sideboard::highlight,
                 (motion::animate, map_motion::animate).chain(),
@@ -1485,6 +1491,7 @@ fn render(
         focus.clear();
     }
     let mut origins = motion::Origins::from_view(table.last_rendered.as_ref());
+    crate::tabletop_ui::release_dialogs_in::<Panel>(&mut commands);
     for (entity, card, transform, motion) in &old {
         if let (Some(card), Some(transform)) = (card, transform) {
             origins.remember(card.0, transform.translation, motion);

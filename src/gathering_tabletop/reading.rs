@@ -1,6 +1,7 @@
 //! Content-sized reading stops; callers own their content and acknowledgment.
 use super::*;
-use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier};
+use crate::tabletop_ui::DialogFrame;
+use bevy::ui_widgets::ModalDialogBarrier;
 
 pub(super) fn panel(
     commands: &mut Commands,
@@ -38,7 +39,7 @@ pub(super) fn panel(
                         ..default()
                     },
                     BackgroundColor(INK),
-                    ModalDialog,
+                    DialogFrame,
                     TabGroup::modal(),
                     AccessibleLabel::new(title),
                 ))

@@ -143,7 +143,7 @@ pub(super) fn keyboard(
 }
 
 pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art) {
-    use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier};
+    use bevy::ui_widgets::ModalDialogBarrier;
     let Some(picker) = &table.prediction else {
         return;
     };
@@ -164,7 +164,7 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art) {
         .with_children(|overlay| {
             overlay
                 .spawn((
-                    ModalDialog,
+                    crate::tabletop_ui::DialogFrame,
                     TabGroup::modal(),
                     BackgroundColor(INK),
                     BorderColor::all(GOLD),
