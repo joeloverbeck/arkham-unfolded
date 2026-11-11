@@ -1,6 +1,9 @@
-//! Local accidental-reuse guard for this repository's Codex desktop checks.
+//! Local accidental-reuse guard for this repository's desktop checks from Codex
+//! and Claude Code sessions.
 //! User-writable session logs/state are trusted inputs, not a security boundary.
-use anyhow::{Context, Result, ensure};
+mod claude;
+
+use anyhow::{Context, Result, bail, ensure};
 use clap::Subcommand;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -14,7 +17,8 @@ use std::{
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Prepare the exact question to submit with request_user_input_async.
+    /// Prepare the exact question for this session's question tool:
+    /// request_user_input_async (Codex) or AskUserQuestion (Claude Code).
     Request {
         #[arg(long)]
         session_log: PathBuf,
@@ -35,10 +39,46 @@ pub enum Command {
     },
 }
 
+/// The session harness whose log records the approval question and answer.
+#[derive(Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum Harness {
+    /// Requests written before Claude Code support carry no harness.
+    #[default]
+    Codex,
+    ClaudeCode,
+}
+
+impl Harness {
+    /// A Codex log opens with its session; any other log must have an entry
+    /// that identifies a Claude Code session.
+    fn of(source: &Path) -> Result<Self> {
+        let mut entries = events(source)?;
+        let first = entries.next().context("Empty session log")??;
+        if first["type"] == "session_meta" {
+            return Ok(Self::Codex);
+        }
+        for entry in std::iter::once(Ok(first)).chain(entries) {
+            if claude::identifies(&entry?) {
+                return Ok(Self::ClaudeCode);
+            }
+        }
+        bail!("Unrecognized session log: no Codex or Claude Code session identity")
+    }
+
+    fn is_codex(&self) -> bool {
+        *self == Self::Codex
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct Request {
     id: String,
     source: PathBuf,
+    /// Omitted for Codex so its stored requests and bound digests are unchanged.
+    #[serde(default, skip_serializing_if = "Harness::is_codex")]
+    harness: Harness,
+    /// The Codex thread or Claude Code session that asked the question.
     thread: String,
     repository: PathBuf,
     minutes: u32,
@@ -103,7 +143,7 @@ fn directory(id: &str) -> Result<PathBuf> {
 
 fn events(path: &Path) -> Result<impl Iterator<Item = Result<Value>>> {
     Ok(
-        BufReader::new(fs::File::open(path).context("Read original Codex session log")?)
+        BufReader::new(fs::File::open(path).context("Read original session log")?)
             .lines()
             .map(|line| Ok(serde_json::from_str(&line?)?)),
     )
@@ -143,13 +183,20 @@ pub fn run(command: Command) -> Result<u8> {
                 "Purpose must be one nonempty line of at most 500 bytes"
             );
             let source = session_log.canonicalize()?;
-            let (thread, repository) = session_identity(&source)?;
-            ensure!(
-                thread
-                    == std::env::var("CODEX_THREAD_ID")
-                        .context("Request requires CODEX_THREAD_ID")?,
-                "Session log is not the active Codex thread"
-            );
+            let harness = Harness::of(&source)?;
+            let (thread, repository) = match harness {
+                Harness::Codex => {
+                    let (thread, repository) = session_identity(&source)?;
+                    ensure!(
+                        thread
+                            == std::env::var("CODEX_THREAD_ID")
+                                .context("Request requires CODEX_THREAD_ID")?,
+                        "Session log is not the active Codex thread"
+                    );
+                    (thread, repository)
+                }
+                Harness::ClaudeCode => claude::active_session(&source)?,
+            };
             ensure!(
                 repository == super::repository().canonicalize()?,
                 "Session log belongs to another repository"
@@ -167,13 +214,17 @@ pub fn run(command: Command) -> Result<u8> {
                 .to_str()
                 .unwrap()
                 .to_owned();
-            let question = json!({
-                "title":format!("May I use your desktop for {minutes} minutes now to {purpose}? Approval request: {id}."),
-                "options":[format!("Yes, {minutes} minutes now"), "Not now"]
-            });
+            let title = format!(
+                "May I use your desktop for {minutes} minutes now to {purpose}? Approval request: {id}."
+            );
+            let question = match harness {
+                Harness::Codex => json!({"title":title, "options":options(minutes)}),
+                Harness::ClaudeCode => claude::question(title, options(minutes)),
+            };
             let request = Request {
                 id: id.clone(),
                 source,
+                harness,
                 thread,
                 repository,
                 minutes,
@@ -227,24 +278,43 @@ impl Approval {
             request.id == id && (1..=10).contains(&request.minutes),
             "Invalid approval request"
         );
+        let names_request = |title: &Value| {
+            title
+                .as_str()
+                .is_some_and(|title| title.ends_with(&format!("Approval request: {id}.")))
+        };
         ensure!(
-            request.question["options"]
-                == json!([format!("Yes, {} minutes now", request.minutes), "Not now"])
-                && request.question["title"]
-                    .as_str()
-                    .is_some_and(|title| title.ends_with(&format!("Approval request: {id}."))),
+            match request.harness {
+                Harness::Codex =>
+                    request.question["options"] == json!(options(request.minutes))
+                        && names_request(&request.question["title"]),
+                Harness::ClaudeCode =>
+                    claude::offers(&request.question, options(request.minutes))
+                        && names_request(&request.question["question"]),
+            },
             "Approval question does not bind its ID and duration"
         );
         ensure!(
             request.repository == super::repository().canonicalize()?,
             "Approval belongs to another repository"
         );
-        ensure!(
-            session_identity(&request.source)?
-                == (request.thread.clone(), request.repository.clone()),
-            "Approval source identity changed"
-        );
-        let (approved_at, proof) = approved_reply(&request)?;
+        let (approved_at, proof) = match request.harness {
+            Harness::Codex => {
+                ensure!(
+                    session_identity(&request.source)?
+                        == (request.thread.clone(), request.repository.clone()),
+                    "Approval source identity changed"
+                );
+                approved_reply(&request)?
+            }
+            Harness::ClaudeCode => {
+                ensure!(
+                    claude::session(&request.source)? == request.thread,
+                    "Approval source identity changed"
+                );
+                claude::approved_answer(&request)?
+            }
+        };
         let deadline_unix_seconds = approved_at + f64::from(request.minutes) * 60.0;
         let wall_now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs_f64();
         ensure!(
@@ -303,6 +373,11 @@ impl Approval {
         self.check()?;
         Ok(self.deadline.saturating_duration_since(Instant::now()))
     }
+}
+
+/// The finite answers; only the first one approves.
+fn options(minutes: u32) -> [String; 2] {
+    [format!("Yes, {minutes} minutes now"), "Not now".into()]
 }
 
 fn approved_reply(request: &Request) -> Result<(f64, String)> {
