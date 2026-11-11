@@ -51,7 +51,7 @@ pub(super) const ENEMIES: Sideboard = Sideboard {
     marker: MarkerKind::EnemyPresence,
     content: resident,
     members: "enemies",
-    heading_piece: "enemy-board",
+    heading_piece: "enemy-sideboard",
     heading_context: None,
 };
 
@@ -65,7 +65,7 @@ pub(super) const ATTACHMENTS: Sideboard = Sideboard {
     marker: MarkerKind::Attachment,
     content: attached,
     members: "attachments",
-    heading_piece: "attachment-board",
+    heading_piece: "attachment-sideboard",
     heading_context: Some("Attached to"),
 };
 

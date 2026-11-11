@@ -594,7 +594,7 @@ fn an_attached_card_has_its_own_marker_and_heading_names() {
         "Attachment Cellar"
     );
     assert_eq!(
-        component(&response, "location:01114/attachment-board")["label"],
+        component(&response, "location:01114/attachment-sideboard")["label"],
         "Attached to CELLAR · 1"
     );
 }
