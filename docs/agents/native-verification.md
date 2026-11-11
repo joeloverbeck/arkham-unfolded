@@ -132,13 +132,23 @@ Prepare the desktop question with the local helper before asking the user:
 
 ```sh
 scripts/tools native approval request \
-  --session-log /absolute/path/to/current-codex-session.jsonl \
+  --session-log /absolute/path/to/current-session.jsonl \
   --minutes 8 --purpose 'check the Gathering controls using disposable saves'
 ```
 
-The source must be the active `CODEX_THREAD_ID` session for this repository.
-Use the returned `request` object unchanged with `request_user_input_async`,
-and retain the returned approval ID as `native_approval`. After the user selects
+The source must be the active session log for this repository. The helper
+recognizes its harness from the log's format:
+
+- **Codex:** the session log of the active `CODEX_THREAD_ID` thread. Use the
+  returned `request` object unchanged with `request_user_input_async`.
+- **Claude Code:** the transcript named `$CLAUDE_CODE_SESSION_ID.jsonl` in
+  Claude Code's `projects/<cwd-slug>/` directory, by default under
+  `~/.claude`. Its latest recorded working directory must be this checkout.
+  Use the returned `request` object unchanged as the `AskUserQuestion` input,
+  adding no `answers` or `annotations`. Only one answer to that question is
+  accepted.
+
+Retain the returned approval ID as `native_approval`. After the user selects
 the affirmative answer, read and announce its original deadline:
 
 ```sh
@@ -146,9 +156,13 @@ scripts/tools native approval status --approval "$native_approval"
 ```
 
 This reads the original question call and matching user reply, including the
-reply's host-recorded timestamp and user provenance. The finite accepted reply
-is the generated affirmative option; unrestricted prose and old questions are
-not interpreted. Unsupported or missing source metadata fails closed. Request,
+reply's host-recorded timestamp. The finite accepted reply is the generated
+affirmative option; unrestricted prose, notes, old questions and questions asked
+by subagents are not interpreted. Unsupported or missing source metadata fails
+closed. Codex marks each reply's user provenance. Claude Code records no such
+marker: its path relies on the harness writing tool results, the unchanged
+question input and main-conversation entries, so a configured hook that answered
+`AskUserQuestion` would be indistinguishable from the owner. Request,
 status, close and help commands do not access the desktop. Keep the original
 source log and local state under `${XDG_STATE_HOME:-$HOME/.local/state}/arkham-unfolded/native-approvals/`.
 They are trusted, user-writable local inputs: this guards accidental reuse,
