@@ -147,12 +147,41 @@ fn relative_layout_reserves_every_standee_and_captions_within_the_real_scenario_
         let bounds = placement.footprint.bounds;
         assert!(bounds.min.x > -9. && bounds.max.x < 9.);
         assert!(bounds.min.y > -16.5 && bounds.max.y < 1.);
+        let code = match placement.room {
+            Room::Hallway => "01112",
+            Room::Attic => "01113",
+            Room::Cellar => "01114",
+            Room::Parlor => "01115",
+            Room::Study => "01111",
+        };
+        let band = graph.marker_band(code);
+        let card_top = placement.at.z - card_size.y / 2.;
+        assert_eq!(band.max.y, card_top, "the band sits on the card's top edge");
+        assert!(band.height() >= 0.7, "the band holds a token and its count");
+        assert!(bounds.contains(band.min) && bounds.contains(band.max));
         for slot in 0..4 {
             let standee = layout::location_standee_position(placement.at, card_size, slot)
                 .unwrap()
                 .xz();
             assert!(bounds.contains(standee - Vec2::splat(radius)));
             assert!(bounds.contains(standee + Vec2::splat(radius)));
+            assert!(
+                standee.y - radius > card_top,
+                "standees stay out of the band"
+            );
+        }
+    }
+    // Attic's link enters the Hallway's top edge and the Hallway's enters the Cellar's.
+    for (code, above) in [
+        ("01112", true),
+        ("01113", false),
+        ("01114", true),
+        ("01115", false),
+    ] {
+        let entry = graph.top_entry(code);
+        assert_eq!(entry.is_some(), above, "{code}");
+        if let Some(x) = entry {
+            assert!((x - graph.position(code).x).abs() < 0.001);
         }
     }
     let obstacles = graph

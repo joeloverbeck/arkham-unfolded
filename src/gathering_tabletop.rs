@@ -29,6 +29,7 @@ mod draws;
 mod encounter;
 mod enemy_board;
 mod map_motion;
+mod markers;
 mod motion;
 mod pendulum;
 mod phase_banner;
@@ -1692,6 +1693,7 @@ fn world_labels(
         Has<enemy_board::Caption>,
         Has<enemy_board::PersistentLabel>,
         Option<&layout::ScenarioBookSide>,
+        Has<markers::HeadingLabel>,
         &mut Node,
         &mut Visibility,
     )>,
@@ -1705,6 +1707,7 @@ fn world_labels(
         enemy_caption,
         persistent,
         book_side,
+        heading,
         mut node,
         mut visibility,
     ) in &mut labels
@@ -1748,9 +1751,14 @@ fn world_labels(
             node.left = px(match book_side {
                 Some(layout::ScenarioBookSide::Agenda) => point.x - width,
                 Some(layout::ScenarioBookSide::Act) => point.x,
+                None if heading => point.x,
                 None => point.x - width / 2.,
             });
-            node.top = px(point.y);
+            node.top = px(if heading {
+                point.y - computed.size().y * computed.inverse_scale_factor / 2.
+            } else {
+                point.y
+            });
             *visibility = Visibility::Inherited;
         } else {
             *visibility = Visibility::Hidden;

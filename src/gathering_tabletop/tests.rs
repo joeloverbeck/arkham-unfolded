@@ -183,6 +183,7 @@ mod counters_and_enemies;
 mod doom;
 mod draws;
 mod encounter;
+mod location_markers;
 mod map_motion;
 mod navigation;
 mod pendulum;

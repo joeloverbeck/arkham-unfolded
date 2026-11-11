@@ -206,7 +206,7 @@ impl Playback {
             let Some(route) = map.connection_route(&old.location, &enemy.location) else {
                 continue;
             };
-            let marker = |room: &str| map.position(room) + Vec3::new(0., 0.08, -1.35);
+            let marker = |room: &str| markers::presence_at(&map, room);
             let (start, end) = (marker(&old.location), marker(&enemy.location));
             // Engaged enemies accompany their investigator; independent enemy
             // moves get separate beats so simultaneous agenda movement is legible.
