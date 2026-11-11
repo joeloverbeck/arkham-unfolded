@@ -22,7 +22,9 @@ pub(crate) enum Area {
 pub(crate) const SCENARIO_CENTER: Vec3 = Vec3::new(0.0, 0.0, -10.0);
 pub(crate) const SCENARIO_SIZE: Vec2 = Vec2::new(18.0, 22.0);
 pub(crate) const SCENARIO_FAR_EDGE: f32 = SCENARIO_CENTER.z - SCENARIO_SIZE.y / 2.0;
-pub(crate) const SCENARIO_MAP_CENTER: Vec3 = Vec3::new(0.0, 0.05, -8.5);
+/// Map sits 0.1 nearer than the middle of its region, almost all the room its
+/// bottom row leaves, so the Attic's markers clear Map's top edge.
+pub(crate) const SCENARIO_MAP_CENTER: Vec3 = Vec3::new(0.0, 0.05, -8.4);
 /// The scenario's token reference stays beside the test, including between tests.
 pub(crate) const SCENARIO_REFERENCE: Vec3 = Vec3::new(-4.9, 0.05, TEST_CENTER.z - 3.2);
 pub(crate) const ENCOUNTER_DECK: Vec3 = Vec3::new(-7.0, 0.05, SCENARIO_FAR_EDGE + 2.5);
@@ -223,11 +225,13 @@ pub(crate) fn test_zone_labels() -> [(&'static str, Vec3); 3] {
     ]
 }
 
+/// Map's region. Its top edge, and the "Map" caption printed on it, sit 0.15
+/// into the strip below the encounter cards, clear of the Attic's markers.
 pub(crate) fn scenario_map_bounds() -> Rect {
     Rect::from_corners(
         Vec2::new(
             SCENARIO_CENTER.x - SCENARIO_SIZE.x / 2.0 + 0.2,
-            SCENARIO_FAR_EDGE + 4.5,
+            SCENARIO_FAR_EDGE + 4.35,
         ),
         Vec2::new(
             SCENARIO_CENTER.x + SCENARIO_SIZE.x / 2.0 - 0.2,

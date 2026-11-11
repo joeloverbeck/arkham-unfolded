@@ -731,3 +731,88 @@ fn markers_and_counts_leave_every_brass_link_uncovered_at_the_scenario_and_overv
     }
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+/// Where a printed area label's text lies on screen. The label is ink on a
+/// plane; its row is 64 texels tall and the text box is centered in it.
+fn printed_text_rect(app: &mut App, name: &str) -> Rect {
+    use bevy::camera::primitives::MeshAabb;
+    let world = app.world_mut();
+    let row_text = world
+        .query::<(&Text, &ComputedNode)>()
+        .iter(world)
+        .find(|(text, _)| text.0 == name)
+        .map(|(_, node)| node.size().y * node.inverse_scale_factor)
+        .unwrap_or_else(|| panic!("{name} is printed"));
+    let (at, mesh) = world
+        .query::<(&Name, &Transform, &Mesh3d)>()
+        .iter(world)
+        .find(|(label, ..)| label.as_str() == format!("Printed area label: {name}"))
+        .map(|(_, at, mesh)| (at.translation, mesh.0.clone()))
+        .unwrap();
+    let half = world
+        .resource::<Assets<Mesh>>()
+        .get(&mesh)
+        .unwrap()
+        .get_aabb()
+        .unwrap()
+        .half_extents;
+    let text_half = half.z * (row_text / 64.).min(1.);
+    let corners = [
+        Vec3::new(-half.x, 0., -text_half),
+        Vec3::new(half.x, 0., -text_half),
+        Vec3::new(-half.x, 0., text_half),
+        Vec3::new(half.x, 0., text_half),
+    ]
+    .map(|corner| project(app, at + corner));
+    Rect::from_corners(
+        corners.iter().copied().fold(Vec2::MAX, Vec2::min),
+        corners.iter().copied().fold(Vec2::MIN, Vec2::max),
+    )
+}
+
+/// Story 52: the Attic's markers sit in the band just below Map's top edge.
+/// Neither they nor their counts may cover that edge or the "Map" caption
+/// printed on it, at either view and viewport.
+#[test]
+fn attic_markers_leave_the_map_caption_and_its_top_edge_uncovered() {
+    let mut failures = Vec::new();
+    for size in [Vec2::new(1600., 1000.), Vec2::new(1280., 800.)] {
+        for (area, framing) in FRAMINGS {
+            let mut app = framed_markers(size, area, framing);
+            let caption = printed_text_rect(&mut app, "Map");
+            // Map's top edge is the region's 0.025-wide border, drawn at y -0.03.
+            let edge = layout::scenario_map_bounds().min.y;
+            let mut pieces = Vec::new();
+            for (marker, count) in [
+                ("Enemy presence Attic", "Attic enemies: 1"),
+                ("Attachment Attic", "Attic attachments: 1"),
+            ] {
+                let (map, _) = tokens(&mut app, marker);
+                let token = &map[0];
+                // The edge's near side on screen, across the token's width.
+                let border = [-token.radius, token.radius]
+                    .map(|dx| project(&mut app, Vec3::new(token.at.x + dx, -0.03, edge + 0.0125)).y)
+                    .into_iter()
+                    .fold(f32::MIN, f32::max);
+                let (pill, _) =
+                    count_rect(&mut app, count).unwrap_or_else(|| panic!("{count} is shown"));
+                pieces.push((marker, token_rect(&mut app, token), border));
+                pieces.push((count, pill, border));
+            }
+            for (piece, rect, border) in pieces {
+                if rect.min.y <= border {
+                    failures.push(format!(
+                        "{size} {area:?}: {piece} top {:.1} reaches Map's top edge at {border:.1}",
+                        rect.min.y
+                    ));
+                }
+                if !rect.intersect(caption).is_empty() {
+                    failures.push(format!(
+                        "{size} {area:?}: {piece} {rect:?} covers the Map caption {caption:?}"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}

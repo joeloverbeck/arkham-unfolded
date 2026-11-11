@@ -571,8 +571,10 @@ distances, so the count covers the top of its location card: about 2–5px of a
 30–53px card in Scenario and about 7–8px of a 16–23px card in Overview, up to
 half the card's height (measured at 1600×1000 and 1280×800). This cover departs
 from the band's purpose of keeping markers off the card and awaits the owner's
-decision. Markers and counts stay clear of brass links. Keep markers distinct
-from printed symbols/gameplay tokens.
+decision. Markers and counts stay clear of brass links, and of Map's top edge
+and the "Map" caption printed on it: Map sits slightly nearer than the middle of
+its region, and the region's top edge lies in the strip below the encounter
+cards. Keep markers distinct from printed symbols/gameplay tokens.
 Counts cover sideboard cards only. Ordinary engaged enemies stay in investigator
 threat areas. If Massive content becomes supported, its single location-resident
 card belongs on the sideboard ready or exhausted; only a ready Massive enemy is
