@@ -7,6 +7,7 @@ exec scripts/dev bash -euc '
 scripts/check-format
 scripts/check-index
 scripts/check-tools
+scripts/check-bevy-free
 scripts/check-clippy
 scripts/check-app
 scripts/check-renderer

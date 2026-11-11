@@ -44,6 +44,8 @@ jobs:
         run: scripts/check-index
       - name: Rust tool tests
         run: scripts/check-tools
+      - name: Bevy-free library and headless executables
+        run: scripts/check-bevy-free
       - name: Clippy
         run: scripts/check-clippy
       - name: Application tests

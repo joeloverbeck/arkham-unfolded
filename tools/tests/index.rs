@@ -36,6 +36,7 @@ fn copy_gate(root: &Path) {
         "check",
         "check-index",
         "check-tools",
+        "check-bevy-free",
         "check-format",
         "check-clippy",
         "check-app",
@@ -221,6 +222,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
         "fmt --all -- --check",
         "run --quiet --locked -p arkham-tools -- check-tracked-files",
         "test --locked -p arkham-tools",
+        "check --locked -p arkham-unfolded-experiment --no-default-features --lib --bin arkham-driver --bin arkham-assets",
         "clippy --locked --workspace --features tabletop --all-targets -- -D warnings",
         "test --locked -p arkham-unfolded-experiment --features tabletop",
         "run --quiet --locked -p arkham-tools -- check-renderer",
@@ -242,7 +244,15 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
         .collect();
     assert_eq!(
         phases,
-        ["format", "index", "tools", "clippy", "app", "renderer"]
+        [
+            "format",
+            "index",
+            "tools",
+            "bevy-free",
+            "clippy",
+            "app",
+            "renderer"
+        ]
     );
     fs::write(&trace, "").unwrap();
     for phase in phases {

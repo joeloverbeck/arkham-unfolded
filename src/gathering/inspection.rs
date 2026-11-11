@@ -3,6 +3,7 @@
 use super::cards;
 
 /// Printed types of the encounter cards selected for the original Gathering.
+#[cfg(feature = "tabletop")]
 pub(crate) fn encounter_card_type(code: &str) -> Option<&'static str> {
     if super::scenario::enemy_definition(code).is_some() {
         Some("Enemy")
