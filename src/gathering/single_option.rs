@@ -25,10 +25,14 @@ pub(super) fn forced(choices: &[Choice]) -> Option<&Choice> {
 /// choice, whose parts are selected and then explicitly confirmed, is decided
 /// at its confirmation: neither a lone part nor the confirmation is performed
 /// for the player. The chaos-token reveal confirms the declared reveal plan and
-/// its token selections and cancellations, so the player draws from the bag.
-/// Story and result reading stops are presentation pauses with no rules choice.
+/// its token selections and cancellations, so the player draws from the bag. A
+/// group clue payment is an allocation the player commits once, even when only
+/// one split exists. Story and result reading stops are presentation pauses with no rules choice.
 fn pause(id: &str) -> bool {
-    id == "test:reveal" || id.starts_with("tokens:") || id.starts_with("commit:")
+    id == "test:reveal"
+        || id.starts_with("tokens:")
+        || id.starts_with("commit:")
+        || id.starts_with("act:pay:")
 }
 
 /// Seam 1: the rules session. Setup edits only place a witness at the named
@@ -61,6 +65,20 @@ mod tests {
         session.choose(view.revision, id).unwrap();
     }
 
+    /// The Barrier's group clue payment, offered as one listed choice, paid with the
+    /// Hallway's nine clues as the direct choice naming that allocation.
+    fn pay_hallway(session: &mut Session) {
+        let view = session.observe();
+        assert!(
+            view.choices
+                .iter()
+                .any(|choice| choice.id == "act:pay:<contributions>"),
+            "The group clue payment is offered: {:?}",
+            view.choices
+        );
+        session.choose(view.revision, "act:pay:3:3:3").unwrap();
+    }
+
     fn performed(session: &Session, label: &str) -> bool {
         session
             .observe()
@@ -90,7 +108,7 @@ mod tests {
         arrive(&mut payable);
         assert_eq!(
             offered(&payable),
-            ["round-end:decline-act", "round-end:advance-act"],
+            ["round-end:decline-act", "act:pay:<contributions>"],
             "When payable, both advancing and declining remain"
         );
         choose(&mut payable, "round-end:decline-act");
@@ -309,12 +327,7 @@ mod tests {
         let game = finish.runtime.as_mut().unwrap();
         (game.agenda, game.agenda_doom) = (2, 0);
         let round = game.round;
-        choose(&mut finish, "round-end:advance-act");
-        for investigator in 0..3 {
-            for _ in 0..3 {
-                choose(&mut finish, &format!("act:contribute:{investigator}"));
-            }
-        }
+        pay_hallway(&mut finish);
         let bounty = offered(&finish)
             .into_iter()
             .find(|id| id.starts_with("bounty:") && id.ends_with(":0"))

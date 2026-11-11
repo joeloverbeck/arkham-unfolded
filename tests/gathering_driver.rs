@@ -433,3 +433,76 @@ fn ordinary_setup_round_and_mythos_resume_through_fresh_player_processes() {
         assert!(!visible.contains(secret), "Player output exposes {secret}");
     }
 }
+
+#[test]
+fn ordinary_player_pays_trapped_once_from_the_observed_group_clue_payment() {
+    use arkham_unfolded_experiment::gathering::{Session, continuity};
+
+    // Ordinary seeded play: investigate until the party holds Trapped's clues.
+    let mut expected = Session::with_seed(89);
+    for _ in 0..200 {
+        let view = expected.observe();
+        if view.group_clue_payment.is_some() {
+            break;
+        }
+        let id = [
+            "lead:tony",
+            "confirm-mulligan",
+            "turn:tony",
+            "turn:patrice",
+            "turn:jacqueline",
+            "action:ordinary:investigate",
+            "window:pass",
+            "commit:confirm",
+            "test:reveal",
+            "lucky:decline",
+            "success:pass",
+            "turn:end",
+        ]
+        .into_iter()
+        .find(|id| view.choices.iter().any(|choice| choice.id == *id))
+        .or_else(|| view.choices.first().map(|choice| choice.id.as_str()))
+        .unwrap()
+        .to_owned();
+        expected.choose(view.revision, &id).unwrap();
+    }
+    let view = expected.observe();
+    let payment = view.group_clue_payment.clone().expect("Trapped is payable");
+    assert!(
+        view.choices
+            .iter()
+            .any(|choice| choice.id == payment.choice)
+    );
+    assert_eq!(payment.required, 6);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("ordinary.json");
+    continuity::save_session(&path, &expected).unwrap();
+    std::fs::remove_file(directory.path().join("ordinary.json.lock")).ok();
+
+    // The driver decides from the observation's holdings, not from labels.
+    let observed = run(directory.path(), &["--save", "ordinary.json"], &[]);
+    let observed = &observed[0]["observation"]["group_clue_payment"];
+    let mut allocation = Vec::new();
+    let mut remaining = observed["required"].as_u64().unwrap();
+    for contributor in observed["contributors"].as_array().unwrap() {
+        assert!(contributor["ineligible"].is_null());
+        let paid = contributor["clues"].as_u64().unwrap().min(remaining);
+        remaining -= paid;
+        allocation.push(paid.to_string());
+    }
+    let id = format!("act:pay:{}", allocation.join(":"));
+    let responses = run(
+        directory.path(),
+        &["--save", "ordinary.json"],
+        &[json!({"op": "choose", "revision": view.revision, "id": id})],
+    );
+    let chosen = responses.last().unwrap();
+    assert_eq!(chosen["status"], "chosen", "{chosen}");
+    assert_eq!(chosen["observation"]["play"]["act"], 2);
+    expected.choose(view.revision, &id).unwrap();
+    assert_eq!(continuity::load_session(&path).unwrap(), expected);
+    assert_eq!(
+        chosen["observation"],
+        serde_json::to_value(expected.observe()).unwrap()
+    );
+}

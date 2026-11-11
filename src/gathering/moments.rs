@@ -65,6 +65,7 @@ pub(super) fn project(
     view.stage = Stage::Playing;
     view.prompt = moment.caption.clone();
     view.choices.clear();
+    view.group_clue_payment = None;
     view.decision_owner = None;
     view.lead = Some(moment.play.lead);
     view.history.extend(

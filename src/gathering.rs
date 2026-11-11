@@ -19,8 +19,10 @@ mod harm_cards;
 pub use elimination::LifecycleFixture;
 pub use harm_cards::HarmFixture;
 mod encounter_search;
+mod group_payment;
 pub use draws::DrawFixture;
 pub use encounter_search::SearchFixture;
+pub use group_payment::{Contributor, GROUP_CLUE_CONTRIBUTIONS, GroupCluePayment, Ineligibility};
 pub use player_cards::AssetFixture;
 pub mod continuity;
 pub mod inspection;
@@ -227,6 +229,9 @@ pub struct Observation {
     pub verification_fixture: Option<HostileFixture>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub play: Option<PlayObservation>,
+    /// The group clue payment the listed `act:pay:<contributions>` choice offers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_clue_payment: Option<GroupCluePayment>,
 }
 
 #[cfg(feature = "tabletop")]
@@ -271,6 +276,17 @@ pub struct Session {
     verification_fixture: Option<HostileFixture>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     runtime: Option<runtime::Game>,
+}
+
+/// Table tests only: place an investigator's clues and location where a witness
+/// needs them. No decision is recorded, so Undo cannot reproduce the placement.
+#[cfg(all(test, feature = "tabletop"))]
+impl Session {
+    pub(crate) fn place_for_test(&mut self, who: Investigator, clues: u8, location: &str) {
+        let player = &mut self.runtime.as_mut().expect("Scenario play").players[who.index()];
+        player.clues = clues;
+        player.location = location.into();
+    }
 }
 
 #[derive(Deserialize)]
@@ -414,6 +430,7 @@ impl Session {
 
     pub fn observe(&self) -> Observation {
         let mut choices = Vec::new();
+        let mut group_clue_payment = None;
         let prompt = match self.stage {
             Stage::ChooseLead => {
                 for investigator in Investigator::ALL {
@@ -460,6 +477,7 @@ impl Session {
             Stage::Playing => {
                 let game = self.runtime.as_ref().expect("Runtime stage");
                 choices = game.choices();
+                group_clue_payment = group_payment::offered(game, &choices);
                 if self.verification_fixture.is_none() && game.scenario.outcome.is_some() {
                     "The Gathering has ended. Review the recorded resolution and campaign consequences."
                 } else if self.verification_fixture.is_none() && choices.is_empty() {
@@ -511,6 +529,7 @@ impl Session {
             standard_bag: standard_bag(),
             verification_fixture: self.verification_fixture,
             play: self.runtime.as_ref().map(runtime::Game::observe),
+            group_clue_payment,
         }
     }
 
@@ -580,7 +599,7 @@ impl Session {
             .or_else(|| {
                 self.runtime
                     .as_ref()
-                    .and_then(|game| test_cards::direct_choice(game, id))
+                    .and_then(|game| game.direct_choice(id))
             })
             .ok_or_else(|| {
                 RuleError("That choice is not available at the current decision.".into())

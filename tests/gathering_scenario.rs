@@ -40,12 +40,9 @@ const ROUND_BEGINS: &str = "A new round begins with the mythos phase.";
 const GHOUL_DOOM: &str = "Resolve the agenda's forced Ghoul doom";
 
 fn pay_hallway_clues(session: &mut Session) {
-    choose(session, "round-end:advance-act");
-    for investigator in 0..3 {
-        for _ in 0..3 {
-            choose(session, &format!("act:contribute:{investigator}"));
-        }
-    }
+    let revision = session.observe().revision;
+    assert!(session.observe().group_clue_payment.is_some());
+    session.choose(revision, "act:pay:3:3:3").unwrap();
 }
 
 /// Tony's optional bounty on the entering Priest is the decision after the
@@ -180,28 +177,30 @@ fn declined_act_two_makes_next_mythos_resolution_three_instead() {
 }
 
 #[test]
-fn partial_group_payment_reopens_without_charging_twice() {
+fn group_payment_is_one_decision_that_reopens_without_charging_twice() {
     use arkham_unfolded_experiment::gathering::continuity::{load_session, save_session};
-    let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
-    choose(&mut session, "round-end:advance-act");
-    for _ in 0..3 {
-        choose(&mut session, "act:contribute:0");
-    }
-    // Contributions are proposed together; nobody pays before the complete,
-    // validated group cost. Reopening preserves the proposal and its choices.
-    assert_eq!(session.observe().play.unwrap().players[0].clues, 3);
+    let session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("group-payment.json");
     save_session(&path, &session).unwrap();
     let mut reopened = load_session(&path).unwrap();
     assert_eq!(reopened, session);
-    for investigator in 1..3 {
-        for _ in 0..3 {
-            choose(&mut reopened, &format!("act:contribute:{investigator}"));
-        }
-    }
-    choose(&mut reopened, "bounty:400:0");
-    let result = reopened.observe();
+    // Nobody pays before the complete, validated group cost, chosen once.
+    let revision = reopened.observe().revision;
+    pay_hallway_clues(&mut reopened);
+    assert_eq!(reopened.observe().revision, revision + 1);
+    save_session(&path, &reopened).unwrap();
+    let mut paid = load_session(&path).unwrap();
+    assert_eq!(paid, reopened);
+    assert!(
+        !paid
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("act:"))
+    );
+    choose(&mut paid, "bounty:400:0");
+    let result = paid.observe();
     assert!(
         result
             .play

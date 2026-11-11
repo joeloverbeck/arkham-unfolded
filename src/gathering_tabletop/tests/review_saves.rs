@@ -647,15 +647,30 @@ pub(super) fn expanded_map_transition() -> Session {
     for _ in 0..200 {
         let view = session.observe();
         if view.play.as_ref().unwrap().scenario.locations.len() > 1 {
-            // Single-option steps no longer take their own revisions.
+            // Single-option steps no longer take their own revisions, and
+            // the group clue payment is one decision instead of seven.
             assert_eq!(
-                view.revision, 60,
+                view.revision, 54,
                 "Keep the native review's revealing decision"
             );
             return session;
         }
+        // Trapped's payment, once the group holds its clues: the first
+        // complete allocation in player order.
+        let payment = view.group_clue_payment.as_ref().and_then(|payment| {
+            let mut allocation = [0; 3];
+            let mut remaining = payment.required;
+            for (paid, contributor) in allocation.iter_mut().zip(&payment.contributors) {
+                *paid = contributor.limit(payment.required).min(remaining);
+                remaining -= *paid;
+            }
+            payment.choice_for(allocation)
+        });
+        if let Some(id) = payment {
+            session.choose(view.revision, &id).unwrap();
+            continue;
+        }
         let id = [
-            "act:advance",
             "turn:tony",
             "turn:patrice",
             "turn:jacqueline",
@@ -669,12 +684,6 @@ pub(super) fn expanded_map_transition() -> Session {
         ]
         .into_iter()
         .find(|id| view.choices.iter().any(|choice| choice.id == *id))
-        .or_else(|| {
-            view.choices
-                .iter()
-                .find(|choice| choice.id.starts_with("act:contribute:"))
-                .map(|choice| choice.id.as_str())
-        })
         .or_else(|| view.choices.first().map(|choice| choice.id.as_str()))
         .expect("A legal decision must remain before the map expands");
         session.choose(view.revision, id).unwrap();

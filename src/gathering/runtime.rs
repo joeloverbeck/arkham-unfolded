@@ -1493,13 +1493,24 @@ impl Game {
         choices
     }
 
+    /// A choice that names a listed choice's number or allocation in place of
+    /// its placeholder: a Crystal Pendulum prediction or a group clue payment.
+    pub(super) fn direct_choice(&self, id: &str) -> Option<Choice> {
+        super::test_cards::direct_choice(self, id)
+            .or_else(|| super::group_payment::direct_choice(self, id))
+    }
+
     pub(super) fn choose(&mut self, id: &str) -> Result<(), RuleError> {
-        if !self.choices().iter().any(|choice| choice.id == id)
-            && super::test_cards::direct_choice(self, id).is_none()
+        if !self.choices().iter().any(|choice| choice.id == id) && self.direct_choice(id).is_none()
         {
             return Err(RuleError(
                 "That choice is not offered by the running effect.".into(),
             ));
+        }
+        if super::group_payment::contributions(id).is_some() {
+            let step = super::group_payment::pay(self, id)?;
+            self.scenario_step(step)?;
+            return self.settle();
         }
         if matches!(self.frames.last(), Some(Frame::Peter { .. })) {
             super::peter::choose(self, id)?;
@@ -1662,11 +1673,7 @@ impl Game {
             self.scenario_step(step)?;
         } else if matches!(self.frames.last(), Some(Frame::Tony(_))) {
             super::tony_cards::apply(self, id)?;
-        } else if id.starts_with("turn:")
-            || id.starts_with("action:")
-            || id == "turn:end"
-            || id == "act:advance"
-        {
+        } else if id.starts_with("turn:") || id.starts_with("action:") || id == "turn:end" {
             self.choose_investigation(id)?;
         } else if id.starts_with("ward:") {
             super::harm_cards::play_ward(self, id)?;
@@ -2226,12 +2233,6 @@ impl Game {
                 }
             }
         }
-        if super::scenario::available_act_payment(self, false).is_some() {
-            choices.push(choice(
-                "act:advance",
-                "Spend the required group clues to advance the act",
-            ));
-        }
         choices.push(choice("turn:end", "End this investigator's turn"));
         choices.extend(self.player_window_choices());
         choices
@@ -2391,12 +2392,6 @@ impl Game {
     }
 
     fn choose_investigation(&mut self, id: &str) -> Result<(), RuleError> {
-        if id == "act:advance" {
-            self.frames.push(Frame::Scenario(
-                super::scenario::available_act_payment(self, false).expect("Offered act payment"),
-            ));
-            return Ok(());
-        }
         if id == "turn:end" {
             let actor = self.actor.expect("Current turn");
             let pending = self.players[actor.index()]
@@ -3198,6 +3193,7 @@ impl Game {
                 }
             }
         }
+        choices.extend(super::group_payment::player_window_choice(self));
         choices
     }
 
@@ -3785,14 +3781,16 @@ impl Game {
             }
             TestOperation::Evade { enemy } => {
                 if success {
-                    let target = self
+                    // An enemy that left play during the test is not exhausted.
+                    if let Some(target) = self
                         .scenario
                         .enemies
                         .iter_mut()
                         .find(|target| target.card.id == enemy)
-                        .ok_or_else(|| RuleError("Evaded enemy missing".into()))?;
-                    target.exhausted = true;
-                    target.engaged = None;
+                    {
+                        target.exhausted = true;
+                        target.engaged = None;
+                    }
                     if test
                         .source_card
                         .as_ref()
@@ -3817,32 +3815,39 @@ impl Game {
                     return Ok(());
                 }
                 if success {
-                    let target = self
+                    // An enemy that left play during the test, such as a Study
+                    // enemy Trapped discarded in a player window, takes no damage.
+                    if let Some(target) = self
                         .scenario
                         .enemies
                         .iter_mut()
                         .find(|target| target.card.id == enemy)
-                        .ok_or_else(|| RuleError("Attacked enemy missing".into()))?;
-                    target.damage += damage;
-                    if target.damage
-                        >= super::scenario::enemy_health(&target.card.code)
-                            .ok_or_else(|| RuleError("Enemy health missing".into()))?
                     {
-                        let defeated = super::scenario::remove_defeated_enemy(self, enemy)?;
-                        if defeated.ends_scenario {
-                            self.suspend_for_resolution();
-                            self.frames.push(Frame::Scenario(ScenarioDecision::Ending));
-                            return Ok(());
-                        }
-                        if let Some(source) = &test.source_card {
-                            super::tony_cards::long_colt_defeat_reward(
+                        target.damage += damage;
+                        if target.damage
+                            >= super::scenario::enemy_health(&target.card.code)
+                                .ok_or_else(|| RuleError("Enemy health missing".into()))?
+                        {
+                            let defeated = super::scenario::remove_defeated_enemy(self, enemy)?;
+                            if defeated.ends_scenario {
+                                self.suspend_for_resolution();
+                                self.frames.push(Frame::Scenario(ScenarioDecision::Ending));
+                                return Ok(());
+                            }
+                            if let Some(source) = &test.source_card {
+                                super::tony_cards::long_colt_defeat_reward(
+                                    self,
+                                    test.tester,
+                                    &source.code,
+                                    defeated.enemy.bounties,
+                                );
+                            }
+                            super::combat::queue_defeat_reactions(
                                 self,
                                 test.tester,
-                                &source.code,
-                                defeated.enemy.bounties,
+                                &defeated.enemy,
                             );
                         }
-                        super::combat::queue_defeat_reactions(self, test.tester, &defeated.enemy);
                     }
                     if test
                         .source_card

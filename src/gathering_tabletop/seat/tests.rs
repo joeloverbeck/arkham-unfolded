@@ -851,3 +851,79 @@ fn the_real_table_is_admitted_and_played_without_a_window() {
     assert!(!proceed);
     assert_eq!(std::fs::read(&save).unwrap(), before);
 }
+
+fn control_choice(response: &Value, label: &str) -> Option<String> {
+    response["table"]["controls"]
+        .as_array()?
+        .iter()
+        .find(|control| control["label"] == label)
+        .and_then(|control| control["choice"].as_str())
+        .map(str::to_owned)
+}
+
+#[test]
+fn the_seat_pays_the_group_clue_payment_by_choice_identity_and_keyboard() {
+    let mut seat = sit_at_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
+    let observed = seat.ask(json!({"op": "observe"}));
+    let payment = &observed["observation"]["group_clue_payment"];
+    assert_eq!(payment["required"], 9);
+    assert_eq!(payment["forced"], json!([3, 3, 3]));
+    let revision = observed["observation"]["revision"].as_u64().unwrap();
+    // The Act card's menu names the listed payment, which opens the chooser.
+    click_source(&mut seat.app, controls::Source::Act);
+    let menu = seat.ask(json!({"op": "settle"}));
+    let row = rows(&menu)
+        .into_iter()
+        .find(|row| row["choice"] == "act:pay:<contributions>")
+        .unwrap_or_else(|| panic!("the Act menu names the payment: {}", menu["table"]["menu"]));
+    assert_eq!(
+        row["label"],
+        "Spend 9 clues as a group: advance The Barrier…"
+    );
+    let opened = seat
+        .ask(json!({"op": "activate", "revision": revision, "choice": "act:pay:<contributions>"}));
+    assert_eq!(opened["status"], "activated", "{opened}");
+    let opened = seat.ask(json!({"op": "settle"}));
+    assert_eq!(
+        opened["observation"], observed["observation"],
+        "Opening commits nothing"
+    );
+    assert_eq!(opened["table"]["modal"], "group clue payment", "{opened}");
+    assert_eq!(
+        control_choice(&opened, "Do not advance").as_deref(),
+        Some("round-end:decline-act")
+    );
+    assert_eq!(
+        control_choice(&opened, "Spend 9 clues and advance").as_deref(),
+        Some("act:pay:3:3:3")
+    );
+    let tony = "Tony Morgan · 3 clues held · Hallway · pays 3";
+    assert_eq!(focused(&opened).as_deref(), Some(tony));
+    // The arrow keys change the focused row; an incomplete total offers no payment.
+    let lowered = seat.ask(json!({"op": "key", "key": "ArrowDown"}));
+    assert_eq!(
+        focused(&lowered).as_deref(),
+        Some("Tony Morgan · 3 clues held · Hallway · pays 2")
+    );
+    assert_eq!(control_choice(&lowered, "Spend 9 clues and advance"), None);
+    let restored = seat.ask(json!({"op": "key", "key": "ArrowUp"}));
+    assert_eq!(focused(&restored).as_deref(), Some(tony));
+    let revision = restored["observation"]["revision"].as_u64().unwrap();
+    assert_eq!(
+        revision,
+        observed["observation"]["revision"].as_u64().unwrap()
+    );
+    let paid = seat.ask(json!({"op": "activate", "revision": revision, "choice": "act:pay:3:3:3"}));
+    assert_eq!(
+        paid["status"], "activated",
+        "{}",
+        restored["table"]["controls"]
+    );
+    let settled = seat.ask(json!({"op": "settle"}));
+    assert_eq!(
+        settled["observation"]["play"]["act"], 3,
+        "{}",
+        settled["observation"]["prompt"]
+    );
+    assert_eq!(settled["observation"], saved(&seat.path));
+}

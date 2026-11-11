@@ -683,24 +683,11 @@ fn revisiting_a_revealed_room_carries_patrice_without_turning_or_replenishing_it
 
 #[test]
 fn act_two_turns_the_zero_clue_parlor_without_a_mover_or_clue_token() {
-    let mut session =
+    let session =
         Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
-    for id in [
-        "round-end:advance-act",
-        "act:contribute:0",
-        "act:contribute:0",
-        "act:contribute:0",
-        "act:contribute:1",
-        "act:contribute:1",
-        "act:contribute:1",
-        "act:contribute:2",
-        "act:contribute:2",
-    ] {
-        session.choose(session.observe().revision, id).unwrap();
-    }
     let dir = tempfile::tempdir().unwrap();
     let mut app = host_with_table(Table::new(session, dir.path().join("parlor.json")), true);
-    choose(&mut app, "act:contribute:2");
+    choose(&mut app, "act:pay:3:3:3");
     // Reading the act reverse remains the existing explicit acknowledgment.
     while app
         .world()

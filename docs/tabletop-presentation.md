@@ -258,6 +258,22 @@ choice once. Cancel/Escape spends nothing. Retain the common inspection, keyboar
 revision and save-before-install safeguards. This is a local compound chooser,
 not a new game timing window or a replacement resolution surface.
 
+An act's clues are paid through one **group clue payment** chooser, never one
+row per clue. The rules session lists one payment choice wherever the rules allow
+it: Trapped in every player window during an investigator's turn, and The
+Barrier at round end beside **Do not advance**. It opens from the Act card and,
+at round end, also from the decision bar; investigator menus list no clue rows.
+The compact panel beside the Act card has one row per investigator with portrait,
+name, clues held, location and a −/+ stepper; ineligible rows are disabled with
+their reason. Steppers stop at the investigator's holdings and the remaining
+requirement, a running **Paid N / required** total is shown, and **Spend N clues
+and advance** is enabled only at the exact requirement. The other button is
+**Cancel**, or **Do not advance** at round end. The panel starts empty, or
+pre-filled when only one split exists. Tab moves between rows, the arrow keys
+change the focused stepper, Enter pays and Escape closes without spending.
+Editing spends nothing; the payment commits once through the save-before-install
+path and the act's existing reading stage follows.
+
 ## Test area, planned reveals and results
 
 Test is dedicated to skill tests, with a stable source, commitments and physical

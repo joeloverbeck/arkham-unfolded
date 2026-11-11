@@ -180,6 +180,7 @@ fn registered_table_saves_its_initial_decision_only_after_admission() {
 
 mod attachment_sideboard;
 mod cards;
+mod clue_payment;
 mod counters_and_enemies;
 mod doom;
 mod draws;
@@ -1913,6 +1914,24 @@ fn choice_source(app: &mut App, id: &str) -> Option<controls::Source> {
         })
 }
 
+/// Pay the offered group clue payment through its chooser: open it from the
+/// listed choice and spend its pre-filled split, which must be the only one.
+pub(super) fn pay_group_clues(app: &mut App) {
+    activate_choice(app, "act:pay:<contributions>");
+    let required = app
+        .world()
+        .resource::<Table>()
+        .session
+        .observe()
+        .group_clue_payment
+        .expect("An offered group clue payment")
+        .required;
+    let spend = choice_button(app, &format!("Spend {required} clues and advance"))
+        .expect("The chooser offers its spend button");
+    app.world_mut().trigger(Activate { entity: spend });
+    app.update();
+}
+
 fn activate_choice(app: &mut App, id: &str) {
     finish_presentation(app);
     let view = app.world().resource::<Table>().view();
@@ -2398,20 +2417,7 @@ fn committed_physical_card_moves_from_hand_and_inspection_preserves_its_position
 fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects() {
     use crate::gathering::HostileFixture;
     use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier};
-    let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
-    let choose = |session: &mut Session, id: &str| {
-        let revision = session.observe().revision;
-        session.choose(revision, id).unwrap();
-    };
-    choose(&mut session, "round-end:advance-act");
-    for investigator in 0..3 {
-        for count in 0..3 {
-            if investigator == 2 && count == 2 {
-                break;
-            }
-            choose(&mut session, &format!("act:contribute:{investigator}"));
-        }
-    }
+    let session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("story-reading.json");
     let mut app = host(path.clone());
@@ -2424,7 +2430,7 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
             .story()
             .is_none()
     );
-    activate_choice(&mut app, "act:contribute:2");
+    pay_group_clues(&mut app);
     for _ in 0..30 {
         if app
             .world()

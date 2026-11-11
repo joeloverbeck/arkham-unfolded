@@ -17,6 +17,20 @@ fn choose(session: &mut Session, id: &str) {
     session.choose(view.revision, id).unwrap();
 }
 
+/// The Barrier's group clue payment, offered as one listed choice, paid with the
+/// Hallway's nine clues as the direct choice naming that allocation.
+fn pay_hallway(session: &mut Session) {
+    let view = session.observe();
+    assert!(
+        view.choices
+            .iter()
+            .any(|choice| choice.id == "act:pay:<contributions>"),
+        "The group clue payment is offered: {:?}",
+        view.choices
+    );
+    session.choose(view.revision, "act:pay:3:3:3").unwrap();
+}
+
 fn reach_reveal(session: &mut Session) {
     for _ in 0..8 {
         let view = session.observe();
@@ -222,12 +236,7 @@ fn original_act_advancement_and_ending_are_recorded_when_their_story_state_chang
         session.presentation_after(0).is_empty(),
         "Privileged fixture construction is not a recorded player transition"
     );
-    choose(&mut session, "round-end:advance-act");
-    for investigator in 0..3 {
-        for _ in 0..3 {
-            choose(&mut session, &format!("act:contribute:{investigator}"));
-        }
-    }
+    pay_hallway(&mut session);
     let record = session.presentation_after(0);
     let advanced = record
         .iter()

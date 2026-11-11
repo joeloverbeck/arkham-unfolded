@@ -5,6 +5,20 @@ fn choose(session: &mut Session, id: &str) {
     session.choose(revision, id).unwrap();
 }
 
+/// The Barrier's group clue payment, offered as one listed choice, paid with the
+/// Hallway's nine clues as the direct choice naming that allocation.
+fn pay_hallway(session: &mut Session) {
+    let view = session.observe();
+    assert!(
+        view.choices
+            .iter()
+            .any(|choice| choice.id == "act:pay:<contributions>"),
+        "The group clue payment is offered: {:?}",
+        view.choices
+    );
+    session.choose(view.revision, "act:pay:3:3:3").unwrap();
+}
+
 #[test]
 fn investigator_menu_keeps_lead_selection_explicit_and_uses_the_public_choice() {
     let session = Session::with_seed(19);
@@ -976,12 +990,7 @@ fn actual_end_turn_and_bounty_history_use_public_names_instead_of_physical_ids()
     assert!(!shown.contains(id));
 
     let mut bounty = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
-    choose(&mut bounty, "round-end:advance-act");
-    for who in 0..3 {
-        for _ in 0..3 {
-            choose(&mut bounty, &format!("act:contribute:{who}"));
-        }
-    }
+    pay_hallway(&mut bounty);
     choose(&mut bounty, "bounty:400:1");
     let view = bounty.observe();
     let raw = view

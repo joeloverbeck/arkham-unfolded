@@ -328,12 +328,17 @@ fn every_modal_dialog_offers_focus_when_opened() {
         "credits",
         "restart confirmation",
         "encounter reading",
+        "group clue payment",
     ] {
         let path = directory.path().join(format!("{name}.json"));
         let mut app = if name == "encounter reading" {
             let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Harm(
                 crate::gathering::HarmFixture::WardCancellation,
             ));
+            host_with_table(Table::new(session, path), false)
+        } else if name == "group clue payment" {
+            let session =
+                Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
             host_with_table(Table::new(session, path), false)
         } else {
             host(path)
@@ -353,6 +358,13 @@ fn every_modal_dialog_offers_focus_when_opened() {
                         _ => "Restart The Gathering...",
                     },
                 );
+            }
+            "group clue payment" => {
+                let entity =
+                    choice_button(&mut app, "Spend 9 clues as a group: advance The Barrier…")
+                        .expect("The decision bar opens the payment at round end");
+                app.world_mut().trigger(Activate { entity });
+                app.update();
             }
             _ => {}
         }

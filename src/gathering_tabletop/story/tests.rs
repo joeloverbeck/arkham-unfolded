@@ -11,14 +11,23 @@ fn choose(session: &mut Session, id: &str) {
     session.choose(view.revision, id).unwrap();
 }
 
+/// The Barrier's group clue payment, offered as one listed choice, paid with the
+/// Hallway's nine clues as the direct choice naming that allocation.
+fn pay_hallway(session: &mut Session) {
+    let view = session.observe();
+    assert!(
+        view.choices
+            .iter()
+            .any(|choice| choice.id == "act:pay:<contributions>"),
+        "The group clue payment is offered: {:?}",
+        view.choices
+    );
+    session.choose(view.revision, "act:pay:3:3:3").unwrap();
+}
+
 fn paid_act_two() -> Session {
     let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
-    choose(&mut session, "round-end:advance-act");
-    for investigator in 0..3 {
-        for _ in 0..3 {
-            choose(&mut session, &format!("act:contribute:{investigator}"));
-        }
-    }
+    pay_hallway(&mut session);
     session
 }
 
@@ -76,12 +85,7 @@ fn advancing_act_two_retains_its_reverse_without_revealing_the_next_act() {
     let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
     assert!(current_faces(&session).is_reverse("01108"));
     assert!(!current_faces(&session).is_reverse("01109"));
-    choose(&mut session, "round-end:advance-act");
-    for who in 0..3 {
-        for _ in 0..3 {
-            choose(&mut session, &format!("act:contribute:{who}"));
-        }
-    }
+    pay_hallway(&mut session);
     let steps = session.presentation_after(0);
     assert!(steps.iter().any(|step| step.play.act == 3));
     for step in steps {

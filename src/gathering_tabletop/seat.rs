@@ -212,9 +212,16 @@ impl Game for Gathering {
                 (component.position, component.reach)
             }
             Name::Choice(wanted) => {
-                let mut shown = controls(world)
+                let mut offered: Vec<_> = controls(world)
                     .into_iter()
-                    .filter(|control| control.choice.as_ref() == Some(wanted));
+                    .filter(|control| control.choice.as_ref() == Some(wanted))
+                    .collect();
+                // An open contextual menu captures the pointer, so a choice it
+                // shares with the decision bar is the menu's row.
+                if offered.iter().any(|control| control.menu) {
+                    offered.retain(|control| control.menu);
+                }
+                let mut shown = offered.into_iter();
                 let Some(control) = shown.next() else {
                     return Err(format!("No shown control offers choice {wanted}."));
                 };
@@ -634,6 +641,8 @@ fn modal(world: &World) -> Option<&'static str> {
         Some("history")
     } else if table.violin.is_some() {
         Some("violin choice")
+    } else if table.clue_payment.is_some() {
+        Some("group clue payment")
     } else if table.menu_open {
         Some("utilities menu")
     } else {
