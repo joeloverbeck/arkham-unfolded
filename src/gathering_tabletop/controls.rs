@@ -272,15 +272,9 @@ enum Route {
     Sources(Vec<Source>),
     Global,
     Pending,
-    Hidden,
 }
 
 fn route(view: &Observation, id: &str) -> Route {
-    if id.starts_with("test-card:number:") {
-        // Retain the old commands for journal reconstruction only. The native
-        // picker owns every number entry, including reopened old predictions.
-        return Route::Hidden;
-    }
     let id = id
         .strip_prefix("action:ordinary:")
         .or_else(|| id.strip_prefix("action:tony:"))
@@ -327,7 +321,8 @@ fn route(view: &Observation, id: &str) -> Route {
         | ["round-end", "voices", card]
         | ["agenda-discard", "deny", card]
         | ["draw", "reveal", card]
-        | ["test-card", "commit-effect" | "pendulum" | "found", card]
+        | ["test-card", "commit-effect" | "found", card]
+        | ["test-card", "predict", card, _]
         | ["search", "enemy" | "play-hunt", card]
         | ["search", "enemy", card, "then"]
         | ["backpack", "select", card]
@@ -741,13 +736,6 @@ pub(super) fn global_choices(view: &Observation) -> Vec<Choice> {
 /// Administrative steps have no strategic alternative. The UI still commits
 /// their existing revision-bound choices, preserving saves and the audit trail.
 pub(super) fn automatic_choice(view: &Observation) -> Option<&str> {
-    if view
-        .choices
-        .iter()
-        .any(|choice| choice.id == "enemy:skip-empty")
-    {
-        return Some("enemy:skip-empty");
-    }
     let mut choices = view.choices.iter().filter(|choice| choice.id != "undo");
     let choice = choices.next()?;
     if choices.next().is_some() {
@@ -759,7 +747,8 @@ pub(super) fn automatic_choice(view: &Observation) -> Option<&str> {
     }
     matches!(
         choice.id.as_str(),
-        "enemy:attacks"
+        "enemy:skip-empty"
+            | "enemy:attacks"
             | "enemy:next-investigator"
             | "enemy:attacks-complete"
             | "enemy:attack-complete"
@@ -962,7 +951,7 @@ fn display_choice(view: &Observation, choice: &Choice) -> Choice {
         shown.label = "Skip remaining reactions".into();
         return shown;
     }
-    if choice.id.starts_with("test-card:pendulum:") {
+    if pendulum::asset(&choice.id).is_some() {
         shown.label = "Exhaust Crystal Pendulum".into();
         return shown;
     }
@@ -1200,6 +1189,10 @@ pub(super) fn render(
     }
     let mut violins = std::collections::BTreeSet::new();
     for mut choice in choices.into_iter().filter(|_| !table.is_presenting()) {
+        if let Some(action) = pendulum::trigger(table.epoch, view.revision, &choice.id) {
+            content.push(Item::Action(feedback::menu::label(&choice.label), action));
+            continue;
+        }
         if let Some(asset) = violin::asset(&choice.id) {
             if !violins.insert(asset) {
                 continue;

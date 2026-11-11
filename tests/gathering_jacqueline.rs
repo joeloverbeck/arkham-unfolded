@@ -33,6 +33,7 @@ fn advance(session: &mut Session, view: &Observation) {
         "harm:confirm",
         "turn:end",
         "enemy:attacks",
+        "enemy:skip-empty",
         "round:end",
         "round-end:decline-act",
         "mythos:begin",

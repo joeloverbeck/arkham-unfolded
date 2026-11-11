@@ -21,6 +21,7 @@ fn movement_session() -> Session {
             "phase-window:pass",
             "enemy:hunters:done",
             "enemy:attacks",
+            "enemy:skip-empty",
             "enemy:end",
             "round:upkeep",
             "upkeep:resolve",

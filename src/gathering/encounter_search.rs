@@ -46,41 +46,40 @@ mod continuity_tests {
     }
 
     #[test]
-    fn legacy_hornet_audit_and_pending_reward_remain_loadable_without_repeating_rewards() {
+    fn hornet_rewards_once_at_spawn_and_the_unsuffixed_identifier_is_refused() {
         let (mut session, enemy) = search();
-        let legacy = format!("search:enemy:{enemy}");
+        let before = session.clone();
         assert!(
-            session.choose(session.observe().revision, &legacy).is_err(),
-            "Live choices must use corrected timing"
+            session
+                .choose(session.observe().revision, &format!("search:enemy:{enemy}"))
+                .is_err(),
+            "Only the Then identifier selects Hornet's spawn"
         );
-        session.choose_recorded(&legacy).unwrap();
-        assert_eq!(session.observe().play.unwrap().players[0].resources, 4);
-        // Pre-fix records have no reward_applied field.
-        let mut old = serde_json::to_value(&session).unwrap();
-        for frame in old["runtime"]["frames"].as_array_mut().unwrap() {
-            if let Some(state) = frame
-                .get_mut("EncounterSearch")
-                .and_then(|search| search.get_mut("AfterSpawn"))
-            {
-                state.as_object_mut().unwrap().remove("reward_applied");
-            }
-        }
-        session = serde_json::from_value(old).unwrap();
-        session.validate().unwrap();
+        assert_eq!(session, before);
+        session
+            .choose(
+                session.observe().revision,
+                &format!("search:enemy:{enemy}:then"),
+            )
+            .unwrap();
+        let play = session.observe().play.unwrap();
+        assert_eq!((play.players[0].resources, play.players[0].clues), (5, 1));
         session
             .choose(session.observe().revision, &format!("bounty:{enemy}:0"))
             .unwrap();
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("legacy-hornet.json");
+        let path = directory.path().join("hornet.json");
         continuity::save_session(&path, &session).unwrap();
         let mut reopened = continuity::load_session(&path).unwrap();
         reopened
             .choose(reopened.observe().revision, "search:finish")
             .unwrap();
         let play = reopened.observe().play.unwrap();
-        assert_eq!((play.players[0].resources, play.players[0].clues), (5, 1));
-        continuity::save_session(&path, &reopened).unwrap();
-        assert_eq!(continuity::load_session(&path).unwrap(), reopened);
+        assert_eq!(
+            (play.players[0].resources, play.players[0].clues),
+            (5, 1),
+            "Finishing never repeats the reward"
+        );
     }
 
     #[test]
@@ -157,10 +156,6 @@ pub(super) enum SearchDecision {
     },
     AfterSpawn {
         event: PaidEvent,
-        health: u8,
-        // Older saves stopped before the reward. Never repeat it in new saves.
-        #[serde(default)]
-        reward_applied: bool,
     },
     FinishEvent {
         event: PaidEvent,
@@ -618,7 +613,7 @@ pub(super) fn choices(game: &Game, decision: &SearchDecision) -> Vec<Choice> {
                 .filter(|card| eligible(card, event))
                 .map(|card| {
                     choice(
-                        if event.card.code == HORNET && !game.legacy_hornet_search {
+                        if event.card.code == HORNET {
                             format!("search:enemy:{}:then", card.id)
                         } else {
                             format!("search:enemy:{}", card.id)
@@ -641,22 +636,9 @@ pub(super) fn choices(game: &Game, decision: &SearchDecision) -> Vec<Choice> {
                 choices
             }
         }
-        SearchDecision::AfterSpawn {
-            event,
-            health,
-            reward_applied,
-        } => vec![choice(
+        SearchDecision::AfterSpawn { event } => vec![choice(
             "search:finish".into(),
-            if event.card.code == HUNT {
-                "Shuffle the encounter deck and finish On the Hunt".into()
-            } else if *reward_applied {
-                "Shuffle the encounter deck and finish Kicking the Hornet's Nest".into()
-            } else {
-                format!(
-                    "Discover 1 clue, gain {}, and shuffle the encounter deck",
-                    counted(*health, "resource", "resources")
-                )
-            },
+            format!("Shuffle the encounter deck and finish {}", event.card.title),
         )],
     }
 }
@@ -857,33 +839,16 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                 owner: None,
             });
             // RR Then: the dependent reward precedes after-entry reactions.
-            let reward_applied = event.card.code == HORNET && id.ends_with(":then");
+            let reward = event.card.code == HORNET;
             let owner = event.owner;
             game.frames
-                .push(Frame::EncounterSearch(SearchDecision::AfterSpawn {
-                    event,
-                    health,
-                    reward_applied,
-                }));
-            if reward_applied {
+                .push(Frame::EncounterSearch(SearchDecision::AfterSpawn { event }));
+            if reward {
                 hornet_reward(game, owner, health);
             }
             game.scenario_step(scenario::ScenarioStep::EnemyEntered(enemy))?;
         }
-        SearchDecision::AfterSpawn {
-            event,
-            health,
-            reward_applied,
-        } => {
-            if event.card.code == HUNT {
-                finish(game, event);
-                return Ok(());
-            }
-            if !reward_applied {
-                hornet_reward(game, event.owner, health);
-            }
-            finish(game, event);
-        }
+        SearchDecision::AfterSpawn { event } => finish(game, event),
     }
     Ok(())
 }

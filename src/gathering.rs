@@ -57,7 +57,7 @@ mod test_boosts;
 mod test_cards;
 mod test_report;
 pub use test_boosts::BoostFixture;
-pub use test_cards::{PendulumPrompt, TestCardFixture};
+pub use test_cards::{PREDICTION_MARGIN, PendulumPrompt, TestCardFixture};
 pub use test_report::{Contribution, TestBreakdown, TokenContribution};
 
 pub use runtime::{
@@ -669,8 +669,10 @@ impl Session {
         }
         let mut active = self.active_decisions.clone();
         let removed = active.pop().expect("A reversible decision");
-        // New automatic reaction closure belongs to its preceding reaction for
-        // Undo. Old explicit pass/Undo journals keep their exact interpretation.
+        // The automatic closure of an emptied test-start window belongs to the
+        // reaction that emptied it, so Undo returns to that genuine decision.
+        // A deliberate Skip (`test-card:pass` beside a real reaction) stays its
+        // own Undo destination.
         if self.decisions[removed] == "test-card:continue" && active.len() > self.undo_floor {
             active.pop();
         }
@@ -681,7 +683,7 @@ impl Session {
                 .get(index)
                 .filter(|decision| decision.as_str() != "undo")
                 .ok_or_else(|| RuleError("Invalid active decision in the Undo record.".into()))?;
-            restored.choose_recorded(decision)?;
+            restored.choose(restored.revision, decision)?;
         }
         // The rules position rewinds; the chronological evidence never does.
         restored.revision = self.revision;
@@ -889,26 +891,13 @@ impl Session {
         self.revision == 0 && self.decisions.is_empty()
     }
 
-    // Preserve the meaning of old audit entries without offering the obsolete
-    // Hornet timing to live players. New selections carry the explicit Then ID.
-    fn choose_recorded(&mut self, id: &str) -> Result<(), RuleError> {
-        let legacy = id
-            .strip_prefix("search:enemy:")
-            .is_some_and(|enemy| enemy.parse::<u16>().is_ok());
-        if let Some(game) = &mut self.runtime {
-            game.legacy_hornet_search = legacy;
-        }
-        let result = self.choose(self.revision, id);
-        if let Some(game) = &mut self.runtime {
-            game.legacy_hornet_search = false;
-        }
-        result
-    }
-
+    /// Admission is exact replay: every recorded decision must still be offered
+    /// by this build and reproduce the recorded state. No earlier-build
+    /// identifier or meaning is reinterpreted.
     pub fn validate(&self) -> Result<(), RuleError> {
         let mut reconstructed = Self::from_origin(self.seed, self.verification_fixture)?;
         for decision in &self.decisions {
-            reconstructed.choose_recorded(decision)?;
+            reconstructed.choose(reconstructed.revision, decision)?;
         }
         if &reconstructed != self {
             return Err(RuleError(

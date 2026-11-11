@@ -343,6 +343,7 @@ fn ordinary_setup_round_and_mythos_resume_through_fresh_player_processes() {
             "action:ordinary:resource",
             "turn:end",
             "enemy:attacks",
+            "enemy:skip-empty",
             "round:end",
             "round-end:decline-act",
             "mythos:begin",

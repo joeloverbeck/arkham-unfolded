@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-const USAGE: &str = "arkham-driver --experiment gathering [--load PATH] [--save PATH]\narkham-driver --experiment gathering --inspect PATH\nInspection emits one validated player observation and exits without writing files or reading stdin; it cannot be combined with --load or --save. Live mode saves on startup. JSON lines: observe; choose with revision and id; save; reopen; quit. An existing save reopens automatically. Inputs use the pinned research baseline, not a current campaign update check. Random draws are session-owned and not player-selectable.";
+const USAGE: &str = "arkham-driver --experiment gathering [--load PATH] [--save PATH]\narkham-driver --experiment gathering --inspect PATH\nInspection emits one validated player observation and exits without writing files or reading stdin; it cannot be combined with --load or --save. Live mode saves on startup. JSON lines: observe; choose with revision and id; save; reopen; quit. A listed choice id ending in :<margin> names a number: choose it with a whole number from 0 to 65535 in place of <margin> (Crystal Pendulum predictions). An existing save reopens automatically. Inputs use the pinned research baseline, not a current campaign update check. Random draws are session-owned and not player-selectable.";
 
 enum Options {
     Inspect(PathBuf),

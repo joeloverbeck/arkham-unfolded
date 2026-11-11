@@ -348,6 +348,39 @@ fn a_covered_control_reports_what_covers_it_and_presses_nothing() {
 }
 
 #[test]
+fn the_listed_pendulum_prediction_opens_its_picker_by_identity_and_commits_nothing() {
+    use crate::gathering::{HostileFixture, PREDICTION_MARGIN, TestCardFixture};
+    let mut seat = sit_at_fixture(HostileFixture::TestCards(
+        TestCardFixture::CrystalPrediction,
+    ));
+    let before = seat.ask(json!({"op": "observe"}));
+    let listed = before["observation"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|choice| choice["id"].as_str().unwrap().to_owned())
+        .find(|id| id.starts_with("test-card:predict:") && id.ends_with(PREDICTION_MARGIN))
+        .expect("the session lists one direct prediction choice");
+    let asset = listed.split(':').nth(2).unwrap().parse().unwrap();
+    click_source(&mut seat.app, controls::Source::Card(asset));
+    let settled = seat.ask(json!({"op": "settle"}));
+    assert_eq!(settled["status"], "settled", "{settled}");
+    let menu = seat.ask(json!({"op": "observe"}));
+    let row = rows(&menu)
+        .into_iter()
+        .find(|row| row["choice"] == listed.as_str())
+        .unwrap_or_else(|| panic!("the menu names {listed}: {}", menu["table"]["menu"]));
+    assert_eq!(row["label"], "Exhaust Crystal Pendulum");
+    let revision = before["observation"]["revision"].clone();
+    let opened =
+        seat.ask(json!({"op": "activate", "revision": revision, "choice": listed.as_str()}));
+    assert_eq!(opened["status"], "activated", "{opened}");
+    assert_eq!(opened["table"]["modal"], "pendulum prediction");
+    assert_eq!(opened["observation"], before["observation"]);
+    assert!(!seat.path.exists(), "opening the picker commits nothing");
+}
+
+#[test]
 fn keys_travel_the_keyboard_path_and_unknown_keys_are_refused() {
     let mut seat = sit();
     seat.open_menu(Investigator::Patrice);

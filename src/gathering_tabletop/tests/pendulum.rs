@@ -1,5 +1,17 @@
 use super::*;
 
+/// The session lists one prediction choice per ready Pendulum; the table opens
+/// its local picker from that entry without committing anything.
+fn open_picker(app: &mut App, asset: u16) {
+    activate_choice(
+        app,
+        &format!(
+            "test-card:predict:{asset}:{}",
+            crate::gathering::PREDICTION_MARGIN
+        ),
+    );
+}
+
 fn press(app: &mut App, label: &str) {
     let entity = choice_button(app, label).unwrap_or_else(|| panic!("Missing {label}"));
     app.world_mut().trigger(Activate { entity });
@@ -24,7 +36,7 @@ fn picker_dismissal_is_free_and_other_margin_commits_once() {
     let path = directory.path().join("picker.json");
     continuity::save_session(&path, &session).unwrap();
     let mut app = host_with_table(Table::new(session.clone(), path.clone()), false);
-    activate_choice(&mut app, &format!("test-card:pendulum:{asset}"));
+    open_picker(&mut app, asset);
     assert_eq!(
         app.world().resource::<Table>().session,
         session,
@@ -36,7 +48,7 @@ fn picker_dismissal_is_free_and_other_margin_commits_once() {
     press(&mut app, "Dismiss");
     assert_eq!(app.world().resource::<Table>().session, session);
     assert_eq!(continuity::load_session(&path).unwrap(), session);
-    activate_choice(&mut app, &format!("test-card:pendulum:{asset}"));
+    open_picker(&mut app, asset);
     press(&mut app, "Other margin…");
     keyboard(&mut app, KeyCode::Digit1, Key::Character("1".into()), true);
     keyboard(&mut app, KeyCode::Digit2, Key::Character("2".into()), true);
@@ -70,36 +82,6 @@ fn picker_dismissal_is_free_and_other_margin_commits_once() {
 }
 
 #[test]
-fn legacy_prediction_stepper_is_absent_from_investigator_menus() {
-    use crate::gathering::{HostileFixture, TestCardFixture};
-    let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(
-        TestCardFixture::CrystalPrediction,
-    ));
-    let asset = session.pendulum_prompts()[0].asset;
-    session
-        .choose(
-            session.observe().revision,
-            &format!("test-card:pendulum:{asset}"),
-        )
-        .unwrap();
-    let directory = tempfile::tempdir().unwrap();
-    let mut app = host_with_table(
-        Table::new(session, directory.path().join("legacy-menu.json")),
-        false,
-    );
-    press(&mut app, "Dismiss");
-    click_source(
-        &mut app,
-        controls::Source::Investigator(Investigator::Jacqueline),
-    );
-    for _ in 0..3 {
-        app.update();
-    }
-    assert!(choice_button(&mut app, "Cancel this prediction").is_none());
-    assert!(choice_button(&mut app, "Predict 1").is_none());
-}
-
-#[test]
 fn undo_after_the_final_reaction_recovers_the_wager_without_an_automatic_loop() {
     use crate::gathering::{HostileFixture, TestCardFixture};
     let session = Session::with_hostile_fixture(HostileFixture::TestCards(
@@ -109,7 +91,7 @@ fn undo_after_the_final_reaction_recovers_the_wager_without_an_automatic_loop() 
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("reaction-undo.json");
     let mut app = host_with_table(Table::new(session, path.clone()), false);
-    activate_choice(&mut app, &format!("test-card:pendulum:{asset}"));
+    open_picker(&mut app, asset);
     press(&mut app, "Predict 3");
     let before = app.world().resource::<Table>().session.observe();
     let wager = before
@@ -163,7 +145,7 @@ fn prediction_choices_form_a_compact_grid_and_stay_inside_the_window() {
     );
     let size = Vec2::new(1280., 800.);
     crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
-    activate_choice(&mut app, &format!("test-card:pendulum:{asset}"));
+    open_picker(&mut app, asset);
     for other in [false, true] {
         if other {
             press(&mut app, "Other margin…");
@@ -208,7 +190,7 @@ fn enter_on_a_focused_prediction_button_does_not_confirm_the_other_field() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("keyboard.json");
     let mut app = host_with_table(Table::new(session.clone(), path.clone()), false);
-    activate_choice(&mut app, &format!("test-card:pendulum:{asset}"));
+    open_picker(&mut app, asset);
     press(&mut app, "Other margin…");
     keyboard(&mut app, KeyCode::Digit1, Key::Character("1".into()), true);
     keyboard(&mut app, KeyCode::Digit2, Key::Character("2".into()), true);
@@ -228,60 +210,4 @@ fn enter_on_a_focused_prediction_button_does_not_confirm_the_other_field() {
             .unwrap()
             .contains("predict 3")
     );
-}
-
-#[test]
-#[ignore = "loads retained pre-change ordinary records from ARKHAM_LEGACY_PENDULUM_DIR"]
-fn retained_legacy_predictions_open_in_a_fresh_process_without_resetting_numbers() {
-    let root = PathBuf::from(
-        std::env::var_os("ARKHAM_LEGACY_PENDULUM_DIR")
-            .expect("Set the retained legacy record directory"),
-    );
-    for number in [0, 3, 12] {
-        let source = root.join(format!("pending-{number}.json"));
-        let original = std::fs::read(&source).unwrap();
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("legacy.json");
-        std::fs::write(&path, &original).unwrap();
-        let table = Table::open_existing(path.clone()).unwrap();
-        let before = table.session.clone();
-        assert!(!before.is_verification_fixture());
-        assert_eq!(before.pendulum_prompts()[0].saved_number, Some(number));
-        let mut app = host_with_table(table, false);
-        assert_eq!(app.world().resource::<Table>().session, before);
-        assert!(rendered_text(&mut app).contains(&format!("Saved prediction: {number}")));
-        assert!(choice_button(&mut app, "Cancel this prediction").is_none());
-        press(&mut app, "Dismiss");
-        assert_eq!(app.world().resource::<Table>().session, before);
-        press(&mut app, "Exhaust Crystal Pendulum");
-        assert!(rendered_text(&mut app).contains(&format!("Saved prediction: {number}")));
-        press(&mut app, &format!("Predict {number}"));
-        let saved = continuity::load_session(&path).unwrap();
-        assert_eq!(saved.observe().revision, before.observe().revision + 1);
-        assert!(saved.pendulum_prompts().is_empty());
-        assert!(
-            saved
-                .observe()
-                .history
-                .last()
-                .unwrap()
-                .contains(&format!("predict {number}"))
-        );
-        assert_eq!(std::fs::read(source).unwrap(), original);
-    }
-    let committed = continuity::load_session(root.join("committed-12.json")).unwrap();
-    let old_undo = continuity::load_session(root.join("old-pass-undo.json")).unwrap();
-    old_undo.validate().unwrap();
-    assert_eq!(old_undo.pendulum_prompts()[0].saved_number, Some(12));
-    assert_eq!(old_undo.observe().revision, 24);
-    assert!(committed.pendulum_prompts().is_empty());
-    assert!(
-        !committed.observe().play.unwrap().players[2]
-            .assets
-            .iter()
-            .find(|asset| asset.card.code == "60411")
-            .unwrap()
-            .ready
-    );
-    committed.validate().unwrap();
 }

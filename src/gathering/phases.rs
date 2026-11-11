@@ -89,10 +89,14 @@ mod tests {
                 .any(|choice| choice.id == "enemy:skip-empty")
         );
         game.agenda = 1;
-        assert!(
-            choices(&game, &decision)
-                .iter()
-                .any(|choice| choice.id == "enemy:skip-empty")
+        let offered: Vec<_> = choices(&game, &decision)
+            .into_iter()
+            .map(|choice| choice.id)
+            .collect();
+        assert_eq!(
+            offered,
+            ["enemy:skip-empty"],
+            "No earlier step-by-step choice is offered beside it"
         );
         choose(&mut game, "enemy:skip-empty").unwrap();
         assert_eq!(game.phase, Phase::Upkeep);
@@ -234,16 +238,14 @@ pub(super) fn choices(game: &Game, decision: &PhaseDecision) -> Vec<Choice> {
                     )
                 })
                 .collect();
-            if choices.is_empty() {
-                let mut choices = vec![choice("enemy:attacks", "Begin enemy attacks")];
-                if !scenario::enemy_phase_has_activity(game)
-                    && game.player_window_choices().is_empty()
-                {
-                    choices.push(choice("enemy:skip-empty", "Enemy phase — no activity"));
-                }
+            if !choices.is_empty() {
                 choices
+            } else if !scenario::enemy_phase_has_activity(game)
+                && game.player_window_choices().is_empty()
+            {
+                vec![choice("enemy:skip-empty", "Enemy phase — no activity")]
             } else {
-                choices
+                vec![choice("enemy:attacks", "Begin enemy attacks")]
             }
         }
         PhaseDecision::EnemyAttacks { order, index } => {
@@ -390,9 +392,10 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
         ));
     }
     if id == "enemy:skip-empty" {
-        // Keep the ordinary framework path (and old recorded choices) intact.
-        // Admission above proves there are no remaining effects or opportunities.
-        choose(game, "enemy:attacks")?;
+        // Run the ordinary framework path. Admission above proves there are no
+        // remaining effects or opportunities, so no step below can pause.
+        game.frames.pop();
+        begin_enemy_attacks(game);
         while let Some(Frame::Phase(PhaseDecision::EnemyAttacks { order, index })) =
             game.frames.last()
         {
@@ -416,13 +419,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
         }
         PhaseDecision::Hunters { mut remaining } => {
             if id == "enemy:attacks" {
-                player_window(
-                    game,
-                    Some(PhaseDecision::EnemyAttacks {
-                        order: scenario::player_order(game),
-                        index: 0,
-                    }),
-                );
+                begin_enemy_attacks(game);
             } else {
                 let enemy = remaining
                     .iter()
@@ -696,6 +693,16 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
 
 fn push(game: &mut Game, decision: PhaseDecision) {
     game.frames.push(Frame::Phase(decision));
+}
+
+fn begin_enemy_attacks(game: &mut Game) {
+    player_window(
+        game,
+        Some(PhaseDecision::EnemyAttacks {
+            order: scenario::player_order(game),
+            index: 0,
+        }),
+    );
 }
 
 fn player_window(game: &mut Game, next: Option<PhaseDecision>) {

@@ -124,7 +124,7 @@ continuation. Use the existing bounded native-verification procedure; personal
 saves and preferences were not used during these checks. Issue #89 retains full
 scenario playthrough and owner acceptance.
 
-Replay has been retired in all four modes. Saves from before this change are unsupported and remain untouched; use `--save` with a new path to start an attempt. New-format saves retain exact continuation, action history and applicable Undo. There is no recording export or historical reader. [Decision and scope](../adr/0003-retire-replay.md). Dated evidence below describes its original builds; references to replay in those historical reports are superseded.
+Replay has been retired in all four modes. Saves from before this change are unsupported and remain untouched; use `--save` with a new path to start an attempt. Development builds promise no save compatibility; see [Record compatibility](#record-compatibility). New-format saves retain exact continuation, action history and applicable Undo. There is no recording export or historical reader. [Decision and scope](../adr/0003-retire-replay.md). Dated evidence below describes its original builds; references to replay in those historical reports are superseded.
 
 This is the local implementation candidate for original Gathering
 under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). It uses the
@@ -1157,5 +1157,7 @@ Consulted rules: `AUTH-1`–`AUTH-3`, `PURP-1`–`PURP-6`, `WORK-1`–`WORK-6`,
 ## Record compatibility
 
 All saves and standalone recordings made before replay retirement are unsupported. This includes setup-v1 and runtime-v2/v3/v4 records. No migration or historical reader is maintained. The loader refuses them without changing the file; start a new attempt at a different `--save` path.
+
+Until Joel accepts a save-compatibility commitment, development builds promise none: a save loads only when the current build reproduces its recorded game exactly, and is otherwise refused unchanged so that a New attempt can begin. No migration, alias or legacy path is kept for records from earlier builds; a build that changes a decision step can therefore refuse version-3 saves made before it.
 
 The new format (version 3) stores current rules/RNG state, action history, completed test explanations, explicit story knowledge and the compact decision journal used for validation and safe Undo. It stores neither historical observations nor live animation queues. Current-session archives and `.previous` recovery files use this same format. Mode, source, application and checksum checks precede loading; save replacement also checks the exact loaded/saved baseline under the file lock.

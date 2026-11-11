@@ -50,7 +50,7 @@ Save/load is required. Gameplay, saving and loading work offline after the neces
 
 Autosave each committed player-decision boundary and permit a manual save at a pending decision, including during a skill test. Loading restores the exact pending choice, state and randomness without rerolling or repeating committed effects. Presentation interrupted by saving must not alter rules state. Save records identify the required game data and application/rules version. Supported formats and source versions must be explicit; unsupported records are refused without changing their bytes.
 
-The replay-retirement change deliberately makes every save and standalone recording produced by pre-removal builds unsupported across all experiments and Gathering. No migration or maintained historical reader is required. This accepted break concerns existing records; it does not decide the compatibility policy for future formats. Personal files are not deleted or overwritten merely because support ends.
+The replay-retirement change deliberately makes every save and standalone recording produced by pre-removal builds unsupported across all experiments and Gathering. No migration or maintained historical reader is required. Until Joel accepts a save-compatibility commitment, development builds promise none: a save loads only when the current build reproduces its recorded game exactly, and is otherwise refused unchanged so that a New attempt can begin. No migration, alias or legacy path is kept for records from earlier builds. Personal files are not deleted or overwritten merely because support ends.
 
 ## Presentation assets and missing artwork
 

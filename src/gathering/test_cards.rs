@@ -100,22 +100,9 @@ struct Prescient {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum TestCardDecision {
     Initiation,
-    Resourceful {
-        owner: Investigator,
-        card: u16,
-    },
-    CommitEffects {
-        pending: Vec<CommitEffect>,
-    },
-    Prescient {
-        owner: Investigator,
-        card: u16,
-    },
-    Prediction {
-        owner: Investigator,
-        asset: u16,
-        number: u16,
-    },
+    Resourceful { owner: Investigator, card: u16 },
+    CommitEffects { pending: Vec<CommitEffect> },
+    Prescient { owner: Investigator, card: u16 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,33 +152,31 @@ fn pendulums(game: &Game) -> Vec<(Investigator, u16)> {
 pub struct PendulumPrompt {
     pub owner: Investigator,
     pub asset: u16,
-    /// A number retained by a supported save made with the former stepper.
-    pub saved_number: Option<u16>,
 }
+
+/// Stands for the named number in the one listed prediction choice per ready
+/// Pendulum. A player chooses that identity with a whole number in its place.
+pub const PREDICTION_MARGIN: &str = "<margin>";
 
 pub(super) fn prediction_prompts(game: &Game) -> Vec<PendulumPrompt> {
     match game.frames.last() {
         Some(Frame::TestCard(TestCardDecision::Initiation)) => pendulums(game)
             .into_iter()
-            .map(|(owner, asset)| PendulumPrompt {
-                owner,
-                asset,
-                saved_number: None,
-            })
+            .map(|(owner, asset)| PendulumPrompt { owner, asset })
             .collect(),
-        Some(Frame::TestCard(TestCardDecision::Prediction {
-            owner,
-            asset,
-            number,
-        })) => {
-            vec![PendulumPrompt {
-                owner: *owner,
-                asset: *asset,
-                saved_number: Some(*number),
-            }]
-        }
         _ => vec![],
     }
+}
+
+fn prediction_choice(owner: Investigator, asset: u16) -> Choice {
+    choice(
+        format!("test-card:predict:{asset}:{PREDICTION_MARGIN}"),
+        format!(
+            "{}: exhaust Crystal Pendulum and predict {PREDICTION_MARGIN} (a whole number from 0 to {})",
+            owner.name(),
+            u16::MAX
+        ),
+    )
 }
 
 fn direct_prediction(game: &Game, id: &str) -> Option<(PendulumPrompt, u16)> {
@@ -311,9 +296,7 @@ fn apply_commit_effect(game: &mut Game, effect: CommitEffect) -> Result<(), Rule
 pub(super) fn decision_owner(game: &Game) -> Option<Investigator> {
     match game.frames.last()? {
         Frame::TestCard(
-            TestCardDecision::Prediction { owner, .. }
-            | TestCardDecision::Prescient { owner, .. }
-            | TestCardDecision::Resourceful { owner, .. },
+            TestCardDecision::Prescient { owner, .. } | TestCardDecision::Resourceful { owner, .. },
         ) => Some(*owner),
         Frame::TestCard(TestCardDecision::Initiation) => game.test.as_ref().map(|test| test.tester),
         Frame::TestCard(TestCardDecision::CommitEffects { .. }) => Some(game.lead),
@@ -367,35 +350,12 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                 "test-card:pass",
                 "Continue after test-begin reactions",
             )];
-            choices.extend(pendulums(game).into_iter().map(|(owner, asset)| {
-                choice(
-                    format!("test-card:pendulum:{asset}"),
-                    format!("{}: predict the margin with Crystal Pendulum", owner.name()),
-                )
-            }));
+            choices.extend(
+                pendulums(game)
+                    .into_iter()
+                    .map(|(owner, asset)| prediction_choice(owner, asset)),
+            );
             choices.extend(super::tony_effects::initiation_choices(game));
-            choices
-        }
-        Some(Frame::TestCard(TestCardDecision::Prediction { number, .. })) => {
-            let mut choices = vec![
-                choice(
-                    "test-card:number:confirm",
-                    format!("Exhaust Crystal Pendulum: predict a margin of {number}"),
-                ),
-                choice("test-card:number:cancel", "Cancel this prediction"),
-            ];
-            if *number > 0 {
-                choices.push(choice(
-                    "test-card:number:down",
-                    format!("Predict {} instead", number - 1),
-                ));
-            }
-            if *number < u16::MAX {
-                choices.push(choice(
-                    "test-card:number:up",
-                    format!("Predict {} instead", number + 1),
-                ));
-            }
             choices
         }
         _ => vec![],
@@ -410,6 +370,12 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
             ));
         }
         return choose(game, "test-card:pass");
+    }
+    if id.ends_with(&format!(":{PREDICTION_MARGIN}")) {
+        return Err(RuleError(format!(
+            "Name the predicted margin: replace {PREDICTION_MARGIN} with a whole number from 0 to {}.",
+            u16::MAX
+        )));
     }
     if let Some((prompt, number)) = direct_prediction(game, id) {
         game.frames.pop();
@@ -481,50 +447,8 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                 game.frames
                     .push(Frame::TestCard(TestCardDecision::Initiation));
                 super::tony_effects::choose_initiation(game, id)?;
-            } else if id != "test-card:pass" {
-                let asset = id
-                    .strip_prefix("test-card:pendulum:")
-                    .expect("Offered prediction")
-                    .parse::<u16>()
-                    .expect("Asset id");
-                let owner = pendulums(game)
-                    .into_iter()
-                    .find(|(_, id)| *id == asset)
-                    .expect("Eligible Pendulum")
-                    .0;
-                game.frames
-                    .push(Frame::TestCard(TestCardDecision::Prediction {
-                        owner,
-                        asset,
-                        number: 0,
-                    }));
             }
-        }
-        TestCardDecision::Prediction {
-            owner,
-            asset,
-            mut number,
-        } => {
-            match id {
-                "test-card:number:up" => number += 1,
-                "test-card:number:down" => number -= 1,
-                "test-card:number:confirm" => {
-                    predict(game, owner, asset, number);
-                }
-                "test-card:number:cancel" => {}
-                _ => unreachable!(),
-            }
-            game.frames.push(Frame::TestCard(
-                if matches!(id, "test-card:number:up" | "test-card:number:down") {
-                    TestCardDecision::Prediction {
-                        owner,
-                        asset,
-                        number,
-                    }
-                } else {
-                    TestCardDecision::Initiation
-                },
-            ));
+            // Otherwise the offered pass closes the test-start window.
         }
     }
     Ok(())

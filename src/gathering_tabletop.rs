@@ -96,7 +96,8 @@ impl Action {
             Self::Choose(_, _, id)
             | Self::ResultChoice(_, _, id)
             | Self::EncounterChoice(_, _, id)
-            | Self::ContextChoice(_, _, _, id) => Some(id),
+            | Self::ContextChoice(_, _, _, id)
+            | Self::Prediction(_, _, _, pendulum::Input::Open(id)) => Some(id),
             _ => None,
         }
     }
@@ -164,7 +165,6 @@ impl Table {
     }
 
     fn new(session: Session, save_path: PathBuf) -> Self {
-        let prediction = pendulum::Picker::saved(&session);
         let presentation = presentation::Presentation::new(&session);
         let mut trays = trays::State::default();
         trays.prepare(&session.observe(), true);
@@ -189,7 +189,7 @@ impl Table {
             trays,
             context: controls::Context::default(),
             token_options: None,
-            prediction,
+            prediction: None,
             violin: None,
         }
     }
@@ -974,13 +974,6 @@ fn handle_actions(
                     violin::open(&mut table, epoch, revision, asset);
                     continue;
                 }
-                if let Some(asset) = id
-                    .strip_prefix("test-card:pendulum:")
-                    .and_then(|id| id.parse().ok())
-                {
-                    pendulum::open(&mut table, epoch, revision, asset);
-                    continue;
-                }
                 table.token_options = None;
                 let path = table.save_path.clone();
                 let before = table.view();
@@ -1153,7 +1146,7 @@ fn handle_actions(
                         table.epoch += 1;
                         let table = &mut *table;
                         table.presentation.reopen(&table.session, &session);
-                        table.prediction = pendulum::Picker::saved(&session);
+                        table.prediction = None;
                         table.violin = None;
                         table.session = session;
                         table.inspection = None;

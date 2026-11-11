@@ -108,7 +108,7 @@ fn decode<T: Snapshot>(bytes: &[u8]) -> Result<T, Error> {
         || envelope.app_version != APP_VERSION
     {
         return Err(Error(format!(
-            "Unsupported save (format {}, kind {}, source {}, application {}). Pre-removal saves and recordings are unsupported. Start a new attempt at a different save path. The original file was left unchanged.",
+            "Unsupported save (format {}, kind {}, source {}, application {}). Records in that format are unsupported by this build, and development builds promise no save compatibility. Start a New attempt at a different save path. The original file was left unchanged.",
             envelope.format_version, envelope.kind, envelope.source_revision, envelope.app_version
         )));
     }
@@ -117,8 +117,15 @@ fn decode<T: Snapshot>(bytes: &[u8]) -> Result<T, Error> {
             "Save checksum mismatch. The original file was left unchanged.".into(),
         ));
     }
-    let session: T = serde_json::from_value(envelope.payload)?;
-    session.validate().map_err(|e| Error(e.to_string()))?;
+    // An intact record admits only when this build reproduces it exactly.
+    let session = serde_json::from_value::<T>(envelope.payload)
+        .map_err(|error| error.to_string())
+        .and_then(|session| session.validate().map(|()| session).map_err(|e| e.0))
+        .map_err(|detail| {
+            Error(format!(
+                "This build cannot reproduce the game recorded in this save ({detail}). Development builds promise no save compatibility: select New attempt to begin again. The original file was left unchanged."
+            ))
+        })?;
     session.baseline().remember(bytes);
     Ok(session)
 }

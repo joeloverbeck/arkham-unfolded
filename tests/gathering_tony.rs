@@ -989,6 +989,7 @@ fn one_in_the_chamber_unused_bonus_expires_through_the_actual_round_transition()
                 matches!(
                     choice.id.as_str(),
                     "enemy:attacks"
+                        | "enemy:skip-empty"
                         | "enemy:attack-complete"
                         | "enemy:next-investigator"
                         | "enemy:attacks-complete"

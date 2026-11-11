@@ -366,6 +366,7 @@ fn ordinary_preparation_runs_a_full_round_and_all_following_mythos_draws() {
                 matches!(
                     choice.id.as_str(),
                     "enemy:attacks"
+                        | "enemy:skip-empty"
                         | "enemy:next-investigator"
                         | "enemy:attacks-complete"
                         | "enemy:end"
