@@ -579,7 +579,7 @@ fn review_launch_recipes_validate_the_saved_state_and_initial_view() {
         assert_visible_button(&mut app, label);
         assert_eq!(app.world().resource::<Table>().presentation.story(), *story);
         if *name == "ordinary-reveal" {
-            assert_visible_button(&mut app, "Use Jacqueline — reveal 3 tokens");
+            assert_visible_button(&mut app, "Use Jacqueline — reveal 3 tokens, then cancel");
         }
     }
     let error = open_review_save_in_view(&points[0].1, Some("resolve"))

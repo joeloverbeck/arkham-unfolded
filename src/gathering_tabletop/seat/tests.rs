@@ -245,7 +245,7 @@ fn names_are_exact_and_absent_ambiguous_or_off_screen_names_fail() {
     seat.app
         .world_mut()
         .resource_mut::<Orbit>()
-        .focus(enemy_board::focus(Area::Investigator(0)));
+        .focus(sideboard::focus(Area::Investigator(0)));
     seat.app.update();
     let zoomed = seat.ask(json!({"op": "settle"}));
     assert_eq!(zoomed["status"], "settled", "{zoomed}");
@@ -569,6 +569,33 @@ fn pieces_sharing_a_source_keep_distinct_names_in_play() {
     assert_eq!(
         component(&response, "investigator:tony")["label"],
         "Tony Morgan"
+    );
+}
+
+#[test]
+fn an_attached_card_has_its_own_marker_and_heading_names() {
+    // This position starts with Obscuring Fog attached to the Cellar.
+    let mut seat = sit_at_fixture(crate::gathering::HostileFixture::Search(
+        crate::gathering::SearchFixture::TonyEvents,
+    ));
+    // Scenario frames both sideboards, so the heading is shown.
+    seat.tab_to("Scenario");
+    let response = seat.enter();
+    let names: Vec<&str> = response["table"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|component| component["name"].as_str().unwrap())
+        .collect();
+    let distinct: BTreeSet<&str> = names.iter().copied().collect();
+    assert_eq!(names.len(), distinct.len(), "{names:?}");
+    assert_eq!(
+        component(&response, "location:01114/attachments")["label"],
+        "Attachment Cellar"
+    );
+    assert_eq!(
+        component(&response, "location:01114/attachment-board")["label"],
+        "Attached to CELLAR · 1"
     );
 }
 

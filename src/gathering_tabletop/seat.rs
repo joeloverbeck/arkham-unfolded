@@ -336,11 +336,23 @@ fn identity(source: &controls::Source) -> String {
 }
 
 /// One source can be shown by several pieces: an investigator by a card and a standee,
-/// a location by its card, clue counter, enemy marker and enemy-board row. The card
-/// keeps the bare identity; each other piece adds what it is, so every name is exact.
+/// a location by its card, clue counter, and each sideboard's marker and heading. The
+/// card keeps the bare identity; each other piece adds what it is, so every name is exact.
 fn component_name(world: &World, entity: Entity, source: &controls::Source) -> String {
     let identity = identity(source);
-    let piece = if world.get::<Node>(entity).is_some() {
+    let link = world
+        .get::<sideboard::Link>(entity)
+        .map(sideboard::Link::board);
+    let piece = if let Some(board) = link {
+        Some(
+            if world.get::<Node>(entity).is_some() {
+                board.heading_piece
+            } else {
+                board.members
+            }
+            .to_owned(),
+        )
+    } else if world.get::<Node>(entity).is_some() {
         Some("board".to_owned())
     } else if let Some(counter) = world.get::<crate::tabletop_counters::Counter>(entity) {
         Some(counter.kind.name().to_lowercase())
@@ -349,8 +361,6 @@ fn component_name(world: &World, entity: Entity, source: &controls::Source) -> S
         Some(map_motion::Surface::Investigator(_))
     ) {
         Some("standee".to_owned())
-    } else if world.get::<enemy_board::Link>(entity).is_some() {
-        Some("enemies".to_owned())
     } else {
         None
     };

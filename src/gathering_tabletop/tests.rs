@@ -178,11 +178,13 @@ fn registered_table_saves_its_initial_decision_only_after_admission() {
     assert_eq!(std::fs::read(save).unwrap(), before);
 }
 
+mod attachment_sideboard;
 mod cards;
 mod counters_and_enemies;
 mod doom;
 mod draws;
 mod encounter;
+mod location_markers;
 mod map_motion;
 mod navigation;
 mod pendulum;
@@ -445,7 +447,7 @@ pub(super) fn host_with_table(table: Table, raw_window_events: bool) -> App {
         .init_resource::<art::Art>()
         .insert_resource(table)
         .insert_resource(RenderHealth::ready_for_test())
-        .insert_resource(Orbit::new().with_home(enemy_board::focus(Area::Overview)));
+        .insert_resource(Orbit::new().with_home(sideboard::focus(Area::Overview)));
     app.world_mut().spawn((
         Window {
             resolution: (1600, 1000).into(),
@@ -588,7 +590,7 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
     assert_eq!(
         app.world().resource::<Orbit>().pose(),
         Orbit::new()
-            .with_home(enemy_board::focus(Area::Overview))
+            .with_home(sideboard::focus(Area::Overview))
             .pose()
     );
     for (name, area) in [
@@ -606,7 +608,7 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
             .unwrap();
         assert_eq!(
             app.world().resource::<Orbit>().pose().target,
-            enemy_board::focus(area).0
+            sideboard::focus(area).0
         );
         assert!(!app.world().resource::<Orbit>().is_following());
     }
@@ -651,7 +653,7 @@ fn gathering_static_capture_waits_for_graphics_and_finishes_the_actual_write() {
     options.configure_diagnostics(&mut app).unwrap();
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
-        enemy_board::focus(Area::Scenario).0
+        sideboard::focus(Area::Scenario).0
     );
     for health in [
         RenderHealth::default(),

@@ -911,15 +911,6 @@ fn display_choice(view: &Observation, choice: &Choice) -> Choice {
         shown.label = "Exhaust Crystal Pendulum".into();
         return shown;
     }
-    if let Some(label) = view
-        .play
-        .as_ref()
-        .and_then(|play| play.tokens.as_ref())
-        .and_then(|tokens| tokens.ability_label(choice))
-    {
-        shown.label = label;
-        return shown;
-    }
     if choice.id == "test:reveal"
         && let Some(label) = reveal::announcement(view)
     {

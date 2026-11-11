@@ -236,9 +236,10 @@ mod tests {
             .filter(|choice| choice.id.starts_with("tokens:jacqueline"))
             .cloned()
             .collect::<Vec<_>>();
-        assert!(
-            expected.len() >= 2,
-            "Historical engine choice IDs remain compatible"
+        assert_eq!(
+            expected.len(),
+            1,
+            "A single draw offers Jacqueline once: {expected:?}"
         );
         let mut app = host(session, directory.path().join("ability-layout.json"));
         crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
@@ -279,14 +280,16 @@ mod tests {
         assert!(text.contains("Tony Morgan is testing"), "{text}");
         assert!(text.contains("at the same location"), "{text}");
         assert!(text.contains("Add 2 tokens"), "{text}");
-        for choice in &expected {
-            assert!(
-                button(&mut app, &choice.label).is_none(),
-                "Redundant alias shown: {}",
-                choice.id
-            );
-        }
-        click(&mut app, "Use Jacqueline — reveal 3 tokens");
+        assert!(!text.contains("Whole reveal"), "{text}");
+        assert!(
+            !text.contains(ui::OLIVE_FIRST_HINT),
+            "No Olive is ready: {text}"
+        );
+        assert_eq!(
+            expected[0].label,
+            "Use Jacqueline — reveal 3 tokens, then cancel"
+        );
+        click(&mut app, &expected[0].label);
         expected_session
             .choose(before.revision, &expected[0].id)
             .unwrap();
@@ -341,7 +344,15 @@ mod tests {
     fn optional_ability_disclosure_preserves_camera_and_decision() {
         use bevy::input::keyboard::Key;
         let directory = tempfile::tempdir().unwrap();
-        let session = declared_reveal();
+        // Olive declared first leaves Jacqueline's scopes distinct.
+        let mut session = declared_reveal();
+        let view = session.observe();
+        let olive = view
+            .choices
+            .iter()
+            .find(|choice| choice.id.starts_with("tokens:olive:"))
+            .unwrap();
+        session.choose(view.revision, &olive.id).unwrap();
         let mut app = host(session.clone(), directory.path().join("keyboard.json"));
         let camera = app.world().resource::<Orbit>().pose();
         click(&mut app, "▸ Use Jacqueline · show");
@@ -463,7 +474,7 @@ mod tests {
             .expect("Jacqueline is eligible in this ordinary investigation");
         let revision = session.observe().revision;
         let mut app = host(session, path.clone());
-        let chosen = button(&mut app, "Use Jacqueline — reveal 3 tokens").unwrap();
+        let chosen = button(&mut app, &choices[selected].label).unwrap();
         let camera = app.world().resource::<Orbit>().pose();
         app.world_mut()
             .resource_mut::<InputFocus>()
@@ -539,6 +550,79 @@ mod tests {
         assert_eq!(app.world().resource::<Table>().session, session);
         assert_eq!(app.world().resource::<Orbit>().pose(), camera);
         assert!(button(&mut app, "Reveal tokens").is_none());
+    }
+
+    #[test]
+    fn ready_olive_shows_the_ordering_hint_beside_the_single_jacqueline_choice() {
+        let directory = tempfile::tempdir().unwrap();
+        let session = declared_reveal();
+        let view = session.observe();
+        assert!(
+            view.choices
+                .iter()
+                .any(|choice| choice.id.starts_with("tokens:olive:"))
+        );
+        let jacqueline = view
+            .choices
+            .iter()
+            .filter(|choice| choice.id.starts_with("tokens:jacqueline"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(jacqueline.len(), 1, "{jacqueline:?}");
+        let mut app = host(session.clone(), directory.path().join("hint.json"));
+        let text = app
+            .world_mut()
+            .query::<&AccessibleLabel>()
+            .iter(app.world())
+            .map(|label| label.0.clone())
+            .collect::<Vec<_>>();
+        assert!(
+            text.iter().any(|line| line
+                == "Use Olive first if you want Jacqueline to affect Olive's three tokens."),
+            "{text:?}"
+        );
+        assert!(
+            !text.iter().any(|line| line.contains("Whole reveal")),
+            "{text:?}"
+        );
+        assert!(button(&mut app, "▸ Use Jacqueline · show").is_none());
+        click(&mut app, &jacqueline[0].label);
+        let mut expected = session;
+        expected.choose(view.revision, &jacqueline[0].id).unwrap();
+        assert_eq!(app.world().resource::<Table>().session, expected);
+    }
+
+    #[test]
+    fn card_and_bag_menus_show_exactly_the_sessions_jacqueline_choices() {
+        let single = declared_reveal();
+        let mut olive_first = single.clone();
+        let view = olive_first.observe();
+        let olive = view
+            .choices
+            .iter()
+            .find(|choice| choice.id.starts_with("tokens:olive:"))
+            .unwrap();
+        olive_first.choose(view.revision, &olive.id).unwrap();
+        for (session, count) in [(single, 1), (olive_first, 5)] {
+            let view = session.observe();
+            let offered = view
+                .choices
+                .iter()
+                .filter(|choice| choice.id.starts_with("tokens:jacqueline"))
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(offered.len(), count, "{offered:?}");
+            for source in [
+                controls::Source::Bag,
+                controls::Source::Investigator(Investigator::Jacqueline),
+            ] {
+                let shown = controls::source_choices(&view, &source)
+                    .into_iter()
+                    .filter(|choice| choice.id.starts_with("tokens:jacqueline"))
+                    .collect::<Vec<_>>();
+                assert_eq!(shown, offered, "{source:?}");
+            }
+        }
     }
 
     #[test]

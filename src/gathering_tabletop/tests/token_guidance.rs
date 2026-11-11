@@ -8,15 +8,8 @@ fn olive_scope_label_geometry_fits_at_selected_scroll_offsets() {
     let labels: Vec<_> = view
         .choices
         .iter()
-        .filter_map(|choice| {
-            view.play
-                .as_ref()
-                .unwrap()
-                .tokens
-                .as_ref()
-                .unwrap()
-                .ability_label(choice)
-        })
+        .filter(|choice| choice.id.starts_with("tokens:jacqueline"))
+        .map(|choice| choice.label.clone())
         .collect();
     assert_eq!(labels.len(), 5);
     let dir = tempfile::tempdir().unwrap();
@@ -387,15 +380,7 @@ fn olive_optional_jacqueline_controls_preserve_every_legal_scope() {
     assert!(choices.len() >= 3);
     let mut labels = std::collections::HashSet::new();
     for choice in choices {
-        let label = before
-            .play
-            .as_ref()
-            .unwrap()
-            .tokens
-            .as_ref()
-            .unwrap()
-            .ability_label(choice)
-            .unwrap();
+        let label = choice.label.clone();
         assert!(
             labels.insert(label.clone()),
             "Different scopes need distinct labels"
@@ -511,9 +496,9 @@ fn curse_followup_offers_one_new_jacqueline_declaration_while_prior_tokens_stay_
     assert_eq!(held.len(), 3);
     let dir = tempfile::tempdir().unwrap();
     let mut app = host_with_table(Table::new(session, dir.path().join("curse.json")), true);
-    let action = choice_button(&mut app, "Use Jacqueline — reveal 3 tokens")
+    let action = choice_button(&mut app, "Use Jacqueline — reveal 3 tokens, then cancel")
         .expect("The new curse reveal has the same direct declaration control");
-    assert!(choice_button(&mut app, "Use Jacqueline — spend round use").is_none());
+    assert!(choice_button(&mut app, "▸ Use Jacqueline · show").is_none());
     app.world_mut().trigger(Activate { entity: action });
     app.update();
     let tokens = app
@@ -804,7 +789,7 @@ fn plain_jacqueline_control_declares_three_tokens_without_revealing_or_changing_
     let revealer = session.observe().play.unwrap().tokens.unwrap().revealer;
     let dir = tempfile::tempdir().unwrap();
     let mut app = host_with_table(Table::new(session, dir.path().join("tokens.json")), true);
-    let action = choice_button(&mut app, "Use Jacqueline — reveal 3 tokens")
+    let action = choice_button(&mut app, "Use Jacqueline — reveal 3 tokens, then cancel")
         .expect("One direct ability action");
     crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
     assert!(button_with_label(&mut app, "Jacqueline's ability...").is_none());
@@ -859,8 +844,13 @@ fn jacqueline_cost_disclosure_is_flat_aligned_and_does_not_execute_a_choice() {
     assert_eq!(app.world().resource::<Table>().session, before);
     let expanded = choice_button(&mut app, "▾ Use Jacqueline · hide").unwrap();
     crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
-    let ordinary = choice_button(&mut app, "Use Jacqueline — spend round use").unwrap();
-    let arbiter = choice_button(&mut app, "Use Jacqueline + Arbiter — preserve round use").unwrap();
+    let ordinary =
+        choice_button(&mut app, "Use Jacqueline — reveal 3 tokens, then cancel").unwrap();
+    let arbiter = choice_button(
+        &mut app,
+        "Use Jacqueline + Arbiter — reveal 3 tokens, then cancel; exhaust Arbiter, preserve round use",
+    )
+    .unwrap();
     let resolve = choice_button(&mut app, "Resolve the declared token reveal").unwrap();
     let left = |entity| {
         let node = app.world().get::<ComputedNode>(entity).unwrap();
@@ -1079,7 +1069,7 @@ fn resolution_diagnostic_matches_resolve_and_preserves_home_and_the_pending_choi
     app.update();
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
-        enemy_board::focus(Area::Overview).0
+        sideboard::focus(Area::Overview).0
     );
     assert_eq!(app.world().resource::<Table>().session, before);
     assert!(!dir.path().join("tokens.json").exists());

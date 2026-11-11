@@ -43,6 +43,7 @@ pub enum TokenFixture {
     PremonitionVoice,
     JacquelineOlive,
     JacquelineOliveProtected,
+    JacquelineKatarina,
     ProphecyOlive,
     ProphecyOliveProtected,
     ProphecyOliveOtherSymbol,
@@ -141,6 +142,21 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
                     .unwrap();
                 jacqueline.threats.push(jacqueline.deck.remove(index));
             }
+        }
+        TokenFixture::JacquelineKatarina => {
+            let index = jacqueline
+                .deck
+                .iter()
+                .position(|card| card.code == "11069")
+                .expect("Selected Katarina");
+            let card = jacqueline.deck.remove(index);
+            jacqueline.assets.push(AssetView {
+                card,
+                ready: true,
+                uses: 0,
+                damage: 0,
+                horror: 0,
+            });
         }
         TokenFixture::ProtectedNumbers => {
             let index = jacqueline
@@ -632,6 +648,16 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
             TokenFace::Cultist,
             TokenFace::Zero,
             TokenFace::MinusOne,
+        ]);
+    }
+    if case == TokenFixture::JacquelineKatarina {
+        game.set_fixture_tokens(vec![
+            TokenFace::MinusOne,
+            TokenFace::Zero,
+            TokenFace::Skull,
+            TokenFace::MinusTwo,
+            TokenFace::PlusOne,
+            TokenFace::Cultist,
         ]);
     }
     if matches!(
@@ -1285,6 +1311,9 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                 // Arbiter exempts the round limit, not the reaction's trigger.
                 // A later curse reveal replaces this root and gets its own opportunity.
                 && !positions.iter().any(|(_, _, used)| *used);
+            // A single plain draw is one scope: its whole reveal and its draw
+            // have identical consequences, so only the whole reveal is offered.
+            let single = tokens.single_position();
             for (path, policy, used_jacqueline) in positions {
                 let position = path_name(&path);
                 let target = tokens.target_label(&path);
@@ -1292,19 +1321,20 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                     && !used_jacqueline
                     && policy != Policy::Katarina
                     && !tokens.root.at(&path).contains_sealed()
+                    && !(single && !path.is_empty())
                 {
                     let base = if path.is_empty() {
                         "tokens:jacqueline".to_owned()
                     } else {
                         format!("tokens:jacqueline:at:{position}")
                     };
-                    result.push(choice(
-                        &base,
-                        format!("Jacqueline · {target}: add 2 tokens, then cancel"),
-                    ));
+                    result.push(choice(&base, tokens.jacqueline_label(&path, false)));
                     for asset in &jacqueline.assets {
                         if asset.card.code == "60402" && asset.ready {
-                            result.push(choice(format!("{base}:arbiter:{}", asset.card.id), format!("Jacqueline + Arbiter of Fates · {target}: add 2 tokens; exhaust Arbiter and preserve the round use")));
+                            result.push(choice(
+                                format!("{base}:arbiter:{}", asset.card.id),
+                                tokens.jacqueline_label(&path, true),
+                            ));
                         }
                     }
                 }

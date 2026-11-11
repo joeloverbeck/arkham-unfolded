@@ -27,8 +27,8 @@ mod controls;
 mod doom;
 mod draws;
 mod encounter;
-mod enemy_board;
 mod map_motion;
+mod markers;
 mod motion;
 mod pendulum;
 mod phase_banner;
@@ -42,6 +42,7 @@ mod scene;
 mod sealed;
 mod seat;
 mod shuffle;
+mod sideboard;
 mod slots;
 mod story;
 mod trays;
@@ -491,9 +492,9 @@ impl Options {
     }
 
     fn configure_diagnostics(&self, app: &mut App) -> Result<(), String> {
-        let mut orbit = Orbit::new().with_home(enemy_board::focus(Area::Overview));
+        let mut orbit = Orbit::new().with_home(sideboard::focus(Area::Overview));
         match self.initial_view {
-            Some(InitialView::Area(area)) => orbit.focus(enemy_board::focus(area)),
+            Some(InitialView::Area(area)) => orbit.focus(sideboard::focus(area)),
             Some(InitialView::Resolve) => {
                 let focus = app
                     .world()
@@ -680,13 +681,13 @@ fn install(app: &mut App) {
                 (render, phase_banner::render, encounter::animate).chain(),
                 (controls::render, violin::render).chain(),
                 contextual_feedback,
-                enemy_board::highlight,
+                sideboard::highlight,
                 (motion::animate, map_motion::animate).chain(),
                 sealed::animate,
                 shuffle::animate,
                 card_counters::follow,
                 trays::animate,
-                world_labels,
+                (world_labels, markers::fit_counts).chain(),
                 crate::tabletop_tokens::position_labels,
             )
                 .chain(),
@@ -1045,7 +1046,7 @@ fn handle_actions(
             }
             Action::Focus(area) => {
                 table.context.dismiss();
-                orbit.focus(enemy_board::focus(area));
+                orbit.focus(sideboard::focus(area));
                 table.dirty = true;
             }
             Action::Resolve => {
@@ -1183,7 +1184,7 @@ fn handle_actions(
                         *table = next;
                         consequences.clear();
                         orbit.set_following(false);
-                        orbit.focus(enemy_board::focus(Area::Overview));
+                        orbit.focus(sideboard::focus(Area::Overview));
                     }
                     Err(error) => {
                         table.notice = format!("Restart failed: {error}");
@@ -1681,9 +1682,10 @@ fn world_labels(
         Option<&motion::CardLabel>,
         &ComputedNode,
         Has<crate::tabletop_pieces::CardCaption>,
-        Has<enemy_board::Caption>,
-        Has<enemy_board::PersistentLabel>,
+        Has<sideboard::Caption>,
+        Has<sideboard::PersistentLabel>,
         Option<&layout::ScenarioBookSide>,
+        Has<markers::HeadingLabel>,
         &mut Node,
         &mut Visibility,
     )>,
@@ -1697,6 +1699,7 @@ fn world_labels(
         enemy_caption,
         persistent,
         book_side,
+        heading,
         mut node,
         mut visibility,
     ) in &mut labels
@@ -1724,7 +1727,7 @@ fn world_labels(
         let point = camera.0.world_to_viewport(camera.1, anchor).ok();
         if let Some(point) = point {
             if enemy_caption {
-                if let Some(width) = enemy_board::caption_width(camera.0, camera.1, anchor) {
+                if let Some(width) = sideboard::caption_width(camera.0, camera.1, anchor) {
                     node.width = px(width);
                 }
             } else if card_caption
@@ -1740,9 +1743,14 @@ fn world_labels(
             node.left = px(match book_side {
                 Some(layout::ScenarioBookSide::Agenda) => point.x - width,
                 Some(layout::ScenarioBookSide::Act) => point.x,
+                None if heading => point.x,
                 None => point.x - width / 2.,
             });
-            node.top = px(point.y);
+            node.top = px(if heading {
+                point.y - computed.size().y * computed.inverse_scale_factor / 2.
+            } else {
+                point.y
+            });
             *visibility = Visibility::Inherited;
         } else {
             *visibility = Visibility::Hidden;

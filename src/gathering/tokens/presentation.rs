@@ -9,13 +9,72 @@ pub struct RevealGroup {
 }
 
 impl TokenResolution {
-    /// Only the unmodified All[Draw] tree has equivalent root and draw scopes.
-    /// A one-token count alone does not establish equivalence (e.g. sealed tokens).
-    pub fn is_plain_single_draw(&self) -> bool {
-        self.stage == TokenStage::Declaration
-            && self.root.policy == Policy::All
+    /// One plain draw: Jacqueline's whole-reveal and first-draw scopes have
+    /// identical consequences, including under later Olive McBride, Dark
+    /// Prophecy or Katarina Sojka declarations, so only the whole reveal is
+    /// offered. Eyes of the Dreamer is excluded even without charges: under the
+    /// first-draw scope her group is one Eyes candidate.
+    pub(super) fn single_position(&self) -> bool {
+        self.root.policy == Policy::All
             && !self.root.jacqueline
             && self.root.children == [RevealNode::draw()]
+    }
+
+    /// Jacqueline's offered scope, described by what it does. Arbiter of Fates
+    /// pays instead of her round use.
+    pub(super) fn jacqueline_label(&self, path: &[usize], arbiter: bool) -> String {
+        let add = "add 2 tokens, then cancel";
+        let eyes = self.root.policy == Policy::Eyes;
+        let scope = match path.split_last() {
+            None if self.single_position() => " — reveal 3 tokens, then cancel".to_owned(),
+            None => {
+                let around = match self.root.children.as_slice() {
+                    [only] => group(only.policy),
+                    _ => None,
+                };
+                if let Some((name, keep)) = around {
+                    format!(
+                        " around {name} — choose {name}'s {keep} first; then cancel whole results"
+                    )
+                } else {
+                    let affect = match self.root.children.len() {
+                        1 => "affect the whole reveal".to_owned(),
+                        2 => "affect both draws".to_owned(),
+                        draws => format!("affect all {draws} draws"),
+                    };
+                    if eyes {
+                        format!(
+                            " — {affect}: add 2 tokens as separate Eyes candidates, then cancel"
+                        )
+                    } else {
+                        format!(" — {affect}: {add}")
+                    }
+                }
+            }
+            Some((&index, parent)) => {
+                let container = self.root.at(parent);
+                let node = &container.children[index];
+                let draw = index + 1;
+                match (group(node.policy), group(container.policy)) {
+                    (Some((name, keep)), _) => format!(
+                        " on {name}'s whole draw — add 2 tokens to {name}'s {}; cancel first, then choose {keep}",
+                        node.children.len()
+                    ),
+                    (None, Some((name, _))) => {
+                        format!(" on {name}'s draw {draw} — cancel within this draw first")
+                    }
+                    _ if eyes => format!(
+                        " — affect only draw {draw}: {add}; her group is one Eyes candidate"
+                    ),
+                    _ => format!(" — affect only draw {draw}: {add}"),
+                }
+            }
+        };
+        if arbiter {
+            format!("Use Jacqueline + Arbiter{scope}; exhaust Arbiter, preserve round use")
+        } else {
+            format!("Use Jacqueline{scope}")
+        }
     }
 
     pub fn reveal_groups(&self) -> Vec<RevealGroup> {
@@ -244,56 +303,6 @@ impl TokenResolution {
             .collect()
     }
 
-    /// Consequences for the common Olive-first combination. Keep engine labels
-    /// and saved choice identities untouched; more elaborate trees retain their
-    /// explicit path descriptions.
-    pub fn ability_label(&self, choice: &crate::Choice) -> Option<String> {
-        if self.root.policy != Policy::All
-            || self.root.children.len() != 1
-            || self.root.children[0].policy != Policy::Olive
-            || self.root.children[0]
-                .children
-                .iter()
-                .any(|child| child.policy != Policy::Draw)
-        {
-            return None;
-        }
-        let (id, arbiter) = choice
-            .id
-            .split_once(":arbiter:")
-            .map_or((choice.id.as_str(), false), |(id, _)| (id, true));
-        let consequence = match id {
-            "tokens:jacqueline" => {
-                "around Olive — choose Olive's 2 first; then cancel whole results".to_owned()
-            }
-            "tokens:jacqueline:at:0" => {
-                "on Olive's whole draw — reveal 5; cancel first, then choose 2".to_owned()
-            }
-            _ => {
-                let path: Vec<usize> = id
-                    .strip_prefix("tokens:jacqueline:at:")?
-                    .split('.')
-                    .map(|part| part.parse().ok())
-                    .collect::<Option<_>>()?;
-                let [0, draw] = path.as_slice() else {
-                    return None;
-                };
-                format!(
-                    "on Olive's draw {} — cancel within this draw first",
-                    draw + 1
-                )
-            }
-        };
-        Some(format!(
-            "Use Jacqueline {consequence}{}",
-            if arbiter {
-                "; exhaust Arbiter, preserve round use"
-            } else {
-                "; spend round use"
-            }
-        ))
-    }
-
     fn purpose_label(&self) -> &'static str {
         match self.purpose {
             TokenPurpose::SkillTest => "Skill test",
@@ -341,5 +350,14 @@ fn policy_label(policy: Policy) -> Option<&'static str> {
         Policy::Olive => Some("Olive McBride"),
         Policy::Katarina => Some("Katarina Sojka"),
         Policy::Eyes => Some("Eyes of the Dreamer"),
+    }
+}
+
+/// Replacement groups whose controller chooses results from their draws.
+fn group(policy: Policy) -> Option<(&'static str, u8)> {
+    match policy {
+        Policy::Olive => Some(("Olive", 2)),
+        Policy::Prophecy => Some(("Dark Prophecy", 1)),
+        _ => None,
     }
 }

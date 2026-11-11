@@ -649,7 +649,7 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                     );
                     app.world_mut()
                         .resource_mut::<Orbit>()
-                        .focus(enemy_board::focus(area));
+                        .focus(sideboard::focus(area));
                     for _ in 0..4 {
                         app.update();
                     }
@@ -702,7 +702,7 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                             );
                         }
                     }
-                    assert!(rendered_text(&mut app).contains("H  /  HALLWAY  /  9"));
+                    assert!(rendered_text(&mut app).contains("HALLWAY  /  9"));
                     let world = app.world_mut();
                     let labels: Vec<_> = world
                         .query::<(Entity, &motion::CardLabel)>()
@@ -786,28 +786,52 @@ fn keyboard_focus_cross_highlights_the_location_marker_without_moving_the_camera
         .find(|(_, text)| text.0.contains("HALLWAY"))
         .unwrap()
         .0;
-    let marker = app
-        .world_mut()
-        .query::<(&Name, &MeshMaterial3d<StandardMaterial>)>()
-        .iter(app.world())
-        .find(|(name, _)| name.as_str() == "Enemy presence H")
-        .unwrap()
-        .1
-        .0
-        .clone();
+    // Both the map token and the heading token carry the location-color ring.
+    let world = app.world_mut();
+    let tokens: Vec<_> = world
+        .query::<(&Name, &Children)>()
+        .iter(world)
+        .filter(|(name, _)| name.as_str() == "Enemy presence Hallway")
+        .map(|(_, children)| children.iter().collect::<Vec<_>>())
+        .collect();
+    assert_eq!(tokens.len(), 2);
+    let rings: Vec<_> = tokens
+        .iter()
+        .flatten()
+        .filter(|child| {
+            world
+                .get::<Name>(**child)
+                .is_some_and(|name| name.as_str() == "Location ring")
+        })
+        .map(|ring| {
+            world
+                .get::<MeshMaterial3d<StandardMaterial>>(*ring)
+                .unwrap()
+                .0
+                .clone()
+        })
+        .collect();
+    assert_eq!(rings.len(), 2);
+    let ring_colors = |app: &App| {
+        rings
+            .iter()
+            .map(|ring| {
+                app.world()
+                    .resource::<Assets<StandardMaterial>>()
+                    .get(ring)
+                    .unwrap()
+                    .base_color
+            })
+            .collect::<Vec<_>>()
+    };
+    app.update();
+    assert!(ring_colors(&app).iter().all(|color| *color != Color::WHITE));
     let camera = app.world().resource::<Orbit>().pose();
     app.world_mut()
         .resource_mut::<InputFocus>()
         .set(header, bevy::input_focus::FocusCause::Navigated);
     app.update();
-    assert_eq!(
-        app.world()
-            .resource::<Assets<StandardMaterial>>()
-            .get(&marker)
-            .unwrap()
-            .base_color,
-        Color::WHITE
-    );
+    assert_eq!(ring_colors(&app), [Color::WHITE; 2]);
     assert_eq!(app.world().resource::<Orbit>().pose(), camera);
 }
 
