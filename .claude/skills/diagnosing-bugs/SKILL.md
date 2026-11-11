@@ -9,7 +9,7 @@ A discipline for hard bugs. Classify the report first; unexplained failures foll
 
 When exploring the codebase, read `GLOSSARY.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
-For logs, source excerpts and saved issue bodies, follow the existing [bounded-reading procedure](../../../docs/agents/issue-tracker.md#bounded-context-reads), including its shared batch budget.
+For logs, source excerpts and saved issue bodies, follow the [bounded-reading procedure](../../../docs/agents/issue-tracker.md#bounded-context-reads).
 
 Apply the repository's implementation-language contract to every project-owned harness, including temporary ones. Write executable diagnostic logic in Rust. Existing external tools may be invoked directly; shell wrappers remain invocation-only.
 

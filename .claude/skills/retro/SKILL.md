@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 The user has asked for a **retrospective**. You are suggesting improvements to the coding agent's **environment** to improve future runs.
 
-Before memory lookup, session discovery or supporting-document reads, read the repository's [bounded context procedure](../../../docs/agents/issue-tracker.md#bounded-context-reads). It owns repository-scoped searches and the shared reading budget.
+Before searching memory or reading session logs, read the repository's [bounded reads](../../../docs/agents/bounded-reads.md). It owns repository-scoped memory searches and the shared reading budget.
 
 ## Steps
 
