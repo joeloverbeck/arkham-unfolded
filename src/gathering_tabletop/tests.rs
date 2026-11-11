@@ -190,7 +190,7 @@ mod map_motion;
 mod navigation;
 mod pendulum;
 mod restart;
-mod results;
+pub(super) mod results;
 mod review_saves;
 mod round_flow;
 mod selection;
