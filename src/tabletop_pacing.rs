@@ -8,11 +8,33 @@ use bevy::{
     window::WindowEvent,
     winit::{UpdateMode, WinitSettings},
 };
-use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
-const ACTIVE_FRAME: Duration = Duration::from_nanos(16_666_667);
+/// Caps settled dispatch, and bounds the step of any update that follows a settled one.
+/// Moving frames follow FIFO presentation: the owner saw sleep caps judder at 144 Hz (#151).
+const SETTLED_FRAME: Duration = Duration::from_nanos(16_666_667);
 const INPUT_SETTLE: Duration = Duration::from_millis(150);
 const STARTUP_SETTLE: Duration = Duration::from_secs(2);
+
+/// The render-extract sub-app cannot read main-world resources, so both hold this handle.
+#[derive(Resource, Clone, Default)]
+struct Settled(Arc<AtomicBool>);
+
+impl Settled {
+    fn set(&self, settled: bool) {
+        self.0.store(settled, Ordering::Relaxed);
+    }
+
+    fn get(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
 
 /// Presentation uses main-update time, not a delayed timestamp from the render thread.
 #[derive(Default, Debug, Clone, Copy)]
@@ -50,7 +72,7 @@ impl Cadence {
         let delta = self.last_update.map_or(Duration::ZERO, |last| {
             now.saturating_duration_since(last).min(if self.idle {
                 // A newly pressed key or queued action must not inherit thinking time.
-                ACTIVE_FRAME
+                SETTLED_FRAME
             } else {
                 // Retain Bevy's ordinary slow-frame bound while motion is underway.
                 Duration::from_millis(250)
@@ -84,7 +106,9 @@ pub(crate) struct TabletopPacingPlugin;
 
 impl Plugin for TabletopPacingPlugin {
     fn build(&self, app: &mut App) {
+        let settled = Settled::default();
         app.init_resource::<PresentationTime>()
+            .insert_resource(settled.clone())
             .init_resource::<Redraw>()
             .init_resource::<Cadence>()
             .init_resource::<WinitSettings>()
@@ -97,14 +121,17 @@ impl Plugin for TabletopPacingPlugin {
             // This sub-app runs after render dispatch, before the next input poll.
             // Its schedule is unset by default; adding a system alone would not run it.
             extract.update_schedule = Some(Main.intern());
-            extract.add_systems(Main, limit_frame_rate);
+            extract
+                .insert_resource(settled)
+                .add_systems(Main, limit_frame_rate);
         }
     }
 }
 
-fn limit_frame_rate(mut previous: Local<Option<Instant>>) {
-    if let Some(previous) = *previous
-        && let Some(remaining) = ACTIVE_FRAME.checked_sub(previous.elapsed())
+fn limit_frame_rate(settled: Res<Settled>, mut previous: Local<Option<Instant>>) {
+    if settled.get()
+        && let Some(previous) = *previous
+        && let Some(remaining) = SETTLED_FRAME.checked_sub(previous.elapsed())
     {
         std::thread::sleep(remaining);
     }
@@ -176,8 +203,10 @@ fn select_cadence(
     mut cadence: ResMut<Cadence>,
     mut redraw: ResMut<Redraw>,
     mut settings: ResMut<WinitSettings>,
+    settled: Res<Settled>,
 ) {
     let next = cadence.finish(std::mem::take(&mut redraw.requested));
+    settled.set(cadence.idle);
     if settings.focused_mode != next.focused_mode || settings.unfocused_mode != next.unfocused_mode
     {
         debug!(

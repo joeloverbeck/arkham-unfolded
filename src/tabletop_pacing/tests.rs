@@ -259,19 +259,38 @@ fn raw_mouse_motion_elsewhere_does_not_keep_a_settled_table_awake() {
     assert!(app.world().resource::<Cadence>().idle);
 }
 
-#[test]
-fn render_dispatch_is_paced_even_when_events_request_repeated_updates() {
+fn dispatching_app() -> App {
     let mut app = App::new();
     app.insert_sub_app(RenderExtractApp, bevy::app::SubApp::new());
     app.add_message::<WindowEvent>()
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<ButtonInput<MouseButton>>()
         .add_plugins(TabletopPacingPlugin);
-    app.update();
+    app
+}
+
+fn dispatch(app: &mut App, updates: u32, request_redraw: bool) -> Duration {
     let start = Instant::now();
-    for _ in 0..4 {
-        app.world_mut().resource_mut::<Redraw>().request();
+    for _ in 0..updates {
+        if request_redraw {
+            app.world_mut().resource_mut::<Redraw>().request();
+        }
         app.update();
     }
-    assert!(start.elapsed() >= Duration::from_millis(60));
+    start.elapsed()
+}
+
+#[test]
+fn moving_table_dispatch_is_left_to_presentation_pacing() {
+    let mut app = dispatching_app();
+    app.update();
+    // A 60/s cap needs at least 133 ms for eight dispatches and a 72/s cap 111 ms.
+    assert!(dispatch(&mut app, 8, true) < Duration::from_millis(100));
+}
+
+#[test]
+fn settled_dispatch_keeps_its_cap_when_wakeups_repeat() {
+    let mut app = dispatching_app();
+    settled(&mut app);
+    assert!(dispatch(&mut app, 4, false) >= Duration::from_millis(60));
 }
