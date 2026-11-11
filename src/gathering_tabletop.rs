@@ -379,6 +379,8 @@ struct Options {
     initial_view: Option<InitialView>,
     attempt: Option<String>,
     agent_seat: bool,
+    /// The agent seat's held session (#175): its local socket.
+    socket: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy)]
@@ -399,6 +401,7 @@ impl Options {
         let mut initial_view = None;
         let mut attempt = None;
         let mut agent_seat = false;
+        let mut socket = None;
         let mut direct = false;
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -410,6 +413,11 @@ impl Options {
                 }
                 "--save" => save = Some(PathBuf::from(args.next().ok_or("--save needs a path")?)),
                 "--agent-seat" => agent_seat = true,
+                "--socket" => {
+                    socket = Some(PathBuf::from(
+                        args.next().ok_or("--socket needs an absolute path")?,
+                    ))
+                }
                 "--attempt" => {
                     let intent = args.next().ok_or("--attempt needs new or open")?;
                     if !matches!(intent.as_str(), "new" | "open") {
@@ -436,7 +444,7 @@ impl Options {
                 }
                 "--help" | "-h" => {
                     println!(
-                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline|resolve\n--agent-seat\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged. The resolve view requires an active resolution drawer. The agent seat plays the same table with no window, exchanging JSON lines on standard input and output; it requires --experiment gathering and --save PATH, and excludes --attempt and --screenshot."
+                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline|resolve\n--agent-seat\n--socket ABSOLUTE_PATH\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged. The resolve view requires an active resolution drawer. The agent seat plays the same table with no window, exchanging JSON lines on standard input and output; it requires --experiment gathering and --save PATH, and excludes --attempt and --screenshot. With --socket it holds one session on that local socket instead: the command returns once the table is admitted, requests go through scripts/tools seat, and diagnostics go to the socket path with .log appended."
                     );
                     return Ok(None);
                 }
@@ -461,6 +469,17 @@ impl Options {
                 );
             }
         }
+        if let Some(socket) = &socket {
+            if !agent_seat {
+                return Err("--socket holds an agent seat session: add --agent-seat".into());
+            }
+            if !socket.is_absolute() {
+                return Err(format!(
+                    "--socket needs an absolute path, not {}",
+                    socket.display()
+                ));
+            }
+        }
         Ok(Some(Self {
             save: save.unwrap_or_else(|| PathBuf::from("local/gathering/setup.session.json")),
             art_root: config.launch_root(root)?,
@@ -470,6 +489,7 @@ impl Options {
             initial_view,
             attempt,
             agent_seat,
+            socket,
         }))
     }
 
@@ -556,10 +576,11 @@ struct Navigation {
     created: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
-/// Whether this launch asks for the agent seat (#153). Such a launch must never take a
-/// path that opens a window, including when its options are refused.
+/// Whether this launch asks for the agent seat (#153) or its held session (#175). Such a
+/// launch must never take a path that opens a window, including when its options are
+/// refused.
 pub fn agent_seat_requested() -> bool {
-    std::env::args().any(|argument| argument == "--agent-seat")
+    std::env::args().any(|argument| argument == "--agent-seat" || argument == "--socket")
 }
 
 fn parse_launch() -> Result<Option<Options>, String> {

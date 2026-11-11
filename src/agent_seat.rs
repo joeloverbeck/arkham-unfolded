@@ -1,9 +1,10 @@
 //! Agent seat (#153): the game-neutral half. An agent sits at the real table through one
-//! JSON request per line on standard input and one JSON response per line on standard
-//! output, with no window. This module owns the windowless host, fixed-step stepping,
-//! pointer and key synthesis, capture and the protocol loop. It reaches the game only
-//! through [`Game`]: produce an observation, resolve a name to a screen position (and a
-//! hit back to a name), and report whether the table is settled.
+//! JSON request per line and one JSON response per line, with no window: on standard
+//! input and output in batch form, or held across shell commands on a local socket
+//! ([`socket`], #175). This module owns the windowless host, fixed-step stepping,
+//! pointer and key synthesis, capture and the protocol loop both forms share. It reaches
+//! the game only through [`Game`]: produce an observation, resolve a name to a screen
+//! position (and a hit back to a name), and report whether the table is settled.
 //!
 //! Input enters where Bevy's own window-event conversion writes it: `PointerInput` and
 //! `KeyboardInput` messages plus the logical window's cursor position. Everything after
@@ -43,6 +44,8 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+
+pub(crate) mod socket;
 
 /// One step of the presentation clock. The seat, not wall-clock time, advances it.
 pub(crate) const STEP: Duration = Duration::from_nanos(16_666_667);
@@ -181,6 +184,15 @@ enum Request {
     Quit {},
 }
 
+/// Whether the session goes on after one connection.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Session {
+    /// The connection's input ended; another connection may continue the session.
+    Open,
+    /// `quit` or the table's own exit ended the session.
+    Ended,
+}
+
 /// Present while an agent sits at the table. The agent operates the table, never the
 /// owner's desktop, so a game refuses what native play hands to the desktop, such as
 /// an address for the desktop's opener.
@@ -284,27 +296,52 @@ impl<G: Game> Seat<G> {
         }
     }
 
-    /// Serve requests until `quit`, end of input or the table's own exit.
+    /// Batch form: `ready`, then standard input as one connection until `quit`, its end
+    /// or the table's own exit.
     pub(crate) fn serve(
         &mut self,
         app: &mut App,
         input: impl BufRead,
         mut output: impl Write,
     ) -> Result<(), String> {
+        emit(&mut output, &self.ready(app))?;
+        self.converse(app, input, &mut output)?;
+        self.outcome(app)
+    }
+
+    /// The first response of a session: the admitted table and its graphics adapter.
+    pub(crate) fn ready(&self, app: &mut App) -> Value {
         let mut ready = self.response(app, "ready", None);
         ready["adapter"] = adapter(app.world());
-        emit(&mut output, &ready)?;
+        ready
+    }
+
+    /// Answer one connection's requests in order until `quit`, the end of its input or
+    /// the table's own exit. An error is this connection's input or output failing.
+    pub(crate) fn converse(
+        &mut self,
+        app: &mut App,
+        input: impl BufRead,
+        mut output: impl Write,
+    ) -> Result<Session, String> {
         for line in input.lines() {
             let line = line.map_err(|error| error.to_string())?;
             if line.trim().is_empty() {
                 continue;
             }
             let (response, proceed) = self.respond(app, &line);
-            emit(&mut output, &response)?;
+            let sent = emit(&mut output, &response);
             if !proceed {
-                break;
+                // Over even if its last response could not be delivered.
+                return Ok(Session::Ended);
             }
+            sent?;
         }
+        Ok(Session::Open)
+    }
+
+    /// How an ended session went: the table's reason when it exited with an error.
+    pub(crate) fn outcome(&self, app: &App) -> Result<(), String> {
         match &self.exit {
             Some(exit) if exit.is_error() => Err(self.exit_reason(app)),
             _ => Ok(()),

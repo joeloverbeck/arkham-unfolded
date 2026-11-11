@@ -6,7 +6,12 @@
 use super::super::tests::{click_source, host_with_pointer_input, host_with_table};
 use super::*;
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::{
+    collections::BTreeSet,
+    io::{BufRead, Write},
+    os::unix::net::UnixStream,
+    path::Path,
+};
 
 const LEAD_TONY: &str = "lead:tony";
 
@@ -649,6 +654,175 @@ fn the_protocol_refuses_what_it_cannot_do_and_ends_cleanly() {
         "this host has no renderer"
     );
     assert!(!seat.path.exists(), "observing and quitting commit nothing");
+}
+
+/// One client connection to a held seat, asking one request at a time.
+struct Connection {
+    reader: std::io::BufReader<UnixStream>,
+    writer: UnixStream,
+}
+
+impl Connection {
+    fn open(socket: &Path) -> Self {
+        let writer = UnixStream::connect(socket).unwrap();
+        Self {
+            reader: std::io::BufReader::new(writer.try_clone().unwrap()),
+            writer,
+        }
+    }
+
+    fn ask(&mut self, request: Value) -> Value {
+        writeln!(self.writer, "{request}").unwrap();
+        let mut line = String::new();
+        self.reader.read_line(&mut line).unwrap();
+        serde_json::from_str(&line).unwrap_or_else(|_| panic!("no response to {request}"))
+    }
+}
+
+impl Sitting {
+    /// Serve this table on a real socket while `client` talks to it from another
+    /// thread. A client that fails before quitting gets a last connection that quits,
+    /// so the session always ends.
+    fn hold<T: Send>(&mut self, socket: &Path, client: impl FnOnce(&Path) -> T + Send) -> T {
+        let listener = crate::agent_seat::socket::Listener::claim(socket).unwrap();
+        std::thread::scope(|scope| {
+            let talking = scope.spawn(|| {
+                let outcome =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| client(socket)));
+                if let Ok(mut last) = UnixStream::connect(socket) {
+                    let _ = writeln!(last, r#"{{"op":"quit"}}"#);
+                    let _ = std::io::Read::read_to_end(&mut last, &mut Vec::new());
+                }
+                outcome
+            });
+            let served = listener.serve(&mut self.seat, &mut self.app);
+            let outcome = talking.join().unwrap();
+            served.unwrap();
+            outcome.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        })
+    }
+}
+
+#[test]
+fn a_held_session_keeps_a_dialog_opened_through_one_connection_until_quit_removes_its_socket() {
+    // This position has Obscuring Fog attached to the Cellar; the Scenario view frames
+    // the attachment sideboard's heading, a piece the no-GPU host's UI picking reaches.
+    // Its only card is inspected at once.
+    let mut seat = sit_at_fixture(crate::gathering::HostileFixture::Search(
+        crate::gathering::SearchFixture::TonyEvents,
+    ));
+    seat.tab_to("Scenario");
+    seat.enter();
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let heading = "location:01114/attachment-sideboard";
+
+    let (activated, opened, held, bye) = seat.hold(&socket, |socket| {
+        let mut first = Connection::open(socket);
+        let observed = first.ask(json!({"op": "observe"}));
+        let revision = observed["observation"]["revision"].clone();
+        let activated =
+            first.ask(json!({"op": "activate", "revision": revision, "component": heading}));
+        let opened = first.ask(json!({"op": "settle"}));
+        drop(first);
+        let mut second = Connection::open(socket);
+        let held = second.ask(json!({"op": "observe"}));
+        let bye = second.ask(json!({"op": "quit"}));
+        (activated, opened, held, bye)
+    });
+    assert_eq!(activated["status"], "activated", "{activated}");
+    assert_eq!(opened["status"], "settled", "{opened}");
+    assert_eq!(
+        opened["table"]["modal"], "inspection",
+        "{}",
+        opened["table"]
+    );
+    assert_eq!(held["status"], "observed");
+    assert_eq!(
+        held["table"], opened["table"],
+        "the next connection finds the same table"
+    );
+    assert_eq!(held["observation"], opened["observation"]);
+    assert_eq!(bye["status"], "bye");
+    assert!(!socket.exists(), "quit removes the socket");
+}
+
+#[test]
+fn a_held_session_keeps_an_open_menu_and_its_focus_between_connections() {
+    // The no-GPU host has no mesh picking, so a synthetic click opens the menu; the
+    // connections then move its focus by keyboard and find it where they left it.
+    let mut seat = sit();
+    seat.open_menu(Investigator::Patrice);
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let (moved, held) = seat.hold(&socket, |socket| {
+        let moved = Connection::open(socket).ask(json!({"op": "key", "key": "Tab"}));
+        let mut second = Connection::open(socket);
+        let held = second.ask(json!({"op": "observe"}));
+        second.ask(json!({"op": "quit"}));
+        (moved, held)
+    });
+    assert_eq!(moved["status"], "pressed", "{moved}");
+    let focused = |response: &Value| {
+        rows(response)
+            .into_iter()
+            .find(|row| row["focused"] == true)
+            .map(|row| row["label"].clone())
+    };
+    assert_eq!(
+        focused(&moved),
+        Some(json!("Inspect")),
+        "{}",
+        moved["table"]["menu"]
+    );
+    assert_eq!(held["table"]["menu"], moved["table"]["menu"]);
+    assert_eq!(focused(&held), Some(json!("Inspect")));
+    assert!(!seat.path.exists(), "moving focus commits nothing");
+}
+
+#[test]
+fn the_tables_own_exit_ends_a_held_session_and_removes_its_socket() {
+    let mut seat = sit();
+    seat.tab_to("Menu");
+    seat.enter();
+    seat.tab_to("Save and return to scenario selection");
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let (exited, after) = seat.hold(&socket, |socket| {
+        let mut connection = Connection::open(socket);
+        let exited = connection.ask(json!({"op": "key", "key": "Enter"}));
+        // The session is over: the seat closes the connection.
+        let mut after = String::new();
+        connection.reader.read_line(&mut after).unwrap();
+        (exited, after)
+    });
+    assert_eq!(exited["status"], "exited", "{exited}");
+    assert_eq!(exited["ok"], true);
+    assert_eq!(after, "");
+    assert!(!socket.exists(), "the table's exit removes the socket");
+    assert_eq!(
+        saved(&seat.path)["revision"],
+        0,
+        "returning saves the attempt"
+    );
+}
+
+#[test]
+fn the_held_socket_is_accessible_only_to_its_owner_and_removed_with_its_listener() {
+    use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let listener = crate::agent_seat::socket::Listener::claim(&socket).unwrap();
+    let file = std::fs::symlink_metadata(&socket).unwrap();
+    assert!(file.file_type().is_socket());
+    assert_eq!(file.permissions().mode() & 0o777, 0o600);
+    // Nothing else is left beside it.
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    drop(listener);
+    assert!(
+        !socket.exists(),
+        "a seat that never served leaves no socket"
+    );
 }
 
 fn parse(directory: &std::path::Path, arguments: &[&str]) -> Result<Option<Options>, String> {

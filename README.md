@@ -60,7 +60,7 @@ target/debug/arkham-tabletop --experiment gathering --agent-seat --save /absolut
 
 It is the same table, rules session, save path and artwork verification as native play: an existing compatible file resumes, an unused path starts setup, and each committed decision autosaves there. `--experiment gathering` and `--save` are required. `--art-root` and `--initial-view` work as above; `--attempt` and `--screenshot` are refused. The seat opens no window and no dialog: it has no window event loop, and artwork recovery, the artwork-folder chooser and the return to scenario selection are not part of it. The seat refuses to open external links: a Credits link, which native play hands to the desktop's opener, only sets `notice` to its address. A startup problem, including a refused option, is one `refused` response, the same text on standard error and an unsuccessful exit.
 
-The seat reads one JSON request per line on standard input and writes one JSON response per line on standard output. Diagnostics go to standard error. The first response has status `ready` and names the graphics `adapter` that rendered the table. Every response carries `ok`, `mode: "seat"`, `status`, an `error` when refused, the player-visible `observation` exactly as the headless driver prints it, and `table`, what the table shows:
+In batch form the seat reads one JSON request per line on standard input and writes one JSON response per line on standard output. Diagnostics go to standard error. A [held session](#held-session) exchanges the same lines over a local socket instead. The first response has status `ready` and names the graphics `adapter` that rendered the table. Every response carries `ok`, `mode: "seat"`, `status`, an `error` when refused, the player-visible `observation` exactly as the headless driver prints it, and `table`, what the table shows:
 
 - `settled` and `pending`: whether the table will accept input, and what is still in progress when it will not. A dialog or menu waiting for the player is settled.
 - `shows_latest`: false while the table is still presenting its way to the observation, for example behind a reading dialog.
@@ -84,7 +84,7 @@ Selecting a component and choosing from its menu are two activations, as for a p
 
 Controls without a choice identity are reached with `Tab` and `Enter` where the table's tab order includes them, or closed with `Escape`. The **Menu** button comes after the portrait rail and the decision panel in that order, so the utilities menu (action history, save, restart, motion, Credits) is within reach; **Save and return to scenario selection** saves and ends the session with `exited`, and no selection window opens. Known limits of this increment: the Crystal Pendulum and Violin pickers compose their choice from several presses and are keyboard-only. It is not established whether the table could drop a choice pressed on a dialog while consequences still resolve behind it, after the seat has answered `activated`; an unchanged `revision` in the response would show it.
 
-Every committed decision is saved, so a shell that runs one command at a time can send a batch of requests in one launch and resume the attempt in the next. Camera position and an open menu do not survive a launch. A harness that can keep a process open, or a named pipe, holds one session instead.
+Every committed decision is saved, so in batch form a shell that runs one command at a time can send a batch of requests in one launch and resume the attempt in the next. Camera position and an open menu do not survive a launch; a held session keeps them.
 
 Each response repeats the whole observation and table, about 15 KB, so keep the responses in a file and read only what the next decision needs:
 
@@ -96,14 +96,44 @@ jq -c '{status, error, revision: .observation.revision, settled: .table.settled,
         pending: .table.pending, modal: .table.modal, menu: .table.menu}' responses.jsonl
 ```
 
-**Evidence limits.** A seat run can establish presentation logic, layout, controls and rendered output on the seat's image, with real artwork and a real graphics adapter. It cannot establish window behaviour, display pacing, focus or physical input, and it is not acceptance of native play. The seat's own admission requires decoded artwork, the registered symbol font, ready render pipelines and completed GPU work for its image; it makes no claim about display rate, and native rendering health is unchanged. Protocol behaviour is checked without a graphics card in the ordinary tests. The real table, including admission, mesh picking, capture, resuming and the end of a session when artwork becomes unavailable, is checked only where the prepared collection and a graphics adapter exist:
+**Evidence limits.** A seat run can establish presentation logic, layout, controls and rendered output on the seat's image, with real artwork and a real graphics adapter. It cannot establish window behaviour, display pacing, focus or physical input, and it is not acceptance of native play. The seat's own admission requires decoded artwork, the registered symbol font, ready render pipelines and completed GPU work for its image; it makes no claim about display rate, and native rendering health is unchanged. Protocol behaviour is checked without a graphics card in the ordinary tests. The real table, including admission, mesh picking, capture, resuming, the end of a session when artwork becomes unavailable and a held session between tool commands, is checked only where the prepared collection and a graphics adapter exist:
 
 ```sh
 ARKHAM_GATHERING_TEST_ASSETS=/absolute/path/to/prepared-collection \
   scripts/dev cargo test --locked --features tabletop --lib \
   gathering_tabletop::seat::tests::the_real_table_is_admitted_and_played_without_a_window \
   -- --ignored --exact
+ARKHAM_GATHERING_TEST_ASSETS=/absolute/path/to/prepared-collection \
+  scripts/dev cargo test --locked --features tabletop --test agent_seat \
+  the_real_table_is_held_between_tool_commands_until_quit -- --ignored --exact
 ```
+
+#### Held session
+
+With `--socket` the seat holds one session on a local socket across separate shell commands. Start it once:
+
+```sh
+target/debug/arkham-tabletop --experiment gathering --agent-seat \
+  --save /absolute/path/to/attempt.json --socket /absolute/path/to/seat.sock
+```
+
+The start command returns as soon as the table is admitted. It prints the same `ready` response as batch form and exits successfully, while the seat keeps running as a separate process, detached from the shell and its process group. The seat keeps none of the shell's standard input, output or error, so the start command finishes like any other command. It needs no background-process feature of the shell or agent harness. A startup problem prints one `refused` response and exits unsuccessfully, with no socket left and no seat running. `--socket` needs an absolute path, at most 107 bytes long, and `--agent-seat`; a path that already exists is refused and left unchanged. The socket file is accessible only to its owner.
+
+Then send requests from any later command. Each command sends its requests over one connection, as arguments or as standard-input lines, and prints each response line unchanged:
+
+```sh
+scripts/tools seat /absolute/path/to/seat.sock '{"op":"observe"}' > responses.jsonl
+printf '%s\n' '{"op":"settle"}' '{"op":"capture","path":"/absolute/path/to/table.png"}' |
+  scripts/tools seat /absolute/path/to/seat.sock > responses.jsonl
+```
+
+The command exits unsuccessfully when a response is `refused` or `skipped`, or when the session ends before every request is answered. When no seat is listening on the path, it says so, names the path and exits unsuccessfully: start a seat first. The `jq` view above reads its output the same way.
+
+Between commands the table keeps its camera, open contextual menu, dialogs, readings and group clue payment chooser, so reading a menu's rows and choosing from it can be two commands. A reading dismissed in a held session stays dismissed. Every committed decision still autosaves, so the attempt stays resumable. Connections are answered one at a time, in arrival order; closing one does not end the session.
+
+The seat's diagnostics, standard error in batch form, go to the socket path with `.log` appended, such as `/absolute/path/to/seat.sock.log`. Each start replaces that file. Read terminal checks there, such as the modal-dialog warning.
+
+`{"op":"quit"}` answers `bye`, removes the socket and ends the seat; the attempt stays resumable and a later start resumes it. When the table ends the session itself, for example through **Save and return to scenario selection**, the response is `exited` and the socket is removed too.
 
 ### Start fresh after an incompatible save
 

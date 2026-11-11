@@ -1,7 +1,9 @@
 //! The Gathering table's side of the agent seat (#153): startup assembly and the
 //! narrow interface the game-neutral [`crate::agent_seat`] reaches the table through.
-//! Deleting this file, `agent_seat.rs`, `tabletop_health/seat.rs` and the integration
-//! points that name them removes the seat.
+//! Deleting this file, `agent_seat.rs` with `agent_seat/socket.rs` (the held session's
+//! socket and launcher, #175), `tabletop_health/seat.rs`, the tools' `seat` command
+//! (`tools/src/seat.rs` and `tools/tests/seat.rs`) and the integration points that name
+//! them removes the seat.
 //!
 //! The seat is the same table as native play: the same `install`, rules session,
 //! continuity and save path, and artwork verification. Every difference from native
@@ -24,7 +26,7 @@
 
 use super::*;
 use crate::{
-    agent_seat::{self, Game, Hit, Name, Observed, Seat},
+    agent_seat::{self, Game, Hit, Name, Observed, Seat, socket},
     tabletop_health::SeatAdmissionPlugin,
     tabletop_support::asset_settings::Collection,
 };
@@ -45,25 +47,39 @@ pub(super) struct Seated {
 }
 
 pub(super) fn run(launch: Result<Option<Options>, String>) -> Result<(), String> {
-    let opened = launch.and_then(|options| match options {
-        Some(options) if options.agent_seat => open(&options).map(Some),
+    let options = match launch.and_then(|options| match options {
+        Some(options) if options.agent_seat => Ok(Some(options)),
         Some(_) => Err("--agent-seat is an option of its own, not another option's value".into()),
         None => Ok(None),
-    });
-    let mut seated = match opened {
-        Ok(Some(seated)) => seated,
+    }) {
+        Ok(Some(options)) => options,
         Ok(None) => return Ok(()),
-        Err(error) => {
-            // The agent reads standard output; the same text also reaches standard error.
-            println!(
-                "{}",
-                json!({"ok": false, "mode": "seat", "status": "refused", "error": error})
-            );
-            return Err(error);
-        }
+        Err(error) => return refuse(error),
     };
+    let Some(path) = &options.socket else {
+        let mut seated = open(&options).or_else(refuse)?;
+        let Seated { app, seat, .. } = &mut seated;
+        return seat.serve(app, std::io::stdin().lock(), std::io::stdout().lock());
+    };
+    if !socket::detached() {
+        // The launching command: it returns once the seat it starts is admitted.
+        return socket::launch(path).or_else(refuse);
+    }
+    let listener = socket::detach(path).or_else(refuse)?;
+    let mut seated = open(&options).or_else(refuse)?;
     let Seated { app, seat, .. } = &mut seated;
-    seat.serve(app, std::io::stdin().lock(), std::io::stdout().lock())
+    socket::announce(&seat.ready(app))?;
+    listener.serve(seat, app)
+}
+
+/// A startup problem: one `refused` response on standard output, which the agent (or
+/// the launching command) reads. The returned error reaches standard error.
+fn refuse<T>(error: String) -> Result<T, String> {
+    println!(
+        "{}",
+        json!({"ok": false, "mode": "seat", "status": "refused", "error": error})
+    );
+    Err(error)
 }
 
 /// The same artwork verification and play lease as native startup. Native startup
