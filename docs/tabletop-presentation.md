@@ -545,7 +545,10 @@ lines, a two-line name and "Exhausted", at the normal Scenario focus at
 1280×800), so the next group's heading and counts start below them. Both
 sideboards share this layout and then hold at most three location groups (four
 rows in all), two groups in five rows or one in six; a fourth nonempty group
-does not fit, which awaits the owner's decision.
+does not fit, which awaits the owner's decision. The columns spread as wide as
+the board allows, so neighbors' "Exhausted" lines stay apart at 1600×1000; at
+1280×800 a column is narrower than that word and they still meet, which also
+awaits the owner's decision.
 Keep full card size, stable group/copy ordering and clearance for exhaustion,
 harm, side counters and names. Do not collapse, overlap, scroll or continually
 shrink cards to solve crowding. Keep the compact board the same depth as the

@@ -9,7 +9,9 @@ use crate::tabletop_gathering_map::GatheringMap;
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::picking::hover::Hovered;
 
-const COLUMN_PITCH: f32 = 2.6;
+/// Columns spread as far as the board allows a 2.4-wide card cell, so the
+/// captions "Exhausted" of neighbors stay apart at 1600x1000 Scenario.
+const COLUMN_PITCH: f32 = 2.75;
 const ROW_PITCH: f32 = 3.;
 const GROUP_GAP: f32 = 0.65;
 /// Below a group's last row, room for its captions: three 13px lines (a

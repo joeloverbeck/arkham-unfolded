@@ -937,3 +937,46 @@ fn later_enemy_groups_clear_the_captions_of_earlier_groups() {
     }
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+/// Three exhausted enemies in one row: each caption ends "Exhausted", one
+/// 68px word at 13px. At 1600x1000 the columns keep those words apart. At
+/// 1280x800 a column spans about 58px of the unchanged board, so the words
+/// still meet there; separating them needs shorter wording, fewer columns or
+/// a wider board, which is the owner's decision.
+#[test]
+fn adjacent_exhausted_captions_stay_apart_at_1600_by_1000() {
+    use crate::tabletop_layout::heading_checks::rendered_text_bounds;
+    let mut app = board_with(&[
+        (ATTIC, "Ghoul Minion", true),
+        (ATTIC, "Ravenous Ghoul", true),
+        (ATTIC, "Icy Ghoul", true),
+    ]);
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+        &mut app,
+        Vec2::new(1600., 1000.),
+        1.,
+    );
+    app.world_mut()
+        .resource_mut::<Orbit>()
+        .focus(sideboard::focus(Area::Scenario));
+    for _ in 0..4 {
+        app.update();
+    }
+    let world = app.world_mut();
+    let entities: Vec<_> = world
+        .query_filtered::<Entity, With<sideboard::Caption>>()
+        .iter(world)
+        .collect();
+    let mut captions: Vec<_> = entities
+        .into_iter()
+        .map(|entity| rendered_text_bounds(world, entity, 1.))
+        .collect();
+    assert_eq!(captions.len(), 3);
+    captions.sort_by(|a, b| a.min.x.total_cmp(&b.min.x));
+    for pair in captions.windows(2) {
+        assert!(
+            pair[1].min.x - pair[0].max.x >= 2.,
+            "adjacent captions run together: {pair:?}"
+        );
+    }
+}
