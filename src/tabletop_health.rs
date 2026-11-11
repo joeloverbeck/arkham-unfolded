@@ -870,13 +870,15 @@ mod tests {
     }
 
     #[derive(Resource)]
-    struct Fixture {
-        root: tempfile::TempDir,
+    pub(super) struct Fixture {
+        pub(super) root: tempfile::TempDir,
         _image: Handle<Image>,
         _font: Handle<Font>,
     }
 
-    fn app_with_window() -> (App, Entity) {
+    /// Synthetic required artwork, loaded through the real asset server. Shared with
+    /// the agent seat's admission tests, which register their own plugin on it.
+    pub(super) fn app_with_artwork() -> App {
         use bevy::image::{CompressedImageFormats, ImageLoader, ImagePlugin};
         let root = tempfile::tempdir().unwrap();
         image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]))
@@ -929,6 +931,11 @@ mod tests {
             _image: image,
             _font: font,
         });
+        app
+    }
+
+    fn app_with_window() -> (App, Entity) {
+        let mut app = app_with_artwork();
         app.add_plugins(TabletopHealthPlugin);
         app.world_mut().run_schedule(Startup);
         app.insert_resource(WinitSettings::continuous());
