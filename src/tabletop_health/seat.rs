@@ -198,3 +198,139 @@ fn acknowledge_image(
     // Completed GPU work for a frame that drew the image. It is not a display timestamp.
     queue.on_submitted_work_done(move || progress.complete(ticket));
 }
+
+/// Seat admission through its registered plugin. Artwork loading, decoding, font
+/// registration and the admission decision are production. Only the renderer's side
+/// is simulated (ready pipelines and completed image frames), as the native gate's
+/// tests simulate GPU completion. The real renderer is covered by the gated
+/// real-table test beside the seat.
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{Fixture, app_with_artwork};
+    use super::*;
+
+    fn seated() -> App {
+        let mut app = app_with_artwork();
+        app.add_plugins(SeatAdmissionPlugin);
+        app.world_mut().run_schedule(Startup);
+        app
+    }
+
+    /// What the render world would report: ready pipelines and `frames` completed
+    /// submissions that drew the seat's image.
+    fn render(app: &App, frames: u64) {
+        let progress = app.world().resource::<ImageProgress>();
+        progress.0.pipelines_pending.store(false, Ordering::Release);
+        let ticket = progress.ticket();
+        for _ in 0..frames {
+            progress.complete(ticket);
+        }
+    }
+
+    fn health(app: &App) -> &RenderHealth {
+        app.world().resource::<RenderHealth>()
+    }
+
+    #[test]
+    fn play_is_admitted_only_by_image_frames_completed_after_artwork_loaded() {
+        let mut app = seated();
+        let loaded = std::mem::replace(
+            &mut *app.world_mut().resource_mut::<HealthAssets>(),
+            // An asset the loader never resolves keeps the required set pending.
+            HealthAssets::new([Handle::<Image>::default().id().untyped()]),
+        );
+        render(&app, REQUIRED_FRAMES);
+        app.update();
+        assert!(health(&app).is_checking());
+        assert!(
+            admission_blocker(app.world()).contains("artwork"),
+            "{}",
+            admission_blocker(app.world())
+        );
+
+        app.insert_resource(loaded);
+        app.update();
+        assert!(
+            health(&app).is_checking(),
+            "frames completed before the artwork loaded earn nothing"
+        );
+        assert!(
+            admission_blocker(app.world()).contains("0 of 3 frames"),
+            "{}",
+            admission_blocker(app.world())
+        );
+
+        render(&app, REQUIRED_FRAMES - 1);
+        app.update();
+        assert!(health(&app).is_checking());
+        render(&app, 1);
+        app.update();
+        assert!(health(&app).allows_play() && health(&app).just_became_ready());
+        app.update();
+        assert!(health(&app).allows_play() && !health(&app).just_became_ready());
+        assert!(app.should_exit().is_none());
+    }
+
+    #[test]
+    fn undecodable_required_artwork_refuses_admission_and_ends_the_session() {
+        let mut app = seated();
+        std::fs::write(
+            app.world()
+                .resource::<Fixture>()
+                .root
+                .path()
+                .join("broken.png"),
+            b"not an image",
+        )
+        .unwrap();
+        let broken = app
+            .world()
+            .resource::<AssetServer>()
+            .load::<Image>("broken.png");
+        app.insert_resource(HealthAssets::new([broken.id().untyped()]));
+        render(&app, REQUIRED_FRAMES);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while health(&app).is_checking() {
+            app.update();
+            assert!(
+                Instant::now() < deadline,
+                "the decoding failure was not surfaced"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(!health(&app).allows_play());
+        assert!(
+            health(&app).status().contains("broken.png"),
+            "{}",
+            health(&app).status()
+        );
+        assert_eq!(admission_blocker(app.world()), health(&app).status());
+        assert!(
+            app.should_exit().is_some_and(|exit| exit.is_error()),
+            "a refusal ends the session unsuccessfully"
+        );
+    }
+
+    #[test]
+    fn required_artwork_that_disappears_revokes_admission_and_ends_the_session() {
+        let mut app = seated();
+        app.update();
+        render(&app, REQUIRED_FRAMES);
+        app.update();
+        assert!(health(&app).allows_play());
+        assert!(app.should_exit().is_none());
+
+        let image = app.world().resource::<HealthAssets>().0[0].typed::<Image>();
+        app.world_mut()
+            .resource_mut::<Assets<Image>>()
+            .remove(image);
+        app.update();
+        assert!(!health(&app).allows_play());
+        assert!(
+            health(&app).status().contains("became unavailable"),
+            "{}",
+            health(&app).status()
+        );
+        assert!(app.should_exit().is_some_and(|exit| exit.is_error()));
+    }
+}

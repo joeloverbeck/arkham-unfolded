@@ -86,9 +86,14 @@ Controls without a choice identity are reached with `Tab` and `Enter` where the 
 
 Every committed decision is saved, so a shell that runs one command at a time can send a batch of requests in one launch and resume the attempt in the next. Camera position and an open menu do not survive a launch. A harness that can keep a process open, or a named pipe, holds one session instead.
 
+Each response repeats the whole observation and table, about 15 KB, so keep the responses in a file and read only what the next decision needs:
+
 ```sh
 printf '%s\n' '{"op":"observe"}' '{"op":"quit"}' |
-  target/debug/arkham-tabletop --experiment gathering --agent-seat --save /absolute/path/to/attempt.json
+  target/debug/arkham-tabletop --experiment gathering --agent-seat \
+    --save /absolute/path/to/attempt.json > responses.jsonl
+jq -c '{status, error, revision: .observation.revision, settled: .table.settled,
+        pending: .table.pending, modal: .table.modal, menu: .table.menu}' responses.jsonl
 ```
 
 **Evidence limits.** A seat run can establish presentation logic, layout, controls and rendered output on the seat's image, with real artwork and a real graphics adapter. It cannot establish window behaviour, display pacing, focus or physical input, and it is not acceptance of native play. The seat's own admission requires decoded artwork, the registered symbol font, ready render pipelines and completed GPU work for its image; it makes no claim about display rate, and native rendering health is unchanged. Protocol behaviour is checked without a graphics card in the ordinary tests. The real table, including admission, mesh picking, capture, resuming and the end of a session when artwork becomes unavailable, is checked only where the prepared collection and a graphics adapter exist:
