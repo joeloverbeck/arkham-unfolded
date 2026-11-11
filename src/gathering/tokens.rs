@@ -43,6 +43,7 @@ pub enum TokenFixture {
     PremonitionVoice,
     JacquelineOlive,
     JacquelineOliveProtected,
+    JacquelineKatarina,
     ProphecyOlive,
     ProphecyOliveProtected,
     ProphecyOliveOtherSymbol,
@@ -141,6 +142,21 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
                     .unwrap();
                 jacqueline.threats.push(jacqueline.deck.remove(index));
             }
+        }
+        TokenFixture::JacquelineKatarina => {
+            let index = jacqueline
+                .deck
+                .iter()
+                .position(|card| card.code == "11069")
+                .expect("Selected Katarina");
+            let card = jacqueline.deck.remove(index);
+            jacqueline.assets.push(AssetView {
+                card,
+                ready: true,
+                uses: 0,
+                damage: 0,
+                horror: 0,
+            });
         }
         TokenFixture::ProtectedNumbers => {
             let index = jacqueline
@@ -632,6 +648,16 @@ pub(super) fn configure_fixture(game: &mut Game, case: TokenFixture) {
             TokenFace::Cultist,
             TokenFace::Zero,
             TokenFace::MinusOne,
+        ]);
+    }
+    if case == TokenFixture::JacquelineKatarina {
+        game.set_fixture_tokens(vec![
+            TokenFace::MinusOne,
+            TokenFace::Zero,
+            TokenFace::Skull,
+            TokenFace::MinusTwo,
+            TokenFace::PlusOne,
+            TokenFace::Cultist,
         ]);
     }
     if matches!(
