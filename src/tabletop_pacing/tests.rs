@@ -259,19 +259,91 @@ fn raw_mouse_motion_elsewhere_does_not_keep_a_settled_table_awake() {
     assert!(app.world().resource::<Cadence>().idle);
 }
 
+fn press(app: &mut App, key: KeyCode) {
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(key);
+    app.update();
+    let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+    keys.release(key);
+    keys.clear();
+}
+
+fn title(app: &mut App) -> String {
+    app.world_mut()
+        .query::<&Window>()
+        .single(app.world())
+        .unwrap()
+        .title
+        .clone()
+}
+
 #[test]
-fn render_dispatch_is_paced_even_when_events_request_repeated_updates() {
+fn f9_cycles_the_compared_cadence_and_names_it_in_the_title() {
+    let mut app = app();
+    app.world_mut()
+        .query::<&mut Window>()
+        .single_mut(app.world_mut())
+        .unwrap()
+        .title = "Table".into();
+    app.update();
+    assert_eq!(title(&mut app), "Table · F9 cadence: 60/s baseline");
+    for expected in [
+        "Table · F9 cadence: 72/s",
+        "Table · F9 cadence: display rate",
+        "Table · F9 cadence: 60/s baseline",
+    ] {
+        press(&mut app, KeyCode::F9);
+        assert_eq!(title(&mut app), expected);
+    }
+}
+
+fn dispatching_app() -> App {
     let mut app = App::new();
     app.insert_sub_app(RenderExtractApp, bevy::app::SubApp::new());
     app.add_message::<WindowEvent>()
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<ButtonInput<MouseButton>>()
         .add_plugins(TabletopPacingPlugin);
-    app.update();
+    app
+}
+
+fn dispatch(app: &mut App, updates: u32, active: bool) -> Duration {
     let start = Instant::now();
-    for _ in 0..4 {
-        app.world_mut().resource_mut::<Redraw>().request();
+    for _ in 0..updates {
+        if active {
+            app.world_mut().resource_mut::<Redraw>().request();
+        }
         app.update();
     }
-    assert!(start.elapsed() >= Duration::from_millis(60));
+    start.elapsed()
+}
+
+fn select_display_rate(app: &mut App) {
+    press(app, KeyCode::F9);
+    press(app, KeyCode::F9);
+    app.update();
+}
+
+#[test]
+fn display_rate_comparison_stops_sleeping_between_active_dispatches() {
+    let mut app = dispatching_app();
+    select_display_rate(&mut app);
+    // 72/s needs at least 111 ms for eight dispatches and the 60/s baseline 133 ms.
+    assert!(dispatch(&mut app, 8, true) < Duration::from_millis(100));
+}
+
+#[test]
+fn display_rate_comparison_keeps_the_settled_dispatch_cap() {
+    let mut app = dispatching_app();
+    select_display_rate(&mut app);
+    settled(&mut app);
+    assert!(dispatch(&mut app, 4, false) >= Duration::from_millis(60));
+}
+
+#[test]
+fn render_dispatch_is_paced_even_when_events_request_repeated_updates() {
+    let mut app = dispatching_app();
+    app.update();
+    assert!(dispatch(&mut app, 4, true) >= Duration::from_millis(60));
 }
