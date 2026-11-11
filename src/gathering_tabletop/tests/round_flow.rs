@@ -179,6 +179,87 @@ fn phase_title(app: &mut App) -> Option<String> {
 }
 
 #[test]
+fn the_phase_banner_is_no_dialog_yet_still_covers_the_table_against_the_pointer() {
+    use bevy::{
+        input_focus::tab_navigation::TabGroup,
+        picking::{hover::HoverMap, pointer::PointerId},
+        ui_widgets::ModalDialog,
+    };
+    let mut session = Session::with_seed(89);
+    for id in ["lead:tony", "confirm-mulligan", "confirm-mulligan"] {
+        session.choose(session.observe().revision, id).unwrap();
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host_with_table(
+        Table::new(session, directory.path().join("banner.json")),
+        true,
+    );
+    let size = Vec2::new(1600., 1000.);
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
+    activate_choice(&mut app, "confirm-mulligan");
+    for _ in 0..300 {
+        if phase_title(&mut app).is_some() {
+            break;
+        }
+        draws::tick(&mut app, 0.1);
+    }
+    let world = app.world_mut();
+    let title = world
+        .query::<(Entity, &Text)>()
+        .iter(world)
+        .find_map(|(entity, text)| (text.0 == "Investigation").then_some(entity))
+        .expect("The opening Investigation phase is announced");
+    let mut banner = title;
+    while let Some(parent) = world.get::<ChildOf>(banner) {
+        banner = parent.parent();
+    }
+    let mut pending = vec![banner];
+    let mut subtree = Vec::new();
+    while let Some(entity) = pending.pop() {
+        subtree.push(entity);
+        assert!(
+            world.get::<ModalDialog>(entity).is_none(),
+            "The banner is no dialog"
+        );
+        assert!(
+            world
+                .get::<TabGroup>(entity)
+                .is_none_or(|group| !group.modal),
+            "The banner offers nothing to focus, so it holds no modal tab group"
+        );
+        pending.extend(world.get::<Children>(entity).into_iter().flatten());
+    }
+    assert_eq!(world.get::<ComputedNode>(banner).unwrap().size(), size);
+
+    // The Menu button sits in a corner the banner's face leaves clear.
+    let menu = choice_button(&mut app, "Menu").expect("The Menu button stays rendered");
+    let world = app.world_mut();
+    let position = world.get::<UiGlobalTransform>(menu).unwrap().translation;
+    let window = world
+        .query_filtered::<Entity, With<Window>>()
+        .single(world)
+        .unwrap();
+    world.write_message(bevy::window::WindowEvent::CursorMoved(
+        bevy::window::CursorMoved {
+            window,
+            position,
+            delta: None,
+        },
+    ));
+    app.update();
+    assert!(app.world().resource::<Table>().is_presenting());
+    let hits: Vec<Entity> = app.world().resource::<HoverMap>()[&PointerId::Mouse]
+        .keys()
+        .copied()
+        .collect();
+    assert!(!hits.is_empty());
+    assert!(
+        hits.iter().all(|hit| subtree.contains(hit)),
+        "The banner's full-screen barrier takes the pointer before the Menu button: {hits:?}"
+    );
+}
+
+#[test]
 fn entered_phases_are_announced_before_processing_and_block_background_choices() {
     for reduced in [false, true] {
         let mut session = Session::with_seed(89);

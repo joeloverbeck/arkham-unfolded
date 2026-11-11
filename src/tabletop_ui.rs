@@ -266,6 +266,9 @@ pub(crate) fn card_image(
             width: px(width),
             height: px(height),
             flex_shrink: 0.,
+            // Layout places the image's box at the frame's middle before the transform
+            // re-centres it. Clipping keeps that box from adding scrollable height.
+            overflow: Overflow::clip(),
             ..default()
         })
         .with_children(|frame| {

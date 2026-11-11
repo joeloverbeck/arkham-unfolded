@@ -773,6 +773,7 @@ fn handle_actions(
     mut consequences: ResMut<consequences::State>,
     mut exit: MessageWriter<AppExit>,
     navigation: Res<Navigation>,
+    seated: Option<Res<crate::agent_seat::SeatedAgent>>,
 ) {
     if table.leaving {
         actions.0.clear();
@@ -1088,6 +1089,11 @@ fn handle_actions(
                 table.epoch += 1;
                 table.inspection = Some((title, code));
                 table.history_open = false;
+                table.dirty = true;
+            }
+            Action::CreditLink(url) if seated.is_some() => {
+                // An agent at the seat never reaches the owner's desktop.
+                table.notice = format!("The agent seat does not open links. Address: {url}");
                 table.dirty = true;
             }
             Action::CreditLink(url) => {

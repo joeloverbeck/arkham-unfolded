@@ -50,7 +50,10 @@ dismisses a transient action list without making a choice or losing commitments.
 
 Tab/Shift+Tab move menu focus, Enter/Space activate and Escape dismisses. Those
 operations must not also move the camera; arrow-key menu navigation is not
-selected. Inspect, History, Menu, story-reading panels, confirmation dialogs and
+selected. The Menu button has its own place in the Tab order, after the
+navigation rail, decision panel and enemy sideboard, so Shift+Tab from the first
+portrait reaches it. Every modal dialog contains a control that takes focus when
+it opens. Inspect, History, Menu, story-reading panels, confirmation dialogs and
 folder dialogs explicitly block camera input. Closing them restores WASD
 immediately. Right-drag orbits; empty navigation-container space permits its
 start, visible controls block its start, and an already captured drag continues
@@ -635,6 +638,8 @@ Keep current round and phase clearly visible after it leaves. Reduced motion use
 stationary text. Announce an empty Enemy phase and the first Investigation after
 setup; the first round skips Mythos. Round-end effects do not create a fifth phase.
 Prevent input through the announcement from activating an underlying control.
+The banner is an announcement, not a dialog: it takes no keyboard focus, and a
+full-screen barrier keeps the pointer from the table while it shows.
 
 Perform compulsory Upkeep and Mythos administration automatically with visible
 consequences, preserving genuine decisions, reactions, ordering choices, tests,
@@ -650,14 +655,16 @@ repeat effects after interruption, scene rebuild, camera movement or reopening.
 Reduced motion reaches the same final state with meaningful explanation and
 immediate placement. Cosmetic steps do not split simultaneous rules effects.
 
-A moving investigator lifts with its full base/holder, travels via the connecting
-brass arrow and settles into the destination slot; others remain stationary.
-First entry then flips the actual location faces in place and lowers its counted
-clue token with a brief gold/green glint. Target roughly one to two seconds,
-subject to native tuning; revisits omit flip/clue placement and no extra Continue
-is added. Zero-clue revelation creates no clue token, enemies do not reveal rooms,
-and scenario placement invents no connection. Use location names in destination
-labels rather than raw identifiers.
+A moving investigator lifts with its full base/holder onto the midpoint of the
+connecting brass arrow, rests there briefly at base height, then lifts into the
+destination slot. Engaged enemies travelling with it hop and rest in step beside
+it; others remain stationary. First entry then flips the actual location faces in
+place and lowers its counted clue token with a brief gold/green glint. Target
+about two and a half seconds for a first entry; the hop, rest, flip and clue
+timings are starting values for native tuning. Revisits omit flip/clue placement
+and no extra Continue is added. Zero-clue revelation creates no clue token,
+enemies do not reveal rooms, and scenario placement invents no connection. Use
+location names in destination labels rather than raw identifiers.
 
 After clue gain commits, lift a marker, carry it in a gentle raised arc and lower
 it to the investigator's clue slot. Decrease source count on departure, increase

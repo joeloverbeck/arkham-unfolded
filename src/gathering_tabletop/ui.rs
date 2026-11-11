@@ -524,7 +524,8 @@ pub(super) fn render(
         let prefix = { "" };
         p.spawn(art.text(format!("{prefix}{}", turn_heading(view)), 18., PAPER));
     });
-    screen::menu_button(commands, Panel, |p| {
+    // Tab reaches the Menu after navigation (0), decisions (1) and the enemy sideboard (2).
+    screen::menu_button(commands, (Panel, TabGroup::new(3)), |p| {
         button(art, p, "Menu", Action::Utilities);
     });
     let portraits = portraits(art, images);
@@ -1139,6 +1140,8 @@ mod tests {
                 (Vec2::new(1600., 1000.), 1., false),
                 (Vec2::new(1600., 1000.), 1., true),
                 (Vec2::new(960., 540.), 1.25, true),
+                // One column: the artwork above the text cannot fit, so the body scrolls.
+                (Vec2::new(640., 480.), 1.25, true),
             ] {
                 let directory = tempfile::tempdir().unwrap();
                 let mut app = super::super::tests::host(directory.path().join("story.json"));
@@ -1197,7 +1200,7 @@ mod tests {
                     .iter(world)
                     .find_map(|(entity, node, panel)| panel.inspection.then_some((entity, node)))
                     .unwrap();
-                if size.y == 540. {
+                if size.y == 480. {
                     assert!(
                         node.content_size().y > node.size().y,
                         "Narrow story scrolls"
@@ -1261,5 +1264,131 @@ mod tests {
         app.update();
         button_named(&mut app, "Focus Tony Morgan · current turn");
         assert_eq!(app.world().resource::<Table>().session.clone(), before);
+    }
+
+    /// A scrolling body that is not squeezed by its dialog or its own cap shows all of
+    /// its content, so it must report no height to scroll through.
+    fn assert_fitting_bodies_do_not_scroll(app: &mut App, size: Vec2, label: &str) -> usize {
+        let world = app.world_mut();
+        let dialog = world
+            .query_filtered::<Entity, With<ModalDialog>>()
+            .single(world)
+            .unwrap();
+        let dialog_height = world.get::<ComputedNode>(dialog).unwrap().size().y;
+        let images = world
+            .query_filtered::<&ChildOf, With<ImageNode>>()
+            .iter(world)
+            .map(ChildOf::parent)
+            .collect::<Vec<_>>();
+        let mut fitting = 0;
+        for (body, node, layout) in world
+            .query::<(Entity, &ComputedNode, &Node)>()
+            .iter(world)
+            .filter(|(entity, _, _)| {
+                world
+                    .get::<ScrollablePanel>(*entity)
+                    .is_some_and(|panel| panel.inspection)
+            })
+        {
+            let mut framed = false;
+            for frame in &images {
+                let mut ancestor = Some(*frame);
+                while let Some(entity) = ancestor {
+                    framed |= entity == body;
+                    ancestor = world.get::<ChildOf>(entity).map(ChildOf::parent);
+                }
+            }
+            assert!(framed, "{label}: the body shows a card image");
+            let capped = match layout.max_height {
+                Val::Px(cap) => node.size().y >= cap - 1.,
+                _ => false,
+            };
+            if dialog_height < size.y * 0.9 - 1. && !capped {
+                fitting += 1;
+                assert!(
+                    node.content_size().y <= node.size().y + 0.5,
+                    "{label} at {size:?}: content {} in a fitting body of {}",
+                    node.content_size().y,
+                    node.size().y
+                );
+            }
+        }
+        fitting
+    }
+
+    #[test]
+    fn card_image_frames_add_no_scrollable_height_to_reading_or_inspection() {
+        use bevy::ecs::system::RunSystemOnce;
+        let sizes = [Vec2::new(1600., 1000.), Vec2::new(1920., 1200.)];
+        let image = |app: &mut App, role: &'static str| {
+            let image = app
+                .world_mut()
+                .resource_mut::<Assets<Image>>()
+                .add(Image::default());
+            app.insert_resource(art::Art::with_images_for_test([(role, image)]));
+            app.world_mut().resource_mut::<Table>().dirty = true;
+        };
+        let settle = |app: &mut App, size: Vec2| {
+            crate::tabletop_layout::heading_checks::viewport::<MainCamera>(app, size, 1.);
+            for _ in 0..4 {
+                app.update();
+            }
+        };
+
+        // A portrait encounter card in its reading stop.
+        let directory = tempfile::tempdir().unwrap();
+        let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Harm(
+            crate::gathering::HarmFixture::WardCancellation,
+        ));
+        let mut app = super::super::tests::host_with_table(
+            Table::new(session, directory.path().join("encounter.json")),
+            false,
+        );
+        image(&mut app, "card-01163");
+        let mut fitting = 0;
+        for size in sizes {
+            settle(&mut app, size);
+            fitting += assert_fitting_bodies_do_not_scroll(&mut app, size, "Encounter reading");
+        }
+        assert!(fitting > 0, "An encounter reading fits its content");
+
+        // A landscape investigator card, rotated inside its frame, in inspection.
+        let mut app = super::super::tests::host(directory.path().join("inspection.json"));
+        image(&mut app, "card-06003");
+        app.world_mut()
+            .resource_mut::<Actions>()
+            .0
+            .push(Action::Inspect("Tony Morgan".into(), "06003".into()));
+        let mut fitting = 0;
+        for size in sizes {
+            settle(&mut app, size);
+            fitting += assert_fitting_bodies_do_not_scroll(&mut app, size, "Inspection");
+        }
+        assert!(fitting > 0, "An inspection fits its content");
+
+        // An act's reverse in its story reading.
+        let mut fitting = 0;
+        for size in sizes {
+            let mut app = super::super::tests::host(directory.path().join("story.json"));
+            image(&mut app, "card-01108-back");
+            settle(&mut app, size);
+            let panels = app
+                .world_mut()
+                .query_filtered::<Entity, With<Panel>>()
+                .iter(app.world())
+                .collect::<Vec<_>>();
+            for panel in panels {
+                app.world_mut().despawn(panel);
+            }
+            app.world_mut().resource_mut::<Table>().dirty = false;
+            app.world_mut()
+                .run_system_once(move |mut commands: Commands, art: Res<art::Art>| {
+                    story_reading(&mut commands, &art, size, story::StoryCard::ActOne)
+                })
+                .unwrap();
+            settle(&mut app, size);
+            fitting += assert_fitting_bodies_do_not_scroll(&mut app, size, "Story reading");
+        }
+        assert!(fitting > 0, "A story reading fits its content");
     }
 }

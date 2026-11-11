@@ -19,6 +19,8 @@
 //!    and import completion, which open dialogs in native play, are not installed.
 //! 8. The stall watchdog and frame-pacing cadence, which exist for a real display,
 //!    do not apply.
+//! 9. Sitting marks the table with [`agent_seat::SeatedAgent`], so a Credits link
+//!    reports its address instead of reaching the desktop's opener.
 
 use super::*;
 use crate::{
