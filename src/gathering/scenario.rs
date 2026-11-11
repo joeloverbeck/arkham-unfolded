@@ -1138,7 +1138,7 @@ pub(super) fn act_requirement(game: &Game, act: u8, at_round_end: bool) -> Optio
 /// sequence continues after the act's nested spawn and its reactions.
 pub(super) fn advance_at_round_end(
     game: &mut Game,
-    contributions: [u8; 3],
+    allocation: super::group_payment::Allocation,
 ) -> Result<ScenarioStep, RuleError> {
     let Some(Frame::Scenario(ScenarioDecision::RoundEndWhen)) = game.frames.pop() else {
         return Err(RuleError("The round-end Objective is not pending.".into()));
@@ -1150,49 +1150,8 @@ pub(super) fn advance_at_round_end(
             .push(Frame::Scenario(ScenarioDecision::RoundEndComplete));
     }
     super::ethereal_form::queue_expiry(game);
-    pay_act_clues(game, 2, contributions, true)?;
+    super::group_payment::spend(game, allocation, true)?;
     advance_act_two(game).map(ScenarioStep::EnemyEntered)
-}
-
-/// Validate the entire allocation before charging anyone. The player chooses
-/// the allocation in one group clue payment; this function never chooses who pays.
-pub(super) fn pay_act_clues(
-    game: &mut Game,
-    act: u8,
-    contributions: [u8; 3],
-    at_round_end: bool,
-) -> Result<(), RuleError> {
-    let Some(required) = act_requirement(game, act, at_round_end) else {
-        return Err(RuleError(
-            "This act cannot be advanced at this timing point.".into(),
-        ));
-    };
-    if game.act != act
-        || contributions
-            .iter()
-            .map(|&clues| u16::from(clues))
-            .sum::<u16>()
-            != u16::from(required)
-    {
-        return Err(RuleError(
-            "The current act requires the exact group clue payment.".into(),
-        ));
-    }
-    for (index, &clues) in contributions.iter().enumerate() {
-        let player = &game.players[index];
-        if clues > player.clues
-            || (clues > 0
-                && (player.defeated || player.resigned || (act == 2 && player.location != HALLWAY)))
-        {
-            return Err(RuleError(
-                "That investigator cannot contribute those clues.".into(),
-            ));
-        }
-    }
-    for (player, clues) in game.players.iter_mut().zip(contributions) {
-        player.clues -= clues;
-    }
-    Ok(())
 }
 
 /// Original Trapped reverse. Discard is not defeat: no victory or after-defeat

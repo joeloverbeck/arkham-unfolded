@@ -22,13 +22,16 @@ mod encounter_search;
 mod group_payment;
 pub use draws::DrawFixture;
 pub use encounter_search::SearchFixture;
-pub use group_payment::{Contributor, GROUP_CLUE_CONTRIBUTIONS, GroupCluePayment, Ineligibility};
+pub use group_payment::{
+    Allocation, Contributor, GROUP_CLUE_CONTRIBUTIONS, GroupCluePayment, Ineligibility,
+};
 pub use player_cards::AssetFixture;
 pub mod continuity;
 pub mod inspection;
 mod live;
 mod moments;
 mod option_labels;
+pub use option_labels::counted;
 mod peter;
 mod phases;
 pub use moments::{DeckStep, DrawBatch, DrawCue, DrawSource, PresentationMoment};

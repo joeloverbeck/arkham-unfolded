@@ -124,7 +124,7 @@ pub(super) fn parenthesized(details: &[String]) -> String {
 }
 
 /// A count that agrees in number with its noun: "1 resource", "2 resources".
-pub(super) fn counted(count: impl Into<usize>, singular: &str, plural: &str) -> String {
+pub fn counted(count: impl Into<usize>, singular: &str, plural: &str) -> String {
     let count = count.into();
     format!("{count} {}", if count == 1 { singular } else { plural })
 }

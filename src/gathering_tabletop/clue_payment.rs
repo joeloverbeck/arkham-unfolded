@@ -3,11 +3,14 @@
 //! spends nothing; **Spend N clues and advance** commits the session's choice for
 //! the complete allocation once, through the ordinary save-before-install path.
 use super::*;
-use crate::gathering::{GROUP_CLUE_CONTRIBUTIONS, GroupCluePayment};
+use crate::gathering::{Allocation, GroupCluePayment, counted};
 use bevy::input::{ButtonState, keyboard::KeyboardInput};
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::ui::InteractionDisabled;
 use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier, RequestClose};
+
+/// The fill of a control that cannot be used now.
+const DISABLED: Color = Color::srgb(0.10, 0.12, 0.13);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Input {
@@ -24,19 +27,23 @@ pub(super) enum Input {
 /// Whether a listed choice opens this chooser: the session's payment choice
 /// with its allocation still to be named.
 pub(super) fn opens(id: &str) -> bool {
-    id.strip_suffix(GROUP_CLUE_CONTRIBUTIONS) == Some("act:pay:")
+    GroupCluePayment::is_listed(id)
 }
 
 pub(super) struct Chooser {
     revision: u64,
     payment: GroupCluePayment,
-    allocation: [u8; 3],
+    allocation: Allocation,
     focus: Option<Input>,
 }
 
 impl Chooser {
-    fn paid(&self) -> u8 {
-        self.allocation.iter().sum()
+    fn paid(&self) -> u16 {
+        self.allocation.total()
+    }
+
+    fn complete(&self) -> bool {
+        self.paid() == u16::from(self.payment.required)
     }
 
     fn limit(&self, who: Investigator) -> u8 {
@@ -44,11 +51,11 @@ impl Chooser {
     }
 
     fn can_add(&self, who: Investigator) -> bool {
-        self.allocation[who.index()] < self.limit(who) && self.paid() < self.payment.required
+        self.allocation[who] < self.limit(who) && self.paid() < u16::from(self.payment.required)
     }
 
     fn can_remove(&self, who: Investigator) -> bool {
-        self.allocation[who.index()] > 0
+        self.allocation[who] > 0
     }
 
     /// The session's choice for this allocation, once it is complete and legal.
@@ -107,8 +114,8 @@ pub(super) fn dispatch(table: &mut Table, action: Action) -> Option<Action> {
         return None;
     }
     match input {
-        Input::Add(who) if chooser.can_add(who) => chooser.allocation[who.index()] += 1,
-        Input::Remove(who) if chooser.can_remove(who) => chooser.allocation[who.index()] -= 1,
+        Input::Add(who) if chooser.can_add(who) => chooser.allocation[who] += 1,
+        Input::Remove(who) if chooser.can_remove(who) => chooser.allocation[who] -= 1,
         Input::Add(_) | Input::Remove(_) => {}
         // Activating a row (a click, or Enter before the keyboard's payment)
         // only remembers it for the next rebuild; it changes nothing shown.
@@ -305,7 +312,7 @@ pub(super) fn render(
             panel.spawn(art.text(
                 format!("Paid {} / {} clues", chooser.paid(), payment.required),
                 18.,
-                if chooser.paid() == payment.required { GOLD } else { PAPER },
+                if chooser.complete() { GOLD } else { PAPER },
             ));
             panel.spawn(art.text(
                 "Tab: next investigator · Arrows: change · Enter: spend · Esc: cancel. Nothing is spent until you confirm.",
@@ -346,7 +353,7 @@ pub(super) fn render(
                         None => {
                             buttons.commands().entity(spend).insert((
                                 InteractionDisabled,
-                                BackgroundColor(Color::srgb(0.10, 0.12, 0.13)),
+                                BackgroundColor(DISABLED),
                             ));
                         }
                     }
@@ -368,15 +375,10 @@ fn row(
     let contributor = &chooser.payment.contributors[who.index()];
     let location = play::location_name(&contributor.location);
     let held = format!(
-        "{} {} held · {location}",
-        contributor.clues,
-        if contributor.clues == 1 {
-            "clue"
-        } else {
-            "clues"
-        }
+        "{} held · {location}",
+        counted(contributor.clues, "clue", "clues")
     );
-    let paid = chooser.allocation[who.index()];
+    let paid = chooser.allocation[who];
     panel
         .spawn(Node {
             column_gap: px(8),
@@ -424,10 +426,10 @@ fn row(
                     .insert_children(0, &[preview]);
             }
             if contributor.ineligible.is_some() {
-                line.commands().entity(entity).remove::<TabIndex>().insert((
-                    InteractionDisabled,
-                    BackgroundColor(Color::srgb(0.10, 0.12, 0.13)),
-                ));
+                line.commands()
+                    .entity(entity)
+                    .remove::<TabIndex>()
+                    .insert((InteractionDisabled, BackgroundColor(DISABLED)));
                 return;
             }
             if focus == Some(Input::Row(who)) {
@@ -464,10 +466,9 @@ fn row(
                     },
                 ));
                 if !enabled {
-                    line.commands().entity(step).insert((
-                        InteractionDisabled,
-                        BackgroundColor(Color::srgb(0.10, 0.12, 0.13)),
-                    ));
+                    line.commands()
+                        .entity(step)
+                        .insert((InteractionDisabled, BackgroundColor(DISABLED)));
                 }
             }
         });

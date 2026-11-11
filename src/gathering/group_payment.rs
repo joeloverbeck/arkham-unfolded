@@ -5,17 +5,69 @@
 //! validates the whole allocation once: eligibility, holdings and the exact
 //! requirement. Nothing is spent before that one choice.
 
-use super::runtime::{Frame, Game, Phase};
+use super::runtime::{Frame, Game, Phase, PlayerState};
 use super::scenario::{self, HALLWAY, ScenarioDecision};
 use super::{Investigator, content};
-use crate::Choice;
+use crate::{Choice, RuleError};
 use serde::{Deserialize, Serialize};
+use std::ops::{Index, IndexMut};
 
 /// Stands for the allocation in the one listed group clue payment choice: one
 /// whole number per investigator, in the order Tony, Patrice, Jacqueline,
 /// separated by colons (`act:pay:2:4:0`).
 pub const GROUP_CLUE_CONTRIBUTIONS: &str = "<contributions>";
 const PREFIX: &str = "act:pay:";
+
+/// The clues each investigator spends in one group clue payment, in player-card
+/// order. It owns the choice identity's numbers: the identity is built, read and
+/// summed here, and the observation shows it as one number per investigator.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Allocation([u8; 3]);
+
+impl From<[u8; 3]> for Allocation {
+    fn from(clues: [u8; 3]) -> Self {
+        Self(clues)
+    }
+}
+
+impl Index<Investigator> for Allocation {
+    type Output = u8;
+
+    fn index(&self, who: Investigator) -> &u8 {
+        &self.0[who.index()]
+    }
+}
+
+impl IndexMut<Investigator> for Allocation {
+    fn index_mut(&mut self, who: Investigator) -> &mut u8 {
+        &mut self.0[who.index()]
+    }
+}
+
+impl Allocation {
+    /// Every clue the allocation spends.
+    pub fn total(self) -> u16 {
+        self.0.iter().map(|&clues| u16::from(clues)).sum()
+    }
+
+    /// The choice identity that commits this allocation.
+    fn id(self) -> String {
+        let [tony, patrice, jacqueline] = self.0;
+        format!("{PREFIX}{tony}:{patrice}:{jacqueline}")
+    }
+
+    /// The allocation a choice identity names, in its one canonical spelling.
+    pub(super) fn parse(id: &str) -> Option<Self> {
+        let mut parts = id.strip_prefix(PREFIX)?.split(':');
+        let mut clues = [0; 3];
+        for paid in &mut clues {
+            *paid = parts.next()?.parse().ok()?;
+        }
+        let allocation = Self(clues);
+        (parts.next().is_none() && allocation.id() == id).then_some(allocation)
+    }
+}
 
 /// Why an investigator cannot contribute clues to this payment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +80,21 @@ pub enum Ineligibility {
 }
 
 impl Ineligibility {
+    /// Why this investigator cannot contribute to the current act's payment:
+    /// defeated or resigned investigators never can, and The Barrier's Objective
+    /// names the investigators in the Hallway.
+    fn of(player: &PlayerState, act: u8) -> Option<Self> {
+        if player.defeated {
+            Some(Self::Defeated)
+        } else if player.resigned {
+            Some(Self::Resigned)
+        } else if act == 2 && player.location != HALLWAY {
+            Some(Self::OutsideHallway)
+        } else {
+            None
+        }
+    }
+
     pub fn reason(self) -> &'static str {
         match self {
             Self::Defeated => "Defeated",
@@ -74,34 +141,39 @@ pub struct GroupCluePayment {
     pub contributors: Vec<Contributor>,
     /// The only complete allocation, when only one exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub forced: Option<[u8; 3]>,
+    pub forced: Option<Allocation>,
 }
 
 impl GroupCluePayment {
-    /// The choice identity that pays this allocation, when it is complete and legal.
-    pub fn choice_for(&self, contributions: [u8; 3]) -> Option<String> {
-        self.accepts(contributions).then(|| identity(contributions))
+    /// Whether a choice identity is the listed payment, whose allocation is
+    /// still to be named.
+    pub fn is_listed(id: &str) -> bool {
+        id.strip_prefix(PREFIX) == Some(GROUP_CLUE_CONTRIBUTIONS)
     }
 
-    fn accepts(&self, contributions: [u8; 3]) -> bool {
-        self.contributors.len() == contributions.len()
+    /// The choice identity that pays this allocation, when it is complete and legal.
+    pub fn choice_for(&self, allocation: impl Into<Allocation>) -> Option<String> {
+        let allocation = allocation.into();
+        self.accepts(allocation).then(|| allocation.id())
+    }
+
+    /// Complete and legal: each investigator within their limit, and exactly the
+    /// requirement in all.
+    fn accepts(&self, allocation: Allocation) -> bool {
+        self.contributors.len() == allocation.0.len()
             && self
                 .contributors
                 .iter()
-                .zip(contributions)
+                .zip(allocation.0)
                 .all(|(contributor, clues)| clues <= contributor.limit(self.required))
-            && contributions
-                .iter()
-                .map(|&clues| u16::from(clues))
-                .sum::<u16>()
-                == u16::from(self.required)
+            && allocation.total() == u16::from(self.required)
     }
 
-    fn label(&self, contributions: [u8; 3]) -> String {
+    fn label(&self, allocation: Allocation) -> String {
         let paid: Vec<_> = self
             .contributors
             .iter()
-            .zip(contributions)
+            .zip(allocation.0)
             .filter(|(_, clues)| *clues > 0)
             .map(|(contributor, clues)| format!("{} {clues}", contributor.investigator.name()))
             .collect();
@@ -114,29 +186,8 @@ impl GroupCluePayment {
     }
 }
 
-fn identity(contributions: [u8; 3]) -> String {
-    format!(
-        "{PREFIX}{}:{}:{}",
-        contributions[0], contributions[1], contributions[2]
-    )
-}
-
-/// The allocation a group clue payment identity names, in its one canonical spelling.
-pub(super) fn contributions(id: &str) -> Option<[u8; 3]> {
-    let mut parts = id.strip_prefix(PREFIX)?.split(':');
-    let mut contributions = [0; 3];
-    for clues in &mut contributions {
-        *clues = parts.next()?.parse().ok()?;
-    }
-    (parts.next().is_none() && identity(contributions) == id).then_some(contributions)
-}
-
 pub(super) fn listed_id() -> String {
     format!("{PREFIX}{GROUP_CLUE_CONTRIBUTIONS}")
-}
-
-pub(super) fn is_listed(id: &str) -> bool {
-    id.strip_prefix(PREFIX) == Some(GROUP_CLUE_CONTRIBUTIONS)
 }
 
 /// The payment when the investigators can afford it at this timing point.
@@ -150,15 +201,7 @@ fn payable(game: &Game, at_round_end: bool) -> Option<GroupCluePayment> {
             investigator: player.investigator,
             clues: player.clues,
             location: player.location.clone(),
-            ineligible: if player.defeated {
-                Some(Ineligibility::Defeated)
-            } else if player.resigned {
-                Some(Ineligibility::Resigned)
-            } else if act == 2 && player.location != HALLWAY {
-                Some(Ineligibility::OutsideHallway)
-            } else {
-                None
-            },
+            ineligible: Ineligibility::of(player, act),
         })
         .collect();
     let limits: Vec<_> = contributors
@@ -174,7 +217,7 @@ fn payable(game: &Game, at_round_end: bool) -> Option<GroupCluePayment> {
         .flat_map(|first| (0..=limits[1]).map(move |second| (first, second)))
         .filter_map(|(first, second)| {
             let third = required.checked_sub(first)?.checked_sub(second)?;
-            (third <= limits[2]).then_some([first, second, third])
+            (third <= limits[2]).then_some(Allocation([first, second, third]))
         });
     let only = complete.next();
     let forced = only.filter(|_| complete.next().is_none());
@@ -244,34 +287,53 @@ fn at_round_end(game: &Game) -> bool {
 pub(super) fn offered(game: &Game, choices: &[Choice]) -> Option<GroupCluePayment> {
     choices
         .iter()
-        .any(|choice| is_listed(&choice.id))
+        .any(|choice| GroupCluePayment::is_listed(&choice.id))
         .then(|| payable(game, at_round_end(game)))
         .flatten()
 }
 
 /// A complete, legal allocation of the listed payment, as the choice it commits.
 pub(super) fn direct_choice(game: &Game, id: &str) -> Option<Choice> {
-    let contributions = contributions(id)?;
+    let allocation = Allocation::parse(id)?;
     let payment = offered(game, &game.choices())?;
-    payment.accepts(contributions).then(|| Choice {
+    payment.accepts(allocation).then(|| Choice {
         id: id.into(),
-        label: payment.label(contributions),
+        label: payment.label(allocation),
         cancel_faces: vec![],
     })
 }
 
 /// Spend the validated allocation and advance the act. At round end this is The
 /// Barrier's Objective; otherwise Trapped's payment inside the open window.
-pub(super) fn pay(game: &mut Game, id: &str) -> Result<scenario::ScenarioStep, crate::RuleError> {
-    let contributions =
-        contributions(id).ok_or_else(|| crate::RuleError("Invalid group clue payment.".into()))?;
+pub(super) fn pay(game: &mut Game, id: &str) -> Result<scenario::ScenarioStep, RuleError> {
+    let allocation =
+        Allocation::parse(id).ok_or_else(|| RuleError("Invalid group clue payment.".into()))?;
     if at_round_end(game) {
-        scenario::advance_at_round_end(game, contributions)
+        scenario::advance_at_round_end(game, allocation)
     } else {
-        scenario::pay_act_clues(game, 1, contributions, false)?;
+        spend(game, allocation, false)?;
         scenario::advance_act_one(game);
         Ok(scenario::ScenarioStep::Continue)
     }
+}
+
+/// Validate the entire allocation against the payment due at this timing point
+/// before charging anyone. The player chooses the allocation; this never chooses
+/// who pays.
+pub(super) fn spend(
+    game: &mut Game,
+    allocation: Allocation,
+    at_round_end: bool,
+) -> Result<(), RuleError> {
+    if !payable(game, at_round_end).is_some_and(|payment| payment.accepts(allocation)) {
+        return Err(RuleError(
+            "The current act requires the exact group clue payment.".into(),
+        ));
+    }
+    for (player, clues) in game.players.iter_mut().zip(allocation.0) {
+        player.clues -= clues;
+    }
+    Ok(())
 }
 
 /// Seam 1: the rules session. Positions are reached through genuine decisions;
@@ -280,7 +342,7 @@ pub(super) fn pay(game: &mut Game, id: &str) -> Result<scenario::ScenarioStep, c
 /// (01109).
 #[cfg(test)]
 mod tests {
-    use super::{GROUP_CLUE_CONTRIBUTIONS, Ineligibility};
+    use super::{Allocation, GROUP_CLUE_CONTRIBUTIONS, Ineligibility};
     use crate::gathering::scenario::{CELLAR, EnemyState, HALLWAY, STUDY};
     use crate::gathering::{CardView, HostileFixture, Investigator, Session};
 
@@ -403,7 +465,7 @@ mod tests {
         hold(&mut session, [4, 2, 0]);
         assert_eq!(
             session.observe().group_clue_payment.unwrap().forced,
-            Some([4, 2, 0])
+            Some(Allocation::from([4, 2, 0]))
         );
 
         hold(&mut session, [5, 1, 3]);
@@ -413,10 +475,45 @@ mod tests {
             payment.contributors[Investigator::Jacqueline.index()].ineligible,
             Some(Ineligibility::Resigned)
         );
-        assert_eq!(payment.forced, Some([5, 1, 0]));
+        assert_eq!(payment.forced, Some(Allocation::from([5, 1, 0])));
         let revision = session.observe().revision;
         assert!(session.choose(revision, "act:pay:4:0:2").is_err());
         assert_eq!(clues(&session), [5, 1, 3]);
+    }
+
+    #[test]
+    fn a_defeated_investigator_contributes_nothing_and_the_observation_names_the_split() {
+        let mut session = tonys_turn();
+        hold(&mut session, [4, 3, 2]);
+        session.runtime.as_mut().unwrap().players[Investigator::Patrice.index()].defeated = true;
+        let view = session.observe();
+        let payment = view.group_clue_payment.as_ref().unwrap();
+        assert_eq!(
+            payment.contributors[Investigator::Patrice.index()].ineligible,
+            Some(Ineligibility::Defeated)
+        );
+        // Tony's 4 and Jacqueline's 2 are the only way to spend 6.
+        let observed = serde_json::to_value(&view).unwrap();
+        assert_eq!(
+            observed["group_clue_payment"]["forced"],
+            serde_json::json!([4, 0, 2]),
+            "The observation names the split as one number per investigator"
+        );
+        assert_eq!(
+            payment.choice_for([4, 0, 2]).as_deref(),
+            Some("act:pay:4:0:2")
+        );
+        assert_eq!(payment.choice_for([3, 1, 2]), None, "Patrice is defeated");
+        let revision = view.revision;
+        assert!(session.choose(revision, "act:pay:3:1:2").is_err());
+        assert_eq!(
+            clues(&session),
+            [4, 3, 2],
+            "A refused allocation spends nothing"
+        );
+        choose(&mut session, "act:pay:4:0:2");
+        assert_eq!(session.observe().play.unwrap().act, 2);
+        assert_eq!(clues(&session), [0, 3, 0]);
     }
 
     #[test]
@@ -586,7 +683,7 @@ mod tests {
             (payment.act_title.as_str(), payment.required),
             ("The Barrier", 9)
         );
-        assert_eq!(payment.forced, Some([3, 3, 3]));
+        assert_eq!(payment.forced, Some(Allocation::from([3, 3, 3])));
 
         let mut declined = session.clone();
         choose(&mut declined, "round-end:decline-act");
@@ -603,7 +700,7 @@ mod tests {
             payment.contributors[Investigator::Jacqueline.index()].ineligible,
             Some(Ineligibility::OutsideHallway)
         );
-        assert_eq!(payment.forced, Some([6, 3, 0]));
+        assert_eq!(payment.forced, Some(Allocation::from([6, 3, 0])));
         let revision = split.observe().revision;
         assert!(split.choose(revision, "act:pay:3:3:3").is_err());
         choose(&mut split, "act:pay:6:3:0");

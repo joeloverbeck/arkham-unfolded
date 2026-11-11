@@ -1507,7 +1507,7 @@ impl Game {
                 "That choice is not offered by the running effect.".into(),
             ));
         }
-        if super::group_payment::contributions(id).is_some() {
+        if super::group_payment::Allocation::parse(id).is_some() {
             let step = super::group_payment::pay(self, id)?;
             self.scenario_step(step)?;
             return self.settle();
