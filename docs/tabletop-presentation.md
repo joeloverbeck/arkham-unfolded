@@ -546,8 +546,10 @@ focus at 1280×800), so the next group's heading and counts start below them.
 Both sideboards share this layout. The full room fits three location groups in
 four rows, two groups in five rows or one in six. A fuller board shares out
 what depth is left, down to none, so every card stays on the board, as before,
-for up to five groups in six rows; a later heading may then meet earlier names,
-a limit the board already had. The columns spread as wide as the board allows,
+for up to five groups in six rows. On such a board a later heading may still
+meet earlier names and the last group's names may cross the board's near edge,
+a limit the board already had that awaits the owner's decision. The columns
+spread as wide as the board allows,
 so neighbors' "Exhausted" lines stay apart at 1600×1000; at 1280×800 a column
 is narrower than that word and they still meet, which awaits the owner's
 decision.
