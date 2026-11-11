@@ -430,7 +430,7 @@ pub(super) fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) ->
     host_with_table(Table::new(Session::with_seed(19), path), raw_window_events)
 }
 
-fn host_with_table(table: Table, raw_window_events: bool) -> App {
+pub(super) fn host_with_table(table: Table, raw_window_events: bool) -> App {
     let mut app = crate::tabletop_layout::heading_checks::app();
     if raw_window_events {
         // Both are supplied by DefaultPlugins in native startup.

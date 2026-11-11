@@ -76,30 +76,8 @@ impl Recovery {
     }
 
     pub(crate) fn install(&self, app: &mut App, report: &CollectionReport) {
-        let server = app.world().resource::<AssetServer>();
-        let mut handles: Vec<UntypedHandle> = report
-            .verified_files()
-            .map(|(role, path)| {
-                if role == "font/symbols" {
-                    server.load::<Font>(path.to_owned()).untyped()
-                } else if role == crate::assets::CHAOS_POUCH_ROLE {
-                    server
-                        .load::<WorldAsset>(crate::tabletop_chaos_pouch::SCENE)
-                        .untyped()
-                } else {
-                    server.load::<Image>(path.to_owned()).untyped()
-                }
-            })
-            .collect();
-        if report
-            .verified_path(crate::assets::CHAOS_POUCH_ROLE)
-            .is_some()
-        {
-            handles.extend(crate::tabletop_chaos_pouch::material_and_textures(server));
-        }
-        app.insert_resource(HealthAssets::new(handles.iter().map(UntypedHandle::id)))
-            .insert_resource(RequiredArtwork { _handles: handles })
-            .insert_resource(self.clone());
+        require_artwork(app, report);
+        app.insert_resource(self.clone());
     }
 
     pub(crate) fn refuse(&self, reason: &str) {
@@ -169,6 +147,34 @@ impl Recovery {
         }
         crate::tabletop_health::exit_result(exit).map(|_| None)
     }
+}
+
+/// Load and retain every verified file as the admission set. Native startup adds
+/// its recovery through `Recovery::install`; the agent seat (#153) has no recovery.
+pub(crate) fn require_artwork(app: &mut App, report: &CollectionReport) {
+    let server = app.world().resource::<AssetServer>();
+    let mut handles: Vec<UntypedHandle> = report
+        .verified_files()
+        .map(|(role, path)| {
+            if role == "font/symbols" {
+                server.load::<Font>(path.to_owned()).untyped()
+            } else if role == crate::assets::CHAOS_POUCH_ROLE {
+                server
+                    .load::<WorldAsset>(crate::tabletop_chaos_pouch::SCENE)
+                    .untyped()
+            } else {
+                server.load::<Image>(path.to_owned()).untyped()
+            }
+        })
+        .collect();
+    if report
+        .verified_path(crate::assets::CHAOS_POUCH_ROLE)
+        .is_some()
+    {
+        handles.extend(crate::tabletop_chaos_pouch::material_and_textures(server));
+    }
+    app.insert_resource(HealthAssets::new(handles.iter().map(UntypedHandle::id)))
+        .insert_resource(RequiredArtwork { _handles: handles });
 }
 
 fn retry_arguments(

@@ -473,6 +473,12 @@ pub(super) fn button(
     action: Action,
 ) -> Entity {
     let entity = screen::button(parent, art.symbol_font(), label);
+    if let Some(id) = action.choice() {
+        parent
+            .commands()
+            .entity(entity)
+            .insert(ChoiceControl(id.to_owned()));
+    }
     parent.commands().entity(entity).observe(
         move |_: On<Activate>, mut actions: ResMut<Actions>| actions.0.push(action.clone()),
     );

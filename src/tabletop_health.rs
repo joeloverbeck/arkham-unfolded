@@ -25,6 +25,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod seat;
+pub(crate) use seat::{SeatAdmissionPlugin, admission_blocker, pipelines_ready};
+
 const WARMUP: Duration = Duration::from_secs(2);
 const SAMPLE: Duration = Duration::from_secs(1);
 const STARTUP_LIMIT: Duration = Duration::from_secs(30);

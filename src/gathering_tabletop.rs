@@ -40,6 +40,7 @@ mod results;
 mod reveal;
 mod scene;
 mod sealed;
+mod seat;
 mod shuffle;
 mod slots;
 mod story;
@@ -86,6 +87,25 @@ enum Action {
     Resolve,
     Follow,
 }
+
+impl Action {
+    /// The choice this control offers, when it offers one.
+    fn choice(&self) -> Option<&str> {
+        match self {
+            Self::Choose(_, _, id)
+            | Self::ResultChoice(_, _, id)
+            | Self::EncounterChoice(_, _, id)
+            | Self::ContextChoice(_, _, _, id) => Some(id),
+            _ => None,
+        }
+    }
+}
+
+/// Names a choice-bearing control by its choice identity, set where the control is
+/// built. Activation still runs through the control's own handler; the agent seat
+/// (#153) reads this to find the control a player would press.
+#[derive(Component)]
+struct ChoiceControl(String);
 
 #[derive(Resource, Default)]
 struct Actions(Vec<Action>);
@@ -351,6 +371,7 @@ struct Options {
     quit_after_screenshot: bool,
     initial_view: Option<InitialView>,
     attempt: Option<String>,
+    agent_seat: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -364,20 +385,24 @@ impl Options {
         config: AssetConfig,
         mut args: impl Iterator<Item = String>,
     ) -> Result<Option<Self>, String> {
-        let mut save = PathBuf::from("local/gathering/setup.session.json");
+        let mut save = None;
         let mut root = None;
         let mut screenshot = None;
         let mut quit_after_screenshot = false;
         let mut initial_view = None;
         let mut attempt = None;
+        let mut agent_seat = false;
+        let mut direct = false;
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--experiment" => {
                     if args.next().as_deref() != Some("gathering") {
                         return Err("Use --experiment gathering.".into());
                     }
+                    direct = true;
                 }
-                "--save" => save = args.next().ok_or("--save needs a path")?.into(),
+                "--save" => save = Some(PathBuf::from(args.next().ok_or("--save needs a path")?)),
+                "--agent-seat" => agent_seat = true,
                 "--attempt" => {
                     let intent = args.next().ok_or("--attempt needs new or open")?;
                     if !matches!(intent.as_str(), "new" | "open") {
@@ -404,7 +429,7 @@ impl Options {
                 }
                 "--help" | "-h" => {
                     println!(
-                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline|resolve\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged. The resolve view requires an active resolution drawer."
+                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline|resolve\n--agent-seat\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged. The resolve view requires an active resolution drawer. The agent seat plays the same table with no window, exchanging JSON lines on standard input and output; it requires --experiment gathering and --save PATH, and excludes --attempt and --screenshot."
                     );
                     return Ok(None);
                 }
@@ -414,14 +439,30 @@ impl Options {
         if quit_after_screenshot && screenshot.is_none() {
             return Err("--quit-after-screenshot requires --screenshot PATH".into());
         }
+        if agent_seat {
+            if !direct {
+                return Err(
+                    "--agent-seat belongs to the direct launch: add --experiment gathering".into(),
+                );
+            }
+            if save.is_none() {
+                return Err("--agent-seat requires an explicit --save PATH".into());
+            }
+            if attempt.is_some() || screenshot.is_some() {
+                return Err(
+                    "--agent-seat cannot be combined with --attempt or --screenshot; use its capture request".into(),
+                );
+            }
+        }
         Ok(Some(Self {
-            save,
+            save: save.unwrap_or_else(|| PathBuf::from("local/gathering/setup.session.json")),
             art_root: config.launch_root(root)?,
             config,
             screenshot,
             quit_after_screenshot,
             initial_view,
             attempt,
+            agent_seat,
         }))
     }
 
@@ -479,6 +520,10 @@ impl Options {
 }
 
 pub fn run() -> Result<(), String> {
+    if agent_seat_requested() {
+        // Never the return to scenario selection below: it opens a window.
+        return seat::run(parse_launch());
+    }
     let selected = std::env::args().any(|arg| arg == "--attempt");
     let result = run_gathering();
     if selected && let Err(error) = &result {
@@ -504,9 +549,18 @@ struct Navigation {
     created: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// Whether this launch asks for the agent seat (#153). Such a launch must never take a
+/// path that opens a window, including when its options are refused.
+pub fn agent_seat_requested() -> bool {
+    std::env::args().any(|argument| argument == "--agent-seat")
+}
+
+fn parse_launch() -> Result<Option<Options>, String> {
+    Options::parse(AssetConfig::load_gathering()?, std::env::args().skip(1))
+}
+
 fn run_gathering() -> Result<(), String> {
-    let Some(options) = Options::parse(AssetConfig::load_gathering()?, std::env::args().skip(1))?
-    else {
+    let Some(options) = parse_launch()? else {
         return Ok(());
     };
     let (recovery, collection) = crate::tabletop_startup::Recovery::prepare(
@@ -1805,6 +1859,67 @@ fn advance_framework(
             .push(Action::Choose(table.epoch, view.revision, id.into()));
         redraw.request();
     }
+}
+
+/// What must finish before the table takes a decision; empty when it is settled.
+/// `Redraw` cannot answer this: the availability cue requests redraws for as long as
+/// a choice is offered. A dialog or menu waiting for the player is settled, even when
+/// it holds a presentation or motion in place behind it.
+fn unsettled(world: &mut World) -> Vec<&'static str> {
+    let moving = world
+        .query_filtered::<(), With<motion::CardMotion>>()
+        .iter(world)
+        .next()
+        .is_some();
+    let table = world.resource::<Table>();
+    let health = world.resource::<RenderHealth>();
+    let consequences = world.resource::<consequences::State>();
+    let held = table.motion_blocked();
+    let mut pending = Vec::new();
+    if !health.allows_play() || health.just_became_ready() {
+        pending.push("graphics admission");
+    }
+    if table.initial_save_pending {
+        pending.push("initial save");
+    }
+    if table.leaving {
+        pending.push("leaving the table");
+    }
+    if table.dirty || table.last_rendered.is_none() {
+        pending.push("scene rebuild");
+    }
+    if !world.resource::<Actions>().0.is_empty() {
+        pending.push("queued input");
+    }
+    if table.presentation.announcement().is_some() {
+        // Every action is dropped while a phase announcement shows, even behind a menu.
+        pending.push("announcement");
+    }
+    if table.presentation.active() && !table.presentation_blocked() {
+        pending.push("presentation");
+    }
+    if consequences.active() && !held {
+        pending.push("consequences");
+    }
+    if table.trays.active() && !held {
+        pending.push("trays");
+    }
+    if table.sealed.active() && !held {
+        pending.push("sealed tokens");
+    }
+    if moving && !held {
+        pending.push("card motion");
+    }
+    if world.resource::<Orbit>().is_moving() {
+        pending.push("camera motion");
+    }
+    if !table.presentation_blocked()
+        && !table.notice.starts_with("Decision not committed:")
+        && controls::automatic_choice(&table.view()).is_some()
+    {
+        pending.push("automatic choice");
+    }
+    pending
 }
 
 fn request_redraw(
