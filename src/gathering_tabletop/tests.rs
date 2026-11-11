@@ -178,11 +178,14 @@ fn registered_table_saves_its_initial_decision_only_after_admission() {
     assert_eq!(std::fs::read(save).unwrap(), before);
 }
 
+mod attachment_sideboard;
 mod cards;
+mod clue_payment;
 mod counters_and_enemies;
 mod doom;
 mod draws;
 mod encounter;
+mod location_markers;
 mod map_motion;
 mod navigation;
 mod pendulum;
@@ -227,14 +230,14 @@ fn empty_enemy_phase_advances_without_a_click_and_saves_its_history() {
         "turn:end",
         "turn:jacqueline",
         "turn:end",
-        "turn:patrice",
-        "turn:end",
     ] {
         session.choose(session.observe().revision, id).unwrap();
     }
+    // Patrice's is the only remaining turn, so the session began it itself.
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("empty-phase.json");
     let mut app = host_with_table(Table::new(session, path.clone()), false);
+    activate_choice(&mut app, "turn:end");
     settle_automatic_resolution(&mut app);
     let session = &app.world().resource::<Table>().session;
     let view = session.observe();
@@ -431,6 +434,26 @@ pub(super) fn host_with_pointer_input(path: PathBuf, raw_window_events: bool) ->
 }
 
 pub(super) fn host_with_table(table: Table, raw_window_events: bool) -> App {
+    let mut app = unstarted_host(table, raw_window_events);
+    app.update();
+    app
+}
+
+/// The host with Bevy's own dialog plugins and delayed-command clock, as
+/// `DefaultPlugins` registers them natively. Advance `Time` to run the modal
+/// plugin's delayed focus.
+pub(super) fn host_with_modal_plugins(table: Table) -> App {
+    let mut app = unstarted_host(table, false);
+    app.add_plugins((
+        bevy::ui_widgets::DialogPlugin,
+        bevy::ui_widgets::ModalDialogPlugin,
+    ))
+    .add_systems(PreUpdate, bevy::time::check_delayed_command_queues);
+    app.update();
+    app
+}
+
+fn unstarted_host(table: Table, raw_window_events: bool) -> App {
     let mut app = crate::tabletop_layout::heading_checks::app();
     if raw_window_events {
         // Both are supplied by DefaultPlugins in native startup.
@@ -445,7 +468,7 @@ pub(super) fn host_with_table(table: Table, raw_window_events: bool) -> App {
         .init_resource::<art::Art>()
         .insert_resource(table)
         .insert_resource(RenderHealth::ready_for_test())
-        .insert_resource(Orbit::new().with_home(enemy_board::focus(Area::Overview)));
+        .insert_resource(Orbit::new().with_home(sideboard::focus(Area::Overview)));
     app.world_mut().spawn((
         Window {
             resolution: (1600, 1000).into(),
@@ -455,8 +478,54 @@ pub(super) fn host_with_table(table: Table, raw_window_events: bool) -> App {
         bevy::window::PrimaryWindow,
     ));
     install(&mut app);
-    app.update();
+    // An assertion, not a substitute: every dialog any tabletop test opens is checked.
+    app.add_systems(Last, opened_dialogs_offer_focus);
     app
+}
+
+/// Bevy's modal plugin moves focus into each newly opened dialog with this exact
+/// navigation call. Natively, a dialog with nothing focusable only logs
+/// "No focusable entities in modal dialog"; here it fails the test that opened it.
+fn opened_dialogs_offer_focus(
+    opened: Query<Entity, Added<bevy::ui_widgets::ModalDialog>>,
+    navigation: bevy::input_focus::tab_navigation::TabNavigation,
+    labels: Query<&AccessibleLabel>,
+) {
+    for dialog in &opened {
+        assert!(
+            navigation
+                .initialize(dialog, bevy::input_focus::tab_navigation::NavAction::Last)
+                .is_ok(),
+            "Modal dialog {:?} opened with no focusable descendant",
+            labels
+                .get(dialog)
+                .map_or("without a label", |label| label.0.as_str())
+        );
+    }
+}
+
+/// Every open modal dialog, paired with whether its own tab group can take focus.
+pub(super) fn modal_dialogs_and_focus(app: &mut App) -> Vec<(Entity, bool)> {
+    use bevy::{
+        ecs::system::RunSystemOnce,
+        input_focus::tab_navigation::{NavAction, TabNavigation},
+        ui_widgets::ModalDialog,
+    };
+    app.world_mut()
+        .run_system_once(
+            |dialogs: Query<Entity, With<ModalDialog>>, navigation: TabNavigation| {
+                dialogs
+                    .iter()
+                    .map(|dialog| {
+                        (
+                            dialog,
+                            navigation.initialize(dialog, NavAction::Last).is_ok(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            },
+        )
+        .unwrap()
 }
 
 pub(super) fn assert_unclipped_button(app: &mut App, label: &str, size: Vec2, scale: f32) {
@@ -541,7 +610,7 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
     assert_eq!(
         app.world().resource::<Orbit>().pose(),
         Orbit::new()
-            .with_home(enemy_board::focus(Area::Overview))
+            .with_home(sideboard::focus(Area::Overview))
             .pose()
     );
     for (name, area) in [
@@ -559,7 +628,7 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
             .unwrap();
         assert_eq!(
             app.world().resource::<Orbit>().pose().target,
-            enemy_board::focus(area).0
+            sideboard::focus(area).0
         );
         assert!(!app.world().resource::<Orbit>().is_following());
     }
@@ -604,7 +673,7 @@ fn gathering_static_capture_waits_for_graphics_and_finishes_the_actual_write() {
     options.configure_diagnostics(&mut app).unwrap();
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
-        enemy_board::focus(Area::Scenario).0
+        sideboard::focus(Area::Scenario).0
     );
     for health in [
         RenderHealth::default(),
@@ -1864,6 +1933,24 @@ fn choice_source(app: &mut App, id: &str) -> Option<controls::Source> {
         })
 }
 
+/// Pay the offered group clue payment through its chooser: open it from the
+/// listed choice and spend its pre-filled split, which must be the only one.
+pub(super) fn pay_group_clues(app: &mut App) {
+    activate_choice(app, "act:pay:<contributions>");
+    let required = app
+        .world()
+        .resource::<Table>()
+        .session
+        .observe()
+        .group_clue_payment
+        .expect("An offered group clue payment")
+        .required;
+    let spend = choice_button(app, &format!("Spend {required} clues and advance"))
+        .expect("The chooser offers its spend button");
+    app.world_mut().trigger(Activate { entity: spend });
+    app.update();
+}
+
 fn activate_choice(app: &mut App, id: &str) {
     finish_presentation(app);
     let view = app.world().resource::<Table>().view();
@@ -1988,7 +2075,6 @@ pub(super) fn settle_automatic_resolution(app: &mut App) {
             .count();
         let table = world.resource::<Table>();
         let view = table.view();
-        let automatic = controls::automatic_choice(&view);
         let consequences = world.resource::<consequences::State>().active();
         let queued = world.resource::<Actions>().0.len();
         if table.presentation.encounter().current().is_some()
@@ -1996,8 +2082,7 @@ pub(super) fn settle_automatic_resolution(app: &mut App) {
                 && !table.trays.active()
                 && moving == 0
                 && !consequences
-                && queued == 0
-                && automatic.is_none())
+                && queued == 0)
         {
             world
                 .resource_mut::<PresentationTime>()
@@ -2005,7 +2090,7 @@ pub(super) fn settle_automatic_resolution(app: &mut App) {
             return;
         }
         remaining = format!(
-            "pending={:?}, presenting={}, moving={moving}, trays_active={}, consequences={consequences}, queued={queued}, automatic={automatic:?}, blocked={}, notice={:?}",
+            "pending={:?}, presenting={}, moving={moving}, trays_active={}, consequences={consequences}, queued={queued}, blocked={}, notice={:?}",
             view.play.as_ref().map(|play| &play.pending),
             table.is_presenting(),
             table.trays.active(),
@@ -2215,7 +2300,8 @@ fn native_automatic_reveal_is_presented_after_commit_and_cannot_accept_rules_inp
         if view.choices.iter().any(|choice| choice.id == "test:reveal") {
             break;
         }
-        let id = ["window:pass", "commit:confirm"]
+        // The witness poses its revelation step; the table never commits it.
+        let id = ["revelation:resolve", "window:pass", "commit:confirm"]
             .into_iter()
             .find(|id| view.choices.iter().any(|choice| choice.id == *id))
             .unwrap();
@@ -2350,20 +2436,7 @@ fn committed_physical_card_moves_from_hand_and_inspection_preserves_its_position
 fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects() {
     use crate::gathering::HostileFixture;
     use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier};
-    let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
-    let choose = |session: &mut Session, id: &str| {
-        let revision = session.observe().revision;
-        session.choose(revision, id).unwrap();
-    };
-    choose(&mut session, "round-end:advance-act");
-    for investigator in 0..3 {
-        for count in 0..3 {
-            if investigator == 2 && count == 2 {
-                break;
-            }
-            choose(&mut session, &format!("act:contribute:{investigator}"));
-        }
-    }
+    let session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("story-reading.json");
     let mut app = host(path.clone());
@@ -2376,7 +2449,7 @@ fn story_reading_reuses_party_barrier_and_continue_never_reapplies_saved_effects
             .story()
             .is_none()
     );
-    activate_choice(&mut app, "act:contribute:2");
+    pay_group_clues(&mut app);
     for _ in 0..30 {
         if app
             .world()

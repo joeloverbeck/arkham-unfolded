@@ -5,7 +5,16 @@ use crate::tabletop_gathering_map::GatheringMap;
 use std::{collections::VecDeque, f32::consts::PI};
 
 const SIZE: Vec2 = Vec2::new(1.35, 1.89);
+/// Starting values for Joel's native tuning of an investigator's move along a
+/// brass link: each hop lifts, carries and sets the standee down; between the
+/// hops it rests on the arrow's midpoint at base height.
+pub(super) const HOP: f32 = 0.5;
+pub(super) const REST: f32 = 0.35;
+/// An enemy moving by itself keeps one carry along the whole arrow.
 const TRAVEL: f32 = 0.85;
+const MARKER_RADIUS: f32 = 0.28;
+/// Space between a resting standee's base and an enemy marker beside it.
+const MARKER_GAP: f32 = 0.1;
 const FLIP: f32 = 0.55;
 const CLUES: f32 = 0.4;
 
@@ -42,8 +51,83 @@ struct Travel {
     piece: Surface,
     group: usize,
     from: String,
-    path: Vec<Vec3>,
+    carry: Carry,
     title: String,
+}
+
+/// How a piece crosses its displayed brass link.
+enum Carry {
+    /// An investigator, with the enemies engaged with it, hops onto the arrow,
+    /// rests there, then hops into its destination.
+    Hops {
+        first: Vec<Vec3>,
+        rest: Vec3,
+        second: Vec<Vec3>,
+    },
+    /// An enemy moving by itself.
+    Direct(Vec<Vec3>),
+}
+
+impl Carry {
+    fn duration(&self) -> f32 {
+        match self {
+            Self::Hops { .. } => 2. * HOP + REST,
+            Self::Direct(_) => TRAVEL,
+        }
+    }
+
+    fn start(&self) -> Vec3 {
+        match self {
+            Self::Hops { first: path, .. } | Self::Direct(path) => path[0],
+        }
+    }
+
+    fn pose(&self, elapsed: f32) -> (Vec3, Quat) {
+        match self {
+            Self::Direct(path) => hop_pose(path, elapsed / TRAVEL),
+            Self::Hops { first, .. } if elapsed < HOP => hop_pose(first, elapsed / HOP),
+            Self::Hops { rest, .. } if elapsed < HOP + REST => (*rest, Quat::IDENTITY),
+            Self::Hops { second, .. } => hop_pose(second, (elapsed - HOP - REST) / HOP),
+        }
+    }
+}
+
+/// The displayed route divided at its arc-length midpoint.
+struct Halves {
+    first: Vec<Vec3>,
+    middle: Vec3,
+    /// Horizontal unit direction across the arrow at its midpoint.
+    across: Vec3,
+    second: Vec<Vec3>,
+}
+
+impl Halves {
+    fn new(route: &[Vec3]) -> Self {
+        let mut remaining = route.windows(2).map(|p| p[0].distance(p[1])).sum::<f32>() / 2.;
+        let last = route.len() - 2;
+        for (index, pair) in route.windows(2).enumerate() {
+            let length = pair[0].distance(pair[1]);
+            if length > 0. && (remaining <= length || index == last) {
+                let along = (pair[1] - pair[0]) / length;
+                return Self {
+                    first: route[..=index].to_vec(),
+                    middle: pair[0].lerp(pair[1], remaining.min(length) / length),
+                    across: Vec3::new(-along.z, 0., along.x),
+                    second: route[index + 1..].to_vec(),
+                };
+            }
+            remaining -= length;
+        }
+        unreachable!("A displayed brass link has a positive length")
+    }
+
+    fn hops(&self, start: Vec3, rest: Vec3, end: Vec3) -> Carry {
+        Carry::Hops {
+            first: rounded_path(start, &self.first, rest),
+            rest,
+            second: rounded_path(rest, &self.second, end),
+        }
+    }
 }
 
 struct Reveal {
@@ -97,11 +181,13 @@ impl Playback {
             };
             let start = slot(&map, &old.location, player.investigator);
             let end = slot(&map, &player.location, player.investigator);
+            let halves = Halves::new(&route);
+            let rest = Vec3::new(halves.middle.x, start.y, halves.middle.z);
             result.travels.push(Travel {
                 piece: Surface::Investigator(player.investigator),
                 group: result.travels.len(),
                 from: old.location.clone(),
-                path: rounded_path(start, &route, end),
+                carry: halves.hops(start, rest, end),
                 title: player.investigator.name().into(),
             });
         }
@@ -120,27 +206,50 @@ impl Playback {
             let Some(route) = map.connection_route(&old.location, &enemy.location) else {
                 continue;
             };
-            let marker = |room: &str| map.position(room) + Vec3::new(0., 0.08, -1.35);
+            // The group marker stands beside any attachment marker shown with it.
+            let marker = |play, room: &str| {
+                sideboard::marker_at(play, &map, room, markers::MarkerKind::EnemyPresence)
+            };
+            let (start, end) = (marker(prior, &old.location), marker(after, &enemy.location));
             // Engaged enemies accompany their investigator; independent enemy
             // moves get separate beats so simultaneous agenda movement is legible.
-            let group = old
-                .engaged
-                .and_then(|who| {
-                    result
+            let companion = old.engaged.and_then(|who| {
+                result.travels.iter().find(|travel| {
+                    travel.piece == Surface::Investigator(who)
+                        && after.players[who.index()].location == enemy.location
+                })
+            });
+            let (group, carry) = match companion {
+                Some(investigator) => {
+                    // Rest beside the standee, alternating sides of the arrow.
+                    let beside = result
                         .travels
                         .iter()
-                        .find(|travel| {
-                            travel.piece == Surface::Investigator(who)
-                                && after.players[who.index()].location == enemy.location
-                        })
-                        .map(|travel| travel.group)
-                })
-                .unwrap_or(result.travels.len());
+                        .filter(|travel| travel.group == investigator.group)
+                        .count()
+                        - 1;
+                    let side = if beside % 2 == 0 { 1. } else { -1. };
+                    let reach = crate::tabletop_standees::radius_for(SIZE)
+                        + MARKER_RADIUS
+                        + MARKER_GAP
+                        + (beside / 2) as f32 * (2. * MARKER_RADIUS + MARKER_GAP);
+                    let halves = Halves::new(&route);
+                    let rest = halves.middle + halves.across * side * reach;
+                    (
+                        investigator.group,
+                        halves.hops(start, Vec3::new(rest.x, start.y, rest.z), end),
+                    )
+                }
+                None => (
+                    result.travels.len(),
+                    Carry::Direct(rounded_path(start, &route, end)),
+                ),
+            };
             result.travels.push(Travel {
                 piece: Surface::Enemy(enemy.card.id),
                 group,
                 from: old.location.clone(),
-                path: rounded_path(marker(&old.location), &route, marker(&enemy.location)),
+                carry,
                 title: enemy.card.title.clone(),
             });
         }
@@ -352,12 +461,19 @@ impl Playback {
             .filter(|travel| self.stage() == Some(Stage::Travel(travel.group)))
     }
 
+    /// One beat carries a whole group: an investigator's hops set its pace.
+    fn travel_duration(&self) -> f32 {
+        self.travelling()
+            .map(|travel| travel.carry.duration())
+            .fold(0., f32::max)
+    }
+
     pub(super) fn advance(&mut self, delta: f32, moving: bool) -> bool {
         if !self.rendered {
             return false;
         }
         let duration = match self.stage() {
-            Some(Stage::Travel(_)) => TRAVEL,
+            Some(Stage::Travel(_)) => self.travel_duration(),
             Some(Stage::Flip) => FLIP,
             Some(Stage::Clues) => CLUES,
             Some(Stage::Settle) => motion::CARD_DURATION,
@@ -393,20 +509,26 @@ impl Playback {
                         ScenePiece,
                         Name::new(format!("Moving {}", travel.title)),
                         travel.piece.clone(),
-                        Mesh3d(meshes.add(Cylinder::new(0.28, 0.12))),
+                        Mesh3d(meshes.add(Cylinder::new(MARKER_RADIUS, 0.12))),
                         MeshMaterial3d(materials.add(StandardMaterial {
                             base_color: Color::srgb(0.32, 0.45, 0.64),
                             metallic: 0.45,
                             ..default()
                         })),
-                        Transform::from_translation(travel.path[0]),
+                        Transform::from_translation(travel.carry.start()),
                         Pickable::IGNORE,
                     ))
                     .id();
-                let label = scene::label(commands, context, &travel.title, travel.path[0], false);
+                let label = scene::label(
+                    commands,
+                    context,
+                    &travel.title,
+                    travel.carry.start(),
+                    false,
+                );
                 commands.entity(label).insert((
                     motion::CardLabel(marker, Vec3::new(0., 0.2, 0.55)),
-                    enemy_board::PersistentLabel,
+                    sideboard::PersistentLabel,
                 ));
             }
         }
@@ -459,8 +581,9 @@ fn rounded_path(start: Vec3, route: &[Vec3], end: Vec3) -> Vec<Vec3> {
     rounded
 }
 
-fn travel_pose(path: &[Vec3], elapsed: f32) -> (Vec3, Quat) {
-    let t = (elapsed / TRAVEL).clamp(0., 1.);
+/// Lift, carry along the path and set down, over progress zero to one.
+fn hop_pose(path: &[Vec3], progress: f32) -> (Vec3, Quat) {
+    let t = progress.clamp(0., 1.);
     let carry = smooth((t - 0.18) / 0.64);
     let total: f32 = path.windows(2).map(|p| p[0].distance(p[1])).sum();
     let mut remaining = carry * total;
@@ -503,8 +626,10 @@ pub(super) fn animate(
     if let Some(beat) = playback.beats.front() {
         for (entity, card, mut pose) in &mut cards {
             if let Some(travel) = beat.cards.iter().find(|travel| travel.id == card.0) {
+                // The card lands as the beat's pieces arrive.
                 let t = smooth(
-                    (playback.elapsed - (TRAVEL - motion::CARD_DURATION)) / motion::CARD_DURATION,
+                    (playback.elapsed - (playback.travel_duration() - motion::CARD_DURATION))
+                        / motion::CARD_DURATION,
                 );
                 pose.translation = travel.start.lerp(travel.end, t);
                 commands.entity(entity).remove::<motion::CardMotion>();
@@ -516,7 +641,7 @@ pub(super) fn animate(
             .travelling()
             .find(|travel| travel.piece == *surface)
         {
-            let (at, rotation) = travel_pose(&travel.path, playback.elapsed);
+            let (at, rotation) = travel.carry.pose(playback.elapsed);
             transform.translation = at;
             transform.rotation = rotation;
         }

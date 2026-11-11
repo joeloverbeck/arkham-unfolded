@@ -2,8 +2,28 @@
 //! Source-derived expected values through the public Session decision seam.
 
 use arkham_unfolded_experiment::gathering::{
-    HostileFixture, Investigator, SearchFixture, Session, TonyEffectFixture,
+    HostileFixture, Investigator, PlayObservation, SearchFixture, Session, TonyEffectFixture,
 };
+
+/// Whether the session performed a step itself with this history label.
+fn performed(session: &Session, label: &str) -> bool {
+    session
+        .observe()
+        .history
+        .iter()
+        .any(|entry| entry.strip_prefix("Automatic: ") == Some(label))
+}
+
+/// The table state presented when Tony's harm resolved during the decision
+/// taken at `revision`; a lone attack of opportunity resolves by itself.
+fn attacked(session: &Session, revision: u64) -> PlayObservation {
+    session
+        .presentation_after(revision)
+        .iter()
+        .find(|moment| moment.caption.starts_with("Tony Morgan resolves"))
+        .map(|moment| moment.play.clone())
+        .expect("Tony's harm is presented")
+}
 
 fn choose(session: &mut Session, id: &str) {
     let observation = session.observe();
@@ -93,7 +113,10 @@ fn hornet_rewards_have_then_priority_before_optional_bounties() {
         assert_eq!(spawned.encounter_deck_count, 25);
         let bounties = health.min(3);
         choose(&mut session, &format!("bounty:{enemy}:{bounties}"));
-        choose(&mut session, "search:finish");
+        assert!(performed(
+            &session,
+            "Shuffle the encounter deck and finish Kicking the Hornet's Nest"
+        ));
         let finished = session.observe().play.unwrap();
         assert_eq!(finished.players[0].resources, 4 + health);
         assert_eq!(finished.players[0].clues, 1);
@@ -145,11 +168,11 @@ fn hornet_no_match_spends_the_action_and_gives_no_dependent_reward() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Search(SearchFixture::HornetNoMatch));
     let event = play_hornet(&mut session);
-    let pending = session.observe();
-    assert_eq!(pending.choices.len(), 1);
-    assert_eq!(pending.choices[0].id, "search:no-match");
-    assert_eq!(pending.play.unwrap().searched_encounter.len(), 9);
-    choose(&mut session, "search:no-match");
+    // Without an eligible enemy, the search's one outcome resolves by itself.
+    assert!(performed(
+        &session,
+        "No eligible enemy: shuffle the encounter deck; gain no clue or resources"
+    ));
     let finished = session.observe().play.unwrap();
     assert!(finished.scenario.enemies.is_empty());
     assert_eq!(finished.players[0].resources, 4);
@@ -172,12 +195,12 @@ fn hornet_pays_before_opportunity_and_searches_only_after_the_attack_finishes() 
         Session::with_hostile_fixture(HostileFixture::Search(SearchFixture::HornetOpportunity));
     let before = session.observe().play.unwrap();
     let minion = before.scenario.enemies[0].card.id;
+    let playing = session.observe().revision;
     let event = play_hornet(&mut session);
-    let paid = session.observe().play.unwrap();
+    let paid = attacked(&session, playing);
     assert_eq!(paid.actions_remaining[0], 2);
     assert!(paid.searched_encounter.is_empty());
     assert!(!paid.players[0].hand.iter().any(|card| card.id == event));
-    choose(&mut session, &format!("opportunity:{minion}"));
     let searched = session.observe().play.unwrap();
     assert_eq!(searched.players[0].damage, before.players[0].damage + 1);
     assert_eq!(searched.players[0].horror, before.players[0].horror + 1);
@@ -231,14 +254,21 @@ fn on_the_hunt_replaces_only_tonys_mythos_draw_and_resumes_the_next_investigator
         .id;
     choose(&mut session, &format!("search:enemy:{icy}"));
     choose(&mut session, &format!("bounty:{icy}:0"));
-    choose(&mut session, "search:finish");
-    let finished = session.observe();
-    assert_eq!(finished.decision_owner, Some(Investigator::Patrice));
-    let play = finished.play.unwrap();
+    // The search finishes by itself, then Patrice's draw follows Tony's
+    // replaced one.
+    let history = session.observe().history;
+    let finish = history
+        .iter()
+        .position(|entry| entry == "Automatic: Shuffle the encounter deck and finish On the Hunt")
+        .unwrap();
+    let patrice = history
+        .iter()
+        .position(|entry| entry == "Automatic: Patrice Hathaway draws an encounter card")
+        .unwrap();
+    assert!(finish < patrice);
+    let play = session.observe().play.unwrap();
     assert_eq!(play.players[0].resources, 3);
     assert_eq!(play.players[0].clues, 0);
-    assert_eq!(play.encounter_deck_count, 25);
-    assert!(play.pending_revelation.is_none());
     assert!(play.searched_encounter.is_empty());
     assert!(play.players[0].discard.iter().any(|card| card.id == event));
     let enemy = play
@@ -249,12 +279,6 @@ fn on_the_hunt_replaces_only_tonys_mythos_draw_and_resumes_the_next_investigator
         .unwrap();
     assert_eq!(enemy.location, "01111");
     assert_eq!(enemy.engaged, Some(Investigator::Tony));
-    choose(&mut session, "mythos:draw");
-    let next_draw = session.observe().play.unwrap();
-    assert_eq!(next_draw.encounter_deck_count, 24);
-    if let Some(revelation) = next_draw.pending_revelation {
-        assert_eq!(revelation.drawn_by, Investigator::Patrice);
-    }
     session.validate().unwrap();
 }
 
@@ -263,7 +287,11 @@ fn on_the_hunt_no_match_draws_an_encounter_and_retains_the_event_until_it_finish
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Search(SearchFixture::HuntNoMatch));
     let event = play_hunt(&mut session);
-    choose(&mut session, "search:no-match");
+    // With no enemy to find, the fallback draw is the search's one outcome.
+    assert!(performed(
+        &session,
+        "No enemy: shuffle, then draw an encounter card"
+    ));
     let drawn = session.observe().play.unwrap();
     assert_eq!(drawn.encounter_deck_count, 25);
     assert_eq!(
@@ -275,10 +303,7 @@ fn on_the_hunt_no_match_draws_an_encounter_and_retains_the_event_until_it_finish
     assert!(!drawn.players[0].discard.iter().any(|card| card.id == event));
     for _ in 0..20 {
         let choices = session.observe().choices;
-        if choices
-            .iter()
-            .any(|choice| choice.id == "search:finish-event")
-        {
+        if performed(&session, "Finish resolving On the Hunt") {
             break;
         }
         let id = [
@@ -300,14 +325,11 @@ fn on_the_hunt_no_match_draws_an_encounter_and_retains_the_event_until_it_finish
         .unwrap_or_else(|| panic!("Unhandled fallback continuation {choices:?}"));
         choose(&mut session, &id);
     }
-    choose(&mut session, "search:finish-event");
-    let finished = session.observe();
-    assert_eq!(finished.decision_owner, Some(Investigator::Patrice));
-    let play = finished.play.unwrap();
+    // The event finishes by itself once its fallback encounter resolves.
+    let play = session.observe().play.unwrap();
     assert!(play.players[0].discard.iter().any(|card| card.id == event));
     assert_eq!(play.players[0].clues, 0);
     assert_eq!(play.actions_remaining[0], 3);
-    assert!(play.pending_revelation.is_none());
     session.validate().unwrap();
 }
 
@@ -330,7 +352,11 @@ fn declining_on_the_hunt_draws_the_original_card_with_its_normal_spawn_rule() {
     assert_eq!(finished.players[0].resources, 4);
     assert!(finished.players[0].hand.iter().any(|card| card.id == event));
     assert!(
-        finished.scenario.enemies.is_empty(),
+        !finished
+            .scenario
+            .enemies
+            .iter()
+            .any(|enemy| enemy.card.code == "01118"),
         "Flesh-Eater's normal Attic spawn cannot occur while only Study exists"
     );
     assert!(
@@ -354,10 +380,7 @@ fn tony_card(session: &Session, code: &str) -> u16 {
 fn finish_plain_test(session: &mut Session) {
     for _ in 0..12 {
         let choices = session.observe().choices;
-        if choices
-            .iter()
-            .any(|choice| choice.id == "search:finish-event")
-        {
+        if session.observe().play.unwrap().test.is_none() {
             return;
         }
         let id = [
@@ -416,7 +439,10 @@ fn scene_of_the_crime_is_only_a_first_action_and_does_not_provoke_the_engaged_en
         .card
         .id;
     choose(&mut late, "action:ordinary:resource");
-    choose(&mut late, &format!("opportunity:{rats}"));
+    assert!(performed(
+        &late,
+        &format!("Resolve enemy {rats}'s attack of opportunity")
+    ));
     assert!(
         !late
             .observe()
@@ -448,11 +474,12 @@ fn boosted_intel_pays_all_costs_before_opportunity_then_discovers_remote_clues_w
         .unwrap()
         .card
         .id;
+    let playing = session.observe().revision;
     choose(
         &mut session,
         &format!("action:ordinary:play:tony:{event}:05111:01114:1:1"),
     );
-    let paid = session.observe().play.unwrap();
+    let paid = attacked(&session, playing);
     assert_eq!(paid.players[0].resources, 2);
     assert_eq!(paid.players[0].clues, 0);
     assert_eq!(
@@ -464,7 +491,10 @@ fn boosted_intel_pays_all_costs_before_opportunity_then_discovers_remote_clues_w
             .clues,
         6
     );
-    choose(&mut session, &format!("opportunity:{rats}"));
+    assert!(performed(
+        &session,
+        &format!("Resolve enemy {rats}'s attack of opportunity")
+    ));
     let after = session.observe().play.unwrap();
     assert_eq!(after.players[0].damage, before.players[0].damage + 1);
     assert_eq!(after.players[0].clues, 2);
@@ -506,12 +536,16 @@ fn boosted_small_favor_defeats_a_remote_enemy_without_a_fight_and_pays_its_bount
         .unwrap()
         .card
         .id;
+    let playing = session.observe().revision;
     choose(
         &mut session,
         &format!("action:ordinary:play:tony:{event}:05277:{ravenous}:1:1"),
     );
-    assert_eq!(session.observe().play.unwrap().players[0].resources, 2);
-    choose(&mut session, &format!("opportunity:{rats}"));
+    assert_eq!(attacked(&session, playing).players[0].resources, 2);
+    assert!(performed(
+        &session,
+        &format!("Resolve enemy {rats}'s attack of opportunity")
+    ));
     let defeated = session.observe().play.unwrap();
     assert_eq!(defeated.players[0].resources, 4);
     assert!(
@@ -532,7 +566,7 @@ fn boosted_small_favor_defeats_a_remote_enemy_without_a_fight_and_pays_its_bount
         defeated.players[2].damage, before.players[2].damage,
         "Direct damage is not a failed Fight against another investigator's enemy"
     );
-    choose(&mut session, "search:finish-event");
+    assert!(performed(&session, "Finish resolving Small Favor"));
     assert!(
         session.observe().play.unwrap().players[0]
             .discard
@@ -614,7 +648,14 @@ fn get_over_here_uses_the_bounty_action_and_frozen_cost_then_pulls_engages_and_f
             .damage,
         1
     );
-    choose(&mut session, "search:finish-event");
+    // The event then finishes by itself.
+    assert!(
+        session
+            .observe()
+            .history
+            .iter()
+            .any(|entry| entry.starts_with("Automatic: Finish resolving "))
+    );
     assert!(
         !session
             .observe()
@@ -969,10 +1010,11 @@ fn one_in_the_chamber_unused_bonus_expires_through_the_actual_round_transition()
     finish_current_test(&mut session);
     choose(&mut session, &format!("tony:chamber:{event}"));
     choose(&mut session, "turn:end");
-    for investigator in ["patrice", "jacqueline"] {
-        choose(&mut session, &format!("turn:{investigator}"));
-        choose(&mut session, "turn:end");
-    }
+    choose(&mut session, "turn:patrice");
+    choose(&mut session, "turn:end");
+    // Jacqueline's is then the only remaining turn and begins by itself.
+    assert!(performed(&session, "Begin Jacqueline Fine's turn"));
+    choose(&mut session, "turn:end");
     for _ in 0..90 {
         let observation = session.observe();
         if observation
@@ -989,6 +1031,7 @@ fn one_in_the_chamber_unused_bonus_expires_through_the_actual_round_transition()
                 matches!(
                     choice.id.as_str(),
                     "enemy:attacks"
+                        | "enemy:skip-empty"
                         | "enemy:attack-complete"
                         | "enemy:next-investigator"
                         | "enemy:attacks-complete"
@@ -1151,10 +1194,13 @@ fn quick_thinking_committed_by_tony_preserves_patrices_turn_and_uses_tonys_actio
     choose(&mut session, "granted:resource");
     // The remaining engaged Minion makes a real attack of opportunity before
     // Tony receives the resource, then the interrupted turn resumes.
-    choose(
-        &mut session,
-        &format!("opportunity:{}", before.scenario.enemies[1].card.id),
-    );
+    assert!(performed(
+        &session,
+        &format!(
+            "Resolve enemy {}'s attack of opportunity",
+            before.scenario.enemies[1].card.id
+        )
+    ));
     let finished = session.observe();
     let play = finished.play.unwrap();
     assert_eq!(play.players[0].resources, before.players[0].resources + 1);

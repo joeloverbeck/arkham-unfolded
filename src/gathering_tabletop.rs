@@ -22,13 +22,14 @@ use std::path::PathBuf;
 mod art;
 mod capture;
 mod card_counters;
+mod clue_payment;
 mod consequences;
 mod controls;
 mod doom;
 mod draws;
 mod encounter;
-mod enemy_board;
 mod map_motion;
+mod markers;
 mod motion;
 mod pendulum;
 mod phase_banner;
@@ -42,6 +43,7 @@ mod scene;
 mod sealed;
 mod seat;
 mod shuffle;
+mod sideboard;
 mod slots;
 mod story;
 mod trays;
@@ -64,6 +66,7 @@ enum Action {
     Choose(u64, u64, String),
     Prediction(u64, u64, u16, pendulum::Input),
     Violin(u64, u64, violin::Input),
+    CluePayment(u64, u64, clue_payment::Input),
     Select(u64, u64, controls::Selection),
     ContextChoice(u64, u64, u64, String),
     ContextInspect(u64, u64, u64, String, String),
@@ -95,7 +98,8 @@ impl Action {
             Self::Choose(_, _, id)
             | Self::ResultChoice(_, _, id)
             | Self::EncounterChoice(_, _, id)
-            | Self::ContextChoice(_, _, _, id) => Some(id),
+            | Self::ContextChoice(_, _, _, id)
+            | Self::Prediction(_, _, _, pendulum::Input::Open(id)) => Some(id),
             _ => None,
         }
     }
@@ -134,6 +138,7 @@ struct Table {
     token_options: Option<String>,
     prediction: Option<pendulum::Picker>,
     violin: Option<violin::Picker>,
+    clue_payment: Option<clue_payment::Chooser>,
 }
 
 impl Table {
@@ -163,7 +168,6 @@ impl Table {
     }
 
     fn new(session: Session, save_path: PathBuf) -> Self {
-        let prediction = pendulum::Picker::saved(&session);
         let presentation = presentation::Presentation::new(&session);
         let mut trays = trays::State::default();
         trays.prepare(&session.observe(), true);
@@ -188,8 +192,9 @@ impl Table {
             trays,
             context: controls::Context::default(),
             token_options: None,
-            prediction,
+            prediction: None,
             violin: None,
+            clue_payment: None,
         }
     }
 
@@ -211,6 +216,7 @@ impl Table {
             || self.restart_confirmation
             || self.prediction.is_some()
             || self.violin.is_some()
+            || self.clue_payment.is_some()
     }
 
     fn result_opportunities(&self) -> bool {
@@ -232,6 +238,7 @@ impl Table {
             || self.menu_open
             || self.context.is_open()
             || self.violin.is_some()
+            || self.clue_payment.is_some()
     }
 }
 
@@ -491,9 +498,9 @@ impl Options {
     }
 
     fn configure_diagnostics(&self, app: &mut App) -> Result<(), String> {
-        let mut orbit = Orbit::new().with_home(enemy_board::focus(Area::Overview));
+        let mut orbit = Orbit::new().with_home(sideboard::focus(Area::Overview));
         match self.initial_view {
-            Some(InitialView::Area(area)) => orbit.focus(enemy_board::focus(area)),
+            Some(InitialView::Area(area)) => orbit.focus(sideboard::focus(area)),
             Some(InitialView::Resolve) => {
                 let focus = app
                     .world()
@@ -670,8 +677,7 @@ fn install(app: &mut App) {
                     remember_attempt,
                 )
                     .chain(),
-                advance_framework,
-                (pendulum::keyboard, handle_actions).chain(),
+                (pendulum::keyboard, clue_payment::keyboard, handle_actions).chain(),
                 (consequences::advance, doom::advance).chain(),
                 reveal::sync,
                 crate::tabletop_reveal::render,
@@ -679,9 +685,15 @@ fn install(app: &mut App) {
                 keyboard_panel_scroll,
                 camera_controls,
                 (render, phase_banner::render, encounter::animate).chain(),
-                (controls::render, violin::render).chain(),
+                (
+                    controls::render,
+                    violin::render,
+                    clue_payment::render,
+                    crate::tabletop_ui::keep_dialog_identity,
+                )
+                    .chain(),
                 contextual_feedback,
-                enemy_board::highlight,
+                sideboard::highlight,
                 (motion::animate, map_motion::animate).chain(),
                 sealed::animate,
                 shuffle::animate,
@@ -773,6 +785,7 @@ fn handle_actions(
     mut consequences: ResMut<consequences::State>,
     mut exit: MessageWriter<AppExit>,
     navigation: Res<Navigation>,
+    seated: Option<Res<crate::agent_seat::SeatedAgent>>,
 ) {
     if table.leaving {
         actions.0.clear();
@@ -786,12 +799,13 @@ fn handle_actions(
 
     table.context.sync(epoch, revision);
     violin::sync(&mut table);
+    clue_payment::sync(&mut table);
     if !health.allows_play()
         || health.just_became_ready()
         || settings.as_ref().is_some_and(|settings| settings.is_busy())
     {
         table.context.reset();
-        if table.violin.take().is_some() {
+        if table.violin.take().is_some() | table.clue_payment.take().is_some() {
             table.epoch += 1;
             table.dirty = true;
         }
@@ -867,6 +881,8 @@ fn handle_actions(
             result_choice
         } else if table.violin.is_some() && table.inspection.is_none() {
             matches!(action, Action::Violin(..) | Action::Close)
+        } else if table.clue_payment.is_some() {
+            matches!(action, Action::CluePayment(..) | Action::Close)
         } else if table.prediction.is_some() {
             matches!(action, Action::Prediction(..) | Action::Close)
         } else if table.restart_confirmation {
@@ -910,6 +926,17 @@ fn handle_actions(
         let Some(action) = violin::dispatch(&mut table, action) else {
             continue;
         };
+        let payment_confirmation = matches!(
+            &action,
+            Action::CluePayment(
+                _,
+                _,
+                clue_payment::Input::Confirm | clue_payment::Input::Decline
+            )
+        );
+        let Some(action) = clue_payment::dispatch(&mut table, action) else {
+            continue;
+        };
         match action {
             Action::Encounter(epoch, input)
                 if epoch == table.epoch && table.presentation.encounter().current().is_some() =>
@@ -920,7 +947,9 @@ fn handle_actions(
             }
             Action::Encounter(..) => {}
             Action::Prediction(..) => unreachable!("Local picker dispatch consumes its controls"),
-            Action::Violin(..) => unreachable!("Local picker dispatch consumes its controls"),
+            Action::Violin(..) | Action::CluePayment(..) => {
+                unreachable!("Local picker dispatch consumes its controls")
+            }
             Action::ContinueResult(epoch) if epoch == table.epoch => {
                 table.presentation.acknowledge_result();
                 table.epoch += 1;
@@ -955,16 +984,10 @@ fn handle_actions(
                     && (!table.modal()
                         || result_choice
                         || encounter_choice
-                        || violin_confirmation)
+                        || violin_confirmation
+                        || payment_confirmation)
                     && (!table.is_presenting() || encounter_choice) =>
             {
-                let id = if id == "test-card:pass"
-                    && controls::automatic_choice(&table.session.observe()) == Some(id.as_str())
-                {
-                    "test-card:continue".into()
-                } else {
-                    id
-                };
                 if let Some(asset) = id
                     .strip_prefix("violin:open:")
                     .and_then(|id| id.parse().ok())
@@ -972,11 +995,8 @@ fn handle_actions(
                     violin::open(&mut table, epoch, revision, asset);
                     continue;
                 }
-                if let Some(asset) = id
-                    .strip_prefix("test-card:pendulum:")
-                    .and_then(|id| id.parse().ok())
-                {
-                    pendulum::open(&mut table, epoch, revision, asset);
+                if clue_payment::opens(&id) {
+                    clue_payment::open(&mut table, epoch, revision);
                     continue;
                 }
                 table.token_options = None;
@@ -991,6 +1011,7 @@ fn handle_actions(
                     Ok(draws) => {
                         let table = &mut *table;
                         table.violin = None;
+                        table.clue_payment = None;
                         let shuffled = table.reduced_motion
                             && draws.iter().any(|cue| {
                                 cue.batch.steps.iter().any(|step| {
@@ -1059,7 +1080,7 @@ fn handle_actions(
             }
             Action::Focus(area) => {
                 table.context.dismiss();
-                orbit.focus(enemy_board::focus(area));
+                orbit.focus(sideboard::focus(area));
                 table.dirty = true;
             }
             Action::Resolve => {
@@ -1080,6 +1101,7 @@ fn handle_actions(
             Action::Close => {
                 if table.inspection.is_none() {
                     table.violin = None;
+                    table.clue_payment = None;
                 }
                 table.prediction = None;
                 table.context.reset();
@@ -1095,6 +1117,11 @@ fn handle_actions(
                 table.epoch += 1;
                 table.inspection = Some((title, code));
                 table.history_open = false;
+                table.dirty = true;
+            }
+            Action::CreditLink(url) if seated.is_some() => {
+                // An agent at the seat never reaches the owner's desktop.
+                table.notice = format!("The agent seat does not open links. Address: {url}");
                 table.dirty = true;
             }
             Action::CreditLink(url) => {
@@ -1146,8 +1173,9 @@ fn handle_actions(
                         table.epoch += 1;
                         let table = &mut *table;
                         table.presentation.reopen(&table.session, &session);
-                        table.prediction = pendulum::Picker::saved(&session);
+                        table.prediction = None;
                         table.violin = None;
+                        table.clue_payment = None;
                         table.session = session;
                         table.inspection = None;
                         table.history_open = false;
@@ -1192,7 +1220,7 @@ fn handle_actions(
                         *table = next;
                         consequences.clear();
                         orbit.set_following(false);
-                        orbit.focus(enemy_board::focus(Area::Overview));
+                        orbit.focus(sideboard::focus(Area::Overview));
                     }
                     Err(error) => {
                         table.notice = format!("Restart failed: {error}");
@@ -1456,12 +1484,14 @@ fn render(
     table.dirty = false;
     if !table.context.is_open()
         && table.violin.is_none()
+        && table.clue_payment.is_none()
         && !shortcut.is_open()
         && let Some(focus) = focus.as_mut()
     {
         focus.clear();
     }
     let mut origins = motion::Origins::from_view(table.last_rendered.as_ref());
+    crate::tabletop_ui::release_dialogs_in::<Panel>(&mut commands);
     for (entity, card, transform, motion) in &old {
         if let (Some(card), Some(transform)) = (card, transform) {
             origins.remember(card.0, transform.translation, motion);
@@ -1690,9 +1720,10 @@ fn world_labels(
         Option<&motion::CardLabel>,
         &ComputedNode,
         Has<crate::tabletop_pieces::CardCaption>,
-        Has<enemy_board::Caption>,
-        Has<enemy_board::PersistentLabel>,
+        Has<sideboard::Caption>,
+        Has<sideboard::PersistentLabel>,
         Option<&layout::ScenarioBookSide>,
+        Has<markers::HeadingLabel>,
         &mut Node,
         &mut Visibility,
     )>,
@@ -1706,6 +1737,7 @@ fn world_labels(
         enemy_caption,
         persistent,
         book_side,
+        heading,
         mut node,
         mut visibility,
     ) in &mut labels
@@ -1733,7 +1765,7 @@ fn world_labels(
         let point = camera.0.world_to_viewport(camera.1, anchor).ok();
         if let Some(point) = point {
             if enemy_caption {
-                if let Some(width) = enemy_board::caption_width(camera.0, camera.1, anchor) {
+                if let Some(width) = sideboard::caption_width(camera.0, camera.1, anchor) {
                     node.width = px(width);
                 }
             } else if card_caption
@@ -1749,9 +1781,14 @@ fn world_labels(
             node.left = px(match book_side {
                 Some(layout::ScenarioBookSide::Agenda) => point.x - width,
                 Some(layout::ScenarioBookSide::Act) => point.x,
+                None if heading => point.x,
                 None => point.x - width / 2.,
             });
-            node.top = px(point.y);
+            node.top = px(if heading {
+                point.y - computed.size().y * computed.inverse_scale_factor / 2.
+            } else {
+                point.y
+            });
             *visibility = Visibility::Inherited;
         } else {
             *visibility = Visibility::Hidden;
@@ -1831,36 +1868,6 @@ fn contextual_feedback(
     }
 }
 
-fn advance_framework(
-    table: Res<Table>,
-    health: Res<RenderHealth>,
-    settings: Option<Res<AssetSettings>>,
-    consequences: Res<consequences::State>,
-    mut actions: ResMut<Actions>,
-    mut redraw: ResMut<Redraw>,
-) {
-    if table.last_rendered.is_none()
-        || !health.allows_play()
-        || health.just_became_ready()
-        || table.presentation_blocked()
-        || table.is_presenting()
-        || table.sealed.active()
-        || consequences.active()
-        || !actions.0.is_empty()
-        || table.notice.starts_with("Decision not committed:")
-        || settings.as_ref().is_some_and(|settings| settings.is_busy())
-    {
-        return;
-    }
-    let view = table.view();
-    if let Some(id) = controls::automatic_choice(&view) {
-        actions
-            .0
-            .push(Action::Choose(table.epoch, view.revision, id.into()));
-        redraw.request();
-    }
-}
-
 /// What must finish before the table takes a decision; empty when it is settled.
 /// `Redraw` cannot answer this: the availability cue requests redraws for as long as
 /// a choice is offered. A dialog or menu waiting for the player is settled, even when
@@ -1912,12 +1919,6 @@ fn unsettled(world: &mut World) -> Vec<&'static str> {
     }
     if world.resource::<Orbit>().is_moving() {
         pending.push("camera motion");
-    }
-    if !table.presentation_blocked()
-        && !table.notice.starts_with("Decision not committed:")
-        && controls::automatic_choice(&table.view()).is_some()
-    {
-        pending.push("automatic choice");
     }
     pending
 }

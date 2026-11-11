@@ -5,6 +5,15 @@ fn choose(session: &mut Session, id: &str) {
         .choose(view.revision, id)
         .unwrap_or_else(|error| panic!("{id}: {error}"));
 }
+
+/// Whether the session performed a step itself with this history label.
+fn performed(session: &Session, label: &str) -> bool {
+    session
+        .observe()
+        .history
+        .iter()
+        .any(|entry| entry.strip_prefix("Automatic: ") == Some(label))
+}
 fn reveal(session: &mut Session) {
     for id in ["window:pass", "commit:confirm", "window:pass"] {
         if session
@@ -182,7 +191,10 @@ fn mask_spends_once_per_test_replenishes_once_per_attack_and_resets_on_retry() {
     continuity::save_session(&path, &session).unwrap();
     session = continuity::load_session(&path).unwrap();
     reveal(&mut session);
-    choose(&mut session, "retaliate:complete");
+    assert!(performed(
+        &session,
+        "Finish the Retaliate attack and resume the skill test"
+    ));
     let failed = session.observe().play.unwrap();
     assert_eq!(failed.completed_tests[0].total, 2);
     assert_eq!(

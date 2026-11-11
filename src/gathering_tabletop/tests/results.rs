@@ -29,56 +29,13 @@ fn read_the_signs_finishes_without_a_cleanup_click_and_resumes_that_pending_step
         .unwrap();
     reach_reveal(&mut session);
 
-    // Retain the existing rules decision so older saves at this exact boundary
-    // still load. The tabletop must commit it without asking the player.
-    let mut pending = session.clone();
-    for _ in 0..12 {
-        let view = pending.observe();
-        if view
-            .choices
-            .iter()
-            .any(|choice| choice.id == "search:finish-event")
-        {
-            break;
-        }
-        let id = ["test:reveal", "after-test:pass"]
-            .into_iter()
-            .find(|id| view.choices.iter().any(|choice| choice.id == *id))
-            .unwrap();
-        pending.choose(view.revision, id).unwrap();
-    }
-    assert!(
-        pending
-            .observe()
-            .choices
-            .iter()
-            .any(|choice| choice.id == "search:finish-event")
-    );
-    assert!(
-        controls::global_choices(&pending.observe())
-            .iter()
-            .all(|choice| choice.id != "search:finish-event")
-    );
-    assert_eq!(
-        pending.observe().play.unwrap().players[2].clues,
-        before.players[2].clues + 2
-    );
+    // The rules session finishes the event itself once its test resolves; the
+    // table never waits for a cleanup click.
     let directory = tempfile::tempdir().unwrap();
-    let pending_path = directory.path().join("pending-cleanup.json");
-    continuity::save_session(&pending_path, &pending).unwrap();
-
-    for (candidate, path, live) in [
-        (session, directory.path().join("live.json"), true),
-        (
-            continuity::load_session(&pending_path).unwrap(),
-            pending_path,
-            false,
-        ),
-    ] {
-        let mut app = host_with_table(Table::new(candidate, path.clone()), false);
-        if live {
-            activate_choice(&mut app, "test:reveal");
-        }
+    {
+        let path = directory.path().join("live.json");
+        let mut app = host_with_table(Table::new(session, path.clone()), false);
+        activate_choice(&mut app, "test:reveal");
         finish_presentation(&mut app);
         if button_with_label(&mut app, "Continue").is_some() {
             acknowledge_result(&mut app);
@@ -294,11 +251,7 @@ fn small_favor_defeat_keeps_reactions_usable_without_reopening_a_previous_test()
             enemy("01161")
         ),
     );
-    activate_source_choice(
-        &mut app,
-        controls::Source::Card(enemy("01159")),
-        &format!("opportunity:{}", enemy("01159")),
-    );
+    // The Rats' lone attack of opportunity resolves by itself.
     finish_presentation(&mut app);
     let view = app.world().resource::<Table>().view();
     let after = view.play.as_ref().unwrap();
@@ -326,8 +279,7 @@ fn small_favor_defeat_keeps_reactions_usable_without_reopening_a_previous_test()
             .iter()
             .any(|card| card.id == bleeds)
     );
-    activate_choice(&mut app, "defeat:done");
-    finish_presentation(&mut app);
+    // No other reaction remains, so the defeat window closes by itself.
     app.update();
     finish_presentation(&mut app);
     assert!(!rendered_text(&mut app).contains("Chaos tokens"));

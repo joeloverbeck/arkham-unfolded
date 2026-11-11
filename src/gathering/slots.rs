@@ -28,15 +28,22 @@ impl SlotUsage {
     }
 
     pub fn label(&self) -> String {
+        format!("{}: {}", self.name, self.occupancy())
+    }
+
+    /// "Hand 2/2": the label without its colon, for the end of an option label
+    /// whose cost already ends at a colon.
+    pub(super) fn summary(&self) -> String {
+        format!("{} {}", self.name, self.occupancy())
+    }
+
+    fn occupancy(&self) -> String {
         let restriction = if self.spell_ritual == 0 {
             String::new()
         } else {
             format!(" (+{} Spell/Ritual)", self.spell_ritual)
         };
-        format!(
-            "{}: {}/{}{restriction}",
-            self.name, self.used, self.capacity
-        )
+        format!("{}/{}{restriction}", self.used, self.capacity)
     }
 }
 

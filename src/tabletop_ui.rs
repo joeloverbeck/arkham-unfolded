@@ -266,6 +266,9 @@ pub(crate) fn card_image(
             width: px(width),
             height: px(height),
             flex_shrink: 0.,
+            // Layout places the image's box at the frame's middle before the transform
+            // re-centres it. Clipping keeps that box from adding scrollable height.
+            overflow: Overflow::clip(),
             ..default()
         })
         .with_children(|frame| {
@@ -294,6 +297,118 @@ pub(crate) fn card_image(
                 Pickable::IGNORE,
             ));
         });
+}
+
+/// The panel of a modal dialog as a renderer builds it, inside a full-screen
+/// `ModalDialogBarrier`. It may carry only `Node`, `BackgroundColor`,
+/// `BorderColor`, `AccessibleLabel` and `TabGroup`; [`keep_dialog_identity`]
+/// makes it a `ModalDialog`.
+#[derive(Component)]
+pub(crate) struct DialogFrame;
+
+/// An open dialog taken out of a panel that is being rebuilt, waiting for its
+/// rebuilt frame.
+#[derive(Component)]
+struct ReleasedDialog;
+
+/// Queue, before despawning the rebuilt roots marked `M`, the release of every
+/// open dialog among their children, so the dialog's entity outlives them.
+pub(crate) fn release_dialogs_in<M: Component>(commands: &mut Commands) {
+    commands.queue(|world: &mut World| {
+        let dialogs: Vec<_> = world
+            .query_filtered::<(Entity, &ChildOf), With<ModalDialog>>()
+            .iter(world)
+            .filter(|(_, parent)| world.get::<M>(parent.parent()).is_some())
+            .map(|(dialog, _)| dialog)
+            .collect();
+        for dialog in dialogs {
+            world
+                .entity_mut(dialog)
+                .despawn_related::<Children>()
+                .remove::<ChildOf>()
+                .insert(ReleasedDialog);
+        }
+    });
+}
+
+/// Bevy's modal plugin moves focus into a dialog 0.1 s after its `ModalDialog`
+/// appears, and warns "No focusable entities in modal dialog" if that entity is
+/// gone by then. The table rebuilds its panels whenever it changes, so an open
+/// dialog keeps one entity across rebuilds: each new frame takes the place of a
+/// released dialog, which receives the frame's look and contents. A frame
+/// with no released dialog opens a new one; a released dialog with no frame
+/// has closed.
+pub(crate) fn keep_dialog_identity(world: &mut World) {
+    let frames: Vec<_> = world
+        .query_filtered::<Entity, With<DialogFrame>>()
+        .iter(world)
+        .collect();
+    let mut released: Vec<_> = world
+        .query_filtered::<Entity, With<ReleasedDialog>>()
+        .iter(world)
+        .collect();
+    for frame in frames {
+        let Some(dialog) = released.pop() else {
+            world
+                .entity_mut(frame)
+                .remove::<DialogFrame>()
+                .insert(ModalDialog)
+                .observe(keep_clicks_inside);
+            continue;
+        };
+        let mut built = world.entity_mut(frame);
+        let node = built.take::<Node>();
+        let background = built.take::<BackgroundColor>();
+        let border = built.take::<BorderColor>();
+        let label = built.take::<AccessibleLabel>();
+        let group = built.take::<TabGroup>();
+        let contents: Vec<_> = built
+            .get::<Children>()
+            .map(|children| children.to_vec())
+            .unwrap_or_default();
+        let parent = built.get::<ChildOf>().map(ChildOf::parent);
+        let mut kept = world.entity_mut(dialog);
+        // Nothing of the previous look or scroll survives, as before rebuilds.
+        kept.remove::<(
+            ReleasedDialog,
+            BackgroundColor,
+            BorderColor,
+            AccessibleLabel,
+            ScrollPosition,
+        )>();
+        if let Some(node) = node {
+            kept.insert(node);
+        }
+        if let Some(background) = background {
+            kept.insert(background);
+        }
+        if let Some(border) = border {
+            kept.insert(border);
+        }
+        if let Some(label) = label {
+            kept.insert(label);
+        }
+        if let Some(group) = group {
+            kept.insert(group);
+        }
+        kept.add_children(&contents);
+        if let Some(parent) = parent {
+            let index = world
+                .get::<Children>(parent)
+                .and_then(|children| children.iter().position(|child| child == frame))
+                .unwrap_or_default();
+            world.entity_mut(parent).insert_children(index, &[dialog]);
+        }
+        world.entity_mut(frame).despawn();
+    }
+    for closed in released {
+        world.entity_mut(closed).despawn();
+    }
+}
+
+/// A click inside a dialog is not a click on its barrier.
+fn keep_clicks_inside(mut click: On<PointerClick>) {
+    click.propagate(false);
 }
 
 /// The title and Close control remain outside the scrolling reading body.
@@ -338,7 +453,7 @@ pub(crate) fn inspection(
                         ..default()
                     },
                     BackgroundColor(INK),
-                    ModalDialog,
+                    DialogFrame,
                     TabGroup::modal(),
                 ))
                 .with_children(|panel| {

@@ -3,6 +3,7 @@
 
 use super::{
     CardView, Investigator, InvestigatorView, cards, content,
+    option_labels::{self, Allowance, EffectiveCost, counted},
     scenario::{ScenarioDecision, ScenarioState},
 };
 use crate::{Choice, RuleError, TokenFace};
@@ -218,9 +219,9 @@ pub(super) enum Frame {
         previous_actor: Option<Investigator>,
         previous_phase: Phase,
     },
-    // Historical serialized name; this is the shared ST6 success/failure
-    // reaction window, which closes before any ST7 result is applied.
-    SuccessWindow,
+    /// The shared ST6 success/failure reaction window, which closes before any
+    /// ST7 result is applied.
+    OutcomeWindow,
     AssetEntry(super::player_cards::AssetEntry),
     Backpack(super::backpack::BackpackDecision),
     AfterTest(super::retry::AfterTestState),
@@ -499,9 +500,6 @@ pub struct PlayObservation {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct Game {
-    /// Only enabled while reconstructing an already recorded pre-fix choice.
-    #[serde(skip)]
-    pub legacy_hornet_search: bool,
     #[serde(skip)]
     pub presentation: Vec<super::moments::StepSnapshot>,
     pub ethereal: Vec<Investigator>,
@@ -605,7 +603,7 @@ impl Game {
             })
             .collect();
         Self {
-            legacy_hornet_search:false,players,lead,agenda:1,agenda_doom:0,act:1,backpacks:vec![],ethereal:vec![],presentation:vec![],
+            players,lead,agenda:1,agenda_doom:0,act:1,backpacks:vec![],ethereal:vec![],presentation:vec![],
             encounter_deck: encounters.iter().enumerate().map(|(index, code)| CardView {id:300+index as u16,code:code.clone(),title:content::title(code).expect("Encounter").into(),weakness:false}).collect(),
             encounter_discard:vec![],scenario:ScenarioState::new(),round:1,phase:Phase::Investigation,actor:None,frames:vec![],test:None,completed_tests:vec![],
             history:vec!["The first investigation phase begins directly after actual preparation; skip the first mythos phase. Investigators choose their turn order. [RR p23–24]".into()],
@@ -719,7 +717,7 @@ impl Game {
         scenario.reveal("01113");
         scenario.reveal("01114");
         let mut game = Self {
-            legacy_hornet_search:false,players, lead: Investigator::Patrice, agenda: 1, agenda_doom: 0, act: 2,
+            players, lead: Investigator::Patrice, agenda: 1, agenda_doom: 0, act: 2,
             encounter_discard: vec![], encounter_deck, scenario, round: 2, phase: Phase::Mythos, actor: None,
             frames: vec![Frame::Revelation(PendingRevelation { card: encounter, drawn_by: Investigator::Patrice, started: false, cancelled: false })],
             test: None, completed_tests: vec![], history: vec!["Privileged P1 verification state: Patrice is in Cellar, Tony in Attic, Jacqueline in Hallway; no other modifier or same-location supporting ability is active. This is not ordinary setup or evidence of complete playable Gathering.".into()],
@@ -935,6 +933,21 @@ impl Game {
                 steps,
             }),
         });
+    }
+
+    /// Present the state awaiting a step the session performs itself, so the
+    /// step's consequences stay visible, unless the latest presented step
+    /// already shows that state.
+    pub(super) fn capture_before_automatic_step(&mut self, caption: &str) {
+        let play = self.observe();
+        if self
+            .presentation
+            .last()
+            .is_some_and(|prior| prior.play == play)
+        {
+            return;
+        }
+        self.capture_public_view(caption, play);
     }
 
     pub(super) fn capture_public_view(
@@ -1162,7 +1175,7 @@ impl Game {
                     Frame::RestoreTurn { previous_actor, .. } => {
                         previous_actor.unwrap_or(self.lead)
                     }
-                    Frame::SuccessWindow => self.test.as_ref().expect("Success reaction").tester,
+                    Frame::OutcomeWindow => self.test.as_ref().expect("Outcome reaction").tester,
                     Frame::AssetEntry(entry) => entry.actor(),
                     Frame::Backpack(decision) => decision.owner(),
                     Frame::AfterTest(state) => state.test.tester,
@@ -1217,7 +1230,7 @@ impl Game {
         if let Some(Frame::GrantedAction { owner }) = self.frames.last() {
             return self.granted_action_choices(*owner);
         }
-        if matches!(self.frames.last(), Some(Frame::SuccessWindow)) {
+        if matches!(self.frames.last(), Some(Frame::OutcomeWindow)) {
             let mut choices = self.outcome_reaction_choices();
             choices.push(choice(
                 "success:pass",
@@ -1322,7 +1335,11 @@ impl Game {
                             owner,
                             amount,
                             source,
-                        } => format!("{} gains {amount} resources from {source}", owner.name()),
+                        } => format!(
+                            "{} gains {} from {source}",
+                            owner.name(),
+                            counted(*amount, "resource", "resources")
+                        ),
                         TestResultEffect::TakeHeart => {
                             "Take Heart: draw 2 cards, then gain 2 resources".into()
                         }
@@ -1383,7 +1400,7 @@ impl Game {
                 return super::harm_cards::discard_choices(self, discard);
             }
             Some(Frame::GrantedAction { .. }) | Some(Frame::RestoreTurn { .. }) => return vec![],
-            Some(Frame::SuccessWindow) => unreachable!("Handled success window"),
+            Some(Frame::OutcomeWindow) => unreachable!("Handled outcome window"),
             Some(Frame::AssetEntry(_)) => unreachable!("Handled asset entry"),
             Some(Frame::AfterTest(_)) | Some(Frame::RetryEvent { .. }) => return vec![],
             Some(Frame::TestCard(_)) => unreachable!("Handled test card"),
@@ -1476,13 +1493,24 @@ impl Game {
         choices
     }
 
+    /// A choice that names a listed choice's number or allocation in place of
+    /// its placeholder: a Crystal Pendulum prediction or a group clue payment.
+    pub(super) fn direct_choice(&self, id: &str) -> Option<Choice> {
+        super::test_cards::direct_choice(self, id)
+            .or_else(|| super::group_payment::direct_choice(self, id))
+    }
+
     pub(super) fn choose(&mut self, id: &str) -> Result<(), RuleError> {
-        if !self.choices().iter().any(|choice| choice.id == id)
-            && super::test_cards::direct_choice(self, id).is_none()
+        if !self.choices().iter().any(|choice| choice.id == id) && self.direct_choice(id).is_none()
         {
             return Err(RuleError(
                 "That choice is not offered by the running effect.".into(),
             ));
+        }
+        if super::group_payment::Allocation::parse(id).is_some() {
+            let step = super::group_payment::pay(self, id)?;
+            self.scenario_step(step)?;
+            return self.settle();
         }
         if matches!(self.frames.last(), Some(Frame::Peter { .. })) {
             super::peter::choose(self, id)?;
@@ -1508,7 +1536,7 @@ impl Game {
                 "action:ordinary:{}",
                 id.strip_prefix("granted:").expect("Granted action")
             ))?;
-        } else if matches!(self.frames.last(), Some(Frame::SuccessWindow)) {
+        } else if matches!(self.frames.last(), Some(Frame::OutcomeWindow)) {
             self.frames.pop();
             if id == "success:pass" {
                 super::tony_effects::close_success_window(self);
@@ -1520,7 +1548,7 @@ impl Game {
                 } else {
                     super::tony_effects::choose_success(self, id)?;
                 }
-                self.frames.insert(index, Frame::SuccessWindow);
+                self.frames.insert(index, Frame::OutcomeWindow);
             }
         } else if matches!(self.frames.last(), Some(Frame::AssetEntry(_))) {
             let Some(Frame::AssetEntry(entry)) = self.frames.pop() else {
@@ -1645,11 +1673,7 @@ impl Game {
             self.scenario_step(step)?;
         } else if matches!(self.frames.last(), Some(Frame::Tony(_))) {
             super::tony_cards::apply(self, id)?;
-        } else if id.starts_with("turn:")
-            || id.starts_with("action:")
-            || id == "turn:end"
-            || id == "act:advance"
-        {
+        } else if id.starts_with("turn:") || id.starts_with("action:") || id == "turn:end" {
             self.choose_investigation(id)?;
         } else if id.starts_with("ward:") {
             super::harm_cards::play_ward(self, id)?;
@@ -2169,6 +2193,55 @@ impl Game {
                 .collect();
         };
         let player = &self.players[actor.index()];
+        let mut choices = Vec::new();
+        for (action, cost) in self.priced_actions(actor) {
+            if player.ordinary_actions >= cost {
+                choices.push(choice(
+                    &format!("action:ordinary:{}", action.id),
+                    &option_labels::label(EffectiveCost::actions(cost), &action.label),
+                ));
+            }
+            if actor == Investigator::Tony
+                && !player.restricted_tony_action_used
+                && player.ordinary_actions >= cost - 1
+                && (matches!(
+                    super::encounter_search::action_designator(&action.id),
+                    Some("fight" | "engage")
+                ) || action.id.starts_with("fight:")
+                    || action.id.starts_with("engage:"))
+            {
+                let enemy_id = super::encounter_search::action_enemy(&action.id).or_else(|| {
+                    action
+                        .id
+                        .split(':')
+                        .nth(1)
+                        .and_then(|id| id.parse::<u16>().ok())
+                });
+                if self
+                    .scenario
+                    .enemies
+                    .iter()
+                    .any(|enemy| Some(enemy.card.id) == enemy_id && enemy.bounties > 0)
+                {
+                    choices.push(choice(
+                        &format!("action:tony:{}", action.id),
+                        &option_labels::label(
+                            EffectiveCost::paid_by(Allowance::TonyBounty, cost),
+                            &action.label,
+                        ),
+                    ));
+                }
+            }
+        }
+        choices.push(choice("turn:end", "End this investigator's turn"));
+        choices.extend(self.player_window_choices());
+        choices
+    }
+
+    /// Each action the actor may initiate now, as its effect label and its
+    /// effective action cost after modifiers. Option labels state that cost.
+    fn priced_actions(&self, actor: Investigator) -> Vec<(Choice, u8)> {
+        let player = &self.players[actor.index()];
         let mut actions = vec![
             choice("resource", "Gain 1 resource"),
             choice("draw", "Draw 1 card"),
@@ -2179,10 +2252,20 @@ impl Game {
                 .location("01115")
                 .is_some_and(|location| location.revealed)
         {
-            actions.push(choice("resign", "Resign: leave the house"));
+            actions.push(choice("resign", "Resign and leave the house"));
         }
         if self.scenario.location(&player.location).is_some() {
-            actions.push(choice("investigate", "Investigate this location"));
+            actions.push(choice(
+                "investigate",
+                &format!(
+                    "Investigate this location{}",
+                    option_labels::parenthesized(&option_labels::investigation_details(
+                        &self.scenario,
+                        &player.location,
+                        &[],
+                    ))
+                ),
+            ));
         }
         for location in &self.scenario.locations {
             if self.scenario.can_move(&player.location, &location.code) {
@@ -2252,7 +2335,7 @@ impl Game {
         {
             actions.push(choice(
                 "parley:lita",
-                "Parley with Lita Chantler: test intellect (4) to take control",
+                "Parley with Lita Chantler; test intellect (4) to take control",
             ));
         }
         for owner in &self.players {
@@ -2263,67 +2346,26 @@ impl Game {
                 if matches!(card.code.as_str(), "02038" | "02039" | "05041") {
                     actions.push(choice(
                         &format!("remove-threat:{}:{}", owner.investigator.id(), card.id),
-                        &format!("Spend two actions to discard {}", card.title),
+                        &format!("Discard {}", card.title),
                     ));
                 }
             }
         }
-        let mut choices = Vec::new();
-        for action in actions {
-            if super::ethereal_form::is_ethereal(self, actor)
-                && matches!(
-                    super::encounter_search::action_designator(&action.id)
-                        .or_else(|| action.id.split(':').next()),
-                    Some("fight" | "engage")
-                )
-            {
-                continue;
-            }
-            let cost = self.action_cost(actor, &action.id);
-            if player.ordinary_actions >= cost {
-                choices.push(choice(
-                    &format!("action:ordinary:{}", action.id),
-                    &format!("Spend an action: {}", action.label),
-                ));
-            }
-            if actor == Investigator::Tony
-                && !player.restricted_tony_action_used
-                && player.ordinary_actions >= cost - 1
-                && (matches!(
-                    super::encounter_search::action_designator(&action.id),
-                    Some("fight" | "engage")
-                ) || action.id.starts_with("fight:")
-                    || action.id.starts_with("engage:"))
-            {
-                let enemy_id = super::encounter_search::action_enemy(&action.id).or_else(|| {
-                    action
-                        .id
-                        .split(':')
-                        .nth(1)
-                        .and_then(|id| id.parse::<u16>().ok())
-                });
-                if self
-                    .scenario
-                    .enemies
-                    .iter()
-                    .any(|enemy| Some(enemy.card.id) == enemy_id && enemy.bounties > 0)
-                {
-                    choices.push(choice(
-                        &format!("action:tony:{}", action.id),
-                        &format!("Spend Tony's additional bounty action: {}", action.label),
-                    ));
-                }
-            }
-        }
-        if super::scenario::available_act_payment(self, false).is_some() {
-            choices.push(choice(
-                "act:advance",
-                "Spend the required group clues to advance the act",
-            ));
-        }
-        choices.push(choice("turn:end", "End this investigator's turn"));
-        choices.extend(self.player_window_choices());
-        choices
+        actions
+            .into_iter()
+            .filter(|action| {
+                !(super::ethereal_form::is_ethereal(self, actor)
+                    && matches!(
+                        super::encounter_search::action_designator(&action.id)
+                            .or_else(|| action.id.split(':').next()),
+                        Some("fight" | "engage")
+                    ))
+            })
+            .map(|action| {
+                let cost = self.action_cost(actor, &action.id);
+                (action, cost)
+            })
+            .collect()
     }
 
     fn action_cost(&self, actor: Investigator, action: &str) -> u8 {
@@ -2350,12 +2392,6 @@ impl Game {
     }
 
     fn choose_investigation(&mut self, id: &str) -> Result<(), RuleError> {
-        if id == "act:advance" {
-            self.frames.push(Frame::Scenario(
-                super::scenario::available_act_payment(self, false).expect("Offered act payment"),
-            ));
-            return Ok(());
-        }
         if id == "turn:end" {
             let actor = self.actor.expect("Current turn");
             let pending = self.players[actor.index()]
@@ -2597,7 +2633,7 @@ impl Game {
                 Frame::TestCleanup(test) if test.tester == who => abandoned.push(*test),
                 Frame::TestResults(_)
                 | Frame::TestCard(_)
-                | Frame::SuccessWindow
+                | Frame::OutcomeWindow
                 | Frame::AfterHarm(HarmContinuation::ApplySymbols)
                 | Frame::ResumeTokens
                 | Frame::Combat(_)
@@ -2744,14 +2780,22 @@ impl Game {
         projection.actor = Some(owner);
         projection.phase = Phase::Investigation;
         projection.players[owner.index()].ordinary_actions += 1;
+        if projection.scenario.outcome.is_some() {
+            return vec![];
+        }
+        let available = projection.players[owner.index()].ordinary_actions;
         projection
-            .investigation_choices()
+            .priced_actions(owner)
             .into_iter()
-            .filter_map(|mut choice| {
-                let action = choice.id.strip_prefix("action:ordinary:")?.to_owned();
-                choice.id = format!("granted:{action}");
-                choice.label = format!("Use the granted action: {}", choice.label);
-                Some(choice)
+            .filter(|(_, cost)| available >= *cost)
+            .map(|(action, cost)| {
+                choice(
+                    &format!("granted:{}", action.id),
+                    &option_labels::label(
+                        EffectiveCost::paid_by(Allowance::Granted, cost),
+                        &action.label,
+                    ),
+                )
             })
             .collect()
     }
@@ -3149,6 +3193,7 @@ impl Game {
                 }
             }
         }
+        choices.extend(super::group_payment::player_window_choice(self));
         choices
     }
 
@@ -3410,7 +3455,7 @@ impl Game {
             if !test.tony.success_window_closed {
                 if !self.outcome_reaction_choices().is_empty() {
                     self.test.as_mut().expect("Test").window = Window::AfterSuccess;
-                    self.frames.push(Frame::SuccessWindow);
+                    self.frames.push(Frame::OutcomeWindow);
                     return Ok(());
                 }
                 super::tony_effects::close_success_window(self);
@@ -3736,14 +3781,16 @@ impl Game {
             }
             TestOperation::Evade { enemy } => {
                 if success {
-                    let target = self
+                    // An enemy that left play during the test is not exhausted.
+                    if let Some(target) = self
                         .scenario
                         .enemies
                         .iter_mut()
                         .find(|target| target.card.id == enemy)
-                        .ok_or_else(|| RuleError("Evaded enemy missing".into()))?;
-                    target.exhausted = true;
-                    target.engaged = None;
+                    {
+                        target.exhausted = true;
+                        target.engaged = None;
+                    }
                     if test
                         .source_card
                         .as_ref()
@@ -3768,32 +3815,39 @@ impl Game {
                     return Ok(());
                 }
                 if success {
-                    let target = self
+                    // An enemy that left play during the test, such as a Study
+                    // enemy Trapped discarded in a player window, takes no damage.
+                    if let Some(target) = self
                         .scenario
                         .enemies
                         .iter_mut()
                         .find(|target| target.card.id == enemy)
-                        .ok_or_else(|| RuleError("Attacked enemy missing".into()))?;
-                    target.damage += damage;
-                    if target.damage
-                        >= super::scenario::enemy_health(&target.card.code)
-                            .ok_or_else(|| RuleError("Enemy health missing".into()))?
                     {
-                        let defeated = super::scenario::remove_defeated_enemy(self, enemy)?;
-                        if defeated.ends_scenario {
-                            self.suspend_for_resolution();
-                            self.frames.push(Frame::Scenario(ScenarioDecision::Ending));
-                            return Ok(());
-                        }
-                        if let Some(source) = &test.source_card {
-                            super::tony_cards::long_colt_defeat_reward(
+                        target.damage += damage;
+                        if target.damage
+                            >= super::scenario::enemy_health(&target.card.code)
+                                .ok_or_else(|| RuleError("Enemy health missing".into()))?
+                        {
+                            let defeated = super::scenario::remove_defeated_enemy(self, enemy)?;
+                            if defeated.ends_scenario {
+                                self.suspend_for_resolution();
+                                self.frames.push(Frame::Scenario(ScenarioDecision::Ending));
+                                return Ok(());
+                            }
+                            if let Some(source) = &test.source_card {
+                                super::tony_cards::long_colt_defeat_reward(
+                                    self,
+                                    test.tester,
+                                    &source.code,
+                                    defeated.enemy.bounties,
+                                );
+                            }
+                            super::combat::queue_defeat_reactions(
                                 self,
                                 test.tester,
-                                &source.code,
-                                defeated.enemy.bounties,
+                                &defeated.enemy,
                             );
                         }
-                        super::combat::queue_defeat_reactions(self, test.tester, &defeated.enemy);
                     }
                     if test
                         .source_card
@@ -4008,7 +4062,7 @@ impl Game {
                 self.phase = previous_phase;
                 continue;
             }
-            if matches!(self.frames.last(), Some(Frame::SuccessWindow)) {
+            if matches!(self.frames.last(), Some(Frame::OutcomeWindow)) {
                 if !self.outcome_reaction_choices().is_empty() {
                     return Ok(());
                 }

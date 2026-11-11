@@ -19,13 +19,19 @@ mod harm_cards;
 pub use elimination::LifecycleFixture;
 pub use harm_cards::HarmFixture;
 mod encounter_search;
+mod group_payment;
 pub use draws::DrawFixture;
 pub use encounter_search::SearchFixture;
+pub use group_payment::{
+    Allocation, Contributor, GROUP_CLUE_CONTRIBUTIONS, GroupCluePayment, Ineligibility,
+};
 pub use player_cards::AssetFixture;
 pub mod continuity;
 pub mod inspection;
 mod live;
 mod moments;
+mod option_labels;
+pub use option_labels::counted;
 mod peter;
 mod phases;
 pub use moments::{DeckStep, DrawBatch, DrawCue, DrawSource, PresentationMoment};
@@ -45,6 +51,7 @@ mod player_events;
 mod scenario;
 mod selected_witnesses;
 pub use selected_witnesses::SelectedWitness;
+mod single_option;
 mod spell_events;
 pub use player_events::PlayerEventFixture;
 mod spells;
@@ -56,7 +63,7 @@ mod test_boosts;
 mod test_cards;
 mod test_report;
 pub use test_boosts::BoostFixture;
-pub use test_cards::{PendulumPrompt, TestCardFixture};
+pub use test_cards::{PREDICTION_MARGIN, PendulumPrompt, TestCardFixture};
 pub use test_report::{Contribution, TestBreakdown, TokenContribution};
 
 pub use runtime::{
@@ -225,6 +232,9 @@ pub struct Observation {
     pub verification_fixture: Option<HostileFixture>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub play: Option<PlayObservation>,
+    /// The group clue payment the listed `act:pay:<contributions>` choice offers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_clue_payment: Option<GroupCluePayment>,
 }
 
 #[cfg(feature = "tabletop")]
@@ -269,6 +279,17 @@ pub struct Session {
     verification_fixture: Option<HostileFixture>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     runtime: Option<runtime::Game>,
+}
+
+/// Table tests only: place an investigator's clues and location where a witness
+/// needs them. No decision is recorded, so Undo cannot reproduce the placement.
+#[cfg(all(test, feature = "tabletop"))]
+impl Session {
+    pub(crate) fn place_for_test(&mut self, who: Investigator, clues: u8, location: &str) {
+        let player = &mut self.runtime.as_mut().expect("Scenario play").players[who.index()];
+        player.clues = clues;
+        player.location = location.into();
+    }
 }
 
 #[derive(Deserialize)]
@@ -412,6 +433,7 @@ impl Session {
 
     pub fn observe(&self) -> Observation {
         let mut choices = Vec::new();
+        let mut group_clue_payment = None;
         let prompt = match self.stage {
             Stage::ChooseLead => {
                 for investigator in Investigator::ALL {
@@ -458,6 +480,7 @@ impl Session {
             Stage::Playing => {
                 let game = self.runtime.as_ref().expect("Runtime stage");
                 choices = game.choices();
+                group_clue_payment = group_payment::offered(game, &choices);
                 if self.verification_fixture.is_none() && game.scenario.outcome.is_some() {
                     "The Gathering has ended. Review the recorded resolution and campaign consequences."
                 } else if self.verification_fixture.is_none() && choices.is_empty() {
@@ -509,6 +532,7 @@ impl Session {
             standard_bag: standard_bag(),
             verification_fixture: self.verification_fixture,
             play: self.runtime.as_ref().map(runtime::Game::observe),
+            group_clue_payment,
         }
     }
 
@@ -578,7 +602,7 @@ impl Session {
             .or_else(|| {
                 self.runtime
                     .as_ref()
-                    .and_then(|game| test_cards::direct_choice(game, id))
+                    .and_then(|game| game.direct_choice(id))
             })
             .ok_or_else(|| {
                 RuleError("That choice is not available at the current decision.".into())
@@ -591,8 +615,13 @@ impl Session {
             if let Some(game) = &mut candidate.runtime {
                 game.capture_presentation("Undo restores the previous position. The action history retains the earlier choices.");
             }
+            candidate.history.push(choice.label);
         } else {
             candidate.apply(id, &mut setup_draws)?;
+            candidate.history.push(choice.label);
+            // The steps that follow with one legal outcome belong to this
+            // decision: they are neither recorded decisions nor Undo destinations.
+            candidate.resolve_single_options()?;
             candidate.active_decisions.push(self.decisions.len());
             if candidate.crossed_undo_boundary(self) {
                 candidate.undo_floor = candidate.active_decisions.len();
@@ -640,7 +669,6 @@ impl Session {
             }
         }
         candidate.decisions.push(id.into());
-        candidate.history.push(choice.label);
         let after = candidate.observe();
         candidate
             .live
@@ -667,12 +695,7 @@ impl Session {
             ));
         }
         let mut active = self.active_decisions.clone();
-        let removed = active.pop().expect("A reversible decision");
-        // New automatic reaction closure belongs to its preceding reaction for
-        // Undo. Old explicit pass/Undo journals keep their exact interpretation.
-        if self.decisions[removed] == "test-card:continue" && active.len() > self.undo_floor {
-            active.pop();
-        }
+        active.pop().expect("A reversible decision");
         let mut restored = Self::from_origin(self.seed, self.verification_fixture)?;
         for &index in &active {
             let decision = self
@@ -680,7 +703,7 @@ impl Session {
                 .get(index)
                 .filter(|decision| decision.as_str() != "undo")
                 .ok_or_else(|| RuleError("Invalid active decision in the Undo record.".into()))?;
-            restored.choose_recorded(decision)?;
+            restored.choose(restored.revision, decision)?;
         }
         // The rules position rewinds; the chronological evidence never does.
         restored.revision = self.revision;
@@ -692,6 +715,30 @@ impl Session {
         restored.undo_floor = self.undo_floor;
         *self = restored;
         Ok(())
+    }
+
+    /// Perform every following step that has exactly one legal outcome, so the
+    /// next observation offers a genuine decision or a pause.
+    fn resolve_single_options(&mut self) -> Result<(), RuleError> {
+        const LIMIT: usize = 10_000;
+        for _ in 0..LIMIT {
+            let Some(game) = &self.runtime else {
+                return Ok(());
+            };
+            let choices = game.choices();
+            let Some(only) = single_option::forced(&choices) else {
+                return Ok(());
+            };
+            let (id, entry) = (only.id.clone(), single_option::history_entry(&only.label));
+            if let Some(game) = &mut self.runtime {
+                game.capture_before_automatic_step(&entry);
+            }
+            self.apply(&id, &mut Vec::new())?;
+            self.history.push(entry);
+        }
+        Err(RuleError(
+            "Automatic steps did not reach a decision; keep this save for review.".into(),
+        ))
     }
 
     fn apply(&mut self, id: &str, draws: &mut Vec<moments::DrawBatch>) -> Result<(), RuleError> {
@@ -888,26 +935,13 @@ impl Session {
         self.revision == 0 && self.decisions.is_empty()
     }
 
-    // Preserve the meaning of old audit entries without offering the obsolete
-    // Hornet timing to live players. New selections carry the explicit Then ID.
-    fn choose_recorded(&mut self, id: &str) -> Result<(), RuleError> {
-        let legacy = id
-            .strip_prefix("search:enemy:")
-            .is_some_and(|enemy| enemy.parse::<u16>().is_ok());
-        if let Some(game) = &mut self.runtime {
-            game.legacy_hornet_search = legacy;
-        }
-        let result = self.choose(self.revision, id);
-        if let Some(game) = &mut self.runtime {
-            game.legacy_hornet_search = false;
-        }
-        result
-    }
-
+    /// Admission is exact replay: every recorded decision must still be offered
+    /// by this build and reproduce the recorded state. No earlier-build
+    /// identifier or meaning is reinterpreted.
     pub fn validate(&self) -> Result<(), RuleError> {
         let mut reconstructed = Self::from_origin(self.seed, self.verification_fixture)?;
         for decision in &self.decisions {
-            reconstructed.choose_recorded(decision)?;
+            reconstructed.choose(reconstructed.revision, decision)?;
         }
         if &reconstructed != self {
             return Err(RuleError(
@@ -943,6 +977,8 @@ impl Session {
             session.history = vec!["Privileged source-derived runtime verification; this is not an ordinary fresh campaign.".into()];
             let mut game =
                 runtime::Game::fixture(fixture, seed, &session.investigators, &session.decks);
+            // A privileged witness poses its named step as constructed, even a
+            // single-option one; the steps that follow its first choice resolve.
             game.presentation.clear();
             session.history.append(&mut game.history);
             session.runtime = Some(game);

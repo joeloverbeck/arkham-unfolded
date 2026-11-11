@@ -4,7 +4,7 @@
 //! one exists; looking does not remove cards from their original game area.
 
 use super::runtime::{Frame, Game, PendingRevelation, Phase, Skill, TestOperation};
-use super::{CardView, Investigator, cards, scenario};
+use super::{CardView, Investigator, cards, option_labels::counted, scenario};
 use crate::{Choice, RuleError};
 use serde::{Deserialize, Serialize};
 
@@ -46,41 +46,45 @@ mod continuity_tests {
     }
 
     #[test]
-    fn legacy_hornet_audit_and_pending_reward_remain_loadable_without_repeating_rewards() {
+    fn hornet_rewards_once_at_spawn_and_the_unsuffixed_identifier_is_refused() {
         let (mut session, enemy) = search();
-        let legacy = format!("search:enemy:{enemy}");
+        let before = session.clone();
         assert!(
-            session.choose(session.observe().revision, &legacy).is_err(),
-            "Live choices must use corrected timing"
+            session
+                .choose(session.observe().revision, &format!("search:enemy:{enemy}"))
+                .is_err(),
+            "Only the Then identifier selects Hornet's spawn"
         );
-        session.choose_recorded(&legacy).unwrap();
-        assert_eq!(session.observe().play.unwrap().players[0].resources, 4);
-        // Pre-fix records have no reward_applied field.
-        let mut old = serde_json::to_value(&session).unwrap();
-        for frame in old["runtime"]["frames"].as_array_mut().unwrap() {
-            if let Some(state) = frame
-                .get_mut("EncounterSearch")
-                .and_then(|search| search.get_mut("AfterSpawn"))
-            {
-                state.as_object_mut().unwrap().remove("reward_applied");
-            }
-        }
-        session = serde_json::from_value(old).unwrap();
-        session.validate().unwrap();
+        assert_eq!(session, before);
+        session
+            .choose(
+                session.observe().revision,
+                &format!("search:enemy:{enemy}:then"),
+            )
+            .unwrap();
+        let play = session.observe().play.unwrap();
+        assert_eq!((play.players[0].resources, play.players[0].clues), (5, 1));
         session
             .choose(session.observe().revision, &format!("bounty:{enemy}:0"))
             .unwrap();
+        // The search then finishes by itself within the bounty decision.
+        assert!(
+            session.observe().history.contains(
+                &"Automatic: Shuffle the encounter deck and finish Kicking the Hornet's Nest"
+                    .to_owned()
+            )
+        );
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("legacy-hornet.json");
+        let path = directory.path().join("hornet.json");
         continuity::save_session(&path, &session).unwrap();
-        let mut reopened = continuity::load_session(&path).unwrap();
-        reopened
-            .choose(reopened.observe().revision, "search:finish")
-            .unwrap();
+        let reopened = continuity::load_session(&path).unwrap();
+        assert_eq!(reopened, session);
         let play = reopened.observe().play.unwrap();
-        assert_eq!((play.players[0].resources, play.players[0].clues), (5, 1));
-        continuity::save_session(&path, &reopened).unwrap();
-        assert_eq!(continuity::load_session(&path).unwrap(), reopened);
+        assert_eq!(
+            (play.players[0].resources, play.players[0].clues),
+            (5, 1),
+            "Finishing never repeats the reward"
+        );
     }
 
     #[test]
@@ -157,10 +161,6 @@ pub(super) enum SearchDecision {
     },
     AfterSpawn {
         event: PaidEvent,
-        health: u8,
-        // Older saves stopped before the reward. Never repeat it in new saves.
-        #[serde(default)]
-        reward_applied: bool,
     },
     FinishEvent {
         event: PaidEvent,
@@ -198,7 +198,7 @@ pub(super) fn action_choices(game: &Game, actor: Investigator) -> Vec<Choice> {
         .map(|card| {
             choice(
                 format!("play:tony:{}", card.id),
-                format!("Play {}: search for a non-Elite enemy", card.title),
+                format!("Play {} to search for a non-Elite enemy", card.title),
             )
         })
         .collect();
@@ -261,7 +261,7 @@ fn event_options(
                     !super::player_cards::uncage_targets(game, actor).is_empty()
                 } =>
             {
-                options.push((choice(format!("play:tony:{}:03033", card.id), "Play Uncage the Soul: play a Spell or Ritual from hand, reducing its cost by 3".into()), 0, EventEffect::Uncage));
+                options.push((choice(format!("play:tony:{}:03033", card.id), "Play Uncage the Soul to play a Spell or Ritual from hand, reducing its cost by 3".into()), 0, EventEffect::Uncage));
             }
             SCENE
                 if player.resources >= 2
@@ -293,7 +293,29 @@ fn event_options(
                                 {
                                     continue;
                                 }
-                                options.push((choice(format!("play:tony:{}:{INTEL}:{}:{}:{}", card.id, location.code, u8::from(amount_boost), u8::from(range_boost)), format!("Play Intel Report for {cost} resources: discover {amount} clues at {}", super::content::title(&location.code).unwrap_or(&location.code))), cost, EventEffect::Discover { location: location.code.clone(), clues: amount }));
+                                options.push((
+                                    choice(
+                                        format!(
+                                            "play:tony:{}:{INTEL}:{}:{}:{}",
+                                            card.id,
+                                            location.code,
+                                            u8::from(amount_boost),
+                                            u8::from(range_boost)
+                                        ),
+                                        format!(
+                                            "Play Intel Report for {} to discover {} at {}",
+                                            counted(cost, "resource", "resources"),
+                                            counted(amount, "clue", "clues"),
+                                            super::content::title(&location.code)
+                                                .unwrap_or(&location.code)
+                                        ),
+                                    ),
+                                    cost,
+                                    EventEffect::Discover {
+                                        location: location.code.clone(),
+                                        clues: amount,
+                                    },
+                                ));
                             }
                         } else {
                             for enemy in &game.scenario.enemies {
@@ -305,7 +327,27 @@ fn event_options(
                                 {
                                     continue;
                                 }
-                                options.push((choice(format!("play:tony:{}:{FAVOR}:{}:{}:{}", card.id, enemy.card.id, u8::from(amount_boost), u8::from(range_boost)), format!("Play Small Favor for {cost} resources: deal {amount} damage to {}", enemy.card.title)), cost, EventEffect::Damage { enemy: enemy.card.id, damage: amount }));
+                                options.push((
+                                    choice(
+                                        format!(
+                                            "play:tony:{}:{FAVOR}:{}:{}:{}",
+                                            card.id,
+                                            enemy.card.id,
+                                            u8::from(amount_boost),
+                                            u8::from(range_boost)
+                                        ),
+                                        format!(
+                                            "Play Small Favor for {} to deal {amount} damage to {}",
+                                            counted(cost, "resource", "resources"),
+                                            enemy.card.title
+                                        ),
+                                    ),
+                                    cost,
+                                    EventEffect::Damage {
+                                        enemy: enemy.card.id,
+                                        damage: amount,
+                                    },
+                                ));
                             }
                         }
                     }
@@ -325,7 +367,7 @@ fn event_options(
                         choice(
                             format!("play:tony:{}:{GET_OVER_HERE}:{}", card.id, enemy.card.id),
                             format!(
-                                "Play Get over here! for 2 resources: pull, engage and fight {}",
+                                "Play Get over here! for 2 resources to pull, engage and fight {}",
                                 enemy.card.title
                             ),
                         ),
@@ -576,7 +618,7 @@ pub(super) fn choices(game: &Game, decision: &SearchDecision) -> Vec<Choice> {
                 .filter(|card| eligible(card, event))
                 .map(|card| {
                     choice(
-                        if event.card.code == HORNET && !game.legacy_hornet_search {
+                        if event.card.code == HORNET {
                             format!("search:enemy:{}:then", card.id)
                         } else {
                             format!("search:enemy:{}", card.id)
@@ -599,19 +641,9 @@ pub(super) fn choices(game: &Game, decision: &SearchDecision) -> Vec<Choice> {
                 choices
             }
         }
-        SearchDecision::AfterSpawn {
-            event,
-            health,
-            reward_applied,
-        } => vec![choice(
+        SearchDecision::AfterSpawn { event } => vec![choice(
             "search:finish".into(),
-            if event.card.code == HUNT {
-                "Shuffle the encounter deck and finish On the Hunt".into()
-            } else if *reward_applied {
-                "Shuffle the encounter deck and finish Kicking the Hornet's Nest".into()
-            } else {
-                format!("Discover 1 clue, gain {health} resources, and shuffle the encounter deck")
-            },
+            format!("Shuffle the encounter deck and finish {}", event.card.title),
         )],
     }
 }
@@ -812,33 +844,16 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                 owner: None,
             });
             // RR Then: the dependent reward precedes after-entry reactions.
-            let reward_applied = event.card.code == HORNET && id.ends_with(":then");
+            let reward = event.card.code == HORNET;
             let owner = event.owner;
             game.frames
-                .push(Frame::EncounterSearch(SearchDecision::AfterSpawn {
-                    event,
-                    health,
-                    reward_applied,
-                }));
-            if reward_applied {
+                .push(Frame::EncounterSearch(SearchDecision::AfterSpawn { event }));
+            if reward {
                 hornet_reward(game, owner, health);
             }
             game.scenario_step(scenario::ScenarioStep::EnemyEntered(enemy))?;
         }
-        SearchDecision::AfterSpawn {
-            event,
-            health,
-            reward_applied,
-        } => {
-            if event.card.code == HUNT {
-                finish(game, event);
-                return Ok(());
-            }
-            if !reward_applied {
-                hornet_reward(game, event.owner, health);
-            }
-            finish(game, event);
-        }
+        SearchDecision::AfterSpawn { event } => finish(game, event),
     }
     Ok(())
 }

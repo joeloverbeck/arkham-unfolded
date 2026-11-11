@@ -416,7 +416,15 @@ fn initiative_loses_icons_for_completed_actions_by_the_other_investigator_in_thi
                 choose(&mut game, "action:ordinary:resource");
             }
         }
-        choose(&mut game, "turn:end");
+        // With no action left and nothing else playable, the turn ends by itself.
+        if game
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == "turn:end")
+        {
+            choose(&mut game, "turn:end");
+        }
         choose(&mut game, "turn:tony");
         choose(&mut game, "action:ordinary:investigate");
         while game

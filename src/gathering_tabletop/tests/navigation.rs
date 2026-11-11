@@ -200,3 +200,369 @@ fn wasd_dismisses_a_card_action_list_without_choosing_and_ordinary_tab_focus_doe
     assert_eq!(app.world().resource::<Table>().view(), view);
     assert!(!path.exists());
 }
+
+fn press(app: &mut App, code: KeyCode, key: Key) {
+    keyboard(app, code, key.clone(), true);
+    keyboard(app, code, key, false);
+}
+
+fn shift_tab(app: &mut App) {
+    keyboard(app, KeyCode::ShiftLeft, Key::Shift, true);
+    press(app, KeyCode::Tab, Key::Tab);
+    keyboard(app, KeyCode::ShiftLeft, Key::Shift, false);
+}
+
+/// Labels in Tab order from the first focusable control until focus returns there.
+fn tab_cycle(app: &mut App) -> Vec<String> {
+    let mut cycle = Vec::new();
+    for _ in 0..80 {
+        press(app, KeyCode::Tab, Key::Tab);
+        let label = focused_label(app).expect("Tab focuses a labelled control");
+        if cycle.first() == Some(&label) {
+            return cycle;
+        }
+        cycle.push(label);
+    }
+    panic!("Tab never returned to its start: {cycle:?}");
+}
+
+/// Labels of the focusable buttons inside the non-modal tab group `order`, in tree order.
+fn group_labels(app: &mut App, order: i32) -> Vec<String> {
+    fn walk(world: &World, entity: Entity, labels: &mut Vec<String>) {
+        if world
+            .get::<bevy::input_focus::tab_navigation::TabIndex>(entity)
+            .is_some()
+            && let Some(label) = world.get::<AccessibleLabel>(entity)
+        {
+            labels.push(label.0.clone());
+        }
+        for child in world.get::<Children>(entity).into_iter().flatten() {
+            walk(world, *child, labels);
+        }
+    }
+    let world = app.world_mut();
+    let groups: Vec<Entity> = world
+        .query::<(Entity, &TabGroup)>()
+        .iter(world)
+        .filter(|(_, group)| !group.modal && group.order == order)
+        .map(|(entity, _)| entity)
+        .collect();
+    let mut labels = Vec::new();
+    for group in groups {
+        walk(world, group, &mut labels);
+    }
+    labels
+}
+
+#[test]
+fn the_menu_button_follows_the_existing_tab_groups_and_shift_tab_reaches_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("menu-tab.json");
+    let mut app = host(path.clone());
+    activate_choice(&mut app, "lead:tony");
+    finish_presentation(&mut app);
+    let saved = std::fs::read(&path).unwrap();
+    let rail = group_labels(&mut app, 0);
+    let decisions = group_labels(&mut app, 1);
+    assert!(
+        decisions.contains(&"Keep this opening hand".to_owned()),
+        "The decision panel offers its controls: {decisions:?}"
+    );
+    assert_eq!(group_labels(&mut app, 3), ["Menu"]);
+
+    app.world_mut().resource_mut::<InputFocus>().clear();
+    let cycle = tab_cycle(&mut app);
+    let first = cycle
+        .iter()
+        .position(|label| label == &rail[0])
+        .expect("The portrait rail is in the Tab order");
+    let cycle = [&cycle[first..], &cycle[..first]].concat();
+    for (index, label) in [
+        "Focus Tony Morgan",
+        "Focus Patrice Hathaway",
+        "Focus Jacqueline Fine",
+        "Scenario",
+        "Test",
+        "Overview",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(cycle[index].starts_with(label), "{cycle:?}");
+    }
+    assert_eq!(
+        cycle,
+        [rail.clone(), decisions, vec!["Menu".to_owned()]].concat(),
+        "Navigation, then decisions, then the Menu"
+    );
+
+    // Shift+Tab wraps from the first portrait to the Menu and back to its predecessor.
+    while focused_label(&app).as_ref() != Some(&rail[0]) {
+        press(&mut app, KeyCode::Tab, Key::Tab);
+    }
+    shift_tab(&mut app);
+    assert_eq!(focused_label(&app).as_deref(), Some("Menu"));
+    shift_tab(&mut app);
+    assert_eq!(focused_label(&app), cycle.get(cycle.len() - 2).cloned());
+    press(&mut app, KeyCode::Tab, Key::Tab);
+    press(&mut app, KeyCode::Enter, Key::Enter);
+    assert!(app.world().resource::<Table>().menu_open);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        saved,
+        "Reaching the Menu decides nothing"
+    );
+}
+
+const MODAL_DIALOGS: [&str; 6] = [
+    "inspection",
+    "history",
+    "credits",
+    "restart confirmation",
+    "encounter reading",
+    "group clue payment",
+];
+
+/// Opens one of `MODAL_DIALOGS` the way a player does.
+fn open_modal_dialog(name: &str, path: PathBuf, host: fn(Table) -> App) -> App {
+    fn activate(app: &mut App, label: &str) {
+        let entity = button_with_label(app, label).unwrap_or_else(|| panic!("{label}"));
+        app.world_mut().trigger(Activate { entity });
+        app.update();
+    }
+    let session = match name {
+        "encounter reading" => Session::with_hostile_fixture(
+            crate::gathering::HostileFixture::Harm(crate::gathering::HarmFixture::WardCancellation),
+        ),
+        "group clue payment" => {
+            Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd)
+        }
+        _ => Session::with_seed(19),
+    };
+    let mut app = host(Table::new(session, path));
+    match name {
+        "inspection" => {
+            click_source(&mut app, controls::Source::Investigator(Investigator::Tony));
+            activate(&mut app, "Inspect");
+        }
+        "history" | "credits" | "restart confirmation" => {
+            activate(&mut app, "Menu");
+            activate(
+                &mut app,
+                match name {
+                    "history" => "Action history and rules reasons",
+                    "credits" => "Credits",
+                    _ => "Restart The Gathering...",
+                },
+            );
+        }
+        "group clue payment" => {
+            let entity = choice_button(&mut app, "Spend 9 clues as a group: advance The Barrier…")
+                .expect("The decision bar opens the payment at round end");
+            app.world_mut().trigger(Activate { entity });
+            app.update();
+        }
+        _ => {}
+    }
+    app
+}
+
+#[test]
+fn every_modal_dialog_offers_focus_when_opened() {
+    let directory = tempfile::tempdir().unwrap();
+    for name in MODAL_DIALOGS {
+        let path = directory.path().join(format!("{name}.json"));
+        let mut app = open_modal_dialog(name, path, |table| host_with_table(table, false));
+        let dialogs = modal_dialogs_and_focus(&mut app);
+        assert!(!dialogs.is_empty(), "{name} opens a modal dialog");
+        assert!(
+            dialogs.iter().all(|(_, focusable)| *focusable),
+            "{name}: {dialogs:?}"
+        );
+    }
+}
+
+/// Natively, Bevy's `ModalDialogPlugin` moves focus into each dialog 0.1 s
+/// after the dialog appears, and logs "No focusable entities in modal dialog"
+/// if that dialog no longer offers focus by then. Table changes re-render the
+/// open dialog inside that delay: the stepper keys of the clue chooser, or any
+/// other change to the table.
+#[test]
+fn modal_dialogs_keep_bevys_delayed_focus_across_re_renders() {
+    use bevy::log::tracing_subscriber;
+    use bevy::ui_widgets::ModalDialog;
+
+    const CHILD: &str = "ARKHAM_MODAL_DELAYED_FOCUS_TEST_CHILD";
+    const VERIFIED: &str = "modal delayed focus assertions completed";
+    const WARNING: &str = "No focusable entities in modal dialog";
+    if std::env::var_os(CHILD).is_none() {
+        // The plugin logs from the production scheduler: a process-global
+        // subscriber in a child process sees every warning it emits.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "gathering_tabletop::tests::navigation::modal_dialogs_keep_bevys_delayed_focus_across_re_renders",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success() && String::from_utf8_lossy(&output.stdout).contains(VERIFIED),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(bevy::log::Level::WARN)
+        .without_time()
+        .with_ansi(false)
+        .with_writer(std::sync::Arc::new(log.reopen().unwrap()))
+        .finish();
+    bevy::log::tracing::subscriber::set_global_default(subscriber).unwrap();
+    let warnings = || std::fs::read_to_string(log.path()).unwrap();
+    let frame = |app: &mut App, millis: u64| {
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_millis(millis));
+        app.update();
+    };
+    let focus_inside_a_dialog = |app: &mut App| {
+        let world = app.world_mut();
+        let Some(focused) = world.resource::<InputFocus>().get() else {
+            return false;
+        };
+        let mut ancestors = world.query::<&ChildOf>();
+        let mut dialogs = world.query_filtered::<(), With<ModalDialog>>();
+        std::iter::once(focused)
+            .chain(ancestors.query(world).iter_ancestors(focused))
+            .any(|entity| dialogs.query(world).contains(entity))
+    };
+    let directory = tempfile::tempdir().unwrap();
+    for name in MODAL_DIALOGS {
+        let mut app = open_modal_dialog(
+            name,
+            directory.path().join(format!("{name}.json")),
+            host_with_modal_plugins,
+        );
+        // Any table change re-renders the open dialog.
+        for _ in 0..2 {
+            frame(&mut app, 30);
+            app.world_mut().resource_mut::<Table>().dirty = true;
+            app.update();
+        }
+        frame(&mut app, 150);
+        frame(&mut app, 16);
+        assert!(!warnings().contains(WARNING), "{name}: {}", warnings());
+        let dialogs = modal_dialogs_and_focus(&mut app);
+        assert!(
+            dialogs.len() == 1 && dialogs[0].1,
+            "{name}: one open dialog offers focus: {dialogs:?}"
+        );
+        assert!(
+            focus_inside_a_dialog(&mut app),
+            "{name}: focus is inside the dialog"
+        );
+        assert!(
+            app.world()
+                .resource::<bevy::input_focus::InputFocusVisible>()
+                .0,
+            "{name}: the plugin made focus visible"
+        );
+        if name == "history" {
+            press(&mut app, KeyCode::Escape, Key::Escape);
+            frame(&mut app, 150);
+            assert!(
+                modal_dialogs_and_focus(&mut app).is_empty(),
+                "Escape closes the history"
+            );
+        }
+    }
+    // Rapid stepper keys re-render the chooser, as the seat's 18 presses did.
+    let mut app = open_modal_dialog(
+        "group clue payment",
+        directory.path().join("chooser.json"),
+        host_with_modal_plugins,
+    );
+    for (code, logical) in [
+        (KeyCode::ArrowDown, Key::ArrowDown),
+        (KeyCode::ArrowLeft, Key::ArrowLeft),
+        (KeyCode::ArrowUp, Key::ArrowUp),
+        (KeyCode::ArrowRight, Key::ArrowRight),
+    ] {
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_millis(20));
+        press(&mut app, code, logical);
+    }
+    frame(&mut app, 150);
+    frame(&mut app, 16);
+    assert!(
+        !warnings().contains(WARNING),
+        "chooser keys: {}",
+        warnings()
+    );
+    assert!(
+        focus_inside_a_dialog(&mut app),
+        "chooser keys: focus stays in the chooser"
+    );
+    println!("{VERIFIED}");
+}
+
+#[test]
+fn sideboard_headings_are_reached_by_tab_between_decisions_and_the_menu() {
+    let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+        crate::gathering::TonyEffectFixture::QuickThinking,
+    ));
+    let mut play = session.observe().play.unwrap();
+    for enemy in &mut play.scenario.enemies {
+        enemy.engaged = None;
+    }
+    play.scenario.locations[0].fog = Some(crate::gathering::CardView {
+        id: 63000,
+        code: "01168".into(),
+        title: "Obscuring Fog".into(),
+        weakness: false,
+    });
+    let mut app = super::cards::at_public_moment(session, play, PathBuf::new(), false);
+    // World labels are shown only once the camera can project them.
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+        &mut app,
+        Vec2::new(1600., 1000.),
+        1.,
+    );
+    app.update();
+    let headings = group_labels(&mut app, 2);
+    assert!(
+        !headings.is_empty() && headings.iter().all(|label| label.contains(" · ")),
+        "The sideboards offer their location headings: {headings:?}"
+    );
+    // Enemy headings come first, then the attachment sideboard's.
+    let attached = headings
+        .iter()
+        .position(|label| label.starts_with("Attached to "))
+        .expect("the attachment sideboard offers its heading");
+    assert!(
+        attached > 0
+            && headings[attached..]
+                .iter()
+                .all(|label| label.starts_with("Attached to ")),
+        "{headings:?}"
+    );
+    app.world_mut().resource_mut::<InputFocus>().clear();
+    let cycle = tab_cycle(&mut app);
+    let start = cycle
+        .iter()
+        .position(|label| label == &headings[0])
+        .unwrap_or_else(|| panic!("Tab reaches the sideboard headings: {cycle:?}"));
+    let after = (start + headings.len()) % cycle.len();
+    let reached: Vec<_> = (start..start + headings.len())
+        .map(|index| cycle[index % cycle.len()].clone())
+        .collect();
+    assert_eq!(reached, headings);
+    assert_eq!(cycle[after], "Menu", "Headings precede the Menu: {cycle:?}");
+}

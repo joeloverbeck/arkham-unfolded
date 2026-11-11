@@ -50,28 +50,27 @@ fn sealed_premonition_voice_pays_once_then_resumes_after_opportunity() {
                 && enemy.engaged == Some(Investigator::Jacqueline)
                 && !enemy.exhausted)
     );
+    let playing = session.observe().revision;
     choose(&mut session, &format!("action:ordinary:play:spell:{voice}"));
-    let paid = session.observe();
-    let play = paid.play.as_ref().unwrap();
+    // The lone attack of opportunity resolves by itself; its presented harm
+    // precedes the event's resolution.
+    let play = session
+        .presentation_after(playing)
+        .iter()
+        .find(|moment| moment.caption.starts_with("Jacqueline Fine resolves"))
+        .map(|moment| moment.play.clone())
+        .unwrap();
     assert_eq!(play.actions_remaining[2], 2);
     assert_eq!(
         play.players[2].resources, 5,
         "Event resolution waits for opportunity attack"
     );
     assert_eq!(play.premonition, before.premonition);
-    let attack = paid
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("voice-opportunity.json");
     continuity::save_session(&path, &session).unwrap();
     let mut reopened = continuity::load_session(&path).unwrap();
     for current in [&mut session, &mut reopened] {
-        choose(current, &attack);
         for _ in 0..5 {
             let pending = current.observe();
             if pending

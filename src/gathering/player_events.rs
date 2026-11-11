@@ -3,6 +3,7 @@
 use super::{
     CardView, Investigator, cards,
     encounter_search::{EventEffect, PaidEvent, SearchDecision},
+    option_labels,
     runtime::{Frame, Game, Skill, TestOperation},
 };
 use crate::{Choice, RuleError, TokenFace};
@@ -56,16 +57,22 @@ pub(super) fn action_choices(game: &Game, owner: Investigator) -> Vec<Choice> {
                 } else {
                     ""
                 };
+                let details = if card.code == "04272" {
+                    option_labels::investigation_details(&game.scenario, &player.location, &[])
+                } else {
+                    vec![]
+                };
                 choices.push(Choice {
                     id: format!("play:tony:{}:{}{origin}", card.id, card.code),
                     label: format!(
-                        "Play {}{}",
+                        "Play {}{}{}",
                         card.title,
                         if from_discard {
                             " from your discard pile"
                         } else {
                             ""
-                        }
+                        },
+                        option_labels::parenthesized(&details)
                     ),
                     cancel_faces: vec![],
                 });

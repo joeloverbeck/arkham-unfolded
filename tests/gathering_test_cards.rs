@@ -1,4 +1,6 @@
-use arkham_unfolded_experiment::gathering::{HostileFixture, Session, TestCardFixture, continuity};
+use arkham_unfolded_experiment::gathering::{
+    HostileFixture, PREDICTION_MARGIN, Session, TestCardFixture, continuity,
+};
 
 #[test]
 fn promise_uses_the_finite_curse_pool_and_resolved_curses_leave_at_cleanup() {
@@ -205,41 +207,44 @@ fn resourceful_recovers_only_an_eligible_discard_at_st7_and_has_a_no_match_outco
         choose(&mut session, &format!("commit:{card}"));
         choose(&mut session, "commit:confirm");
         reach_reveal(&mut session);
+        let mut moments = Vec::new();
+        let revealing = session.observe().revision;
         choose(&mut session, "test:reveal");
+        moments.extend_from_slice(session.presentation_after(revealing));
         if let Some(result) =
             session.observe().choices.iter().find(|choice| {
                 choice.id.starts_with("result:") && choice.label.contains("Resourceful")
             })
         {
+            let ordering = session.observe().revision;
             choose(&mut session, &result.id);
+            moments.extend_from_slice(session.presentation_after(ordering));
         }
-        let pending = session.observe();
-        let recovery: Vec<_> = pending
-            .choices
+        // Resourceful cannot recover itself or a neutral card, so its one
+        // eligible target is returned by itself.
+        let recovered = session
+            .observe()
+            .history
             .iter()
-            .filter(|choice| choice.id.starts_with("resourceful:"))
-            .collect();
+            .filter(|entry| entry.starts_with("Automatic: Return ") && entry.ends_with("'s hand"))
+            .count();
         if case == TestCardFixture::ResourcefulSuccess {
             assert_eq!(
-                recovery.len(),
-                1,
+                recovered, 1,
                 "Resourceful cannot recover itself or a neutral card"
             );
+            let cleanup = moments
+                .iter()
+                .find(|moment| moment.caption.starts_with("The skill test finishes."))
+                .map(|moment| &moment.play)
+                .unwrap();
             assert!(
-                !pending.play.as_ref().unwrap().players[1]
-                    .discard
+                cleanup.players[1]
+                    .hand
                     .iter()
-                    .any(|entry| entry.id == card),
+                    .any(|entry| entry.code == "04200"),
                 "ST7 recovery precedes ST8 committed-card discard"
             );
-            let decision = recovery[0].id.clone();
-            let directory = tempfile::tempdir().unwrap();
-            let path = directory.path().join("resourceful.json");
-            continuity::save_session(&path, &session).unwrap();
-            let mut reopened = continuity::load_session(&path).unwrap();
-            choose(&mut session, &decision);
-            choose(&mut reopened, &decision);
-            assert_eq!(session.observe(), reopened.observe());
             assert!(
                 session.observe().play.unwrap().players[1]
                     .hand
@@ -247,7 +252,7 @@ fn resourceful_recovers_only_an_eligible_discard_at_st7_and_has_a_no_match_outco
                     .any(|entry| entry.code == "04200")
             );
         } else {
-            assert!(recovery.is_empty());
+            assert_eq!(recovered, 0);
         }
         assert!(
             session.observe().play.unwrap().players[1]
@@ -307,6 +312,80 @@ fn reach_reveal(session: &mut Session) {
         );
     }
     panic!("Expected the actual test's reveal window");
+}
+
+#[test]
+fn observations_list_one_direct_prediction_choice_per_ready_pendulum_and_no_stepper() {
+    let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(
+        TestCardFixture::CrystalPrediction,
+    ));
+    let view = session.observe();
+    let crystal = view.play.as_ref().unwrap().players[2]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "60411")
+        .unwrap()
+        .card
+        .id;
+    let listed: Vec<_> = view
+        .choices
+        .iter()
+        .filter(|choice| choice.id.starts_with("test-card:predict:"))
+        .collect();
+    assert_eq!(listed.len(), 1, "{:?}", view.choices);
+    let template = &listed[0].id;
+    assert_eq!(
+        template,
+        &format!("test-card:predict:{crystal}:{PREDICTION_MARGIN}")
+    );
+    assert!(
+        listed[0].label.contains("Crystal Pendulum"),
+        "{}",
+        listed[0].label
+    );
+    assert!(
+        listed[0].label.contains(PREDICTION_MARGIN),
+        "{}",
+        listed[0].label
+    );
+    assert!(
+        !view.choices.iter().any(|choice| {
+            choice.id.starts_with("test-card:pendulum:")
+                || choice.id.starts_with("test-card:number:")
+        }),
+        "The former stepper is gone: {:?}",
+        view.choices
+    );
+    let before = session.clone();
+    for refused in [
+        template.clone(),
+        format!("test-card:pendulum:{crystal}"),
+        format!("test-card:predict:{crystal}:65536"),
+        format!("test-card:predict:{crystal}:07"),
+    ] {
+        assert!(
+            session.choose(view.revision, &refused).is_err(),
+            "{refused}"
+        );
+        assert_eq!(session, before, "{refused}");
+    }
+    session
+        .choose(view.revision, &template.replace(PREDICTION_MARGIN, "7"))
+        .unwrap();
+    let after = session.observe();
+    assert!(
+        after.history.last().unwrap().contains("predict 7"),
+        "{:?}",
+        after.history.last()
+    );
+    assert!(
+        !after
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("test-card:predict:")),
+        "An exhausted Pendulum offers no further prediction"
+    );
+    assert!(session.pendulum_prompts().is_empty());
 }
 
 #[test]
@@ -380,14 +459,19 @@ fn direct_prediction_preserves_another_reaction_and_the_following_commitment_win
             .iter()
             .any(|choice| choice.id.starts_with("tony:gregory:"))
     );
-    let with_reaction = session.clone();
-    assert!(session.choose(view.revision, "test-card:continue").is_err());
-    assert_eq!(session, with_reaction);
+    // A window with a real opportunity is never resolved away: Gregory's
+    // reaction stays beside the explicit skip.
     assert!(
         view.choices
             .iter()
             .any(|choice| choice.id == "test-card:pass")
     );
+    let with_reaction = session.clone();
+    assert!(
+        session.choose(view.revision, "test-card:continue").is_err(),
+        "No hidden continuation identity stands in for the explicit skip"
+    );
+    assert_eq!(session, with_reaction);
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("reaction.json");
     continuity::save_session(&path, &session).unwrap();
@@ -399,15 +483,26 @@ fn direct_prediction_preserves_another_reaction_and_the_following_commitment_win
         .find(|choice| choice.id.starts_with("tony:gregory:"))
         .unwrap()
         .id;
+    let reacting = session.observe();
     choose(&mut session, &wager);
-    if session
-        .observe()
-        .choices
-        .iter()
-        .any(|choice| choice.id == "test-card:pass")
-    {
-        choose(&mut session, "test-card:pass");
-    }
+    // The wager leaves no other reaction, so the emptied window closes by
+    // itself as part of the wager, and Undo returns to the genuine decision.
+    let after_wager = session.observe();
+    assert!(
+        !after_wager
+            .choices
+            .iter()
+            .any(|choice| choice.id == "test-card:pass")
+    );
+    assert!(
+        after_wager
+            .history
+            .contains(&"Automatic: Continue after test-begin reactions".to_owned())
+    );
+    let mut undone = session.clone();
+    choose(&mut undone, "undo");
+    assert_eq!(undone.observe().play, reacting.play);
+    assert_eq!(undone.observe().choices, reacting.choices);
     if session
         .observe()
         .choices
@@ -542,17 +637,25 @@ fn crystal_prediction_is_saved_before_reveal_and_only_the_exact_margin_draws() {
             .unwrap()
             .card
             .id;
-        choose(&mut session, &format!("test-card:pendulum:{crystal}"));
-        for _ in 0..number {
-            choose(&mut session, "test-card:number:up");
-        }
+        let listed = session
+            .observe()
+            .choices
+            .into_iter()
+            .find(|choice| choice.id.starts_with("test-card:predict:"))
+            .unwrap()
+            .id;
+        session
+            .choose(
+                session.observe().revision,
+                &listed.replace(PREDICTION_MARGIN, &number.to_string()),
+            )
+            .unwrap();
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("prediction.json");
         continuity::save_session(&path, &session).unwrap();
         let mut reopened = continuity::load_session(&path).unwrap();
         assert_eq!(reopened.observe(), session.observe());
         for game in [&mut session, &mut reopened] {
-            choose(game, "test-card:number:confirm");
             let named = game.observe().play.unwrap();
             assert!(
                 !named.players[2]
@@ -563,14 +666,13 @@ fn crystal_prediction_is_saved_before_reveal_and_only_the_exact_margin_draws() {
                     .ready
             );
             assert_eq!(named.players[2].deck_count, before.players[2].deck_count);
-            choose(game, "test-card:pass");
             reach_reveal(game);
             assert!(
                 !game
                     .observe()
                     .choices
                     .iter()
-                    .any(|choice| choice.id.starts_with("test-card:number:"))
+                    .any(|choice| choice.id.starts_with("test-card:predict:"))
             );
             choose(game, "test:reveal");
         }

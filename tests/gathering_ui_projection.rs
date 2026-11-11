@@ -158,7 +158,15 @@ fn conditional_icons_use_effective_contribution_instead_of_printed_wild_icons() 
         for _ in 0..completed {
             choose(&mut session, "action:ordinary:resource");
         }
-        choose(&mut session, "turn:end");
+        // With no action left and nothing else playable, the turn ends by itself.
+        if session
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == "turn:end")
+        {
+            choose(&mut session, "turn:end");
+        }
         choose(&mut session, "turn:tony");
         choose(&mut session, "action:ordinary:investigate");
         while session

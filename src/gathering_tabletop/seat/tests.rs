@@ -43,8 +43,9 @@ fn sit_at(mut app: App, path: PathBuf, directory: tempfile::TempDir) -> Sitting 
         .query_filtered::<Entity, With<MainCamera>>()
         .single(world)
         .unwrap();
+    let seat = Seat::new(Gathering, &mut app, camera, None);
     let mut sitting = Sitting {
-        seat: Seat::new(Gathering, camera, None),
+        seat,
         app,
         path,
         _directory: directory,
@@ -244,7 +245,7 @@ fn names_are_exact_and_absent_ambiguous_or_off_screen_names_fail() {
     seat.app
         .world_mut()
         .resource_mut::<Orbit>()
-        .focus(enemy_board::focus(Area::Investigator(0)));
+        .focus(sideboard::focus(Area::Investigator(0)));
     seat.app.update();
     let zoomed = seat.ask(json!({"op": "settle"}));
     assert_eq!(zoomed["status"], "settled", "{zoomed}");
@@ -347,6 +348,39 @@ fn a_covered_control_reports_what_covers_it_and_presses_nothing() {
 }
 
 #[test]
+fn the_listed_pendulum_prediction_opens_its_picker_by_identity_and_commits_nothing() {
+    use crate::gathering::{HostileFixture, PREDICTION_MARGIN, TestCardFixture};
+    let mut seat = sit_at_fixture(HostileFixture::TestCards(
+        TestCardFixture::CrystalPrediction,
+    ));
+    let before = seat.ask(json!({"op": "observe"}));
+    let listed = before["observation"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|choice| choice["id"].as_str().unwrap().to_owned())
+        .find(|id| id.starts_with("test-card:predict:") && id.ends_with(PREDICTION_MARGIN))
+        .expect("the session lists one direct prediction choice");
+    let asset = listed.split(':').nth(2).unwrap().parse().unwrap();
+    click_source(&mut seat.app, controls::Source::Card(asset));
+    let settled = seat.ask(json!({"op": "settle"}));
+    assert_eq!(settled["status"], "settled", "{settled}");
+    let menu = seat.ask(json!({"op": "observe"}));
+    let row = rows(&menu)
+        .into_iter()
+        .find(|row| row["choice"] == listed.as_str())
+        .unwrap_or_else(|| panic!("the menu names {listed}: {}", menu["table"]["menu"]));
+    assert_eq!(row["label"], "Exhaust Crystal Pendulum");
+    let revision = before["observation"]["revision"].clone();
+    let opened =
+        seat.ask(json!({"op": "activate", "revision": revision, "choice": listed.as_str()}));
+    assert_eq!(opened["status"], "activated", "{opened}");
+    assert_eq!(opened["table"]["modal"], "pendulum prediction");
+    assert_eq!(opened["observation"], before["observation"]);
+    assert!(!seat.path.exists(), "opening the picker commits nothing");
+}
+
+#[test]
 fn keys_travel_the_keyboard_path_and_unknown_keys_are_refused() {
     let mut seat = sit();
     seat.open_menu(Investigator::Patrice);
@@ -384,6 +418,64 @@ fn keys_travel_the_keyboard_path_and_unknown_keys_are_refused() {
     assert_eq!(settled["observation"]["revision"], 1);
     assert_eq!(settled["observation"]["lead"], "patrice");
     assert_eq!(settled["observation"], saved(&seat.path));
+}
+
+/// The label of the one focused control outside a contextual menu.
+fn focused(response: &Value) -> Option<String> {
+    response["table"]["controls"]
+        .as_array()?
+        .iter()
+        .find(|control| control["focused"] == true)
+        .and_then(|control| control["label"].as_str())
+        .map(str::to_owned)
+}
+
+impl Sitting {
+    /// Press Tab until the named control has focus, as an agent without a pointer would.
+    fn tab_to(&mut self, label: &str) -> Value {
+        let mut response = self.ask(json!({"op": "observe"}));
+        for _ in 0..40 {
+            if focused(&response).as_deref() == Some(label) {
+                return response;
+            }
+            response = self.ask(json!({"op": "key", "key": "Tab"}));
+            assert_eq!(response["status"], "pressed", "{response}");
+        }
+        panic!(
+            "Tab never reached {label}: {}",
+            response["table"]["controls"]
+        );
+    }
+
+    fn enter(&mut self) -> Value {
+        let pressed = self.ask(json!({"op": "key", "key": "Enter"}));
+        assert_eq!(pressed["status"], "pressed", "{pressed}");
+        let settled = self.ask(json!({"op": "settle"}));
+        assert_eq!(settled["status"], "settled", "{settled}");
+        settled
+    }
+}
+
+#[test]
+fn the_seat_reaches_the_menu_by_tab_and_refuses_to_open_external_links() {
+    let mut seat = sit();
+    seat.tab_to("Menu");
+    let menu = seat.enter();
+    assert_eq!(menu["table"]["modal"], "utilities menu", "{menu}");
+    seat.tab_to("Credits");
+    let credits = seat.enter();
+    assert_eq!(credits["table"]["modal"], "inspection", "{credits}");
+    seat.tab_to("Chalice drops — source");
+    let refused = seat.enter();
+    let notice = refused["table"]["notice"].as_str().unwrap_or_default();
+    assert!(
+        notice.contains("agent seat")
+            && notice.contains("https://game-icons.net/1x1/lorc/chalice-drops.html"),
+        "The refusal names the address it did not open: {refused}"
+    );
+    assert_eq!(refused["table"]["modal"], "inspection");
+    assert_eq!(refused["observation"]["revision"], 0);
+    assert!(!seat.path.exists(), "Credits decide nothing");
 }
 
 /// Cards that are still face down in a deck now, proven by drawing them later: the
@@ -477,6 +569,33 @@ fn pieces_sharing_a_source_keep_distinct_names_in_play() {
     assert_eq!(
         component(&response, "investigator:tony")["label"],
         "Tony Morgan"
+    );
+}
+
+#[test]
+fn an_attached_card_has_its_own_marker_and_heading_names() {
+    // This position starts with Obscuring Fog attached to the Cellar.
+    let mut seat = sit_at_fixture(crate::gathering::HostileFixture::Search(
+        crate::gathering::SearchFixture::TonyEvents,
+    ));
+    // Scenario frames both sideboards, so the heading is shown.
+    seat.tab_to("Scenario");
+    let response = seat.enter();
+    let names: Vec<&str> = response["table"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|component| component["name"].as_str().unwrap())
+        .collect();
+    let distinct: BTreeSet<&str> = names.iter().copied().collect();
+    assert_eq!(names.len(), distinct.len(), "{names:?}");
+    assert_eq!(
+        component(&response, "location:01114/attachments")["label"],
+        "Attachment Cellar"
+    );
+    assert_eq!(
+        component(&response, "location:01114/attachment-sideboard")["label"],
+        "Attached to CELLAR · 1"
     );
 }
 
@@ -731,4 +850,80 @@ fn the_real_table_is_admitted_and_played_without_a_window() {
     );
     assert!(!proceed);
     assert_eq!(std::fs::read(&save).unwrap(), before);
+}
+
+fn control_choice(response: &Value, label: &str) -> Option<String> {
+    response["table"]["controls"]
+        .as_array()?
+        .iter()
+        .find(|control| control["label"] == label)
+        .and_then(|control| control["choice"].as_str())
+        .map(str::to_owned)
+}
+
+#[test]
+fn the_seat_pays_the_group_clue_payment_by_choice_identity_and_keyboard() {
+    let mut seat = sit_at_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
+    let observed = seat.ask(json!({"op": "observe"}));
+    let payment = &observed["observation"]["group_clue_payment"];
+    assert_eq!(payment["required"], 9);
+    assert_eq!(payment["forced"], json!([3, 3, 3]));
+    let revision = observed["observation"]["revision"].as_u64().unwrap();
+    // The Act card's menu names the listed payment, which opens the chooser.
+    click_source(&mut seat.app, controls::Source::Act);
+    let menu = seat.ask(json!({"op": "settle"}));
+    let row = rows(&menu)
+        .into_iter()
+        .find(|row| row["choice"] == "act:pay:<contributions>")
+        .unwrap_or_else(|| panic!("the Act menu names the payment: {}", menu["table"]["menu"]));
+    assert_eq!(
+        row["label"],
+        "Spend 9 clues as a group: advance The Barrier…"
+    );
+    let opened = seat
+        .ask(json!({"op": "activate", "revision": revision, "choice": "act:pay:<contributions>"}));
+    assert_eq!(opened["status"], "activated", "{opened}");
+    let opened = seat.ask(json!({"op": "settle"}));
+    assert_eq!(
+        opened["observation"], observed["observation"],
+        "Opening commits nothing"
+    );
+    assert_eq!(opened["table"]["modal"], "group clue payment", "{opened}");
+    assert_eq!(
+        control_choice(&opened, "Do not advance").as_deref(),
+        Some("round-end:decline-act")
+    );
+    assert_eq!(
+        control_choice(&opened, "Spend 9 clues and advance").as_deref(),
+        Some("act:pay:3:3:3")
+    );
+    let tony = "Tony Morgan · 3 clues held · Hallway · pays 3";
+    assert_eq!(focused(&opened).as_deref(), Some(tony));
+    // The arrow keys change the focused row; an incomplete total offers no payment.
+    let lowered = seat.ask(json!({"op": "key", "key": "ArrowDown"}));
+    assert_eq!(
+        focused(&lowered).as_deref(),
+        Some("Tony Morgan · 3 clues held · Hallway · pays 2")
+    );
+    assert_eq!(control_choice(&lowered, "Spend 9 clues and advance"), None);
+    let restored = seat.ask(json!({"op": "key", "key": "ArrowUp"}));
+    assert_eq!(focused(&restored).as_deref(), Some(tony));
+    let revision = restored["observation"]["revision"].as_u64().unwrap();
+    assert_eq!(
+        revision,
+        observed["observation"]["revision"].as_u64().unwrap()
+    );
+    let paid = seat.ask(json!({"op": "activate", "revision": revision, "choice": "act:pay:3:3:3"}));
+    assert_eq!(
+        paid["status"], "activated",
+        "{}",
+        restored["table"]["controls"]
+    );
+    let settled = seat.ask(json!({"op": "settle"}));
+    assert_eq!(
+        settled["observation"]["play"]["act"], 3,
+        "{}",
+        settled["observation"]["prompt"]
+    );
+    assert_eq!(settled["observation"], saved(&seat.path));
 }

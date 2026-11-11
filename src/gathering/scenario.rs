@@ -14,6 +14,8 @@ pub(super) const HALLWAY: &str = "01112";
 pub(super) const ATTIC: &str = "01113";
 pub(super) const CELLAR: &str = "01114";
 pub(super) const PARLOR: &str = "01115";
+/// Obscuring Fog (01168): "Attached location gets +2 shroud."
+pub(super) const FOG_SHROUD: u8 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Prey {
@@ -272,7 +274,12 @@ impl ScenarioState {
             CELLAR => 4,
             _ => return None,
         };
-        Some(printed + if location.fog.is_some() { 2 } else { 0 })
+        let fog = if location.fog.is_some() {
+            FOG_SHROUD
+        } else {
+            0
+        };
+        Some(printed + fog)
     }
 
     /// Connections do not themselves grant an investigator permission to enter
@@ -358,11 +365,6 @@ impl ScenarioState {
 pub(super) enum ScenarioDecision {
     AgendaOne,
     AgendaTwoSearch,
-    ActPayment {
-        act: u8,
-        remaining: u8,
-        contributions: [u8; 3],
-    },
     Ending,
     Engagement {
         enemy: u16,
@@ -420,29 +422,6 @@ pub(super) fn choices(game: &Game, decision: &ScenarioDecision) -> Vec<Choice> {
                     "agenda:random-discard",
                     "Each investigator discards 1 random card",
                 ));
-            }
-            choices
-        }
-        ScenarioDecision::ActPayment {
-            act,
-            remaining,
-            contributions,
-        } => {
-            let mut choices = vec![choice("act:cancel", "Cancel this proposed group payment")];
-            for player in &game.players {
-                if !player.defeated
-                    && !player.resigned
-                    && (*act == 1 || player.location == HALLWAY)
-                    && player.clues > contributions[player.investigator.index()]
-                {
-                    choices.push(choice(
-                        format!("act:contribute:{}", player.investigator.index()),
-                        format!(
-                            "{} contributes 1 clue ({remaining} still needed)",
-                            player.investigator.name()
-                        ),
-                    ));
-                }
             }
             choices
         }
@@ -504,17 +483,21 @@ pub(super) fn choices(game: &Game, decision: &ScenarioDecision) -> Vec<Choice> {
             choices
         }
         ScenarioDecision::RoundEndWhen => {
-            let mut choices = vec![choice(
-                "round-end:decline-act",
-                "Do not advance The Barrier at this round end",
-            )];
-            if available_act_payment(game, true).is_some() {
-                choices.push(choice(
-                    "round-end:advance-act",
-                    "Propose the nine-clue Hallway payment",
-                ));
-            }
-            choices
+            let Some(payment) = super::group_payment::round_end_choice(game) else {
+                // The Objective's optional payment is impossible, so declining
+                // is the step's one legal outcome, not an offered decision.
+                return vec![choice(
+                    "round-end:decline-act",
+                    "The Barrier does not advance: the investigators in the Hallway cannot pay its clues",
+                )];
+            };
+            vec![
+                choice(
+                    "round-end:decline-act",
+                    "Do not advance The Barrier at this round end",
+                ),
+                payment,
+            ]
         }
         ScenarioDecision::RoundEndAt { agenda, voices } => {
             let mut choices = Vec::new();
@@ -566,38 +549,6 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<ScenarioStep, RuleErro
         ScenarioDecision::AgendaOne => {
             super::harm_cards::begin_agenda_discard(game);
             Ok(ScenarioStep::Continue)
-        }
-        ScenarioDecision::ActPayment {
-            act,
-            remaining,
-            mut contributions,
-        } => {
-            if id == "act:cancel" {
-                return Ok(ScenarioStep::Continue);
-            }
-            let index = id
-                .rsplit(':')
-                .next()
-                .and_then(|value| value.parse::<usize>().ok())
-                .ok_or_else(|| RuleError("Invalid clue contribution.".into()))?;
-            contributions[index] += 1;
-            if remaining > 1 {
-                game.frames
-                    .push(Frame::Scenario(ScenarioDecision::ActPayment {
-                        act,
-                        remaining: remaining - 1,
-                        contributions,
-                    }));
-                Ok(ScenarioStep::Continue)
-            } else {
-                pay_act_clues(game, act, contributions, act == 2)?;
-                if act == 1 {
-                    advance_act_one(game);
-                    Ok(ScenarioStep::Continue)
-                } else {
-                    advance_act_two(game).map(ScenarioStep::EnemyEntered)
-                }
-            }
         }
         ScenarioDecision::Ending => {
             finish_resolution(
@@ -658,24 +609,10 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<ScenarioStep, RuleErro
         }
         ScenarioDecision::RoundEndWhen => {
             let step = queue_round_end_at(game);
-            if id == "round-end:advance-act" {
-                if matches!(step, ScenarioStep::RoundEnded) {
-                    // If Agenda1/2 and no Voices leave no AT ability, the
-                    // round still ends after Act2's nested spawn/reactions.
-                    game.frames
-                        .push(Frame::Scenario(ScenarioDecision::RoundEndComplete));
-                }
+            if matches!(step, ScenarioStep::Continue) {
                 super::ethereal_form::queue_expiry(game);
-                game.frames.push(Frame::Scenario(
-                    available_act_payment(game, true).expect("Validated payment"),
-                ));
-                Ok(ScenarioStep::Continue)
-            } else {
-                if matches!(step, ScenarioStep::Continue) {
-                    super::ethereal_form::queue_expiry(game);
-                }
-                Ok(step)
             }
+            Ok(step)
         }
         ScenarioDecision::RoundEndAt {
             mut agenda,
@@ -1184,70 +1121,37 @@ pub(super) fn resolution_record(game: &Game, resolution: Resolution) -> Resoluti
     record
 }
 
-pub(super) fn available_act_payment(game: &Game, at_round_end: bool) -> Option<ScenarioDecision> {
-    let required = match (game.act, at_round_end) {
-        (1, false) => 6,
-        (2, true) => 9,
+/// The group clue requirement at this timing: 2 (Trapped) or 3 (The Barrier)
+/// per investigator who started the scenario, whether or not still playing.
+pub(super) fn act_requirement(game: &Game, act: u8, at_round_end: bool) -> Option<u8> {
+    let per_investigator = match (act, at_round_end) {
+        (1, false) => 2,
+        (2, true) => 3,
         _ => return None,
     };
-    let total: u16 = game
-        .players
-        .iter()
-        .filter(|player| {
-            !player.defeated && !player.resigned && (game.act == 1 || player.location == HALLWAY)
-        })
-        .map(|player| u16::from(player.clues))
-        .sum();
-    (total >= u16::from(required)).then_some(ScenarioDecision::ActPayment {
-        act: game.act,
-        remaining: required,
-        contributions: [0; 3],
-    })
+    u8::try_from(game.players.len())
+        .ok()
+        .and_then(|started| started.checked_mul(per_investigator))
 }
 
-/// Validate the entire allocation before charging anyone. The runtime presents
-/// and persists contribution choices; this function never chooses who pays.
-pub(super) fn pay_act_clues(
+/// The Barrier's Objective, paid with a validated allocation: the round-end
+/// sequence continues after the act's nested spawn and its reactions.
+pub(super) fn advance_at_round_end(
     game: &mut Game,
-    act: u8,
-    contributions: [u8; 3],
-    at_round_end: bool,
-) -> Result<(), RuleError> {
-    let required = match (act, at_round_end) {
-        (1, false) => 6,
-        (2, true) => 9,
-        _ => {
-            return Err(RuleError(
-                "This act cannot be advanced at this timing point.".into(),
-            ));
-        }
+    allocation: super::group_payment::Allocation,
+) -> Result<ScenarioStep, RuleError> {
+    let Some(Frame::Scenario(ScenarioDecision::RoundEndWhen)) = game.frames.pop() else {
+        return Err(RuleError("The round-end Objective is not pending.".into()));
     };
-    if game.act != act
-        || contributions
-            .iter()
-            .map(|&clues| u16::from(clues))
-            .sum::<u16>()
-            != required
-    {
-        return Err(RuleError(
-            "The current act requires the exact group clue payment.".into(),
-        ));
+    if matches!(queue_round_end_at(game), ScenarioStep::RoundEnded) {
+        // If Agenda1/2 and no Voices leave no AT ability, the
+        // round still ends after Act2's nested spawn/reactions.
+        game.frames
+            .push(Frame::Scenario(ScenarioDecision::RoundEndComplete));
     }
-    for (index, &clues) in contributions.iter().enumerate() {
-        let player = &game.players[index];
-        if clues > player.clues
-            || (clues > 0
-                && (player.defeated || player.resigned || (act == 2 && player.location != HALLWAY)))
-        {
-            return Err(RuleError(
-                "That investigator cannot contribute those clues.".into(),
-            ));
-        }
-    }
-    for (player, clues) in game.players.iter_mut().zip(contributions) {
-        player.clues -= clues;
-    }
-    Ok(())
+    super::ethereal_form::queue_expiry(game);
+    super::group_payment::spend(game, allocation, true)?;
+    advance_act_two(game).map(ScenarioStep::EnemyEntered)
 }
 
 /// Original Trapped reverse. Discard is not defeat: no victory or after-defeat

@@ -132,21 +132,22 @@ fn scrounge_targets_printed_level_zero_and_rejects_no_level_as_zero() {
             continue;
         }
         choose(&mut session, &play);
-        let pending = session.observe();
-        let targets: Vec<_> = pending
-            .choices
+        // Violin and Watcher have no printed level, so the one level-zero
+        // target is returned by itself.
+        let recovered: Vec<_> = session
+            .observe()
+            .history
             .iter()
-            .filter(|choice| choice.id.starts_with("event:recover:"))
+            .filter(|entry| {
+                entry.starts_with("Automatic: Return ") && entry.ends_with(" to your hand")
+            })
+            .cloned()
             .collect();
-        assert_eq!(targets.len(), 1, "Violin and Watcher have no printed level");
-        let decision = targets[0].id.clone();
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("scrounge-target.json");
-        continuity::save_session(&path, &session).unwrap();
-        let mut reopened = continuity::load_session(&path).unwrap();
-        choose(&mut session, &decision);
-        choose(&mut reopened, &decision);
-        assert_eq!(session.observe(), reopened.observe());
+        assert_eq!(
+            recovered.len(),
+            1,
+            "Violin and Watcher have no printed level"
+        );
         let after = session.observe().play.unwrap();
         assert!(
             after.players[1]
@@ -235,8 +236,12 @@ fn old_keyring_reduces_shroud_and_spends_keys_only_on_success() {
                     .iter()
                     .any(|asset| asset.card.id == keyring)
             );
-            let recover = format!("resourceful:{resourceful}:{keyring}");
-            choose(&mut session, &recover);
+            // The emptied Old Keyring is Resourceful's only eligible target.
+            assert!(
+                session.observe().history.iter().any(
+                    |entry| entry == "Automatic: Return Old Keyring to Patrice Hathaway's hand"
+                )
+            );
             assert!(
                 session.observe().play.unwrap().players[1]
                     .hand

@@ -259,39 +259,36 @@ fn ethereal_expires_before_at_round_end_abilities_and_ready_enemies_reengage() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Ethereal(EtherealFixture::Expiry));
     let round = session.observe().play.unwrap().round;
+    let ending = session.observe().revision;
     choose(&mut session, "round:end");
-    assert_eq!(
-        session.observe().play.unwrap().ethereal.len(),
-        1,
-        "The when-round-ends window is still in the old round"
-    );
-    choose(&mut session, "round-end:decline-act");
-    let play = session.observe().play.unwrap();
-    assert_eq!(
-        play.round, round,
-        "AT-end Voices still must resolve before the next round"
-    );
-    assert!(play.ethereal.is_empty());
-    assert!(
-        play.scenario.enemies.iter().all(|enemy| enemy.engaged
-            == Some(arkham_unfolded_experiment::gathering::Investigator::Patrice))
-    );
-    let voices = session
-        .observe()
-        .choices
+    // The Hallway cannot pay The Barrier's clues and Voices is the only AT
+    // ability, so the round end resolves by itself in that order.
+    let history = session.observe().history;
+    let when = history
         .iter()
-        .find(|choice| choice.id.starts_with("round-end:voices:"))
-        .unwrap()
-        .id
-        .clone();
-    choose(&mut session, &voices);
-    assert_eq!(session.observe().play.unwrap().round, round + 1);
+        .position(|entry| {
+            entry
+                == "Automatic: The Barrier does not advance: the investigators in the Hallway cannot pay its clues"
+        })
+        .expect("The when-round-ends step precedes the AT abilities");
+    let voices = history
+        .iter()
+        .position(|entry| {
+            entry.starts_with("Automatic: Discard ") && entry.ends_with("'s Dissonant Voices")
+        })
+        .expect("AT-end Voices still resolves before the next round");
+    assert!(when < voices);
+    let next = session
+        .presentation_after(ending)
+        .iter()
+        .find(|moment| moment.caption == "A new round begins with the mythos phase.")
+        .map(|moment| moment.play.clone())
+        .unwrap();
+    assert_eq!(next.round, round + 1);
+    assert!(next.ethereal.is_empty());
     assert!(
-        session
-            .observe()
-            .choices
-            .iter()
-            .any(|choice| choice.id == "mythos:begin")
+        next.scenario.enemies.iter().all(|enemy| enemy.engaged
+            == Some(arkham_unfolded_experiment::gathering::Investigator::Patrice))
     );
     session.validate().unwrap();
 }

@@ -6,6 +6,21 @@ fn choose(session: &mut Session, id: &str) {
         .unwrap_or_else(|error| panic!("{id}: {error}; choices: {:?}", session.observe().choices));
 }
 
+/// Whether the session performed a step itself whose history label matches.
+fn performed(session: &Session, label: impl Fn(&str) -> bool) -> bool {
+    session
+        .observe()
+        .history
+        .iter()
+        .filter_map(|entry| entry.strip_prefix("Automatic: "))
+        .any(label)
+}
+
+/// A lone attack of opportunity is forced, so the session resolves it.
+fn opportunity(label: &str) -> bool {
+    label.starts_with("Resolve enemy ") && label.ends_with("'s attack of opportunity")
+}
+
 fn completed_setup() -> Session {
     let mut session = Session::with_hostile_fixture(HostileFixture::GatheringFromSetup);
     choose(&mut session, "lead:tony");
@@ -76,14 +91,7 @@ fn robes_discount_is_optional_paid_before_opportunity_and_not_repeated_after_reo
     let unchanged = session.clone();
     assert!(session.choose(paid.revision, &reduced).is_err());
     assert_eq!(session, unchanged);
-    let attack = paid
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
-    choose(&mut session, &attack);
+    assert!(performed(&session, opportunity));
     for _ in 0..2 {
         choose(&mut session, "harm:damage:investigator");
     }
@@ -196,15 +204,7 @@ fn sign_magick_fast_play_avoids_opportunity_and_opens_a_third_spell_slot() {
         "The new restricted slot holds this Spell without discarding either existing Spell"
     );
     choose(&mut session, &third_spell);
-    let pending = session.observe();
-    let attack = pending
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
-    choose(&mut session, &attack);
+    assert!(performed(&session, opportunity));
     let after = session.observe().play.unwrap();
     assert_eq!(after.actions_remaining[2], 2);
     assert_eq!(after.players[2].resources, 0);
@@ -381,14 +381,7 @@ fn paired_long_colts_reopen_at_optional_free_play_and_pay_only_the_first_play() 
     choose(&mut session, &play);
     let paid = session.observe();
     assert_eq!(paid.play.as_ref().unwrap().players[0].resources, 2);
-    let opportunity = paid
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
-    choose(&mut session, &opportunity);
+    assert!(performed(&session, opportunity));
     let entry = session.observe();
     let first = &entry.play.as_ref().unwrap().players[0];
     assert_eq!(
@@ -490,14 +483,7 @@ fn uncage_selects_and_pays_its_spell_after_opportunity_with_optional_robes_and_s
             .unwrap()
             .ready
     );
-    let attack = paid
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
-    choose(&mut session, &attack);
+    assert!(performed(&session, opportunity));
     choose(&mut session, "harm:damage:investigator");
     choose(&mut session, "harm:damage:investigator");
     let targets = session.observe();
@@ -527,7 +513,6 @@ fn uncage_selects_and_pays_its_spell_after_opportunity_with_optional_robes_and_s
     assert_eq!(refused, session);
     let mut ritual = session.clone();
     choose(&mut ritual, &format!("uncage:{}", sign.id));
-    choose(&mut ritual, "search:finish-event");
     let ritual = ritual.observe().play.unwrap();
     assert!(
         ritual.players[2]
@@ -558,7 +543,8 @@ fn uncage_selects_and_pays_its_spell_after_opportunity_with_optional_robes_and_s
     session = continuity::load_session(&path).unwrap();
     assert_eq!(session.observe(), targets);
     choose(&mut session, &reduced);
-    choose(&mut session, "search:finish-event");
+    assert!(performed(&session, |label| label
+        == "Finish resolving Uncage the Soul"));
     let after = session.observe().play.unwrap();
     let player = &after.players[2];
     assert_eq!(player.resources, 0);
@@ -620,15 +606,7 @@ fn uncage_waits_for_voice_of_ra_tokens_before_finishing_the_outer_event() {
         &mut session,
         &format!("action:ordinary:play:tony:{}:03033", event.id),
     );
-    let attack = session
-        .observe()
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
-    choose(&mut session, &attack);
+    assert!(performed(&session, opportunity));
     choose(&mut session, "harm:damage:investigator");
     choose(&mut session, "harm:damage:investigator");
     let target = format!("uncage:spell:{}", voice.id);
@@ -681,6 +659,7 @@ fn uncage_waits_for_voice_of_ra_tokens_before_finishing_the_outer_event() {
     session = continuity::load_session(&path).unwrap();
     assert_eq!(session.observe(), revealing);
     choose(&mut session, "test:reveal");
+    // Once the nested reveal resolves, the outer event finishes by itself.
     let nested_complete = session.observe().play.unwrap();
     assert_eq!(
         nested_complete.players[2].resources, 5,
@@ -692,13 +671,8 @@ fn uncage_waits_for_voice_of_ra_tokens_before_finishing_the_outer_event() {
             .iter()
             .any(|card| card.id == voice.id)
     );
-    assert!(
-        !nested_complete.players[2]
-            .discard
-            .iter()
-            .any(|card| card.id == event.id)
-    );
-    choose(&mut session, "search:finish-event");
+    assert!(performed(&session, |label| label
+        == "Finish resolving Uncage the Soul"));
     let completed = session.observe().play.unwrap();
     assert_eq!(completed.actions_remaining[2], 2);
     assert_eq!(completed.players[2].resources, 5);
@@ -893,9 +867,21 @@ fn asset_costs_and_limbo_precede_an_attack_of_opportunity() {
         .find(|card| card.code == "60306")
         .unwrap()
         .clone();
+    let playing = session.observe().revision;
     choose(&mut session, &format!("action:ordinary:play:{}", mauser.id));
-    let pending = session.observe();
-    let tony = &pending.play.as_ref().unwrap().players[0];
+    // The lone attack of opportunity resolves by itself; its presented harm
+    // shows the paid card still in limbo.
+    let attacked = session
+        .presentation_after(playing)
+        .iter()
+        .find(|moment| {
+            moment
+                .caption
+                .starts_with("Tony Morgan resolves 2 damage and 2 horror")
+        })
+        .map(|moment| moment.play.clone())
+        .unwrap();
+    let tony = &attacked.players[0];
     assert_eq!(
         tony.resources, 1,
         "The original Mauser costs 4, paid before the attack"
@@ -905,23 +891,7 @@ fn asset_costs_and_limbo_precede_an_attack_of_opportunity() {
         !tony.assets.iter().any(|asset| asset.card.id == mauser.id),
         "The paid asset has not entered play during the attack"
     );
-    let attack = pending
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("paid-asset.session.json");
-    continuity::save_session(&path, &session).unwrap();
-    session = continuity::load_session(&path).unwrap();
-    assert_eq!(
-        session.observe(),
-        pending,
-        "Reopening retains the paid card in limbo and the pending attack"
-    );
-    choose(&mut session, &attack);
+    assert!(performed(&session, opportunity));
     let after = session.observe().play.unwrap();
     let tony = &after.players[0];
     assert_eq!(

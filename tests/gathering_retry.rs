@@ -11,6 +11,15 @@ fn choose(session: &mut Session, id: &str) {
         )
     });
 }
+
+/// Whether the session performed a step itself with this history label.
+fn performed(session: &Session, label: &str) -> bool {
+    session
+        .observe()
+        .history
+        .iter()
+        .any(|entry| entry.strip_prefix("Automatic: ") == Some(label))
+}
 fn reveal(session: &mut Session) {
     pass_window(session);
     if session
@@ -48,7 +57,10 @@ fn charged_spell_retry_keeps_the_operation_without_paying_a_second_charge_or_act
         &format!("action:ordinary:fight:400:spell:{flame}"),
     );
     reveal(&mut session);
-    choose(&mut session, "retaliate:complete");
+    assert!(performed(
+        &session,
+        "Finish the Retaliate attack and resume the skill test"
+    ));
     let first = session.observe().play.unwrap();
     assert_eq!(
         first.players[1]
@@ -117,7 +129,10 @@ fn a_retry_reveals_again_and_repeats_the_originating_spell_drawback_with_event_s
         &format!("action:ordinary:fight:400:spell:{flame}"),
     );
     reveal(&mut session);
-    choose(&mut session, "retaliate:complete");
+    assert!(performed(
+        &session,
+        "Finish the Retaliate attack and resume the skill test"
+    ));
     choose(&mut session, &format!("live-learn:{}", event.id));
     let retry = session.observe();
     let owner = &retry.play.as_ref().unwrap().players[1];
@@ -299,7 +314,10 @@ fn patrice_elder_cleanup_precedes_live_and_learn_after_reward_and_retaliation() 
     choose(&mut session, "commit:confirm");
     pass_window(&mut session);
     choose(&mut session, "test:reveal");
-    choose(&mut session, "retaliate:complete");
+    assert!(performed(
+        &session,
+        "Finish the Retaliate attack and resume the skill test"
+    ));
     let pending = session.observe();
     let play = pending.play.as_ref().unwrap();
     assert_eq!(

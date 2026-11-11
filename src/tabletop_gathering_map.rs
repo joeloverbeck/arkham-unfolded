@@ -12,6 +12,10 @@ const PORT_GAP: f32 = 0.32;
 const LINK_HALF_WIDTH: f32 = 0.085;
 const HEAD_WIDTH_RATIO: f32 = 2.8;
 const LINK_HEIGHT: f32 = -0.025;
+/// Half the width of a brass arrowhead, the widest part of a link.
+pub(crate) const LINK_HEAD_HALF_WIDTH: f32 = LINK_HALF_WIDTH * HEAD_WIDTH_RATIO;
+/// Depth reserved above every location card for its marker tokens and counts.
+pub(crate) const MARKER_BAND: f32 = 0.75;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Room {
@@ -75,12 +79,13 @@ struct Footprint {
 impl Footprint {
     fn location(transform: Transform, size: Vec2) -> Self {
         let radius = crate::tabletop_standees::radius_for(size);
-        // Reserve every standee slot, even when empty. The caption allowance
-        // covers two short 13px lines at the normal Scenario focus. Native
-        // framing remains the check for their projected pixel extents.
+        // Reserve every standee slot, even when empty, and the marker band
+        // above the card. The caption allowance covers two short 13px lines at
+        // the normal Scenario focus. Native framing remains the check for their
+        // projected pixel extents.
         let half_width = (size.x / 2.0 + radius * 2.0 + 0.1).max(2.3);
         let local = Rect::from_corners(
-            Vec2::new(-half_width, -size.y / 2.0 - 0.2),
+            Vec2::new(-half_width, -size.y / 2.0 - MARKER_BAND),
             Vec2::new(half_width, size.y / 2.0 + 2.0),
         );
         let mut bounds = Rect {
@@ -133,6 +138,7 @@ struct Placement {
 pub(crate) struct GatheringMap {
     placements: Vec<Placement>,
     links: Vec<(Connection, Vec<Vec2>)>,
+    size: Vec2,
 }
 
 impl GatheringMap {
@@ -207,16 +213,52 @@ impl GatheringMap {
                 }
             }
         }
-        Ok(Self { placements, links })
+        Ok(Self {
+            placements,
+            links,
+            size,
+        })
     }
 
     pub fn position(&self, code: &str) -> Vec3 {
+        self.placement(code).at
+    }
+
+    fn placement(&self, code: &str) -> &Placement {
         let room = Room::from_code(code).expect("map construction checked location identities");
         self.placements
             .iter()
             .find(|p| p.room == room)
             .expect("shown location has a placement")
-            .at
+    }
+
+    /// The reserved strip between the card's top edge and its footprint's top,
+    /// across the footprint's width.
+    pub(crate) fn marker_band(&self, code: &str) -> Rect {
+        let placement = self.placement(code);
+        let top = placement.at.z - self.size.y / 2.0;
+        Rect::from_corners(
+            Vec2::new(placement.footprint.bounds.min.x, top - MARKER_BAND),
+            Vec2::new(placement.footprint.bounds.max.x, top),
+        )
+    }
+
+    /// Where a displayed link ends above this location's footprint, so it enters
+    /// through the card's top edge. Other links reach a side or the bottom.
+    pub(crate) fn top_entry(&self, code: &str) -> Option<f32> {
+        let placement = self.placement(code);
+        let bounds = placement.footprint.bounds;
+        self.links.iter().find_map(|(link, points)| {
+            let end = if link.from == placement.room {
+                points.first()
+            } else if link.to == placement.room {
+                points.last()
+            } else {
+                None
+            }?;
+            (end.y < bounds.min.y && (bounds.min.x..=bounds.max.x).contains(&end.x))
+                .then_some(end.x)
+        })
     }
 
     pub fn entry_blocked(code: &str, revealed: bool) -> bool {

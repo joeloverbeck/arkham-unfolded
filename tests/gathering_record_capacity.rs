@@ -23,6 +23,7 @@ fn next_choice(view: &Observation) -> String {
         "action:ordinary:resource",
         "turn:end",
         "enemy:attacks",
+        "enemy:skip-empty",
         "round:end",
         "round-end:decline-act",
         "mythos:begin",
@@ -89,10 +90,10 @@ fn actual_setup_through_terminal_defeat_keeps_compact_current_saves() {
     let mut checked = Vec::new();
     for _ in 0..400 {
         let view = session.observe();
-        if matches!(view.revision, 213..=215) {
-            round_trip(&session, &path);
-            checked.push(view.revision);
-        }
+        // Every committed revision round-trips, which covers the formerly
+        // measured oversized position wherever single-option steps now fold it.
+        round_trip(&session, &path);
+        checked.push(view.revision);
         if view
             .play
             .as_ref()
@@ -100,10 +101,9 @@ fn actual_setup_through_terminal_defeat_keeps_compact_current_saves() {
         {
             assert_eq!(
                 checked,
-                vec![213, 214, 215],
-                "Exercise both sides of the measured old size failure"
+                (0..=view.revision).collect::<Vec<_>>(),
+                "Exercise every committed position of the actual game"
             );
-            round_trip(&session, &path);
             // Formatting is not record identity: a preserved pretty JSON file
             // with the same payload/checksum remains readable.
             let pretty_path = directory.path().join("small-old-style.session.json");

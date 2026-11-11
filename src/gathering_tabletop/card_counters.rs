@@ -119,7 +119,7 @@ pub(super) fn harm(
     commands.entity(label).insert((
         AccessibleLabel::new(accessible),
         motion::CardLabel(token, Vec3::new(0., 0.10, 0.16)),
-        enemy_board::PersistentLabel,
+        sideboard::PersistentLabel,
         TextLayout::justify(Justify::Center).with_no_wrap(),
         Node {
             position_type: PositionType::Absolute,

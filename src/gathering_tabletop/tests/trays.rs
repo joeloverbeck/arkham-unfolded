@@ -195,19 +195,19 @@ fn searched_cards_travel_from_and_back_to_the_deck_before_the_drawer_closes() {
         false,
     );
     let camera = app.world().resource::<Orbit>().pose();
+    // Finding no eligible enemy, the search returns its cards by itself in the
+    // same decision; the presentation still shows both journeys.
     activate_choice(&mut app, &format!("action:ordinary:play:tony:{event}"));
-    let target = app.world().resource::<Table>().session.observe();
-    let searched = target.play.as_ref().unwrap().searched_encounter.clone();
+    let mut searched = vec![];
     for _ in 0..30 {
-        if !app
+        searched = app
             .world()
             .resource::<Table>()
             .view()
             .play
             .unwrap()
-            .searched_encounter
-            .is_empty()
-        {
+            .searched_encounter;
+        if !searched.is_empty() {
             break;
         }
         tick(&mut app, 0.1);
@@ -233,12 +233,18 @@ fn searched_cards_travel_from_and_back_to_the_deck_before_the_drawer_closes() {
                 && *visible != Visibility::Hidden),
         "The drawer must open before the incoming search cards arrive"
     );
-    finish_presentation(&mut app);
-    assert!(physical(&mut app, searched[0].id).translation.z > 30.);
-    activate_choice(&mut app, "search:no-match");
-    let returning = physical(&mut app, searched[0].id);
+    let mut arrived = None;
+    for _ in 0..60 {
+        tick(&mut app, 0.05);
+        let at = physical(&mut app, searched[0].id);
+        match arrived {
+            None if at.translation.z > 30. => arrived = Some(at),
+            Some(drawer) if at.translation != drawer.translation => break,
+            _ => {}
+        }
+    }
+    let returning = arrived.expect("The searched card reaches the drawer");
     assert!(returning.translation.z > 30., "Return begins at the drawer");
-    tick(&mut app, 0.35);
     assert_ne!(
         physical(&mut app, searched[0].id).translation,
         returning.translation
@@ -584,7 +590,6 @@ fn defeated_assets_wait_in_the_drawer_and_both_travel_to_the_ordered_discard() {
     );
     for id in [
         "action:ordinary:resource".into(),
-        "opportunity:400".into(),
         format!("harm:damage:{olive}"),
         format!("harm:damage:{robes}"),
         "harm:horror:investigator".into(),

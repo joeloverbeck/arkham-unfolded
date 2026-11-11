@@ -272,15 +272,9 @@ enum Route {
     Sources(Vec<Source>),
     Global,
     Pending,
-    Hidden,
 }
 
 fn route(view: &Observation, id: &str) -> Route {
-    if id.starts_with("test-card:number:") {
-        // Retain the old commands for journal reconstruction only. The native
-        // picker owns every number entry, including reopened old predictions.
-        return Route::Hidden;
-    }
     let id = id
         .strip_prefix("action:ordinary:")
         .or_else(|| id.strip_prefix("action:tony:"))
@@ -310,7 +304,8 @@ fn route(view: &Observation, id: &str) -> Route {
         ["investigate" | "resign"] => current_location(view, owner),
         ["move" | "quarry" | "spell-move", location] => vec![Source::Location((*location).into())],
         ["parley", "lita"] => vec![Source::Lita],
-        ["act", "advance"] | ["round-end", "advance-act"] => vec![Source::Act],
+        // The group clue payment opens its chooser beside the Act card.
+        ["act", "pay", _] => vec![Source::Act],
         ["agenda", "search" | "lead-horror" | "random-discard"]
         | ["agenda-discard", "resolve"]
         | ["round-end", "ghoul-doom"] => vec![Source::Agenda],
@@ -327,7 +322,8 @@ fn route(view: &Observation, id: &str) -> Route {
         | ["round-end", "voices", card]
         | ["agenda-discard", "deny", card]
         | ["draw", "reveal", card]
-        | ["test-card", "commit-effect" | "pendulum" | "found", card]
+        | ["test-card", "commit-effect" | "found", card]
+        | ["test-card", "predict", card, _]
         | ["search", "enemy" | "play-hunt", card]
         | ["search", "enemy", card, "then"]
         | ["backpack", "select", card]
@@ -401,11 +397,6 @@ fn route(view: &Observation, id: &str) -> Route {
             .map(|r| card_sources(view, r.card.id))
             .unwrap_or_default(),
         ["backpack", "search"] => owned(Source::Deck),
-        ["act", "contribute", index] => {
-            let mut sources = indexed_investigator(index);
-            sources.push(Source::Act);
-            sources
-        }
         ["lita", "recipient", index] => indexed_investigator(index),
         ["elimination", "lead", who] | ["tony", "quick-thinking", who] => investigator(who)
             .map(|who| vec![Source::Investigator(who)])
@@ -502,7 +493,6 @@ fn global(id: &str) -> bool {
             | "spell-move:decline"
             | "defeat:done"
             | "peter:decline"
-            | "act:cancel"
             | "lita:successor"
             | "resolution:burn"
             | "resolution:refuse"
@@ -729,61 +719,20 @@ pub(super) fn source_choices(view: &Observation, source: &Source) -> Vec<Choice>
 }
 
 pub(super) fn global_choices(view: &Observation) -> Vec<Choice> {
-    let automatic = automatic_choice(view);
+    // At round end The Barrier's payment also opens from the decision bar,
+    // beside Do not advance.
+    let round_end_payment = |choice: &Choice| {
+        clue_payment::opens(&choice.id)
+            && view
+                .group_clue_payment
+                .as_ref()
+                .is_some_and(|payment| payment.at_round_end)
+    };
     view.choices
         .iter()
-        .filter(|choice| Some(choice.id.as_str()) != automatic)
-        .filter(|choice| route(view, &choice.id) == Route::Global)
+        .filter(|choice| route(view, &choice.id) == Route::Global || round_end_payment(choice))
         .map(|choice| display_choice(view, choice))
         .collect()
-}
-
-/// Administrative steps have no strategic alternative. The UI still commits
-/// their existing revision-bound choices, preserving saves and the audit trail.
-pub(super) fn automatic_choice(view: &Observation) -> Option<&str> {
-    if view
-        .choices
-        .iter()
-        .any(|choice| choice.id == "enemy:skip-empty")
-    {
-        return Some("enemy:skip-empty");
-    }
-    let mut choices = view.choices.iter().filter(|choice| choice.id != "undo");
-    let choice = choices.next()?;
-    if choices.next().is_some() {
-        return None;
-    }
-    // The sole remaining card's place in Patrice's discard order is forced.
-    if choice.id.starts_with("upkeep:patrice-discard:") {
-        return Some(choice.id.as_str());
-    }
-    matches!(
-        choice.id.as_str(),
-        "enemy:attacks"
-            | "enemy:next-investigator"
-            | "enemy:attacks-complete"
-            | "enemy:attack-complete"
-            | "enemy:end"
-            | "upkeep:ready"
-            | "upkeep:draw"
-            | "upkeep:draws-complete"
-            | "upkeep:patrice-refill"
-            | "upkeep:resources"
-            | "upkeep:next-hand"
-            | "upkeep:hand-limits-complete"
-            | "round:end"
-            | "mythos:begin"
-            | "mythos:encounters"
-            | "mythos:draw"
-            | "mythos:draws-complete"
-            | "investigation:begin"
-            | "revelation:resolve"
-            | "phase-window:pass"
-            | "test-card:pass"
-            | "search:finish-event"
-            | "search:finish"
-    )
-    .then_some(choice.id.as_str())
 }
 
 pub(super) fn window_opportunities(view: &Observation) -> Vec<(Source, String)> {
@@ -825,6 +774,7 @@ pub(super) fn window_opportunities(view: &Observation) -> Vec<(Source, String)> 
                     })
                     .unwrap_or_else(|| choice.label.clone()),
                 Source::Investigator(owner) => format!("{} — {}", owner.name(), choice.label),
+                Source::Act => format!("Act — {}", choice.label),
                 _ => continue,
             };
             result.push((source, label));
@@ -962,17 +912,12 @@ fn display_choice(view: &Observation, choice: &Choice) -> Choice {
         shown.label = "Skip remaining reactions".into();
         return shown;
     }
-    if choice.id.starts_with("test-card:pendulum:") {
+    if pendulum::asset(&choice.id).is_some() {
         shown.label = "Exhaust Crystal Pendulum".into();
         return shown;
     }
-    if let Some(label) = view
-        .play
-        .as_ref()
-        .and_then(|play| play.tokens.as_ref())
-        .and_then(|tokens| tokens.ability_label(choice))
-    {
-        shown.label = label;
+    if clue_payment::opens(&choice.id) {
+        shown.label.push('…');
         return shown;
     }
     if choice.id == "test:reveal"
@@ -1200,6 +1145,10 @@ pub(super) fn render(
     }
     let mut violins = std::collections::BTreeSet::new();
     for mut choice in choices.into_iter().filter(|_| !table.is_presenting()) {
+        if let Some(action) = pendulum::trigger(table.epoch, view.revision, &choice.id) {
+            content.push(Item::Action(feedback::menu::label(&choice.label), action));
+            continue;
+        }
         if let Some(asset) = violin::asset(&choice.id) {
             if !violins.insert(asset) {
                 continue;

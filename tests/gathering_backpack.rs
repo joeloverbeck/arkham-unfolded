@@ -8,6 +8,15 @@ fn choose(session: &mut Session, id: &str) {
     );
     session.choose(view.revision, id).unwrap();
 }
+/// Whether the session performed a step itself whose history label matches.
+fn performed(session: &Session, label: impl Fn(&str) -> bool) -> bool {
+    session
+        .observe()
+        .history
+        .iter()
+        .filter_map(|entry| entry.strip_prefix("Automatic: "))
+        .any(label)
+}
 fn start(case: BackpackFixture) -> (Session, u16) {
     let mut session = Session::with_hostile_fixture(HostileFixture::Backpack(case));
     let pack = session.observe().play.unwrap().players[0]
@@ -104,9 +113,8 @@ fn optional_search_no_match_and_short_deck_finish_without_inventing_cards() {
     assert!(after.searched_player.is_empty());
     let (mut no_match, pack) = start(BackpackFixture::NoMatch);
     choose(&mut no_match, "backpack:search");
-    assert_eq!(no_match.observe().play.unwrap().searched_player.len(), 6);
-    assert_eq!(no_match.observe().choices.len(), 1);
-    choose(&mut no_match, "backpack:attach");
+    // Nothing found can be selected, so attaching nothing is the one outcome.
+    assert!(performed(&no_match, |label| label.starts_with("Attach 0 ")));
     let after = no_match.observe().play.unwrap();
     assert!(after.backpacks.is_empty());
     assert!(after.players[0].discard.iter().any(|card| card.id == pack));
@@ -249,7 +257,8 @@ fn crypt_chill_discards_the_host_and_attachments_simultaneously_in_chosen_order(
             }
         }
     }
-    choose(&mut session, &format!("chill:{pack}"));
+    // The Backpack is Tony's only asset, so Crypt Chill's discard is forced.
+    assert!(performed(&session, |label| label.ends_with(" for Crypt Chill")));
     let pending = session.observe();
     assert!(pending.play.as_ref().unwrap().backpacks.is_empty());
     assert!(
@@ -313,12 +322,20 @@ fn lethal_opportunity_keeps_the_paid_attachment_and_all_remaining_owned_cards() 
         + before.players[0].threats.len()
         + attached.len();
     let played = attached.iter().find(|card| card.code == "04107").unwrap();
+    let playing = session.observe().revision;
     choose(&mut session, &format!("action:ordinary:play:{}", played.id));
-    let paid = session.observe();
-    assert_eq!(paid.play.as_ref().unwrap().players[0].resources, 8);
-    assert_eq!(paid.play.as_ref().unwrap().backpacks[0].cards.len(), 2);
+    // The lone, lethal attack of opportunity resolves by itself; its presented
+    // harm shows the paid attachment still waiting outside play.
+    let paid = session
+        .presentation_after(playing)
+        .iter()
+        .find(|moment| moment.caption.starts_with("Tony Morgan resolves"))
+        .map(|moment| moment.play.clone())
+        .unwrap();
+    assert_eq!(paid.players[0].resources, 8);
+    assert_eq!(paid.backpacks[0].cards.len(), 2);
     assert!(
-        !paid.play.as_ref().unwrap().players[0]
+        !paid.players[0]
             .assets
             .iter()
             .any(|asset| asset.card.id == played.id)
@@ -327,15 +344,6 @@ fn lethal_opportunity_keeps_the_paid_attachment_and_all_remaining_owned_cards() 
     let path = directory.path().join("paid-attached.json");
     continuity::save_session(&path, &session).unwrap();
     session = continuity::load_session(&path).unwrap();
-    let attack = session
-        .observe()
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
-    choose(&mut session, &attack);
     let after = session.observe().play.unwrap();
     assert!(after.players[0].defeated);
     assert!(after.backpacks.is_empty());

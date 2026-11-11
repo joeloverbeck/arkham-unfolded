@@ -61,15 +61,14 @@ fn mandatory_dark_future_uses_the_sealed_group_and_four_fresh_positions() {
         let mut session = seal_two(case);
         let sealed = session.observe().play.unwrap().premonition.unwrap();
         choose(&mut session, "turn:end");
-        let forced = session
-            .observe()
-            .choices
-            .iter()
-            .find(|choice| choice.id.starts_with("turn-end:"))
-            .unwrap()
-            .id
-            .clone();
-        choose(&mut session, &forced);
+        // Dark Future is the only end-of-turn effect, so it begins by itself.
+        assert!(
+            session
+                .observe()
+                .history
+                .iter()
+                .any(|entry| entry.starts_with("Automatic: Resolve end-of-turn effect "))
+        );
         let pending = session.observe();
         assert!(
             pending

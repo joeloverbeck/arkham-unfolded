@@ -166,8 +166,13 @@ fn encounter_draw_has_reveal_anchor_but_search_placement_is_not_a_draw() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Search(SearchFixture::HuntTargets));
     assert!(choose(&mut session, "mythos:draw").is_empty());
+    // The original card is Tony's draw; the following investigators' mythos
+    // draws continue by themselves in the same decision.
     let cues = choose(&mut session, "search:decline-hunt");
-    assert_eq!(cues.len(), 1);
+    assert!(
+        cues.iter()
+            .all(|cue| cue.batch.source == DrawSource::Encounter)
+    );
     assert_eq!(cues[0].batch.source, DrawSource::Encounter);
     assert_eq!(cues[0].batch.cards[0].code, "01118");
     let anchor = session
@@ -198,8 +203,9 @@ fn encounter_draw_has_reveal_anchor_but_search_placement_is_not_a_draw() {
             .unwrap()
             .id;
         assert!(choose(&mut session, "mythos:draw").is_empty());
-        assert!(choose(&mut session, &format!("search:play-hunt:{event}")).is_empty());
+        let cues = choose(&mut session, &format!("search:play-hunt:{event}"));
         if fixture == SearchFixture::HuntTargets {
+            assert!(cues.is_empty());
             let enemy = session
                 .observe()
                 .play
@@ -211,10 +217,8 @@ fn encounter_draw_has_reveal_anchor_but_search_placement_is_not_a_draw() {
                 .id;
             assert!(choose(&mut session, &format!("search:enemy:{enemy}")).is_empty());
         } else {
-            assert_eq!(
-                choose(&mut session, "search:no-match")[0].batch.source,
-                DrawSource::Encounter
-            );
+            // With no enemy found, the fallback draw follows by itself.
+            assert_eq!(cues[0].batch.source, DrawSource::Encounter);
         }
         session.validate().unwrap();
     }

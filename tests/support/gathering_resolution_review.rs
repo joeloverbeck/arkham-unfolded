@@ -60,18 +60,16 @@ pub fn checkpoints() -> Result<Vec<Checkpoint>, String> {
         &hornet,
     ));
 
-    let mut no_match = start(405, "turn:tony")?;
+    let no_match = start(405, "turn:tony")?;
     let view = no_match.observe();
     let event = view.investigators[0]
         .hand
         .iter()
         .find(|card| card.code == "09068")
         .ok_or("Seed 405 must offer Kicking the Hornet's Nest")?;
-    choose(
-        &mut no_match,
-        &format!("action:ordinary:play:tony:{}", event.id),
-    )?;
-    result.push(point("no-match", "tony", "search:no-match", &no_match));
+    // Without an eligible enemy, the play's search finishes by itself.
+    let play = format!("action:ordinary:play:tony:{}", event.id);
+    result.push(point("no-match", "tony", &play, &no_match));
 
     let mut backpack = start(5, "turn:tony")?;
     choose(&mut backpack, "action:ordinary:play:11")?;
@@ -102,7 +100,6 @@ pub fn checkpoints() -> Result<Vec<Checkpoint>, String> {
     for id in [
         "search:enemy:318:then",
         "bounty:318:0",
-        "search:finish",
         "action:ordinary:evade:318",
         "commit:7",
         "tony:watch:7:0",
@@ -156,6 +153,8 @@ pub fn checkpoints() -> Result<Vec<Checkpoint>, String> {
         &keyring,
     ));
 
+    // Only genuine decisions remain in this route: the session performs the
+    // last turn's start, the round's administration and the mythos draws itself.
     let mut revelation = Session::with_seed(0);
     for id in [
         "lead:tony",
@@ -166,41 +165,25 @@ pub fn checkpoints() -> Result<Vec<Checkpoint>, String> {
         "turn:end",
         "turn:patrice",
         "turn:end",
-        "turn:jacqueline",
         "turn:end",
-        "enemy:attacks",
-        "enemy:next-investigator",
-        "enemy:next-investigator",
-        "enemy:next-investigator",
-        "enemy:attacks-complete",
-        "enemy:end",
-        "upkeep:ready",
-        "upkeep:draw",
-        "upkeep:draw",
         "upkeep:patrice-discard:124",
         "upkeep:patrice-discard:143",
         "upkeep:patrice-discard:118",
-        "upkeep:patrice-discard:123",
-        "upkeep:patrice-discard:141",
-        "upkeep:patrice-refill",
-        "upkeep:draw",
-        "upkeep:draws-complete",
-        "upkeep:resources",
-        "upkeep:next-hand",
-        "upkeep:next-hand",
-        "upkeep:next-hand",
-        "upkeep:hand-limits-complete",
-        "round:end",
-        "mythos:begin",
-        "mythos:draw",
     ] {
         if id == "upkeep:patrice-discard:124" {
             result.push(point("patrice-upkeep", "patrice", id, &revelation));
         }
         choose(&mut revelation, id)?;
     }
-    result.push(point("revelation", "patrice", "mythos:draw", &revelation));
-    choose(&mut revelation, "mythos:draw")?;
+    // Placing the fourth card leaves the last one forced; the refill, the round
+    // end and the mythos draws then follow within this decision.
+    result.push(point(
+        "revelation",
+        "patrice",
+        "upkeep:patrice-discard:123",
+        &revelation,
+    ));
+    choose(&mut revelation, "upkeep:patrice-discard:123")?;
     let view = revelation.observe();
     if !view
         .play

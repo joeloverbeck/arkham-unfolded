@@ -19,6 +19,8 @@
 //!    and import completion, which open dialogs in native play, are not installed.
 //! 8. The stall watchdog and frame-pacing cadence, which exist for a real display,
 //!    do not apply.
+//! 9. Sitting marks the table with [`agent_seat::SeatedAgent`], so a Credits link
+//!    reports its address instead of reaching the desktop's opener.
 
 use super::*;
 use crate::{
@@ -210,9 +212,16 @@ impl Game for Gathering {
                 (component.position, component.reach)
             }
             Name::Choice(wanted) => {
-                let mut shown = controls(world)
+                let mut offered: Vec<_> = controls(world)
                     .into_iter()
-                    .filter(|control| control.choice.as_ref() == Some(wanted));
+                    .filter(|control| control.choice.as_ref() == Some(wanted))
+                    .collect();
+                // An open contextual menu captures the pointer, so a choice it
+                // shares with the decision bar is the menu's row.
+                if offered.iter().any(|control| control.menu) {
+                    offered.retain(|control| control.menu);
+                }
+                let mut shown = offered.into_iter();
                 let Some(control) = shown.next() else {
                     return Err(format!("No shown control offers choice {wanted}."));
                 };
@@ -334,11 +343,23 @@ fn identity(source: &controls::Source) -> String {
 }
 
 /// One source can be shown by several pieces: an investigator by a card and a standee,
-/// a location by its card, clue counter, enemy marker and enemy-board row. The card
-/// keeps the bare identity; each other piece adds what it is, so every name is exact.
+/// a location by its card, clue counter, and each sideboard's marker and heading. The
+/// card keeps the bare identity; each other piece adds what it is, so every name is exact.
 fn component_name(world: &World, entity: Entity, source: &controls::Source) -> String {
     let identity = identity(source);
-    let piece = if world.get::<Node>(entity).is_some() {
+    let link = world
+        .get::<sideboard::Link>(entity)
+        .map(sideboard::Link::board);
+    let piece = if let Some(board) = link {
+        Some(
+            if world.get::<Node>(entity).is_some() {
+                board.heading_piece
+            } else {
+                board.members
+            }
+            .to_owned(),
+        )
+    } else if world.get::<Node>(entity).is_some() {
         Some("board".to_owned())
     } else if let Some(counter) = world.get::<crate::tabletop_counters::Counter>(entity) {
         Some(counter.kind.name().to_lowercase())
@@ -347,8 +368,6 @@ fn component_name(world: &World, entity: Entity, source: &controls::Source) -> S
         Some(map_motion::Surface::Investigator(_))
     ) {
         Some("standee".to_owned())
-    } else if world.get::<enemy_board::Link>(entity).is_some() {
-        Some("enemies".to_owned())
     } else {
         None
     };
@@ -622,6 +641,8 @@ fn modal(world: &World) -> Option<&'static str> {
         Some("history")
     } else if table.violin.is_some() {
         Some("violin choice")
+    } else if table.clue_payment.is_some() {
+        Some("group clue payment")
     } else if table.menu_open {
         Some("utilities menu")
     } else {

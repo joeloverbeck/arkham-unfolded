@@ -32,6 +32,14 @@ _Avoid_: Action allowance, selection marker
 An extra action whose use is limited by the effect that grants it, distinct from the investigator's ordinary action allowance.
 _Avoid_: Ordinary action when referring to a restricted allowance
 
+**Genuine decision**:
+A pending point at which the player has at least two legal alternatives, counting the decline of an optional effect as one. A step with exactly one legal outcome is administered by the program, not presented as a decision.
+_Avoid_: Prompt, confirmation when referring to a forced step
+
+**Group clue payment**:
+Clues spent together by investigators to meet a requirement such as advancing the act. Each eligible investigator may contribute any number of their own clues, and the whole requirement is paid at once.
+_Avoid_: Clue contribution when referring to the whole payment
+
 **Scenario area**:
 The shared playing surface for the location map, investigator standees and scenario components, including the act, agenda, encounter deck, encounter discard pile and victory display.
 _Avoid_: Player area, map area when referring to all shared components
@@ -42,11 +50,23 @@ _Avoid_: Scenario area when referring only to the map
 
 **Enemy sideboard**:
 The tabletop display of enemy cards that remain at locations rather than in an investigator's threat area, grouped by their location. It is a presentation arrangement, not a rules-defined game zone.
-_Avoid_: Threat area, enemy deck, off-map zone
+_Avoid_: Threat area, enemy deck, off-map zone, monster sideboard
 
 **Enemy-presence marker**:
 A tabletop marker linking a location to its group on the enemy sideboard. Its count represents that group's cards, not every enemy sharing the location with investigators.
-_Avoid_: Enemy token, total enemies at the location
+_Avoid_: Enemy token, total enemies at the location, monster token
+
+**Attachment sideboard**:
+The tabletop display of cards attached to locations, grouped by their location. It is a presentation arrangement, not a rules-defined game zone; the cards remain attached to their locations.
+_Avoid_: Location modifiers, enemy sideboard
+
+**Attachment marker**:
+A tabletop marker linking a location to its group on the attachment sideboard. Its count represents that group's cards.
+_Avoid_: Location token, enemy-presence marker
+
+**Location color**:
+The stable presentation color identifying a location on its markers and sideboard headings. It is not a printed card property and carries no rules meaning.
+_Avoid_: Connection symbol, marker letter
 
 **Investigator area**:
 An individual investigator's personal playing surface, distinct from the shared scenario area. One human player can control several investigators, each with their own area.

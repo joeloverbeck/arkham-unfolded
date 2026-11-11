@@ -1,7 +1,9 @@
 //! Selected cancellation and prevention cards at real revelation/harm windows.
 
 use super::{
-    CardView, Investigator, cards, player_cards,
+    CardView, Investigator, cards,
+    option_labels::counted,
+    player_cards,
     runtime::{AssetState, Frame, Game, HarmAssignment, HarmOrigin, PendingRevelation},
 };
 use crate::{Choice, RuleError};
@@ -53,8 +55,27 @@ impl IdolDecision {
 }
 
 pub(super) fn idol_choices(game: &Game, decision: &IdolDecision) -> Vec<Choice> {
-    if decision.remaining.is_some() {
+    if let Some(remaining) = decision.remaining {
         let harm = idol_harm(game);
+        let (damage, horror) = harm
+            .allocations
+            .iter()
+            .fold((0u8, 0u8), |(damage, horror), (_, d, h)| {
+                (damage.saturating_add(*d), horror.saturating_add(*h))
+            });
+        if remaining >= damage.saturating_add(horror) {
+            // Canceling every assigned point leaves no order or target to choose.
+            let parts: Vec<_> = [(damage, "damage"), (horror, "horror")]
+                .into_iter()
+                .filter(|(amount, _)| *amount > 0)
+                .map(|(amount, aspect)| format!("{amount} {aspect}"))
+                .collect();
+            return vec![Choice {
+                id: "idol-prevent:all".into(),
+                label: format!("Cancel all assigned harm ({})", parts.join(" and ")),
+                cancel_faces: vec![],
+            }];
+        }
         let mut choices = Vec::new();
         for (target, damage, horror) in &harm.allocations {
             for (aspect, amount) in [("damage", damage), ("horror", horror)] {
@@ -121,8 +142,8 @@ pub(super) fn idol_choices(game: &Game, decision: &IdolDecision) -> Vec<Choice> 
         choices.push(Choice {
             id: "idol-pay".into(),
             label: format!(
-                "Exhaust Idol and discard {} cards in the selected order",
-                decision.selected.len()
+                "Exhaust Idol and discard {} in the selected order",
+                counted(decision.selected.len(), "card", "cards")
             ),
             cancel_faces: vec![],
         });
@@ -191,7 +212,18 @@ pub(super) fn choose_idol(game: &mut Game, id: &str) -> Result<(), RuleError> {
             player.discard.push(player.hand.remove(index));
         }
         decision.remaining = Some(total.min(decision.selected.len() as u8));
-        game.history.push(format!("{} exhausts Idol of Xanatos and discards {} chosen cards in the selected order. Cancel that much assigned damage/horror. [09102]", decision.owner.name(), decision.selected.len()));
+        game.history.push(format!("{} exhausts Idol of Xanatos and discards {} in the selected order. Cancel that much assigned damage/horror. [09102]", decision.owner.name(), counted(decision.selected.len(), "chosen card", "chosen cards")));
+    } else if id == "idol-prevent:all" {
+        let Some(Frame::Harm(harm)) = game.frames.last_mut() else {
+            unreachable!()
+        };
+        for (_, damage, horror) in &mut harm.allocations {
+            harm.damage -= *damage;
+            harm.horror -= *horror;
+            *damage = 0;
+            *horror = 0;
+        }
+        decision.remaining = Some(0);
     } else {
         let parts: Vec<_> = id.split(':').collect();
         let target = if parts[2] == "investigator" {
@@ -705,7 +737,7 @@ pub(super) fn revelation_choices(game: &Game, revelation: &PendingRevelation) ->
             let suffix = payment.robes.map_or_else(String::new, |id| format!(":robes:{id}"));
             Choice {
                 id: format!("ward:{}{suffix}", card.id),
-                label: format!("Play Ward of Protection{} ({} resources); cancel {}'s revelation, then take 1 horror", if payment.robes.is_some() { " exhausting Robes of Endless Night" } else { "" }, payment.cost, revelation.card.title),
+                label: format!("Play Ward of Protection{} ({}); cancel {}'s revelation, then take 1 horror", if payment.robes.is_some() { " exhausting Robes of Endless Night" } else { "" }, counted(payment.cost, "resource", "resources"), revelation.card.title),
                 cancel_faces: vec![],
             }
         })

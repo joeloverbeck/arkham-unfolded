@@ -360,7 +360,7 @@ pub(super) fn framing(view: &Observation) -> (Vec3, f32) {
         .filter(|tray| {
             tray.has_content() || view.play.as_ref().is_none_or(|play| play.test.is_none())
         })
-        .map_or_else(|| enemy_board::focus(focus(view)), |tray| tray.focus())
+        .map_or_else(|| sideboard::focus(focus(view)), |tray| tray.focus())
 }
 
 pub(super) fn status(view: &Observation) -> Option<String> {
@@ -854,7 +854,7 @@ pub(super) fn render(
 ) {
     let view = context.view;
     let Some(play) = &view.play else { return };
-    enemy_board::render(commands, meshes, materials, context);
+    sideboard::render(commands, meshes, materials, context);
     doom::render(commands, meshes, materials, context);
     shuffle::held(commands, meshes, materials, context);
     let mut paint = Painter {
@@ -1127,12 +1127,20 @@ pub(super) fn render(
         for (index, player) in occupants {
             paint.standee(at, player.investigator.index(), index, player.investigator);
         }
+        // An attachment waits on the attachment sideboard, not above its location.
         if let Some(fog) = &room.fog {
-            paint.card(CardSpec {
+            let title = format!("{}\nAttached to {}", fog.title, location_name(&room.code));
+            let card = paint.card(CardSpec {
                 source: Some(Source::Card(fog.id)),
                 physical_id: Some(fog.id),
-                ..CardSpec::new(at + Vec3::new(0., 0., -2.5), &fog.title, &fog.code)
+                caption: Some(Caption::Text(&fog.title)),
+                ..CardSpec::new(
+                    sideboard::ATTACHMENTS.position(play, fog.id),
+                    &title,
+                    &fog.code,
+                )
             });
+            sideboard::label_card(paint.commands, card, title, true);
         }
     }
     for (slot, enemy) in play.scenario.enemies.iter().enumerate() {
@@ -1172,24 +1180,7 @@ pub(super) fn render(
             caption: Some(Caption::Text(&caption)),
             ..CardSpec::new(pose.translation, &title, &enemy.card.code)
         });
-        let on_sideboard = enemy.engaged.is_none();
-        paint.commands.queue(move |world: &mut World| {
-            let labels: Vec<_> = world
-                .query::<(Entity, &motion::CardLabel)>()
-                .iter(world)
-                .filter(|(_, label)| label.0 == card)
-                .map(|(entity, _)| entity)
-                .collect();
-            for label in labels {
-                world.entity_mut(label).insert((
-                    enemy_board::PersistentLabel,
-                    AccessibleLabel::new(title.clone()),
-                ));
-                if on_sideboard {
-                    world.entity_mut(label).insert(enemy_board::Caption);
-                }
-            }
-        });
+        sideboard::label_card(paint.commands, card, title, enemy.engaged.is_none());
         card_counters::damage(
             paint.commands,
             paint.meshes,
@@ -1499,7 +1490,7 @@ pub(super) fn enemy_position(play: &PlayObservation, slot: usize) -> Vec3 {
             play.players[owner.index()].threats.len() + prior,
         );
     }
-    enemy_board::position(play, enemy.card.id)
+    sideboard::ENEMIES.position(play, enemy.card.id)
 }
 
 pub(super) fn test_resolving_cards(play: &PlayObservation) -> Vec<&crate::gathering::CardView> {

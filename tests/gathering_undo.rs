@@ -9,6 +9,20 @@ fn choose(session: &mut Session, id: &str) {
     );
     session.choose(before.revision, id).unwrap();
 }
+
+/// The Barrier's group clue payment, offered as one listed choice, paid with the
+/// Hallway's nine clues as the direct choice naming that allocation.
+fn pay_hallway(session: &mut Session) {
+    let view = session.observe();
+    assert!(
+        view.choices
+            .iter()
+            .any(|choice| choice.id == "act:pay:<contributions>"),
+        "The group clue payment is offered: {:?}",
+        view.choices
+    );
+    session.choose(view.revision, "act:pay:3:3:3").unwrap();
+}
 fn can_undo(session: &Session) -> bool {
     session
         .observe()
@@ -326,27 +340,15 @@ fn entering_an_unrevealed_room_blocks_undo_at_the_actual_reveal() {
 #[test]
 fn act_advancement_and_terminal_story_information_seal_earlier_choices() {
     let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
-    choose(&mut session, "round-end:advance-act");
-    for who in 0..3 {
-        for _ in 0..3 {
-            choose(&mut session, &format!("act:contribute:{who}"));
-        }
-    }
+    pay_hallway(&mut session);
     assert_eq!(session.observe().play.unwrap().act, 3);
     assert!(
         !can_undo(&session),
         "Act reverse and Parlor reveal cannot be undone"
     );
+    // The forced Ghoul doom, the round's end and the next mythos follow the
+    // bounty choice by themselves and reach the terminal resolution.
     choose(&mut session, "bounty:400:0");
-    assert!(can_undo(&session));
-    choose(&mut session, "undo");
-    assert!(
-        !can_undo(&session),
-        "Undoing the subsequent known choice cannot cross the story boundary"
-    );
-    choose(&mut session, "bounty:400:0");
-    choose(&mut session, "round-end:ghoul-doom");
-    choose(&mut session, "mythos:begin");
     assert!(session.observe().play.unwrap().scenario.outcome.is_some());
     assert!(
         session

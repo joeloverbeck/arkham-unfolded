@@ -182,7 +182,14 @@ fn uncage_plays_read_the_signs_from_zero_resources_and_finishes_both_owned_event
         &mut session,
         &format!("action:ordinary:play:tony:{uncage}:03033"),
     );
-    choose(&mut session, &format!("uncage:event:{event}:06117"));
+    // Read the Signs is the only eligible Spell event, so Uncage plays it by itself.
+    assert!(
+        session
+            .observe()
+            .history
+            .iter()
+            .any(|entry| entry.starts_with("Automatic: ") && entry.contains("Read the Signs"))
+    );
     assert_eq!(session.observe().play.unwrap().players[2].resources, 0);
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("uncage-read-signs.json");
@@ -244,18 +251,10 @@ fn read_signs_pays_before_opportunity_and_resumes_without_repayment() {
             .iter()
             .any(|card| card.id == event)
     );
-    let attack = paid
-        .choices
-        .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("read-signs-paid.json");
     continuity::save_session(&path, &session).unwrap();
     session = continuity::load_session(&path).unwrap();
-    choose(&mut session, &attack);
     choose(&mut session, "harm:damage:investigator");
     finish_test(&mut session);
     let after = session.observe().play.unwrap();

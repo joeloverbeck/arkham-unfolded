@@ -28,9 +28,10 @@ between Scenario and the investigator row. Keep the gaps around Test equal.
 Overview supports orientation. Focused views support readable play; simultaneous
 readability of every card in Overview is not the aim. Do not shrink cards to fit
 more investigator areas. A permanent map inset or split view is not selected.
-Scenario and Overview framing include the enemy sideboard. Frame each view within
-the usable viewport, accounting for headings and bottom controls; retain pan,
-zoom and Inspect for details. Finite layout examples are not gameplay limits.
+Scenario and Overview framing include the enemy and attachment sideboards, with
+the target re-centred between them at each view's unchanged distance, so cards do
+not shrink. Frame each view within the usable viewport, accounting for headings
+and bottom controls; retain pan, zoom and Inspect for details. Finite layout examples are not gameplay limits.
 
 A persistent side strip uses investigator portraits to focus their areas, with
 Scenario, Test and Overview shortcuts. Portrait buttons retain accessible names.
@@ -50,7 +51,11 @@ dismisses a transient action list without making a choice or losing commitments.
 
 Tab/Shift+Tab move menu focus, Enter/Space activate and Escape dismisses. Those
 operations must not also move the camera; arrow-key menu navigation is not
-selected. Inspect, History, Menu, story-reading panels, confirmation dialogs and
+selected. The Menu button has its own place in the Tab order, after the
+navigation rail, decision panel and sideboard headings (enemy, then attachment),
+so Shift+Tab from the first
+portrait reaches it. Every modal dialog contains a control that takes focus when
+it opens. Inspect, History, Menu, story-reading panels, confirmation dialogs and
 folder dialogs explicitly block camera input. Closing them restores WASD
 immediately. Right-drag orbits; empty navigation-container space permits its
 start, visible controls block its start, and an already captured drag continues
@@ -133,7 +138,9 @@ actions; selection alone makes no game choice. Use a compact nearby screen-space
 panel with one full-width clickable row per option and Inspect last. Rows can
 have a title and wrapped details. Keep actor, costs, test information,
 opportunity-attack warnings and other consequences readable before activation.
-Keep panels inside the viewport without shrinking text or hiding details, and
+Each option states its effective cost once, as currently modified (**Spend two
+actions:**), followed by its effect; the effect does not restate the cost, and
+counts agree in number. Keep panels inside the viewport without shrinking text or hiding details, and
 retain predictable ordering as legality changes. Actions without a useful
 physical source, including ending a turn and declining an effect, remain in the
 decision controls. Compound selections retain all legal alternatives and an
@@ -228,8 +235,10 @@ numeric entry. The quick choices are not a rules cap. Selecting a number exhaust
 once and records that prediction; dismissal before selection spends nothing.
 Do not expose separate cancel-prediction or one-step increment/decrement actions.
 This local numeric picker is an exception to the ordinary full-width action rows.
-Retain supported pending predictions through save/reopen without resetting their
-number. After selection, automatically close an empty test-start reaction window.
+It opens from the Pendulum's own **Exhaust Crystal Pendulum** entry for the rules
+session's one listed prediction choice; opening it commits nothing. Retain
+supported pending predictions through save/reopen without resetting their number.
+After selection, automatically close an empty test-start reaction window.
 If legal reactions remain, name them and offer **Skip remaining reactions**.
 Continue to the next genuine decision, preserving commitments and other legal
 abilities before token reveal.
@@ -249,6 +258,22 @@ a card nor exhausts the Violin; confirmation commits the existing complete game
 choice once. Cancel/Escape spends nothing. Retain the common inspection, keyboard,
 revision and save-before-install safeguards. This is a local compound chooser,
 not a new game timing window or a replacement resolution surface.
+
+An act's clues are paid through one **group clue payment** chooser, never one
+row per clue. The rules session lists one payment choice wherever the rules allow
+it: Trapped in every player window during an investigator's turn, and The
+Barrier at round end beside **Do not advance**. It opens from the Act card and,
+at round end, also from the decision bar; investigator menus list no clue rows.
+The compact panel beside the Act card has one row per investigator with portrait,
+name, clues held, location and a −/+ stepper; ineligible rows are disabled with
+their reason. Steppers stop at the investigator's holdings and the remaining
+requirement, a running **Paid N / required** total is shown, and **Spend N clues
+and advance** is enabled only at the exact requirement. The other button is
+**Cancel**, or **Do not advance** at round end. The panel starts empty, or
+pre-filled when only one split exists. Tab moves between rows, the arrow keys
+change the focused stepper, Enter pays and Escape closes without spending.
+Editing spends nothing; the payment commits once through the save-before-install
+path and the act's existing reading stage follows.
 
 ## Test area, planned reveals and results
 
@@ -313,10 +338,20 @@ abilities rather than reopening their chooser. Adding an ability updates the pla
 before revealing. Opening/dismissing its chooser neither activates nor undoes it.
 Preserve pre-reveal Undo, supported save/resume and stale-action rejection.
 
-For a proven-equivalent ordinary singleton reveal, offer one genuine **Use
-Jacqueline — reveal 3 tokens** action with the cancellation explanation. Distinct
-scopes and Arbiter costs use an aligned chevron disclosure with consequences
-explained. Equal physical draw counts alone do not justify collapsing choices.
+The rules session offers Jacqueline once where her whole-reveal and first-draw
+scopes are equivalent, which is every reveal of one plain draw, including when
+Olive McBride, Dark Prophecy or Katarina could still be declared afterwards: one
+**Use Jacqueline — reveal 3 tokens, then cancel** action with the cancellation
+explanation. Where scopes differ, both are offered and each label states its
+effect, such as **affect all 3 draws** or **affect only draw 1**. They differ for
+Voice of Ra, Dark Future, Olive or Dark Prophecy declared first, and every Eyes
+of the Dreamer reveal: Eyes keeps both scopes even with one position, because
+under the first-draw scope Jacqueline's group is one Eyes candidate.
+A sole Jacqueline choice is shown directly; several, including an Arbiter cost,
+use an aligned chevron disclosure. When Olive is ready, the panel adds: *Use Olive
+first if you want Jacqueline to affect Olive's three tokens.* The panel and the
+card and chaos-bag menus show exactly the session's choices. Equal physical draw
+counts alone do not justify collapsing choices.
 Explain who tests and each affected scope; Jacqueline helping someone else does
 not become the testing investigator. Guide cancellation and Olive's selection at
 their actual stages, never creating a response opportunity after learning faces.
@@ -489,8 +524,10 @@ Use up to four slots outside each location card, two along each long side, with
 positive clearance from the card and narrow gaps between neighboring bases.
 Keep deterministic investigator order, filling left then right; empty slots have
 no visible markings. The arrangement reflects investigator location, not human
-player count. Scenario's normal view leaves cards unobscured; natural overlap
-during orbit does not make figures fade or reposition. Inspect remains clear.
+player count. In Scenario's normal view standees leave cards unobscured, although
+marker counts cover the top of their location cards (see the markers below).
+Natural overlap during orbit does not make figures fade or reposition. Inspect
+remains clear.
 
 Show the three reciprocal Hallway links from visible connection symbols, keeping
 Parlor's entry restriction separate. Brass arrows are restrained/non-pickable and
@@ -502,6 +539,20 @@ source-prescribed arrangements take precedence. No force simulation is selected.
 
 Location-resident enemies use an exposed physical sideboard left of Map, grouping
 cards beneath full location names in three columns with further exposed rows.
+Rows start just below their heading, leaving clearance for damage tokens above
+the cards. Below its last row a group reserves room for its cards' names
+(three 13px lines, a two-line name and "Exhausted", at the normal Scenario
+focus at 1280×800), so the next group's heading and counts start below them.
+Both sideboards share this layout. The full room fits three location groups in
+four rows, two groups in five rows or one in six. A fuller board shares out
+what depth is left, down to none, so every card stays on the board, as before,
+for up to five groups in six rows. On such a board a later heading may still
+meet earlier names and the last group's names may cross the board's near edge,
+a limit the board already had that awaits the owner's decision. The columns
+spread as wide as the board allows,
+so neighbors' "Exhausted" lines stay apart at 1600×1000; at 1280×800 a column
+is narrower than that word and they still meet, which awaits the owner's
+decision.
 Keep full card size, stable group/copy ordering and clearance for exhaustion,
 harm, side counters and names. Do not collapse, overlap, scroll or continually
 shrink cards to solve crowding. Keep the compact board the same depth as the
@@ -512,17 +563,51 @@ or counters merely because framing widens.
 Use the same thick table body and inset top as the other playing surfaces,
 retaining the sideboard's navy/steel-blue palette and footprint.
 
-Each nonempty group has a marker above its location, repeating stable color,
-short identifier and group count beside its sideboard heading. Identity survives
-emptying/refilling. Keep markers distinct from printed symbols/gameplay tokens,
-outside investigator slots; route links around them without changing connections.
+Each location has a stable location color, assigned by location identity from an
+ordered Okabe–Ito list that avoids colors already meaningful on the table; two
+locations share a color only if they can never be in play together. Each nonempty
+group has an enemy-presence marker above its location: a round in-engine token
+with a dark outline, a location-color ring, an ivory face and an ink slit-eye
+emblem whose iris takes the location color, with the group count in a small dark
+pill beneath. Its sideboard heading repeats the token followed by **LOCATION
+NAME · count**; markers and headings carry no letters. Identity survives
+emptying/refilling. Markers sit in a band reserved above the location card,
+centered as a group with the enemy-presence marker left of any other marker.
+When a brass link enters through the card's top edge, markers sit on either side
+of it and a lone marker keeps its usual side. Map footprints include the band, so
+links route around it and standee slots stay outside it. Each count is drawn at
+the 11px counter-label size in every view, including Overview, centered beneath
+its token and starting at the token's lower edge; it is never shrunk or omitted
+to fit the band. On screen the band is shallower than the pill at both accepted
+distances, so the count covers the top of its location card: about 2–5px of a
+30–53px card in Scenario and about 7–8px of a 16–23px card in Overview, up to
+half the card's height (measured at 1600×1000 and 1280×800). This cover departs
+from the band's purpose of keeping markers off the card and awaits the owner's
+decision. Markers and counts stay clear of brass links, and of Map's top edge
+and the "Map" caption printed on it: Map sits slightly nearer than the middle of
+its region, and the region's top edge lies in the strip below the encounter
+cards. Keep markers distinct from printed symbols/gameplay tokens.
 Counts cover sideboard cards only. Ordinary engaged enemies stay in investigator
 threat areas. If Massive content becomes supported, its single location-resident
 card belongs on the sideboard ready or exhausted; only a ready Massive enemy is
 considered engaged with everyone there. This convention adds no content support.
 
-Card transfers preserve identity/counters and synchronize positions, markers and
-counts to the same displayed moment. Each face offers its own actions/Inspect;
+Cards attached to locations, currently Obscuring Fog, wait on an attachment
+sideboard right of Map rather than above their location. It is a presentation
+arrangement: the cards remain attached. It mirrors the enemy sideboard's footprint,
+three columns, exposed rows, full-size cards, thick body and inset top, in an olive
+surface (#2B3318) with a lichen rim (#8E9A4A); both boards share one layout that
+differs only by side, palette, marker and content. Each location with attachments
+shows an attachment marker right of any enemy-presence marker: a hexagonal token
+with flat edges toward the card, a dark outline, a location-color ring, an ivory
+face and an ink chain-link emblem, with the count in a dark pill beneath. Its
+heading repeats the token followed by **LOCATION NAME · count**. A marker, heading
+or card highlights only its own group; the location card highlights all of its
+groups.
+
+Card transfers, including attaching and discarding, preserve identity/counters and
+synchronize positions, markers and counts to the same displayed moment. Each face
+offers its own actions/Inspect;
 hover or keyboard focus highlights matching marker/heading without camera travel.
 Markers/headings retain aggregate group access. A moving enemy uses a temporary
 individually named marker along its route; permanent location-group identity stays
@@ -635,6 +720,8 @@ Keep current round and phase clearly visible after it leaves. Reduced motion use
 stationary text. Announce an empty Enemy phase and the first Investigation after
 setup; the first round skips Mythos. Round-end effects do not create a fifth phase.
 Prevent input through the announcement from activating an underlying control.
+The banner is an announcement, not a dialog: it takes no keyboard focus, and a
+full-screen barrier keeps the pointer from the table while it shows.
 
 Perform compulsory Upkeep and Mythos administration automatically with visible
 consequences, preserving genuine decisions, reactions, ordering choices, tests,
@@ -650,14 +737,16 @@ repeat effects after interruption, scene rebuild, camera movement or reopening.
 Reduced motion reaches the same final state with meaningful explanation and
 immediate placement. Cosmetic steps do not split simultaneous rules effects.
 
-A moving investigator lifts with its full base/holder, travels via the connecting
-brass arrow and settles into the destination slot; others remain stationary.
-First entry then flips the actual location faces in place and lowers its counted
-clue token with a brief gold/green glint. Target roughly one to two seconds,
-subject to native tuning; revisits omit flip/clue placement and no extra Continue
-is added. Zero-clue revelation creates no clue token, enemies do not reveal rooms,
-and scenario placement invents no connection. Use location names in destination
-labels rather than raw identifiers.
+A moving investigator lifts with its full base/holder onto the midpoint of the
+connecting brass arrow, rests there briefly at base height, then lifts into the
+destination slot. Engaged enemies travelling with it hop and rest in step beside
+it; others remain stationary. First entry then flips the actual location faces in
+place and lowers its counted clue token with a brief gold/green glint. Target
+about two and a half seconds for a first entry; the hop, rest, flip and clue
+timings are starting values for native tuning. Revisits omit flip/clue placement
+and no extra Continue is added. Zero-clue revelation creates no clue token,
+enemies do not reveal rooms, and scenario placement invents no connection. Use
+location names in destination labels rather than raw identifiers.
 
 After clue gain commits, lift a marker, carry it in a gentle raised arc and lower
 it to the investigator's clue slot. Decrease source count on departure, increase

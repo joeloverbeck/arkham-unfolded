@@ -5,6 +5,20 @@ fn choose(session: &mut Session, id: &str) {
     session.choose(revision, id).unwrap();
 }
 
+/// The Barrier's group clue payment, offered as one listed choice, paid with the
+/// Hallway's nine clues as the direct choice naming that allocation.
+fn pay_hallway(session: &mut Session) {
+    let view = session.observe();
+    assert!(
+        view.choices
+            .iter()
+            .any(|choice| choice.id == "act:pay:<contributions>"),
+        "The group clue payment is offered: {:?}",
+        view.choices
+    );
+    session.choose(view.revision, "act:pay:3:3:3").unwrap();
+}
+
 #[test]
 fn investigator_menu_keeps_lead_selection_explicit_and_uses_the_public_choice() {
     let session = Session::with_seed(19);
@@ -961,35 +975,22 @@ fn actual_end_turn_and_bounty_history_use_public_names_instead_of_physical_ids()
     use crate::gathering::{HostileFixture, PeterFixture};
     let mut forced =
         Session::with_hostile_fixture(HostileFixture::Peter(PeterFixture::ForcedBeforeReaction));
+    // Frozen in Fear's is the only end-of-turn effect, so the session begins
+    // it itself; its history entry still names the card, not its identity.
     choose(&mut forced, "turn:end");
     let view = forced.observe();
     let raw = view
-        .choices
+        .history
         .iter()
-        .find(|choice| choice.id.starts_with("turn-end:"))
+        .find(|line| line.starts_with("Automatic: Resolve end-of-turn effect "))
         .unwrap();
-    let id = raw
-        .id
-        .strip_prefix("turn-end:")
-        .unwrap()
-        .parse::<u16>()
-        .unwrap();
-    let shown = source_choices(&view, &Source::Card(id))
-        .into_iter()
-        .find(|choice| choice.id == raw.id)
-        .unwrap();
-    assert!(shown.label.contains("Frozen in Fear"));
-    assert!(!shown.label.contains(&id.to_string()));
-    assert!(raw.label.contains(&id.to_string()));
-    assert!(display_history(&view, &raw.label).contains("Frozen in Fear"));
+    let id = raw.rsplit(' ').next().unwrap();
+    let shown = display_history(&view, raw);
+    assert!(shown.contains("Frozen in Fear"), "{shown}");
+    assert!(!shown.contains(id));
 
     let mut bounty = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
-    choose(&mut bounty, "round-end:advance-act");
-    for who in 0..3 {
-        for _ in 0..3 {
-            choose(&mut bounty, &format!("act:contribute:{who}"));
-        }
-    }
+    pay_hallway(&mut bounty);
     choose(&mut bounty, "bounty:400:1");
     let view = bounty.observe();
     let raw = view

@@ -29,6 +29,9 @@ fn altar_keeps_agenda_doom_separate_from_quarry_and_automatic_mythos_clears_both
             .any(|(_, at)| at.x.abs() < 0.1 && (at.z + 18.4).abs() < 0.1)
     );
     assert!(rendered_text(&mut app).contains("Total doom: 2/3"));
+    // The witness poses the mythos step itself; the table never commits it.
+    assert_eq!(app.world().resource::<Table>().session, session);
+    activate_choice(&mut app, "mythos:begin");
     let mut seen_three = false;
     let mut seen_local_clear = false;
     let quarry_at = play::enemy_position(&session.observe().play.unwrap(), 0);
@@ -93,6 +96,14 @@ fn altar_keeps_agenda_doom_separate_from_quarry_and_automatic_mythos_clears_both
             .choices
             .iter()
             .any(|choice| choice.id == "agenda:lead-horror")
+    );
+    assert!(
+        committed
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == "agenda:random-discard"),
+        "Agenda 1's choice is genuine while someone can discard"
     );
     assert_eq!(continuity::load_session(path).unwrap(), committed);
     let world = app.world_mut();
@@ -183,6 +194,7 @@ fn zero_doom_keeps_the_altar_and_reduced_motion_uses_the_same_committed_result()
     let mut table = Table::new(session, directory.path().join("reduced.json"));
     table.reduced_motion = true;
     let mut app = host_with_table(table, false);
+    activate_choice(&mut app, "mythos:begin");
     for _ in 0..30 {
         draws::tick(&mut app, 0.1);
     }

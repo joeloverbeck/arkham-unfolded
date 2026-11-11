@@ -1,6 +1,7 @@
-//! Crystal Pendulum's local picker. Only confirming a number submits a rule choice.
+//! Crystal Pendulum's local picker, opened by its own trigger from the session's
+//! listed prediction choice. Only confirming a number submits a rule choice.
 use super::*;
-use crate::gathering::PendulumPrompt;
+use crate::gathering::{PREDICTION_MARGIN, PendulumPrompt};
 use bevy::input::{
     ButtonState,
     keyboard::{Key, KeyboardInput},
@@ -8,7 +9,9 @@ use bevy::input::{
 
 #[derive(Clone)]
 pub(super) enum Input {
-    Open,
+    /// Opens the picker from the session's listed prediction choice, whose
+    /// identity the trigger carries so the agent seat can name it.
+    Open(String),
     Other,
     Predict(u16),
 }
@@ -19,21 +22,28 @@ pub(super) struct Picker {
     other: Option<String>,
 }
 
+/// The Pendulum named by the session's listed prediction choice, which takes a
+/// number the picker supplies.
+pub(super) fn asset(id: &str) -> Option<u16> {
+    id.strip_prefix("test-card:predict:")?
+        .strip_suffix(PREDICTION_MARGIN)?
+        .strip_suffix(':')?
+        .parse()
+        .ok()
+}
+
+/// The picker's own trigger for a listed prediction choice.
+pub(super) fn trigger(epoch: u64, revision: u64, id: &str) -> Option<Action> {
+    asset(id).map(|asset| Action::Prediction(epoch, revision, asset, Input::Open(id.into())))
+}
+
 impl Picker {
     fn new(prompt: PendulumPrompt, revision: u64) -> Self {
         Self {
             prompt,
             revision,
-            other: prompt.saved_number.map(|number| number.to_string()),
+            other: None,
         }
-    }
-
-    pub(super) fn saved(session: &Session) -> Option<Self> {
-        session
-            .pendulum_prompts()
-            .into_iter()
-            .find(|prompt| prompt.saved_number.is_some())
-            .map(|prompt| Self::new(prompt, session.observe().revision))
     }
 
     fn action(&self, epoch: u64, input: Input) -> Action {
@@ -67,7 +77,7 @@ pub(super) fn dispatch(table: &mut Table, action: Action) -> Option<Action> {
     let Action::Prediction(epoch, revision, asset, input) = action else {
         return Some(action);
     };
-    if matches!(input, Input::Open) {
+    if matches!(input, Input::Open(_)) {
         open(table, epoch, revision, asset);
         return None;
     }
@@ -89,7 +99,7 @@ pub(super) fn dispatch(table: &mut Table, action: Action) -> Option<Action> {
                 format!("test-card:predict:{asset}:{number}"),
             ))
         }
-        Input::Open => unreachable!(),
+        Input::Open(_) => unreachable!(),
     }
 }
 
@@ -133,7 +143,7 @@ pub(super) fn keyboard(
 }
 
 pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art) {
-    use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier};
+    use bevy::ui_widgets::ModalDialogBarrier;
     let Some(picker) = &table.prediction else {
         return;
     };
@@ -154,7 +164,7 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art) {
         .with_children(|overlay| {
             overlay
                 .spawn((
-                    ModalDialog,
+                    crate::tabletop_ui::DialogFrame,
                     TabGroup::modal(),
                     BackgroundColor(INK),
                     BorderColor::all(GOLD),
@@ -171,9 +181,6 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art) {
                 .with_children(|panel| {
                     panel.spawn(art.text("Exhaust Crystal Pendulum", 24., GOLD));
                     panel.spawn(art.text(picker.prompt.owner.name(), 16., PAPER));
-                    if let Some(number) = picker.prompt.saved_number {
-                        panel.spawn(art.text(format!("Saved prediction: {number}"), 16., PAPER));
-                    }
                     panel
                         .spawn(Node {
                             flex_wrap: FlexWrap::Wrap,
