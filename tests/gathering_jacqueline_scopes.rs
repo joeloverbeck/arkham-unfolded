@@ -4,11 +4,12 @@ use arkham_unfolded_experiment::{
 };
 
 // Jacqueline's reaction adds two draws to the reveal she modifies, then cancels
-// within it (60401). For a reveal with one position, her whole-reveal scope and
-// her first-draw scope modify the same single draw. The proof compares every
-// legal continuation of both scopes through the session: later declarations
-// (Olive McBride, Dark Prophecy, Katarina Sojka) map draw P of the whole reveal
-// to draw 0.P of the first-draw scope, and token choices name physical tokens.
+// within it (60401). For a reveal with one plain draw, her whole-reveal scope and
+// her first-draw scope modify the same draw. Commit 48f1389 proved, by exploring
+// every legal continuation of both scopes, that they have identical
+// consequences there, including under later Olive McBride, Dark Prophecy and
+// Katarina Sojka declarations; the session now offers that scope once. Where
+// the scopes differ, both stay offered and each label states its effect.
 
 fn choose(session: &mut Session, id: &str) {
     let view = session.observe();
@@ -31,8 +32,9 @@ fn asset(session: &Session, code: &str) -> u16 {
 }
 
 /// Passes the empty windows before a reveal and, for Eyes of the Dreamer,
-/// spends no charges, so the reveal has exactly one position.
-fn reach_declaration(session: &mut Session) {
+/// spends the given number of charges.
+fn reach_declaration(session: &mut Session, charges: u8) {
+    let eyes = format!("tokens:eyes:{charges}");
     for _ in 0..8 {
         let choices = session.observe().choices;
         if choices
@@ -41,7 +43,7 @@ fn reach_declaration(session: &mut Session) {
         {
             return;
         }
-        let next = ["tokens:eyes:0", "commit:confirm", "window:pass"]
+        let next = [eyes.as_str(), "commit:confirm", "window:pass"]
             .into_iter()
             .find(|id| choices.iter().any(|choice| choice.id == *id))
             .unwrap_or_else(|| panic!("No route to the reveal: {choices:?}"));
@@ -50,143 +52,232 @@ fn reach_declaration(session: &mut Session) {
     panic!("Jacqueline was never offered");
 }
 
-/// The identity a whole-reveal declaration has under the first-draw scope.
-fn nested(id: &str) -> String {
-    ["tokens:olive:", "tokens:prophecy:", "tokens:katarina:"]
-        .into_iter()
-        .find_map(|prefix| {
-            id.strip_prefix(prefix)
-                .map(|rest| format!("{prefix}0.{rest}"))
-        })
-        .unwrap_or_else(|| id.to_owned())
-}
-
-fn ids(view: &Observation, map: fn(&str) -> String) -> Vec<String> {
+fn ids(view: &Observation) -> Vec<String> {
     view.choices
         .iter()
         .filter(|choice| choice.id != "undo")
-        .map(|choice| map(&choice.id))
+        .map(|choice| choice.id.clone())
         .collect()
 }
 
-/// Everything a player can observe about the consequences, excluding wording
-/// that names the scope's position (labels and history).
-fn assert_same_consequences(whole: &Session, first: &Session, trail: &[String]) {
-    let (a, b) = (whole.observe(), first.observe());
-    assert_eq!(ids(&a, nested), ids(&b, str::to_owned), "after {trail:?}");
-    let (a, b) = (a.play.unwrap(), b.play.unwrap());
-    assert_eq!(a.players, b.players, "after {trail:?}");
-    assert_eq!(a.test, b.test, "after {trail:?}");
-    assert_eq!(a.completed_tests, b.completed_tests, "after {trail:?}");
-    assert_eq!(a.bag_count, b.bag_count, "after {trail:?}");
-    assert_eq!(a.curse_pool, b.curse_pool, "after {trail:?}");
-    assert_eq!(a.premonition, b.premonition, "after {trail:?}");
-    assert_eq!(a.actions_remaining, b.actions_remaining, "after {trail:?}");
-    match (a.tokens, b.tokens) {
-        (Some(a), Some(b)) => {
-            assert_eq!(a.stage, b.stage, "after {trail:?}");
-            assert_eq!(a.revealed, b.revealed, "after {trail:?}");
-            assert_eq!(a.selected, b.selected, "after {trail:?}");
-            assert_eq!(a.ignored, b.ignored, "after {trail:?}");
-            assert_eq!(a.cancelled, b.cancelled, "after {trail:?}");
-            assert_eq!(a.fresh_reveal_count(), b.fresh_reveal_count());
-        }
-        (a, b) => assert_eq!(a.is_none(), b.is_none(), "after {trail:?}"),
-    }
+fn jacqueline(session: &Session) -> Vec<(String, String)> {
+    session
+        .observe()
+        .choices
+        .into_iter()
+        .filter(|choice| choice.id.starts_with("tokens:jacqueline"))
+        .map(|choice| (choice.id, choice.label))
+        .collect()
 }
 
-/// Selecting a token or group toggles it; the proof explores each selection
-/// set once (ascending physical order) and never unselects.
-fn explores(view: &Observation, id: &str) -> bool {
-    if id == "undo" {
-        return false;
-    }
-    let Some(tokens) = view.play.as_ref().and_then(|play| play.tokens.as_ref()) else {
-        return true;
-    };
-    let members = tokens.choice_members(id);
-    if members.is_empty() || id.starts_with("tokens:effect:") {
-        return true;
-    }
-    let highest = tokens.selected.iter().max();
-    members
+fn offered(expected: &[(&str, &str)]) -> Vec<(String, String)> {
+    expected
         .iter()
-        .all(|index| !tokens.selected.contains(index) && highest.is_none_or(|top| index > top))
+        .map(|(id, label)| ((*id).to_owned(), (*label).to_owned()))
+        .collect()
 }
 
-/// Explores every continuation until no reveal decision remains.
-/// Returns the number of complete continuations compared.
-fn explore(whole: &Session, first: &Session, trail: &mut Vec<String>) -> usize {
-    assert_same_consequences(whole, first, trail);
-    assert!(trail.len() < 40, "Unbounded continuation: {trail:?}");
-    let view = whole.observe();
-    let finished = view.play.as_ref().is_some_and(|play| play.tokens.is_none())
-        || !view
-            .choices
-            .iter()
-            .any(|choice| choice.id.starts_with("tokens:") || choice.id == "test:reveal");
-    if finished {
-        return 1;
-    }
-    let mut leaves = 0;
-    for choice in &view.choices {
-        if !explores(&view, &choice.id) {
-            continue;
-        }
-        let (mut a, mut b) = (whole.clone(), first.clone());
-        choose(&mut a, &choice.id);
-        choose(&mut b, &nested(&choice.id));
-        trail.push(choice.id.clone());
-        leaves += explore(&a, &b, trail);
-        trail.pop();
-    }
-    leaves
-}
+const ONCE: &str = "Use Jacqueline — reveal 3 tokens, then cancel";
+const ONCE_ARBITER: &str =
+    "Use Jacqueline + Arbiter — reveal 3 tokens, then cancel; exhaust Arbiter, preserve round use";
 
-fn prove(fixture: HostileFixture, arbiter: bool) -> usize {
-    let mut session = Session::with_hostile_fixture(fixture);
-    reach_declaration(&mut session);
-    let cost = if arbiter {
-        format!(":arbiter:{}", asset(&session, "60402"))
-    } else {
-        String::new()
-    };
-    let (mut whole, mut first) = (session.clone(), session);
-    choose(&mut whole, &format!("tokens:jacqueline{cost}"));
-    choose(&mut first, &format!("tokens:jacqueline:at:0{cost}"));
-    explore(&whole, &first, &mut vec![])
+fn assert_first_draw_refused(session: &mut Session) {
+    let before = session.clone();
+    let revision = session.observe().revision;
+    assert!(session.choose(revision, "tokens:jacqueline:at:0").is_err());
+    assert_eq!(*session, before);
 }
 
 #[test]
-fn single_draw_jacqueline_scopes_have_identical_consequences_under_every_later_declaration() {
-    let mut compared = 0;
-    for (fixture, arbiter) in [
-        (HostileFixture::JacquelineCancellation, false),
-        (HostileFixture::JacquelineProtectedTokens, false),
-        (
-            HostileFixture::Tokens(TokenFixture::ArbiterCancellation),
-            true,
-        ),
-        (HostileFixture::Tokens(TokenFixture::JacquelineOlive), false),
-        (
-            HostileFixture::Tokens(TokenFixture::JacquelineOliveProtected),
-            false,
-        ),
-        (HostileFixture::Tokens(TokenFixture::ProphecyOlive), false),
-        (
-            HostileFixture::Tokens(TokenFixture::ProphecyOliveOtherSymbol),
-            false,
-        ),
-        (HostileFixture::Tokens(TokenFixture::DarkProphecy), false),
-        (
-            HostileFixture::Tokens(TokenFixture::JacquelineKatarina),
-            false,
-        ),
-        (HostileFixture::Tokens(TokenFixture::Premonition), false),
+fn a_single_draw_reveal_offers_jacqueline_once_whether_or_not_olive_is_ready() {
+    for fixture in [
+        // Tony tests; Jacqueline assists at his location.
+        HostileFixture::JacquelineCancellation,
+        HostileFixture::Tokens(TokenFixture::JacquelineOlive),
+        HostileFixture::Tokens(TokenFixture::ProphecyOlive),
+        HostileFixture::Tokens(TokenFixture::DarkProphecy),
+        HostileFixture::Tokens(TokenFixture::JacquelineKatarina),
+        // Premonition's own one-token reveal.
+        HostileFixture::Tokens(TokenFixture::Premonition),
     ] {
-        compared += prove(fixture, arbiter);
+        let mut session = Session::with_hostile_fixture(fixture);
+        reach_declaration(&mut session, 0);
+        assert_eq!(
+            jacqueline(&session),
+            offered(&[("tokens:jacqueline", ONCE)]),
+            "{fixture:?}"
+        );
+        assert_first_draw_refused(&mut session);
     }
-    assert!(compared > 100, "Only {compared} continuations compared");
+}
+
+#[test]
+fn arbiter_is_the_only_variant_beside_the_single_jacqueline_choice() {
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::ArbiterCancellation));
+    reach_declaration(&mut session, 0);
+    let arbiter = format!("tokens:jacqueline:arbiter:{}", asset(&session, "60402"));
+    assert_eq!(
+        jacqueline(&session),
+        offered(&[("tokens:jacqueline", ONCE), (&arbiter, ONCE_ARBITER)])
+    );
+    assert_first_draw_refused(&mut session);
+    let revision = session.observe().revision;
+    assert!(
+        session
+            .choose(
+                revision,
+                &format!("tokens:jacqueline:at:0{}", &arbiter[17..])
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn a_curse_reveal_offers_its_new_single_draw_once() {
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::ArbiterCurse));
+    reach_declaration(&mut session, 0);
+    let arbiter = format!("tokens:jacqueline:arbiter:{}", asset(&session, "60402"));
+    for id in [
+        arbiter.as_str(),
+        "test:reveal",
+        "tokens:cancel:1",
+        "tokens:cancel:2",
+        "tokens:confirm",
+    ] {
+        choose(&mut session, id);
+    }
+    // Arbiter preserved the round use for the curse's additional reveal.
+    assert_eq!(
+        jacqueline(&session),
+        offered(&[("tokens:jacqueline", ONCE)])
+    );
+    assert_first_draw_refused(&mut session);
+}
+
+#[test]
+fn voice_of_ra_offers_the_whole_reveal_and_each_draw_by_effect() {
+    let session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::VoiceRaGuidance));
+    assert_eq!(
+        jacqueline(&session),
+        offered(&[
+            (
+                "tokens:jacqueline",
+                "Use Jacqueline — affect all 3 draws: add 2 tokens, then cancel"
+            ),
+            (
+                "tokens:jacqueline:at:0",
+                "Use Jacqueline — affect only draw 1: add 2 tokens, then cancel"
+            ),
+            (
+                "tokens:jacqueline:at:1",
+                "Use Jacqueline — affect only draw 2: add 2 tokens, then cancel"
+            ),
+            (
+                "tokens:jacqueline:at:2",
+                "Use Jacqueline — affect only draw 3: add 2 tokens, then cancel"
+            ),
+        ])
+    );
+}
+
+#[test]
+fn dark_future_offers_the_whole_reveal_and_each_of_its_five_draws() {
+    let session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::NestedProphecyCleanup));
+    let mut expected = vec![(
+        "tokens:jacqueline".to_owned(),
+        "Use Jacqueline — affect all 5 draws: add 2 tokens, then cancel".to_owned(),
+    )];
+    expected.extend((0..5).map(|draw| {
+        (
+            format!("tokens:jacqueline:at:{draw}"),
+            format!(
+                "Use Jacqueline — affect only draw {}: add 2 tokens, then cancel",
+                draw + 1
+            ),
+        )
+    }));
+    assert_eq!(jacqueline(&session), expected);
+}
+
+#[test]
+fn olive_declared_first_offers_jacqueline_around_her_on_her_draw_or_on_one_of_her_draws() {
+    let mut session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::JacquelineOlive));
+    reach_declaration(&mut session, 0);
+    let olive = asset(&session, "04197");
+    choose(&mut session, &format!("tokens:olive:0:{olive}"));
+    assert_eq!(
+        jacqueline(&session),
+        offered(&[
+            (
+                "tokens:jacqueline",
+                "Use Jacqueline around Olive — choose Olive's 2 first; then cancel whole results"
+            ),
+            (
+                "tokens:jacqueline:at:0",
+                "Use Jacqueline on Olive's whole draw — add 2 tokens to Olive's 3; cancel first, then choose 2"
+            ),
+            (
+                "tokens:jacqueline:at:0.0",
+                "Use Jacqueline on Olive's draw 1 — cancel within this draw first"
+            ),
+            (
+                "tokens:jacqueline:at:0.1",
+                "Use Jacqueline on Olive's draw 2 — cancel within this draw first"
+            ),
+            (
+                "tokens:jacqueline:at:0.2",
+                "Use Jacqueline on Olive's draw 3 — cancel within this draw first"
+            ),
+        ])
+    );
+}
+
+#[test]
+fn eyes_offers_its_whole_request_and_each_draw_by_effect() {
+    for (charges, expected) in [
+        (
+            1,
+            [
+                (
+                    "tokens:jacqueline",
+                    "Use Jacqueline — affect both draws: add 2 tokens as separate Eyes candidates, then cancel",
+                ),
+                (
+                    "tokens:jacqueline:at:0",
+                    "Use Jacqueline — affect only draw 1: add 2 tokens, then cancel; her group is one Eyes candidate",
+                ),
+                (
+                    "tokens:jacqueline:at:1",
+                    "Use Jacqueline — affect only draw 2: add 2 tokens, then cancel; her group is one Eyes candidate",
+                ),
+            ]
+            .as_slice(),
+        ),
+        (
+            0,
+            [
+                (
+                    "tokens:jacqueline",
+                    "Use Jacqueline — affect the whole reveal: add 2 tokens as separate Eyes candidates, then cancel",
+                ),
+                (
+                    "tokens:jacqueline:at:0",
+                    "Use Jacqueline — affect only draw 1: add 2 tokens, then cancel; her group is one Eyes candidate",
+                ),
+            ]
+            .as_slice(),
+        ),
+    ] {
+        let mut session =
+            Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesKatarina));
+        reach_declaration(&mut session, charges);
+        assert_eq!(jacqueline(&session), offered(expected), "{charges} charges");
+    }
 }
 
 /// Eyes of the Dreamer chooses one candidate per position. Under the first-draw
@@ -197,7 +288,7 @@ fn single_draw_jacqueline_scopes_have_identical_consequences_under_every_later_d
 fn eyes_without_charges_keeps_both_scopes_because_jacquelines_group_is_one_eyes_candidate() {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::EyesKatarina));
-    reach_declaration(&mut session);
+    reach_declaration(&mut session, 0);
     let katarina = asset(&session, "11069");
     let (mut whole, mut first) = (session.clone(), session);
     for (session, scope, position) in [
@@ -223,9 +314,6 @@ fn eyes_without_charges_keeps_both_scopes_because_jacquelines_group_is_one_eyes_
         choose(session, "tokens:cancel:4");
         choose(session, "tokens:confirm");
     }
-    assert_eq!(
-        ids(&whole.observe(), str::to_owned),
-        ["tokens:keep:2", "tokens:keep:3"]
-    );
-    assert_eq!(ids(&first.observe(), str::to_owned), ["tokens:position:0"]);
+    assert_eq!(ids(&whole.observe()), ["tokens:keep:2", "tokens:keep:3"]);
+    assert_eq!(ids(&first.observe()), ["tokens:position:0"]);
 }
