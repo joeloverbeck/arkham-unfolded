@@ -37,8 +37,11 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          # Rust inputs are keyed automatically; include our check/build settings too.
-          key: ${{ hashFiles('.github/workflows/check.yml', 'scripts/check*', 'scripts/tools', 'scripts/prepare-ci-toolchain') }}
+          # The action keys the compiler, CARGO*, CC*, CFLAGS*, CXX*, CMAKE* and RUST* variables,
+          # manifests, lockfile, Cargo config and toolchain file. No custom `key`: it would join
+          # the restore prefix, so any edit to its inputs would restore nothing and rebuild every
+          # phase. A launcher change that needs new dependency builds repeats them on each run
+          # until any keyed input changes and a fresh cache is saved.
           cache-bin: false
       - name: Tracked-file hygiene
         run: scripts/check-index
