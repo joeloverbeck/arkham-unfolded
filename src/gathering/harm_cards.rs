@@ -212,7 +212,7 @@ pub(super) fn choose_idol(game: &mut Game, id: &str) -> Result<(), RuleError> {
             player.discard.push(player.hand.remove(index));
         }
         decision.remaining = Some(total.min(decision.selected.len() as u8));
-        game.history.push(format!("{} exhausts Idol of Xanatos and discards {} chosen cards in the selected order. Cancel that much assigned damage/horror. [09102]", decision.owner.name(), decision.selected.len()));
+        game.history.push(format!("{} exhausts Idol of Xanatos and discards {} in the selected order. Cancel that much assigned damage/horror. [09102]", decision.owner.name(), counted(decision.selected.len(), "chosen card", "chosen cards")));
     } else if id == "idol-prevent:all" {
         let Some(Frame::Harm(harm)) = game.frames.last_mut() else {
             unreachable!()

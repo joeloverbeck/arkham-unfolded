@@ -455,6 +455,12 @@ fn idol_pays_selected_nonweakness_cards_in_order_then_saves_cancelled_aspects() 
     // the session cancels them all and records it.
     let paid = session.observe();
     assert!(
+        paid.history.contains(
+            &"Patrice Hathaway exhausts Idol of Xanatos and discards 2 chosen cards in the selected order. Cancel that much assigned damage/horror. [09102]"
+                .to_owned()
+        )
+    );
+    assert!(
         paid.history
             .contains(&"Automatic: Cancel all assigned harm (1 damage and 1 horror)".to_owned())
     );
@@ -556,6 +562,13 @@ fn idol_can_cancel_before_costs_and_cannot_discard_four_cards_or_reuse_exhausted
     choose(&mut session, &format!("idol:{idol}"));
     choose(&mut session, &format!("idol-select:{}", cards[0]));
     choose(&mut session, "idol-pay");
+    assert!(
+        session.observe().history.contains(
+            &"Patrice Hathaway exhausts Idol of Xanatos and discards 1 chosen card in the selected order. Cancel that much assigned damage/horror. [09102]"
+                .to_owned()
+        ),
+        "one discard is singular"
+    );
     choose(&mut session, "idol-prevent:horror:investigator");
     let remaining = session.observe();
     assert!(
