@@ -48,7 +48,7 @@ README's launch/recovery instructions in the same handoff. Keep the existing
 save bytes intact. Prepared diagnostic checkpoints have a separate purpose and
 do not establish that the ordinary launch command works.
 
-Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. Keep the following runnable checklist in private local evidence and link it directly to the owner in the conversation. The issue's [current handoff](issue-tracker.md#current-handoff) contains the compact public status below. Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from the private checklist and this procedure without reconstructing the implementation transcript.
+Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. Keep the following runnable checklist in private local evidence and link it directly to the owner in the conversation. When the owner operates the run, the reply itself also carries the exact copyable launch command and numbered route; the checklist remains the record. The issue's [current handoff](issue-tracker.md#current-handoff) contains the compact public status below. Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from the private checklist and this procedure without reconstructing the implementation transcript.
 
 ```text
 Private checklist — do not upload:
@@ -470,6 +470,15 @@ Protocol references: [RemoteDesktop](https://flatpak.github.io/xdg-desktop-porta
 ### Foreground performance measurements
 
 Before a timed check, establish who will keep the app visible and focused. Within an authorized desktop interval, use the verified PID/window and existing focus support: `native capture` focuses its client, and a running native session accepts `{"action":"focus"}` or `"focus":true` on an operation. Wait for that operation's result before selecting the measurement interval. When the check needs the owner's attention, establish readiness before launch instead of sending a focus request during a short countdown. Record any capture or focus operation as part of the comparison's conditions.
+
+To measure tabletop cadence, launch with the pacing counter and keep the log:
+
+```sh
+RUST_LOG=info,wgpu=error,naga=warn,arkham_unfolded_experiment::tabletop_pacing=debug \
+  target/debug/arkham-tabletop 2>&1 | tee /absolute/path/to/new-launch.log
+```
+
+`RUST_LOG` replaces Bevy's default filter, so the command restates those defaults. The target names the library crate, not the package or executable. Each `Tabletop updates: N in Xs; longest gap …` line covers one interval of main-app updates, not GPU presentation timestamps; `Tabletop cadence: idle|active` marks transitions.
 
 Record usable foreground duration or sample count alongside total elapsed time and measured rates. Background time does not satisfy the graphics check. A supervisor timeout without enough foreground evidence is **inconclusive**, not evidence of GPU failure; retain any independently reported renderer error separately. Keep the original absolute deadline, cleanup reserve and existing focus guards. Focus loss consumes the remaining allowance; it does not authorize a longer run or another attempt.
 

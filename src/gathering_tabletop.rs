@@ -545,6 +545,7 @@ fn run_window(
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
+                        // tools/src/desktop.rs verifies this exact title before focus or capture.
                         title: "Arkham Unfolded — Gathering Setup".into(),
                         resolution: (1600, 1000).into(),
                         ..default()
