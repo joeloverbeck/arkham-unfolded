@@ -540,15 +540,17 @@ source-prescribed arrangements take precedence. No force simulation is selected.
 Location-resident enemies use an exposed physical sideboard left of Map, grouping
 cards beneath full location names in three columns with further exposed rows.
 Rows start just below their heading, leaving clearance for damage tokens above
-the cards. Below its last row a group reserves its cards' names (three 13px
-lines, a two-line name and "Exhausted", at the normal Scenario focus at
-1280×800), so the next group's heading and counts start below them. Both
-sideboards share this layout and then hold at most three location groups (four
-rows in all), two groups in five rows or one in six; a fourth nonempty group
-does not fit, which awaits the owner's decision. The columns spread as wide as
-the board allows, so neighbors' "Exhausted" lines stay apart at 1600×1000; at
-1280×800 a column is narrower than that word and they still meet, which also
-awaits the owner's decision.
+the cards. Below its last row a group reserves room for its cards' names
+(three 13px lines, a two-line name and "Exhausted", at the normal Scenario
+focus at 1280×800), so the next group's heading and counts start below them.
+Both sideboards share this layout. The full room fits three location groups in
+four rows, two groups in five rows or one in six. A fuller board shares out
+what depth is left, down to none, so every card stays on the board, as before,
+for up to five groups in six rows; a later heading may then meet earlier names,
+a limit the board already had. The columns spread as wide as the board allows,
+so neighbors' "Exhausted" lines stay apart at 1600×1000; at 1280×800 a column
+is narrower than that word and they still meet, which awaits the owner's
+decision.
 Keep full card size, stable group/copy ordering and clearance for exhaustion,
 harm, side counters and names. Do not collapse, overlap, scroll or continually
 shrink cards to solve crowding. Keep the compact board the same depth as the

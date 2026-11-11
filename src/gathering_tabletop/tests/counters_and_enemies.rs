@@ -620,9 +620,7 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                     let mut play = session.observe().play.unwrap();
                     let template = play.scenario.enemies[0].clone();
                     play.scenario.enemies.clear();
-                    // Three groups in four rows: the most a board holds once
-                    // each group reserves its three-line captions.
-                    for index in 0..9 {
+                    for index in 0..13 {
                         let mut enemy = template.clone();
                         enemy.card.id = 61000 + index;
                         enemy.card.title = match index % 3 {
@@ -631,10 +629,11 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                             _ => "Ghoul Minion",
                         }
                         .into();
-                        enemy.engaged = (index == 8).then_some(Investigator::Tony);
+                        enemy.engaged = (index == 12).then_some(Investigator::Tony);
                         enemy.location = match index {
-                            6 => "01113",
-                            7 => "01114",
+                            9 => "01113",
+                            10 => "01114",
+                            11 => "01115",
                             _ => "01112",
                         }
                         .into();
@@ -676,7 +675,7 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                     let cards: Vec<_> = world
                         .query::<(&motion::PhysicalCard, &Transform)>()
                         .iter(world)
-                        .filter(|(card, _)| (61000..61008).contains(&card.0))
+                        .filter(|(card, _)| (61000..61012).contains(&card.0))
                         .map(|(card, at)| (card.0, *at))
                         .collect();
                     let cells: Vec<_> = cards
@@ -688,7 +687,7 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                             )
                         })
                         .collect();
-                    assert_eq!(cells.len(), 8);
+                    assert_eq!(cells.len(), 12);
                     for (index, cell) in cells.iter().enumerate() {
                         assert!(
                             cell.min.x >= board.min.x
@@ -703,7 +702,7 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                             );
                         }
                     }
-                    assert!(rendered_text(&mut app).contains("HALLWAY  /  6"));
+                    assert!(rendered_text(&mut app).contains("HALLWAY  /  9"));
                     let world = app.world_mut();
                     let labels: Vec<_> = world
                         .query::<(Entity, &motion::CardLabel)>()
@@ -713,12 +712,12 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                                 .get::<card_counters::Attached>(label.0)
                                 .map_or(label.0, |attached| attached.0);
                             let id = world.get::<motion::PhysicalCard>(owner)?.0;
-                            (61000..61008).contains(&id).then_some(entity)
+                            (61000..61012).contains(&id).then_some(entity)
                         })
                         .collect();
                     assert_eq!(
                         labels.len(),
-                        16,
+                        24,
                         "Every enemy has its name and damage fraction"
                     );
                     let mut rich_labels = 0;

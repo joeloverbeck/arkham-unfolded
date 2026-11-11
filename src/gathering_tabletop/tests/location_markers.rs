@@ -839,12 +839,27 @@ fn board_with(enemies: &[(&str, &str, bool)]) -> App {
 }
 
 /// Story 54 with captions: a group's rows reserve their cards' captions, so a
-/// later group's heading, damage counts and damage tokens stay clear of them.
-/// An exhausted card's caption is three lines here.
+/// later group's heading and damage counts stay clear of them while the board
+/// has room. An exhausted card's caption is three lines here. The largest
+/// boards with that room are three groups in four rows and two in five; a
+/// fuller board keeps its cards on the board instead (see
+/// `enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels`).
 #[test]
 fn later_enemy_groups_clear_the_captions_of_earlier_groups() {
     use crate::tabletop_layout::heading_checks::rendered_text_bounds;
-    let boards: [&[(&str, &str, bool)]; 2] = [
+    let ready = |room| (room, "Ghoul Minion", false);
+    let three_in_four_rows = [
+        ready(HALLWAY),
+        ready(HALLWAY),
+        ready(HALLWAY),
+        (HALLWAY, "Icy Ghoul", true),
+        (ATTIC, "Ravenous Ghoul", true),
+        (CELLAR, "Flesh-Eater", false),
+    ];
+    let mut two_in_five_rows = vec![ready(HALLWAY); 12];
+    two_in_five_rows[11] = (HALLWAY, "Icy Ghoul", true);
+    two_in_five_rows.push((ATTIC, "Flesh-Eater", false));
+    let boards: [&[(&str, &str, bool)]; 4] = [
         // The seat's play3: an exhausted Icy Ghoul above a ready Flesh-Eater.
         &[(HALLWAY, "Icy Ghoul", true), (ATTIC, "Flesh-Eater", false)],
         &[
@@ -854,6 +869,8 @@ fn later_enemy_groups_clear_the_captions_of_earlier_groups() {
             (CELLAR, "Ghoul Minion", false),
             (PARLOR, "Swarm of Rats", true),
         ],
+        &three_in_four_rows,
+        &two_in_five_rows,
     ];
     let mut failures = Vec::new();
     for size in [Vec2::new(1600., 1000.), Vec2::new(1280., 800.)] {

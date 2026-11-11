@@ -16,9 +16,14 @@ const ROW_PITCH: f32 = 3.;
 const GROUP_GAP: f32 = 0.65;
 /// Below a group's last row, room for its captions: three 13px lines (a
 /// two-line name and "Exhausted") at the normal Scenario focus at 1280x800,
-/// so the next group's heading and damage counts start below them.
+/// so the next group's heading and damage counts start below them. A full
+/// board gives up this room before any card leaves it.
 const CAPTION_ROOM: f32 = 3.2;
-/// The first group's top sits this far inside the board's far edge.
+/// A row's cell, its cards with the damage tokens above them, ends this far
+/// below the cards' centers.
+const ROW_CELL_BELOW: f32 = ROW_PITCH / 2. - 0.15;
+/// The first group's top sits this far inside the board's far edge, and
+/// caption room never brings the last row's cell nearer the near edge.
 const BOARD_INSET: f32 = 0.4;
 /// The heading token's center below its group's top.
 const HEADING_DROP: f32 = 0.32;
@@ -116,7 +121,25 @@ impl Sideboard {
     }
 
     /// Lay out nonempty groups of the given sizes top to bottom.
+    /// Each gap between groups takes the full caption room while the board's
+    /// depth allows, and otherwise an equal share of what is left, never less
+    /// than none: a crowded board keeps every card on it.
     pub(super) fn layout(&self, counts: &[usize]) -> Vec<GroupLayout> {
+        let gaps = counts.len().saturating_sub(1);
+        if gaps == 0 {
+            return self.stack(counts, 0.);
+        }
+        let last_row = self
+            .stack(counts, 0.)
+            .iter()
+            .flat_map(|group| group.cards.iter().map(|card| card.z))
+            .fold(f32::MIN, f32::max);
+        let spare = self.center.z + self.size.y / 2. - BOARD_INSET - (last_row + ROW_CELL_BELOW);
+        self.stack(counts, (spare / gaps as f32).clamp(0., CAPTION_ROOM))
+    }
+
+    /// Groups top to bottom, with `caption_room` below each group's last row.
+    fn stack(&self, counts: &[usize], caption_room: f32) -> Vec<GroupLayout> {
         let mut top = self.center.z - self.size.y / 2. + BOARD_INSET;
         counts
             .iter()
@@ -136,7 +159,7 @@ impl Sideboard {
                         )
                     })
                     .collect();
-                top += GROUP_GAP + count.div_ceil(3) as f32 * ROW_PITCH + CAPTION_ROOM;
+                top += GROUP_GAP + count.div_ceil(3) as f32 * ROW_PITCH + caption_room;
                 GroupLayout { heading, cards }
             })
             .collect()
