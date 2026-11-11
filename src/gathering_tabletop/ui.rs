@@ -102,6 +102,10 @@ fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
     });
 }
 
+/// Shown while Olive McBride and Jacqueline can both still be declared.
+pub(super) const OLIVE_FIRST_HINT: &str =
+    "Use Olive first if you want Jacqueline to affect Olive's three tokens.";
+
 fn token_options_body(
     p: &mut ChildSpawnerCommands,
     art: &art::Art,
@@ -114,23 +118,14 @@ fn token_options_body(
     let Some(tokens) = &play.tokens else {
         return;
     };
-    // Preserve historical engine choice IDs. Collapse aliases only when neither
-    // a replacement policy nor a later offered modifier can distinguish scopes.
-    let plain = tokens.is_plain_single_draw()
-        && !view.choices.iter().any(|choice| {
-            ["tokens:olive:", "tokens:prophecy:", "tokens:katarina:"]
-                .iter()
-                .any(|prefix| choice.id.starts_with(prefix))
-        });
+    // The rules session offers Jacqueline once when her scopes are equivalent.
+    // A sole offered choice is shown directly; several share a disclosure.
     let jacqueline: Vec<_> = view
         .choices
         .iter()
-        .filter(|choice| {
-            choice.id.starts_with("tokens:jacqueline")
-                && !(plain && choice.id.starts_with("tokens:jacqueline:at:"))
-        })
+        .filter(|choice| choice.id.starts_with("tokens:jacqueline"))
         .collect();
-    let direct = plain && jacqueline.len() == 1;
+    let direct = jacqueline.len() == 1;
     let olive: Vec<_> = view
         .choices
         .iter()
@@ -187,7 +182,7 @@ fn token_options_body(
                     control(
                         art,
                         row,
-                        "Use Jacqueline — reveal 3 tokens",
+                        choice_label(jacqueline[0]),
                         Action::Choose(table.epoch, view.revision, jacqueline[0].id.clone()),
                     );
                     continue;
@@ -214,6 +209,9 @@ fn token_options_body(
                 }
             }
         });
+        if !jacqueline.is_empty() && !olive.is_empty() {
+            p.spawn(art.text(OLIVE_FIRST_HINT, 13., MUTED));
+        }
         if direct || table.token_options.as_deref() == Some("tokens:jacqueline") {
             let activity = if tokens.is_skill_test() {
                 "testing"
@@ -231,9 +229,6 @@ fn token_options_body(
                 PAPER,
             ));
             p.spawn(art.text("Add 2 tokens, then cancel 2 tokens or only the auto-fail. Tokens are revealed only when you resolve the declared reveal.", 13., MUTED));
-            if !plain {
-                p.spawn(art.text("Whole reveal: affect the entire group. A numbered draw: affect only that position; other positions still resolve normally.", 13., MUTED));
-            }
             if jacqueline
                 .iter()
                 .any(|choice| choice.id.contains(":arbiter:"))
@@ -247,10 +242,7 @@ fn token_options_body(
             if declaring && olive.len() == 1 && choice.id.starts_with("tokens:olive:") {
                 continue;
             }
-            if declaring
-                && choice.id.starts_with("tokens:jacqueline")
-                && (direct || !jacqueline.iter().any(|shown| shown.id == choice.id))
-            {
+            if declaring && direct && choice.id.starts_with("tokens:jacqueline") {
                 continue;
             }
             let visible = if declaring {
@@ -263,22 +255,10 @@ fn token_options_body(
                 choice.id.starts_with("tokens:") && choice.id != "tokens:confirm"
             };
             if visible {
-                let ability_label = tokens.ability_label(choice);
-                let label = if let Some(label) = &ability_label {
-                    label.as_str()
-                } else if plain && choice.id.starts_with("tokens:jacqueline") {
-                    if choice.id.contains(":arbiter:") {
-                        "Use Jacqueline + Arbiter — preserve round use"
-                    } else {
-                        "Use Jacqueline — spend round use"
-                    }
-                } else {
-                    choice_label(choice)
-                };
                 control(
                     art,
                     p,
-                    label,
+                    choice_label(choice),
                     Action::Choose(table.epoch, view.revision, choice.id.clone()),
                 );
             }

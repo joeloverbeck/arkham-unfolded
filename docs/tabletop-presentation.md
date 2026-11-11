@@ -321,10 +321,16 @@ abilities rather than reopening their chooser. Adding an ability updates the pla
 before revealing. Opening/dismissing its chooser neither activates nor undoes it.
 Preserve pre-reveal Undo, supported save/resume and stale-action rejection.
 
-For a proven-equivalent ordinary singleton reveal, offer one genuine **Use
-Jacqueline — reveal 3 tokens** action with the cancellation explanation. Distinct
-scopes and Arbiter costs use an aligned chevron disclosure with consequences
-explained. Equal physical draw counts alone do not justify collapsing choices.
+The rules session offers Jacqueline once where her whole-reveal and first-draw
+scopes are equivalent, which is every reveal of one plain draw, including when
+Olive is ready: one **Use Jacqueline — reveal 3 tokens, then cancel** action
+with the cancellation explanation. Where scopes differ, both are offered and each
+label states its effect, such as **affect all 3 draws** or **affect only draw 1**.
+A sole Jacqueline choice is shown directly; several, including an Arbiter cost,
+use an aligned chevron disclosure. When Olive is ready, the panel adds: *Use Olive
+first if you want Jacqueline to affect Olive's three tokens.* The panel and the
+card and chaos-bag menus show exactly the session's choices. Equal physical draw
+counts alone do not justify collapsing choices.
 Explain who tests and each affected scope; Jacqueline helping someone else does
 not become the testing investigator. Guide cancellation and Olive's selection at
 their actual stages, never creating a response opportunity after learning faces.
