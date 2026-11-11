@@ -147,3 +147,98 @@ fn same_total_encounter_substitution_is_refused_even_with_a_matching_checksum() 
     assert!(save_session(&path, &game).is_err());
     assert_eq!(std::fs::read(&path).unwrap(), altered);
 }
+
+/// Rewrite one saved payload and reseal it, as an earlier development build
+/// would have written it. The checksum is intact, so only replay can refuse it.
+fn reseal(path: &std::path::Path, edit: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    edit(&mut envelope["payload"]);
+    let checked = serde_json::to_vec(&(
+        &envelope["format_version"],
+        &envelope["kind"],
+        &envelope["source_revision"],
+        &envelope["app_version"],
+        &envelope["payload"],
+    ))
+    .unwrap();
+    envelope["checksum"] = serde_json::json!(format!("{:x}", Sha256::digest(checked)));
+    let bytes = serde_json::to_vec_pretty(&envelope).unwrap();
+    std::fs::write(path, &bytes).unwrap();
+    bytes
+}
+
+/// Append a decision the current build no longer offers, as if an earlier
+/// build had journalled it at this exact position.
+fn journal_removed_decision(payload: &mut serde_json::Value, id: &str) {
+    let decisions = payload["decisions"].as_array_mut().unwrap();
+    decisions.push(serde_json::json!(id));
+    let index = decisions.len() - 1;
+    payload["active_decisions"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!(index));
+    payload["revision"] = serde_json::json!(payload["revision"].as_u64().unwrap() + 1);
+}
+
+fn assert_refused_unchanged(path: &std::path::Path, bytes: &[u8], owner: &Session) {
+    let error = load_session(path).unwrap_err().to_string();
+    assert!(
+        error.contains("Development builds promise no save compatibility"),
+        "{error}"
+    );
+    assert!(error.contains("New attempt"), "{error}");
+    assert!(!error.to_lowercase().contains("checksum"), "{error}");
+    assert!(save_session(path, owner).is_err());
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+    assert!(!previous_path(path).exists());
+}
+
+#[test]
+fn earlier_build_records_that_no_longer_replay_are_refused_unchanged() {
+    use arkham_unfolded_experiment::gathering::{HostileFixture, SearchFixture, TestCardFixture};
+    let directory = tempfile::tempdir().unwrap();
+
+    // Earlier builds journalled Kicking the Hornet's Nest's spawn without its
+    // Then reward. That identifier is no longer accepted, even from a record.
+    let mut hornet =
+        Session::with_hostile_fixture(HostileFixture::Search(SearchFixture::HornetTargets));
+    let view = hornet.observe();
+    let card = view.play.unwrap().players[0]
+        .hand
+        .iter()
+        .find(|card| card.code == "09068")
+        .unwrap()
+        .id;
+    hornet
+        .choose(view.revision, &format!("action:ordinary:play:tony:{card}"))
+        .unwrap();
+    let enemy = hornet
+        .observe()
+        .play
+        .unwrap()
+        .searched_encounter
+        .iter()
+        .find(|card| card.code == "01159")
+        .unwrap()
+        .id;
+    let path = directory.path().join("hornet.json");
+    save_session(&path, &hornet).unwrap();
+    let bytes = reseal(&path, |payload| {
+        journal_removed_decision(payload, &format!("search:enemy:{enemy}"));
+    });
+    assert_refused_unchanged(&path, &bytes, &hornet);
+
+    // Earlier builds opened Crystal Pendulum's −/+ stepper as a rules step.
+    let pendulum = Session::with_hostile_fixture(HostileFixture::TestCards(
+        TestCardFixture::CrystalPrediction,
+    ));
+    let asset = pendulum.pendulum_prompts()[0].asset;
+    let path = directory.path().join("pendulum.json");
+    save_session(&path, &pendulum).unwrap();
+    let bytes = reseal(&path, |payload| {
+        journal_removed_decision(payload, &format!("test-card:pendulum:{asset}"));
+    });
+    assert_refused_unchanged(&path, &bytes, &pendulum);
+}

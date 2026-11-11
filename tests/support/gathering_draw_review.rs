@@ -47,6 +47,7 @@ fn before_draw(
             "phase-window:pass",
             "mythos:draw",
             "enemy:attacks",
+            "enemy:skip-empty",
             "enemy:next-investigator",
             "enemy:attacks-complete",
             "enemy:end",

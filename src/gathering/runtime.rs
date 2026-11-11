@@ -218,9 +218,9 @@ pub(super) enum Frame {
         previous_actor: Option<Investigator>,
         previous_phase: Phase,
     },
-    // Historical serialized name; this is the shared ST6 success/failure
-    // reaction window, which closes before any ST7 result is applied.
-    SuccessWindow,
+    /// The shared ST6 success/failure reaction window, which closes before any
+    /// ST7 result is applied.
+    OutcomeWindow,
     AssetEntry(super::player_cards::AssetEntry),
     Backpack(super::backpack::BackpackDecision),
     AfterTest(super::retry::AfterTestState),
@@ -499,9 +499,6 @@ pub struct PlayObservation {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct Game {
-    /// Only enabled while reconstructing an already recorded pre-fix choice.
-    #[serde(skip)]
-    pub legacy_hornet_search: bool,
     #[serde(skip)]
     pub presentation: Vec<super::moments::StepSnapshot>,
     pub ethereal: Vec<Investigator>,
@@ -605,7 +602,7 @@ impl Game {
             })
             .collect();
         Self {
-            legacy_hornet_search:false,players,lead,agenda:1,agenda_doom:0,act:1,backpacks:vec![],ethereal:vec![],presentation:vec![],
+            players,lead,agenda:1,agenda_doom:0,act:1,backpacks:vec![],ethereal:vec![],presentation:vec![],
             encounter_deck: encounters.iter().enumerate().map(|(index, code)| CardView {id:300+index as u16,code:code.clone(),title:content::title(code).expect("Encounter").into(),weakness:false}).collect(),
             encounter_discard:vec![],scenario:ScenarioState::new(),round:1,phase:Phase::Investigation,actor:None,frames:vec![],test:None,completed_tests:vec![],
             history:vec!["The first investigation phase begins directly after actual preparation; skip the first mythos phase. Investigators choose their turn order. [RR p23–24]".into()],
@@ -719,7 +716,7 @@ impl Game {
         scenario.reveal("01113");
         scenario.reveal("01114");
         let mut game = Self {
-            legacy_hornet_search:false,players, lead: Investigator::Patrice, agenda: 1, agenda_doom: 0, act: 2,
+            players, lead: Investigator::Patrice, agenda: 1, agenda_doom: 0, act: 2,
             encounter_discard: vec![], encounter_deck, scenario, round: 2, phase: Phase::Mythos, actor: None,
             frames: vec![Frame::Revelation(PendingRevelation { card: encounter, drawn_by: Investigator::Patrice, started: false, cancelled: false })],
             test: None, completed_tests: vec![], history: vec!["Privileged P1 verification state: Patrice is in Cellar, Tony in Attic, Jacqueline in Hallway; no other modifier or same-location supporting ability is active. This is not ordinary setup or evidence of complete playable Gathering.".into()],
@@ -1162,7 +1159,7 @@ impl Game {
                     Frame::RestoreTurn { previous_actor, .. } => {
                         previous_actor.unwrap_or(self.lead)
                     }
-                    Frame::SuccessWindow => self.test.as_ref().expect("Success reaction").tester,
+                    Frame::OutcomeWindow => self.test.as_ref().expect("Outcome reaction").tester,
                     Frame::AssetEntry(entry) => entry.actor(),
                     Frame::Backpack(decision) => decision.owner(),
                     Frame::AfterTest(state) => state.test.tester,
@@ -1217,7 +1214,7 @@ impl Game {
         if let Some(Frame::GrantedAction { owner }) = self.frames.last() {
             return self.granted_action_choices(*owner);
         }
-        if matches!(self.frames.last(), Some(Frame::SuccessWindow)) {
+        if matches!(self.frames.last(), Some(Frame::OutcomeWindow)) {
             let mut choices = self.outcome_reaction_choices();
             choices.push(choice(
                 "success:pass",
@@ -1383,7 +1380,7 @@ impl Game {
                 return super::harm_cards::discard_choices(self, discard);
             }
             Some(Frame::GrantedAction { .. }) | Some(Frame::RestoreTurn { .. }) => return vec![],
-            Some(Frame::SuccessWindow) => unreachable!("Handled success window"),
+            Some(Frame::OutcomeWindow) => unreachable!("Handled outcome window"),
             Some(Frame::AssetEntry(_)) => unreachable!("Handled asset entry"),
             Some(Frame::AfterTest(_)) | Some(Frame::RetryEvent { .. }) => return vec![],
             Some(Frame::TestCard(_)) => unreachable!("Handled test card"),
@@ -1508,7 +1505,7 @@ impl Game {
                 "action:ordinary:{}",
                 id.strip_prefix("granted:").expect("Granted action")
             ))?;
-        } else if matches!(self.frames.last(), Some(Frame::SuccessWindow)) {
+        } else if matches!(self.frames.last(), Some(Frame::OutcomeWindow)) {
             self.frames.pop();
             if id == "success:pass" {
                 super::tony_effects::close_success_window(self);
@@ -1520,7 +1517,7 @@ impl Game {
                 } else {
                     super::tony_effects::choose_success(self, id)?;
                 }
-                self.frames.insert(index, Frame::SuccessWindow);
+                self.frames.insert(index, Frame::OutcomeWindow);
             }
         } else if matches!(self.frames.last(), Some(Frame::AssetEntry(_))) {
             let Some(Frame::AssetEntry(entry)) = self.frames.pop() else {
@@ -2597,7 +2594,7 @@ impl Game {
                 Frame::TestCleanup(test) if test.tester == who => abandoned.push(*test),
                 Frame::TestResults(_)
                 | Frame::TestCard(_)
-                | Frame::SuccessWindow
+                | Frame::OutcomeWindow
                 | Frame::AfterHarm(HarmContinuation::ApplySymbols)
                 | Frame::ResumeTokens
                 | Frame::Combat(_)
@@ -3410,7 +3407,7 @@ impl Game {
             if !test.tony.success_window_closed {
                 if !self.outcome_reaction_choices().is_empty() {
                     self.test.as_mut().expect("Test").window = Window::AfterSuccess;
-                    self.frames.push(Frame::SuccessWindow);
+                    self.frames.push(Frame::OutcomeWindow);
                     return Ok(());
                 }
                 super::tony_effects::close_success_window(self);
@@ -4008,7 +4005,7 @@ impl Game {
                 self.phase = previous_phase;
                 continue;
             }
-            if matches!(self.frames.last(), Some(Frame::SuccessWindow)) {
+            if matches!(self.frames.last(), Some(Frame::OutcomeWindow)) {
                 if !self.outcome_reaction_choices().is_empty() {
                     return Ok(());
                 }

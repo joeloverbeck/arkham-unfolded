@@ -653,24 +653,6 @@ pub(super) fn render(
                             Action::Choose(table.epoch, view.revision, id.into()),
                         );
                     }
-                    for prompt in table
-                        .session
-                        .pendulum_prompts()
-                        .into_iter()
-                        .filter(|prompt| prompt.saved_number.is_some())
-                    {
-                        control(
-                            art,
-                            row,
-                            "Exhaust Crystal Pendulum",
-                            Action::Prediction(
-                                table.epoch,
-                                view.revision,
-                                prompt.asset,
-                                pendulum::Input::Open,
-                            ),
-                        );
-                    }
                     for (index, choice) in controls::global_choices(view).into_iter().enumerate() {
                         let entity = control(
                             art,

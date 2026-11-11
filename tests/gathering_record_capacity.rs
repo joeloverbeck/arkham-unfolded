@@ -23,6 +23,7 @@ fn next_choice(view: &Observation) -> String {
         "action:ordinary:resource",
         "turn:end",
         "enemy:attacks",
+        "enemy:skip-empty",
         "round:end",
         "round-end:decline-act",
         "mythos:begin",

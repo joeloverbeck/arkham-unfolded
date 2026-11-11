@@ -1,4 +1,6 @@
-use arkham_unfolded_experiment::gathering::{HostileFixture, Session, TestCardFixture, continuity};
+use arkham_unfolded_experiment::gathering::{
+    HostileFixture, PREDICTION_MARGIN, Session, TestCardFixture, continuity,
+};
 
 #[test]
 fn promise_uses_the_finite_curse_pool_and_resolved_curses_leave_at_cleanup() {
@@ -310,6 +312,80 @@ fn reach_reveal(session: &mut Session) {
 }
 
 #[test]
+fn observations_list_one_direct_prediction_choice_per_ready_pendulum_and_no_stepper() {
+    let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(
+        TestCardFixture::CrystalPrediction,
+    ));
+    let view = session.observe();
+    let crystal = view.play.as_ref().unwrap().players[2]
+        .assets
+        .iter()
+        .find(|asset| asset.card.code == "60411")
+        .unwrap()
+        .card
+        .id;
+    let listed: Vec<_> = view
+        .choices
+        .iter()
+        .filter(|choice| choice.id.starts_with("test-card:predict:"))
+        .collect();
+    assert_eq!(listed.len(), 1, "{:?}", view.choices);
+    let template = &listed[0].id;
+    assert_eq!(
+        template,
+        &format!("test-card:predict:{crystal}:{PREDICTION_MARGIN}")
+    );
+    assert!(
+        listed[0].label.contains("Crystal Pendulum"),
+        "{}",
+        listed[0].label
+    );
+    assert!(
+        listed[0].label.contains(PREDICTION_MARGIN),
+        "{}",
+        listed[0].label
+    );
+    assert!(
+        !view.choices.iter().any(|choice| {
+            choice.id.starts_with("test-card:pendulum:")
+                || choice.id.starts_with("test-card:number:")
+        }),
+        "The former stepper is gone: {:?}",
+        view.choices
+    );
+    let before = session.clone();
+    for refused in [
+        template.clone(),
+        format!("test-card:pendulum:{crystal}"),
+        format!("test-card:predict:{crystal}:65536"),
+        format!("test-card:predict:{crystal}:07"),
+    ] {
+        assert!(
+            session.choose(view.revision, &refused).is_err(),
+            "{refused}"
+        );
+        assert_eq!(session, before, "{refused}");
+    }
+    session
+        .choose(view.revision, &template.replace(PREDICTION_MARGIN, "7"))
+        .unwrap();
+    let after = session.observe();
+    assert!(
+        after.history.last().unwrap().contains("predict 7"),
+        "{:?}",
+        after.history.last()
+    );
+    assert!(
+        !after
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("test-card:predict:")),
+        "An exhausted Pendulum offers no further prediction"
+    );
+    assert!(session.pendulum_prompts().is_empty());
+}
+
+#[test]
 fn direct_pendulum_prediction_is_atomic_unbounded_and_undoable() {
     for number in [0u16, 3, 12, u16::MAX] {
         let mut session = Session::with_hostile_fixture(HostileFixture::TestCards(
@@ -542,17 +618,25 @@ fn crystal_prediction_is_saved_before_reveal_and_only_the_exact_margin_draws() {
             .unwrap()
             .card
             .id;
-        choose(&mut session, &format!("test-card:pendulum:{crystal}"));
-        for _ in 0..number {
-            choose(&mut session, "test-card:number:up");
-        }
+        let listed = session
+            .observe()
+            .choices
+            .into_iter()
+            .find(|choice| choice.id.starts_with("test-card:predict:"))
+            .unwrap()
+            .id;
+        session
+            .choose(
+                session.observe().revision,
+                &listed.replace(PREDICTION_MARGIN, &number.to_string()),
+            )
+            .unwrap();
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("prediction.json");
         continuity::save_session(&path, &session).unwrap();
         let mut reopened = continuity::load_session(&path).unwrap();
         assert_eq!(reopened.observe(), session.observe());
         for game in [&mut session, &mut reopened] {
-            choose(game, "test-card:number:confirm");
             let named = game.observe().play.unwrap();
             assert!(
                 !named.players[2]
@@ -563,14 +647,13 @@ fn crystal_prediction_is_saved_before_reveal_and_only_the_exact_margin_draws() {
                     .ready
             );
             assert_eq!(named.players[2].deck_count, before.players[2].deck_count);
-            choose(game, "test-card:pass");
             reach_reveal(game);
             assert!(
                 !game
                     .observe()
                     .choices
                     .iter()
-                    .any(|choice| choice.id.starts_with("test-card:number:"))
+                    .any(|choice| choice.id.starts_with("test-card:predict:"))
             );
             choose(game, "test:reveal");
         }
