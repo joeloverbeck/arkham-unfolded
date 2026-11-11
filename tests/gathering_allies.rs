@@ -41,7 +41,13 @@ fn mandatory_at_end_of_turn_test_finishes_before_peters_after_turn_reaction() {
             .iter()
             .any(|choice| choice.id.starts_with("peter:"))
     );
-    choose(&mut session, &format!("turn-end:{frozen}"));
+    // Frozen in Fear's is the only end-of-turn effect, so it begins by itself.
+    assert!(
+        session
+            .observe()
+            .history
+            .contains(&format!("Automatic: Resolve end-of-turn effect {frozen}"))
+    );
     for _ in 0..20 {
         let view = session.observe();
         if view.play.as_ref().unwrap().test.is_none() {

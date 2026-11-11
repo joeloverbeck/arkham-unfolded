@@ -19,8 +19,6 @@ fn paid_act_two() -> Session {
             choose(&mut session, &format!("act:contribute:{investigator}"));
         }
     }
-    choose(&mut session, "bounty:400:0");
-    choose(&mut session, "round-end:ghoul-doom");
     session
 }
 
@@ -29,7 +27,9 @@ fn agenda_three_no_resolution_reveals_only_at_its_public_doom_removal() {
     let mut session = paid_act_two();
     let before = session.observe();
     assert!(!current_faces(&session).is_reverse("01107"));
-    choose(&mut session, "mythos:begin");
+    // Declining the Priest's bounty lets the forced Ghoul doom, the round end
+    // and the next mythos follow by themselves.
+    choose(&mut session, "bounty:400:0");
     let after = session.observe();
     assert_eq!(
         after

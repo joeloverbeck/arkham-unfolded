@@ -227,14 +227,14 @@ fn empty_enemy_phase_advances_without_a_click_and_saves_its_history() {
         "turn:end",
         "turn:jacqueline",
         "turn:end",
-        "turn:patrice",
-        "turn:end",
     ] {
         session.choose(session.observe().revision, id).unwrap();
     }
+    // Patrice's is the only remaining turn, so the session began it itself.
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("empty-phase.json");
     let mut app = host_with_table(Table::new(session, path.clone()), false);
+    activate_choice(&mut app, "turn:end");
     settle_automatic_resolution(&mut app);
     let session = &app.world().resource::<Table>().session;
     let view = session.observe();
@@ -2035,7 +2035,6 @@ pub(super) fn settle_automatic_resolution(app: &mut App) {
             .count();
         let table = world.resource::<Table>();
         let view = table.view();
-        let automatic = controls::automatic_choice(&view);
         let consequences = world.resource::<consequences::State>().active();
         let queued = world.resource::<Actions>().0.len();
         if table.presentation.encounter().current().is_some()
@@ -2043,8 +2042,7 @@ pub(super) fn settle_automatic_resolution(app: &mut App) {
                 && !table.trays.active()
                 && moving == 0
                 && !consequences
-                && queued == 0
-                && automatic.is_none())
+                && queued == 0)
         {
             world
                 .resource_mut::<PresentationTime>()
@@ -2052,7 +2050,7 @@ pub(super) fn settle_automatic_resolution(app: &mut App) {
             return;
         }
         remaining = format!(
-            "pending={:?}, presenting={}, moving={moving}, trays_active={}, consequences={consequences}, queued={queued}, automatic={automatic:?}, blocked={}, notice={:?}",
+            "pending={:?}, presenting={}, moving={moving}, trays_active={}, consequences={consequences}, queued={queued}, blocked={}, notice={:?}",
             view.play.as_ref().map(|play| &play.pending),
             table.is_presenting(),
             table.trays.active(),
@@ -2262,7 +2260,8 @@ fn native_automatic_reveal_is_presented_after_commit_and_cannot_accept_rules_inp
         if view.choices.iter().any(|choice| choice.id == "test:reveal") {
             break;
         }
-        let id = ["window:pass", "commit:confirm"]
+        // The witness poses its revelation step; the table never commits it.
+        let id = ["revelation:resolve", "window:pass", "commit:confirm"]
             .into_iter()
             .find(|id| view.choices.iter().any(|choice| choice.id == *id))
             .unwrap();

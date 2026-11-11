@@ -193,17 +193,6 @@ fn direct_prediction(game: &Game, id: &str) -> Option<(PendulumPrompt, u16)> {
 }
 
 pub(super) fn direct_choice(game: &Game, id: &str) -> Option<Choice> {
-    if id == "test-card:continue" {
-        if !matches!(
-            game.frames.last(),
-            Some(Frame::TestCard(TestCardDecision::Initiation))
-        ) {
-            return None;
-        }
-        let remaining = choices(game);
-        return (remaining.len() == 1 && remaining[0].id == "test-card:pass")
-            .then(|| choice(id, "Continue automatically after test-begin reactions"));
-    }
     let (prompt, number) = direct_prediction(game, id)?;
     Some(choice(
         id,
@@ -363,14 +352,6 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
 }
 
 pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
-    if id == "test-card:continue" {
-        if direct_choice(game, id).is_none() {
-            return Err(RuleError(
-                "A real test-begin reaction remains available.".into(),
-            ));
-        }
-        return choose(game, "test-card:pass");
-    }
     if id.ends_with(&format!(":{PREDICTION_MARGIN}")) {
         return Err(RuleError(format!(
             "Name the predicted margin: replace {PREDICTION_MARGIN} with a whole number from 0 to {}.",

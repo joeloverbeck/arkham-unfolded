@@ -46,6 +46,7 @@ mod player_events;
 mod scenario;
 mod selected_witnesses;
 pub use selected_witnesses::SelectedWitness;
+mod single_option;
 mod spell_events;
 pub use player_events::PlayerEventFixture;
 mod spells;
@@ -592,8 +593,13 @@ impl Session {
             if let Some(game) = &mut candidate.runtime {
                 game.capture_presentation("Undo restores the previous position. The action history retains the earlier choices.");
             }
+            candidate.history.push(choice.label);
         } else {
             candidate.apply(id, &mut setup_draws)?;
+            candidate.history.push(choice.label);
+            // The steps that follow with one legal outcome belong to this
+            // decision: they are neither recorded decisions nor Undo destinations.
+            candidate.resolve_single_options()?;
             candidate.active_decisions.push(self.decisions.len());
             if candidate.crossed_undo_boundary(self) {
                 candidate.undo_floor = candidate.active_decisions.len();
@@ -641,7 +647,6 @@ impl Session {
             }
         }
         candidate.decisions.push(id.into());
-        candidate.history.push(choice.label);
         let after = candidate.observe();
         candidate
             .live
@@ -668,14 +673,7 @@ impl Session {
             ));
         }
         let mut active = self.active_decisions.clone();
-        let removed = active.pop().expect("A reversible decision");
-        // The automatic closure of an emptied test-start window belongs to the
-        // reaction that emptied it, so Undo returns to that genuine decision.
-        // A deliberate Skip (`test-card:pass` beside a real reaction) stays its
-        // own Undo destination.
-        if self.decisions[removed] == "test-card:continue" && active.len() > self.undo_floor {
-            active.pop();
-        }
+        active.pop().expect("A reversible decision");
         let mut restored = Self::from_origin(self.seed, self.verification_fixture)?;
         for &index in &active {
             let decision = self
@@ -695,6 +693,30 @@ impl Session {
         restored.undo_floor = self.undo_floor;
         *self = restored;
         Ok(())
+    }
+
+    /// Perform every following step that has exactly one legal outcome, so the
+    /// next observation offers a genuine decision or a pause.
+    fn resolve_single_options(&mut self) -> Result<(), RuleError> {
+        const LIMIT: usize = 10_000;
+        for _ in 0..LIMIT {
+            let Some(game) = &self.runtime else {
+                return Ok(());
+            };
+            let choices = game.choices();
+            let Some(only) = single_option::forced(&choices) else {
+                return Ok(());
+            };
+            let (id, entry) = (only.id.clone(), single_option::history_entry(&only.label));
+            if let Some(game) = &mut self.runtime {
+                game.capture_before_automatic_step(&entry);
+            }
+            self.apply(&id, &mut Vec::new())?;
+            self.history.push(entry);
+        }
+        Err(RuleError(
+            "Automatic steps did not reach a decision; keep this save for review.".into(),
+        ))
     }
 
     fn apply(&mut self, id: &str, draws: &mut Vec<moments::DrawBatch>) -> Result<(), RuleError> {
@@ -933,6 +955,8 @@ impl Session {
             session.history = vec!["Privileged source-derived runtime verification; this is not an ordinary fresh campaign.".into()];
             let mut game =
                 runtime::Game::fixture(fixture, seed, &session.investigators, &session.decks);
+            // A privileged witness poses its named step as constructed, even a
+            // single-option one; the steps that follow its first choice resolve.
             game.presentation.clear();
             session.history.append(&mut game.history);
             session.runtime = Some(game);

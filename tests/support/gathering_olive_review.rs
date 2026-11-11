@@ -13,16 +13,17 @@ pub fn checkpoints() -> Vec<(&'static str, Session)> {
         "confirm-mulligan",
         "confirm-mulligan",
         "turn:jacqueline",
+        // Uncage's only eligible Spell is played and the event finishes by itself.
         "action:ordinary:play:tony:203:03033",
-        "uncage:227",
-        "search:finish-event",
         "action:ordinary:play:209",
         "action:ordinary:investigate:spell:227",
         "window:pass",
         "commit:confirm",
         "window:pass",
     ] {
-        session.choose(session.observe().revision, id).unwrap();
+        session
+            .choose(session.observe().revision, id)
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
     }
     let mut result = vec![("olive-ready", session.clone())];
     for (id, name) in [

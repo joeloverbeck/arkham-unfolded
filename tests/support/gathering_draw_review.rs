@@ -83,12 +83,12 @@ fn before_draw(
         let draws = next
             .choose_with_draws(observed.revision, id)
             .map_err(|error| error.to_string())?;
-        let found = draws.iter().any(|cue| cue.batch.source == source);
-        let before = found.then(|| checkpoint(name, view, id, session));
-        *session = next;
-        if let Some(before) = before {
-            return Ok(before);
+        // One decision can carry several draws through the single-option steps
+        // that follow it, so the session stays before a found decision.
+        if draws.iter().any(|cue| cue.batch.source == source) {
+            return Ok(checkpoint(name, view, id, session));
         }
+        *session = next;
     }
     Err(format!("{name} preparation exceeded 48 ordinary decisions"))
 }

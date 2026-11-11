@@ -2,7 +2,9 @@ use arkham_unfolded_experiment::gathering::{
     HostileFixture, Investigator, LifecycleFixture, Session, continuity,
 };
 fn choose(session: &mut Session, id: &str) {
-    session.choose(session.observe().revision, id).unwrap();
+    session
+        .choose(session.observe().revision, id)
+        .unwrap_or_else(|error| panic!("{id}: {error}"));
 }
 
 #[test]
@@ -56,9 +58,10 @@ fn promise_commitment_horror_eliminates_before_any_token_is_revealed() {
     session.validate().unwrap();
 }
 
+/// Taking a resource provokes the engaged Priest's lone attack of
+/// opportunity, which resolves by itself before its harm is assigned.
 fn lethal_attack(session: &mut Session) {
     choose(session, "action:ordinary:resource");
-    choose(session, "opportunity:400");
     choose(session, "harm:damage:investigator");
     choose(session, "harm:damage:investigator");
 }
@@ -69,11 +72,12 @@ fn elimination_of_the_last_unfinished_turn_continues_into_the_enemy_phase() {
         Session::with_hostile_fixture(HostileFixture::Lifecycle(LifecycleFixture::EndTurnDefeat));
     lethal_attack(&mut session);
     choose(&mut session, "elimination:lead:tony");
+    // The enemy phase then begins by itself.
     let view = session.observe();
     assert!(
-        view.choices
+        view.history
             .iter()
-            .any(|choice| choice.id == "enemy:attacks"),
+            .any(|entry| entry == "Automatic: Begin enemy attacks"),
         "The surviving party must not stall with no available turns"
     );
 }
@@ -264,7 +268,6 @@ fn defeated_lead_drops_clues_removes_owned_cards_and_resumes_with_a_new_lead() {
         + before.players[2].assets.len()
         + 1;
     choose(&mut session, "action:ordinary:resource");
-    choose(&mut session, "opportunity:400");
     choose(&mut session, "harm:damage:investigator");
     choose(&mut session, "harm:damage:investigator");
     let pending = session.observe();

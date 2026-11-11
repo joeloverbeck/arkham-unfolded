@@ -670,7 +670,6 @@ fn install(app: &mut App) {
                     remember_attempt,
                 )
                     .chain(),
-                advance_framework,
                 (pendulum::keyboard, handle_actions).chain(),
                 (consequences::advance, doom::advance).chain(),
                 reveal::sync,
@@ -959,13 +958,6 @@ fn handle_actions(
                         || violin_confirmation)
                     && (!table.is_presenting() || encounter_choice) =>
             {
-                let id = if id == "test-card:pass"
-                    && controls::automatic_choice(&table.session.observe()) == Some(id.as_str())
-                {
-                    "test-card:continue".into()
-                } else {
-                    id
-                };
                 if let Some(asset) = id
                     .strip_prefix("violin:open:")
                     .and_then(|id| id.parse().ok())
@@ -1830,36 +1822,6 @@ fn contextual_feedback(
     }
 }
 
-fn advance_framework(
-    table: Res<Table>,
-    health: Res<RenderHealth>,
-    settings: Option<Res<AssetSettings>>,
-    consequences: Res<consequences::State>,
-    mut actions: ResMut<Actions>,
-    mut redraw: ResMut<Redraw>,
-) {
-    if table.last_rendered.is_none()
-        || !health.allows_play()
-        || health.just_became_ready()
-        || table.presentation_blocked()
-        || table.is_presenting()
-        || table.sealed.active()
-        || consequences.active()
-        || !actions.0.is_empty()
-        || table.notice.starts_with("Decision not committed:")
-        || settings.as_ref().is_some_and(|settings| settings.is_busy())
-    {
-        return;
-    }
-    let view = table.view();
-    if let Some(id) = controls::automatic_choice(&view) {
-        actions
-            .0
-            .push(Action::Choose(table.epoch, view.revision, id.into()));
-        redraw.request();
-    }
-}
-
 /// What must finish before the table takes a decision; empty when it is settled.
 /// `Redraw` cannot answer this: the availability cue requests redraws for as long as
 /// a choice is offered. A dialog or menu waiting for the player is settled, even when
@@ -1911,12 +1873,6 @@ fn unsettled(world: &mut World) -> Vec<&'static str> {
     }
     if world.resource::<Orbit>().is_moving() {
         pending.push("camera motion");
-    }
-    if !table.presentation_blocked()
-        && !table.notice.starts_with("Decision not committed:")
-        && controls::automatic_choice(&table.view()).is_some()
-    {
-        pending.push("automatic choice");
     }
     pending
 }

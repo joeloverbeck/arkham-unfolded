@@ -11,8 +11,8 @@ fn round_review_points() -> Vec<(&'static str, Session, &'static str)> {
         "turn:tony",
         "turn:end",
         "turn:jacqueline",
+        // Patrice's remaining turn then begins by itself.
         "turn:end",
-        "turn:patrice",
     ] {
         session.choose(session.observe().revision, id).unwrap();
     }
@@ -20,31 +20,29 @@ fn round_review_points() -> Vec<(&'static str, Session, &'static str)> {
     session
         .choose(session.observe().revision, "turn:end")
         .unwrap();
+    // The rules session performs the round's single-option steps itself; only
+    // its genuine choices remain.
     let mut last_manual = None;
     for _ in 0..40 {
         let view = session.observe();
-        if view.choices.iter().any(|choice| choice.id == "round:end") {
-            let late_upkeep: Session = last_manual.expect("A real Upkeep choice precedes Mythos");
-            assert_eq!(late_upkeep.observe().play.unwrap().phase, Phase::Upkeep);
-            return vec![
-                ("last-turn", last_turn, "patrice"),
-                ("late-upkeep", late_upkeep, "scenario"),
-            ];
-        }
-        let id = if let Some(id) = controls::automatic_choice(&view) {
-            id
+        if view.play.as_ref().unwrap().phase != Phase::Upkeep {
+            if let Some(late_upkeep) = last_manual {
+                return vec![
+                    ("last-turn", last_turn, "patrice"),
+                    ("late-upkeep", late_upkeep, "scenario"),
+                ];
+            }
         } else {
             last_manual = Some(session.clone());
-            &view
-                .choices
-                .iter()
-                .find(|choice| {
-                    choice.id.starts_with("upkeep:patrice-discard:")
-                        || choice.id == "phase-window:pass"
-                })
-                .expect("Only the ordinary round's explicit choices")
-                .id
-        };
+        }
+        let id = &view
+            .choices
+            .iter()
+            .find(|choice| {
+                choice.id.starts_with("upkeep:patrice-discard:") || choice.id == "phase-window:pass"
+            })
+            .expect("Only the ordinary round's explicit choices")
+            .id;
         session.choose(view.revision, id).unwrap();
     }
     panic!("The ordinary round must reach its end within the bounded route");
@@ -93,39 +91,6 @@ fn export_round_review_saves() {
         .map(|(name, session, view)| (*name, session, *view))
         .collect();
     review_saves::export_review_saves(&output, &launches);
-}
-
-#[test]
-fn failed_compulsory_step_preserves_state_and_waits_for_explicit_retry() {
-    let session =
-        Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringDoomThreshold);
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("blocked.json");
-    std::fs::create_dir(&path).unwrap();
-    let mut app = host_with_table(Table::new(session.clone(), path.clone()), false);
-    app.update();
-    assert_eq!(app.world().resource::<Table>().session, session);
-    assert!(
-        app.world()
-            .resource::<Table>()
-            .notice
-            .starts_with("Decision not committed:")
-    );
-    std::fs::remove_dir(&path).unwrap();
-    for _ in 0..10 {
-        draws::tick(&mut app, 0.1);
-    }
-    assert_eq!(app.world().resource::<Table>().session, session);
-    assert!(
-        !path.exists(),
-        "Recovery does not silently retry the failed choice"
-    );
-    let retry = choice_button(&mut app, "Retry step").expect("An explicit recovery control");
-    app.world_mut().trigger(Activate { entity: retry });
-    app.update();
-    let saved = continuity::load_session(&path).unwrap();
-    assert_eq!(saved.observe().revision, session.observe().revision + 1);
-    assert_eq!(saved, app.world().resource::<Table>().session);
 }
 
 #[test]
@@ -271,8 +236,8 @@ fn entered_phases_are_announced_before_processing_and_block_background_choices()
             "turn:tony",
             "turn:end",
             "turn:jacqueline",
+            // Patrice's remaining turn then begins by itself.
             "turn:end",
-            "turn:patrice",
         ] {
             session.choose(session.observe().revision, id).unwrap();
         }
@@ -361,8 +326,9 @@ fn entered_phases_are_announced_before_processing_and_block_background_choices()
 #[test]
 fn reopening_the_last_patrice_discard_finishes_ordering_and_refills_only_once() {
     let (_, mut session, _) = round_review_points().pop().unwrap();
-    // Recreate a pre-fix save with the final card still waiting, using ordinary
-    // driver choices rather than privileged state construction.
+    // Finish the order through ordinary choices; the last card's place is then
+    // forced, so the session places it and refills Patrice's hand itself.
+    let before = session.observe();
     for _ in 0..5 {
         let view = session.observe();
         let choices = view
@@ -370,22 +336,12 @@ fn reopening_the_last_patrice_discard_finishes_ordering_and_refills_only_once() 
             .iter()
             .filter(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
             .collect::<Vec<_>>();
-        assert!(!choices.is_empty());
-        if choices.len() == 1 {
+        if choices.is_empty() {
             break;
         }
+        assert!(choices.len() > 1, "Only a genuine order is offered");
         session.choose(view.revision, &choices[0].id).unwrap();
     }
-    let before = session.observe();
-    assert_eq!(
-        before
-            .choices
-            .iter()
-            .filter(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
-            .map(|choice| choice.id.as_str())
-            .collect::<Vec<_>>(),
-        ["upkeep:patrice-discard:111"]
-    );
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("last-discard.json");
     continuity::save_session(&path, &session).unwrap();
@@ -429,8 +385,8 @@ fn automatic_round_preserves_discard_order_and_reopens_into_a_real_mythos_choice
         "turn:tony",
         "turn:end",
         "turn:jacqueline",
+        // Patrice's remaining turn then begins by itself.
         "turn:end",
-        "turn:patrice",
     ] {
         session.choose(session.observe().revision, id).unwrap();
     }

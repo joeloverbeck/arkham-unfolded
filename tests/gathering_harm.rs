@@ -451,8 +451,21 @@ fn idol_pays_selected_nonweakness_cards_in_order_then_saves_cancelled_aspects() 
     choose(&mut session, &format!("idol-select:{}", cards[1].id));
     choose(&mut session, &format!("idol-select:{}", cards[0].id));
     choose(&mut session, "idol-pay");
+    // Two discards cancel both assigned points, so no per-point choice remains:
+    // the session cancels them all and records it.
     let paid = session.observe();
-    let patrice = &paid.play.as_ref().unwrap().players[1];
+    assert!(
+        paid.history
+            .contains(&"Automatic: Cancel all assigned harm (1 damage and 1 horror)".to_owned())
+    );
+    assert!(
+        !paid
+            .choices
+            .iter()
+            .any(|choice| choice.id.starts_with("idol-prevent:"))
+    );
+    let paid = paid.play.unwrap();
+    let patrice = &paid.players[1];
     assert!(
         !patrice
             .assets
@@ -466,19 +479,11 @@ fn idol_pays_selected_nonweakness_cards_in_order_then_saves_cancelled_aspects() 
         &[cards[1].clone(), cards[0].clone()]
     );
     assert!(patrice.hand.iter().any(|card| card.id == watcher));
-    assert_eq!(
-        (patrice.damage, patrice.horror),
-        (player.damage, player.horror)
-    );
-    choose(&mut session, "idol-prevent:damage:investigator");
-    let pending = session.observe();
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("idol-cancel.json");
     continuity::save_session(&path, &session).unwrap();
-    session = continuity::load_session(&path).unwrap();
-    assert_eq!(session.observe(), pending);
-    assert!(session.choose(pending.revision, "idol-pay").is_err());
-    choose(&mut session, "idol-prevent:horror:investigator");
+    let reopened = continuity::load_session(&path).unwrap();
+    assert_eq!(reopened.observe(), session.observe());
     let after = session.observe().play.unwrap();
     assert_eq!(
         (after.players[1].damage, after.players[1].horror),

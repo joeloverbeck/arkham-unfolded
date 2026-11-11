@@ -55,8 +55,27 @@ impl IdolDecision {
 }
 
 pub(super) fn idol_choices(game: &Game, decision: &IdolDecision) -> Vec<Choice> {
-    if decision.remaining.is_some() {
+    if let Some(remaining) = decision.remaining {
         let harm = idol_harm(game);
+        let (damage, horror) = harm
+            .allocations
+            .iter()
+            .fold((0u8, 0u8), |(damage, horror), (_, d, h)| {
+                (damage.saturating_add(*d), horror.saturating_add(*h))
+            });
+        if remaining >= damage.saturating_add(horror) {
+            // Canceling every assigned point leaves no order or target to choose.
+            let parts: Vec<_> = [(damage, "damage"), (horror, "horror")]
+                .into_iter()
+                .filter(|(amount, _)| *amount > 0)
+                .map(|(amount, aspect)| format!("{amount} {aspect}"))
+                .collect();
+            return vec![Choice {
+                id: "idol-prevent:all".into(),
+                label: format!("Cancel all assigned harm ({})", parts.join(" and ")),
+                cancel_faces: vec![],
+            }];
+        }
         let mut choices = Vec::new();
         for (target, damage, horror) in &harm.allocations {
             for (aspect, amount) in [("damage", damage), ("horror", horror)] {
@@ -194,6 +213,17 @@ pub(super) fn choose_idol(game: &mut Game, id: &str) -> Result<(), RuleError> {
         }
         decision.remaining = Some(total.min(decision.selected.len() as u8));
         game.history.push(format!("{} exhausts Idol of Xanatos and discards {} chosen cards in the selected order. Cancel that much assigned damage/horror. [09102]", decision.owner.name(), decision.selected.len()));
+    } else if id == "idol-prevent:all" {
+        let Some(Frame::Harm(harm)) = game.frames.last_mut() else {
+            unreachable!()
+        };
+        for (_, damage, horror) in &mut harm.allocations {
+            harm.damage -= *damage;
+            harm.horror -= *horror;
+            *damage = 0;
+            *horror = 0;
+        }
+        decision.remaining = Some(0);
     } else {
         let parts: Vec<_> = id.split(':').collect();
         let target = if parts[2] == "investigator" {

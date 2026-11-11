@@ -25,8 +25,10 @@ pub(super) fn respond(app: &mut App, id: &str) {
     app.update();
 }
 
+/// A decision's single-option continuation can present an upkeep refill and
+/// earlier mythos steps before the encounter arrives.
 fn wait_for_reading(app: &mut App) {
-    for _ in 0..100 {
+    for _ in 0..400 {
         if rendered_text(app).contains("ENCOUNTER CARD") {
             return;
         }
@@ -96,7 +98,9 @@ fn encounter_reading_waits_for_the_draw_and_continue_keeps_the_enemy_spawn_rules
             .iter()
             .any(|enemy| enemy.card.id == revelation.card.id)
     );
-    assert!(!rendered_text(&mut app).contains("ENCOUNTER CARD"));
+    // The following investigators' mythos draws continued in the same
+    // decision; only their own readings may remain.
+    assert!(!rendered_text(&mut app).contains("Flesh-Eater  /  Enemy"));
 }
 
 #[test]
@@ -307,11 +311,11 @@ fn on_the_hunt_search_is_not_a_draw_but_its_fallback_is() {
             .id
             .clone();
         activate_choice(&mut app, &hunt);
-        finish_presentation(&mut app);
-        let view = app.world().resource::<Table>().view();
-        assert_eq!(view.play.as_ref().unwrap().searched_encounter.len(), 9);
-        assert!(!rendered_text(&mut app).contains("ENCOUNTER CARD"));
         if fixture == SearchFixture::HuntTargets {
+            finish_presentation(&mut app);
+            let view = app.world().resource::<Table>().view();
+            assert_eq!(view.play.as_ref().unwrap().searched_encounter.len(), 9);
+            assert!(!rendered_text(&mut app).contains("ENCOUNTER CARD"));
             let enemy = view
                 .play
                 .unwrap()
@@ -335,7 +339,8 @@ fn on_the_hunt_search_is_not_a_draw_but_its_fallback_is() {
                         && placed.engaged == Some(Investigator::Tony))
             );
         } else {
-            activate_choice(&mut app, "search:no-match");
+            // Finding no enemy, the search's fallback draw follows by itself;
+            // only that draw reaches the encounter reading.
             wait_for_reading(&mut app);
             assert!(rendered_text(&mut app).contains("Drawn by Tony Morgan"));
             continue_reading(&mut app);
@@ -397,7 +402,7 @@ fn reduced_motion_and_small_viewports_keep_the_reading_controls_and_effective_te
 #[test]
 fn encounter_response_buttons_and_their_labels_fit_without_overlap() {
     let point = review_saves::draw_review::encounter_checkpoint(77).unwrap();
-    let (_directory, mut app) = open_reading_checkpoint(&point.session, "01163");
+    let (_directory, mut app) = open_reading_checkpoint(&point.session, &point.trigger, "01163");
     for (size, scale) in [
         (Vec2::new(1600., 1000.), 1.),
         (Vec2::new(1280., 800.), 2.),
@@ -464,7 +469,9 @@ fn encounter_response_buttons_and_their_labels_fit_without_overlap() {
     }
 }
 
-fn review_points() -> Vec<(&'static str, Session, &'static str)> {
+/// Each point is the genuine decision whose following mythos draws reach the
+/// named encounter; the session performs those draws itself.
+fn review_points() -> Vec<(&'static str, Session, String, &'static str)> {
     [
         ("rotting-remains", 77, "01163"),
         ("ancient-evils", 6, "01166"),
@@ -473,15 +480,19 @@ fn review_points() -> Vec<(&'static str, Session, &'static str)> {
     .into_iter()
     .map(|(name, seed, code)| {
         let point = review_saves::draw_review::encounter_checkpoint(seed).unwrap();
-        assert_eq!(point.trigger, "mythos:draw");
-        (name, point.session, code)
+        (name, point.session, point.trigger, code)
     })
     .collect()
 }
 
-fn open_reading_checkpoint(session: &Session, code: &str) -> (tempfile::TempDir, App) {
+fn open_reading_checkpoint(
+    session: &Session,
+    trigger: &str,
+    code: &str,
+) -> (tempfile::TempDir, App) {
     let (directory, mut app) =
         review_saves::open_review_save_in_view(session, Some("scenario")).unwrap();
+    activate_choice(&mut app, trigger);
     wait_for_reading(&mut app);
     let table = app.world().resource::<Table>();
     let drawn = table.presentation.encounter().current().unwrap();
@@ -498,7 +509,8 @@ fn open_reading_checkpoint(session: &Session, code: &str) -> (tempfile::TempDir,
 fn encounter_drawer_closes_when_its_only_card_moves_to_test() {
     let point = review_saves::draw_review::encounter_checkpoint(77).unwrap();
     for reduced in [false, true] {
-        let (_directory, mut app) = open_reading_checkpoint(&point.session, "01163");
+        let (_directory, mut app) =
+            open_reading_checkpoint(&point.session, &point.trigger, "01163");
         app.world_mut().resource_mut::<Table>().reduced_motion = reduced;
         let card = app
             .world()
@@ -553,8 +565,8 @@ fn encounter_drawer_closes_when_its_only_card_moves_to_test() {
 
 #[test]
 fn ordinary_encounter_review_saves_preserve_reading_reactions_tests_doom_and_engagement() {
-    for (_, session, code) in review_points() {
-        let (_directory, mut app) = open_reading_checkpoint(&session, code);
+    for (_, session, trigger, code) in review_points() {
+        let (_directory, mut app) = open_reading_checkpoint(&session, &trigger, code);
         let card = app
             .world()
             .resource::<Table>()
@@ -608,7 +620,17 @@ fn ordinary_encounter_review_saves_preserve_reading_reactions_tests_doom_and_eng
             }
             _ => unreachable!(),
         }
-        assert!(!rendered_text(&mut app).contains("ENCOUNTER CARD"));
+        // Later investigators' draws may follow in the same decision with their
+        // own readings; this card's reading is acknowledged.
+        assert_ne!(
+            app.world()
+                .resource::<Table>()
+                .presentation
+                .encounter()
+                .current()
+                .map(|drawn| drawn.card.id),
+            Some(card.id)
+        );
     }
 }
 
@@ -619,14 +641,14 @@ fn export_encounter_review_saves() {
         std::env::var_os("ARKHAM_ENCOUNTER_REVIEW_DIR").expect("Set a fresh directory"),
     );
     std::fs::create_dir(&output).unwrap();
-    for (name, session, code) in review_points() {
+    for (name, session, trigger, code) in review_points() {
         let path = output.join(format!("{name}.json"));
         continuity::save_session(&path, &session).unwrap();
-        // Production startup runs on an exact loaded copy: preserve the pre-draw
-        // source, since automatic startup legitimately commits the impending draw.
+        // Production startup runs on an exact loaded copy: preserve the source
+        // before the decision whose following mythos draws reach the encounter.
         let loaded = continuity::load_session(&path).unwrap();
         assert_eq!(loaded, session);
-        let (_directory, app) = open_reading_checkpoint(&loaded, code);
+        let (_directory, app) = open_reading_checkpoint(&loaded, &trigger, code);
         if code == "01163" {
             let pending = app.world().resource::<Table>().session.clone();
             continuity::save_session(output.join("rotting-remains-pending.json"), &pending)

@@ -1,7 +1,9 @@
 use arkham_unfolded_experiment::gathering::{HostileFixture, Session};
 
 fn choose(session: &mut Session, id: &str) {
-    session.choose(session.observe().revision, id).unwrap();
+    session
+        .choose(session.observe().revision, id)
+        .unwrap_or_else(|error| panic!("{id}: {error}"));
 }
 
 #[test]
@@ -100,7 +102,6 @@ fn simultaneous_asset_defeat_waits_for_saved_discard_order_before_the_action_con
         .card
         .clone();
     choose(&mut session, "action:ordinary:resource");
-    choose(&mut session, "opportunity:400");
     choose(&mut session, &format!("harm:damage:{}", olive.id));
     choose(&mut session, &format!("harm:damage:{}", robes.id));
     choose(&mut session, "harm:horror:investigator");
@@ -250,11 +251,19 @@ fn a_two_action_weakness_removal_pays_once_and_provokes_one_attack_before_its_ef
         .find(|card| card.code == "02038")
         .unwrap()
         .id;
+    let removing = session.observe().revision;
     choose(
         &mut session,
         &format!("action:ordinary:remove-threat:tony:{injury}"),
     );
-    let pending = session.observe().play.unwrap();
+    // The lone attack of opportunity resolves by itself; its presented harm
+    // precedes the removal effect.
+    let pending = session
+        .presentation_after(removing)
+        .iter()
+        .find(|moment| moment.caption.starts_with("Tony Morgan resolves"))
+        .map(|moment| moment.play.clone())
+        .unwrap();
     assert_eq!(
         pending.actions_remaining[0], 1,
         "Two actions are one activation cost"
@@ -266,7 +275,6 @@ fn a_two_action_weakness_removal_pays_once_and_provokes_one_attack_before_its_ef
             .any(|card| card.id == injury),
         "Effect follows the attack of opportunity"
     );
-    choose(&mut session, "opportunity:400");
     let after = session.observe().play.unwrap();
     assert_eq!(after.players[0].damage, initial.players[0].damage + 2);
     assert_eq!(after.players[0].horror, initial.players[0].horror + 2);

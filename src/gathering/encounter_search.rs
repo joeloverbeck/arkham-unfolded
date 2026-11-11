@@ -67,13 +67,18 @@ mod continuity_tests {
         session
             .choose(session.observe().revision, &format!("bounty:{enemy}:0"))
             .unwrap();
+        // The search then finishes by itself within the bounty decision.
+        assert!(
+            session.observe().history.contains(
+                &"Automatic: Shuffle the encounter deck and finish Kicking the Hornet's Nest"
+                    .to_owned()
+            )
+        );
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("hornet.json");
         continuity::save_session(&path, &session).unwrap();
-        let mut reopened = continuity::load_session(&path).unwrap();
-        reopened
-            .choose(reopened.observe().revision, "search:finish")
-            .unwrap();
+        let reopened = continuity::load_session(&path).unwrap();
+        assert_eq!(reopened, session);
         let play = reopened.observe().play.unwrap();
         assert_eq!(
             (play.players[0].resources, play.players[0].clues),

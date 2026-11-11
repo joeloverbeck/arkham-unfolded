@@ -71,7 +71,9 @@ fn patrice_upkeep_orders_one_physical_hand_in_her_drawer_and_reopens_there() {
     for id in &cards {
         assert!(physical(&mut app, *id).translation.z > 30.);
     }
-    for _ in 1..cards.len() {
+    // The last card's place is forced, so the third ordered choice also places
+    // it and refills Patrice's hand by itself.
+    for _ in 2..cards.len() {
         let view = expected.observe();
         let choice = view
             .choices
@@ -81,17 +83,7 @@ fn patrice_upkeep_orders_one_physical_hand_in_her_drawer_and_reopens_there() {
             .id
             .clone();
         expected.choose(view.revision, &choice).unwrap();
-        if view
-            .choices
-            .iter()
-            .filter(|choice| choice.id.starts_with("upkeep:patrice-discard:"))
-            .count()
-            > 1
-        {
-            activate_choice(&mut app, &choice);
-        } else {
-            app.update();
-        }
+        activate_choice(&mut app, &choice);
         if expected
             .observe()
             .choices
@@ -103,10 +95,6 @@ fn patrice_upkeep_orders_one_physical_hand_in_her_drawer_and_reopens_there() {
             tick(&mut app, 0.5);
         }
     }
-    expected
-        .choose(expected.observe().revision, "upkeep:patrice-refill")
-        .unwrap();
-    finish_presentation(&mut app);
     app.update();
     for id in cards {
         assert!(
@@ -124,14 +112,6 @@ fn resolution_review_saves_open_as_ordinary_sessions_with_the_expected_decisions
     for point in resolution_review::checkpoints().unwrap() {
         let (_directory, mut app) = open_review_save(&point.session);
         let view = app.world().resource::<Table>().view();
-        if controls::automatic_choice(&point.session.observe()).is_some() {
-            assert!(
-                app.world().resource::<Table>().is_presenting(),
-                "{} starts automatically",
-                point.name
-            );
-            continue;
-        }
         assert!(
             view.choices.iter().any(|choice| choice.id == point.trigger),
             "{}",
@@ -187,27 +167,25 @@ fn draw_review_checkpoints_open_on_visible_triggers_and_preserve_manual_framing(
             "{} opens without a blocking dialog",
             point.name
         );
-        if controls::automatic_choice(&point.session.observe()).is_none() {
-            assert!(
-                !table.is_presenting(),
-                "{} opens before its chosen draw",
-                point.name
-            );
-            let view = table.view();
-            let choice = view
-                .choices
-                .iter()
-                .find(|choice| choice.id == point.trigger)
-                .unwrap();
-            if let Some(source) = choice_source(&mut app, &point.trigger) {
-                click_source(&mut app, source);
-            }
-            for _ in 0..3 {
-                app.update();
-            }
-            assert_visible_button(&mut app, ui::choice_label(choice));
-            activate_choice(&mut app, &point.trigger);
+        assert!(
+            !table.is_presenting(),
+            "{} opens before its chosen draw",
+            point.name
+        );
+        let view = table.view();
+        let choice = view
+            .choices
+            .iter()
+            .find(|choice| choice.id == point.trigger)
+            .unwrap();
+        if let Some(source) = choice_source(&mut app, &point.trigger) {
+            click_source(&mut app, source);
         }
+        for _ in 0..3 {
+            app.update();
+        }
+        assert_visible_button(&mut app, ui::choice_label(choice));
+        activate_choice(&mut app, &point.trigger);
         assert!(
             app.world().resource::<Table>().is_presenting(),
             "{} starts its draw",
@@ -234,12 +212,10 @@ fn draw_review_checkpoints_open_on_visible_triggers_and_preserve_manual_framing(
         }
         let committed = app.world().resource::<Table>().session.clone();
         let (_reopened_directory, reopened) = open_review_save(&committed);
-        if controls::automatic_choice(&committed.observe()).is_none() {
-            assert!(
-                !reopened.world().resource::<Table>().is_presenting(),
-                "Reopening shows the saved endpoint"
-            );
-        }
+        assert!(
+            !reopened.world().resource::<Table>().is_presenting(),
+            "Reopening shows the saved endpoint"
+        );
     }
 }
 
@@ -327,19 +303,10 @@ fn preflight_review_launch(
     for _ in 0..4 {
         app.update();
     }
-    let current = &app.world().resource::<Table>().session;
-    let mut expected = session.clone();
-    for _ in session.observe().revision..current.observe().revision {
-        let view = expected.observe();
-        let id =
-            controls::automatic_choice(&view).expect("Startup may only commit compulsory steps");
-        expected.choose(view.revision, id).unwrap();
-    }
-    assert_eq!(current, &expected);
-    assert_eq!(continuity::load_session(path).unwrap(), expected);
-    if current == &session {
-        assert_eq!(std::fs::read(path).unwrap(), saved);
-    }
+    // The rules session performs single-option steps itself; opening a save
+    // never commits a choice.
+    assert_eq!(&app.world().resource::<Table>().session, &session);
+    assert_eq!(std::fs::read(path).unwrap(), saved);
     Ok(app)
 }
 
@@ -680,8 +647,9 @@ pub(super) fn expanded_map_transition() -> Session {
     for _ in 0..200 {
         let view = session.observe();
         if view.play.as_ref().unwrap().scenario.locations.len() > 1 {
+            // Single-option steps no longer take their own revisions.
             assert_eq!(
-                view.revision, 61,
+                view.revision, 60,
                 "Keep the native review's revealing decision"
             );
             return session;
@@ -760,10 +728,6 @@ fn expanded_map_review_requires_a_clear_screen_after_the_story_transition() {
     session
         .choose(session.observe().revision, "turn:end")
         .unwrap();
-    // The new UI automatically traverses administrative enemy-phase choices.
-    while let Some(id) = controls::automatic_choice(&session.observe()).map(str::to_owned) {
-        session.choose(session.observe().revision, &id).unwrap();
-    }
     let (_directory, mut ready) = open_review_save(&session);
     let table = ready.world().resource::<Table>();
     assert_eq!(table.view().revision, session.observe().revision);

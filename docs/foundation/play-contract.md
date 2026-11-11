@@ -28,7 +28,7 @@ New campaigns use the latest taboo version available through the accepted update
 
 ## Decisions and tabletop interaction
 
-The program administers setup, costs, timing, bookkeeping, forced effects, movement and scenario/campaign flow. Joel retains every genuine player decision, including optional effects and legal choices of order, targets or allocation. Automation must not silently discard an opportunity or choose strategy for him.
+The program administers setup, costs, timing, bookkeeping, forced effects, movement and scenario/campaign flow. Joel retains every genuine player decision, including optional effects and legal choices of order, targets or allocation. Automation must not silently discard an opportunity or choose strategy for him. Only options that are legal at that moment are offered, each with distinct consequences, and a decline appears only beside a legal alternative. A step with exactly one legal outcome is not a genuine decision: the program performs it with visible consequences and an action-history entry. Story and result reading stops and the confirmation of a compound choice are pauses, not decisions.
 
 The primary interaction is point and click: choose an action and any legal targets, then the program moves and animates the components. Free dragging is deferred. Live play uses a manual camera by default, with optional automatic following. Investigator standees show their map positions. Decks, tokens, shuffling and draws must be visibly represented without making readability or control depend on manipulating virtual components by hand.
 

@@ -227,23 +227,24 @@ fn last_key_and_resourceful_offer_order_directly_and_preserve_both_outcomes() {
                 activate_choice(&mut app, &choice.id);
             }
         }
-        let recover_key = format!("resourceful:{resourceful}:{key}");
+        // Removing the last key first makes the emptied Keyring Resourceful's
+        // only target, which the session returns itself; otherwise no target
+        // exists and nothing is offered.
+        finish_presentation(&mut app);
         let view = app.world().resource::<Table>().view();
+        assert!(
+            !view
+                .choices
+                .iter()
+                .any(|choice| choice.id.starts_with("resourceful:")),
+            "With one eligible discard or none, Resourceful offers no target choice"
+        );
         assert_eq!(
-            view.choices.iter().any(|choice| choice.id == recover_key),
+            view.history
+                .iter()
+                .any(|entry| entry == "Automatic: Return Old Keyring to Patrice Hathaway's hand"),
             key_first
         );
-        if key_first {
-            activate_choice(&mut app, &recover_key);
-        } else {
-            assert!(
-                !view
-                    .choices
-                    .iter()
-                    .any(|choice| choice.id.starts_with("resourceful:")),
-                "With no eligible discard, Resourceful cannot recover a card that is still in play"
-            );
-        }
         let view = app.world().resource::<Table>().view();
         assert!(
             !view.play.as_ref().unwrap().players[1]

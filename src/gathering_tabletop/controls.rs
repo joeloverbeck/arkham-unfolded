@@ -724,55 +724,11 @@ pub(super) fn source_choices(view: &Observation, source: &Source) -> Vec<Choice>
 }
 
 pub(super) fn global_choices(view: &Observation) -> Vec<Choice> {
-    let automatic = automatic_choice(view);
     view.choices
         .iter()
-        .filter(|choice| Some(choice.id.as_str()) != automatic)
         .filter(|choice| route(view, &choice.id) == Route::Global)
         .map(|choice| display_choice(view, choice))
         .collect()
-}
-
-/// Administrative steps have no strategic alternative. The UI still commits
-/// their existing revision-bound choices, preserving saves and the audit trail.
-pub(super) fn automatic_choice(view: &Observation) -> Option<&str> {
-    let mut choices = view.choices.iter().filter(|choice| choice.id != "undo");
-    let choice = choices.next()?;
-    if choices.next().is_some() {
-        return None;
-    }
-    // The sole remaining card's place in Patrice's discard order is forced.
-    if choice.id.starts_with("upkeep:patrice-discard:") {
-        return Some(choice.id.as_str());
-    }
-    matches!(
-        choice.id.as_str(),
-        "enemy:skip-empty"
-            | "enemy:attacks"
-            | "enemy:next-investigator"
-            | "enemy:attacks-complete"
-            | "enemy:attack-complete"
-            | "enemy:end"
-            | "upkeep:ready"
-            | "upkeep:draw"
-            | "upkeep:draws-complete"
-            | "upkeep:patrice-refill"
-            | "upkeep:resources"
-            | "upkeep:next-hand"
-            | "upkeep:hand-limits-complete"
-            | "round:end"
-            | "mythos:begin"
-            | "mythos:encounters"
-            | "mythos:draw"
-            | "mythos:draws-complete"
-            | "investigation:begin"
-            | "revelation:resolve"
-            | "phase-window:pass"
-            | "test-card:pass"
-            | "search:finish-event"
-            | "search:finish"
-    )
-    .then_some(choice.id.as_str())
 }
 
 pub(super) fn window_opportunities(view: &Observation) -> Vec<(Source, String)> {

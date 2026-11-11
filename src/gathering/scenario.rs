@@ -511,17 +511,24 @@ pub(super) fn choices(game: &Game, decision: &ScenarioDecision) -> Vec<Choice> {
             choices
         }
         ScenarioDecision::RoundEndWhen => {
-            let mut choices = vec![choice(
-                "round-end:decline-act",
-                "Do not advance The Barrier at this round end",
-            )];
-            if available_act_payment(game, true).is_some() {
-                choices.push(choice(
+            if available_act_payment(game, true).is_none() {
+                // The Objective's optional payment is impossible, so declining
+                // is the step's one legal outcome, not an offered decision.
+                return vec![choice(
+                    "round-end:decline-act",
+                    "The Barrier does not advance: the investigators in the Hallway cannot pay its clues",
+                )];
+            }
+            vec![
+                choice(
+                    "round-end:decline-act",
+                    "Do not advance The Barrier at this round end",
+                ),
+                choice(
                     "round-end:advance-act",
                     "Propose the nine-clue Hallway payment",
-                ));
-            }
-            choices
+                ),
+            ]
         }
         ScenarioDecision::RoundEndAt { agenda, voices } => {
             let mut choices = Vec::new();
@@ -1191,12 +1198,21 @@ pub(super) fn resolution_record(game: &Game, resolution: Resolution) -> Resoluti
     record
 }
 
-pub(super) fn available_act_payment(game: &Game, at_round_end: bool) -> Option<ScenarioDecision> {
-    let required = match (game.act, at_round_end) {
-        (1, false) => 6,
-        (2, true) => 9,
+/// The group clue requirement at this timing: 2 (Trapped) or 3 (The Barrier)
+/// per investigator who started the scenario, whether or not still playing.
+fn act_requirement(game: &Game, act: u8, at_round_end: bool) -> Option<u8> {
+    let per_investigator = match (act, at_round_end) {
+        (1, false) => 2,
+        (2, true) => 3,
         _ => return None,
     };
+    u8::try_from(game.players.len())
+        .ok()
+        .and_then(|started| started.checked_mul(per_investigator))
+}
+
+pub(super) fn available_act_payment(game: &Game, at_round_end: bool) -> Option<ScenarioDecision> {
+    let required = act_requirement(game, game.act, at_round_end)?;
     let total: u16 = game
         .players
         .iter()
@@ -1220,21 +1236,17 @@ pub(super) fn pay_act_clues(
     contributions: [u8; 3],
     at_round_end: bool,
 ) -> Result<(), RuleError> {
-    let required = match (act, at_round_end) {
-        (1, false) => 6,
-        (2, true) => 9,
-        _ => {
-            return Err(RuleError(
-                "This act cannot be advanced at this timing point.".into(),
-            ));
-        }
+    let Some(required) = act_requirement(game, act, at_round_end) else {
+        return Err(RuleError(
+            "This act cannot be advanced at this timing point.".into(),
+        ));
     };
     if game.act != act
         || contributions
             .iter()
             .map(|&clues| u16::from(clues))
             .sum::<u16>()
-            != required
+            != u16::from(required)
     {
         return Err(RuleError(
             "The current act requires the exact group clue payment.".into(),

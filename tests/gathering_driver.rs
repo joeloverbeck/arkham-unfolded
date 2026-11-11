@@ -314,7 +314,6 @@ fn ordinary_setup_round_and_mythos_resume_through_fresh_player_processes() {
     assert!(!expected.is_verification_fixture());
     continuity::save_session(&path, &expected).unwrap();
     let mut requests = Vec::new();
-    let mut encounter_draws = 0;
     for _ in 0..180 {
         let view = expected.observe();
         if view
@@ -377,12 +376,20 @@ fn ordinary_setup_round_and_mythos_resume_through_fresh_player_processes() {
             .unwrap_or_else(|| panic!("Unexpected ordinary choice: {:?}", view.choices))
             .id
             .clone();
-        encounter_draws += usize::from(id == "mythos:draw");
         requests.push(json!({"op":"choose", "revision":view.revision, "id":id}));
         expected.choose(view.revision, &id).unwrap();
     }
     let pending = expected.observe();
-    assert_eq!(encounter_draws, 3);
+    // The session performs every mythos draw itself and records each.
+    assert_eq!(
+        pending
+            .history
+            .iter()
+            .filter(|entry| entry.starts_with("Automatic: ")
+                && entry.ends_with(" draws an encounter card"))
+            .count(),
+        3
+    );
     assert_eq!(pending.play.as_ref().unwrap().round, 2);
     assert_eq!(pending.play.as_ref().unwrap().phase, Phase::Investigation);
     assert_eq!(pending.play.as_ref().unwrap().encounter_deck_count, 23);

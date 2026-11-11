@@ -961,27 +961,19 @@ fn actual_end_turn_and_bounty_history_use_public_names_instead_of_physical_ids()
     use crate::gathering::{HostileFixture, PeterFixture};
     let mut forced =
         Session::with_hostile_fixture(HostileFixture::Peter(PeterFixture::ForcedBeforeReaction));
+    // Frozen in Fear's is the only end-of-turn effect, so the session begins
+    // it itself; its history entry still names the card, not its identity.
     choose(&mut forced, "turn:end");
     let view = forced.observe();
     let raw = view
-        .choices
+        .history
         .iter()
-        .find(|choice| choice.id.starts_with("turn-end:"))
+        .find(|line| line.starts_with("Automatic: Resolve end-of-turn effect "))
         .unwrap();
-    let id = raw
-        .id
-        .strip_prefix("turn-end:")
-        .unwrap()
-        .parse::<u16>()
-        .unwrap();
-    let shown = source_choices(&view, &Source::Card(id))
-        .into_iter()
-        .find(|choice| choice.id == raw.id)
-        .unwrap();
-    assert!(shown.label.contains("Frozen in Fear"));
-    assert!(!shown.label.contains(&id.to_string()));
-    assert!(raw.label.contains(&id.to_string()));
-    assert!(display_history(&view, &raw.label).contains("Frozen in Fear"));
+    let id = raw.rsplit(' ').next().unwrap();
+    let shown = display_history(&view, raw);
+    assert!(shown.contains("Frozen in Fear"), "{shown}");
+    assert!(!shown.contains(id));
 
     let mut bounty = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
     choose(&mut bounty, "round-end:advance-act");

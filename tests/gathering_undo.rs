@@ -337,16 +337,9 @@ fn act_advancement_and_terminal_story_information_seal_earlier_choices() {
         !can_undo(&session),
         "Act reverse and Parlor reveal cannot be undone"
     );
+    // The forced Ghoul doom, the round's end and the next mythos follow the
+    // bounty choice by themselves and reach the terminal resolution.
     choose(&mut session, "bounty:400:0");
-    assert!(can_undo(&session));
-    choose(&mut session, "undo");
-    assert!(
-        !can_undo(&session),
-        "Undoing the subsequent known choice cannot cross the story boundary"
-    );
-    choose(&mut session, "bounty:400:0");
-    choose(&mut session, "round-end:ghoul-doom");
-    choose(&mut session, "mythos:begin");
     assert!(session.observe().play.unwrap().scenario.outcome.is_some());
     assert!(
         session

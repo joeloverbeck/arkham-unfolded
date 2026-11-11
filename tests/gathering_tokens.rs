@@ -527,23 +527,17 @@ fn a_paid_voice_of_ra_does_not_resolve_after_lethal_opportunity_damage() {
         .find(|card| card.code == "60416")
         .unwrap()
         .id;
+    let playing = session.observe().revision;
     choose(&mut session, &format!("action:ordinary:play:spell:{event}"));
-    let pending = session.observe();
-    assert_eq!(pending.play.as_ref().unwrap().players[2].resources, 5);
-    assert!(
-        !pending.play.as_ref().unwrap().players[2]
-            .hand
-            .iter()
-            .any(|card| card.id == event)
-    );
-    let attack = pending
-        .choices
+    // The lone, lethal attack of opportunity resolves by itself.
+    let pending = session
+        .presentation_after(playing)
         .iter()
-        .find(|choice| choice.id.starts_with("opportunity:"))
-        .unwrap()
-        .id
-        .clone();
-    choose(&mut session, &attack);
+        .find(|moment| moment.caption.starts_with("Jacqueline Fine resolves"))
+        .map(|moment| moment.play.clone())
+        .unwrap();
+    assert_eq!(pending.players[2].resources, 5);
+    assert!(!pending.players[2].hand.iter().any(|card| card.id == event));
     let play = session.observe().play.unwrap();
     assert!(play.players[2].defeated);
     assert!(play.players[2].removed.iter().any(|card| card.id == event));

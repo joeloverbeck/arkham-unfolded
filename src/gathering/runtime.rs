@@ -935,6 +935,21 @@ impl Game {
         });
     }
 
+    /// Present the state awaiting a step the session performs itself, so the
+    /// step's consequences stay visible, unless the latest presented step
+    /// already shows that state.
+    pub(super) fn capture_before_automatic_step(&mut self, caption: &str) {
+        let play = self.observe();
+        if self
+            .presentation
+            .last()
+            .is_some_and(|prior| prior.play == play)
+        {
+            return;
+        }
+        self.capture_public_view(caption, play);
+    }
+
     pub(super) fn capture_public_view(
         &mut self,
         caption: impl Into<String>,

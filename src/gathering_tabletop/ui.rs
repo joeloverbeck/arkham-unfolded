@@ -644,16 +644,6 @@ pub(super) fn render(
             }
             screen::controls(p, |row| {
                 if !table.is_presenting() && !table.modal() {
-                    if table.notice.starts_with("Decision not committed:")
-                        && let Some(id) = controls::automatic_choice(view)
-                    {
-                        control(
-                            art,
-                            row,
-                            "Retry step",
-                            Action::Choose(table.epoch, view.revision, id.into()),
-                        );
-                    }
                     for (index, choice) in controls::global_choices(view).into_iter().enumerate() {
                         let entity = control(
                             art,
