@@ -38,7 +38,7 @@ For new or corrected behavior:
 - **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
 - **One slice at a time.** One seam, one test, one minimal implementation per cycle.
 
-For a behavior-preserving refactor, establish passing characterization tests at the agreed seams before changing the structure. Use the spec and accepted behavior to identify preservation obligations; reuse existing coverage and add checks only for missing obligations. Refactor in small steps and rerun those checks afterward. A green baseline is expected. A missing-interface compiler error establishes only the interface gap. Any separately authorized behavior change uses the red → green loop above.
+For a behavior-preserving refactor, establish passing characterization tests at the agreed seams before changing the structure. Use the spec and accepted behavior to identify preservation obligations; reuse existing coverage and add checks only for missing obligations. Refactor in small steps and rerun those checks afterward. A green baseline is expected. When a comparison needs a temporary baseline tree, follow the [refactor baseline procedure](../../../docs/agents/measured-and-baseline-checks.md#behavior-preserving-refactor-baselines). A missing-interface compiler error establishes only the interface gap. Any separately authorized behavior change uses the red → green loop above.
 
 ## Running checks
 
