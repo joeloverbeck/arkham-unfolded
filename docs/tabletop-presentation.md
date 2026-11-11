@@ -236,8 +236,9 @@ once and records that prediction; dismissal before selection spends nothing.
 Do not expose separate cancel-prediction or one-step increment/decrement actions.
 This local numeric picker is an exception to the ordinary full-width action rows.
 It opens from the Pendulum's own **Exhaust Crystal Pendulum** entry for the rules
-session's one listed prediction choice; opening it commits nothing. After
-selection, automatically close an empty test-start reaction window.
+session's one listed prediction choice; opening it commits nothing. Retain
+supported pending predictions through save/reopen without resetting their number.
+After selection, automatically close an empty test-start reaction window.
 If legal reactions remain, name them and offer **Skip remaining reactions**.
 Continue to the next genuine decision, preserving commitments and other legal
 abilities before token reveal.
@@ -339,9 +340,13 @@ Preserve pre-reveal Undo, supported save/resume and stale-action rejection.
 
 The rules session offers Jacqueline once where her whole-reveal and first-draw
 scopes are equivalent, which is every reveal of one plain draw, including when
-Olive is ready: one **Use Jacqueline — reveal 3 tokens, then cancel** action
-with the cancellation explanation. Where scopes differ, both are offered and each
-label states its effect, such as **affect all 3 draws** or **affect only draw 1**.
+Olive McBride, Dark Prophecy or Katarina could still be declared afterwards: one
+**Use Jacqueline — reveal 3 tokens, then cancel** action with the cancellation
+explanation. Where scopes differ, both are offered and each label states its
+effect, such as **affect all 3 draws** or **affect only draw 1**. They differ for
+Voice of Ra, Dark Future, Olive or Dark Prophecy declared first, and every Eyes
+of the Dreamer reveal: Eyes keeps both scopes even with one position, because
+under the first-draw scope Jacqueline's group is one Eyes candidate.
 A sole Jacqueline choice is shown directly; several, including an Arbiter cost,
 use an aligned chevron disclosure. When Olive is ready, the panel adds: *Use Olive
 first if you want Jacqueline to affect Olive's three tokens.* The panel and the
