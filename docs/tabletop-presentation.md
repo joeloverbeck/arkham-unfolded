@@ -524,8 +524,10 @@ Use up to four slots outside each location card, two along each long side, with
 positive clearance from the card and narrow gaps between neighboring bases.
 Keep deterministic investigator order, filling left then right; empty slots have
 no visible markings. The arrangement reflects investigator location, not human
-player count. Scenario's normal view leaves cards unobscured; natural overlap
-during orbit does not make figures fade or reposition. Inspect remains clear.
+player count. In Scenario's normal view standees leave cards unobscured, although
+marker counts cover the top of their location cards (see the markers below).
+Natural overlap during orbit does not make figures fade or reposition. Inspect
+remains clear.
 
 Show the three reciprocal Hallway links from visible connection symbols, keeping
 Parlor's entry restriction separate. Brass arrows are restrained/non-pickable and
@@ -563,11 +565,14 @@ When a brass link enters through the card's top edge, markers sit on either side
 of it and a lone marker keeps its usual side. Map footprints include the band, so
 links route around it and standee slots stay outside it. Each count is drawn at
 the 11px counter-label size in every view, including Overview, centered beneath
-its token and starting at the token's lower edge. Where the band's projected
-depth beneath the token is shorter than the pill, as at the Scenario and Overview
-distances, the pill extends onto the card's top margin; it is never shrunk or
-omitted to fit the band. Keep markers distinct from printed symbols/gameplay
-tokens.
+its token and starting at the token's lower edge; it is never shrunk or omitted
+to fit the band. On screen the band is shallower than the pill at both accepted
+distances, so the count covers the top of its location card: about 2–5px of a
+30–53px card in Scenario and about 7–8px of a 16–23px card in Overview, up to
+half the card's height (measured at 1600×1000 and 1280×800). This cover departs
+from the band's purpose of keeping markers off the card and awaits the owner's
+decision. Markers and counts stay clear of brass links. Keep markers distinct
+from printed symbols/gameplay tokens.
 Counts cover sideboard cards only. Ordinary engaged enemies stay in investigator
 threat areas. If Massive content becomes supported, its single location-resident
 card belongs on the sideboard ready or exhausted; only a ready Massive enemy is

@@ -523,38 +523,60 @@ fn count_rect(app: &mut App, accessible: &str) -> Option<(Rect, f32)> {
     ))
 }
 
+/// The accepted framing: the boards re-centre the target, and the camera
+/// distance stays the one each view already used.
+const FRAMINGS: [(Area, (Vec3, f32)); 2] = [
+    (Area::Scenario, (Vec3::new(0., 0., -5.5), 40.)),
+    (Area::Overview, (Vec3::new(0., 0., 7.), 72.)),
+];
+
+/// Every marker kind and count, at the accepted framing of `area`. Hallway and
+/// Cellar have a link entering from above; Attic's pair is centered.
+fn framed_markers(size: Vec2, area: Area, framing: (Vec3, f32)) -> App {
+    let mut app = table_with(
+        &[(HALLWAY, 3), (ATTIC, 1), (CELLAR, 1), (PARLOR, 1)],
+        &[HALLWAY, ATTIC],
+    );
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
+    assert_eq!(sideboard::focus(area), framing, "{area:?} framing");
+    app.world_mut().resource_mut::<Orbit>().focus(framing);
+    for _ in 0..4 {
+        app.update();
+    }
+    let pose = app.world().resource::<Orbit>().pose();
+    assert_eq!((pose.target, pose.distance), framing, "{area:?} camera");
+    app
+}
+
+const SHOWN: [(&str, &str, &str, &str); 6] = [
+    (HALLWAY, "Hallway", "Enemy presence", "enemies: 3"),
+    (ATTIC, "Attic", "Enemy presence", "enemies: 1"),
+    (CELLAR, "Cellar", "Enemy presence", "enemies: 1"),
+    (PARLOR, "Parlor", "Enemy presence", "enemies: 1"),
+    (HALLWAY, "Hallway", "Attachment", "attachments: 1"),
+    (ATTIC, "Attic", "Attachment", "attachments: 1"),
+];
+
+/// The count's measured cover of the card's top edge, in logical pixels, plus
+/// half a pixel: an 11px pill hangs past the band at these distances (#163
+/// review). A later change must not cover more of the card silently.
+fn accepted_cover(size: Vec2, area: Area) -> f32 {
+    match (size.x as u32, area) {
+        (1600, Area::Scenario) => 4.5,
+        (1600, Area::Overview) => 8.,
+        (1280, Area::Scenario) => 6.,
+        (1280, Area::Overview) => 8.5,
+        _ => unreachable!(),
+    }
+}
+
 #[test]
 fn marker_counts_are_legible_beneath_their_markers_at_the_scenario_and_overview_views() {
     let mut failures = Vec::new();
     for size in [Vec2::new(1600., 1000.), Vec2::new(1280., 800.)] {
-        // The accepted framing: the boards re-centre the target, and the
-        // camera distance stays the one each view already used.
-        for (area, framing) in [
-            (Area::Scenario, (Vec3::new(0., 0., -5.5), 40.)),
-            (Area::Overview, (Vec3::new(0., 0., 7.), 72.)),
-        ] {
-            // Hallway has a link entering from above; Attic's pair is centered.
-            let mut app = table_with(
-                &[(HALLWAY, 3), (ATTIC, 1), (CELLAR, 1), (PARLOR, 1)],
-                &[HALLWAY, ATTIC],
-            );
-            crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
-            assert_eq!(sideboard::focus(area), framing, "{area:?} framing");
-            app.world_mut().resource_mut::<Orbit>().focus(framing);
-            for _ in 0..4 {
-                app.update();
-            }
-            let pose = app.world().resource::<Orbit>().pose();
-            assert_eq!((pose.target, pose.distance), framing, "{area:?} camera");
-            let mut overlaps = Vec::new();
-            for (room, name, marker, count) in [
-                (HALLWAY, "Hallway", "Enemy presence", "enemies: 3"),
-                (ATTIC, "Attic", "Enemy presence", "enemies: 1"),
-                (CELLAR, "Cellar", "Enemy presence", "enemies: 1"),
-                (PARLOR, "Parlor", "Enemy presence", "enemies: 1"),
-                (HALLWAY, "Hallway", "Attachment", "attachments: 1"),
-                (ATTIC, "Attic", "Attachment", "attachments: 1"),
-            ] {
+        for (area, framing) in FRAMINGS {
+            let mut app = framed_markers(size, area, framing);
+            for (room, name, marker, count) in SHOWN {
                 let card = location_card(&mut app, room);
                 let (map, _) = tokens(&mut app, &format!("{marker} {name}"));
                 let token = &map[0];
@@ -586,9 +608,125 @@ fn marker_counts_are_legible_beneath_their_markers_at_the_scenario_and_overview_
                         "{size} {area:?} {label}: the count {pill:?} does not hang from its token ({token_bottom})"
                     ));
                 }
-                overlaps.push((label, (pill.max.y - card_top).max(0.)));
+                let cover = pill.max.y - card_top;
+                if cover > accepted_cover(size, area) {
+                    failures.push(format!(
+                        "{size} {area:?} {label}: the count covers {cover}px of the card's top"
+                    ));
+                }
             }
-            eprintln!("{size} {area:?}: count overlap onto the card top, px: {overlaps:?}");
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// Whether a screen triangle and rectangle share any area: no separating axis
+/// among the rectangle's sides and the triangle's edge normals.
+fn triangle_meets_rect(triangle: [Vec2; 3], rect: Rect) -> bool {
+    let corners = [
+        rect.min,
+        Vec2::new(rect.max.x, rect.min.y),
+        rect.max,
+        Vec2::new(rect.min.x, rect.max.y),
+    ];
+    let mut axes = vec![Vec2::X, Vec2::Y];
+    for index in 0..3 {
+        axes.push((triangle[(index + 1) % 3] - triangle[index]).perp());
+    }
+    axes.into_iter().all(|axis| {
+        let span = |points: &[Vec2]| {
+            points
+                .iter()
+                .map(|point| point.dot(axis))
+                .fold((f32::MAX, f32::MIN), |(low, high), value| {
+                    (low.min(value), high.max(value))
+                })
+        };
+        let (a, b) = (span(&triangle), span(&corners));
+        a.0 < b.1 && b.0 < a.1
+    })
+}
+
+/// Every displayed brass link triangle, arrowheads and shafts, on screen.
+fn screen_link_triangles(app: &mut App) -> Vec<[Vec2; 3]> {
+    use bevy::mesh::VertexAttributeValues;
+    let world = app.world_mut();
+    let layers: Vec<_> = world
+        .query_filtered::<&Children, With<crate::tabletop_gathering_map::ConnectionVisual>>()
+        .iter(world)
+        .flat_map(|children| children.iter().collect::<Vec<_>>())
+        .collect();
+    let mut triangles = Vec::new();
+    for layer in layers {
+        let transform = *app.world().get::<GlobalTransform>(layer).unwrap();
+        let mesh = app.world().get::<Mesh3d>(layer).unwrap().0.clone();
+        let Some(VertexAttributeValues::Float32x3(points)) = app
+            .world()
+            .resource::<Assets<Mesh>>()
+            .get(&mesh)
+            .unwrap()
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .cloned()
+        else {
+            panic!("links expose positions");
+        };
+        for triangle in points.chunks_exact(3) {
+            let screen = [0, 1, 2].map(|index| {
+                project(
+                    app,
+                    transform.transform_point(Vec3::from_array(triangle[index])),
+                )
+            });
+            triangles.push(screen);
+        }
+    }
+    triangles
+}
+
+/// A map token's screen footprint: its body's bounds, top and bottom faces.
+fn token_rect(app: &mut App, token: &Token) -> Rect {
+    let mut rect = Rect {
+        min: Vec2::splat(f32::MAX),
+        max: Vec2::splat(f32::MIN),
+    };
+    for x in [-token.radius, token.radius] {
+        for y in [-0.05, 0.05] {
+            for z in [-token.depth, token.depth] {
+                let point = project(app, token.at + Vec3::new(x, y, z));
+                rect.min = rect.min.min(point);
+                rect.max = rect.max.max(point);
+            }
+        }
+    }
+    rect
+}
+
+#[test]
+fn markers_and_counts_leave_every_brass_link_uncovered_at_the_scenario_and_overview_views() {
+    let mut failures = Vec::new();
+    for size in [Vec2::new(1600., 1000.), Vec2::new(1280., 800.)] {
+        for (area, framing) in FRAMINGS {
+            let mut app = framed_markers(size, area, framing);
+            let triangles = screen_link_triangles(&mut app);
+            assert!(!triangles.is_empty());
+            for (_, name, marker, count) in SHOWN {
+                let (map, _) = tokens(&mut app, &format!("{marker} {name}"));
+                let token = token_rect(&mut app, &map[0]);
+                let label = format!("{name} {count}");
+                let (pill, _) =
+                    count_rect(&mut app, &label).unwrap_or_else(|| panic!("{label} is shown"));
+                for (piece, rect) in [(format!("{marker} {name}"), token), (label, pill)] {
+                    let crossed = triangles
+                        .iter()
+                        .filter(|triangle| triangle_meets_rect(**triangle, rect))
+                        .count();
+                    if crossed > 0 {
+                        failures.push(format!(
+                            "{size} {area:?}: {piece} at {rect:?} covers {crossed} link triangles"
+                        ));
+                    }
+                }
+            }
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");
