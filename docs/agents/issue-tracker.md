@@ -13,7 +13,7 @@ This selects the GitHub client for repository work. If a different operation nee
 - **List:** `gh issue list --state open --limit 100 --json number,title,state,labels`, with appropriate label and state filters. Inspect selected issue bodies separately; paginate when the task requires every matching issue.
 - **Comment:** `gh issue comment <number> --body-file /tmp/comment.md`.
 - **Labels:** `gh issue edit <number> --add-label "..." --remove-label "..."`, using the mapping in `triage-labels.md`.
-- **Close:** post the explanation with `gh issue comment`, then use `gh issue close <number>`. Comment separately even when the issue is already closed.
+- **Close:** merging a PR never closes its issue: auto-close is disabled, and closure is a separate decision once the acceptance criteria and owner acceptance are satisfied ([GitHub administration](github-administration.md#accepted-publication-and-contribution-policy)). Post the explanation with `gh issue comment`, then use `gh issue close <number>`. Comment separately even when the issue is already closed.
 
 Write multiline bodies to a temporary file and pass `--body-file`. Read back the affected issue, comment, or label after every write. If a write times out or its result is unclear, inspect remote state before retrying.
 
