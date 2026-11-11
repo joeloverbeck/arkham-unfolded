@@ -200,3 +200,167 @@ fn wasd_dismisses_a_card_action_list_without_choosing_and_ordinary_tab_focus_doe
     assert_eq!(app.world().resource::<Table>().view(), view);
     assert!(!path.exists());
 }
+
+fn press(app: &mut App, code: KeyCode, key: Key) {
+    keyboard(app, code, key.clone(), true);
+    keyboard(app, code, key, false);
+}
+
+fn shift_tab(app: &mut App) {
+    keyboard(app, KeyCode::ShiftLeft, Key::Shift, true);
+    press(app, KeyCode::Tab, Key::Tab);
+    keyboard(app, KeyCode::ShiftLeft, Key::Shift, false);
+}
+
+/// Labels in Tab order from the first focusable control until focus returns there.
+fn tab_cycle(app: &mut App) -> Vec<String> {
+    let mut cycle = Vec::new();
+    for _ in 0..80 {
+        press(app, KeyCode::Tab, Key::Tab);
+        let label = focused_label(app).expect("Tab focuses a labelled control");
+        if cycle.first() == Some(&label) {
+            return cycle;
+        }
+        cycle.push(label);
+    }
+    panic!("Tab never returned to its start: {cycle:?}");
+}
+
+/// Labels of the focusable buttons inside the non-modal tab group `order`, in tree order.
+fn group_labels(app: &mut App, order: i32) -> Vec<String> {
+    fn walk(world: &World, entity: Entity, labels: &mut Vec<String>) {
+        if world
+            .get::<bevy::input_focus::tab_navigation::TabIndex>(entity)
+            .is_some()
+            && let Some(label) = world.get::<AccessibleLabel>(entity)
+        {
+            labels.push(label.0.clone());
+        }
+        for child in world.get::<Children>(entity).into_iter().flatten() {
+            walk(world, *child, labels);
+        }
+    }
+    let world = app.world_mut();
+    let groups: Vec<Entity> = world
+        .query::<(Entity, &TabGroup)>()
+        .iter(world)
+        .filter(|(_, group)| !group.modal && group.order == order)
+        .map(|(entity, _)| entity)
+        .collect();
+    let mut labels = Vec::new();
+    for group in groups {
+        walk(world, group, &mut labels);
+    }
+    labels
+}
+
+#[test]
+fn the_menu_button_follows_the_existing_tab_groups_and_shift_tab_reaches_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("menu-tab.json");
+    let mut app = host(path.clone());
+    activate_choice(&mut app, "lead:tony");
+    finish_presentation(&mut app);
+    let saved = std::fs::read(&path).unwrap();
+    let rail = group_labels(&mut app, 0);
+    let decisions = group_labels(&mut app, 1);
+    assert!(
+        decisions.contains(&"Keep this opening hand".to_owned()),
+        "The decision panel offers its controls: {decisions:?}"
+    );
+    assert_eq!(group_labels(&mut app, 3), ["Menu"]);
+
+    app.world_mut().resource_mut::<InputFocus>().clear();
+    let cycle = tab_cycle(&mut app);
+    let first = cycle
+        .iter()
+        .position(|label| label == &rail[0])
+        .expect("The portrait rail is in the Tab order");
+    let cycle = [&cycle[first..], &cycle[..first]].concat();
+    for (index, label) in [
+        "Focus Tony Morgan",
+        "Focus Patrice Hathaway",
+        "Focus Jacqueline Fine",
+        "Scenario",
+        "Test",
+        "Overview",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(cycle[index].starts_with(label), "{cycle:?}");
+    }
+    assert_eq!(
+        cycle,
+        [rail.clone(), decisions, vec!["Menu".to_owned()]].concat(),
+        "Navigation, then decisions, then the Menu"
+    );
+
+    // Shift+Tab wraps from the first portrait to the Menu and back to its predecessor.
+    while focused_label(&app).as_ref() != Some(&rail[0]) {
+        press(&mut app, KeyCode::Tab, Key::Tab);
+    }
+    shift_tab(&mut app);
+    assert_eq!(focused_label(&app).as_deref(), Some("Menu"));
+    shift_tab(&mut app);
+    assert_eq!(focused_label(&app), cycle.get(cycle.len() - 2).cloned());
+    press(&mut app, KeyCode::Tab, Key::Tab);
+    press(&mut app, KeyCode::Enter, Key::Enter);
+    assert!(app.world().resource::<Table>().menu_open);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        saved,
+        "Reaching the Menu decides nothing"
+    );
+}
+
+#[test]
+fn every_modal_dialog_offers_focus_when_opened() {
+    fn activate(app: &mut App, label: &str) {
+        let entity = button_with_label(app, label).unwrap_or_else(|| panic!("{label}"));
+        app.world_mut().trigger(Activate { entity });
+        app.update();
+    }
+    let directory = tempfile::tempdir().unwrap();
+    for name in [
+        "inspection",
+        "history",
+        "credits",
+        "restart confirmation",
+        "encounter reading",
+    ] {
+        let path = directory.path().join(format!("{name}.json"));
+        let mut app = if name == "encounter reading" {
+            let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Harm(
+                crate::gathering::HarmFixture::WardCancellation,
+            ));
+            host_with_table(Table::new(session, path), false)
+        } else {
+            host(path)
+        };
+        match name {
+            "inspection" => {
+                click_source(&mut app, controls::Source::Investigator(Investigator::Tony));
+                activate(&mut app, "Inspect");
+            }
+            "history" | "credits" | "restart confirmation" => {
+                activate(&mut app, "Menu");
+                activate(
+                    &mut app,
+                    match name {
+                        "history" => "Action history and rules reasons",
+                        "credits" => "Credits",
+                        _ => "Restart The Gathering...",
+                    },
+                );
+            }
+            _ => {}
+        }
+        let dialogs = modal_dialogs_and_focus(&mut app);
+        assert!(!dialogs.is_empty(), "{name} opens a modal dialog");
+        assert!(
+            dialogs.iter().all(|(_, focusable)| *focusable),
+            "{name}: {dialogs:?}"
+        );
+    }
+}

@@ -181,6 +181,12 @@ enum Request {
     Quit {},
 }
 
+/// Present while an agent sits at the table. The agent operates the table, never the
+/// owner's desktop, so a game refuses what native play hands to the desktop, such as
+/// an address for the desktop's opener.
+#[derive(Resource)]
+pub(crate) struct SeatedAgent;
+
 pub(crate) struct Seat<G> {
     game: G,
     camera: Entity,
@@ -191,7 +197,13 @@ pub(crate) struct Seat<G> {
 impl<G: Game> Seat<G> {
     /// Sit at a table whose camera already has a render target. Without an image
     /// (the no-GPU test host) every operation but `capture` is available.
-    pub(crate) fn new(game: G, camera: Entity, image: Option<Handle<Image>>) -> Self {
+    pub(crate) fn new(
+        game: G,
+        app: &mut App,
+        camera: Entity,
+        image: Option<Handle<Image>>,
+    ) -> Self {
+        app.insert_resource(SeatedAgent);
         Self {
             game,
             camera,
@@ -210,7 +222,8 @@ impl<G: Game> Seat<G> {
         let camera = surface
             .camera
             .ok_or("The table spawned no camera for the seat's image.")?;
-        Ok(Self::new(game, camera, Some(surface.image.clone())))
+        let image = surface.image.clone();
+        Ok(Self::new(game, app, camera, Some(image)))
     }
 
     /// Advance the presentation clock by `advance` and run one update. Returns

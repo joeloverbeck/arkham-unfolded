@@ -50,7 +50,10 @@ dismisses a transient action list without making a choice or losing commitments.
 
 Tab/Shift+Tab move menu focus, Enter/Space activate and Escape dismisses. Those
 operations must not also move the camera; arrow-key menu navigation is not
-selected. Inspect, History, Menu, story-reading panels, confirmation dialogs and
+selected. The Menu button has its own place in the Tab order, after the
+navigation rail, decision panel and enemy sideboard, so Shift+Tab from the first
+portrait reaches it. Every modal dialog contains a control that takes focus when
+it opens. Inspect, History, Menu, story-reading panels, confirmation dialogs and
 folder dialogs explicitly block camera input. Closing them restores WASD
 immediately. Right-drag orbits; empty navigation-container space permits its
 start, visible controls block its start, and an already captured drag continues
@@ -635,6 +638,8 @@ Keep current round and phase clearly visible after it leaves. Reduced motion use
 stationary text. Announce an empty Enemy phase and the first Investigation after
 setup; the first round skips Mythos. Round-end effects do not create a fifth phase.
 Prevent input through the announcement from activating an underlying control.
+The banner is an announcement, not a dialog: it takes no keyboard focus, and a
+full-screen barrier keeps the pointer from the table while it shows.
 
 Perform compulsory Upkeep and Mythos administration automatically with visible
 consequences, preserving genuine decisions, reactions, ordering choices, tests,

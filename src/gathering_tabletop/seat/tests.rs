@@ -43,8 +43,9 @@ fn sit_at(mut app: App, path: PathBuf, directory: tempfile::TempDir) -> Sitting 
         .query_filtered::<Entity, With<MainCamera>>()
         .single(world)
         .unwrap();
+    let seat = Seat::new(Gathering, &mut app, camera, None);
     let mut sitting = Sitting {
-        seat: Seat::new(Gathering, camera, None),
+        seat,
         app,
         path,
         _directory: directory,
@@ -384,6 +385,64 @@ fn keys_travel_the_keyboard_path_and_unknown_keys_are_refused() {
     assert_eq!(settled["observation"]["revision"], 1);
     assert_eq!(settled["observation"]["lead"], "patrice");
     assert_eq!(settled["observation"], saved(&seat.path));
+}
+
+/// The label of the one focused control outside a contextual menu.
+fn focused(response: &Value) -> Option<String> {
+    response["table"]["controls"]
+        .as_array()?
+        .iter()
+        .find(|control| control["focused"] == true)
+        .and_then(|control| control["label"].as_str())
+        .map(str::to_owned)
+}
+
+impl Sitting {
+    /// Press Tab until the named control has focus, as an agent without a pointer would.
+    fn tab_to(&mut self, label: &str) -> Value {
+        let mut response = self.ask(json!({"op": "observe"}));
+        for _ in 0..40 {
+            if focused(&response).as_deref() == Some(label) {
+                return response;
+            }
+            response = self.ask(json!({"op": "key", "key": "Tab"}));
+            assert_eq!(response["status"], "pressed", "{response}");
+        }
+        panic!(
+            "Tab never reached {label}: {}",
+            response["table"]["controls"]
+        );
+    }
+
+    fn enter(&mut self) -> Value {
+        let pressed = self.ask(json!({"op": "key", "key": "Enter"}));
+        assert_eq!(pressed["status"], "pressed", "{pressed}");
+        let settled = self.ask(json!({"op": "settle"}));
+        assert_eq!(settled["status"], "settled", "{settled}");
+        settled
+    }
+}
+
+#[test]
+fn the_seat_reaches_the_menu_by_tab_and_refuses_to_open_external_links() {
+    let mut seat = sit();
+    seat.tab_to("Menu");
+    let menu = seat.enter();
+    assert_eq!(menu["table"]["modal"], "utilities menu", "{menu}");
+    seat.tab_to("Credits");
+    let credits = seat.enter();
+    assert_eq!(credits["table"]["modal"], "inspection", "{credits}");
+    seat.tab_to("Chalice drops — source");
+    let refused = seat.enter();
+    let notice = refused["table"]["notice"].as_str().unwrap_or_default();
+    assert!(
+        notice.contains("agent seat")
+            && notice.contains("https://game-icons.net/1x1/lorc/chalice-drops.html"),
+        "The refusal names the address it did not open: {refused}"
+    );
+    assert_eq!(refused["table"]["modal"], "inspection");
+    assert_eq!(refused["observation"]["revision"], 0);
+    assert!(!seat.path.exists(), "Credits decide nothing");
 }
 
 /// Cards that are still face down in a deck now, proven by drawing them later: the

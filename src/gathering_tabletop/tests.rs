@@ -455,8 +455,55 @@ pub(super) fn host_with_table(table: Table, raw_window_events: bool) -> App {
         bevy::window::PrimaryWindow,
     ));
     install(&mut app);
+    // An assertion, not a substitute: every dialog any tabletop test opens is checked.
+    app.add_systems(Last, opened_dialogs_offer_focus);
     app.update();
     app
+}
+
+/// Bevy's modal plugin moves focus into each newly opened dialog with this exact
+/// navigation call. Natively, a dialog with nothing focusable only logs
+/// "No focusable entities in modal dialog"; here it fails the test that opened it.
+fn opened_dialogs_offer_focus(
+    opened: Query<Entity, Added<bevy::ui_widgets::ModalDialog>>,
+    navigation: bevy::input_focus::tab_navigation::TabNavigation,
+    labels: Query<&AccessibleLabel>,
+) {
+    for dialog in &opened {
+        assert!(
+            navigation
+                .initialize(dialog, bevy::input_focus::tab_navigation::NavAction::Last)
+                .is_ok(),
+            "Modal dialog {:?} opened with no focusable descendant",
+            labels
+                .get(dialog)
+                .map_or("without a label", |label| label.0.as_str())
+        );
+    }
+}
+
+/// Every open modal dialog, paired with whether its own tab group can take focus.
+pub(super) fn modal_dialogs_and_focus(app: &mut App) -> Vec<(Entity, bool)> {
+    use bevy::{
+        ecs::system::RunSystemOnce,
+        input_focus::tab_navigation::{NavAction, TabNavigation},
+        ui_widgets::ModalDialog,
+    };
+    app.world_mut()
+        .run_system_once(
+            |dialogs: Query<Entity, With<ModalDialog>>, navigation: TabNavigation| {
+                dialogs
+                    .iter()
+                    .map(|dialog| {
+                        (
+                            dialog,
+                            navigation.initialize(dialog, NavAction::Last).is_ok(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            },
+        )
+        .unwrap()
 }
 
 pub(super) fn assert_unclipped_button(app: &mut App, label: &str, size: Vec2, scale: f32) {

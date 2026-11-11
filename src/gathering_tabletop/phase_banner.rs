@@ -77,7 +77,10 @@ pub(super) fn render(
         }
         *shown = key;
         if let Some(announcement) = announcement {
-            use bevy::ui_widgets::{ModalDialog, ModalDialogBarrier};
+            // The full-screen barrier keeps the pointer off the table while the
+            // announcement shows, and the presentation state drops other input. The
+            // banner offers nothing to focus, so it is not a modal dialog.
+            use bevy::ui_widgets::ModalDialogBarrier;
             commands
                 .spawn((
                     Banner,
@@ -109,8 +112,6 @@ pub(super) fn render(
                             },
                             BackgroundColor(Color::srgba(0.025, 0.09, 0.12, 0.98)),
                             BorderColor::all(GOLD),
-                            ModalDialog,
-                            TabGroup::modal(),
                             AccessibleLabel::new(format!(
                                 "{} phase, round {}",
                                 announcement.phase, announcement.round
