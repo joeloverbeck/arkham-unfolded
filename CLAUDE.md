@@ -1,7 +1,5 @@
 # Arkham Unfolded
 
-Before memory lookup, session discovery, supporting-document reads or tool discovery, read the [tracker procedure](docs/agents/issue-tracker.md) from client selection through **Bounded context reads**. It owns the GitHub client choice and shared reading budget.
-
 Read `docs/foundation/mission.md`, `docs/foundation/play-contract.md`, and `docs/foundation/sources-and-verification.md` before selecting project work. GitHub Issues and pull requests own active work. Consult `README.md` for implemented status and launch instructions.
 
 <!-- BEGIN PRINCIPLES-FOR-REPOS BOOTSTRAP 2026-09-30.1 -->
@@ -62,7 +60,7 @@ Card and token artwork, the external resource archive, credentials, local config
 
 ### Issue tracker
 
-GitHub via `gh`: use Issues and pull requests in `joeloverbeck/arkham-unfolded`. Read `docs/agents/issue-tracker.md` before working with issues or specs.
+GitHub via `gh`: use Issues and pull requests in `joeloverbeck/arkham-unfolded`. Read `docs/agents/issue-tracker.md` before working with issues, specs, pull requests or check failures.
 
 ### Triage labels
 

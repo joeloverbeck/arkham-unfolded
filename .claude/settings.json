@@ -1,0 +1,6 @@
+{
+  "claudeMdExcludes": ["**/local/verification/**/CLAUDE.md"],
+  "env": {
+    "CLAUDE_CODE_GLOB_NO_IGNORE": "false"
+  }
+}
