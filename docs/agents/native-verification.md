@@ -42,10 +42,12 @@ do not establish that a save is usable.
 
 Before returning an implementation for owner play, check the owner's normal
 launch command, including its working directory, settings and resolved save
-path. After an intentional save-compatibility break, provide a tested fresh-start
-command with an unused `--save` path and the expected setup screen; update
-README's launch/recovery instructions in the same handoff. Keep the existing
-save bytes intact. Prepared diagnostic checkpoints have a separate purpose and
+path. Development builds promise no save compatibility: a save loads only when
+the current build reproduces its recorded game exactly, and is otherwise refused
+unchanged so that a New attempt can begin. When a change can refuse the owner's
+existing save, provide a tested fresh-start command with an unused `--save` path
+and the expected setup screen; update README's launch/recovery instructions in
+the same handoff. Keep the existing save bytes intact. Prepared diagnostic checkpoints have a separate purpose and
 do not establish that the ordinary launch command works.
 
 Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. Keep the following runnable checklist in private local evidence and link it directly to the owner in the conversation. When the owner operates the run, the reply itself also carries the exact copyable launch command and numbered route; the checklist remains the record. The issue's [current handoff](issue-tracker.md#current-handoff) contains the compact public status below. Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from the private checklist and this procedure without reconstructing the implementation transcript.

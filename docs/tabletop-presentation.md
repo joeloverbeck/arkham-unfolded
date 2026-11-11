@@ -228,8 +228,8 @@ numeric entry. The quick choices are not a rules cap. Selecting a number exhaust
 once and records that prediction; dismissal before selection spends nothing.
 Do not expose separate cancel-prediction or one-step increment/decrement actions.
 This local numeric picker is an exception to the ordinary full-width action rows.
-Retain supported pending predictions through save/reopen without resetting their
-number. After selection, automatically close an empty test-start reaction window.
+It opens from the Pendulum's own **Exhaust Crystal Pendulum** entry for the rules
+session's one listed prediction choice; opening it commits nothing. After selection, automatically close an empty test-start reaction window.
 If legal reactions remain, name them and offer **Skip remaining reactions**.
 Continue to the next genuine decision, preserving commitments and other legal
 abilities before token reveal.
