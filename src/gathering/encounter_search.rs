@@ -4,7 +4,7 @@
 //! one exists; looking does not remove cards from their original game area.
 
 use super::runtime::{Frame, Game, PendingRevelation, Phase, Skill, TestOperation};
-use super::{CardView, Investigator, cards, scenario};
+use super::{CardView, Investigator, cards, option_labels::counted, scenario};
 use crate::{Choice, RuleError};
 use serde::{Deserialize, Serialize};
 
@@ -193,7 +193,7 @@ pub(super) fn action_choices(game: &Game, actor: Investigator) -> Vec<Choice> {
         .map(|card| {
             choice(
                 format!("play:tony:{}", card.id),
-                format!("Play {}: search for a non-Elite enemy", card.title),
+                format!("Play {} to search for a non-Elite enemy", card.title),
             )
         })
         .collect();
@@ -256,7 +256,7 @@ fn event_options(
                     !super::player_cards::uncage_targets(game, actor).is_empty()
                 } =>
             {
-                options.push((choice(format!("play:tony:{}:03033", card.id), "Play Uncage the Soul: play a Spell or Ritual from hand, reducing its cost by 3".into()), 0, EventEffect::Uncage));
+                options.push((choice(format!("play:tony:{}:03033", card.id), "Play Uncage the Soul to play a Spell or Ritual from hand, reducing its cost by 3".into()), 0, EventEffect::Uncage));
             }
             SCENE
                 if player.resources >= 2
@@ -288,7 +288,29 @@ fn event_options(
                                 {
                                     continue;
                                 }
-                                options.push((choice(format!("play:tony:{}:{INTEL}:{}:{}:{}", card.id, location.code, u8::from(amount_boost), u8::from(range_boost)), format!("Play Intel Report for {cost} resources: discover {amount} clues at {}", super::content::title(&location.code).unwrap_or(&location.code))), cost, EventEffect::Discover { location: location.code.clone(), clues: amount }));
+                                options.push((
+                                    choice(
+                                        format!(
+                                            "play:tony:{}:{INTEL}:{}:{}:{}",
+                                            card.id,
+                                            location.code,
+                                            u8::from(amount_boost),
+                                            u8::from(range_boost)
+                                        ),
+                                        format!(
+                                            "Play Intel Report for {} to discover {} at {}",
+                                            counted(cost, "resource", "resources"),
+                                            counted(amount, "clue", "clues"),
+                                            super::content::title(&location.code)
+                                                .unwrap_or(&location.code)
+                                        ),
+                                    ),
+                                    cost,
+                                    EventEffect::Discover {
+                                        location: location.code.clone(),
+                                        clues: amount,
+                                    },
+                                ));
                             }
                         } else {
                             for enemy in &game.scenario.enemies {
@@ -300,7 +322,27 @@ fn event_options(
                                 {
                                     continue;
                                 }
-                                options.push((choice(format!("play:tony:{}:{FAVOR}:{}:{}:{}", card.id, enemy.card.id, u8::from(amount_boost), u8::from(range_boost)), format!("Play Small Favor for {cost} resources: deal {amount} damage to {}", enemy.card.title)), cost, EventEffect::Damage { enemy: enemy.card.id, damage: amount }));
+                                options.push((
+                                    choice(
+                                        format!(
+                                            "play:tony:{}:{FAVOR}:{}:{}:{}",
+                                            card.id,
+                                            enemy.card.id,
+                                            u8::from(amount_boost),
+                                            u8::from(range_boost)
+                                        ),
+                                        format!(
+                                            "Play Small Favor for {} to deal {amount} damage to {}",
+                                            counted(cost, "resource", "resources"),
+                                            enemy.card.title
+                                        ),
+                                    ),
+                                    cost,
+                                    EventEffect::Damage {
+                                        enemy: enemy.card.id,
+                                        damage: amount,
+                                    },
+                                ));
                             }
                         }
                     }
@@ -320,7 +362,7 @@ fn event_options(
                         choice(
                             format!("play:tony:{}:{GET_OVER_HERE}:{}", card.id, enemy.card.id),
                             format!(
-                                "Play Get over here! for 2 resources: pull, engage and fight {}",
+                                "Play Get over here! for 2 resources to pull, engage and fight {}",
                                 enemy.card.title
                             ),
                         ),

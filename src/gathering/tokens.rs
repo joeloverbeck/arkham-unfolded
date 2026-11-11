@@ -3,7 +3,7 @@
 //! Rules expectations: issue-89-rules-jacqueline J1–J7. A reveal declaration
 //! precedes randomness; cancellation never returns a token early to the bag.
 
-use super::{Investigator, runtime::Game};
+use super::{Investigator, option_labels::counted, runtime::Game};
 use crate::{Choice, RuleError, TokenFace};
 use serde::{Deserialize, Serialize};
 
@@ -1264,8 +1264,9 @@ pub(super) fn choices(game: &Game) -> Vec<Choice> {
                     choice(
                         format!("tokens:eyes:{count}"),
                         format!(
-                            "Spend {count} Eyes charges: reveal {} token(s), then choose 1",
-                            count + 1
+                            "Spend {}: reveal {}, then choose 1",
+                            counted(count, "Eyes charge", "Eyes charges"),
+                            counted(count + 1, "token", "tokens")
                         ),
                     )
                 })

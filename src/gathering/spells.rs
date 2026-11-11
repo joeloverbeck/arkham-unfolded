@@ -2,7 +2,7 @@
 //! Costs precede opportunity attacks; captured ability text survives its asset.
 
 use super::{
-    CardView, Investigator, cards,
+    CardView, Investigator, cards, option_labels,
     runtime::{Game, Skill, TestOperation},
     scenario,
 };
@@ -54,16 +54,26 @@ pub(super) fn action_choices(game: &Game, who: Investigator) -> Vec<Choice> {
         }
         if matches!(code, "11067" | "60408" | "60507") {
             if game.scenario.shroud(&player.location).is_some() {
+                let mut details = if code == "60408" {
+                    vec!["spend 1 charge".to_owned()]
+                } else {
+                    vec![]
+                };
+                details.extend(option_labels::investigation_details(
+                    &game.scenario,
+                    &player.location,
+                    if code == "60507" {
+                        &["uses a key"]
+                    } else {
+                        &[]
+                    },
+                ));
                 choices.push(choice(
                     format!("investigate:spell:{}", asset.card.id),
                     format!(
                         "Investigate with {}{}",
                         asset.card.title,
-                        if code == "60408" {
-                            " (spend 1 charge)"
-                        } else {
-                            ""
-                        }
+                        option_labels::parenthesized(&details)
                     ),
                 ));
             }

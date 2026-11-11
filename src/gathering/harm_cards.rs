@@ -1,7 +1,9 @@
 //! Selected cancellation and prevention cards at real revelation/harm windows.
 
 use super::{
-    CardView, Investigator, cards, player_cards,
+    CardView, Investigator, cards,
+    option_labels::counted,
+    player_cards,
     runtime::{AssetState, Frame, Game, HarmAssignment, HarmOrigin, PendingRevelation},
 };
 use crate::{Choice, RuleError};
@@ -121,8 +123,8 @@ pub(super) fn idol_choices(game: &Game, decision: &IdolDecision) -> Vec<Choice> 
         choices.push(Choice {
             id: "idol-pay".into(),
             label: format!(
-                "Exhaust Idol and discard {} cards in the selected order",
-                decision.selected.len()
+                "Exhaust Idol and discard {} in the selected order",
+                counted(decision.selected.len(), "card", "cards")
             ),
             cancel_faces: vec![],
         });
@@ -705,7 +707,7 @@ pub(super) fn revelation_choices(game: &Game, revelation: &PendingRevelation) ->
             let suffix = payment.robes.map_or_else(String::new, |id| format!(":robes:{id}"));
             Choice {
                 id: format!("ward:{}{suffix}", card.id),
-                label: format!("Play Ward of Protection{} ({} resources); cancel {}'s revelation, then take 1 horror", if payment.robes.is_some() { " exhausting Robes of Endless Night" } else { "" }, payment.cost, revelation.card.title),
+                label: format!("Play Ward of Protection{} ({}); cancel {}'s revelation, then take 1 horror", if payment.robes.is_some() { " exhausting Robes of Endless Night" } else { "" }, counted(payment.cost, "resource", "resources"), revelation.card.title),
                 cancel_faces: vec![],
             }
         })

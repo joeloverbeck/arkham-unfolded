@@ -136,7 +136,9 @@ actions; selection alone makes no game choice. Use a compact nearby screen-space
 panel with one full-width clickable row per option and Inspect last. Rows can
 have a title and wrapped details. Keep actor, costs, test information,
 opportunity-attack warnings and other consequences readable before activation.
-Keep panels inside the viewport without shrinking text or hiding details, and
+Each option states its effective cost once, as currently modified (**Spend two
+actions:**), followed by its effect; the effect does not restate the cost, and
+counts agree in number. Keep panels inside the viewport without shrinking text or hiding details, and
 retain predictable ordering as legality changes. Actions without a useful
 physical source, including ending a turn and declining an effect, remain in the
 decision controls. Compound selections retain all legal alternatives and an

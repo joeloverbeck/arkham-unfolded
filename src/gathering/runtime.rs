@@ -3,6 +3,7 @@
 
 use super::{
     CardView, Investigator, InvestigatorView, cards, content,
+    option_labels::{self, Allowance, EffectiveCost, counted},
     scenario::{ScenarioDecision, ScenarioState},
 };
 use crate::{Choice, RuleError, TokenFace};
@@ -1319,7 +1320,11 @@ impl Game {
                             owner,
                             amount,
                             source,
-                        } => format!("{} gains {amount} resources from {source}", owner.name()),
+                        } => format!(
+                            "{} gains {} from {source}",
+                            owner.name(),
+                            counted(*amount, "resource", "resources")
+                        ),
                         TestResultEffect::TakeHeart => {
                             "Take Heart: draw 2 cards, then gain 2 resources".into()
                         }
@@ -2166,6 +2171,61 @@ impl Game {
                 .collect();
         };
         let player = &self.players[actor.index()];
+        let mut choices = Vec::new();
+        for (action, cost) in self.priced_actions(actor) {
+            if player.ordinary_actions >= cost {
+                choices.push(choice(
+                    &format!("action:ordinary:{}", action.id),
+                    &option_labels::label(EffectiveCost::actions(cost), &action.label),
+                ));
+            }
+            if actor == Investigator::Tony
+                && !player.restricted_tony_action_used
+                && player.ordinary_actions >= cost - 1
+                && (matches!(
+                    super::encounter_search::action_designator(&action.id),
+                    Some("fight" | "engage")
+                ) || action.id.starts_with("fight:")
+                    || action.id.starts_with("engage:"))
+            {
+                let enemy_id = super::encounter_search::action_enemy(&action.id).or_else(|| {
+                    action
+                        .id
+                        .split(':')
+                        .nth(1)
+                        .and_then(|id| id.parse::<u16>().ok())
+                });
+                if self
+                    .scenario
+                    .enemies
+                    .iter()
+                    .any(|enemy| Some(enemy.card.id) == enemy_id && enemy.bounties > 0)
+                {
+                    choices.push(choice(
+                        &format!("action:tony:{}", action.id),
+                        &option_labels::label(
+                            EffectiveCost::paid_by(Allowance::TonyBounty, cost),
+                            &action.label,
+                        ),
+                    ));
+                }
+            }
+        }
+        if super::scenario::available_act_payment(self, false).is_some() {
+            choices.push(choice(
+                "act:advance",
+                "Spend the required group clues to advance the act",
+            ));
+        }
+        choices.push(choice("turn:end", "End this investigator's turn"));
+        choices.extend(self.player_window_choices());
+        choices
+    }
+
+    /// Each action the actor may initiate now, as its effect label and its
+    /// effective action cost after modifiers. Option labels state that cost.
+    fn priced_actions(&self, actor: Investigator) -> Vec<(Choice, u8)> {
+        let player = &self.players[actor.index()];
         let mut actions = vec![
             choice("resource", "Gain 1 resource"),
             choice("draw", "Draw 1 card"),
@@ -2176,10 +2236,20 @@ impl Game {
                 .location("01115")
                 .is_some_and(|location| location.revealed)
         {
-            actions.push(choice("resign", "Resign: leave the house"));
+            actions.push(choice("resign", "Resign and leave the house"));
         }
         if self.scenario.location(&player.location).is_some() {
-            actions.push(choice("investigate", "Investigate this location"));
+            actions.push(choice(
+                "investigate",
+                &format!(
+                    "Investigate this location{}",
+                    option_labels::parenthesized(&option_labels::investigation_details(
+                        &self.scenario,
+                        &player.location,
+                        &[],
+                    ))
+                ),
+            ));
         }
         for location in &self.scenario.locations {
             if self.scenario.can_move(&player.location, &location.code) {
@@ -2249,7 +2319,7 @@ impl Game {
         {
             actions.push(choice(
                 "parley:lita",
-                "Parley with Lita Chantler: test intellect (4) to take control",
+                "Parley with Lita Chantler; test intellect (4) to take control",
             ));
         }
         for owner in &self.players {
@@ -2260,67 +2330,26 @@ impl Game {
                 if matches!(card.code.as_str(), "02038" | "02039" | "05041") {
                     actions.push(choice(
                         &format!("remove-threat:{}:{}", owner.investigator.id(), card.id),
-                        &format!("Spend two actions to discard {}", card.title),
+                        &format!("Discard {}", card.title),
                     ));
                 }
             }
         }
-        let mut choices = Vec::new();
-        for action in actions {
-            if super::ethereal_form::is_ethereal(self, actor)
-                && matches!(
-                    super::encounter_search::action_designator(&action.id)
-                        .or_else(|| action.id.split(':').next()),
-                    Some("fight" | "engage")
-                )
-            {
-                continue;
-            }
-            let cost = self.action_cost(actor, &action.id);
-            if player.ordinary_actions >= cost {
-                choices.push(choice(
-                    &format!("action:ordinary:{}", action.id),
-                    &format!("Spend an action: {}", action.label),
-                ));
-            }
-            if actor == Investigator::Tony
-                && !player.restricted_tony_action_used
-                && player.ordinary_actions >= cost - 1
-                && (matches!(
-                    super::encounter_search::action_designator(&action.id),
-                    Some("fight" | "engage")
-                ) || action.id.starts_with("fight:")
-                    || action.id.starts_with("engage:"))
-            {
-                let enemy_id = super::encounter_search::action_enemy(&action.id).or_else(|| {
-                    action
-                        .id
-                        .split(':')
-                        .nth(1)
-                        .and_then(|id| id.parse::<u16>().ok())
-                });
-                if self
-                    .scenario
-                    .enemies
-                    .iter()
-                    .any(|enemy| Some(enemy.card.id) == enemy_id && enemy.bounties > 0)
-                {
-                    choices.push(choice(
-                        &format!("action:tony:{}", action.id),
-                        &format!("Spend Tony's additional bounty action: {}", action.label),
-                    ));
-                }
-            }
-        }
-        if super::scenario::available_act_payment(self, false).is_some() {
-            choices.push(choice(
-                "act:advance",
-                "Spend the required group clues to advance the act",
-            ));
-        }
-        choices.push(choice("turn:end", "End this investigator's turn"));
-        choices.extend(self.player_window_choices());
-        choices
+        actions
+            .into_iter()
+            .filter(|action| {
+                !(super::ethereal_form::is_ethereal(self, actor)
+                    && matches!(
+                        super::encounter_search::action_designator(&action.id)
+                            .or_else(|| action.id.split(':').next()),
+                        Some("fight" | "engage")
+                    ))
+            })
+            .map(|action| {
+                let cost = self.action_cost(actor, &action.id);
+                (action, cost)
+            })
+            .collect()
     }
 
     fn action_cost(&self, actor: Investigator, action: &str) -> u8 {
@@ -2741,14 +2770,22 @@ impl Game {
         projection.actor = Some(owner);
         projection.phase = Phase::Investigation;
         projection.players[owner.index()].ordinary_actions += 1;
+        if projection.scenario.outcome.is_some() {
+            return vec![];
+        }
+        let available = projection.players[owner.index()].ordinary_actions;
         projection
-            .investigation_choices()
+            .priced_actions(owner)
             .into_iter()
-            .filter_map(|mut choice| {
-                let action = choice.id.strip_prefix("action:ordinary:")?.to_owned();
-                choice.id = format!("granted:{action}");
-                choice.label = format!("Use the granted action: {}", choice.label);
-                Some(choice)
+            .filter(|(_, cost)| available >= *cost)
+            .map(|(action, cost)| {
+                choice(
+                    &format!("granted:{}", action.id),
+                    &option_labels::label(
+                        EffectiveCost::paid_by(Allowance::Granted, cost),
+                        &action.label,
+                    ),
+                )
             })
             .collect()
     }
