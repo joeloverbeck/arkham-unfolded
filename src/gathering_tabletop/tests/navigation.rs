@@ -366,7 +366,7 @@ fn every_modal_dialog_offers_focus_when_opened() {
 }
 
 #[test]
-fn enemy_sideboard_headings_are_reached_by_tab_between_decisions_and_the_menu() {
+fn sideboard_headings_are_reached_by_tab_between_decisions_and_the_menu() {
     let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
         crate::gathering::TonyEffectFixture::QuickThinking,
     ));
@@ -374,6 +374,12 @@ fn enemy_sideboard_headings_are_reached_by_tab_between_decisions_and_the_menu() 
     for enemy in &mut play.scenario.enemies {
         enemy.engaged = None;
     }
+    play.scenario.locations[0].fog = Some(crate::gathering::CardView {
+        id: 63000,
+        code: "01168".into(),
+        title: "Obscuring Fog".into(),
+        weakness: false,
+    });
     let mut app = super::cards::at_public_moment(session, play, PathBuf::new(), false);
     // World labels are shown only once the camera can project them.
     crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
@@ -385,7 +391,19 @@ fn enemy_sideboard_headings_are_reached_by_tab_between_decisions_and_the_menu() 
     let headings = group_labels(&mut app, 2);
     assert!(
         !headings.is_empty() && headings.iter().all(|label| label.contains(" · ")),
-        "The sideboard offers its location headings: {headings:?}"
+        "The sideboards offer their location headings: {headings:?}"
+    );
+    // Enemy headings come first, then the attachment sideboard's.
+    let attached = headings
+        .iter()
+        .position(|label| label.starts_with("Attached to "))
+        .expect("the attachment sideboard offers its heading");
+    assert!(
+        attached > 0
+            && headings[attached..]
+                .iter()
+                .all(|label| label.starts_with("Attached to ")),
+        "{headings:?}"
     );
     app.world_mut().resource_mut::<InputFocus>().clear();
     let cycle = tab_cycle(&mut app);

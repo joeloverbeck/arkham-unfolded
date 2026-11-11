@@ -245,7 +245,7 @@ fn names_are_exact_and_absent_ambiguous_or_off_screen_names_fail() {
     seat.app
         .world_mut()
         .resource_mut::<Orbit>()
-        .focus(enemy_board::focus(Area::Investigator(0)));
+        .focus(sideboard::focus(Area::Investigator(0)));
     seat.app.update();
     let zoomed = seat.ask(json!({"op": "settle"}));
     assert_eq!(zoomed["status"], "settled", "{zoomed}");
@@ -569,6 +569,38 @@ fn pieces_sharing_a_source_keep_distinct_names_in_play() {
     assert_eq!(
         component(&response, "investigator:tony")["label"],
         "Tony Morgan"
+    );
+}
+
+#[test]
+fn an_attached_card_has_its_own_marker_and_heading_names() {
+    let mut seat = sit_at_fixture(crate::gathering::HostileFixture::SelectedWitness(
+        crate::gathering::SelectedWitness::ObscuringFog,
+    ));
+    let revision = seat.ask(json!({"op": "observe"}))["observation"]["revision"].clone();
+    let resolved = seat.ask(json!({
+        "op": "activate",
+        "revision": revision,
+        "choice": "revelation:resolve",
+    }));
+    assert_eq!(resolved["status"], "activated", "{resolved}");
+    let settled = seat.ask(json!({"op": "settle"}));
+    assert_eq!(settled["status"], "settled", "{settled}");
+    let names: Vec<&str> = settled["table"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|component| component["name"].as_str().unwrap())
+        .collect();
+    let distinct: BTreeSet<&str> = names.iter().copied().collect();
+    assert_eq!(names.len(), distinct.len(), "{names:?}");
+    assert_eq!(
+        component(&settled, "location:01111/attachments")["label"],
+        "Attachment Study"
+    );
+    assert_eq!(
+        component(&settled, "location:01111/attachment-board")["label"],
+        "Attached to STUDY · 1"
     );
 }
 

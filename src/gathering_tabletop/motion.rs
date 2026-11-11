@@ -111,6 +111,16 @@ impl Origins {
                     .positions
                     .insert(enemy.card.id, play::enemy_position(play, slot));
             }
+            for card in play
+                .scenario
+                .locations
+                .iter()
+                .filter_map(|room| room.fog.as_ref())
+            {
+                result
+                    .positions
+                    .insert(card.id, sideboard::ATTACHMENTS.position(play, card.id));
+            }
             if let Some(tray) = trays::Layout::for_play(play) {
                 result.positions.extend(tray.positions());
             }

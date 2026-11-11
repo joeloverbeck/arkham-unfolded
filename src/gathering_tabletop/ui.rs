@@ -524,7 +524,7 @@ pub(super) fn render(
         let prefix = { "" };
         p.spawn(art.text(format!("{prefix}{}", turn_heading(view)), 18., PAPER));
     });
-    // Tab reaches the Menu after navigation (0), decisions (1) and the enemy sideboard (2).
+    // Tab reaches the Menu after navigation (0), decisions (1) and the sideboard headings (2).
     screen::menu_button(commands, (Panel, TabGroup::new(3)), |p| {
         button(art, p, "Menu", Action::Utilities);
     });

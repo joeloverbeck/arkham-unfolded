@@ -8,7 +8,7 @@ const CELLAR: &str = "01114";
 const PARLOR: &str = "01115";
 
 /// The ticket's accepted Okabe–Ito assignment.
-fn accepted_color(room: &str) -> Color {
+pub(super) fn accepted_color(room: &str) -> Color {
     match room {
         "01111" | HALLWAY => Color::srgb_u8(0xD5, 0x5E, 0x00),
         ATTIC => Color::srgb_u8(0xF0, 0xE4, 0x42),
@@ -19,7 +19,12 @@ fn accepted_color(room: &str) -> Color {
 }
 
 /// Unengaged enemies in the requested sideboard groups, at a public moment.
-fn table_with_groups(groups: &[(&str, usize)]) -> App {
+pub(super) fn table_with_groups(groups: &[(&str, usize)]) -> App {
+    table_with(groups, &[])
+}
+
+/// Enemy groups as above, and an Obscuring Fog attached to each listed location.
+pub(super) fn table_with(groups: &[(&str, usize)], fogged: &[&str]) -> App {
     let session =
         Session::with_hostile_fixture(HostileFixture::Tony(TonyEffectFixture::QuickThinking));
     let mut play = session.observe().play.unwrap();
@@ -39,17 +44,30 @@ fn table_with_groups(groups: &[(&str, usize)]) -> App {
             id += 1;
         }
     }
+    for location in &mut play.scenario.locations {
+        location.fog = fogged.contains(&location.code.as_str()).then(|| {
+            id += 1;
+            crate::gathering::CardView {
+                id,
+                code: "01168".into(),
+                title: "Obscuring Fog".into(),
+                weakness: false,
+            }
+        });
+    }
     super::cards::at_public_moment(session, play, PathBuf::new(), false)
 }
 
-struct Token {
-    at: Vec3,
-    radius: f32,
-    layers: Vec<(String, Color)>,
+pub(super) struct Token {
+    pub at: Vec3,
+    pub radius: f32,
+    /// Half the body's depth on the table; less than the radius for a hexagon.
+    pub depth: f32,
+    pub layers: Vec<(String, Color)>,
 }
 
 impl Token {
-    fn layer(&self, name: &str) -> Color {
+    pub(super) fn layer(&self, name: &str) -> Color {
         self.layers
             .iter()
             .find_map(|(layer, color)| (layer == name).then_some(*color))
@@ -62,7 +80,7 @@ impl Token {
 }
 
 /// Map tokens and sideboard heading tokens named for a location group.
-fn tokens(app: &mut App, name: &str) -> (Vec<Token>, Vec<Token>) {
+pub(super) fn tokens(app: &mut App, name: &str) -> (Vec<Token>, Vec<Token>) {
     use bevy::camera::primitives::MeshAabb;
     let world = app.world_mut();
     let roots: Vec<_> = world
@@ -88,14 +106,13 @@ fn tokens(app: &mut App, name: &str) -> (Vec<Token>, Vec<Token>) {
     };
     let (mut map, mut board) = (Vec::new(), Vec::new());
     for (entity, at, mesh, material) in roots {
-        let radius = world
+        let half = world
             .resource::<Assets<Mesh>>()
             .get(&mesh)
             .unwrap()
             .get_aabb()
             .unwrap()
-            .half_extents
-            .x;
+            .half_extents;
         let mut layers = vec![("Outline".to_owned(), color(world, &material))];
         for child in world.get::<Children>(entity).unwrap().iter() {
             let name = world.get::<Name>(child).unwrap().to_string();
@@ -104,17 +121,28 @@ fn tokens(app: &mut App, name: &str) -> (Vec<Token>, Vec<Token>) {
                 .unwrap();
             layers.push((name, color(world, &material.0)));
         }
-        let token = Token { at, radius, layers };
-        (if at.x < -9.8 { &mut board } else { &mut map }).push(token);
+        let token = Token {
+            at,
+            radius: half.x,
+            depth: half.z,
+            layers,
+        };
+        // Both sideboards lie beyond Map's edges.
+        (if at.x.abs() > 9.8 {
+            &mut board
+        } else {
+            &mut map
+        })
+        .push(token);
     }
     (map, board)
 }
 
-fn luminance(color: Color) -> f32 {
+pub(super) fn luminance(color: Color) -> f32 {
     color.to_linear().luminance()
 }
 
-fn texts(app: &mut App) -> Vec<(Entity, String, String, Vec3)> {
+pub(super) fn texts(app: &mut App) -> Vec<(Entity, String, String, Vec3)> {
     let world = app.world_mut();
     world
         .query::<(Entity, &Text, &AccessibleLabel, &WorldLabel)>()
@@ -123,7 +151,7 @@ fn texts(app: &mut App) -> Vec<(Entity, String, String, Vec3)> {
         .collect()
 }
 
-fn location_card(app: &mut App, room: &str) -> Vec3 {
+pub(super) fn location_card(app: &mut App, room: &str) -> Vec3 {
     let world = app.world_mut();
     world
         .query::<(&crate::gathering_tabletop::map_motion::Surface, &Transform)>()
@@ -136,7 +164,7 @@ fn location_card(app: &mut App, room: &str) -> Vec3 {
 }
 
 /// Every brass triangle of the displayed links, in table (x, z) coordinates.
-fn link_triangles(app: &mut App) -> Vec<[Vec2; 3]> {
+pub(super) fn link_triangles(app: &mut App) -> Vec<[Vec2; 3]> {
     use bevy::mesh::VertexAttributeValues;
     let world = app.world_mut();
     let links: Vec<_> = world
@@ -364,7 +392,7 @@ fn enemy_rows_start_just_below_their_heading_and_clear_damage_tokens() {
         crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
         app.world_mut()
             .resource_mut::<Orbit>()
-            .focus(enemy_board::focus(Area::Scenario));
+            .focus(sideboard::focus(Area::Scenario));
         for _ in 0..4 {
             app.update();
         }
@@ -450,4 +478,109 @@ fn enemy_rows_start_just_below_their_heading_and_clear_damage_tokens() {
             );
         }
     }
+}
+
+/// Where the camera shows a table point, in logical viewport pixels.
+pub(super) fn project(app: &mut App, at: Vec3) -> Vec2 {
+    let world = app.world_mut();
+    let (camera, transform) = world
+        .query_filtered::<(&Camera, &GlobalTransform), With<MainCamera>>()
+        .single(world)
+        .unwrap();
+    camera.world_to_viewport(transform, at).unwrap()
+}
+
+/// A shown count's rectangle as laid out on screen, or None while hidden.
+fn count_rect(app: &mut App, accessible: &str) -> Option<(Rect, f32)> {
+    let world = app.world_mut();
+    let (node, computed, visibility, font) = world
+        .query::<(
+            &AccessibleLabel,
+            &Node,
+            &ComputedNode,
+            &Visibility,
+            &TextFont,
+        )>()
+        .iter(world)
+        .find(|(label, ..)| label.0 == accessible)
+        .map(|(_, node, computed, visibility, font)| {
+            (node.clone(), *computed, *visibility, font.font_size)
+        })
+        .unwrap_or_else(|| panic!("{accessible} is shown"));
+    if visibility == Visibility::Hidden {
+        return None;
+    }
+    let (Val::Px(left), Val::Px(top)) = (node.left, node.top) else {
+        panic!("{accessible} is positioned on screen");
+    };
+    let bevy::text::FontSize::Px(font) = font else {
+        panic!("{accessible} has a pixel size");
+    };
+    let size = computed.size() * computed.inverse_scale_factor;
+    Some((
+        Rect::from_corners(Vec2::new(left, top), Vec2::new(left, top) + size),
+        font,
+    ))
+}
+
+#[test]
+fn marker_counts_stay_inside_the_band_at_the_scenario_and_overview_views() {
+    let mut failures = Vec::new();
+    for size in [Vec2::new(1600., 1000.), Vec2::new(1280., 800.)] {
+        for area in [Area::Scenario, Area::Overview] {
+            // Hallway has a link entering from above; Attic's pair is centered.
+            let mut app = table_with(
+                &[(HALLWAY, 3), (ATTIC, 1), (CELLAR, 1), (PARLOR, 1)],
+                &[HALLWAY, ATTIC],
+            );
+            crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
+            app.world_mut()
+                .resource_mut::<Orbit>()
+                .focus(sideboard::focus(area));
+            for _ in 0..4 {
+                app.update();
+            }
+            for (room, name, marker, count) in [
+                (HALLWAY, "Hallway", "Enemy presence", "enemies: 3"),
+                (ATTIC, "Attic", "Enemy presence", "enemies: 1"),
+                (CELLAR, "Cellar", "Enemy presence", "enemies: 1"),
+                (PARLOR, "Parlor", "Enemy presence", "enemies: 1"),
+                (HALLWAY, "Hallway", "Attachment", "attachments: 1"),
+                (ATTIC, "Attic", "Attachment", "attachments: 1"),
+            ] {
+                let card = location_card(&mut app, room);
+                let (map, _) = tokens(&mut app, &format!("{marker} {name}"));
+                let token = &map[0];
+                // The band ends at the card's top edge, beneath the token.
+                let card_top = project(
+                    &mut app,
+                    Vec3::new(token.at.x, card.y, card.z - pieces::CARD_LENGTH / 2.),
+                )
+                .y;
+                let token_bottom = project(&mut app, token.at + Vec3::new(0., 0.05, token.depth)).y;
+                let label = format!("{name} {count}");
+                let Some((pill, font)) = count_rect(&mut app, &label) else {
+                    // Overview is too far for legible digits.
+                    if area == Area::Scenario {
+                        failures.push(format!("{size} {area:?}: {label} is not shown"));
+                    }
+                    continue;
+                };
+                if pill.max.y > card_top {
+                    failures.push(format!(
+                        "{size} {area:?} {label}: the count {pill:?} reaches past the band onto the card ({card_top})"
+                    ));
+                }
+                if pill.min.y < token_bottom - 1. {
+                    failures.push(format!(
+                        "{size} {area:?} {label}: the count {pill:?} covers its token ({token_bottom})"
+                    ));
+                }
+                if !(4. ..=11.).contains(&font) {
+                    failures.push(format!("{size} {area:?} {label}: {font}px count"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }

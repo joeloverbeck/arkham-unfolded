@@ -28,6 +28,13 @@ const GROUP_PITCH: f32 = 0.72;
 /// A marker beside a top-entering link clears its arrowhead by this margin.
 const LINK_CLEARANCE: f32 = 0.06;
 const TOKEN_HEIGHT: f32 = 0.10;
+/// Map tokens hang just inside the band's top, leaving the rest for the count.
+const BAND_TOP_MARGIN: f32 = 0.03;
+/// The count's largest size: the counter-label size used across the table.
+const PILL_MAX: f32 = 11.;
+/// Below this size digits are only a smudge, so the count is not drawn (as in
+/// Overview); the sideboard heading still states it.
+const PILL_MIN: f32 = 4.;
 
 /// Location identity decides the color. Study and Hallway share one because
 /// they are never in play together; every other Gathering location differs.
@@ -45,19 +52,23 @@ pub(super) fn location_color(code: &str) -> Color {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum MarkerKind {
     EnemyPresence,
+    Attachment,
 }
 
 impl MarkerKind {
     fn name(self) -> &'static str {
         match self {
             Self::EnemyPresence => "Enemy presence",
+            Self::Attachment => "Attachment",
         }
     }
 
-    /// Body corners; a round body is a fine polygon.
+    /// Body corners; a round body is a fine polygon. The hexagon's first
+    /// corner points right, so its flat edges face the band's top and the card.
     fn sides(self) -> u32 {
         match self {
             Self::EnemyPresence => 48,
+            Self::Attachment => 6,
         }
     }
 
@@ -65,6 +76,7 @@ impl MarkerKind {
     fn side(self) -> f32 {
         match self {
             Self::EnemyPresence => -1.,
+            Self::Attachment => 1.,
         }
     }
 }
@@ -73,6 +85,7 @@ impl MarkerKind {
 #[derive(Component)]
 pub(super) struct Tint {
     pub room: String,
+    pub kind: MarkerKind,
     pub color: Color,
 }
 
@@ -91,7 +104,7 @@ pub(super) fn band_positions(
 ) -> Vec<(MarkerKind, Vec3)> {
     let band = map.marker_band(room);
     let center = map.position(room);
-    let z = band.max.y - 0.47;
+    let z = band.min.y + BAND_TOP_MARGIN + MAP_RADIUS;
     let mut kinds = kinds.to_vec();
     kinds.sort();
     let count = kinds.len() as f32;
@@ -113,15 +126,8 @@ pub(super) fn band_positions(
         .collect()
 }
 
-/// Where a location's enemy-presence marker stands; moving enemies start and end
-/// their temporary marker's route here.
-pub(super) fn presence_at(map: &GatheringMap, room: &str) -> Vec3 {
-    band_positions(map, room, &[MarkerKind::EnemyPresence])[0].1
-}
-
-/// The count pill hangs from a map token's lower edge. At the normal Scenario
-/// focus its fixed-pixel height still reaches a few pixels past the band.
-pub(super) fn pill_anchor(token: Vec3) -> Vec3 {
+/// The count pill hangs from a map token's lower edge.
+fn pill_anchor(token: Vec3) -> Vec3 {
     token + Vec3::new(0., 0.02, MAP_RADIUS)
 }
 
@@ -201,6 +207,30 @@ pub(super) fn spawn_token(
                 ),
             ]);
         }
+        MarkerKind::Attachment => {
+            // Two links along the rising diagonal, the upper one over the lower.
+            let axis = Vec2::new(1., -1.).normalize();
+            for (index, center) in [-1., 1.].into_iter().enumerate() {
+                let center = axis * center * radius * 0.20;
+                let lift = top + index as f32 * 0.004;
+                layers.extend([
+                    (
+                        "Chain link",
+                        meshes.add(convex(&stadium(center, axis, radius * 0.16, radius * 0.19))),
+                        flat(INK, materials),
+                        Vec3::Y * lift,
+                        false,
+                    ),
+                    (
+                        "Link opening",
+                        meshes.add(convex(&stadium(center, axis, radius * 0.16, radius * 0.09))),
+                        flat(IVORY, materials),
+                        Vec3::Y * (lift + 0.002),
+                        false,
+                    ),
+                ]);
+            }
+        }
     }
     let name = format!("{} {}", kind.name(), play::location_name(room));
     commands
@@ -223,6 +253,7 @@ pub(super) fn spawn_token(
                 if tinted {
                     layer.insert(Tint {
                         room: room.into(),
+                        kind,
                         color,
                     });
                 }
@@ -231,23 +262,33 @@ pub(super) fn spawn_token(
         .id()
 }
 
-/// The group count in a small dark pill, using the counter-label renderer.
+/// A count pill's room: from its map token's lower edge down to the card's
+/// top edge, which bounds the band.
+#[derive(Component)]
+pub(super) struct CountPill {
+    floor: Vec3,
+}
+
+/// The group count in a small dark pill beneath a map token, using the
+/// counter-label renderer. Its size follows the band on screen; see [`fit_counts`].
 pub(super) fn spawn_pill(
     commands: &mut Commands,
     context: &CardRender<'_>,
     accessible: String,
     count: usize,
-    at: Vec3,
+    token: Vec3,
+    card_edge: Vec3,
 ) -> Entity {
+    let at = pill_anchor(token);
     let label = scene::label(commands, context, count.to_string(), at, false);
     commands.entity(label).insert((
         AccessibleLabel::new(accessible),
         TextFont {
-            font_size: bevy::text::FontSize::Px(11.),
+            font_size: bevy::text::FontSize::Px(PILL_MAX),
             ..default()
         },
         // A compact line keeps the pill as short as its digits.
-        bevy::text::LineHeight::Px(11.),
+        bevy::text::LineHeight::Px(PILL_MAX),
         TextLayout::justify(Justify::Center).with_no_wrap(),
         Node {
             position_type: PositionType::Absolute,
@@ -256,8 +297,53 @@ pub(super) fn spawn_pill(
             ..default()
         },
         BackgroundColor(PILL),
+        CountPill { floor: card_edge },
     ));
     label
+}
+
+/// Size each shown count to the band's projected room beneath its token, so it
+/// never reaches the card at any zoom. It grows to the counter-label size when
+/// the band allows and is not drawn where digits would be illegible.
+#[allow(clippy::type_complexity)]
+pub(super) fn fit_counts(
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut pills: Query<(
+        &CountPill,
+        &WorldLabel,
+        &mut TextFont,
+        &mut bevy::text::LineHeight,
+        &mut Node,
+        &mut Visibility,
+    )>,
+) {
+    let (camera, transform) = *camera;
+    for (pill, anchor, mut font, mut line, mut node, mut visibility) in &mut pills {
+        if *visibility == Visibility::Hidden {
+            continue;
+        }
+        let (Ok(top), Ok(floor)) = (
+            camera.world_to_viewport(transform, anchor.0),
+            camera.world_to_viewport(transform, pill.floor),
+        ) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        // Whole pixels keep the font atlas small while the camera zooms; the
+        // margin absorbs the layout's rounding to the pixel grid.
+        let size = (floor.y - top.y - 0.5).floor().min(PILL_MAX);
+        if size < PILL_MIN {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+        let pixels = bevy::text::FontSize::Px(size);
+        if font.font_size != pixels {
+            font.font_size = pixels;
+            *line = bevy::text::LineHeight::Px(size);
+            node.padding = UiRect::axes(px((size * 0.45).round()), px(0.));
+            node.border_radius = BorderRadius::all(px((size * 0.64).round()));
+        }
+    }
 }
 
 /// Two circular arcs meeting at sharp corners on the horizontal axis.
@@ -270,6 +356,23 @@ fn lens(half_width: f32, half_height: f32) -> Vec<Vec2> {
             let angle = -reach + 2. * reach * step as f32 / 12.;
             let x = radius * angle.sin() * -sign;
             points.push(Vec2::new(x, center + sign * radius * angle.cos()));
+        }
+    }
+    points
+}
+
+/// A link's outline: two half circles joined along `axis` around `center`.
+fn stadium(center: Vec2, axis: Vec2, half_length: f32, radius: f32) -> Vec<Vec2> {
+    let across = axis.perp();
+    let mut points = Vec::new();
+    for end in [1., -1.] {
+        for step in 0..=12 {
+            let angle = std::f32::consts::PI * step as f32 / 12.;
+            points.push(
+                center
+                    + axis * end * (half_length + radius * angle.sin())
+                    + across * end * radius * angle.cos(),
+            );
         }
     }
     points

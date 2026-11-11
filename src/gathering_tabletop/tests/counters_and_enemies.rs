@@ -649,7 +649,7 @@ fn enemy_board_matches_map_and_keeps_cards_and_readable_counter_labels() {
                     );
                     app.world_mut()
                         .resource_mut::<Orbit>()
-                        .focus(enemy_board::focus(area));
+                        .focus(sideboard::focus(area));
                     for _ in 0..4 {
                         app.update();
                     }

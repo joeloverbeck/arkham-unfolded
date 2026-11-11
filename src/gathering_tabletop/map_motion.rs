@@ -206,8 +206,11 @@ impl Playback {
             let Some(route) = map.connection_route(&old.location, &enemy.location) else {
                 continue;
             };
-            let marker = |room: &str| markers::presence_at(&map, room);
-            let (start, end) = (marker(&old.location), marker(&enemy.location));
+            // The group marker stands beside any attachment marker shown with it.
+            let marker = |play, room: &str| {
+                sideboard::marker_at(play, &map, room, markers::MarkerKind::EnemyPresence)
+            };
+            let (start, end) = (marker(prior, &old.location), marker(after, &enemy.location));
             // Engaged enemies accompany their investigator; independent enemy
             // moves get separate beats so simultaneous agenda movement is legible.
             let companion = old.engaged.and_then(|who| {
@@ -525,7 +528,7 @@ impl Playback {
                 );
                 commands.entity(label).insert((
                     motion::CardLabel(marker, Vec3::new(0., 0.2, 0.55)),
-                    enemy_board::PersistentLabel,
+                    sideboard::PersistentLabel,
                 ));
             }
         }

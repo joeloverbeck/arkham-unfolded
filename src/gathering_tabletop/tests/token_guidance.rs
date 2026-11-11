@@ -1079,7 +1079,7 @@ fn resolution_diagnostic_matches_resolve_and_preserves_home_and_the_pending_choi
     app.update();
     assert_eq!(
         app.world().resource::<Orbit>().pose().target,
-        enemy_board::focus(Area::Overview).0
+        sideboard::focus(Area::Overview).0
     );
     assert_eq!(app.world().resource::<Table>().session, before);
     assert!(!dir.path().join("tokens.json").exists());
