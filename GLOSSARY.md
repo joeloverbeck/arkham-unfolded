@@ -155,3 +155,7 @@ _Avoid_: Installed assets, prepared asset collection
 **Prepared asset collection**:
 The self-contained selection of presentation assets supplied for Arkham Unfolded's supported content. It is separate from the source archive and from personal saves and settings.
 _Avoid_: Source archive, cache
+
+**Agent seat**:
+An agent's place at the real 3D table, where it sees and chooses only what a player can, without using the owner's desktop. It is distinct from the headless player driver, which plays the rules with no table.
+_Avoid_: Headless player driver, remote desktop control
