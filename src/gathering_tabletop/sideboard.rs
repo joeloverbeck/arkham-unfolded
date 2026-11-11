@@ -258,13 +258,8 @@ impl Sideboard {
                 context,
                 format!("{name} {}: {count}", self.members),
                 count,
+                self.marker,
                 marker_at,
-                // The card's top edge beneath the token bounds the band.
-                Vec3::new(
-                    marker_at.x,
-                    map.position(room).y,
-                    map.marker_band(room).max.y,
-                ),
             );
             commands.entity(pill).insert(PersistentLabel);
             let token = markers::spawn_token(

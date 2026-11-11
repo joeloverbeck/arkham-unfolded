@@ -693,7 +693,7 @@ fn install(app: &mut App) {
                 shuffle::animate,
                 card_counters::follow,
                 trays::animate,
-                (world_labels, markers::fit_counts).chain(),
+                world_labels,
                 crate::tabletop_tokens::position_labels,
             )
                 .chain(),

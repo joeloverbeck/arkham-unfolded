@@ -524,22 +524,29 @@ fn count_rect(app: &mut App, accessible: &str) -> Option<(Rect, f32)> {
 }
 
 #[test]
-fn marker_counts_stay_inside_the_band_at_the_scenario_and_overview_views() {
+fn marker_counts_are_legible_beneath_their_markers_at_the_scenario_and_overview_views() {
     let mut failures = Vec::new();
     for size in [Vec2::new(1600., 1000.), Vec2::new(1280., 800.)] {
-        for area in [Area::Scenario, Area::Overview] {
+        // The accepted framing: the boards re-centre the target, and the
+        // camera distance stays the one each view already used.
+        for (area, framing) in [
+            (Area::Scenario, (Vec3::new(0., 0., -5.5), 40.)),
+            (Area::Overview, (Vec3::new(0., 0., 7.), 72.)),
+        ] {
             // Hallway has a link entering from above; Attic's pair is centered.
             let mut app = table_with(
                 &[(HALLWAY, 3), (ATTIC, 1), (CELLAR, 1), (PARLOR, 1)],
                 &[HALLWAY, ATTIC],
             );
             crate::tabletop_layout::heading_checks::viewport::<MainCamera>(&mut app, size, 1.);
-            app.world_mut()
-                .resource_mut::<Orbit>()
-                .focus(sideboard::focus(area));
+            assert_eq!(sideboard::focus(area), framing, "{area:?} framing");
+            app.world_mut().resource_mut::<Orbit>().focus(framing);
             for _ in 0..4 {
                 app.update();
             }
+            let pose = app.world().resource::<Orbit>().pose();
+            assert_eq!((pose.target, pose.distance), framing, "{area:?} camera");
+            let mut overlaps = Vec::new();
             for (room, name, marker, count) in [
                 (HALLWAY, "Hallway", "Enemy presence", "enemies: 3"),
                 (ATTIC, "Attic", "Enemy presence", "enemies: 1"),
@@ -551,35 +558,37 @@ fn marker_counts_stay_inside_the_band_at_the_scenario_and_overview_views() {
                 let card = location_card(&mut app, room);
                 let (map, _) = tokens(&mut app, &format!("{marker} {name}"));
                 let token = &map[0];
-                // The band ends at the card's top edge, beneath the token.
                 let card_top = project(
                     &mut app,
                     Vec3::new(token.at.x, card.y, card.z - pieces::CARD_LENGTH / 2.),
                 )
                 .y;
+                let token_center = project(&mut app, token.at).x;
                 let token_bottom = project(&mut app, token.at + Vec3::new(0., 0.05, token.depth)).y;
                 let label = format!("{name} {count}");
                 let Some((pill, font)) = count_rect(&mut app, &label) else {
-                    // Overview is too far for legible digits.
-                    if area == Area::Scenario {
-                        failures.push(format!("{size} {area:?}: {label} is not shown"));
-                    }
+                    failures.push(format!("{size} {area:?}: {label} is not shown"));
                     continue;
                 };
-                if pill.max.y > card_top {
+                if font < 11. || pill.height() < 11. {
                     failures.push(format!(
-                        "{size} {area:?} {label}: the count {pill:?} reaches past the band onto the card ({card_top})"
+                        "{size} {area:?} {label}: {font}px count in a {}px pill",
+                        pill.height()
                     ));
                 }
-                if pill.min.y < token_bottom - 1. {
+                if (pill.center().x - token_center).abs() > 1. {
                     failures.push(format!(
-                        "{size} {area:?} {label}: the count {pill:?} covers its token ({token_bottom})"
+                        "{size} {area:?} {label}: the count {pill:?} is not centered on its token ({token_center})"
                     ));
                 }
-                if !(4. ..=11.).contains(&font) {
-                    failures.push(format!("{size} {area:?} {label}: {font}px count"));
+                if pill.min.y < token_bottom - 1. || pill.min.y > token_bottom + 1. {
+                    failures.push(format!(
+                        "{size} {area:?} {label}: the count {pill:?} does not hang from its token ({token_bottom})"
+                    ));
                 }
+                overlaps.push((label, (pill.max.y - card_top).max(0.)));
             }
+            eprintln!("{size} {area:?}: count overlap onto the card top, px: {overlaps:?}");
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");

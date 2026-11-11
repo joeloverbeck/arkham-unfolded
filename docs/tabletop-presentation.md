@@ -556,11 +556,13 @@ emptying/refilling. Markers sit in a band reserved above the location card,
 centered as a group with the enemy-presence marker left of any other marker.
 When a brass link enters through the card's top edge, markers sit on either side
 of it and a lone marker keeps its usual side. Map footprints include the band, so
-links route around it and standee slots stay outside it. Each count stays inside
-the band at every zoom: it is sized to the band's projected room beneath its
-token, up to the 11px counter-label size, and is omitted where digits would be
-illegible (Overview); the sideboard heading always states it. Keep markers
-distinct from printed symbols/gameplay tokens.
+links route around it and standee slots stay outside it. Each count is drawn at
+the 11px counter-label size in every view, including Overview, centered beneath
+its token and starting at the token's lower edge. Where the band's projected
+depth beneath the token is shorter than the pill, as at the Scenario and Overview
+distances, the pill extends onto the card's top margin; it is never shrunk or
+omitted to fit the band. Keep markers distinct from printed symbols/gameplay
+tokens.
 Counts cover sideboard cards only. Ordinary engaged enemies stay in investigator
 threat areas. If Massive content becomes supported, its single location-resident
 card belongs on the sideboard ready or exhausted; only a ready Massive enemy is

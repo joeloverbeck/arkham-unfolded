@@ -30,11 +30,8 @@ const LINK_CLEARANCE: f32 = 0.06;
 const TOKEN_HEIGHT: f32 = 0.10;
 /// Map tokens hang just inside the band's top, leaving the rest for the count.
 const BAND_TOP_MARGIN: f32 = 0.03;
-/// The count's largest size: the counter-label size used across the table.
-const PILL_MAX: f32 = 11.;
-/// Below this size digits are only a smudge, so the count is not drawn (as in
-/// Overview); the sideboard heading still states it.
-const PILL_MIN: f32 = 4.;
+/// The count keeps the counter-label size used across the table at every zoom.
+const COUNT_SIZE: f32 = 11.;
 
 /// Location identity decides the color. Study and Hallway share one because
 /// they are never in play together; every other Gathering location differs.
@@ -77,6 +74,15 @@ impl MarkerKind {
         match self {
             Self::EnemyPresence => -1.,
             Self::Attachment => 1.,
+        }
+    }
+
+    /// How far the body reaches from its center toward the card: the radius,
+    /// or the hexagon's flat edge.
+    fn reach(self, radius: f32) -> f32 {
+        match self {
+            Self::EnemyPresence => radius,
+            Self::Attachment => radius * std::f32::consts::FRAC_PI_6.cos(),
         }
     }
 }
@@ -127,8 +133,8 @@ pub(super) fn band_positions(
 }
 
 /// The count pill hangs from a map token's lower edge.
-fn pill_anchor(token: Vec3) -> Vec3 {
-    token + Vec3::new(0., 0.02, MAP_RADIUS)
+fn pill_anchor(kind: MarkerKind, token: Vec3) -> Vec3 {
+    token + Vec3::new(0., 0.02, kind.reach(MAP_RADIUS))
 }
 
 /// A token with a dark outline, a location-color ring, an ivory face and the
@@ -262,33 +268,28 @@ pub(super) fn spawn_token(
         .id()
 }
 
-/// A count pill's room: from its map token's lower edge down to the card's
-/// top edge, which bounds the band.
-#[derive(Component)]
-pub(super) struct CountPill {
-    floor: Vec3,
-}
-
 /// The group count in a small dark pill beneath a map token, using the
-/// counter-label renderer. Its size follows the band on screen; see [`fit_counts`].
+/// counter-label renderer at the counter-label size in every view. Where the
+/// band's projected room beneath the token is shorter than the pill, the pill
+/// overlaps the card's top margin rather than shrinking.
 pub(super) fn spawn_pill(
     commands: &mut Commands,
     context: &CardRender<'_>,
     accessible: String,
     count: usize,
+    kind: MarkerKind,
     token: Vec3,
-    card_edge: Vec3,
 ) -> Entity {
-    let at = pill_anchor(token);
+    let at = pill_anchor(kind, token);
     let label = scene::label(commands, context, count.to_string(), at, false);
     commands.entity(label).insert((
         AccessibleLabel::new(accessible),
         TextFont {
-            font_size: bevy::text::FontSize::Px(PILL_MAX),
+            font_size: bevy::text::FontSize::Px(COUNT_SIZE),
             ..default()
         },
         // A compact line keeps the pill as short as its digits.
-        bevy::text::LineHeight::Px(PILL_MAX),
+        bevy::text::LineHeight::Px(COUNT_SIZE),
         TextLayout::justify(Justify::Center).with_no_wrap(),
         Node {
             position_type: PositionType::Absolute,
@@ -297,53 +298,8 @@ pub(super) fn spawn_pill(
             ..default()
         },
         BackgroundColor(PILL),
-        CountPill { floor: card_edge },
     ));
     label
-}
-
-/// Size each shown count to the band's projected room beneath its token, so it
-/// never reaches the card at any zoom. It grows to the counter-label size when
-/// the band allows and is not drawn where digits would be illegible.
-#[allow(clippy::type_complexity)]
-pub(super) fn fit_counts(
-    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
-    mut pills: Query<(
-        &CountPill,
-        &WorldLabel,
-        &mut TextFont,
-        &mut bevy::text::LineHeight,
-        &mut Node,
-        &mut Visibility,
-    )>,
-) {
-    let (camera, transform) = *camera;
-    for (pill, anchor, mut font, mut line, mut node, mut visibility) in &mut pills {
-        if *visibility == Visibility::Hidden {
-            continue;
-        }
-        let (Ok(top), Ok(floor)) = (
-            camera.world_to_viewport(transform, anchor.0),
-            camera.world_to_viewport(transform, pill.floor),
-        ) else {
-            *visibility = Visibility::Hidden;
-            continue;
-        };
-        // Whole pixels keep the font atlas small while the camera zooms; the
-        // margin absorbs the layout's rounding to the pixel grid.
-        let size = (floor.y - top.y - 0.5).floor().min(PILL_MAX);
-        if size < PILL_MIN {
-            *visibility = Visibility::Hidden;
-            continue;
-        }
-        let pixels = bevy::text::FontSize::Px(size);
-        if font.font_size != pixels {
-            font.font_size = pixels;
-            *line = bevy::text::LineHeight::Px(size);
-            node.padding = UiRect::axes(px((size * 0.45).round()), px(0.));
-            node.border_radius = BorderRadius::all(px((size * 0.64).round()));
-        }
-    }
 }
 
 /// Two circular arcs meeting at sharp corners on the horizontal axis.
