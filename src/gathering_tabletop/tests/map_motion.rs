@@ -1,4 +1,5 @@
 use super::*;
+use crate::gathering_tabletop::map_motion::{HOP, REST};
 
 fn movement_session() -> Session {
     let mut session = review_saves::expanded_map_transition();
@@ -94,6 +95,185 @@ fn settle(app: &mut App) {
     panic!("Map presentation did not naturally complete");
 }
 
+const STEP: f32 = 0.02;
+/// The beat's first rendered frame may trail the commit by a few updates.
+const LAG: f32 = 0.06;
+
+fn location_size() -> Vec2 {
+    Vec2::new(
+        crate::tabletop_pieces::CARD_WIDTH,
+        crate::tabletop_pieces::CARD_LENGTH,
+    )
+}
+
+fn moving_marker(app: &mut App, title: &str) -> Option<Transform> {
+    let name = format!("Moving {title}");
+    let world = app.world_mut();
+    world
+        .query::<(&Name, &Transform)>()
+        .iter(world)
+        .find(|(marker, _)| marker.as_str() == name)
+        .map(|(_, at)| *at)
+}
+
+fn marker_radius(app: &mut App, title: &str) -> f32 {
+    use bevy::camera::primitives::MeshAabb;
+    let name = format!("Moving {title}");
+    let world = app.world_mut();
+    let handle = world
+        .query::<(&Name, &Mesh3d)>()
+        .iter(world)
+        .find(|(marker, _)| marker.as_str() == name)
+        .map(|(_, mesh)| mesh.0.clone())
+        .unwrap();
+    let aabb = world
+        .resource::<Assets<Mesh>>()
+        .get(&handle)
+        .unwrap()
+        .get_aabb()
+        .unwrap();
+    aabb.half_extents.x.max(aabb.half_extents.z)
+}
+
+/// The point halfway along the brass link the table displays between two rooms,
+/// measured along the link itself rather than between its ends.
+fn displayed_link_midpoint(app: &mut App, from: &str, to: &str) -> Vec2 {
+    use bevy::mesh::VertexAttributeValues;
+    let play = app.world().resource::<Table>().view().play.unwrap();
+    let map = crate::tabletop_gathering_map::GatheringMap::new(
+        play.scenario
+            .locations
+            .iter()
+            .filter(|room| !play.scenario.location_in_victory_display(&room.code))
+            .map(|room| (room.code.as_str(), room.revealed)),
+        location_size(),
+    )
+    .unwrap();
+    let route: Vec<Vec2> = map
+        .connection_route(from, to)
+        .unwrap()
+        .iter()
+        .map(|point| point.xz())
+        .collect();
+    let half = route
+        .windows(2)
+        .map(|pair| pair[0].distance(pair[1]))
+        .sum::<f32>()
+        / 2.;
+    let mut walked = 0.;
+    let mut midpoint = None;
+    for pair in route.windows(2) {
+        let length = pair[0].distance(pair[1]);
+        if walked + length >= half {
+            midpoint = Some(pair[0].lerp(pair[1], (half - walked) / length));
+            break;
+        }
+        walked += length;
+    }
+    let midpoint = midpoint.unwrap();
+    // The rendered brass, not only the routing data, passes under that point.
+    let world = app.world_mut();
+    let parts: Vec<Entity> = world
+        .query_filtered::<&Children, With<crate::tabletop_gathering_map::ConnectionVisual>>()
+        .iter(world)
+        .flat_map(|children| children.to_vec())
+        .collect();
+    let meshes = world.resource::<Assets<Mesh>>();
+    let on_brass = parts.iter().any(|part| {
+        let Some(mesh) = world.get::<Mesh3d>(*part) else {
+            return false;
+        };
+        let Some(VertexAttributeValues::Float32x3(positions)) = meshes
+            .get(&mesh.0)
+            .unwrap()
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            return false;
+        };
+        positions.chunks(3).any(|triangle| {
+            let [a, b, c] = [0, 1, 2].map(|i| Vec2::new(triangle[i][0], triangle[i][2]));
+            let sides = [
+                (b - a).perp_dot(midpoint - a),
+                (c - b).perp_dot(midpoint - b),
+                (a - c).perp_dot(midpoint - c),
+            ];
+            sides.iter().all(|side| *side >= -1e-5) || sides.iter().all(|side| *side <= 1e-5)
+        })
+    });
+    assert!(
+        on_brass,
+        "The route midpoint must lie on the displayed brass"
+    );
+    midpoint
+}
+
+type Sample = (f32, Transform, Option<Transform>);
+
+/// Advance from a committed move through its whole travel beat, sampling the
+/// mover and an accompanying enemy marker against time since the beat began.
+fn sample_travel(app: &mut App, who: Investigator, enemy: Option<&str>) -> Vec<Sample> {
+    let mut samples = vec![];
+    let mut time = 0.;
+    while time < 2. * HOP + REST - LAG {
+        draws::tick(app, STEP);
+        time += STEP;
+        let marker = enemy.and_then(|title| moving_marker(app, title));
+        samples.push((time, standee(app, who), marker));
+    }
+    samples
+}
+
+fn sample_at(samples: &[Sample], time: f32) -> &Sample {
+    samples
+        .iter()
+        .min_by(|a, b| (a.0 - time).abs().total_cmp(&(b.0 - time).abs()))
+        .unwrap()
+}
+
+/// Mid-flight moments of the first and second hop.
+fn hops() -> [f32; 2] {
+    [HOP / 2., HOP + REST + HOP / 2.]
+}
+
+fn resting(samples: &[Sample]) -> Vec<&Sample> {
+    let rest: Vec<_> = samples
+        .iter()
+        .filter(|(time, ..)| *time >= HOP + LAG && *time <= HOP + REST - LAG)
+        .collect();
+    assert!(rest.len() >= 3, "The rest must be perceptible");
+    rest
+}
+
+/// Both hops carry the standee raised; between them it stands still, upright and
+/// at its base height, on the midpoint of the displayed brass arrow.
+fn assert_rests_on_the_arrow(samples: &[Sample], start: Transform, midpoint: Vec2) -> Transform {
+    for hop in hops() {
+        let lifted = sample_at(samples, hop).1;
+        assert!(
+            lifted.translation.y > start.translation.y + 0.1,
+            "Each hop lifts the standee: {lifted:?} at {hop}s"
+        );
+        assert_eq!(lifted.scale, start.scale, "Lift the whole physical piece");
+    }
+    let rest = resting(samples);
+    let pose = rest[0].1;
+    for (time, at, _) in &rest {
+        assert_eq!(
+            *at, pose,
+            "The standee stays still throughout the rest ({time}s)"
+        );
+    }
+    assert!(
+        pose.translation.xz().abs_diff_eq(midpoint, 0.001),
+        "Rest at the arrow's midpoint {midpoint:?}, not {:?}",
+        pose.translation
+    );
+    assert!((pose.translation.y - start.translation.y).abs() < 0.001);
+    assert!(pose.rotation.abs_diff_eq(start.rotation, 0.001));
+    assert_eq!(pose.scale, start.scale);
+    pose
+}
+
 fn assert_card_lands_with_enemy_arrival(app: &mut App, id: u16) {
     let committed = app
         .world()
@@ -109,7 +289,10 @@ fn assert_card_lands_with_enemy_arrival(app: &mut App, id: u16) {
         .position(|enemy| enemy.card.id == id)
         .unwrap();
     let target = &committed.scenario.enemies[slot];
-    for _ in 0..30 {
+    // The longest travel beat is an investigator's two hops and rest; a few
+    // extra frames cover the beat's first render.
+    let bound = ((2. * HOP + REST) / 0.05).ceil() as usize + 6;
+    for _ in 0..bound {
         let displayed = app
             .world()
             .resource::<Table>()
@@ -249,6 +432,160 @@ fn hunter_travel_keeps_other_enemies_in_place_then_transfers_its_card_and_engage
     }
     assert_eq!(app.world().resource::<Table>().session, committed);
     assert_eq!(continuity::load_session(&save).unwrap(), committed);
+}
+
+fn continue_stories(app: &mut App) {
+    while app
+        .world()
+        .resource::<Table>()
+        .presentation
+        .story()
+        .is_some()
+    {
+        app.world_mut()
+            .resource_mut::<Actions>()
+            .0
+            .push(Action::ContinueStory);
+        app.update();
+    }
+}
+
+#[test]
+fn a_first_entry_hops_to_the_brass_arrow_rests_then_hops_into_the_room() {
+    let session = movement_session();
+    let play = session.observe().play.unwrap();
+    let who = play.actor.unwrap();
+    let from = play.players[who.index()].location.clone();
+    let dir = tempfile::tempdir().unwrap();
+    let save = dir.path().join("hops.json");
+    let mut app = host_with_table(Table::new(session, save.clone()), true);
+    continue_stories(&mut app);
+    finish_presentation(&mut app);
+    let start = standee(&mut app, who);
+    let midpoint = displayed_link_midpoint(&mut app, &from, "01113");
+    choose(&mut app, "action:ordinary:move:01113");
+    let committed = app.world().resource::<Table>().session.clone();
+    assert_eq!(continuity::load_session(&save).unwrap(), committed);
+    let samples = sample_travel(&mut app, who, None);
+    assert_rests_on_the_arrow(&samples, start, midpoint);
+    assert_eq!(
+        room(&app, "01113"),
+        (false, 0),
+        "Both hops and the rest are one travel beat, before the room turns"
+    );
+    settle(&mut app);
+    assert_eq!(room(&app, "01113"), (true, 6));
+    let arrived = standee(&mut app, who);
+    assert!(arrived.translation.xz().distance(midpoint) > 0.5);
+    assert!((arrived.translation.y - start.translation.y).abs() < 0.001);
+    assert_eq!(app.world().resource::<Table>().session, committed);
+}
+
+/// Tony, engaged with the Ghoul Priest, moves from the Hallway into the Cellar.
+/// Returns the decision before the one that completes the move, and that choice.
+fn engaged_move() -> (Session, String) {
+    let mut session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringPriestDefeat);
+    let mut id = "action:ordinary:move:01114".to_owned();
+    for _ in 0..20 {
+        let mut next = session.clone();
+        next.choose(next.observe().revision, &id).unwrap();
+        if next.observe().play.unwrap().players[Investigator::Tony.index()].location == "01114" {
+            return (session, id);
+        }
+        session = next;
+        id = session
+            .observe()
+            .choices
+            .iter()
+            .find(|choice| choice.id != "undo")
+            .unwrap()
+            .id
+            .clone();
+    }
+    panic!("Tony did not complete his move within its bound");
+}
+
+#[test]
+fn an_engaged_enemy_hops_and_rests_in_step_beside_its_investigator() {
+    let (session, id) = engaged_move();
+    let before = session.observe().play.unwrap();
+    assert_eq!(before.players[Investigator::Tony.index()].location, "01112");
+    let priest = before
+        .scenario
+        .enemies
+        .iter()
+        .find(|enemy| enemy.engaged == Some(Investigator::Tony))
+        .unwrap()
+        .clone();
+    let dir = tempfile::tempdir().unwrap();
+    let save = dir.path().join("engaged.json");
+    let mut app = host_with_table(Table::new(session, save.clone()), true);
+    continue_stories(&mut app);
+    finish_presentation(&mut app);
+    let start = standee(&mut app, Investigator::Tony);
+    let midpoint = displayed_link_midpoint(&mut app, "01112", "01114");
+    choose(&mut app, &id);
+    let committed = app.world().resource::<Table>().session.clone();
+    assert_eq!(continuity::load_session(&save).unwrap(), committed);
+    // Earlier moments of the same commit may precede the travel beat; its
+    // marker appears as the beat begins.
+    let mut waited = 0.;
+    while moving_marker(&mut app, &priest.card.title).is_none() {
+        assert!(
+            waited < 5.,
+            "No travel beat began: {:?}",
+            app.world().resource::<Table>().notice
+        );
+        draws::tick(&mut app, STEP);
+        waited += STEP;
+    }
+    assert_eq!(standee(&mut app, Investigator::Tony), start);
+    let radius = marker_radius(&mut app, &priest.card.title);
+    let samples = sample_travel(&mut app, Investigator::Tony, Some(&priest.card.title));
+    let standee_rest = assert_rests_on_the_arrow(&samples, start, midpoint);
+    let rest = resting(&samples);
+    let marker_rest = rest[0]
+        .2
+        .expect("The engaged enemy travels with its investigator");
+    for (time, _, marker) in &rest {
+        assert_eq!(
+            *marker,
+            Some(marker_rest),
+            "The enemy rests with its investigator ({time}s)"
+        );
+    }
+    for hop in hops() {
+        let marker = sample_at(&samples, hop)
+            .2
+            .expect("The enemy hops with its investigator");
+        assert!(
+            marker.translation.y > marker_rest.translation.y + 0.1,
+            "The enemy is lifted in step: {marker:?} at {hop}s"
+        );
+    }
+    // Set down on the table beside the standee, clear of its base, at the arrow.
+    assert!((marker_rest.translation.y - standee_rest.translation.y).abs() < 0.15);
+    let apart = marker_rest
+        .translation
+        .xz()
+        .distance(standee_rest.translation.xz());
+    assert!(
+        apart >= crate::tabletop_standees::radius_for(location_size()) + radius,
+        "The resting enemy marker must not overlap the standee ({apart})"
+    );
+    assert!(marker_rest.translation.xz().distance(midpoint) < location_size().x);
+    settle(&mut app);
+    let after = app.world().resource::<Table>().view().play.unwrap();
+    let moved = after
+        .scenario
+        .enemies
+        .iter()
+        .find(|enemy| enemy.card.id == priest.card.id)
+        .unwrap();
+    assert_eq!(moved.location, "01114");
+    assert_eq!(moved.engaged, Some(Investigator::Tony));
+    assert_eq!(app.world().resource::<Table>().session, committed);
 }
 
 #[test]
