@@ -63,7 +63,7 @@ fn writer(path: PathBuf, elapsed: Duration) -> impl FnMut(&Image) -> Result<(), 
     }
 }
 
-fn write_image(image: Image, path: &std::path::Path) -> Result<(), String> {
+pub(crate) fn write_image(image: Image, path: &std::path::Path) -> Result<(), String> {
     let image = image
         .try_into_dynamic()
         .map_err(|error| error.to_string())?;

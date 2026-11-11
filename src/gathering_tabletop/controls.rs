@@ -1271,6 +1271,9 @@ pub(super) fn render(
         },
         content,
         |row, action| {
+            if let Some(id) = action.choice() {
+                row.insert(ChoiceControl(id.to_owned()));
+            }
             row.observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
                 queue.0.push(action.clone());
             });

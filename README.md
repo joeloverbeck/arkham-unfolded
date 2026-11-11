@@ -49,6 +49,57 @@ scripts/dev cargo run --locked --bin arkham-driver -- --inspect /absolute/path/t
 
 Inspection validates the save, prints one JSON response containing the player-visible observation, and exits without reading commands, autosaving, or creating lock/recovery files. Missing, incompatible, invalid and privileged verification saves are refused. `--inspect` cannot be combined with `--load` or `--save`; the driver's live mode still saves on startup and accepts JSON-line player commands.
 
+### Agent seat
+
+An agent can sit at the real Gathering table with no window. This is a decision-only first increment under [#153](https://github.com/joeloverbeck/arkham-unfolded/issues/153); the owner has not yet decided to adopt, narrow or drop it.
+
+```sh
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop --experiment gathering --agent-seat --save /absolute/path/to/attempt.json
+```
+
+It is the same table, rules session, save path and artwork verification as native play: an existing compatible file resumes, an unused path starts setup, and each committed decision autosaves there. `--experiment gathering` and `--save` are required. `--art-root` and `--initial-view` work as above; `--attempt` and `--screenshot` are refused. The seat opens no window and no dialog: it has no window event loop, and artwork recovery, the artwork-folder chooser and the return to scenario selection are not part of it. Credits links, which hand an address to the desktop's opener, sit behind the Menu button that the seat cannot reach (see the limits below); nothing else guards them. A startup problem, including a refused option, is one `refused` response, the same text on standard error and an unsuccessful exit.
+
+The seat reads one JSON request per line on standard input and writes one JSON response per line on standard output. Diagnostics go to standard error. The first response has status `ready` and names the graphics `adapter` that rendered the table. Every response carries `ok`, `mode: "seat"`, `status`, an `error` when refused, the player-visible `observation` exactly as the headless driver prints it, and `table`, what the table shows:
+
+- `settled` and `pending`: whether the table will accept input, and what is still in progress when it will not. A dialog or menu waiting for the player is settled.
+- `shows_latest`: false while the table is still presenting its way to the observation, for example behind a reading dialog.
+- `modal`: the surface that captures the table, such as `inspection` or `story reading`, or `null`.
+- `notice`: the decision panel's notice, such as a decision that was not committed, or `null`.
+- `components`: each shown piece that selects something, with its `name`, `label`, logical screen `position`, `on_screen`, and `available` when it shows the gameplay availability cue. Names are the table's source identities, such as `investigator:tony`, `card:23`, `location:01111`, `deck:tony`, `chaos-bag` and `token:0`. A card keeps the bare name; another piece showing the same source adds what it is, such as `investigator:tony/standee` or `location:01111/clues`.
+- `menu`: the open contextual menu and its `rows`, or `null`.
+- `controls`: every other shown button. Rows and controls carry `choice` (the choice identity, or `null` for controls such as Continue, Inspect and Menu), `label`, `position`, `on_screen` and `focused`.
+
+| Request | Effect |
+| --- | --- |
+| `{"op":"observe"}` | Return the current observation without advancing the table. |
+| `{"op":"activate","revision":N,"component":"NAME"}` | Move the pointer onto the named component, then press and release. |
+| `{"op":"activate","revision":N,"choice":"ID"}` | The same for the one shown control offering that choice. |
+| `{"op":"key","key":"Escape"}` | Press and release one key: `Escape`, `Enter`, `Space`, `Tab`, `Home`, `End`, `PageUp`, `PageDown`, the four `Arrow` keys, `KeyW`, `KeyA`, `KeyS`, `KeyD`, `Minus` or `Equal`. |
+| `{"op":"settle","steps":N}` | Step the table until it settles or `steps` is reached (default 1,800, at most 7,200). An `unsettled` response names what remains; ask again to continue. |
+| `{"op":"capture","path":"/absolute/path.png"}` | Write a picture of the table. The response follows the completed file. |
+| `{"op":"quit"}` | End the session. The attempt stays resumable. |
+
+Selecting a component and choosing from its menu are two activations, as for a player. `revision` is the observation revision the request was decided on; a different current revision is refused as outdated. Names match exactly: an absent, ambiguous or off-screen name is refused, never matched to something near. Activations and keys are refused while the table is busy, because the table drops input while presenting. A key that moves the camera leaves the table busy until the camera rests, so settle before the next request. The seat rests the pointer on a part of the named component that nothing covers, as a player would beside a counter standing on a card; when it presses at a later point, `covered` reports the first point it tried and what the pointer found there. When every part is covered it answers `missed`, reports what the pointer is over in `hit` and presses nothing. Table time advances only in the seat's own fixed steps of one sixtieth of a second, never with the wall clock.
+
+Controls without a choice identity are reached with `Tab` and `Enter` where the table's tab order includes them, or closed with `Escape`. Known limits of this increment: the **Menu** button is outside that tab order, so the utilities menu (action history, save, restart, motion) is out of the seat's reach; the Crystal Pendulum and Violin pickers compose their choice from several presses and are keyboard-only. It is not established whether the table could drop a choice pressed on a dialog while consequences still resolve behind it, after the seat has answered `activated`; an unchanged `revision` in the response would show it.
+
+Every committed decision is saved, so a shell that runs one command at a time can send a batch of requests in one launch and resume the attempt in the next. Camera position and an open menu do not survive a launch. A harness that can keep a process open, or a named pipe, holds one session instead.
+
+```sh
+printf '%s\n' '{"op":"observe"}' '{"op":"quit"}' |
+  target/debug/arkham-tabletop --experiment gathering --agent-seat --save /absolute/path/to/attempt.json
+```
+
+**Evidence limits.** A seat run can establish presentation logic, layout, controls and rendered output on the seat's image, with real artwork and a real graphics adapter. It cannot establish window behaviour, display pacing, focus or physical input, and it is not acceptance of native play. The seat's own admission requires decoded artwork, the registered symbol font, ready render pipelines and completed GPU work for its image; it makes no claim about display rate, and native rendering health is unchanged. Protocol behaviour is checked without a graphics card in the ordinary tests. The real table, including admission, mesh picking, capture, resuming and the end of a session when artwork becomes unavailable, is checked only where the prepared collection and a graphics adapter exist:
+
+```sh
+ARKHAM_GATHERING_TEST_ASSETS=/absolute/path/to/prepared-collection \
+  scripts/dev cargo test --locked --features tabletop --lib \
+  gathering_tabletop::seat::tests::the_real_table_is_admitted_and_played_without_a_window \
+  -- --ignored --exact
+```
+
 ### Start fresh after an incompatible save
 
 Select **New attempt**. Keep the rejected file; no migration or repair is performed. Replay-era format-1 records are unsupported, and older format-3 records can already be incompatible with the current Gathering implementation. The error `Gathering setup does not match its recorded decisions and pinned inputs` means validation could not reconstruct that record, including its recorded history. This retirement change preserves saves loadable at its baseline; it does not repair previously incompatible records. See [replay retirement](docs/adr/0003-retire-replay.md) and [earlier compatibility notes](docs/research/gathering-wagers-keys-and-token-layout.md#implementation-and-verification).

@@ -1,5 +1,7 @@
 //! The Gathering rules, persistence and native presentation.
 
+#[cfg(feature = "tabletop")]
+mod agent_seat;
 pub mod asset_config;
 pub mod assets;
 #[cfg(feature = "tabletop")]
