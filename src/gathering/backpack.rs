@@ -1,6 +1,7 @@
 //! Original Backpack: a finite private search and facedown playable attachments.
 use super::{
     CardView, Investigator, cards,
+    option_labels::counted,
     runtime::{AssetState, Frame, Game, PendingRevelation},
 };
 use crate::{Choice, RuleError};
@@ -99,8 +100,8 @@ pub(super) fn choices(game: &Game, decision: &BackpackDecision) -> Vec<Choice> {
             let mut choices = vec![choice(
                 "backpack:attach",
                 format!(
-                    "Attach {} selected cards facedown; shuffle the deck",
-                    selected.len()
+                    "Attach {} facedown; shuffle the deck",
+                    counted(selected.len(), "selected card", "selected cards")
                 ),
             )];
             for id in searched {

@@ -2,6 +2,7 @@
 
 use super::{
     Investigator, cards,
+    option_labels::{self, EffectiveCost, counted},
     runtime::{Frame, Game, Skill, TestOperation},
     scenario,
 };
@@ -83,7 +84,7 @@ pub(super) fn pay_frozen_surcharge(
         })?;
     if surcharge > 0 {
         player.frozen_action_used = true;
-        game.history.push(format!("{} pays {surcharge} additional actions for Frozen in Fear during {source}; only the base action cost is waived. [01164; FAQ2.24]",actor.name()));
+        game.history.push(format!("{} pays {} for Frozen in Fear during {source}; only the base action cost is waived. [01164; FAQ2.24]",actor.name(), counted(surcharge, "additional action", "additional actions")));
     }
     Ok(surcharge)
 }
@@ -113,16 +114,15 @@ pub(super) fn entry_choices(game: &Game, entry: &AssetEntry) -> Vec<Choice> {
             )];
             let surcharge = frozen_surcharge(game, *actor);
             if game.players[actor.index()].ordinary_actions >= surcharge {
+                // Sword Cane's own cost (its action and exhausting it) is
+                // waived; Frozen in Fear's additional actions are not.
                 choices.extend(cane_choices(game, *actor, *asset, true).into_iter().map(
                     |mut candidate| {
                         candidate.id = format!("entry:{asset}:{}", candidate.id);
-                        candidate.label =
-                            format!("Trigger without its activation costs: {}", candidate.label);
-                        if surcharge > 0 {
-                            candidate.label.push_str(&format!(
-                                "; pay {surcharge} additional actions for Frozen in Fear"
-                            ));
-                        }
+                        candidate.label = option_labels::label(
+                            EffectiveCost::actions(surcharge),
+                            &format!("{}, without exhausting it", candidate.label),
+                        );
                         candidate
                     },
                 ));

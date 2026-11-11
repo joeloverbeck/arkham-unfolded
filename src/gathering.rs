@@ -26,6 +26,7 @@ pub mod continuity;
 pub mod inspection;
 mod live;
 mod moments;
+mod option_labels;
 mod peter;
 mod phases;
 pub use moments::{DeckStep, DrawBatch, DrawCue, DrawSource, PresentationMoment};

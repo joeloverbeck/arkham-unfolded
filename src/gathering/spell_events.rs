@@ -3,6 +3,7 @@
 use super::{
     Investigator, cards,
     encounter_search::{EventEffect, PaidEvent, SearchDecision},
+    option_labels::{self, EffectiveCost, counted},
     runtime::{AssetView, Frame, Game, Skill, TestOperation},
     scenario,
 };
@@ -232,11 +233,12 @@ fn options(
                         .map(|target| target.card.title.as_str())
                         .unwrap_or("Watcher from Another Dimension in your hand");
                     format!("; evade {title} (copy {enemy})")
-                } else {
-                    String::new()
-                };
-                let additional = if surcharge > 0 {
-                    format!("; pay {surcharge} additional actions for Frozen in Fear")
+                } else if let TestOperation::Investigate { location, .. } = &effect.operation {
+                    option_labels::parenthesized(&option_labels::investigation_details(
+                        &game.scenario,
+                        location,
+                        &[],
+                    ))
                 } else {
                     String::new()
                 };
@@ -252,15 +254,20 @@ fn options(
                 options.push(EventOption {
                     choice: Choice {
                         id,
-                        label: format!(
-                            "Play {} for {} resources{}{target}{additional}",
-                            card.title,
-                            payment.cost,
-                            if payment.robes.is_some() {
-                                " (exhaust Robes)"
-                            } else {
-                                ""
-                            }
+                        // Played through Uncage, the event's own action is
+                        // waived but Frozen in Fear's surcharge is not.
+                        label: option_labels::label(
+                            EffectiveCost::actions(surcharge),
+                            &format!(
+                                "Play {} for {}{}{target}",
+                                card.title,
+                                counted(payment.cost, "resource", "resources"),
+                                if payment.robes.is_some() {
+                                    " (exhaust Robes)"
+                                } else {
+                                    ""
+                                }
+                            ),
                         ),
                         cancel_faces: vec![],
                     },

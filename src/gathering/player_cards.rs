@@ -6,6 +6,7 @@ pub(super) use super::asset_entry::{
 use super::{
     CardView, Investigator,
     cards::{self, CardDefinition, CardKind},
+    option_labels::counted,
     runtime::{AssetState, Frame, Game, Phase, PlayerState},
 };
 use crate::{Choice, RuleError, TokenFace};
@@ -509,7 +510,7 @@ pub(super) fn placement_choices(game: &Game, prepared: &PreparedAsset) -> Vec<Ch
             Choice {
                 id: format!("asset:{}:replace:{identities}", prepared.card.id),
                 label: format!(
-                    "{}; afterward: {}",
+                    "{}; afterward {}",
                     if ids.is_empty() {
                         format!(
                             "Put {} into play without discarding an asset",
@@ -620,7 +621,11 @@ fn asset_choices(game: &Game, actor: Investigator, mode: PlayMode) -> Vec<Choice
             for payment in payments {
                 for discarded in replacement_choices(player, definition) {
                     let mut id = format!("{}:{}", mode.prefix(), card.id);
-                    let mut label = format!("Play {} for {} resources", card.title, payment.cost);
+                    let mut label = format!(
+                        "Play {} for {}",
+                        card.title,
+                        counted(payment.cost, "resource", "resources")
+                    );
                     if !discarded.is_empty() {
                         id.push_str(":replace:");
                         id.push_str(
@@ -644,7 +649,7 @@ fn asset_choices(game: &Game, actor: Investigator, mode: PlayMode) -> Vec<Choice
                             })
                             .collect();
                         label.push_str(&format!(
-                            "; discard {} in that order to make room; afterward: {}",
+                            "; discard {} in that order to make room; afterward {}",
                             names.join(", "),
                             slot_summary_after(player, definition, &discarded)
                         ));
@@ -756,7 +761,7 @@ fn slot_summary_after(
     super::slots::usage(&placement_definitions(player, incoming, discarded))
         .iter()
         .filter(|slot| slot.used > 0 || slot.spell_ritual > 0)
-        .map(|slot| slot.label())
+        .map(|slot| slot.summary())
         .collect::<Vec<_>>()
         .join(" · ")
 }
