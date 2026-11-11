@@ -1,6 +1,7 @@
 mod check;
 mod ci;
 mod desktop;
+mod github;
 mod handoff;
 mod interaction;
 mod merge;
@@ -8,6 +9,7 @@ mod native;
 mod portal;
 use arkham_tools::process;
 mod profile;
+mod publish;
 mod reader;
 mod renderer;
 mod review;
@@ -33,6 +35,11 @@ enum Command {
     CheckPublicHandoff(handoff::Check),
     /// Verify exact PR revisions and required checks, then perform one authorized merge.
     MergeReviewed(merge::MergeArgs),
+    /// Post or replace public issue and PR text from a file, proved by exact readback.
+    Publish {
+        #[command(subcommand)]
+        command: publish::Command,
+    },
     /// Read a bounded page of whole UTF-8 lines, bound to the source hash.
     ReadContext(reader::Args),
     /// Read multiple excerpts under one shared output budget and source identity.
@@ -82,6 +89,7 @@ fn main() -> ExitCode {
         Command::CheckSummary(args) => check::summary::run(args),
         Command::CheckPublicHandoff(args) => handoff::run(args).map(|_| 0),
         Command::MergeReviewed(args) => merge::run(args),
+        Command::Publish { command } => publish::run(command),
         Command::ReadContext(args) => write_context_page(reader::page(args)),
         Command::ReadContextBatch(args) => write_context_page(reader::batch(args)),
         Command::SearchContext(args) => write_context_page(reader::search(args)),

@@ -11,23 +11,15 @@ This selects the GitHub client for repository work. If a different operation nee
 - **Create:** `gh issue create --title "..." --body-file /tmp/issue.md`.
 - **Read:** `gh issue view <number> --json number,title,state,body,labels`. Read relevant comments separately as below.
 - **List:** `gh issue list --state open --limit 100 --json number,title,state,labels`, with appropriate label and state filters. Inspect selected issue bodies separately; paginate when the task requires every matching issue.
-- **Comment:** `gh issue comment <number> --body-file /tmp/comment.md`.
+- **Comment:** `scripts/tools publish comment --issue <number> --body-file /tmp/comment.md`.
 - **Labels:** `gh issue edit <number> --add-label "..." --remove-label "..."`, using the mapping in `triage-labels.md`.
-- **Close:** merging a PR never closes its issue: auto-close is disabled, and closure is a separate decision once the acceptance criteria and owner acceptance are satisfied ([GitHub administration](github-administration.md#accepted-publication-and-contribution-policy)). Post the explanation with `gh issue comment`, then use `gh issue close <number>`. Comment separately even when the issue is already closed.
+- **Close:** merging a PR never closes its issue: auto-close is disabled, and closure is a separate decision once the acceptance criteria and owner acceptance are satisfied ([GitHub administration](github-administration.md#accepted-publication-and-contribution-policy)). Post the explanation and close in one step with `scripts/tools publish comment --issue <number> --body-file /tmp/comment.md --close`. An issue that is already closed still gets its comment and stays closed.
 
 Write multiline bodies to a temporary file and pass `--body-file`. Read back the affected issue, comment, or label after every write. If a write times out or its result is unclear, inspect remote state before retrying.
 
 When preparing a publication artifact, require a completed exit code of `0` from each producer before consuming its output. For an already-authorized sequence with no intervening decision, put the dependent commands in one shell invocation joined by `&&`, including the final mutation. Across separate tool calls, inspect the returned status before issuing the next call: a running session must reach a successful terminal result first. Awaiting a tool response alone does not establish success. Verify the completed artifact against the intended content or recorded candidate digest before the dependent GitHub write. On failure, stop that sequence, retain the error, and inspect remote state before retrying an ambiguous write.
 
-For an exact comment-body readback followed by an authorized issue closure, replace `COMMENT_ID` with the returned comment ID and `ISSUE_NUMBER` with the selected issue number. Save the response, compare its decoded `body` with the submitted file, and close only after it matches:
-
-```sh
-gh api repos/joeloverbeck/arkham-unfolded/issues/comments/COMMENT_ID > /tmp/comment-readback.json &&
-jq -e --rawfile expected /tmp/comment.md '.body == $expected' /tmp/comment-readback.json &&
-gh issue close ISSUE_NUMBER --repo joeloverbeck/arkham-unfolded
-```
-
-Equality exits successfully; a failed read or mismatch prevents closure. This preserves body whitespace while avoiding the extra output newline from `gh api --jq .body`. Read back the issue state after closure. For a readback without a dependent write, end the sequence after `jq`.
+Public text goes through `scripts/tools publish`: `comment` (with `--close` for an authorized closure), `edit-comment --id <comment-id>` for the current handoff, and `pr-body --pr <number>`. Each runs the [public handoff preflight](native-verification.md#public-handoff-preflight) on the exact text before contacting GitHub, sends the file's bytes as the request body, and reads the stored text back. A mismatch stops the command before any further write, such as a closure. With raw `gh api`, `-f body=@FILE` sends the literal text `@FILE`; only `-F` and `--input` read files.
 
 For an authorized PR, identify the workflow run for the accepted head once, then
 keep one watcher:
@@ -41,7 +33,8 @@ If the tool returns a running session, wait on that same session for up to
 itself instead of alternating short polls with separate sleeps. Use its output
 for intermediate status; a second watcher or repeated `gh run view` calls add no evidence while
 it remains connected. After it exits, read the terminal run status and `headSha`
-and verify the expected revision before the guarded merge. If the connection is
+and verify the expected revision before the guarded merge with
+[`scripts/tools merge-reviewed`](github-administration.md#merge-an-accepted-pr). If the connection is
 lost, inspect the run once before reconnecting; losing the watcher does not
 authorize rerunning CI. A failed run needs the failure diagnosis required by
 `OPS-3` before any repair or retry.
@@ -61,7 +54,7 @@ Before changing GitHub settings or diagnosing a publication refusal, read [GitHu
 
 ## Current handoff
 
-Designate one issue comment as the current handoff and retain its URL. It owns the current candidate, completed checks, remaining acceptance checklist, next acceptance boundary and publication status. Read that comment before updating it, edit it by identity, and verify the exact body afterward. Reuse it as results and owner decisions arrive; carry forward accepted checks unless a later change invalidates them.
+Designate one issue comment as the current handoff and retain its URL. It owns the current candidate, completed checks, remaining acceptance checklist, next acceptance boundary and publication status. Read that comment before updating it, then replace it by identity with `scripts/tools publish edit-comment`, which verifies the exact body. Reuse it as results and owner decisions arrive; carry forward accepted checks unless a later change invalidates them.
 
 Keep that comment compact: state the candidate, summarize verification, list only remaining decisions, and link the accepted brief and dated evidence. Historical bodies belong behind links; collapsed `<details>` still sends the full text to API readers. If the current comment is the only copy of the accepted brief, preserve its exact text once in a dated comment during the authorized handoff update. Verify that archive by its returned identity before replacing the original with the compact handoff and archive link. Reuse an existing preserved brief rather than posting another copy. Leave dated records unchanged; later decisions receive their own linked records.
 

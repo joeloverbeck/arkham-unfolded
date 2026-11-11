@@ -16,6 +16,12 @@ pub fn run(args: &[OsString]) -> ExitCode {
         .open(journal)
         .unwrap();
     writeln!(trace, "{}", args.join("\t")).unwrap();
+    // A request body read from standard input is kept for the test to inspect.
+    if args.windows(2).any(|pair| pair == ["--input", "-"]) {
+        let mut input = Vec::new();
+        std::io::Read::read_to_end(&mut std::io::stdin(), &mut input).unwrap();
+        fs::write(root.join(format!("{count}.input")), input).unwrap();
+    }
     let expected = fs::read_to_string(root.join(format!("{count}.args"))).unwrap_or_default();
     if args.join("\n") != expected {
         eprintln!("Unexpected gh invocation {count}: {args:?}; expected {expected:?}");

@@ -1,17 +1,10 @@
 //! One authorized protected-main merge; every prerequisite must succeed first.
 
-use crate::process::{Completion, OwnedChild};
-use anyhow::{Context, Result, bail, ensure};
+use crate::github::{REPO, gh, json};
+use anyhow::{Context, Result, ensure};
 use clap::Args;
-use serde::{Deserialize, de::DeserializeOwned};
-use std::{
-    collections::HashSet,
-    fs,
-    process::{Command, Stdio},
-    time::Duration,
-};
-
-const REPO: &str = "github.com/joeloverbeck/arkham-unfolded";
+use serde::Deserialize;
+use std::collections::HashSet;
 
 #[derive(Args)]
 pub struct MergeArgs {
@@ -207,35 +200,4 @@ fn read_pull(pr: u64) -> Result<Pull> {
         "--json",
         "number,state,isDraft,headRefOid,baseRefName,baseRefOid,mergeStateStatus,mergeCommit",
     ])
-}
-
-fn json<T: DeserializeOwned>(args: &[&str]) -> Result<T> {
-    serde_json::from_slice(&gh(args)?).context("Invalid or incomplete GitHub JSON response")
-}
-
-fn gh(args: &[&str]) -> Result<Vec<u8>> {
-    // Files avoid pipe backpressure while the shared process owner enforces a
-    // finite wait and cleans up on interruption or failure.
-    let stdout = tempfile::NamedTempFile::new()?;
-    let stderr = tempfile::NamedTempFile::new()?;
-    let mut command = Command::new("gh");
-    command
-        .args(args)
-        .env("GH_PROMPT_DISABLED", "1")
-        .stdin(Stdio::null())
-        .stdout(stdout.as_file().try_clone()?)
-        .stderr(stderr.as_file().try_clone()?);
-    let mut child = OwnedChild::spawn(&mut command).context("Start gh")?;
-    let completion = child.wait(Duration::from_secs(30))?;
-    child.cleanup()?;
-    match completion {
-        Completion::Exited(status) if status.success() => Ok(fs::read(stdout.path())?),
-        Completion::Exited(status) => bail!(
-            "gh {} failed ({status}): {}",
-            args.join(" "),
-            fs::read_to_string(stderr.path())?
-        ),
-        Completion::TimedOut => bail!("gh {} timed out after 30 seconds", args.join(" ")),
-        Completion::Interrupted => bail!("gh {} interrupted", args.join(" ")),
-    }
 }
