@@ -507,6 +507,8 @@ source-prescribed arrangements take precedence. No force simulation is selected.
 
 Location-resident enemies use an exposed physical sideboard left of Map, grouping
 cards beneath full location names in three columns with further exposed rows.
+Rows start just below their heading, leaving clearance for damage tokens above
+the cards.
 Keep full card size, stable group/copy ordering and clearance for exhaustion,
 harm, side counters and names. Do not collapse, overlap, scroll or continually
 shrink cards to solve crowding. Keep the compact board the same depth as the
@@ -517,10 +519,20 @@ or counters merely because framing widens.
 Use the same thick table body and inset top as the other playing surfaces,
 retaining the sideboard's navy/steel-blue palette and footprint.
 
-Each nonempty group has a marker above its location, repeating stable color,
-short identifier and group count beside its sideboard heading. Identity survives
-emptying/refilling. Keep markers distinct from printed symbols/gameplay tokens,
-outside investigator slots; route links around them without changing connections.
+Each location has a stable location color, assigned by location identity from an
+ordered Okabe–Ito list that avoids colors already meaningful on the table; two
+locations share a color only if they can never be in play together. Each nonempty
+group has an enemy-presence marker above its location: a round in-engine token
+with a dark outline, a location-color ring, an ivory face and an ink slit-eye
+emblem whose iris takes the location color, with the group count in a small dark
+pill beneath. Its sideboard heading repeats the token followed by **LOCATION
+NAME · count**; markers and headings carry no letters. Identity survives
+emptying/refilling. Markers sit in a band reserved above the location card,
+centered as a group with the enemy-presence marker left of any other marker.
+When a brass link enters through the card's top edge, markers sit on either side
+of it and a lone marker keeps its usual side. Map footprints include the band, so
+links route around it and standee slots stay outside it. Keep markers distinct
+from printed symbols/gameplay tokens.
 Counts cover sideboard cards only. Ordinary engaged enemies stay in investigator
 threat areas. If Massive content becomes supported, its single location-resident
 card belongs on the sideboard ready or exhausted; only a ready Massive enemy is

@@ -364,3 +364,39 @@ fn every_modal_dialog_offers_focus_when_opened() {
         );
     }
 }
+
+#[test]
+fn enemy_sideboard_headings_are_reached_by_tab_between_decisions_and_the_menu() {
+    let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+        crate::gathering::TonyEffectFixture::QuickThinking,
+    ));
+    let mut play = session.observe().play.unwrap();
+    for enemy in &mut play.scenario.enemies {
+        enemy.engaged = None;
+    }
+    let mut app = super::cards::at_public_moment(session, play, PathBuf::new(), false);
+    // World labels are shown only once the camera can project them.
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+        &mut app,
+        Vec2::new(1600., 1000.),
+        1.,
+    );
+    app.update();
+    let headings = group_labels(&mut app, 2);
+    assert!(
+        !headings.is_empty() && headings.iter().all(|label| label.contains(" · ")),
+        "The sideboard offers its location headings: {headings:?}"
+    );
+    app.world_mut().resource_mut::<InputFocus>().clear();
+    let cycle = tab_cycle(&mut app);
+    let start = cycle
+        .iter()
+        .position(|label| label == &headings[0])
+        .unwrap_or_else(|| panic!("Tab reaches the sideboard headings: {cycle:?}"));
+    let after = (start + headings.len()) % cycle.len();
+    let reached: Vec<_> = (start..start + headings.len())
+        .map(|index| cycle[index % cycle.len()].clone())
+        .collect();
+    assert_eq!(reached, headings);
+    assert_eq!(cycle[after], "Menu", "Headings precede the Menu: {cycle:?}");
+}
