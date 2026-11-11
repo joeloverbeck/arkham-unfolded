@@ -51,7 +51,7 @@ Inspection validates the save, prints one JSON response containing the player-vi
 
 ### Agent seat
 
-An agent can sit at the real Gathering table with no window. This is a decision-only first increment under [#153](https://github.com/joeloverbeck/arkham-unfolded/issues/153); the owner has not yet decided to adopt, narrow or drop it.
+An agent can sit at the real Gathering table with no window. It was built as a first increment under [#153](https://github.com/joeloverbeck/arkham-unfolded/issues/153) and merged on the owner's authorization on 2026-11-11. It is not yet the routine verification path: that still needs a materially different second use and a return use from these documents alone.
 
 ```sh
 scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
