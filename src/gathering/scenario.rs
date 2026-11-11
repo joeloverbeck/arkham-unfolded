@@ -14,6 +14,8 @@ pub(super) const HALLWAY: &str = "01112";
 pub(super) const ATTIC: &str = "01113";
 pub(super) const CELLAR: &str = "01114";
 pub(super) const PARLOR: &str = "01115";
+/// Obscuring Fog (01168): "Attached location gets +2 shroud."
+pub(super) const FOG_SHROUD: u8 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Prey {
@@ -272,7 +274,12 @@ impl ScenarioState {
             CELLAR => 4,
             _ => return None,
         };
-        Some(printed + if location.fog.is_some() { 2 } else { 0 })
+        let fog = if location.fog.is_some() {
+            FOG_SHROUD
+        } else {
+            0
+        };
+        Some(printed + fog)
     }
 
     /// Connections do not themselves grant an investigator permission to enter

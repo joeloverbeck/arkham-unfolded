@@ -2,7 +2,7 @@
 //! Original 06162/04107/09029/02229, Legacy FAQ2.5 §1.7 and taboo10.
 
 use super::runtime::{AssetState, Frame, Game, SkillTest, TestResultEffect};
-use super::{Investigator, cards};
+use super::{Investigator, cards, option_labels::counted};
 use crate::{Choice, RuleError, TokenFace};
 use serde::{Deserialize, Serialize};
 
@@ -77,7 +77,7 @@ pub(super) fn initiation_choices(game: &Game) -> Vec<Choice> {
         return vec![];
     }
     player.assets.iter().filter(|asset| asset.card.code == "06162" && !test.tony.wagers.iter().any(|wager| wager.asset == asset.card.id)).flat_map(|asset| {
-        (1..=asset.uses.min(3)).map(move |amount| choice(format!("tony:gregory:{}:{amount}", asset.card.id), format!("Spend {amount} resources from Gregory Gry; gain {amount} if you succeed by at least {amount}")))
+        (1..=asset.uses.min(3)).map(move |amount| choice(format!("tony:gregory:{}:{amount}", asset.card.id), format!("Spend {} from Gregory Gry; gain {amount} if you succeed by at least {amount}", counted(amount, "resource", "resources"))))
     }).collect()
 }
 
@@ -183,7 +183,10 @@ pub(super) fn commitment_choices(game: &Game) -> Vec<Choice> {
             };
             choices.push(choice(
                 format!("tony:watch:{}:{amount}", card.id),
-                format!("Watch this!{copy} — Wager {amount} resources ({outcome})"),
+                format!(
+                    "Watch this!{copy} — Wager {} ({outcome})",
+                    counted(amount, "resource", "resources")
+                ),
             ));
         }
     }

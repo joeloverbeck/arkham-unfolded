@@ -140,7 +140,7 @@ pub(super) fn choices(game: &Game, decision: &CombatDecision) -> Vec<Choice> {
                 choice(
                     &format!("lita:discard-ally:{}", asset.card.id),
                     &format!(
-                        "Discard {} to make room for Lita Chantler; afterward: Ally: 1/1",
+                        "Discard {} to make room for Lita Chantler; afterward Ally 1/1",
                         asset.card.title
                     ),
                 )
