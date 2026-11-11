@@ -12,7 +12,7 @@ Before searching memory or reading session logs, read the repository's [bounded 
 
 1. Read and apply the [writing-for-agents guide](../writing-for-agents/SKILL.md). Native skill invocation may load it when available; otherwise read the linked file directly.
 
-2. Read the primary sources for the session the user specifies; default to the current one. Locate local logs by the supplied session identifier or the current thread identifier (for example, `CODEX_THREAD_ID`) before listing session files. Filter filenames by that identifier, then confirm the session identity and working directory in its metadata. If the identifier is unavailable or yields no match, narrow discovery by repository and date before reading log contents.
+2. Read the primary sources for the session the user specifies; default to the current one. Locate local logs by the supplied session identifier or the current one (`CODEX_THREAD_ID` in Codex, `CLAUDE_CODE_SESSION_ID` in Claude Code) before listing session files. Filter filenames by that identifier, then confirm the session identity and working directory in its metadata. A Claude Code transcript is `<id>.jsonl` under `~/.claude/projects/<cwd-slug>/`; those directory names begin with `-`, so put `--` before globbed paths, and confirm identity by `sessionId`, since `session_id` can name the session from before `/clear`. If the identifier is unavailable or yields no match, narrow discovery by repository and date before reading log contents.
 
 3. Look for candidates for improvement in these categories.
 
