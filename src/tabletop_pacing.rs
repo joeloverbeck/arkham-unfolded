@@ -11,74 +11,28 @@ use bevy::{
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
 
-const ACTIVE_FRAME: Duration = Duration::from_nanos(16_666_667);
+/// Caps settled dispatch, and bounds the step of any update that follows a settled one.
+/// Moving frames follow FIFO presentation: the owner saw sleep caps judder at 144 Hz (#151).
+const SETTLED_FRAME: Duration = Duration::from_nanos(16_666_667);
 const INPUT_SETTLE: Duration = Duration::from_millis(150);
 const STARTUP_SETTLE: Duration = Duration::from_secs(2);
-const COMPARISON_TITLE: &str = " · F9 cadence: ";
-
-/// Decision-only comparison for #151, removed by its adopt or reject outcome.
-/// F9 cycles the active-motion frame limit so one launch can judge camera motion under each.
-#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum ComparedCadence {
-    #[default]
-    Cap60,
-    Cap72,
-    DisplayRate,
-}
-
-impl ComparedCadence {
-    fn next(self) -> Self {
-        match self {
-            Self::Cap60 => Self::Cap72,
-            Self::Cap72 => Self::DisplayRate,
-            Self::DisplayRate => Self::Cap60,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Cap60 => "60/s baseline",
-            Self::Cap72 => "72/s",
-            Self::DisplayRate => "display rate",
-        }
-    }
-
-    fn active_limit(self) -> Duration {
-        match self {
-            Self::Cap60 => ACTIVE_FRAME,
-            // About two refreshes of the owner's 143.99 Hz display; sleep is not phase-locked.
-            Self::Cap72 => Duration::from_nanos(13_888_889),
-            // FIFO presentation alone paces active dispatch.
-            Self::DisplayRate => Duration::ZERO,
-        }
-    }
-}
 
 /// The render-extract sub-app cannot read main-world resources, so both hold this handle.
-#[derive(Resource, Clone)]
-struct FrameLimit(Arc<AtomicU64>);
+#[derive(Resource, Clone, Default)]
+struct Settled(Arc<AtomicBool>);
 
-impl Default for FrameLimit {
-    fn default() -> Self {
-        let limit = Self(Arc::default());
-        limit.set(ACTIVE_FRAME);
-        limit
-    }
-}
-
-impl FrameLimit {
-    fn set(&self, limit: Duration) {
-        let nanos = u64::try_from(limit.as_nanos()).unwrap_or(u64::MAX);
-        self.0.store(nanos, Ordering::Relaxed);
+impl Settled {
+    fn set(&self, settled: bool) {
+        self.0.store(settled, Ordering::Relaxed);
     }
 
-    fn get(&self) -> Duration {
-        Duration::from_nanos(self.0.load(Ordering::Relaxed))
+    fn get(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
     }
 }
 
@@ -118,7 +72,7 @@ impl Cadence {
         let delta = self.last_update.map_or(Duration::ZERO, |last| {
             now.saturating_duration_since(last).min(if self.idle {
                 // A newly pressed key or queued action must not inherit thinking time.
-                ACTIVE_FRAME
+                SETTLED_FRAME
             } else {
                 // Retain Bevy's ordinary slow-frame bound while motion is underway.
                 Duration::from_millis(250)
@@ -152,62 +106,36 @@ pub(crate) struct TabletopPacingPlugin;
 
 impl Plugin for TabletopPacingPlugin {
     fn build(&self, app: &mut App) {
-        let limit = FrameLimit::default();
+        let settled = Settled::default();
         app.init_resource::<PresentationTime>()
-            .insert_resource(limit.clone())
-            .init_resource::<ComparedCadence>()
+            .insert_resource(settled.clone())
             .init_resource::<Redraw>()
             .init_resource::<Cadence>()
             .init_resource::<WinitSettings>()
             .add_systems(First, update_clock)
             .configure_sets(Last, SelectCadence.after(RequestRedraw))
             .add_systems(Last, input_activity.in_set(RequestRedraw))
-            .add_systems(Last, select_cadence.in_set(SelectCadence))
-            .add_systems(Last, compare_cadence.before(SelectCadence));
+            .add_systems(Last, select_cadence.in_set(SelectCadence));
 
         if let Some(extract) = app.get_sub_app_mut(RenderExtractApp) {
             // This sub-app runs after render dispatch, before the next input poll.
             // Its schedule is unset by default; adding a system alone would not run it.
             extract.update_schedule = Some(Main.intern());
             extract
-                .insert_resource(limit)
+                .insert_resource(settled)
                 .add_systems(Main, limit_frame_rate);
         }
     }
 }
 
-fn limit_frame_rate(limit: Res<FrameLimit>, mut previous: Local<Option<Instant>>) {
-    if let Some(previous) = *previous
-        && let Some(remaining) = limit.get().checked_sub(previous.elapsed())
+fn limit_frame_rate(settled: Res<Settled>, mut previous: Local<Option<Instant>>) {
+    if settled.get()
+        && let Some(previous) = *previous
+        && let Some(remaining) = SETTLED_FRAME.checked_sub(previous.elapsed())
     {
         std::thread::sleep(remaining);
     }
     *previous = Some(Instant::now());
-}
-
-fn compare_cadence(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut selected: ResMut<ComparedCadence>,
-    mut labelled: Local<bool>,
-    mut windows: Query<&mut Window>,
-) {
-    if keys.just_pressed(KeyCode::F9) {
-        *selected = selected.next();
-    } else if *labelled {
-        return;
-    }
-    *labelled = true;
-    info!("Cadence comparison (#151): {}", selected.label());
-    // The owner judges this run; the agent desktop helper refuses the suffixed title.
-    for mut window in &mut windows {
-        let base = window
-            .title
-            .split(COMPARISON_TITLE)
-            .next()
-            .unwrap_or_default()
-            .to_owned();
-        window.title = format!("{base}{COMPARISON_TITLE}{}", selected.label());
-    }
 }
 
 #[derive(Default)]
@@ -275,16 +203,10 @@ fn select_cadence(
     mut cadence: ResMut<Cadence>,
     mut redraw: ResMut<Redraw>,
     mut settings: ResMut<WinitSettings>,
-    compared: Res<ComparedCadence>,
-    limit: Res<FrameLimit>,
+    settled: Res<Settled>,
 ) {
     let next = cadence.finish(std::mem::take(&mut redraw.requested));
-    // Settled dispatch keeps the baseline cap in every compared mode.
-    limit.set(if cadence.idle {
-        ACTIVE_FRAME
-    } else {
-        compared.active_limit()
-    });
+    settled.set(cadence.idle);
     if settings.focused_mode != next.focused_mode || settings.unfocused_mode != next.unfocused_mode
     {
         debug!(
