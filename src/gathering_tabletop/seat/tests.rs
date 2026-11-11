@@ -574,19 +574,14 @@ fn pieces_sharing_a_source_keep_distinct_names_in_play() {
 
 #[test]
 fn an_attached_card_has_its_own_marker_and_heading_names() {
-    let mut seat = sit_at_fixture(crate::gathering::HostileFixture::SelectedWitness(
-        crate::gathering::SelectedWitness::ObscuringFog,
+    // This position starts with Obscuring Fog attached to the Cellar.
+    let mut seat = sit_at_fixture(crate::gathering::HostileFixture::Search(
+        crate::gathering::SearchFixture::TonyEvents,
     ));
-    let revision = seat.ask(json!({"op": "observe"}))["observation"]["revision"].clone();
-    let resolved = seat.ask(json!({
-        "op": "activate",
-        "revision": revision,
-        "choice": "revelation:resolve",
-    }));
-    assert_eq!(resolved["status"], "activated", "{resolved}");
-    let settled = seat.ask(json!({"op": "settle"}));
-    assert_eq!(settled["status"], "settled", "{settled}");
-    let names: Vec<&str> = settled["table"]["components"]
+    // Scenario frames both sideboards, so the heading is shown.
+    seat.tab_to("Scenario");
+    let response = seat.enter();
+    let names: Vec<&str> = response["table"]["components"]
         .as_array()
         .unwrap()
         .iter()
@@ -595,12 +590,12 @@ fn an_attached_card_has_its_own_marker_and_heading_names() {
     let distinct: BTreeSet<&str> = names.iter().copied().collect();
     assert_eq!(names.len(), distinct.len(), "{names:?}");
     assert_eq!(
-        component(&settled, "location:01111/attachments")["label"],
-        "Attachment Study"
+        component(&response, "location:01114/attachments")["label"],
+        "Attachment Cellar"
     );
     assert_eq!(
-        component(&settled, "location:01111/attachment-board")["label"],
-        "Attached to STUDY · 1"
+        component(&response, "location:01114/attachment-board")["label"],
+        "Attached to CELLAR · 1"
     );
 }
 
