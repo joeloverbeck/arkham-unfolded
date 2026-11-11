@@ -650,14 +650,16 @@ repeat effects after interruption, scene rebuild, camera movement or reopening.
 Reduced motion reaches the same final state with meaningful explanation and
 immediate placement. Cosmetic steps do not split simultaneous rules effects.
 
-A moving investigator lifts with its full base/holder, travels via the connecting
-brass arrow and settles into the destination slot; others remain stationary.
-First entry then flips the actual location faces in place and lowers its counted
-clue token with a brief gold/green glint. Target roughly one to two seconds,
-subject to native tuning; revisits omit flip/clue placement and no extra Continue
-is added. Zero-clue revelation creates no clue token, enemies do not reveal rooms,
-and scenario placement invents no connection. Use location names in destination
-labels rather than raw identifiers.
+A moving investigator lifts with its full base/holder onto the midpoint of the
+connecting brass arrow, rests there briefly at base height, then lifts into the
+destination slot. Engaged enemies travelling with it hop and rest in step beside
+it; others remain stationary. First entry then flips the actual location faces in
+place and lowers its counted clue token with a brief gold/green glint. Target
+about two and a half seconds for a first entry; the hop, rest, flip and clue
+timings are starting values for native tuning. Revisits omit flip/clue placement
+and no extra Continue is added. Zero-clue revelation creates no clue token,
+enemies do not reveal rooms, and scenario placement invents no connection. Use
+location names in destination labels rather than raw identifiers.
 
 After clue gain commits, lift a marker, carry it in a gentle raised arc and lower
 it to the investigator's clue slot. Decrease source count on departure, increase
