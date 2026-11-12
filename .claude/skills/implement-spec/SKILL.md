@@ -22,7 +22,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. Ensure the exploration subagent can save files - it should save its markdown notes in a directory outside the repo, accessible by all future subagents. This lets **implementer subagents** focus on implementation rather than exploration.
 
-3. Create the integration branch. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge in step 5 (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
+3. Create the integration branch. This repository publishes through a PR to `main` and closes issues separately, so open a draft PR after the first merge in step 5 (a branch with no commits ahead of main can't open one), naming the spec and tickets it implements.
 
 4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Create each worktree with `scripts/tools worktree add`, which gives it the owner's Cargo target and its own profile value ([one target for several checkouts](../../../docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts)). Each implementer subagent:
    - confirms its worktree is based on the integration branch before starting, and resets onto it if not;
@@ -36,6 +36,6 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 7. Once all tickets are complete, call the Skill tool with `code-review` on the integration branch. Fix all issues raised by the code review in a single **implementer subagent**.
 
-8. If a draft PR exists, mark it ready for review. Otherwise, resolve each ticket the way the issue tracker closes work, and report the integration branch.
+8. Mark the PR ready for review, then publish and close out as [the tracker workflow](../../../docs/agents/issue-tracker.md#conventions) describes: watch the head's CI, merge with `scripts/tools merge-reviewed`, update the local `main`, and close each ticket, then the spec, with a comment once its acceptance criteria are met. Joel's invocation of this skill authorizes these steps (2026-11-12) unless it says otherwise. The spec's closeout comment lists the judgement calls made within the delegated scope, each rejectable on its own. A ticket with an unmet acceptance criterion stays open and goes in your report.
 
 9. Remove every **implementer subagent** worktree with `scripts/tools worktree remove --merged-into <integration branch> DIR...`. Report each one it refuses, with its reason, and leave those for the owner.
