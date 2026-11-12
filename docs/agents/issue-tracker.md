@@ -8,7 +8,7 @@ This selects the GitHub client for repository work. If a different operation nee
 
 ## Conventions
 
-- **Create:** `gh issue create --title "..." --body-file /tmp/issue.md`.
+- **Create:** `scripts/tools publish issue --title "..." --body-file /tmp/issue.md --label <label>`, repeating `--label` for each label. An error that names an opened issue's URL means that issue exists: correct it rather than opening another.
 - **Read:** `gh issue view <number> --json number,title,state,body,labels`. Read relevant comments separately as below.
 - **List:** `gh issue list --state open --limit 100 --json number,title,state,labels`, with appropriate label and state filters. Inspect selected issue bodies separately; paginate when the task requires every matching issue.
 - **Comment:** `scripts/tools publish comment --issue <number> --body-file /tmp/comment.md`.
@@ -19,7 +19,7 @@ Write multiline bodies to a temporary file and pass `--body-file`. Read back the
 
 When preparing a publication artifact, require a completed exit code of `0` from each producer before consuming its output. For an already-authorized sequence with no intervening decision, put the dependent commands in one shell invocation joined by `&&`, including the final mutation. Across separate tool calls, inspect the returned status before issuing the next call: a running session must reach a successful terminal result first. Awaiting a tool response alone does not establish success. Verify the completed artifact against the intended content or recorded candidate digest before the dependent GitHub write. On failure, stop that sequence, retain the error, and inspect remote state before retrying an ambiguous write.
 
-Public text goes through `scripts/tools publish`: `comment` (with `--close` for an authorized closure), `edit-comment --id <comment-id>` for the current handoff, and `pr-body --pr <number>`. Each runs the [public handoff preflight](native-verification.md#public-handoff-preflight) on the exact text before contacting GitHub, sends the file's bytes as the request body, and reads the stored text back. A mismatch stops the command before any further write, such as a closure. With raw `gh api`, `-f body=@FILE` sends the literal text `@FILE`; only `-F` and `--input` read files.
+Public text goes through `scripts/tools publish`: `issue` for a new issue's title and body, `comment` (with `--close` for an authorized closure), `edit-comment --id <comment-id>` for the current handoff, and `pr-body --pr <number>`. Each runs the [public handoff preflight](native-verification.md#public-handoff-preflight) on the exact text before contacting GitHub, sends the file's bytes as the request body, and reads the stored text back. A mismatch stops the command before any further write, such as a closure. With raw `gh api`, `-f body=@FILE` sends the literal text `@FILE`; only `-F` and `--input` read files.
 
 For an authorized PR, identify the workflow run for the accepted head once, then
 keep one watcher:
@@ -83,8 +83,8 @@ Read selected ranges of logs, source files and saved issue bodies with a line-nu
 
 Use native GitHub relationships with `gh` 2.94 or later:
 
-- **Parent:** `gh issue create --parent <parent> ...` or `gh issue edit <parent> --add-sub-issue <child>`.
-- **Blocker:** `gh issue create --blocked-by <blocker> ...` or `gh issue edit <child> --add-blocked-by <blocker>`.
+- **Parent:** open the child with `scripts/tools publish issue`, then `gh issue edit <parent> --add-sub-issue <child>`.
+- **Blocker:** open the child with `scripts/tools publish issue`, then `gh issue edit <child> --add-blocked-by <blocker>`.
 - **Open blocker count:** `gh issue view <number> --json blockedBy --jq '[.blockedBy.nodes[] | select(.state == "OPEN")] | length'`.
 
 If the CLI lacks these flags, use the native REST endpoints with numeric issue database IDs: `POST repos/joeloverbeck/arkham-unfolded/issues/<parent>/sub_issues` with `sub_issue_id`, or `POST repos/joeloverbeck/arkham-unfolded/issues/<child>/dependencies/blocked_by` with `issue_id`. Obtain a database ID with `gh api repos/joeloverbeck/arkham-unfolded/issues/<number> --jq .id`.

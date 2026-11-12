@@ -33,6 +33,11 @@ enum Command {
     RecordCheck(check::CheckArgs),
     /// Show bounded diagnostic excerpts without changing the complete check log.
     CheckSummary(check::summary::Args),
+    /// Show a recorded check's CPU use over time windows from its resource samples.
+    #[command(
+        after_help = "Resource measurements: docs/agents/measured-and-baseline-checks.md#resource-measurements"
+    )]
+    ResourceSummary(check::resources::summary::Args),
     /// Check public handoff text for listed private path forms without publishing it.
     CheckPublicHandoff(handoff::Check),
     /// Verify exact PR revisions and required checks, then perform one authorized merge.
@@ -100,6 +105,7 @@ fn main() -> ExitCode {
     let result = match command {
         Command::RecordCheck(args) => check::run(args),
         Command::CheckSummary(args) => check::summary::run(args),
+        Command::ResourceSummary(args) => check::resources::summary::run(args),
         Command::CheckPublicHandoff(args) => handoff::run(args).map(|_| 0),
         Command::MergeReviewed(args) => merge::run(args),
         Command::Publish { command } => publish::run(command),

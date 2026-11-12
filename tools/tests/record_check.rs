@@ -393,6 +393,24 @@ fn optional_resource_capture_keeps_measurements_and_original_failure_status() {
                 .windows(2)
                 .all(|pair| pair[0]["unix_ms"].as_u64() <= pair[1]["unix_ms"].as_u64())
         );
+        // The reader accepts every line the recorder wrote.
+        let summary = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .arg("resource-summary")
+            .arg(&directory)
+            .output()
+            .unwrap();
+        assert!(summary.status.success(), "{summary:?}");
+        let report = String::from_utf8_lossy(&summary.stdout);
+        assert!(
+            report.contains(&format!("{} samples from ", samples.len())),
+            "{report}"
+        );
+        assert!(!report.contains("incomplete"), "{report}");
+        assert!(
+            report.contains("| From s | To s | Sampled s | Host CPU % |"),
+            "{report}"
+        );
+        assert!(report.contains("Whole record: host CPU "), "{report}");
     }
 }
 

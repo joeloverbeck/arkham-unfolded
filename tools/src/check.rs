@@ -1,7 +1,7 @@
 //! Record one check invocation so its result survives a lost tool session.
 
 mod inputs;
-mod resources;
+pub mod resources;
 mod source;
 pub mod summary;
 
