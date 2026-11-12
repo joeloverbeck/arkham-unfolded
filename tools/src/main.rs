@@ -13,6 +13,7 @@ mod publish;
 mod reader;
 mod renderer;
 mod review;
+mod seat;
 mod tracked;
 
 use clap::{Parser, Subcommand};
@@ -66,6 +67,9 @@ enum Command {
         #[command(subcommand)]
         command: native::Command,
     },
+    /// Send requests to a held agent seat over its socket and print each response unchanged.
+    #[command(after_help = "Agent seat: README.md#held-session")]
+    Seat(seat::Args),
     /// Owner-run bounded perf capture of an already running, exact executable.
     ProfileNative(profile::Args),
 }
@@ -101,6 +105,7 @@ fn main() -> ExitCode {
         Command::PrepareCiToolchain => ci::prepare_toolchain().map_err(anyhow::Error::msg),
         Command::Native { command } => native::run(command),
         Command::ProfileNative(args) => profile::capture(args),
+        Command::Seat(args) => seat::run(args),
     };
     match result {
         Ok(code) => ExitCode::from(code),

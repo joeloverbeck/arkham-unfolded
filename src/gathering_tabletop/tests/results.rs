@@ -576,7 +576,8 @@ fn lethal_test_consequences_do_not_consume_the_survivors_next_result() {
     );
 }
 
-fn quick_thinking_session() -> Session {
+/// Tony's fight test, with its result shown and Quick Thinking still to offer.
+pub(in crate::gathering_tabletop) fn quick_thinking_session() -> Session {
     quick_thinking_until("tony:quick-thinking:tony")
 }
 

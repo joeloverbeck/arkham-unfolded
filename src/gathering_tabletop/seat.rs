@@ -1,7 +1,9 @@
 //! The Gathering table's side of the agent seat (#153): startup assembly and the
 //! narrow interface the game-neutral [`crate::agent_seat`] reaches the table through.
-//! Deleting this file, `agent_seat.rs`, `tabletop_health/seat.rs` and the integration
-//! points that name them removes the seat.
+//! Deleting this file, `agent_seat.rs` with `agent_seat/socket.rs` (the held session's
+//! socket and launcher, #175), `tabletop_health/seat.rs`, the tools' `seat` command
+//! (`tools/src/seat.rs` and `tools/tests/seat.rs`) and the integration points that name
+//! them removes the seat.
 //!
 //! The seat is the same table as native play: the same `install`, rules session,
 //! continuity and save path, and artwork verification. Every difference from native
@@ -21,10 +23,13 @@
 //!    do not apply.
 //! 9. Sitting marks the table with [`agent_seat::SeatedAgent`], so a Credits link
 //!    reports its address instead of reaching the desktop's opener.
+//! 10. With `--socket`, the launching command claims the socket and starts the seat as
+//!     a detached process of its own ([`agent_seat::socket`]), which performs this same
+//!     admission and then serves the socket instead of standard input.
 
 use super::*;
 use crate::{
-    agent_seat::{self, Game, Hit, Name, Observed, Seat},
+    agent_seat::{self, Focus, Game, Hit, Name, Observed, Seat, socket},
     tabletop_health::SeatAdmissionPlugin,
     tabletop_support::asset_settings::Collection,
 };
@@ -45,25 +50,46 @@ pub(super) struct Seated {
 }
 
 pub(super) fn run(launch: Result<Option<Options>, String>) -> Result<(), String> {
-    let opened = launch.and_then(|options| match options {
-        Some(options) if options.agent_seat => open(&options).map(Some),
+    let options = match launch.and_then(|options| match options {
+        Some(options) if options.agent_seat => Ok(Some(options)),
         Some(_) => Err("--agent-seat is an option of its own, not another option's value".into()),
         None => Ok(None),
-    });
-    let mut seated = match opened {
-        Ok(Some(seated)) => seated,
+    }) {
+        Ok(Some(options)) => options,
         Ok(None) => return Ok(()),
-        Err(error) => {
-            // The agent reads standard output; the same text also reaches standard error.
-            println!(
-                "{}",
-                json!({"ok": false, "mode": "seat", "status": "refused", "error": error})
-            );
-            return Err(error);
-        }
+        Err(error) => return refuse(error),
     };
+    let Some(path) = &options.socket else {
+        let mut seated = open(&options).or_else(refuse)?;
+        let Seated { app, seat, .. } = &mut seated;
+        return seat.serve(app, std::io::stdin().lock(), std::io::stdout().lock());
+    };
+    if !socket::detached() {
+        // The launching command: it returns once the seat it starts is admitted.
+        return socket::launch(path).or_else(refuse);
+    }
+    let listener = socket::detach(path).or_else(refuse)?;
+    let mut seated = open(&options).or_else(refuse)?;
     let Seated { app, seat, .. } = &mut seated;
-    seat.serve(app, std::io::stdin().lock(), std::io::stdout().lock())
+    socket::announce(&seat.ready(app))?;
+    listener.serve(seat, app, idle(&options))
+}
+
+/// How long a held session waits for a request before it ends as `quit` does.
+fn idle(options: &Options) -> Duration {
+    options.idle_minutes.map_or(socket::IDLE, |minutes| {
+        Duration::from_secs(u64::from(minutes) * 60)
+    })
+}
+
+/// A startup problem: one `refused` response on standard output, which the agent (or
+/// the launching command) reads. The returned error reaches standard error.
+fn refuse<T>(error: String) -> Result<T, String> {
+    println!(
+        "{}",
+        json!({"ok": false, "mode": "seat", "status": "refused", "error": error})
+    );
+    Err(error)
 }
 
 /// The same artwork verification and play lease as native startup. Native startup
@@ -179,14 +205,12 @@ impl Game for Gathering {
         }
     }
 
-    fn resolve(&self, world: &mut World, name: &Name, revision: u64) -> Result<Vec<Vec2>, String> {
+    fn revision(&self, world: &mut World) -> u64 {
+        world.resource::<Table>().session.observe().revision
+    }
+
+    fn resolve(&self, world: &mut World, name: &Name) -> Result<Vec<Vec2>, String> {
         let table = world.resource::<Table>();
-        let current = table.session.observe().revision;
-        if revision != current {
-            return Err(format!(
-                "Outdated: the request names revision {revision}, but the attempt is at revision {current}. Observe again."
-            ));
-        }
         // Production accepts a selection only from a piece built for this table state.
         let shown_state = (table.epoch, table.view().revision);
         let (position, reach) = match name {
@@ -305,6 +329,25 @@ impl Game for Gathering {
 
     fn unsettled(&self, world: &mut World) -> Vec<String> {
         unsettled(world).into_iter().map(str::to_owned).collect()
+    }
+
+    /// The focused control or menu row exactly as `controls` and `menu.rows` report
+    /// it; any other focused entity is described as a pointer hit would be.
+    fn focus(&self, world: &mut World) -> Focus {
+        let Some(entity) = world
+            .get_resource::<InputFocus>()
+            .and_then(InputFocus::get)
+            .filter(|entity| world.get_entity(*entity).is_ok())
+        else {
+            return Focus::Nothing;
+        };
+        match controls(world).into_iter().find(|control| control.focused) {
+            Some(control) => Focus::Control {
+                choice: control.choice,
+                label: control.label,
+            },
+            None => Focus::Other(self.identify(world, entity).description),
+        }
     }
 }
 

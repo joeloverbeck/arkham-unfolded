@@ -379,7 +379,14 @@ struct Options {
     initial_view: Option<InitialView>,
     attempt: Option<String>,
     agent_seat: bool,
+    /// The agent seat's held session (#175): its local socket.
+    socket: Option<PathBuf>,
+    /// The held session's idle end, when not the default.
+    idle_minutes: Option<u16>,
 }
+
+/// The longest idle period a held session can be given: a day.
+const MAX_IDLE_MINUTES: u16 = 1_440;
 
 #[derive(Clone, Copy)]
 enum InitialView {
@@ -399,8 +406,34 @@ impl Options {
         let mut initial_view = None;
         let mut attempt = None;
         let mut agent_seat = false;
+        let mut socket = None;
+        let mut idle_minutes = None;
         let mut direct = false;
         while let Some(arg) = args.next() {
+            if let Some(option) = SeatOption::named(&arg) {
+                match option {
+                    SeatOption::AgentSeat => agent_seat = true,
+                    SeatOption::Socket => {
+                        socket = Some(PathBuf::from(
+                            args.next().ok_or("--socket needs an absolute path")?,
+                        ))
+                    }
+                    SeatOption::IdleMinutes => {
+                        let needs = format!(
+                            "--idle-minutes needs a whole number of minutes from 1 to {MAX_IDLE_MINUTES}"
+                        );
+                        let value = args.next().ok_or_else(|| needs.clone())?;
+                        idle_minutes = Some(
+                            value
+                                .parse()
+                                .ok()
+                                .filter(|minutes| (1..=MAX_IDLE_MINUTES).contains(minutes))
+                                .ok_or_else(|| format!("{needs}, not {value}"))?,
+                        );
+                    }
+                }
+                continue;
+            }
             match arg.as_str() {
                 "--experiment" => {
                     if args.next().as_deref() != Some("gathering") {
@@ -409,7 +442,6 @@ impl Options {
                     direct = true;
                 }
                 "--save" => save = Some(PathBuf::from(args.next().ok_or("--save needs a path")?)),
-                "--agent-seat" => agent_seat = true,
                 "--attempt" => {
                     let intent = args.next().ok_or("--attempt needs new or open")?;
                     if !matches!(intent.as_str(), "new" | "open") {
@@ -436,7 +468,7 @@ impl Options {
                 }
                 "--help" | "-h" => {
                     println!(
-                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline|resolve\n--agent-seat\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged. The resolve view requires an active resolution drawer. The agent seat plays the same table with no window, exchanging JSON lines on standard input and output; it requires --experiment gathering and --save PATH, and excludes --attempt and --screenshot."
+                        "The Gathering\n--experiment gathering\n--save PATH\n--art-root PREPARED_FOLDER\n--screenshot PATH\n--quit-after-screenshot\n--initial-view overview|scenario|test|tony|patrice|jacqueline|resolve\n--agent-seat\n--socket ABSOLUTE_PATH\n--idle-minutes MINUTES\nReopens an existing session; a new path starts setup and scenario play. Artwork uses the saved folder unless overridden. Initial view changes diagnostic startup framing; Home is unchanged. The resolve view requires an active resolution drawer. The agent seat plays the same table with no window, exchanging JSON lines on standard input and output; it requires --experiment gathering and --save PATH, and excludes --attempt and --screenshot. With --socket it holds one session on that local socket instead: the command returns once the table is admitted, requests go through scripts/tools seat, and diagnostics go to the socket path with .log appended. The session ends as quit does after 30 minutes without a request, or after --idle-minutes MINUTES (1 to 1440)."
                     );
                     return Ok(None);
                 }
@@ -461,6 +493,22 @@ impl Options {
                 );
             }
         }
+        if let Some(socket) = &socket {
+            if !agent_seat {
+                return Err("--socket holds an agent seat session: add --agent-seat".into());
+            }
+            if !socket.is_absolute() {
+                return Err(format!(
+                    "--socket needs an absolute path, not {}",
+                    socket.display()
+                ));
+            }
+        }
+        if idle_minutes.is_some() && socket.is_none() {
+            return Err(
+                "--idle-minutes ends a held session after that many minutes without a request: add --socket".into(),
+            );
+        }
         Ok(Some(Self {
             save: save.unwrap_or_else(|| PathBuf::from("local/gathering/setup.session.json")),
             art_root: config.launch_root(root)?,
@@ -470,6 +518,8 @@ impl Options {
             initial_view,
             attempt,
             agent_seat,
+            socket,
+            idle_minutes,
         }))
     }
 
@@ -556,10 +606,34 @@ struct Navigation {
     created: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
-/// Whether this launch asks for the agent seat (#153). Such a launch must never take a
-/// path that opens a window, including when its options are refused.
+/// The options of the agent seat (#153) and its held session (#175). A launch naming any
+/// of them must never take a path that opens a window, including when its options are
+/// refused.
+#[derive(Clone, Copy)]
+enum SeatOption {
+    AgentSeat,
+    Socket,
+    IdleMinutes,
+}
+
+impl SeatOption {
+    const ALL: [(&str, Self); 3] = [
+        ("--agent-seat", Self::AgentSeat),
+        ("--socket", Self::Socket),
+        ("--idle-minutes", Self::IdleMinutes),
+    ];
+
+    fn named(argument: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .find(|(name, _)| *name == argument)
+            .map(|(_, option)| *option)
+    }
+}
+
+/// Whether this launch asks for the agent seat or its held session.
 pub fn agent_seat_requested() -> bool {
-    std::env::args().any(|argument| argument == "--agent-seat")
+    std::env::args().any(|argument| SeatOption::named(&argument).is_some())
 }
 
 fn parse_launch() -> Result<Option<Options>, String> {
