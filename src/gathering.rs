@@ -77,11 +77,28 @@ pub use investigator::Investigator;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, io::Read};
+use unfolded_tabletop::random::SeededRandom;
 
 pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-runtime-v4";
 const DECK_PROJECTION: &str = include_str!("../docs/research/issue-1-decks.json");
 const DECK_PROJECTION_SHA256: &str =
     "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb";
+
+/// The generator is shared from unfolded-tabletop. Its state stays here as the
+/// plain number a save holds, never player-visible; setup and play both draw
+/// through these two functions.
+fn random_index(state: &mut u64, upper: usize) -> usize {
+    let mut random = SeededRandom::new(*state);
+    let index = random.index(upper);
+    *state = random.state();
+    index
+}
+
+fn shuffle<T>(state: &mut u64, items: &mut [T]) {
+    let mut random = SeededRandom::new(*state);
+    random.shuffle(items);
+    *state = random.state();
+}
 
 /// Effective selected-card text for readable inspection. Metadata does not imply
 /// that the corresponding gameplay ability has been implemented.
@@ -882,28 +899,8 @@ impl Session {
         Ok((drawn, steps))
     }
 
-    fn random_index(&mut self, upper: usize) -> usize {
-        // SplitMix64 with rejection sampling; deterministic state is saved, never
-        // player-visible. Avoid modulo bias when selecting a shuffle position.
-        let upper = upper as u64;
-        let threshold = upper.wrapping_neg() % upper;
-        loop {
-            self.random = self.random.wrapping_add(0x9e3779b97f4a7c15);
-            let mut value = self.random;
-            value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-            value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
-            value ^= value >> 31;
-            if value >= threshold {
-                return (value % upper) as usize;
-            }
-        }
-    }
-
     fn shuffle_deck(&mut self, index: usize) {
-        for last in (1..self.decks[index].len()).rev() {
-            let other = self.random_index(last + 1);
-            self.decks[index].swap(last, other);
-        }
+        shuffle(&mut self.random, &mut self.decks[index]);
     }
 
     fn assemble_scenario(&mut self) -> Result<(), RuleError> {
@@ -914,10 +911,7 @@ impl Session {
                 usize::from(entry.quantity),
             ));
         }
-        for last in (1..self.encounter_deck.len()).rev() {
-            let other = self.random_index(last + 1);
-            self.encounter_deck.swap(last, other);
-        }
+        shuffle(&mut self.random, &mut self.encounter_deck);
         for investigator in &mut self.investigators {
             investigator.location = Some("01111".into());
         }
@@ -987,5 +981,63 @@ impl Session {
             session.live.new_story.clear();
         }
         Ok(session)
+    }
+}
+
+#[cfg(test)]
+mod saved_randomness {
+    //! Numbers recorded at 4e7a014, while the generator still lived in this
+    //! repository. A saved game stores the generator's state, so it continues
+    //! only while a given state keeps producing these numbers.
+    use super::*;
+
+    /// Wide enough that about half of the generator's values are rejected: the
+    /// eleven indexes below took fifteen steps.
+    const WIDE: usize = (1 << 63) + 1;
+    const RANGES: [usize; 11] = [1, 2, 6, 16, 33, 52, 1000, WIDE, WIDE, WIDE, WIDE];
+    const INDEXES: [usize; 11] = [
+        0,
+        1,
+        4,
+        8,
+        10,
+        13,
+        244,
+        790_593_979_517_193_502,
+        3_061_971_736_353_442_415,
+        7_495_161_214_544_515_997,
+        3_495_176_742_473_237_818,
+    ];
+    const STATE_AFTER_INDEXES: u64 = 4_990_025_626_462_012_820;
+
+    #[test]
+    fn play_generator_repeats_its_recorded_indexes() {
+        let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
+        let game = session.runtime.as_mut().expect("Fixture runtime");
+        game.random = 89;
+        let indexes = RANGES.map(|upper| game.random_index(upper));
+        assert_eq!((indexes, game.random), (INDEXES, STATE_AFTER_INDEXES));
+    }
+
+    #[test]
+    fn setup_generator_repeats_its_recorded_deck_shuffle_from_a_saved_state() {
+        let mut session = Session::with_seed(89);
+        assert_eq!(session.random, 89, "A fresh generator starts at its seed");
+        session.random = STATE_AFTER_INDEXES;
+        let dealt: Vec<u16> = session.decks[0].iter().map(|card| card.id).collect();
+        session.shuffle_deck(0);
+        let order: Vec<usize> = session.decks[0]
+            .iter()
+            .map(|card| dealt.iter().position(|id| *id == card.id).unwrap())
+            .collect();
+        assert_eq!(
+            order,
+            [
+                9, 10, 21, 3, 2, 5, 26, 16, 11, 4, 14, 1, 19, 25, 13, 18, 29, 7, 6, 22, 20, 17, 8,
+                15, 24, 12, 31, 33, 0, 23, 27, 32, 28, 30
+            ],
+            "Each shuffled card's position in the deck before the shuffle"
+        );
+        assert_eq!(session.random, 12_278_733_189_936_530_505);
     }
 }

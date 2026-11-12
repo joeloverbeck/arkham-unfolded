@@ -157,10 +157,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
     Ok(())
 }
 fn shuffle_player(game: &mut Game, who: Investigator) {
-    for end in (1..game.players[who.index()].deck.len()).rev() {
-        let other = game.random_index(end + 1);
-        game.players[who.index()].deck.swap(end, other);
-    }
+    super::shuffle(&mut game.random, &mut game.players[who.index()].deck);
 }
 fn take(player: &mut super::runtime::PlayerState, code: &str) -> CardView {
     if let Some(index) = player.hand.iter().position(|card| card.code == code) {

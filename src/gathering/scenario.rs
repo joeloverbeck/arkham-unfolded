@@ -1916,10 +1916,7 @@ pub(super) fn agenda_two_ghoul(game: &mut Game) -> Option<CardView> {
 }
 
 fn shuffle_encounter(game: &mut Game) {
-    for index in (1..game.encounter_deck.len()).rev() {
-        let other = game.random_index(index + 1);
-        game.encounter_deck.swap(index, other);
-    }
+    super::shuffle(&mut game.random, &mut game.encounter_deck);
 }
 
 /// Call after the draw/effect that exhausted the deck has fully resolved, or
