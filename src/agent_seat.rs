@@ -257,7 +257,8 @@ enum Status {
     Captured,
     /// The request was not acted on, for the reason in its error.
     Refused,
-    /// Something else was over the activation's target, so nothing was pressed.
+    /// Something else was over the activation's target: nothing was pressed, or the
+    /// press was cancelled before release.
     Missed,
     /// An earlier refusal or miss on the connection stopped its activations and keys.
     Skipped,
@@ -268,8 +269,8 @@ enum Status {
 }
 
 impl Status {
-    /// The table was not as the request assumed and nothing was pressed, so the rest of
-    /// the connection stops acting.
+    /// The table was not as the request assumed and the request clicked nothing, so the
+    /// rest of the connection stops acting.
     fn stops_connection(self) -> bool {
         matches!(self, Self::Refused | Self::Missed)
     }
