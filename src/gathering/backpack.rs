@@ -176,10 +176,7 @@ pub(super) fn choose(game: &mut Game, id: &str) -> Result<(), RuleError> {
                         .expect("Searched selected card");
                     attached.push(deck.remove(index));
                 }
-                for index in (1..game.players[owner.index()].deck.len()).rev() {
-                    let other = game.random_index(index + 1);
-                    game.players[owner.index()].deck.swap(index, other);
-                }
+                super::shuffle(&mut game.random, &mut game.players[owner.index()].deck);
                 game.history.push(format!("{} finishes Backpack's search, attaches {} cards facedown, and shuffles the remaining deck. [04037; RR p18]",owner.name(),attached.len()));
                 if attached.is_empty() {
                     discard_empty(game, owner, asset);

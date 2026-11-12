@@ -100,10 +100,7 @@ pub(super) fn advance(game: &mut Game) -> Result<(), RuleError> {
             }
             game.players[index].deck = std::mem::take(&mut game.players[index].discard);
             let count = game.players[index].deck.len();
-            for upper in (1..game.players[index].deck.len()).rev() {
-                let other = game.random_index(upper + 1);
-                game.players[index].deck.swap(upper, other);
-            }
+            super::shuffle(&mut game.random, &mut game.players[index].deck);
             deck_steps.push(DeckStep::Recycle { count });
             deck_steps.push(DeckStep::Shuffle { count });
             draw.exhaustion_horror += 1;

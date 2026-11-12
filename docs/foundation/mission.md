@@ -42,6 +42,25 @@ Joel accepted [complete replay retirement](../adr/0003-retire-replay.md) on 2026
 
 Joel selected [experiment retirement and scenario selection](../adr/0005-retire-experiments-and-select-scenarios.md) on 2026-11-07. The maintained entry offers only original The Gathering on Standard with the three selected starting decks, marked in development. Browsing selection needs no game session or artwork. Retired experiment evidence remains historical; this choice does not complete the campaign or accept #89's full native playing experience.
 
+## Code shared with the sibling games
+
+Arkham consumes `unfolded-tabletop`, the public library that holds mechanisms first written here, at one immutable revision pinned in `Cargo.toml` and `Cargo.lock`. Rules, cards, saves and presentation policy stay in this repository, in adapters over the shared code, and shared code imports no game's domain. A change to a shared mechanism reaches Arkham only through a new pin, with Arkham's own checks and acceptance.
+
+`EVID-6` asks for three materially different real cases and a holdout before cross-product adoption. Sharing with fewer rests on two scoped waivers under `ADOPT-2`. Neither edits the constitution, and neither establishes general library fitness or acceptance of an untested migration.
+
+- **2026-11-05, Arkham and Netrunner.** Recorded in netrunner-unfolded's [shared code and development](https://github.com/joeloverbeck/netrunner-unfolded/blob/main/docs/foundation/05-shared-code-and-development.md#accepted-evid-6-exception). It covers code used by both games and, for any surface, ends when a third consumer appears.
+- **2026-11-11, a third consumer.** Joel accepted the waiver below so that `mudsong`, a private repository of his, can share mechanisms with these games. Its authoritative text is that repository's `docs/foundation/04-engineering-and-shared-code.md`. This is its record here, carried by the first extraction made under it: the seeded generator and shuffle that setup and play draw from.
+
+| Field | Accepted boundary |
+| --- | --- |
+| Exact rule | `EVID-6`: three materially different real cases and an independent holdout before cross-product adoption |
+| Scope | Concrete mechanisms, not specific to any game, owned in `unfolded-tabletop` and really used by `mudsong` and by at least one of `arkham-unfolded` and `netrunner-unfolded` |
+| Reason | These three are the only real products. Duplicating mechanisms or inventing nominal consumers would defeat the intended reuse |
+| Accepted risk | Two consumers can miss an incompatible assumption; a later case may force an interface change or a reversal |
+| Required evidence | A real path in each consuming application, each repository's own checks, game policy preserved in adapters, and a coordinated rollback |
+| Appetite | Two active hours per extraction attempt, then reassess. No extension into a framework project |
+| Ends | For a given mechanism: a consumer outside these three games, publication to crates.io or a promise of general reuse, or loss of its second real consumer. There is no milestone or date expiry. After that, further sharing needs the normal evidence or a new waiver |
+
 ## Founding proposal and stopping boundary (historical)
 
 The founding commitment is this repository bootstrap, three foundation documents and one proposed feasibility issue, with no gameplay implementation or paid services. The active bottleneck is understanding and bounding the rules obligations of this exact campaign and party, including chosen upgrades and weaknesses. There is no accepted estimate for completing the full campaign implementation.

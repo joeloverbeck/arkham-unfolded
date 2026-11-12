@@ -649,10 +649,7 @@ pub(super) fn choices(game: &Game, decision: &SearchDecision) -> Vec<Choice> {
 }
 
 fn shuffle(game: &mut Game) {
-    for index in (1..game.encounter_deck.len()).rev() {
-        let other = game.random_index(index + 1);
-        game.encounter_deck.swap(index, other);
-    }
+    super::shuffle(&mut game.random, &mut game.encounter_deck);
     game.capture_shuffle(super::DrawSource::Encounter, 0, vec![]);
 }
 

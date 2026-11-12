@@ -1906,18 +1906,7 @@ impl Game {
     }
 
     pub(super) fn random_index(&mut self, upper: usize) -> usize {
-        let upper = upper as u64;
-        let threshold = upper.wrapping_neg() % upper;
-        loop {
-            self.random = self.random.wrapping_add(0x9e3779b97f4a7c15);
-            let mut value = self.random;
-            value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-            value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
-            value ^= value >> 31;
-            if value >= threshold {
-                return (value % upper) as usize;
-            }
-        }
+        super::random_index(&mut self.random, upper)
     }
 
     fn token_step(&mut self, step: super::tokens::TokenStep) -> Result<(), RuleError> {
