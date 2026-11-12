@@ -10,12 +10,13 @@
 //! time, in arrival order, through the same serving loop as batch form, until `quit`,
 //! the table's own exit or its idle end.
 
-use super::{Game, Seat, Session, emit};
+use super::{ConnectionEnd, Game, Seat, Status, emit};
 use bevy::prelude::App;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use serde::Deserialize;
 use serde_json::Value;
 use std::{
-    fs::{self, File, OpenOptions, Permissions},
+    fs::{self, File, Metadata, OpenOptions, Permissions},
     io::{self, BufRead, BufReader, ErrorKind, Read},
     os::{
         fd::{AsFd, OwnedFd},
@@ -49,16 +50,41 @@ pub(crate) fn log_path(socket: &Path) -> PathBuf {
     log.into()
 }
 
+/// Which file a path names: its device and inode. A path replaced since is another file.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FileIdentity {
+    device: u64,
+    inode: u64,
+}
+
+impl FileIdentity {
+    fn of(file: &Metadata) -> Self {
+        Self {
+            device: file.dev(),
+            inode: file.ino(),
+        }
+    }
+}
+
 /// A socket path one seat listens on, accessible only to its owner. The path is removed
 /// when the listener ends, unless something else has replaced it there.
 pub(crate) struct Listener {
     listener: UnixListener,
     path: PathBuf,
-    /// The socket file's device and inode while this listener owns the path.
-    file: Option<(u64, u64)>,
+    /// The socket file while this listener owns the path.
+    file: Option<FileIdentity>,
 }
 
 impl Listener {
+    /// `listener`, owning the socket file `socket` found at `path`.
+    fn owning(listener: UnixListener, path: &Path, socket: &Metadata) -> Self {
+        Self {
+            listener,
+            path: path.to_owned(),
+            file: Some(FileIdentity::of(socket)),
+        }
+    }
+
     /// Listen on `path`. The socket is made in a private directory and linked into place
     /// only once owner-only, so the path never exists with wider access. A socket where
     /// nothing answers was left by a crashed seat and is replaced. A socket where a seat
@@ -132,11 +158,7 @@ impl Listener {
             );
         }
         let file = fs::symlink_metadata(path).map_err(|error| cannot(&error))?;
-        Ok(Self {
-            listener,
-            path: path.to_owned(),
-            file: Some((file.dev(), file.ino())),
-        })
+        Ok(Self::owning(listener, path, &file))
     }
 
     /// The listener a launcher handed this seat as its standard input, for `path`.
@@ -158,11 +180,17 @@ impl Listener {
         if !file.file_type().is_socket() {
             return Err(not_handed(&"the path is not a socket"));
         }
-        Ok(Self {
-            listener,
-            path: path.to_owned(),
-            file: Some((file.dev(), file.ino())),
-        })
+        Ok(Self::owning(listener, path, &file))
+    }
+
+    /// The listening socket, duplicated as the standard input of the seat process that
+    /// will serve it.
+    fn as_stdin(&self) -> Result<Stdio, String> {
+        let socket = self
+            .listener
+            .try_clone()
+            .map_err(|error| format!("Cannot hand over the socket: {error}"))?;
+        Ok(Stdio::from(OwnedFd::from(socket)))
     }
 
     /// Answer connections one at a time, in arrival order, until `quit`, the table's own
@@ -183,9 +211,9 @@ impl Listener {
                 self.path.display()
             )
         };
-        let mut quiet = Quiet::new(idle);
+        let mut clock = IdleClock::new(idle);
         let last = loop {
-            if !quiet.wait(&self.listener).map_err(stopped)? {
+            if !clock.wait(&self.listener).map_err(stopped)? {
                 break None;
             }
             let stream = match self.listener.accept() {
@@ -197,20 +225,20 @@ impl Listener {
             let _ = stream.set_write_timeout(Some(idle));
             let requests = Requests {
                 stream: &stream,
-                quiet: &mut quiet,
+                clock: &mut clock,
                 heard: false,
             };
             match seat.converse(app, BufReader::new(requests), &stream) {
-                Ok(Session::Ended) => break Some(stream),
-                Ok(Session::Open) => {}
-                Err(_) if quiet.over => break Some(stream),
+                Ok(ConnectionEnd::SessionEnded) => break Some(stream),
+                Ok(ConnectionEnd::InputEnded) => {}
+                Err(_) if clock.over => break Some(stream),
                 Err(error) => eprintln!("A connection ended before all its responses: {error}"),
             }
         };
-        if quiet.over {
+        if clock.over {
             eprintln!(
                 "The agent seat is ending its session as quit does: no request arrived for {}.",
-                describe(idle)
+                period_in_words(idle)
             );
         }
         self.remove();
@@ -228,7 +256,7 @@ impl Listener {
         let Some(owned) = self.file.take() else {
             return;
         };
-        if fs::symlink_metadata(&self.path).is_ok_and(|file| (file.dev(), file.ino()) == owned) {
+        if fs::symlink_metadata(&self.path).is_ok_and(|file| FileIdentity::of(&file) == owned) {
             let _ = fs::remove_file(&self.path);
         }
     }
@@ -242,14 +270,14 @@ impl Drop for Listener {
 
 /// The idle clock: the session ends once its period passes while the seat waits for a
 /// request. Time spent answering does not count.
-struct Quiet {
+struct IdleClock {
     period: Duration,
     end: Instant,
     /// The period passed: the session is over.
     over: bool,
 }
 
-impl Quiet {
+impl IdleClock {
     fn new(period: Duration) -> Self {
         Self {
             period,
@@ -285,7 +313,7 @@ impl Quiet {
 /// One connection's input, waiting for each request only until the idle end.
 struct Requests<'a> {
     stream: &'a UnixStream,
-    quiet: &'a mut Quiet,
+    clock: &'a mut IdleClock,
     /// The last read brought something, so the seat reads again only once it has
     /// answered it.
     heard: bool,
@@ -294,9 +322,9 @@ struct Requests<'a> {
 impl Read for Requests<'_> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         if self.heard {
-            self.quiet.restart();
+            self.clock.restart();
         }
-        if !self.quiet.wait(self.stream)? {
+        if !self.clock.wait(self.stream)? {
             return Err(io::Error::new(
                 ErrorKind::TimedOut,
                 "no request arrived within the idle period",
@@ -310,7 +338,7 @@ impl Read for Requests<'_> {
 }
 
 /// The idle period as the log states it.
-fn describe(period: Duration) -> String {
+fn period_in_words(period: Duration) -> String {
     let minutes = period.as_secs() / 60;
     if minutes == 0 || period != Duration::from_secs(minutes * 60) {
         format!("{period:?}")
@@ -335,23 +363,19 @@ pub(crate) fn launch(socket: &Path) -> Result<(), String> {
     let mut seat = command
         .args(std::env::args_os().skip(1))
         .env(DETACHED, "1")
-        .stdin(Stdio::from(OwnedFd::from(
-            listener
-                .listener
-                .try_clone()
-                .map_err(|error| format!("Cannot hand over the socket: {error}"))?,
-        )))
+        .stdin(listener.as_stdin()?)
         .stdout(Stdio::piped())
-        .stderr(replace(&log)?)
+        .stderr(create_log(&log)?)
         .spawn()
         .map_err(|error| format!("Cannot start the seat: {error}"))?;
     let mut line = String::new();
     let read = BufReader::new(seat.stdout.take().expect("piped")).read_line(&mut line);
-    let response: Option<Value> = serde_json::from_str(&line).ok();
+    let startup: Option<Startup> = serde_json::from_str(&line).ok();
     if read.is_ok()
-        && response
-            .as_ref()
-            .is_some_and(|ready| ready["status"] == "ready")
+        && let Some(Startup {
+            status: Status::Ready,
+            ..
+        }) = startup
     {
         print!("{line}");
         listener.hand_over();
@@ -360,11 +384,8 @@ pub(crate) fn launch(socket: &Path) -> Result<(), String> {
     // The seat did not start and is ending; the socket goes with this listener.
     let ended = seat.wait();
     drop(listener);
-    match response
-        .as_ref()
-        .and_then(|refused| refused["error"].as_str())
-    {
-        Some(error) => Err(error.to_owned()),
+    match startup.and_then(|refused| refused.error) {
+        Some(error) => Err(error),
         None => Err(format!(
             "The seat ended before admission ({}). Its diagnostics are in {}.",
             ended.map_or_else(|error| error.to_string(), |status| status.to_string()),
@@ -373,10 +394,19 @@ pub(crate) fn launch(socket: &Path) -> Result<(), String> {
     }
 }
 
-/// The log, replaced: a fresh file accessible only to its owner.
-fn replace(log: &Path) -> Result<File, String> {
+/// The first line a starting seat prints: `ready`, or one `refused` response.
+#[derive(Deserialize)]
+struct Startup {
+    status: Status,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+/// Create the log afresh, accessible only to its owner. A log an earlier start left at
+/// the path is removed first.
+fn create_log(log: &Path) -> Result<File, String> {
     let cannot =
-        |error: std::io::Error| format!("Cannot replace the log {}: {error}", log.display());
+        |error: std::io::Error| format!("Cannot create the log {}: {error}", log.display());
     match fs::remove_file(log) {
         Err(error) if error.kind() != ErrorKind::NotFound => return Err(cannot(error)),
         _ => {}

@@ -309,34 +309,40 @@ fn names_are_exact_and_absent_ambiguous_or_off_screen_names_fail() {
     assert!(!seat.path.exists());
 }
 
+impl Sitting {
+    /// The planted defect: another control drawn over the open menu's row for `choice`.
+    fn cover_row(&mut self, choice: &str) {
+        let menu = self.ask(json!({"op": "observe"}));
+        let row = rows(&menu)
+            .into_iter()
+            .find(|row| row["choice"] == choice)
+            .unwrap_or_else(|| panic!("no row for {choice}: {}", menu["table"]["menu"]));
+        let at = Vec2::new(
+            row["position"][0].as_f64().unwrap() as f32,
+            row["position"][1].as_f64().unwrap() as f32,
+        );
+        self.app.world_mut().spawn((
+            Button,
+            AccessibleLabel::new("Planted cover"),
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(at.x - 60.),
+                top: px(at.y - 20.),
+                width: px(120),
+                height: px(40),
+                ..default()
+            },
+            GlobalZIndex(1_000),
+        ));
+        self.app.update();
+    }
+}
+
 #[test]
 fn a_covered_control_reports_what_covers_it_and_presses_nothing() {
     let mut seat = sit();
     seat.open_menu(Investigator::Tony);
-    let menu = seat.ask(json!({"op": "observe"}));
-    let lead = rows(&menu)
-        .into_iter()
-        .find(|row| row["choice"] == LEAD_TONY)
-        .unwrap();
-    let at = Vec2::new(
-        lead["position"][0].as_f64().unwrap() as f32,
-        lead["position"][1].as_f64().unwrap() as f32,
-    );
-    // The planted defect: another control drawn over the lead choice.
-    seat.app.world_mut().spawn((
-        Button,
-        AccessibleLabel::new("Planted cover"),
-        Node {
-            position_type: PositionType::Absolute,
-            left: px(at.x - 60.),
-            top: px(at.y - 20.),
-            width: px(120),
-            height: px(40),
-            ..default()
-        },
-        GlobalZIndex(1_000),
-    ));
-    seat.app.update();
+    seat.cover_row(LEAD_TONY);
 
     let missed = seat.ask(json!({"op": "activate", "revision": 0, "choice": LEAD_TONY}));
     assert_eq!(missed["ok"], false);
@@ -390,12 +396,7 @@ fn keys_travel_the_keyboard_path_and_unknown_keys_are_refused() {
     let mut seat = sit();
     seat.open_menu(Investigator::Patrice);
     let menu = seat.ask(json!({"op": "observe"}));
-    let focused: Vec<_> = rows(&menu)
-        .into_iter()
-        .filter(|row| row["focused"] == true)
-        .collect();
-    assert_eq!(focused.len(), 1, "{menu}");
-    assert_eq!(focused[0]["choice"], "lead:patrice");
+    assert_eq!(focused(&menu).as_deref(), Some("lead:patrice"), "{menu}");
 
     let unknown = seat.ask(json!({"op": "key", "key": "F13", "revision": 0}));
     assert_eq!(unknown["status"], "refused");
@@ -403,13 +404,16 @@ fn keys_travel_the_keyboard_path_and_unknown_keys_are_refused() {
 
     let moved = seat.ask(json!({"op": "key", "key": "Tab", "revision": 0}));
     assert_eq!(moved["status"], "pressed", "{moved}");
-    let focused: Vec<_> = rows(&moved)
+    assert_eq!(focused(&moved).as_deref(), Some("Inspect"), "{moved}");
+    let inspect = rows(&moved)
         .into_iter()
-        .filter(|row| row["focused"] == true)
-        .collect();
-    assert_eq!(focused.len(), 1, "{moved}");
-    assert_eq!(focused[0]["label"], "Inspect");
-    assert_eq!(focused[0]["choice"], Value::Null);
+        .find(|row| row["label"] == "Inspect")
+        .unwrap();
+    assert_eq!(
+        inspect["choice"],
+        Value::Null,
+        "Inspect is named by its label"
+    );
 
     let dismissed = seat.ask(json!({"op": "key", "key": "Escape", "revision": 0}));
     assert_eq!(dismissed["status"], "pressed", "{dismissed}");
@@ -459,17 +463,18 @@ fn enter_presses_only_the_control_the_agent_names() {
     let mut seat = sit();
     seat.open_menu(Investigator::Patrice);
     let menu = seat.ask(json!({"op": "observe"}));
-    let focused_row: Vec<_> = rows(&menu)
+    assert_eq!(focused(&menu).as_deref(), Some("lead:patrice"), "{menu}");
+    let label = rows(&menu)
         .into_iter()
-        .filter(|row| row["focused"] == true)
-        .collect();
-    assert_eq!(focused_row[0]["choice"], "lead:patrice", "{menu}");
+        .find(|row| row["choice"] == "lead:patrice")
+        .unwrap()["label"]
+        .clone();
 
     for request in [
         // The menu's other choice is shown, but focus is elsewhere.
         json!({"op": "key", "key": "Enter", "revision": 0, "focused": LEAD_TONY}),
         // A choice's label is not its name: the match is exact.
-        json!({"op": "key", "key": "Enter", "revision": 0, "focused": focused_row[0]["label"]}),
+        json!({"op": "key", "key": "Enter", "revision": 0, "focused": label}),
         // Enter and Space can commit, so they must say what they expect to press.
         json!({"op": "key", "key": "Enter", "revision": 0}),
         json!({"op": "key", "key": "Space", "revision": 0}),
@@ -576,13 +581,7 @@ fn keys_that_cannot_commit_need_only_the_revision_and_a_named_focus_is_checked()
     seat.open_menu(Investigator::Patrice);
     let moved = seat.ask(json!({"op": "key", "key": "Tab", "revision": 0}));
     assert_eq!(moved["status"], "pressed", "{moved}");
-    let focused_row = |response: &Value| {
-        rows(response)
-            .into_iter()
-            .find(|row| row["focused"] == true)
-            .map(|row| row["label"].clone())
-    };
-    assert_eq!(focused_row(&moved), Some(json!("Inspect")));
+    assert_eq!(focused(&moved).as_deref(), Some("Inspect"));
 
     let wrong =
         seat.ask(json!({"op": "key", "key": "Tab", "revision": 0, "focused": "lead:patrice"}));
@@ -593,14 +592,14 @@ fn keys_that_cannot_commit_need_only_the_revision_and_a_named_focus_is_checked()
         wrong["error"]
     );
     assert_eq!(
-        focused_row(&wrong),
-        Some(json!("Inspect")),
+        focused(&wrong).as_deref(),
+        Some("Inspect"),
         "Tab moved no focus"
     );
 
     let named = seat.ask(json!({"op": "key", "key": "Tab", "revision": 0, "focused": "Inspect"}));
     assert_eq!(named["status"], "pressed", "{named}");
-    assert_ne!(focused_row(&named), Some(json!("Inspect")));
+    assert_ne!(focused(&named).as_deref(), Some("Inspect"));
     assert!(!seat.path.exists());
 }
 
@@ -713,22 +712,67 @@ fn a_malformed_line_stops_the_connection_and_the_next_connection_starts_afresh()
     assert_eq!(responses[1]["observation"], saved(&seat.path));
 }
 
-/// The label of the one focused control outside a contextual menu.
+#[test]
+fn a_missed_activation_stops_the_connection_as_a_refusal_does() {
+    let mut seat = sit();
+    seat.open_menu(Investigator::Tony);
+    seat.cover_row(LEAD_TONY);
+    let menu = seat.ask(json!({"op": "observe"}));
+    assert_eq!(focused(&menu).as_deref(), Some(LEAD_TONY), "{menu}");
+    // The agent planned Enter on the focused row after the activation; the miss shows
+    // the table was not as assumed, so the Enter must not commit Tony as lead.
+    let activate = json!({"op": "activate", "revision": 0, "choice": LEAD_TONY}).to_string();
+    let enter =
+        json!({"op": "key", "key": "Enter", "revision": 0, "focused": LEAD_TONY}).to_string();
+    let responses = converse(
+        &mut seat,
+        &[
+            activate.clone(),
+            enter.clone(),
+            json!({"op": "observe"}).to_string(),
+        ],
+    );
+    assert_eq!(statuses(&responses), ["missed", "skipped", "observed"]);
+    let error = responses[1]["error"].as_str().unwrap();
+    assert!(
+        error.contains(&activate) && error.contains("Planted cover"),
+        "a skip names the missed request and why it missed: {error}"
+    );
+    assert_eq!(responses[1]["observation"]["revision"], 0);
+    assert_eq!(rows(&responses[1]), rows(&menu), "nothing was pressed");
+    assert!(!seat.path.exists(), "the skipped Enter committed nothing");
+
+    // On a connection of its own the same Enter presses the row it names.
+    let responses = converse(&mut seat, &[enter, json!({"op": "settle"}).to_string()]);
+    assert_eq!(statuses(&responses), ["pressed", "settled"]);
+    assert_eq!(responses[1]["observation"]["lead"], "tony");
+    assert_eq!(responses[1]["observation"], saved(&seat.path));
+}
+
+/// The one focused control or contextual-menu row as a guarded key names it: its
+/// choice identity, or its label when it has none. `None` when neither has focus.
 fn focused(response: &Value) -> Option<String> {
-    response["table"]["controls"]
-        .as_array()?
-        .iter()
-        .find(|control| control["focused"] == true)
-        .and_then(|control| control["label"].as_str())
+    let table = &response["table"];
+    let controls = table["controls"].as_array().into_iter().flatten();
+    let rows = table["menu"]["rows"].as_array().into_iter().flatten();
+    let mut focused = controls
+        .chain(rows)
+        .filter(|control| control["focused"] == true);
+    let control = focused.next()?;
+    assert!(focused.next().is_none(), "one control has focus: {table}");
+    control["choice"]
+        .as_str()
+        .or_else(|| control["label"].as_str())
         .map(str::to_owned)
 }
 
 impl Sitting {
-    /// Press Tab until the named control has focus, as an agent without a pointer would.
-    fn tab_to(&mut self, label: &str) -> Value {
+    /// Press Tab until the control a guarded key names `name` has focus, as an agent
+    /// without a pointer would.
+    fn tab_to(&mut self, name: &str) -> Value {
         let mut response = self.ask(json!({"op": "observe"}));
         for _ in 0..40 {
-            if focused(&response).as_deref() == Some(label) {
+            if focused(&response).as_deref() == Some(name) {
                 return response;
             }
             let revision = &response["observation"]["revision"];
@@ -736,16 +780,16 @@ impl Sitting {
             assert_eq!(response["status"], "pressed", "{response}");
         }
         panic!(
-            "Tab never reached {label}: {}",
+            "Tab never reached {name}: {}",
             response["table"]["controls"]
         );
     }
 
-    /// Press Enter on the focused control, named by its label.
-    fn enter(&mut self, label: &str) -> Value {
+    /// Press Enter on the focused control, named as a guarded key names it.
+    fn enter(&mut self, name: &str) -> Value {
         let revision = self.ask(json!({"op": "observe"}))["observation"]["revision"].clone();
         let pressed =
-            self.ask(json!({"op": "key", "key": "Enter", "revision": revision, "focused": label}));
+            self.ask(json!({"op": "key", "key": "Enter", "revision": revision, "focused": name}));
         assert_eq!(pressed["status"], "pressed", "{pressed}");
         let settled = self.ask(json!({"op": "settle"}));
         assert_eq!(settled["status"], "settled", "{settled}");
@@ -1065,20 +1109,14 @@ fn a_held_session_keeps_an_open_menu_and_its_focus_between_connections() {
         (moved, held)
     });
     assert_eq!(moved["status"], "pressed", "{moved}");
-    let focused = |response: &Value| {
-        rows(response)
-            .into_iter()
-            .find(|row| row["focused"] == true)
-            .map(|row| row["label"].clone())
-    };
     assert_eq!(
-        focused(&moved),
-        Some(json!("Inspect")),
+        focused(&moved).as_deref(),
+        Some("Inspect"),
         "{}",
         moved["table"]["menu"]
     );
     assert_eq!(held["table"]["menu"], moved["table"]["menu"]);
-    assert_eq!(focused(&held), Some(json!("Inspect")));
+    assert_eq!(focused(&held).as_deref(), Some("Inspect"));
     assert!(!seat.path.exists(), "moving focus commits nothing");
 }
 
@@ -1658,18 +1696,6 @@ fn the_seat_pays_the_group_clue_payment_by_choice_identity_and_keyboard() {
     assert_eq!(settled["observation"], saved(&seat.path));
 }
 
-/// The focused control outside a contextual menu, as a guarded key names it.
-fn focused_name(response: &Value) -> Option<String> {
-    let control = response["table"]["controls"]
-        .as_array()?
-        .iter()
-        .find(|control| control["focused"] == true)?;
-    control["choice"]
-        .as_str()
-        .or_else(|| control["label"].as_str())
-        .map(str::to_owned)
-}
-
 #[test]
 fn a_blind_enter_at_round_end_commits_nothing_and_a_named_chooser_row_pays() {
     let mut seat = sit_at_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
@@ -1677,11 +1703,15 @@ fn a_blind_enter_at_round_end_commits_nothing_and_a_named_chooser_row_pays() {
     let revision = observed["observation"]["revision"].clone();
     // #173: Enter meant for a reading pressed whatever had focus instead, here a
     // decision-bar choice.
-    let decline = focused_name(&observed).expect("a decision-bar control has focus");
-    assert_eq!(
-        control_choice(&observed, &focused(&observed).unwrap()).as_deref(),
-        Some(decline.as_str()),
-        "Enter would commit a choice"
+    let decline = focused(&observed).expect("a decision-bar control has focus");
+    assert!(
+        observed["table"]["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|control| control["choice"] == decline.as_str()),
+        "Enter would commit a choice: {}",
+        observed["table"]["controls"]
     );
     let blind =
         seat.ask(json!({"op": "key", "key": "Enter", "revision": revision, "focused": "Continue"}));
@@ -1703,7 +1733,7 @@ fn a_blind_enter_at_round_end_commits_nothing_and_a_named_chooser_row_pays() {
     assert_eq!(opened["table"]["modal"], "group clue payment", "{opened}");
     // Enter on a focused investigator row spends the clues, so the row is named by
     // its label, which carries the amounts it would spend.
-    let row = focused_name(&opened).expect("an investigator row has focus");
+    let row = focused(&opened).expect("an investigator row has focus");
     assert_eq!(row, "Tony Morgan · 3 clues held · Hallway · pays 3");
     let elsewhere = seat.ask(
         json!({"op": "key", "key": "Enter", "revision": revision, "focused": "act:pay:3:3:3"}),

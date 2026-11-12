@@ -93,11 +93,13 @@ fn requests_cross_one_connection_and_responses_print_unchanged() {
 }
 
 #[test]
-fn a_refused_skipped_or_missing_response_fails_the_command_after_printing_the_rest() {
+fn a_refused_missed_skipped_or_missing_response_fails_the_command_after_printing_the_rest() {
     let refused = r#"{"ok":false,"status":"refused","error":"Outdated"}"#;
+    let missed = r#"{"ok":false,"status":"missed","error":"covered","pressed":false}"#;
     let skipped = r#"{"ok":false,"status":"skipped","error":"after a refusal"}"#;
     for answers in [
         vec![refused, OBSERVED],
+        vec![missed, OBSERVED],
         vec![OBSERVED, skipped],
         // The session ended before answering the second request.
         vec![OBSERVED],

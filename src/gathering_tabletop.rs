@@ -410,6 +410,30 @@ impl Options {
         let mut idle_minutes = None;
         let mut direct = false;
         while let Some(arg) = args.next() {
+            if let Some(option) = SeatOption::named(&arg) {
+                match option {
+                    SeatOption::AgentSeat => agent_seat = true,
+                    SeatOption::Socket => {
+                        socket = Some(PathBuf::from(
+                            args.next().ok_or("--socket needs an absolute path")?,
+                        ))
+                    }
+                    SeatOption::IdleMinutes => {
+                        let needs = format!(
+                            "--idle-minutes needs a whole number of minutes from 1 to {MAX_IDLE_MINUTES}"
+                        );
+                        let value = args.next().ok_or_else(|| needs.clone())?;
+                        idle_minutes = Some(
+                            value
+                                .parse()
+                                .ok()
+                                .filter(|minutes| (1..=MAX_IDLE_MINUTES).contains(minutes))
+                                .ok_or_else(|| format!("{needs}, not {value}"))?,
+                        );
+                    }
+                }
+                continue;
+            }
             match arg.as_str() {
                 "--experiment" => {
                     if args.next().as_deref() != Some("gathering") {
@@ -418,25 +442,6 @@ impl Options {
                     direct = true;
                 }
                 "--save" => save = Some(PathBuf::from(args.next().ok_or("--save needs a path")?)),
-                "--agent-seat" => agent_seat = true,
-                "--socket" => {
-                    socket = Some(PathBuf::from(
-                        args.next().ok_or("--socket needs an absolute path")?,
-                    ))
-                }
-                "--idle-minutes" => {
-                    let needs = format!(
-                        "--idle-minutes needs a whole number of minutes from 1 to {MAX_IDLE_MINUTES}"
-                    );
-                    let value = args.next().ok_or_else(|| needs.clone())?;
-                    idle_minutes = Some(
-                        value
-                            .parse()
-                            .ok()
-                            .filter(|minutes| (1..=MAX_IDLE_MINUTES).contains(minutes))
-                            .ok_or_else(|| format!("{needs}, not {value}"))?,
-                    );
-                }
                 "--attempt" => {
                     let intent = args.next().ok_or("--attempt needs new or open")?;
                     if !matches!(intent.as_str(), "new" | "open") {
@@ -601,16 +606,34 @@ struct Navigation {
     created: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
-/// Whether this launch asks for the agent seat (#153) or its held session (#175). Such a
-/// launch must never take a path that opens a window, including when its options are
+/// The options of the agent seat (#153) and its held session (#175). A launch naming any
+/// of them must never take a path that opens a window, including when its options are
 /// refused.
+#[derive(Clone, Copy)]
+enum SeatOption {
+    AgentSeat,
+    Socket,
+    IdleMinutes,
+}
+
+impl SeatOption {
+    const ALL: [(&str, Self); 3] = [
+        ("--agent-seat", Self::AgentSeat),
+        ("--socket", Self::Socket),
+        ("--idle-minutes", Self::IdleMinutes),
+    ];
+
+    fn named(argument: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .find(|(name, _)| *name == argument)
+            .map(|(_, option)| *option)
+    }
+}
+
+/// Whether this launch asks for the agent seat or its held session.
 pub fn agent_seat_requested() -> bool {
-    std::env::args().any(|argument| {
-        matches!(
-            argument.as_str(),
-            "--agent-seat" | "--socket" | "--idle-minutes"
-        )
-    })
+    std::env::args().any(|argument| SeatOption::named(&argument).is_some())
 }
 
 fn parse_launch() -> Result<Option<Options>, String> {

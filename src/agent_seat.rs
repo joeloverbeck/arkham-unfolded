@@ -9,7 +9,8 @@
 //!
 //! The protocol's guards live here, so every transport gets them (#175): activations and
 //! keys act only on the revision they were decided on, a key that can commit presses
-//! only the control it names, and a connection stops acting after its first refusal.
+//! only the control it names, and a connection stops acting after its first refusal or
+//! missed activation.
 //!
 //! Input enters where Bevy's own window-event conversion writes it: `PointerInput` and
 //! `KeyboardInput` messages plus the logical window's cursor position. Everything after
@@ -41,7 +42,7 @@ use bevy::{
     window::{ExitCondition, PrimaryWindow},
     winit::WinitPlugin,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     io::{BufRead, Write},
@@ -242,40 +243,108 @@ enum Request {
     Quit {},
 }
 
-/// Whether the session goes on after one connection.
+/// A response's status, which decides what follows it on its connection and in the
+/// session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Status {
+    Ready,
+    Observed,
+    Activated,
+    Pressed,
+    Settled,
+    Unsettled,
+    Captured,
+    /// The request was not acted on, for the reason in its error.
+    Refused,
+    /// Something else was over the activation's target, so nothing was pressed.
+    Missed,
+    /// An earlier refusal or miss on the connection stopped its activations and keys.
+    Skipped,
+    /// `quit` ended the session.
+    Bye,
+    /// The table ended the session itself.
+    Exited,
+}
+
+impl Status {
+    /// The table was not as the request assumed and nothing was pressed, so the rest of
+    /// the connection stops acting.
+    fn stops_connection(self) -> bool {
+        matches!(self, Self::Refused | Self::Missed)
+    }
+
+    fn ends_session(self) -> bool {
+        matches!(self, Self::Bye | Self::Exited)
+    }
+}
+
+/// One response line and its status.
+struct Response {
+    status: Status,
+    /// The line itself: `ok`, `mode`, `status`, `observation`, `table`, any `error` and
+    /// the status's own details.
+    json: Value,
+}
+
+impl Response {
+    /// The error the agent reads, or nothing.
+    fn error(&self) -> &str {
+        self.json["error"].as_str().unwrap_or_default()
+    }
+}
+
+/// How one connection ended: whether the session goes on after it.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Session {
+pub(crate) enum ConnectionEnd {
     /// The connection's input ended; another connection may continue the session.
-    Open,
+    InputEnded,
     /// `quit` or the table's own exit ended the session.
-    Ended,
+    SessionEnded,
 }
 
 /// One connection's requests: standard input in batch form, or one connection to the
-/// seat. After its first refused response the connection stops acting: every later
-/// activation and key is skipped, so one wrong assumption cannot cascade into several
-/// commits. Observing, settling, capturing and quitting are still served.
+/// seat. After its first refused or missed response the connection stops acting: every
+/// later activation and key is skipped, so one wrong assumption cannot cascade into
+/// several commits. Observing, settling, capturing and quitting are still served.
 #[derive(Default)]
 struct Connection {
-    /// The first refused request and the reason it was refused.
-    refused: Option<(String, String)>,
+    stopped: Option<Stop>,
+}
+
+/// The request that stopped a connection.
+struct Stop {
+    line: String,
+    status: Status,
+    reason: String,
 }
 
 impl Connection {
     /// Why `request` is skipped, if it is.
     fn skips(&self, request: &Request) -> Option<String> {
-        let (line, reason) = self.refused.as_ref()?;
+        let Stop {
+            line,
+            status,
+            reason,
+        } = self.stopped.as_ref()?;
+        let (stopped, request_was) = match status {
+            Status::Missed => ("missed its target", "Missed"),
+            _ => ("was refused", "Refused"),
+        };
         matches!(request, Request::Activate { .. } | Request::Key { .. }).then(|| {
             format!(
-                "Skipped: an earlier request on this connection was refused, so its activations and keys are no longer acted on. Nothing was pressed. Refused request: {line}. Reason: {reason}"
+                "Skipped: an earlier request on this connection {stopped}, so its activations and keys are no longer acted on. Nothing was pressed. {request_was} request: {line}. Reason: {reason}"
             )
         })
     }
 
-    fn answered(&mut self, line: &str, response: &Value) {
-        if self.refused.is_none() && response["status"] == "refused" {
-            let reason = response["error"].as_str().unwrap_or_default();
-            self.refused = Some((line.trim().to_owned(), reason.to_owned()));
+    fn answered(&mut self, line: &str, response: &Response) {
+        if self.stopped.is_none() && response.status.stops_connection() {
+            self.stopped = Some(Stop {
+                line: line.trim().to_owned(),
+                status: response.status,
+                reason: response.error().to_owned(),
+            });
         }
     }
 }
@@ -398,36 +467,36 @@ impl<G: Game> Seat<G> {
 
     /// The first response of a session: the admitted table and its graphics adapter.
     pub(crate) fn ready(&self, app: &mut App) -> Value {
-        let mut ready = self.response(app, "ready", None);
-        ready["adapter"] = adapter(app.world());
-        ready
+        let mut ready = self.response(app, Status::Ready, None);
+        ready.json["adapter"] = adapter(app.world());
+        ready.json
     }
 
     /// Answer one connection's requests in order until `quit`, the end of its input or
-    /// the table's own exit. Each call is a connection of its own, so a refusal stops
-    /// only the rest of this call's actions. An error is this connection's input or
-    /// output failing.
+    /// the table's own exit. Each call is a connection of its own, so a refusal or miss
+    /// stops only the rest of this call's actions. An error is this connection's input
+    /// or output failing.
     pub(crate) fn converse(
         &mut self,
         app: &mut App,
         input: impl BufRead,
         mut output: impl Write,
-    ) -> Result<Session, String> {
+    ) -> Result<ConnectionEnd, String> {
         let mut connection = Connection::default();
         for line in input.lines() {
             let line = line.map_err(|error| error.to_string())?;
             if line.trim().is_empty() {
                 continue;
             }
-            let (response, proceed) = self.respond_on(app, &mut connection, &line);
-            let sent = emit(&mut output, &response);
-            if !proceed {
+            let response = self.respond_on(app, &mut connection, &line);
+            let sent = emit(&mut output, &response.json);
+            if response.status.ends_session() {
                 // Over even if its last response could not be delivered.
-                return Ok(Session::Ended);
+                return Ok(ConnectionEnd::SessionEnded);
             }
             sent?;
         }
-        Ok(Session::Open)
+        Ok(ConnectionEnd::InputEnded)
     }
 
     /// How an ended session went: the table's reason when it exited with an error.
@@ -442,31 +511,26 @@ impl<G: Game> Seat<G> {
     /// send requests one at a time. The flag is false when the session has ended.
     #[cfg(test)]
     pub(crate) fn respond(&mut self, app: &mut App, line: &str) -> (Value, bool) {
-        self.respond_on(app, &mut Connection::default(), line)
+        let response = self.respond_on(app, &mut Connection::default(), line);
+        (response.json, !response.status.ends_session())
     }
 
-    /// One request on `connection`, one response. The flag is false when the session
-    /// has ended.
-    fn respond_on(
-        &mut self,
-        app: &mut App,
-        connection: &mut Connection,
-        line: &str,
-    ) -> (Value, bool) {
-        let (response, proceed) = match serde_json::from_str::<Request>(line) {
-            Err(error) => (self.refused(app, error.to_string()), true),
+    /// One request on `connection`, one response.
+    fn respond_on(&mut self, app: &mut App, connection: &mut Connection, line: &str) -> Response {
+        let response = match serde_json::from_str::<Request>(line) {
+            Err(error) => self.refused(app, error.to_string()),
             Ok(request) => match connection.skips(&request) {
-                Some(error) => (self.response(app, "skipped", Some(error)), true),
+                Some(error) => self.response(app, Status::Skipped, Some(error)),
                 None => self.perform(app, request),
             },
         };
         connection.answered(line, &response);
-        (response, proceed)
+        response
     }
 
-    fn perform(&mut self, app: &mut App, request: Request) -> (Value, bool) {
+    fn perform(&mut self, app: &mut App, request: Request) -> Response {
         let response = match request {
-            Request::Observe {} => self.response(app, "observed", None),
+            Request::Observe {} => self.response(app, Status::Observed, None),
             Request::Activate {
                 revision,
                 component,
@@ -486,35 +550,35 @@ impl<G: Game> Seat<G> {
             } => self.key(app, &key, revision, focused.as_deref()),
             Request::Settle { steps } => self.settle(app, steps),
             Request::Capture { path } => self.capture(app, &path),
-            Request::Quit {} => return (self.response(app, "bye", None), false),
+            Request::Quit {} => return self.response(app, Status::Bye, None),
         };
         if let Some(exit) = &self.exit {
             // The table ended the session itself, for example by returning to selection.
             let error = exit.is_error().then(|| self.exit_reason(app));
-            return (self.response(app, "exited", error), false);
-        }
-        (response, true)
-    }
-
-    fn response(&self, app: &mut App, status: &str, error: Option<String>) -> Value {
-        let Observed { observation, table } = self.game.observe(app.world_mut());
-        let mut response = json!({
-            "ok": error.is_none(), "mode": "seat", "status": status,
-            "observation": observation, "table": table,
-        });
-        if let Some(error) = error {
-            response["error"] = json!(error);
+            return self.response(app, Status::Exited, error);
         }
         response
     }
 
-    fn refused(&self, app: &mut App, error: String) -> Value {
-        self.response(app, "refused", Some(error))
+    fn response(&self, app: &mut App, status: Status, error: Option<String>) -> Response {
+        let Observed { observation, table } = self.game.observe(app.world_mut());
+        let mut json = json!({
+            "ok": error.is_none(), "mode": "seat", "status": status,
+            "observation": observation, "table": table,
+        });
+        if let Some(error) = error {
+            json["error"] = json!(error);
+        }
+        Response { status, json }
+    }
+
+    fn refused(&self, app: &mut App, error: String) -> Response {
+        self.response(app, Status::Refused, Some(error))
     }
 
     /// Why a request decided on `revision` must not act now, if it must not: the table
     /// is presenting and would drop the input, or the attempt has moved on.
-    fn unready(&self, app: &mut App, revision: u64) -> Option<Value> {
+    fn unready(&self, app: &mut App, revision: u64) -> Option<Response> {
         let pending = self.game.unsettled(app.world_mut());
         if !pending.is_empty() {
             return Some(self.busy(app, &pending));
@@ -530,7 +594,7 @@ impl<G: Game> Seat<G> {
         })
     }
 
-    fn activate(&mut self, app: &mut App, name: Name, revision: u64) -> Value {
+    fn activate(&mut self, app: &mut App, name: Name, revision: u64) -> Response {
         if let Some(refusal) = self.unready(app, revision) {
             return refusal;
         }
@@ -588,12 +652,12 @@ impl<G: Game> Seat<G> {
                 }
             }
         }
-        let mut response = self.response(app, "activated", None);
-        response["position"] = json!([position.x, position.y]);
+        let mut response = self.response(app, Status::Activated, None);
+        response.json["position"] = json!([position.x, position.y]);
         if let Some((tried, hits)) = covered {
             // Pressed at a later point: say what the pointer found at the first one,
             // so a partly covered target is reported, not hidden by the success.
-            response["covered"] = json!({
+            response.json["covered"] = json!({
                 "position": [tried.x, tried.y],
                 "hit": hits.into_iter().map(|hit| hit.description).collect::<Vec<_>>(),
             });
@@ -601,7 +665,7 @@ impl<G: Game> Seat<G> {
         response
     }
 
-    fn busy(&self, app: &mut App, pending: &[String]) -> Value {
+    fn busy(&self, app: &mut App, pending: &[String]) -> Response {
         // The table drops input while presenting; never let it vanish silently.
         self.refused(
             app,
@@ -616,7 +680,7 @@ impl<G: Game> Seat<G> {
         position: Vec2,
         hits: Vec<Hit>,
         pressed: bool,
-    ) -> Value {
+    ) -> Response {
         let hit: Vec<Value> = hits.into_iter().map(|hit| hit.description).collect();
         let over = if hit.is_empty() {
             "nothing".to_owned()
@@ -641,10 +705,10 @@ impl<G: Game> Seat<G> {
                 name.describe()
             )
         };
-        let mut response = self.response(app, "missed", Some(error));
-        response["hit"] = json!(hit);
-        response["pressed"] = json!(pressed);
-        response["position"] = json!([position.x, position.y]);
+        let mut response = self.response(app, Status::Missed, Some(error));
+        response.json["hit"] = json!(hit);
+        response.json["pressed"] = json!(pressed);
+        response.json["position"] = json!([position.x, position.y]);
         response
     }
 
@@ -690,7 +754,7 @@ impl<G: Game> Seat<G> {
 
     /// Press and release one key decided on `revision`. A key that can commit, or any
     /// key given `focused`, presses only when the named control has focus.
-    fn key(&mut self, app: &mut App, name: &str, revision: u64, focused: Option<&str>) -> Value {
+    fn key(&mut self, app: &mut App, name: &str, revision: u64, focused: Option<&str>) -> Response {
         let Some((code, logical)) = key_named(name) else {
             let known: Vec<&str> = KEYS.iter().map(|(known, ..)| *known).collect();
             return self.refused(
@@ -736,10 +800,10 @@ impl<G: Game> Seat<G> {
             });
             self.step(app, STEP);
         }
-        self.response(app, "pressed", None)
+        self.response(app, Status::Pressed, None)
     }
 
-    fn settle(&mut self, app: &mut App, steps: Option<u32>) -> Value {
+    fn settle(&mut self, app: &mut App, steps: Option<u32>) -> Response {
         let limit = steps.unwrap_or(DEFAULT_SETTLE_STEPS).min(MAX_SETTLE_STEPS);
         let mut used = 0;
         loop {
@@ -747,18 +811,18 @@ impl<G: Game> Seat<G> {
             let done = pending.is_empty();
             if done || used == limit || self.exit.is_some() {
                 let mut response = if done {
-                    self.response(app, "settled", None)
+                    self.response(app, Status::Settled, None)
                 } else {
                     self.response(
                         app,
-                        "unsettled",
+                        Status::Unsettled,
                         Some(format!(
                             "Still in progress after {used} steps: {}.",
                             pending.join(", ")
                         )),
                     )
                 };
-                response["steps"] = json!(used);
+                response.json["steps"] = json!(used);
                 return response;
             }
             self.step(app, STEP);
@@ -768,7 +832,7 @@ impl<G: Game> Seat<G> {
 
     /// Write a picture of the seat's image. The clock is frozen while the capture is
     /// read back, and the response follows the completed file.
-    fn capture(&mut self, app: &mut App, path: &Path) -> Value {
+    fn capture(&mut self, app: &mut App, path: &Path) -> Response {
         let Some(image) = self.image.clone() else {
             return self.refused(
                 app,
@@ -813,8 +877,8 @@ impl<G: Game> Seat<G> {
             if let Some(result) = written.lock().unwrap().take() {
                 return match result {
                     Ok(()) => {
-                        let mut response = self.response(app, "captured", None);
-                        response["path"] = json!(path);
+                        let mut response = self.response(app, Status::Captured, None);
+                        response.json["path"] = json!(path);
                         response
                     }
                     Err(error) => self.refused(app, format!("Cannot save the capture: {error}")),
