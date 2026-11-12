@@ -5,7 +5,9 @@
 //! pointer and key synthesis, capture and the protocol loop both forms share. It reaches
 //! the game only through [`Game`]: produce an observation and its revision, resolve a
 //! name to a screen position (and a hit back to a name), say what has keyboard focus,
-//! and report whether the table is settled.
+//! and report whether the table is settled. The host's surface and the capture of its
+//! image come from `unfolded-tabletop`; when a capture may start, and on which clock,
+//! stay here.
 //!
 //! The protocol's guards live here, so every transport gets them (#175): activations and
 //! keys act only on the revision they were decided on, a key that can commit presses
@@ -34,12 +36,8 @@ use bevy::{
         pointer::{Location, PointerAction, PointerButton, PointerId, PointerInput},
     },
     prelude::*,
-    render::{
-        render_resource::TextureFormat,
-        renderer::RenderAdapterInfo,
-        view::screenshot::{Screenshot, ScreenshotCaptured},
-    },
-    window::{ExitCondition, PrimaryWindow},
+    render::renderer::RenderAdapterInfo,
+    window::PrimaryWindow,
     winit::WinitPlugin,
 };
 use serde::{Deserialize, Serialize};
@@ -47,9 +45,9 @@ use serde_json::{Value, json};
 use std::{
     io::{BufRead, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+use unfolded_tabletop::capture::{self, Failure, Surface};
 
 pub(crate) mod socket;
 
@@ -154,66 +152,23 @@ pub(crate) trait Game {
     fn unsettled(&self, world: &mut World) -> Vec<String>;
 }
 
-/// The seat's image and the camera that renders it.
-#[derive(Resource)]
-pub(crate) struct Surface {
-    image: Handle<Image>,
-    camera: Option<Entity>,
-}
-
 /// Native plugins without a window event loop: no operating-system window is ever
-/// created and the caller steps updates itself.
+/// created and the caller steps updates itself. The window settings are the shared
+/// ones; Arkham enabled Bevy's event loop, so Arkham leaves it out.
 pub(crate) fn windowless(asset: AssetPlugin) -> PluginGroupBuilder {
     DefaultPlugins
         .set(asset)
-        .set(WindowPlugin {
-            primary_window: None,
-            exit_condition: ExitCondition::DontExit,
-            ..default()
-        })
+        .set(capture::no_window())
         .disable::<WinitPlugin>()
 }
 
-/// Give the table a logical primary window with nothing behind it and an image for
-/// camera `C` to render. Bevy's picking ignores every pointer without a primary window,
-/// and draws UI to the image only for the default UI camera.
+/// Give the table the shared windowless surface: a logical primary window with
+/// nothing behind it and an image for camera `C` to render. The seat steps the
+/// presentation clock itself, so native pacing is not installed with it.
 pub(crate) fn install<C: Component>(app: &mut App, size: UVec2) {
-    app.world_mut().spawn((
-        Window {
-            resolution: (size.x, size.y).into(),
-            focused: true,
-            ..default()
-        },
-        PrimaryWindow,
-    ));
-    let image = app
-        .world_mut()
-        .resource_mut::<Assets<Image>>()
-        .add(Image::new_target_texture(
-            size.x,
-            size.y,
-            TextureFormat::Rgba8UnormSrgb,
-            None,
-        ));
-    app.insert_resource(Surface {
-        image,
-        camera: None,
-    })
-    .init_resource::<PresentationTime>()
-    .init_resource::<Redraw>()
-    .add_systems(PostStartup, retarget::<C>);
-}
-
-fn retarget<C: Component>(
-    mut commands: Commands,
-    mut surface: ResMut<Surface>,
-    camera: Single<Entity, With<C>>,
-) {
-    commands.entity(*camera).insert((
-        RenderTarget::Image(surface.image.clone().into()),
-        bevy::ui::IsDefaultUiCamera,
-    ));
-    surface.camera = Some(*camera);
+    capture::install::<C>(app, size);
+    app.init_resource::<PresentationTime>()
+        .init_resource::<Redraw>();
 }
 
 #[derive(Deserialize)]
@@ -389,9 +344,9 @@ impl<G: Game> Seat<G> {
         app.update();
         let surface = app.world().resource::<Surface>();
         let camera = surface
-            .camera
+            .camera()
             .ok_or("The table spawned no camera for the seat's image.")?;
-        let image = surface.image.clone();
+        let image = surface.image();
         Ok(Self::new(game, app, camera, Some(image)))
     }
 
@@ -862,39 +817,27 @@ impl<G: Game> Seat<G> {
                 std::thread::sleep(Duration::from_millis(2));
             }
         }
-        let written: Arc<Mutex<Option<Result<(), String>>>> = Arc::default();
-        let slot = written.clone();
-        let target = path.to_owned();
-        app.world_mut().spawn(Screenshot::image(image)).observe(
-            move |captured: On<ScreenshotCaptured>| {
-                *slot.lock().unwrap() = Some(crate::tabletop_capture::write_image(
-                    captured.image.clone(),
-                    &target,
-                ));
-            },
-        );
-        loop {
-            let proceed = self.step(app, Duration::ZERO);
-            if let Some(result) = written.lock().unwrap().take() {
-                return match result {
-                    Ok(()) => {
-                        let mut response = self.response(app, Status::Captured, None);
-                        response.json["path"] = json!(path);
-                        response
-                    }
-                    Err(error) => self.refused(app, format!("Cannot save the capture: {error}")),
-                };
+        // The shared capture steps the seat's frozen clock until the file is written,
+        // inside the limit the readiness wait began.
+        let captured = capture::image_to_file(app, image, path, deadline, |app| {
+            self.step(app, Duration::ZERO)
+        });
+        match captured {
+            Ok(()) => {
+                let mut response = self.response(app, Status::Captured, None);
+                response.json["path"] = json!(path);
+                response
             }
-            if !proceed || Instant::now() >= deadline {
-                return self.refused(
-                    app,
-                    format!(
-                        "The capture did not complete within {} seconds; no file was written.",
-                        CAPTURE_LIMIT.as_secs()
-                    ),
-                );
+            Err(Failure::Unsaved(error)) => {
+                self.refused(app, format!("Cannot save the capture: {error}"))
             }
-            std::thread::sleep(Duration::from_millis(2));
+            Err(Failure::Incomplete) => self.refused(
+                app,
+                format!(
+                    "The capture did not complete within {} seconds; no file was written.",
+                    CAPTURE_LIMIT.as_secs()
+                ),
+            ),
         }
     }
 }
