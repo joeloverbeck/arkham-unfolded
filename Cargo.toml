@@ -14,7 +14,7 @@ default = []
 tabletop = ["dep:bevy", "unfolded-tabletop/render"]
 
 [dependencies]
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "7764187f3b3713fb154e372f482e42a529ffc64e" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "d407fd049cebeec0f70bcea7aa7178b692d3b056" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -68,4 +68,4 @@ debug = "full"
 debug = "full"
 
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "7764187f3b3713fb154e372f482e42a529ffc64e" }
+wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "d407fd049cebeec0f70bcea7aa7178b692d3b056" }
