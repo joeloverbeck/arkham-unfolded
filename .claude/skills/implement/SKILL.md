@@ -16,7 +16,7 @@ After selecting the branch, record its current commit (`git rev-parse HEAD`) as 
 
 For tabletop UI work, establish the [inherited presentation baseline](../../../docs/agents/native-verification.md#visual-and-wording-review) before coding, including when adding a scenario or mode. Carry its affected sections, implementation paths and authorized differences into the review brief.
 
-For a decision-only measurement on the owner's display, whose result is an evidence record, not a merge, follow the [owner-run measurement launch](../diagnosing-bugs/native-performance.md#owner-run-measurement-launch): it names the checks, build and publication that stand in for the full gate and the pull request.
+For a measurement launch on the owner's display, follow the [owner-run measurement launch](../diagnosing-bugs/native-performance.md#owner-run-measurement-launch) from the instrument's design onward. When the result is an evidence record alone, its checks, build and publication stand in for the full gate and the pull request. When the issue's pull request keeps the comparison build, the full gate and the pull request follow on the outcome's commit.
 
 Use the [TDD guide](../tdd/SKILL.md) at pre-agreed seams, selecting the workflow for a behavior change or a refactor that preserves behavior.
 

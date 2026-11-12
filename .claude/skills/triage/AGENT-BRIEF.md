@@ -37,6 +37,8 @@ When a decision-only measurement chooses between named outcomes, give each outco
 - **Good:** "Lower MSAA when panning power falls by at least 25 W or GPU utilisation by at least 10 points; two launches at 4× differed by up to 13 W"
 - **Bad:** "Lower MSAA when panning power drops materially"
 
+Name each measure and what it is read from. Leave how the instrument records it to the [launch contract](../diagnosing-bugs/native-performance.md#owner-run-measurement-launch).
+
 ### Explicit scope boundaries
 
 State what is out of scope. This prevents the agent from gold-plating or making assumptions about adjacent features.

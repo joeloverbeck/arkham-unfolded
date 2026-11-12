@@ -46,7 +46,7 @@ git switch main &&
 git pull --ff-only origin main
 ```
 
-Verify the resulting branch, commit and working-tree status before reporting synchronization complete. Keep human decisions between separate command sequences; `&&` supplies failure propagation, not acceptance.
+Verify the resulting branch, commit and working-tree status before reporting synchronization complete. Keep human decisions between separate command sequences; `&&` supplies failure propagation, not acceptance. This repository's `delete_branch_on_merge` setting deletes a merged PR's head branch on GitHub, so only the local copy remains: remove it with `git branch -d BRANCH`, which refuses an unmerged branch.
 
 Publishing an issue or applying a readiness label follows the authority and feasibility rules in `CLAUDE.md` and the constitution. A draft spec or a closed dependency alone does not activate work.
 
