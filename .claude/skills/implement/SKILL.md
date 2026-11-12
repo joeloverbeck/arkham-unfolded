@@ -16,6 +16,8 @@ After selecting the branch, record its current commit (`git rev-parse HEAD`) as 
 
 For tabletop UI work, establish the [inherited presentation baseline](../../../docs/agents/native-verification.md#visual-and-wording-review) before coding, including when adding a scenario or mode. Carry its affected sections, implementation paths and authorized differences into the review brief.
 
+For a decision-only measurement on the owner's display, whose result is an evidence record, not a merge, follow the [owner-run measurement launch](../diagnosing-bugs/native-performance.md#owner-run-measurement-launch): it names the checks, build and publication that stand in for the full gate and the pull request.
+
 Use the [TDD guide](../tdd/SKILL.md) at pre-agreed seams, selecting the workflow for a behavior change or a refactor that preserves behavior.
 
 Run typechecking and focused tests during implementation. Before capturing a review candidate or starting desktop verification, run `scripts/check-format` and `scripts/dev scripts/check-clippy` through the recorded-check procedure below and require both to pass. These existing checks catch mechanical repairs before review and timed human work. Run the full repository gate once the final candidate is stable; repeat it only after changes or failures invalidate that result.
