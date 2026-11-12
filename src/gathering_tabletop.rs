@@ -1324,7 +1324,13 @@ fn setup(
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.9, -0.6, 0.)),
     ));
-    commands.spawn((Camera3d::default(), Transform::default(), MainCamera));
+    // Joel chose MSAA off after #189: 4× barely smoothed edges and kept the GPU busier.
+    commands.spawn((
+        Camera3d::default(),
+        Msaa::Off,
+        Transform::default(),
+        MainCamera,
+    ));
 }
 
 /// Existing caption roles keep their distinct literal and rich-text treatment.
