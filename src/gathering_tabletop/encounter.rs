@@ -395,7 +395,8 @@ pub(super) fn animate(
         && health.allows_play()
         && windows.iter().any(|window| window.focused);
     if running {
-        redraw.request();
+        // The surround is a slow decoration; an open reading is not a presentation.
+        redraw.decorate();
         if *was_running {
             let reading = table.presentation.encounter_mut();
             reading.elapsed = (reading.elapsed + time.delta_secs().min(0.05)) % 2640.;

@@ -269,6 +269,10 @@ fn encounter_surround_has_no_pause_control_and_resumes_without_a_focus_time_jump
         draws::tick(&mut app, 0.05);
     }
     assert_ne!(surrounds(&mut app), initial);
+    // An open reading is not a presentation: only the surround asks for frames (#188).
+    *app.world_mut().resource_mut::<Redraw>() = Redraw::default();
+    draws::tick(&mut app, 0.05);
+    assert!(app.world().resource::<Redraw>().decorative_only());
     let window = app
         .world_mut()
         .query_filtered::<Entity, With<Window>>()
@@ -278,6 +282,9 @@ fn encounter_surround_has_no_pause_control_and_resumes_without_a_focus_time_jump
     let before = surrounds(&mut app);
     draws::tick(&mut app, 60.);
     assert_eq!(surrounds(&mut app), before);
+    *app.world_mut().resource_mut::<Redraw>() = Redraw::default();
+    draws::tick(&mut app, 0.05);
+    assert!(!app.world().resource::<Redraw>().decorative_only());
     app.world_mut().get_mut::<Window>(window).unwrap().focused = true;
     draws::tick(&mut app, 60.);
     assert_eq!(

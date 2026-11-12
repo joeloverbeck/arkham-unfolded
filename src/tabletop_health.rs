@@ -1,6 +1,6 @@
 //! Admission to native play depends on observed rendering progress, not GPU-memory guesses.
 
-use crate::tabletop_pacing::{Redraw, RequestRedraw, SelectCadence};
+use crate::tabletop_pacing::{Redraw, RequestRedraw, SelectCadence, Settled};
 use bevy::{
     app::AppExit,
     asset::UntypedAssetId,
@@ -526,19 +526,19 @@ struct HealthConditions {
 fn refresh_watchdog(
     health: Res<RenderHealth>,
     environment: Res<HealthEnvironment>,
-    settings: Option<Res<WinitSettings>>,
+    settled: Option<Res<Settled>>,
     progress: Res<GpuProgress>,
 ) {
     // Current input can change cadence after PreUpdate. Arm for that decision
     // before entering render extraction, which may wait for a blocked renderer.
-    let active =
-        settings.is_none_or(|settings| matches!(settings.focused_mode, UpdateMode::Continuous));
+    // A decorative table keeps updating too; only a settled one waits for input.
+    let updating = settled.is_none_or(|settled| !settled.get());
     progress.0.heartbeat_ms.store(
         progress.0.origin.elapsed().as_millis() as u64,
         Ordering::Release,
     );
     progress.0.armed.store(
-        environment.foreground && active && !matches!(health.phase, Phase::Failed(_)),
+        environment.foreground && updating && !matches!(health.phase, Phase::Failed(_)),
         Ordering::Release,
     );
 }
@@ -1533,6 +1533,17 @@ mod tests {
             app.world().resource::<WinitSettings>().focused_mode,
             UpdateMode::Continuous
         ));
+        assert!(!progress.0.armed.load(Ordering::Acquire));
+
+        // A decorative table keeps updating below display rate, so a hang there is caught too.
+        app.world_mut().resource_mut::<Redraw>().decorate();
+        app.update();
+        assert!(!matches!(
+            app.world().resource::<WinitSettings>().focused_mode,
+            UpdateMode::Continuous
+        ));
+        assert!(progress.0.armed.load(Ordering::Acquire));
+        app.update();
         assert!(!progress.0.armed.load(Ordering::Acquire));
     }
 

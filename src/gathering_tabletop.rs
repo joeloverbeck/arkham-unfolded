@@ -692,6 +692,7 @@ fn run_window(
         .add_plugins(MeshPickingPlugin)
         .add_plugins(crate::tabletop_chaos_pouch::ChaosPouchPlugin)
         .add_plugins(TabletopPacingPlugin)
+        .add_plugins(crate::tabletop_pacing::comparison::DecorativeComparisonPlugin)
         .add_plugins(TabletopHealthPlugin);
     let art = prepared.load(app.world().resource::<AssetServer>());
     app.insert_resource(art);

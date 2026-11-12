@@ -1,7 +1,7 @@
 use super::*;
 use bevy::window::{CursorMoved, WindowFocused};
 
-fn app() -> App {
+pub(super) fn app() -> App {
     let mut app = App::new();
     app.add_message::<WindowEvent>()
         .init_resource::<ButtonInput<KeyCode>>()
@@ -11,11 +11,195 @@ fn app() -> App {
     app
 }
 
+pub(super) fn pace(app: &App) -> Pace {
+    app.world().resource::<Cadence>().pace
+}
+
 fn settled(app: &mut App) {
     app.update();
     app.world_mut().resource_mut::<Cadence>().active_until = Some(Instant::now());
     app.update();
-    assert!(app.world().resource::<Cadence>().idle);
+    assert_eq!(pace(app), Pace::Settled);
+}
+
+/// One update in which only a slow looping decoration asks for a frame.
+pub(super) fn decorate(app: &mut App) {
+    app.world_mut().resource_mut::<Redraw>().decorate();
+    app.update();
+}
+
+pub(super) fn end_active_interval(app: &mut App) {
+    app.world_mut().resource_mut::<Cadence>().active_until = Some(Instant::now());
+}
+
+fn move_cursor(app: &mut App) {
+    let window = app
+        .world_mut()
+        .query_filtered::<Entity, With<Window>>()
+        .single(app.world())
+        .unwrap();
+    app.world_mut()
+        .write_message(WindowEvent::CursorMoved(CursorMoved {
+            window,
+            position: Vec2::new(100.0, 200.0),
+            delta: Some(Vec2::X),
+        }));
+}
+
+#[test]
+fn decorations_alone_draw_at_the_decorative_rate_then_settle_when_they_stop() {
+    let mut app = app();
+    // Startup keeps the display rate whatever asks for frames.
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Active);
+    settled(&mut app);
+
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Decorative);
+    assert!(!app.world().resource::<Settled>().get());
+    let mode = app.world().resource::<WinitSettings>().focused_mode;
+    assert_eq!(mode, UpdateMode::reactive_low_power(DECORATIVE_FRAME));
+    // Window input ends the wait between decorative frames.
+    assert!(matches!(
+        mode,
+        UpdateMode::Reactive {
+            react_to_window_events: true,
+            ..
+        }
+    ));
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Decorative);
+
+    // No choice offered, Reduced motion or focus loss: nothing decorates any more.
+    app.update();
+    assert_eq!(pace(&app), Pace::Settled);
+    assert!(app.world().resource::<Settled>().get());
+    assert_eq!(
+        app.world().resource::<WinitSettings>().focused_mode,
+        UpdateMode::reactive_low_power(Duration::from_millis(250))
+    );
+}
+
+#[test]
+fn input_or_other_work_returns_a_decorative_table_to_display_rate() {
+    let mut app = app();
+    settled(&mut app);
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Decorative);
+
+    move_cursor(&mut app);
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Active);
+    assert_eq!(
+        app.world().resource::<WinitSettings>().focused_mode,
+        UpdateMode::Continuous
+    );
+    // The settling interval still holds the display rate.
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Active);
+    end_active_interval(&mut app);
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Decorative);
+
+    app.world_mut().resource_mut::<Redraw>().request();
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Active);
+    end_active_interval(&mut app);
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Decorative);
+
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::KeyW);
+    end_active_interval(&mut app);
+    decorate(&mut app);
+    assert_eq!(pace(&app), Pace::Active);
+}
+
+#[test]
+fn decorative_frames_keep_their_phase_but_input_does_not_inherit_the_wait() {
+    let start = Instant::now();
+    let mut cadence = Cadence::default();
+    cadence.begin(start, false);
+    let frame = start + Duration::from_secs(3);
+    cadence.begin(frame, false);
+    cadence.finish(Demand::Decorative);
+    assert_eq!(cadence.pace, Pace::Decorative);
+    // A timed frame advances presentation by its whole interval, so the breath keeps pace.
+    let frame = frame + DECORATIVE_FRAME;
+    assert_eq!(cadence.begin(frame, false), DECORATIVE_FRAME);
+    cadence.finish(Demand::Decorative);
+    // Input that ends the wait moves at most one 60/s step, as on a settled table.
+    assert_eq!(
+        cadence.begin(frame + Duration::from_millis(30), true),
+        SETTLED_FRAME
+    );
+}
+
+#[test]
+fn breathing_availability_is_decorative_while_a_hover_fade_keeps_display_rate() {
+    use crate::tabletop_feedback::{
+        CardFeedback, FeedbackPlugin, FeedbackSettings, attach_card_feedback,
+    };
+    use bevy::picking::{backend::HitData, hover::HoverMap, pointer::PointerId};
+    let mut app = app();
+    app.init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>()
+        .init_resource::<HoverMap>()
+        .init_resource::<bevy::input_focus::InputFocus>()
+        .add_plugins(bevy::transform::TransformPlugin)
+        .add_plugins(FeedbackPlugin);
+    {
+        let mut window = app
+            .world_mut()
+            .query::<&mut Window>()
+            .single_mut(app.world_mut())
+            .unwrap();
+        window.focused = true;
+        window.set_cursor_position(Some(Vec2::new(30.0, 30.0)));
+    }
+    let card = app.world_mut().spawn(Transform::default()).id();
+    app.world_mut()
+        .resource_scope(|world, mut meshes: Mut<Assets<Mesh>>| {
+            world.resource_scope(|world, mut materials: Mut<Assets<StandardMaterial>>| {
+                let mut commands = world.commands();
+                attach_card_feedback(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    card,
+                    2.0,
+                    2.8,
+                    0.0,
+                );
+            });
+        });
+    app.world_mut().flush();
+    app.world_mut()
+        .get_mut::<CardFeedback>(card)
+        .unwrap()
+        .opportunity = true;
+    app.update();
+    end_active_interval(&mut app);
+    app.update();
+    assert_eq!(pace(&app), Pace::Decorative);
+
+    app.world_mut()
+        .resource_mut::<HoverMap>()
+        .entry(PointerId::Mouse)
+        .or_default()
+        .insert(card, HitData::new(Entity::PLACEHOLDER, 1.0, None, None));
+    end_active_interval(&mut app);
+    app.update();
+    assert_eq!(pace(&app), Pace::Active);
+
+    // Reduced motion completes the hover and steadies the cue: nothing asks for frames.
+    app.world_mut()
+        .resource_mut::<FeedbackSettings>()
+        .reduced_motion = true;
+    end_active_interval(&mut app);
+    app.update();
+    assert_eq!(pace(&app), Pace::Settled);
 }
 
 #[test]
@@ -32,19 +216,9 @@ fn settled_table_sleeps_but_input_wakes_then_returns_to_idle() {
         UpdateMode::reactive_low_power(Duration::from_secs(1))
     );
 
-    let window = app
-        .world_mut()
-        .query_filtered::<Entity, With<Window>>()
-        .single(app.world())
-        .unwrap();
-    app.world_mut()
-        .write_message(WindowEvent::CursorMoved(CursorMoved {
-            window,
-            position: Vec2::new(100.0, 200.0),
-            delta: Some(Vec2::X),
-        }));
+    move_cursor(&mut app);
     app.update();
-    assert!(!app.world().resource::<Cadence>().idle);
+    assert_eq!(pace(&app), Pace::Active);
     assert_eq!(
         app.world().resource::<WinitSettings>().focused_mode,
         UpdateMode::Continuous
@@ -61,10 +235,10 @@ fn held_navigation_keeps_ticking_until_release_or_focus_loss() {
         .resource_mut::<ButtonInput<KeyCode>>()
         .press(KeyCode::KeyW);
     app.update();
-    assert!(!app.world().resource::<Cadence>().idle);
+    assert_eq!(pace(&app), Pace::Active);
     app.world_mut().resource_mut::<Cadence>().active_until = Some(Instant::now());
     app.update();
-    assert!(!app.world().resource::<Cadence>().idle);
+    assert_eq!(pace(&app), Pace::Active);
 
     let (window, mut state) = app
         .world_mut()
@@ -87,7 +261,7 @@ fn unfinished_presentation_extends_cadence_then_settles() {
     settled(&mut app);
     app.world_mut().resource_mut::<Redraw>().request();
     app.update();
-    assert!(!app.world().resource::<Cadence>().idle);
+    assert_eq!(pace(&app), Pace::Active);
     app.update();
     settled(&mut app);
 }
@@ -139,7 +313,7 @@ fn reveal_control_attention_moves_only_the_icon_and_sleeps_when_paused() {
         .single(app.world())
         .unwrap();
     let hitbox = *app.world().get::<UiTransform>(button).unwrap();
-    // Force a settled cadence: only the production attention cue may keep it awake.
+    // End the active interval: only the production attention cue keeps it drawing.
     app.world_mut().resource_mut::<Cadence>().active_until = Some(Instant::now());
     app.update();
     assert_ne!(
@@ -151,7 +325,7 @@ fn reveal_control_attention_moves_only_the_icon_and_sleeps_when_paused() {
         Vec2::ONE
     );
     assert_eq!(*app.world().get::<UiTransform>(button).unwrap(), hitbox);
-    assert!(!app.world().resource::<Cadence>().idle);
+    assert_eq!(pace(&app), Pace::Decorative);
 
     app.world_mut()
         .query::<&mut Window>()
@@ -228,19 +402,19 @@ fn reveal_control_attention_moves_only_the_icon_and_sleeps_when_paused() {
 fn idle_wait_is_not_charged_to_new_motion_or_delayed_into_the_next_frame() {
     let start = Instant::now();
     let mut cadence = Cadence::default();
-    assert_eq!(cadence.begin(start), Duration::ZERO);
-    cadence.begin(start + Duration::from_secs(3));
-    cadence.finish(false);
-    assert!(cadence.idle);
+    assert_eq!(cadence.begin(start, false), Duration::ZERO);
+    cadence.begin(start + Duration::from_secs(3), false);
+    cadence.finish(Demand::None);
+    assert_eq!(cadence.pace, Pace::Settled);
     let wake = start + Duration::from_secs(60);
-    assert!(cadence.begin(wake) <= Duration::from_millis(17));
-    cadence.finish(true);
+    assert!(cadence.begin(wake, true) <= Duration::from_millis(17));
+    cadence.finish(Demand::Display);
     assert_eq!(
-        cadence.begin(wake + Duration::from_millis(20)),
+        cadence.begin(wake + Duration::from_millis(20), false),
         Duration::from_millis(20)
     );
     assert_eq!(
-        cadence.begin(wake + Duration::from_millis(120)),
+        cadence.begin(wake + Duration::from_millis(120), false),
         Duration::from_millis(100)
     );
 }
@@ -256,7 +430,7 @@ fn raw_mouse_motion_elsewhere_does_not_keep_a_settled_table_awake() {
     app.world_mut()
         .write_message(WindowEvent::RequestRedraw(bevy::window::RequestRedraw));
     app.update();
-    assert!(app.world().resource::<Cadence>().idle);
+    assert_eq!(pace(&app), Pace::Settled);
 }
 
 fn dispatching_app() -> App {
@@ -293,4 +467,17 @@ fn settled_dispatch_keeps_its_cap_when_wakeups_repeat() {
     let mut app = dispatching_app();
     settled(&mut app);
     assert!(dispatch(&mut app, 4, false) >= Duration::from_millis(60));
+}
+
+#[test]
+fn decorative_dispatch_leaves_no_sleep_for_input_to_wait_behind() {
+    let mut app = dispatching_app();
+    settled(&mut app);
+    let start = Instant::now();
+    for _ in 0..8 {
+        decorate(&mut app);
+    }
+    // Even a 60/s sleep cap would need more than 100 ms for eight dispatches.
+    assert!(start.elapsed() < Duration::from_millis(100));
+    assert_eq!(pace(&app), Pace::Decorative);
 }

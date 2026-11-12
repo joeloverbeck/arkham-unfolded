@@ -19,19 +19,23 @@ use std::{
 /// Caps settled dispatch, and bounds the step of any update that follows a settled one.
 /// Moving frames follow FIFO presentation: the owner saw sleep caps judder at 144 Hz (#151).
 const SETTLED_FRAME: Duration = Duration::from_nanos(16_666_667);
+/// How often a table that only shows slow looping decorations is drawn (#188).
+/// A wait that input interrupts paces it, not a sleep after dispatch.
+const DECORATIVE_FRAME: Duration = Duration::from_nanos(33_333_333);
 const INPUT_SETTLE: Duration = Duration::from_millis(150);
 const STARTUP_SETTLE: Duration = Duration::from_secs(2);
 
 /// The render-extract sub-app cannot read main-world resources, so both hold this handle.
 #[derive(Resource, Clone, Default)]
-struct Settled(Arc<AtomicBool>);
+pub(crate) struct Settled(Arc<AtomicBool>);
 
 impl Settled {
     fn set(&self, settled: bool) {
         self.0.store(settled, Ordering::Relaxed);
     }
 
-    fn get(&self) -> bool {
+    /// Whether this update chose to wait for input: no motion, work or decoration needs frames.
+    pub(crate) fn get(&self) -> bool {
         self.0.load(Ordering::Relaxed)
     }
 }
@@ -41,15 +45,40 @@ impl Settled {
 pub(crate) struct Presentation;
 pub(crate) type PresentationTime = Time<Presentation>;
 
+/// What this update's requests ask of the next frames, weakest first.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+enum Demand {
+    #[default]
+    None,
+    /// Only slow looping decorations.
+    Decorative,
+    /// Unfinished work or input.
+    Display,
+}
+
 #[derive(Resource, Default)]
 pub(crate) struct Redraw {
-    requested: bool,
+    demand: Demand,
 }
 
 impl Redraw {
     /// Keep ticking while a visible transition or capture has unfinished work.
     pub(crate) fn request(&mut self) {
-        self.requested = true;
+        self.demand = Demand::Display;
+    }
+
+    /// Keep drawing a slow looping decoration, at the decorative rate unless
+    /// something else holds the display rate. Its phase must come from `PresentationTime`.
+    pub(crate) fn decorate(&mut self) {
+        self.demand = self.demand.max(Demand::Decorative);
+    }
+}
+
+#[cfg(test)]
+impl Redraw {
+    /// Whether this update's requests asked only for decorative frames.
+    pub(crate) fn decorative_only(&self) -> bool {
+        self.demand == Demand::Decorative
     }
 }
 
@@ -60,44 +89,79 @@ pub(crate) struct RequestRedraw;
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct SelectCadence;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Pace {
+    /// Display rate: motion, presentations, checks, captures or recent input.
+    #[default]
+    Active,
+    /// Only slow looping decorations ask for frames.
+    Decorative,
+    /// Nothing asks for frames; the table waits for input.
+    Settled,
+}
+
+impl Pace {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Decorative => "decorative",
+            Self::Settled => "settled",
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 struct Cadence {
     last_update: Option<Instant>,
     active_until: Option<Instant>,
-    idle: bool,
+    pace: Pace,
 }
 
 impl Cadence {
-    fn begin(&mut self, now: Instant) -> Duration {
+    /// `input` says that a window event other than raw mouse motion woke this update.
+    fn begin(&mut self, now: Instant, input: bool) -> Duration {
         let delta = self.last_update.map_or(Duration::ZERO, |last| {
-            now.saturating_duration_since(last).min(if self.idle {
-                // A newly pressed key or queued action must not inherit thinking time.
-                SETTLED_FRAME
-            } else {
-                // Retain Bevy's ordinary slow-frame bound while motion is underway.
-                Duration::from_millis(250)
-            })
+            now.saturating_duration_since(last).min(
+                if self.pace == Pace::Settled || (self.pace == Pace::Decorative && input) {
+                    // A newly pressed key or queued action must not inherit thinking time.
+                    SETTLED_FRAME
+                } else {
+                    // Retain Bevy's ordinary slow-frame bound while motion is underway.
+                    // Decorative frames take their whole interval, so their phase keeps time.
+                    Duration::from_millis(250)
+                },
+            )
         });
         self.last_update = Some(now);
         self.active_until.get_or_insert(now + STARTUP_SETTLE);
         delta
     }
 
-    fn finish(&mut self, requested: bool) -> WinitSettings {
+    fn finish(&mut self, demand: Demand) -> WinitSettings {
         let now = self
             .last_update
             .expect("clock runs before cadence selection");
-        if requested {
+        if demand == Demand::Display {
             self.active_until = Some(self.active_until.unwrap().max(now + INPUT_SETTLE));
         }
-        self.idle = now >= self.active_until.unwrap();
-        if self.idle {
-            WinitSettings {
+        self.pace = if now < self.active_until.unwrap() {
+            Pace::Active
+        } else if demand == Demand::Decorative {
+            Pace::Decorative
+        } else {
+            Pace::Settled
+        };
+        match self.pace {
+            Pace::Active => WinitSettings::continuous(),
+            // Decorations stop without focus, so the unfocused mode only bridges one update.
+            Pace::Decorative => WinitSettings {
+                focused_mode: UpdateMode::reactive_low_power(DECORATIVE_FRAME),
+                unfocused_mode: UpdateMode::reactive_low_power(DECORATIVE_FRAME),
+            },
+            Pace::Settled => WinitSettings {
                 focused_mode: UpdateMode::reactive_low_power(Duration::from_millis(250)),
                 unfocused_mode: UpdateMode::reactive_low_power(Duration::from_secs(1)),
-            }
-        } else {
-            WinitSettings::continuous()
+            },
         }
     }
 }
@@ -148,6 +212,8 @@ struct UpdateStats {
 fn update_clock(
     mut cadence: ResMut<Cadence>,
     mut time: ResMut<PresentationTime>,
+    mut events: MessageReader<WindowEvent>,
+    recording: Option<Res<comparison::Recording>>,
     mut stats: Local<UpdateStats>,
 ) {
     let now = Instant::now();
@@ -156,18 +222,26 @@ fn update_clock(
             .longest_gap
             .max(now.saturating_duration_since(previous));
     }
-    time.advance_by(cadence.begin(now));
+    let input = read_input(&mut events);
+    time.advance_by(cadence.begin(now, input));
     let since = *stats.since.get_or_insert(now);
     stats.count += 1;
     let elapsed = now.saturating_duration_since(since);
     if elapsed >= Duration::from_secs(1) {
         // Opt-in via RUST_LOG; these are app updates, not GPU presentation timestamps.
         debug!(
-            "Tabletop updates: {} in {:.3}s; longest gap {:.1}ms; idle={}",
+            "Tabletop updates: {} in {:.3}s; longest gap {:.1}ms; pace={}",
             stats.count,
             elapsed.as_secs_f64(),
             stats.longest_gap.as_secs_f64() * 1000.0,
-            cadence.idle
+            cadence.pace.label()
+        );
+        comparison::record_updates(
+            recording.as_deref(),
+            stats.count,
+            elapsed,
+            stats.longest_gap,
+            cadence.pace,
         );
         stats.since = Some(now);
         stats.count = 0;
@@ -182,21 +256,28 @@ fn input_activity(
     windows: Query<&Window>,
     mut redraw: ResMut<Redraw>,
 ) {
-    // Raw mouse motion also arrives while another application has focus. Logical
-    // cursor events cover our camera/hover input without waking for that traffic.
-    for event in events.read() {
-        if !matches!(
-            event,
-            WindowEvent::MouseMotion(_) | WindowEvent::RequestRedraw(_)
-        ) {
-            redraw.request();
-        }
-    }
-    if windows.iter().any(|window| window.focused)
-        && (keys.get_pressed().next().is_some() || buttons.get_pressed().next().is_some())
+    if read_input(&mut events)
+        || (windows.iter().any(|window| window.focused)
+            && (keys.get_pressed().next().is_some() || buttons.get_pressed().next().is_some()))
     {
         redraw.request();
     }
+}
+
+/// Reads every pending window event (`any` would stop early and leave the rest for
+/// the next update). Raw mouse motion also arrives while another application has
+/// focus. Logical cursor events cover our camera/hover input without waking for it.
+fn read_input(events: &mut MessageReader<WindowEvent>) -> bool {
+    events
+        .read()
+        .filter(|event| {
+            !matches!(
+                event,
+                WindowEvent::MouseMotion(_) | WindowEvent::RequestRedraw(_)
+            )
+        })
+        .count()
+        > 0
 }
 
 fn select_cadence(
@@ -204,18 +285,32 @@ fn select_cadence(
     mut redraw: ResMut<Redraw>,
     mut settings: ResMut<WinitSettings>,
     settled: Res<Settled>,
+    compared: Option<Res<comparison::ComparedRate>>,
 ) {
-    let next = cadence.finish(std::mem::take(&mut redraw.requested));
-    settled.set(cadence.idle);
+    let demand = std::mem::take(&mut redraw.demand);
+    let previous = cadence.pace;
+    let frame = compared.map_or(Some(DECORATIVE_FRAME), |compared| compared.frame());
+    let mut next = cadence.finish(match frame {
+        // Display rate: decorations count as ordinary requests, as before #188.
+        None if demand == Demand::Decorative => Demand::Display,
+        _ => demand,
+    });
+    if let Some(frame) = frame
+        && cadence.pace == Pace::Decorative
+    {
+        next.focused_mode = UpdateMode::reactive_low_power(frame);
+        next.unfocused_mode = UpdateMode::reactive_low_power(frame);
+    }
+    settled.set(cadence.pace == Pace::Settled);
+    if cadence.pace != previous {
+        debug!("Tabletop cadence: {}", cadence.pace.label());
+    }
     if settings.focused_mode != next.focused_mode || settings.unfocused_mode != next.unfocused_mode
     {
-        debug!(
-            "Tabletop cadence: {}",
-            if cadence.idle { "idle" } else { "active" }
-        );
         *settings = next;
     }
 }
 
+pub(crate) mod comparison;
 #[cfg(test)]
 mod tests;

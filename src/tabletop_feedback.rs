@@ -346,12 +346,13 @@ fn card_feedback(
                 material.base_color.set_alpha(opacity);
             }
         }
-        if wanted
-            && ((mark.kind == Mark::Hover && opacity < 1.0)
-                || (mark.kind == Mark::AvailableOpportunity && breathe))
-            && let Some(redraw) = redraw.as_mut()
-        {
-            redraw.request();
+        if wanted && let Some(redraw) = redraw.as_mut() {
+            if mark.kind == Mark::Hover && opacity < 1.0 {
+                redraw.request();
+            } else if mark.kind == Mark::AvailableOpportunity && breathe {
+                // The breath's phase comes from elapsed time, so fewer frames keep its pace.
+                redraw.decorate();
+            }
         }
     }
 }

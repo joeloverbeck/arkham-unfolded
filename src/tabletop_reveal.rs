@@ -565,8 +565,10 @@ pub(crate) fn render(
 
 fn request_redraw(shortcut: Res<Shortcut>, mut redraw: ResMut<Redraw>) {
     let target = if shortcut.offer.is_some() { 1.0 } else { 0.0 };
-    if shortcut.dirty || shortcut.opacity != target || shortcut.attention_moving {
+    if shortcut.dirty || shortcut.opacity != target {
         redraw.request();
+    } else if shortcut.attention_moving {
+        redraw.decorate();
     }
 }
 
