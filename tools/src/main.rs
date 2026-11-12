@@ -15,6 +15,7 @@ mod renderer;
 mod review;
 mod seat;
 mod tracked;
+mod worktree;
 
 use clap::{Parser, Subcommand};
 use std::{io::Write, process::ExitCode};
@@ -70,6 +71,14 @@ enum Command {
     /// Send requests to a held agent seat over its socket and print each response unchanged.
     #[command(after_help = "Agent seat: README.md#held-session")]
     Seat(seat::Args),
+    /// Add or remove checkouts that build into the owner's Cargo target.
+    #[command(
+        after_help = "Shared target: docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts"
+    )]
+    Worktree {
+        #[command(subcommand)]
+        command: worktree::Command,
+    },
     /// Owner-run bounded perf capture of an already running, exact executable.
     ProfileNative(profile::Args),
 }
@@ -106,6 +115,7 @@ fn main() -> ExitCode {
         Command::Native { command } => native::run(command),
         Command::ProfileNative(args) => profile::capture(args),
         Command::Seat(args) => seat::run(args),
+        Command::Worktree { command } => worktree::run(command),
     };
     match result {
         Ok(code) => ExitCode::from(code),

@@ -24,7 +24,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 3. Create the integration branch. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge in step 5 (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
 
-4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Worktrees sharing one Cargo target each need their own profile value: see [one target for several checkouts](../../../docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts). Each implementer subagent:
+4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Create each worktree with `scripts/tools worktree add`, which gives it the owner's Cargo target and its own profile value ([one target for several checkouts](../../../docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts)). Each implementer subagent:
    - confirms its worktree is based on the integration branch before starting, and resets onto it if not;
    - calls the Skill tool with `tdd` to build the ticket;
    - merges the integration branch tip into its own branch before reporting done;
@@ -38,4 +38,4 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 8. If a draft PR exists, mark it ready for review. Otherwise, resolve each ticket the way the issue tracker closes work, and report the integration branch.
 
-9. Clean up all **implementer subagent** worktrees.
+9. Remove every **implementer subagent** worktree with `scripts/tools worktree remove --merged-into <integration branch> DIR...`. Report each one it refuses, with its reason, and leave those for the owner.
