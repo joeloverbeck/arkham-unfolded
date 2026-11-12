@@ -7,30 +7,35 @@
 //! as standard input. The launching shell's standard input, output and error are not
 //! passed on, so a harness waiting for their end is not held by the seat. The launcher
 //! waits for admission and prints its result; the seat then answers one connection at a
-//! time, in arrival order, through the same serving loop as batch form.
+//! time, in arrival order, through the same serving loop as batch form, until `quit`,
+//! the table's own exit or its idle end.
 
 use super::{Game, Seat, Session, emit};
 use bevy::prelude::App;
+use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use serde_json::Value;
 use std::{
     fs::{self, File, OpenOptions, Permissions},
-    io::{BufRead, BufReader, ErrorKind},
+    io::{self, BufRead, BufReader, ErrorKind, Read},
     os::{
         fd::{AsFd, OwnedFd},
         unix::{
             fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-            net::UnixListener,
+            net::{UnixListener, UnixStream},
             process::CommandExt,
         },
     },
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    time::{Duration, Instant},
 };
 
 /// Set on the process the launcher starts, which serves instead of launching.
 const DETACHED: &str = "ARKHAM_AGENT_SEAT_DETACHED";
 /// A Unix-domain socket path is at most this many bytes.
 const PATH_LIMIT: usize = 107;
+/// A held session without any request for this long ends itself.
+pub(crate) const IDLE: Duration = Duration::from_secs(30 * 60);
 
 /// Whether this process is the seat a launcher started.
 pub(crate) fn detached() -> bool {
@@ -55,8 +60,9 @@ pub(crate) struct Listener {
 
 impl Listener {
     /// Listen on `path`. The socket is made in a private directory and linked into place
-    /// only once owner-only, so the path never exists with wider access. An existing path
-    /// is refused and left unchanged.
+    /// only once owner-only, so the path never exists with wider access. A socket where
+    /// nothing answers was left by a crashed seat and is replaced. A socket where a seat
+    /// answers, and any other existing path, is refused and left unchanged.
     pub(crate) fn claim(path: &Path) -> Result<Self, String> {
         let cannot =
             |error: &dyn std::fmt::Display| format!("Cannot listen on {}: {error}", path.display());
@@ -78,10 +84,53 @@ impl Listener {
         let listener = UnixListener::bind(&made).map_err(|error| cannot(&error))?;
         fs::set_permissions(&made, Permissions::from_mode(0o600))
             .map_err(|error| cannot(&error))?;
+        // Seats claiming paths in one directory take turns, so the leftover found here is
+        // the one replaced, never a seat that started meanwhile. A seat removes its own
+        // socket while still listening, so a socket where nothing answers is left over.
+        let _turn = File::open(parent)
+            .and_then(|directory| directory.lock().map(|()| directory))
+            .map_err(|error| cannot(&format_args!("cannot lock its directory: {error}")))?;
+        let replaced = match fs::symlink_metadata(path) {
+            Err(error) if error.kind() == ErrorKind::NotFound => false,
+            Err(error) => return Err(cannot(&error)),
+            Ok(file) if !file.file_type().is_socket() => {
+                return Err(cannot(
+                    &"the path exists and is not a socket; it was left unchanged",
+                ));
+            }
+            Ok(_) => match UnixStream::connect(path) {
+                Ok(_) => {
+                    return Err(cannot(
+                        &"an agent seat already answers there and was left untouched; quit that seat or choose another path",
+                    ));
+                }
+                Err(error) if error.kind() == ErrorKind::ConnectionRefused => {
+                    match fs::remove_file(path) {
+                        Err(error) if error.kind() != ErrorKind::NotFound => {
+                            return Err(cannot(&format_args!(
+                                "cannot remove the socket a crashed seat left there: {error}"
+                            )));
+                        }
+                        _ => true,
+                    }
+                }
+                Err(error) => {
+                    return Err(cannot(&format_args!(
+                        "cannot tell whether a seat answers on the socket there ({error}); it was left unchanged"
+                    )));
+                }
+            },
+        };
         fs::hard_link(&made, path).map_err(|error| match error.kind() {
             ErrorKind::AlreadyExists => cannot(&"the path already exists; it was left unchanged"),
             _ => cannot(&error),
         })?;
+        if replaced {
+            eprintln!(
+                "Replaced {}: a socket left by a seat that no longer answers.",
+                path.display()
+            );
+        }
         let file = fs::symlink_metadata(path).map_err(|error| cannot(&error))?;
         Ok(Self {
             listener,
@@ -116,32 +165,54 @@ impl Listener {
         })
     }
 
-    /// Answer connections one at a time, in arrival order, until `quit` or the table's
-    /// own exit. A client closing its connection does not end the session. The socket
-    /// is removed before the last connection closes.
+    /// Answer connections one at a time, in arrival order, until `quit`, the table's own
+    /// exit, or `idle` without any request, which ends the session as `quit` does. A
+    /// client closing its connection does not end the session; an open connection that
+    /// sends nothing does not keep it. The socket is removed before the last connection
+    /// closes.
     pub(crate) fn serve<G: Game>(
         mut self,
         seat: &mut Seat<G>,
         app: &mut App,
+        idle: Duration,
     ) -> Result<(), String> {
         eprintln!("The agent seat is listening on {}.", self.path.display());
+        let stopped = |error: io::Error| {
+            format!(
+                "The seat stopped accepting connections on {}: {error}",
+                self.path.display()
+            )
+        };
+        let mut quiet = Quiet::new(idle);
         let last = loop {
+            if !quiet.wait(&self.listener).map_err(stopped)? {
+                break None;
+            }
             let stream = match self.listener.accept() {
                 Ok((stream, _)) => stream,
                 Err(error) if error.kind() == ErrorKind::ConnectionAborted => continue,
-                Err(error) => {
-                    return Err(format!(
-                        "The seat stopped accepting connections on {}: {error}",
-                        self.path.display()
-                    ));
-                }
+                Err(error) => return Err(stopped(error)),
             };
-            match seat.converse(app, BufReader::new(&stream), &stream) {
-                Ok(Session::Ended) => break stream,
+            // A client that stops reading cannot hold the seat past its idle end either.
+            let _ = stream.set_write_timeout(Some(idle));
+            let requests = Requests {
+                stream: &stream,
+                quiet: &mut quiet,
+                heard: false,
+            };
+            match seat.converse(app, BufReader::new(requests), &stream) {
+                Ok(Session::Ended) => break Some(stream),
                 Ok(Session::Open) => {}
+                Err(_) if quiet.over => break Some(stream),
                 Err(error) => eprintln!("A connection ended before all its responses: {error}"),
             }
         };
+        if quiet.over {
+            eprintln!(
+                "The agent seat is ending its session as quit does: no request arrived for {}.",
+                describe(idle)
+            );
+        }
         self.remove();
         drop(last);
         eprintln!("The agent seat's session ended.");
@@ -166,6 +237,87 @@ impl Listener {
 impl Drop for Listener {
     fn drop(&mut self) {
         self.remove();
+    }
+}
+
+/// The idle clock: the session ends once its period passes while the seat waits for a
+/// request. Time spent answering does not count.
+struct Quiet {
+    period: Duration,
+    end: Instant,
+    /// The period passed: the session is over.
+    over: bool,
+}
+
+impl Quiet {
+    fn new(period: Duration) -> Self {
+        Self {
+            period,
+            end: Instant::now() + period,
+            over: false,
+        }
+    }
+
+    /// The seat has answered what arrived and waits again.
+    fn restart(&mut self) {
+        self.end = Instant::now() + self.period;
+    }
+
+    /// Wait until `source` has something to read: true when it has, false once the
+    /// period has passed first.
+    fn wait(&mut self, source: &impl AsFd) -> io::Result<bool> {
+        loop {
+            let left = self.end.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                self.over = true;
+                return Ok(false);
+            }
+            let timeout = Timespec::try_from(left).map_err(io::Error::other)?;
+            match poll(&mut [PollFd::new(source, PollFlags::IN)], Some(&timeout)) {
+                Ok(0) | Err(rustix::io::Errno::INTR) => {}
+                Ok(_) => return Ok(true),
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+}
+
+/// One connection's input, waiting for each request only until the idle end.
+struct Requests<'a> {
+    stream: &'a UnixStream,
+    quiet: &'a mut Quiet,
+    /// The last read brought something, so the seat reads again only once it has
+    /// answered it.
+    heard: bool,
+}
+
+impl Read for Requests<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if self.heard {
+            self.quiet.restart();
+        }
+        if !self.quiet.wait(self.stream)? {
+            return Err(io::Error::new(
+                ErrorKind::TimedOut,
+                "no request arrived within the idle period",
+            ));
+        }
+        let mut stream = self.stream;
+        let read = stream.read(buffer)?;
+        self.heard = read > 0;
+        Ok(read)
+    }
+}
+
+/// The idle period as the log states it.
+fn describe(period: Duration) -> String {
+    let minutes = period.as_secs() / 60;
+    if minutes == 0 || period != Duration::from_secs(minutes * 60) {
+        format!("{period:?}")
+    } else if minutes == 1 {
+        "1 minute".to_owned()
+    } else {
+        format!("{minutes} minutes")
     }
 }
 

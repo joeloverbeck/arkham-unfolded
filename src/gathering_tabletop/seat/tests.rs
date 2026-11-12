@@ -976,6 +976,16 @@ impl Sitting {
     /// thread. A client that fails before quitting gets a last connection that quits,
     /// so the session always ends.
     fn hold<T: Send>(&mut self, socket: &Path, client: impl FnOnce(&Path) -> T + Send) -> T {
+        self.hold_idle(socket, crate::agent_seat::socket::IDLE, client)
+    }
+
+    /// [`Sitting::hold`], ending the session after `idle` without a request.
+    fn hold_idle<T: Send>(
+        &mut self,
+        socket: &Path,
+        idle: Duration,
+        client: impl FnOnce(&Path) -> T + Send,
+    ) -> T {
         let listener = crate::agent_seat::socket::Listener::claim(socket).unwrap();
         std::thread::scope(|scope| {
             let talking = scope.spawn(|| {
@@ -987,7 +997,7 @@ impl Sitting {
                 }
                 outcome
             });
-            let served = listener.serve(&mut self.seat, &mut self.app);
+            let served = listener.serve(&mut self.seat, &mut self.app, idle);
             let outcome = talking.join().unwrap();
             served.unwrap();
             outcome.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
@@ -1120,11 +1130,258 @@ fn the_held_socket_is_accessible_only_to_its_owner_and_removed_with_its_listener
     );
 }
 
+#[test]
+fn a_path_that_is_not_a_socket_is_refused_and_left_unchanged() {
+    use std::os::unix::fs::{FileTypeExt, symlink};
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("notes.sock");
+    std::fs::write(&file, "an agent's notes").unwrap();
+    let folder = directory.path().join("folder.sock");
+    std::fs::create_dir(&folder).unwrap();
+    // A link to a socket nobody answers is still not a socket at the path.
+    let left = directory.path().join("left.sock");
+    drop(std::os::unix::net::UnixListener::bind(&left).unwrap());
+    let link = directory.path().join("link.sock");
+    symlink(&left, &link).unwrap();
+    for path in [&file, &folder, &link] {
+        let error = crate::agent_seat::socket::Listener::claim(path)
+            .err()
+            .unwrap_or_else(|| panic!("{} was claimed", path.display()));
+        assert!(error.contains(path.to_str().unwrap()), "{error}");
+        assert!(error.contains("not a socket"), "{error}");
+        assert!(error.contains("left unchanged"), "{error}");
+    }
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "an agent's notes");
+    assert!(folder.is_dir());
+    assert_eq!(std::fs::read_link(&link).unwrap(), left);
+    assert!(
+        std::fs::symlink_metadata(&left)
+            .unwrap()
+            .file_type()
+            .is_socket()
+    );
+    assert_eq!(
+        std::fs::read_dir(directory.path()).unwrap().count(),
+        4,
+        "nothing is left beside them"
+    );
+}
+
+#[test]
+fn a_socket_left_by_a_crashed_seat_is_replaced() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    // A seat that crashed left its socket file, and nothing answers there.
+    drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+    assert!(UnixStream::connect(&socket).is_err());
+    let mut seat = sit();
+    let (observed, bye) = seat.hold(&socket, |socket| {
+        let mut connection = Connection::open(socket);
+        (
+            connection.ask(json!({"op": "observe"})),
+            connection.ask(json!({"op": "quit"})),
+        )
+    });
+    assert_eq!(observed["status"], "observed", "{observed}");
+    assert_eq!(bye["status"], "bye", "{bye}");
+    assert!(!socket.exists(), "quit removes the replacement");
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn seats_starting_together_on_one_leftover_socket_leave_exactly_one_listening() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+    let starting = std::sync::Barrier::new(8);
+    let claims: Vec<_> = std::thread::scope(|scope| {
+        let claimants: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    starting.wait();
+                    crate::agent_seat::socket::Listener::claim(&socket)
+                })
+            })
+            .collect();
+        claimants
+            .into_iter()
+            .map(|claimant| claimant.join().unwrap())
+            .collect()
+    });
+    let (listening, refused): (Vec<_>, Vec<_>) = claims.into_iter().partition(Result::is_ok);
+    let refused: Vec<String> = refused.into_iter().filter_map(Result::err).collect();
+    assert_eq!(listening.len(), 1, "{refused:?}");
+    for error in &refused {
+        assert!(error.contains("already answers"), "{error}");
+    }
+    assert!(UnixStream::connect(&socket).is_ok(), "the one seat answers");
+    drop(listening);
+    assert!(!socket.exists());
+}
+
+#[test]
+fn a_second_seat_on_a_live_seats_path_is_refused_and_the_live_seat_is_untouched() {
+    use std::os::unix::fs::MetadataExt;
+    let mut seat = sit();
+    seat.open_menu(Investigator::Patrice);
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let file = |socket: &Path| {
+        let file = std::fs::symlink_metadata(socket).unwrap();
+        (file.dev(), file.ino())
+    };
+    let (moved, before, refused, after, held) = seat.hold(&socket, |socket| {
+        let moved = Connection::open(socket).ask(json!({"op": "key", "key": "Tab", "revision": 0}));
+        let before = file(socket);
+        let refused = crate::agent_seat::socket::Listener::claim(socket).err();
+        let after = file(socket);
+        let mut next = Connection::open(socket);
+        let held = next.ask(json!({"op": "observe"}));
+        next.ask(json!({"op": "quit"}));
+        (moved, before, refused, after, held)
+    });
+    let error = refused.expect("the second seat was refused");
+    assert!(error.contains(socket.to_str().unwrap()), "{error}");
+    assert!(error.contains("already answers"), "{error}");
+    assert_eq!(before, after, "the live seat's socket stays in place");
+    assert_eq!(moved["status"], "pressed", "{moved}");
+    assert_eq!(held["status"], "observed", "{held}");
+    assert_eq!(held["table"], moved["table"], "the live table is unchanged");
+    assert_eq!(held["observation"], moved["observation"]);
+    assert!(!socket.exists(), "quit removes the live seat's socket");
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    assert!(!seat.path.exists(), "nothing was committed");
+}
+
+#[test]
+fn a_refusal_skips_only_the_rest_of_its_own_connection_on_a_held_socket() {
+    let mut seat = sit();
+    seat.open_menu(Investigator::Patrice);
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let choose = json!({"op": "activate", "revision": 0, "choice": "lead:patrice"});
+    let (first, second) = seat.hold(&socket, |socket| {
+        let mut first = Connection::open(socket);
+        // Focus is on lead:patrice, so this Enter is refused.
+        let refused =
+            first.ask(json!({"op": "key", "key": "Enter", "revision": 0, "focused": LEAD_TONY}));
+        let skipped = first.ask(choose.clone());
+        drop(first);
+        let mut second = Connection::open(socket);
+        let activated = second.ask(choose.clone());
+        let settled = second.ask(json!({"op": "settle"}));
+        second.ask(json!({"op": "quit"}));
+        ([refused, skipped], [activated, settled])
+    });
+    assert_eq!(statuses(&first), ["refused", "skipped"], "{first:?}");
+    assert_eq!(first[1]["observation"]["revision"], 0);
+    assert_eq!(statuses(&second), ["activated", "settled"], "{second:?}");
+    assert_eq!(second[1]["observation"]["lead"], "patrice");
+    assert_eq!(second[1]["observation"], saved(&seat.path));
+}
+
+#[test]
+fn a_held_session_ends_as_quit_does_after_its_idle_period_without_a_request() {
+    let idle = Duration::from_millis(1_500);
+    let mut seat = sit();
+    seat.open_menu(Investigator::Patrice);
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let (answered, quiet) = seat.hold_idle(&socket, idle, |socket| {
+        // Requests closer together than the idle period keep the session, across
+        // connections, for longer than one period.
+        let gap = idle * 3 / 5;
+        let mut first = Connection::open(socket);
+        let observed = first.ask(json!({"op": "observe"}));
+        std::thread::sleep(gap);
+        let activated =
+            first.ask(json!({"op": "activate", "revision": 0, "choice": "lead:patrice"}));
+        drop(first);
+        std::thread::sleep(gap);
+        let settled = Connection::open(socket).ask(json!({"op": "settle"}));
+        let last = std::time::Instant::now();
+        while socket.exists() {
+            assert!(last.elapsed() < idle * 10, "the idle session did not end");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        ([observed, activated, settled], last.elapsed())
+    });
+    assert_eq!(
+        statuses(&answered),
+        ["observed", "activated", "settled"],
+        "{answered:?}"
+    );
+    assert!(
+        quiet >= idle * 2 / 3,
+        "the period counts from the last request: {quiet:?}"
+    );
+    assert!(!socket.exists(), "the idle end removes the socket");
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    assert_eq!(answered[2]["observation"]["lead"], "patrice");
+    assert_eq!(
+        saved(&seat.path),
+        answered[2]["observation"],
+        "the attempt is saved and resumes where the session ended"
+    );
+}
+
+#[test]
+fn an_open_connection_without_requests_does_not_keep_a_held_session() {
+    let idle = Duration::from_millis(500);
+    let mut seat = sit();
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let (end, waited) = seat.hold_idle(&socket, idle, |socket| {
+        let opened = std::time::Instant::now();
+        let mut silent = Connection::open(socket);
+        silent.writer.set_read_timeout(Some(idle * 10)).unwrap();
+        let mut end = String::new();
+        silent
+            .reader
+            .read_line(&mut end)
+            .expect("the idle session did not end");
+        (end, opened.elapsed())
+    });
+    assert_eq!(end, "", "the seat closes the connection without a response");
+    assert!(waited >= idle * 2 / 3, "{waited:?}");
+    assert!(!socket.exists(), "the idle end removes the socket");
+}
+
 fn parse(directory: &std::path::Path, arguments: &[&str]) -> Result<Option<Options>, String> {
     Options::parse(
         AssetConfig::load_at(directory.join("gathering.toml"), directory.join("assets")),
         arguments.iter().map(|argument| (*argument).to_owned()),
     )
+}
+
+#[test]
+fn a_held_session_waits_thirty_minutes_for_a_request_unless_started_with_another_period() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let save = directory.path().join("attempt.json");
+    let held = [
+        "--experiment",
+        "gathering",
+        "--agent-seat",
+        "--save",
+        save.to_str().unwrap(),
+        "--socket",
+        socket.to_str().unwrap(),
+    ];
+    let period = |extra: &[&str]| {
+        let arguments: Vec<&str> = held.iter().chain(extra).copied().collect();
+        idle(&parse(directory.path(), &arguments).unwrap().unwrap())
+    };
+    assert_eq!(period(&[]), Duration::from_secs(30 * 60));
+    assert_eq!(
+        period(&["--idle-minutes", "90"]),
+        Duration::from_secs(90 * 60)
+    );
+    assert_eq!(period(&["--idle-minutes", "1"]), Duration::from_secs(60));
+    assert_eq!(
+        period(&["--idle-minutes", "1440"]),
+        Duration::from_secs(24 * 60 * 60)
+    );
 }
 
 fn tell(seat: &mut Seat<Gathering>, app: &mut App, request: Value) -> Value {

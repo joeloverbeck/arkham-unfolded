@@ -170,6 +170,64 @@ fn refused_options_are_text_and_never_scenario_selection() {
             ],
             "--agent-seat requires an explicit --save",
         ),
+        // The idle end belongs to a held session, with or without the direct launch.
+        (
+            vec![
+                "--experiment",
+                "gathering",
+                "--agent-seat",
+                "--save",
+                save,
+                "--idle-minutes",
+                "5",
+            ],
+            "--idle-minutes ends a held session after that many minutes without a request: add --socket",
+        ),
+        (
+            vec!["--idle-minutes", "5"],
+            "--idle-minutes ends a held session after that many minutes without a request: add --socket",
+        ),
+        (
+            vec![
+                "--experiment",
+                "gathering",
+                "--agent-seat",
+                "--save",
+                save,
+                "--socket",
+                socket,
+                "--idle-minutes",
+                "0",
+            ],
+            "--idle-minutes needs a whole number of minutes from 1 to 1440, not 0",
+        ),
+        (
+            vec![
+                "--experiment",
+                "gathering",
+                "--agent-seat",
+                "--save",
+                save,
+                "--socket",
+                socket,
+                "--idle-minutes",
+                "1441",
+            ],
+            "--idle-minutes needs a whole number of minutes from 1 to 1440, not 1441",
+        ),
+        (
+            vec![
+                "--experiment",
+                "gathering",
+                "--agent-seat",
+                "--save",
+                save,
+                "--socket",
+                socket,
+                "--idle-minutes",
+            ],
+            "--idle-minutes needs a whole number of minutes from 1 to 1440",
+        ),
     ] {
         let reason = refusal(&launch(directory.path(), &arguments));
         assert!(reason.contains(expected), "{reason}");
@@ -300,9 +358,22 @@ fn tool(socket: &Path, requests: &[&str]) -> (Output, Vec<Value>) {
     (output, responses)
 }
 
+/// The one response a successful start command printed.
+fn started(output: &Output) -> Value {
+    assert!(output.status.success(), "{output:?}");
+    let lines: Vec<&str> = std::str::from_utf8(&output.stdout)
+        .unwrap()
+        .lines()
+        .collect();
+    assert_eq!(lines.len(), 1, "one response: {lines:?}");
+    serde_json::from_str(lines[0]).unwrap()
+}
+
 /// The held session at the real table, with real artwork and a real renderer: the start
 /// command returns once admitted, separate tool commands share one table, and `quit`
-/// ends the seat. Run on the owner's machine after preparing the collection.
+/// ends the seat. A later start resumes the attempt, a second seat on its path is
+/// refused, and the seat ends itself without requests. Run on the owner's machine after
+/// preparing the collection.
 #[test]
 #[ignore = "requires ARKHAM_GATHERING_TEST_ASSETS pointing at a complete prepared collection and a graphics adapter"]
 fn the_real_table_is_held_between_tool_commands_until_quit() {
@@ -311,27 +382,25 @@ fn the_real_table_is_held_between_tool_commands_until_quit() {
     let directory = tempfile::tempdir().unwrap();
     let save = directory.path().join("attempt.json");
     let socket = directory.path().join("seat.sock");
-    let started = finish(
-        Command::new(env!("CARGO_BIN_EXE_arkham-tabletop"))
-            .args(["--experiment", "gathering", "--agent-seat", "--save"])
-            .arg(&save)
-            .arg("--art-root")
-            .arg(&root)
-            .arg("--socket")
-            .arg(&socket)
-            .current_dir(directory.path())
-            .env("XDG_CONFIG_HOME", directory.path().join("config"))
-            .env("XDG_DATA_HOME", directory.path().join("data")),
-        Duration::from_secs(240),
-    );
+    let start = |extra: &[&str], limit| {
+        finish(
+            Command::new(env!("CARGO_BIN_EXE_arkham-tabletop"))
+                .args(["--experiment", "gathering", "--agent-seat", "--save"])
+                .arg(&save)
+                .arg("--art-root")
+                .arg(&root)
+                .arg("--socket")
+                .arg(&socket)
+                .args(extra)
+                .current_dir(directory.path())
+                .env("XDG_CONFIG_HOME", directory.path().join("config"))
+                .env("XDG_DATA_HOME", directory.path().join("data")),
+            limit,
+        )
+    };
+    let first = start(&[], Duration::from_secs(240));
     let _held = Held(&socket);
-    assert!(started.status.success(), "{started:?}");
-    let lines: Vec<&str> = std::str::from_utf8(&started.stdout)
-        .unwrap()
-        .lines()
-        .collect();
-    assert_eq!(lines.len(), 1, "one response: {lines:?}");
-    let ready: Value = serde_json::from_str(lines[0]).unwrap();
+    let ready = started(&first);
     assert_eq!(ready["status"], "ready", "{ready}");
     assert!(ready["adapter"]["name"].is_string(), "{}", ready["adapter"]);
     assert_eq!(ready["table"]["settled"], true, "{}", ready["table"]);
@@ -386,5 +455,44 @@ fn the_real_table_is_held_between_tool_commands_until_quit() {
     let log = fs::read_to_string(directory.path().join("seat.sock.log")).unwrap();
     assert!(log.contains("Artwork root:"), "{log}");
     assert!(log.contains("The agent seat is listening on"), "{log}");
+    assert!(log.contains("The agent seat's session ended."), "{log}");
+
+    // A start on the same path resumes the attempt. A second start there is refused
+    // while the seat runs on; without requests the seat ends itself as quit does.
+    let restarted = start(&["--idle-minutes", "1"], Duration::from_secs(240));
+    let _restarted = Held(&socket);
+    let ready = started(&restarted);
+    assert_eq!(ready["status"], "ready", "{ready}");
+    assert_eq!(ready["observation"]["revision"], 1, "the attempt resumed");
+    let reason = refusal(&start(&[], Duration::from_secs(60)));
+    assert!(reason.contains("already answers"), "{reason}");
+    assert_eq!(seats_on(&socket).len(), 1, "the first seat runs on alone");
+    let (observed, responses) = tool(&socket, &[r#"{"op":"observe"}"#]);
+    let asked = Instant::now();
+    assert!(observed.status.success(), "{observed:?}");
+    assert_eq!(responses[0]["observation"]["revision"], 1);
+    let attempt = fs::read(&save).unwrap();
+    let deadline = asked + Duration::from_secs(120);
+    while !seats_on(&socket).is_empty() {
+        assert!(Instant::now() < deadline, "the idle seat did not end");
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(
+        asked.elapsed() >= Duration::from_secs(55),
+        "the idle period counts from the last request: {:?}",
+        asked.elapsed()
+    );
+    assert!(!socket.exists(), "the idle end removes the socket");
+    assert_eq!(
+        fs::read(&save).unwrap(),
+        attempt,
+        "the attempt is as it was"
+    );
+    let log = fs::read_to_string(directory.path().join("seat.sock.log")).unwrap();
+    assert!(
+        log.contains("Artwork root:"),
+        "the refused start left the log: {log}"
+    );
+    assert!(log.contains("no request arrived for 1 minute"), "{log}");
     assert!(log.contains("The agent seat's session ended."), "{log}");
 }

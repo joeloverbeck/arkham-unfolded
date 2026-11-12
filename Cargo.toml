@@ -11,8 +11,9 @@ resolver = "3"
 
 [features]
 default = []
-# The agent seat's held session starts its own session with `setsid`.
-tabletop = ["dep:bevy", "unfolded-tabletop/render", "rustix/process"]
+# The agent seat's held session starts its own session with `setsid` and waits for
+# requests with `poll` until its idle end.
+tabletop = ["dep:bevy", "unfolded-tabletop/render", "rustix/process", "rustix/event"]
 
 [dependencies]
 unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "8f709f71d34e7193ca096f71d7810d1a494b43a8" }

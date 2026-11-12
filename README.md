@@ -140,7 +140,7 @@ jq -c '{status, error, revision: .observation.revision, settled: .table.settled,
   responses.jsonl
 ```
 
-**Evidence limits.** A seat run can establish presentation logic, layout, controls and rendered output on the seat's image, with real artwork and a real graphics adapter. It cannot establish window behaviour, display pacing, focus or physical input, and it is not acceptance of native play. The seat's own admission requires decoded artwork, the registered symbol font, ready render pipelines and completed GPU work for its image; it makes no claim about display rate, and native rendering health is unchanged. Protocol behaviour is checked without a graphics card in the ordinary tests. The real table, including admission, mesh picking, capture, resuming, the end of a session when artwork becomes unavailable and a held session between tool commands, is checked only where the prepared collection and a graphics adapter exist:
+**Evidence limits.** A seat run can establish presentation logic, layout, controls and rendered output on the seat's image, with real artwork and a real graphics adapter. It cannot establish window behaviour, display pacing, focus or physical input, and it is not acceptance of native play. The seat's own admission requires decoded artwork, the registered symbol font, ready render pipelines and completed GPU work for its image; it makes no claim about display rate, and native rendering health is unchanged. Protocol behaviour is checked without a graphics card in the ordinary tests. The real table, including admission, mesh picking, capture, resuming, the end of a session when artwork becomes unavailable, and a held session between tool commands with a refused second start and its idle end, is checked only where the prepared collection and a graphics adapter exist:
 
 ```sh
 ARKHAM_GATHERING_TEST_ASSETS=/absolute/path/to/prepared-collection \
@@ -154,14 +154,14 @@ ARKHAM_GATHERING_TEST_ASSETS=/absolute/path/to/prepared-collection \
 
 #### Held session
 
-With `--socket` the seat holds one session on a local socket across separate shell commands. Start it once:
+With `--socket` the seat holds one session on a local socket across separate shell commands. Use it for play and for long checks, where the table's state must last between commands; batch form suits a short confirmation that fits in one command. Start it once:
 
 ```sh
 target/debug/arkham-tabletop --experiment gathering --agent-seat \
   --save /absolute/path/to/attempt.json --socket /absolute/path/to/seat.sock
 ```
 
-The start command returns as soon as the table is admitted. It prints the same `ready` response as batch form and exits successfully, while the seat keeps running as a separate process, detached from the shell and its process group. The seat keeps none of the shell's standard input, output or error, so the start command finishes like any other command. It needs no background-process feature of the shell or agent harness. A startup problem prints one `refused` response and exits unsuccessfully, with no socket left and no seat running. `--socket` needs an absolute path, at most 107 bytes long, and `--agent-seat`; a path that already exists is refused and left unchanged. The socket file is accessible only to its owner.
+The start command returns as soon as the table is admitted. It prints the same `ready` response as batch form and exits successfully, while the seat keeps running as a separate process, detached from the shell and its process group. The seat keeps none of the shell's standard input, output or error, so the start command finishes like any other command. It needs no background-process feature of the shell or agent harness. A startup problem prints one `refused` response and exits unsuccessfully, with no socket left and no seat running. `--socket` needs an absolute path, at most 107 bytes long, and `--agent-seat`. The socket file is accessible only to its owner. When a seat already answers on the path, the start is refused and that seat is left untouched: use it, or quit it first. A socket file where nothing answers, as a crashed or killed seat leaves it, is replaced. Any other existing path is refused and left unchanged.
 
 Then send requests from any later command. Each command sends its requests over one connection, as arguments or as standard-input lines, and prints each response line unchanged. Here one command opens Tony's menu and the next, after reading its rows, chooses from it:
 
@@ -179,6 +179,8 @@ Between commands the table keeps its camera, open contextual menu, dialogs, read
 The seat's diagnostics, standard error in batch form, go to the socket path with `.log` appended, such as `/absolute/path/to/seat.sock.log`. Each start replaces that file. Read terminal checks there, such as the modal-dialog warning.
 
 `{"op":"quit"}` answers `bye`, removes the socket and ends the seat; the attempt stays resumable and a later start resumes it. When the table ends the session itself, for example through **Save and return to scenario selection**, the response is `exited` and the socket is removed too.
+
+A seat that receives no request for 30 minutes ends itself as `quit` does: the attempt stays resumable, the socket is removed and the log says that no request arrived. Time the seat spends answering does not count, and an open connection that sends nothing does not keep it. To think longer between requests, start the seat with `--idle-minutes MINUTES`, from 1 to 1440. After the idle end a command finds no seat listening; start again to resume the attempt.
 
 ### Start fresh after an incompatible save
 

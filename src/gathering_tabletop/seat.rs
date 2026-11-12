@@ -72,7 +72,14 @@ pub(super) fn run(launch: Result<Option<Options>, String>) -> Result<(), String>
     let mut seated = open(&options).or_else(refuse)?;
     let Seated { app, seat, .. } = &mut seated;
     socket::announce(&seat.ready(app))?;
-    listener.serve(seat, app)
+    listener.serve(seat, app, idle(&options))
+}
+
+/// How long a held session waits for a request before it ends as `quit` does.
+fn idle(options: &Options) -> Duration {
+    options.idle_minutes.map_or(socket::IDLE, |minutes| {
+        Duration::from_secs(u64::from(minutes) * 60)
+    })
 }
 
 /// A startup problem: one `refused` response on standard output, which the agent (or
