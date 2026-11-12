@@ -1,4 +1,5 @@
-//! Summarises one frame-stage record as Markdown for #157's evidence record.
+//! Summarises one frame-stage record as Markdown for #157's evidence record, and for
+//! #189 by MSAA setting.
 
 use super::{
     CUE, FOCUSED, GpuReading, IDLE, MainFrame, REDUCED_MOTION, RenderFrame, Row, SAMPLING,
@@ -14,6 +15,9 @@ const CAMERA_MOVED: f32 = 1e-4;
 /// A handoff wait longer than this means the render thread finished after the update.
 const WAITED: u64 = 200_000;
 const SECOND: u64 = 1_000_000_000;
+/// After a change of MSAA setting the renderer prepares new pipelines; the comparison
+/// (#189) leaves this much of each new setting out.
+const SETTLE: u64 = 3 * SECOND;
 /// One refresh of the owner's display, 143.99 Hz (#151).
 const DISPLAY_REFRESH: u64 = 6_944_927;
 
@@ -51,6 +55,10 @@ pub(crate) struct Record {
     gpu: Vec<(u64, GpuReading)>,
     sampling: Vec<(u64, bool)>,
     windows: Vec<(u64, u32, u32, f32)>,
+    /// The MSAA sample counts the adapter allows (#189).
+    support: Option<u32>,
+    /// Each MSAA choice: when, the sample count, and whether it was allowed.
+    msaa: Vec<(u64, u32, bool)>,
 }
 
 impl Record {
@@ -78,10 +86,110 @@ impl Record {
                     height,
                     scale,
                 } => record.windows.push((at, width, height, scale)),
+                Row::MsaaSupport { counts, .. } => record.support = Some(counts),
+                Row::Msaa {
+                    at,
+                    samples,
+                    allowed,
+                } => record.msaa.push((at, samples, allowed)),
             }
         }
         Ok(record)
     }
+}
+
+/// A stretch of the launch with one MSAA setting and one GPU-readings state (#189).
+/// The first starts at the start setting's row.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Stretch {
+    pub from: u64,
+    /// The table camera's sample count.
+    pub samples: u32,
+    pub sampling: bool,
+    /// Until this instant the renderer may still be settling after the setting changed.
+    /// The start setting never settles: its stretches hold the table's own startup.
+    pub settled: u64,
+}
+
+pub(crate) fn stretches(record: &Record) -> Vec<Stretch> {
+    let mut events: Vec<(u64, Option<u32>, Option<bool>)> = record
+        .msaa
+        .iter()
+        .filter(|(_, _, allowed)| *allowed)
+        .map(|(at, samples, _)| (*at, Some(*samples), None))
+        .chain(
+            record
+                .sampling
+                .iter()
+                .map(|(at, on)| (*at, None, Some(*on))),
+        )
+        .collect();
+    events.sort_by_key(|(at, _, _)| *at);
+    let mut stretches: Vec<Stretch> = Vec::new();
+    let (mut samples, mut sampling, mut settled) = (None, false, u64::MAX);
+    for (at, chosen, readings) in events {
+        if let Some(chosen) = chosen
+            && samples != Some(chosen)
+        {
+            if samples.is_some() {
+                settled = at + SETTLE;
+            }
+            samples = Some(chosen);
+        }
+        if let Some(on) = readings {
+            sampling = on;
+        }
+        let Some(samples) = samples else {
+            continue;
+        };
+        let stretch = Stretch {
+            from: at,
+            samples,
+            sampling,
+            settled,
+        };
+        match stretches.last_mut() {
+            // Events at one instant make one stretch.
+            Some(last) if last.from == at => *last = stretch,
+            Some(last) if (last.samples, last.sampling) == (samples, sampling) => {}
+            _ => stretches.push(stretch),
+        }
+    }
+    stretches
+}
+
+/// The stretch that held at `at`.
+fn stretch_at(stretches: &[Stretch], at: u64) -> Option<usize> {
+    stretches
+        .partition_point(|stretch| stretch.from <= at)
+        .checked_sub(1)
+}
+
+fn samples_name(samples: u32) -> String {
+    match samples {
+        1 => "off".into(),
+        samples => format!("{samples}×"),
+    }
+}
+
+/// Mean (lowest–highest) of each of the four GPU columns, as table cells.
+fn gpu_cells(readings: &[GpuReading]) -> String {
+    let mut cells = String::new();
+    for column in 0..4 {
+        let values: Vec<f32> = readings
+            .iter()
+            .filter_map(|reading| reading.0[column])
+            .collect();
+        match mean(values.iter().map(|value| f64::from(*value))) {
+            Some(mean) => {
+                let low = values.iter().copied().fold(f32::INFINITY, f32::min);
+                let high = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let _ = write!(cells, " {mean:.0} ({low:.0}–{high:.0}) |");
+            }
+            None => cells.push_str(" – |"),
+        }
+    }
+    cells
 }
 
 /// One update with what followed it.
@@ -93,12 +201,16 @@ struct Frame {
     period: Option<u64>,
     /// From the end of extraction to the next update's start.
     gap: Option<u64>,
+    stretch: Option<usize>,
+    /// Started before the renderer settled after a change of MSAA setting.
+    settling: bool,
 }
 
 pub(crate) struct Analysis {
     record: Record,
     frames: Vec<Frame>,
     refresh: u64,
+    stretches: Vec<Stretch>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -201,6 +313,7 @@ fn mean(values: impl Iterator<Item = f64>) -> Option<f64> {
 impl Analysis {
     pub(crate) fn new(record: Record, refresh: u64) -> Self {
         let conditions = classify(&record.main);
+        let stretches = stretches(&record);
         let frames = record
             .main
             .iter()
@@ -213,11 +326,14 @@ impl Analysis {
                     .main
                     .get(index + 1)
                     .filter(|next| next.frame == main.frame + 1);
+                let stretch = stretch_at(&stretches, main.start);
                 Frame {
                     main: *main,
                     condition,
                     period: next.map(|next| next.start - main.start),
                     gap: next.map(|next| next.start.saturating_sub(main.end)),
+                    stretch,
+                    settling: stretch.is_some_and(|index| main.start < stretches[index].settled),
                 }
             })
             .collect();
@@ -225,6 +341,192 @@ impl Analysis {
             record,
             frames,
             refresh,
+            stretches,
+        }
+    }
+
+    /// GPU readings whose whole preceding second lay in one settled stretch and one
+    /// condition, with that stretch's index.
+    pub(crate) fn settled_readings(&self) -> Vec<(usize, Condition, GpuReading)> {
+        self.record
+            .gpu
+            .iter()
+            .filter_map(|(at, reading)| {
+                let from = at.checked_sub(SECOND)?;
+                let index = stretch_at(&self.stretches, from)?;
+                (stretch_at(&self.stretches, *at) == Some(index)
+                    && from >= self.stretches[index].settled)
+                    .then_some(())?;
+                Some((index, self.condition_before(*at)?, *reading))
+            })
+            .collect()
+    }
+
+    /// One comparison row per condition for the settled updates and readings of the
+    /// stretches `held` selects: updates, seconds, late updates, render medians, then
+    /// the GPU columns after the row's leading `cells`.
+    fn comparison_rows(
+        &self,
+        out: &mut String,
+        cells: &str,
+        held: impl Fn(usize) -> bool,
+        readings: &[(usize, Condition, GpuReading)],
+    ) {
+        for condition in [
+            Condition::Panning,
+            Condition::StillWithCue,
+            Condition::Settled,
+        ] {
+            let frames: Vec<&Frame> = self
+                .frames
+                .iter()
+                .filter(|frame| {
+                    frame.period.is_some()
+                        && frame.stretch.is_some_and(&held)
+                        && !frame.settling
+                        && frame.condition == condition
+                })
+                .collect();
+            let taken: Vec<GpuReading> = readings
+                .iter()
+                .filter(|(during, at, _)| held(*during) && *at == condition)
+                .map(|(_, _, reading)| *reading)
+                .collect();
+            if frames.is_empty() && taken.is_empty() {
+                continue;
+            }
+            let late = frames.iter().filter(|frame| self.late(frame)).count();
+            let render: Vec<&RenderFrame> = frames
+                .iter()
+                .filter_map(|frame| self.record.render.get(&frame.main.frame))
+                .collect();
+            let median = |stage: fn(&RenderFrame) -> u64| {
+                summarise(render.iter().map(|frame| stage(frame)), self.refresh)
+                    .map_or("–".into(), |summary| format!("{:.2}", ms(summary.median)))
+            };
+            let late_share = if frames.is_empty() {
+                "–".into()
+            } else {
+                format!("{:.2}", 100.0 * late as f64 / frames.len() as f64)
+            };
+            let _ = writeln!(
+                out,
+                "| {cells} | {} | {} | {:.1} | {late} | {late_share} | {} | {} | {} |{}",
+                condition.name(),
+                frames.len(),
+                seconds(frames.iter().copied()),
+                median(|frame| frame.graph),
+                median(|frame| frame.acquire),
+                taken.len(),
+                gpu_cells(&taken)
+            );
+        }
+    }
+
+    fn msaa(&self, out: &mut String) {
+        if self.record.msaa.is_empty() {
+            return;
+        }
+        let _ = writeln!(out, "\n## MSAA comparison (#189)\n");
+        match self.record.support {
+            Some(counts) => {
+                let allowed: Vec<String> = [1, 2, 4, 8]
+                    .into_iter()
+                    .filter(|count| *count == 1 || counts & count != 0)
+                    .map(samples_name)
+                    .collect();
+                let _ = writeln!(
+                    out,
+                    "The adapter allows MSAA {} for the table's formats.",
+                    allowed.join(", ")
+                );
+            }
+            None => {
+                let _ = writeln!(out, "The adapter's MSAA support was not recorded.");
+            }
+        }
+        for (at, samples, allowed) in &self.record.msaa {
+            let _ = writeln!(
+                out,
+                "- {:.1} s: {} {}.",
+                *at as f64 / 1e9,
+                samples_name(*samples),
+                if *allowed { "chosen" } else { "refused" }
+            );
+        }
+        let (startup, changed): (Vec<&Frame>, Vec<&Frame>) = self
+            .frames
+            .iter()
+            .filter(|frame| frame.period.is_some() && frame.settling)
+            .partition(|frame| {
+                frame
+                    .stretch
+                    .is_some_and(|index| self.stretches[index].settled == u64::MAX)
+            });
+        let late = |frames: &[&Frame]| frames.iter().filter(|frame| self.late(frame)).count();
+        let _ = writeln!(
+            out,
+            "\nThe tables leave out the start setting until the first change, because it holds \
+             the table's own startup ({} updates, {} late), and the first {} s after each change, \
+             while the renderer prepares new pipelines ({} updates, {} late). A GPU reading \
+             counts when its whole preceding second lay in one condition and one settled stretch. \
+             Temperature and fan speed lag power by tens of seconds, so they carry the previous \
+             stretch with them.",
+            startup.len(),
+            late(&startup),
+            SETTLE / SECOND,
+            changed.len(),
+            late(&changed)
+        );
+        let readings = self.settled_readings();
+        let columns = "Condition | Updates | Seconds | Late | Late % | Render graph median ms \
+                       | Surface image wait median ms | GPU readings | Utilisation % | Power W \
+                       | Temperature °C | Fan %";
+        let header = |leading: &str| {
+            let names = format!("{leading} | {columns}");
+            format!(
+                "| {names} |\n|{}",
+                " --- |".repeat(names.matches(" | ").count() + 1)
+            )
+        };
+        let _ = writeln!(
+            out,
+            "\n### By stretch\n\n{}",
+            header("Stretch | From s | MSAA | GPU readings taken")
+        );
+        for (index, stretch) in self.stretches.iter().enumerate() {
+            let cells = format!(
+                "{} | {:.1} | {} | {}",
+                index + 1,
+                stretch.from as f64 / 1e9,
+                samples_name(stretch.samples),
+                if stretch.sampling { "yes" } else { "no" }
+            );
+            self.comparison_rows(out, &cells, |during| during == index, &readings);
+        }
+        let mut settings: Vec<(u32, bool)> = self
+            .stretches
+            .iter()
+            .map(|stretch| (stretch.samples, stretch.sampling))
+            .collect();
+        settings.sort_by_key(|(samples, sampling)| (std::cmp::Reverse(*sampling), *samples));
+        settings.dedup();
+        let _ = writeln!(
+            out,
+            "\n### By setting, all its stretches together\n\n{}",
+            header("MSAA | GPU readings taken")
+        );
+        for (samples, sampling) in settings {
+            let cells = format!(
+                "{} | {}",
+                samples_name(samples),
+                if sampling { "yes" } else { "no" }
+            );
+            let same = |index: usize| {
+                let stretch = &self.stretches[index];
+                (stretch.samples, stretch.sampling) == (samples, sampling)
+            };
+            self.comparison_rows(out, &cells, same, &readings);
         }
     }
 
@@ -436,22 +738,12 @@ impl Analysis {
             if readings.is_empty() {
                 return;
             }
-            let mut line = format!("| {name} | {} |", readings.len());
-            for column in 0..4 {
-                let values: Vec<f32> = readings
-                    .iter()
-                    .filter_map(|reading| reading.0[column])
-                    .collect();
-                match mean(values.iter().map(|value| f64::from(*value))) {
-                    Some(mean) => {
-                        let low = values.iter().copied().fold(f32::INFINITY, f32::min);
-                        let high = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                        let _ = write!(line, " {mean:.0} ({low:.0}–{high:.0}) |");
-                    }
-                    None => line.push_str(" – |"),
-                }
-            }
-            let _ = writeln!(out, "{line}");
+            let _ = writeln!(
+                out,
+                "| {name} | {} |{}",
+                readings.len(),
+                gpu_cells(readings)
+            );
         };
         row("Baseline, app closed", baseline);
         let mut by_condition: HashMap<Option<Condition>, Vec<GpuReading>> = HashMap::new();
@@ -608,6 +900,7 @@ impl Analysis {
         self.time_steps(&mut out);
         self.gpu(&mut out, baseline);
         self.sampling(&mut out);
+        self.msaa(&mut out);
         out
     }
 }

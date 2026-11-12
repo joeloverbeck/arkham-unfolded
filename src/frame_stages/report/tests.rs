@@ -236,3 +236,153 @@ fn a_gpu_reading_belongs_to_the_condition_that_held_for_the_second_before_it() {
         "nothing recorded"
     );
 }
+
+#[test]
+fn msaa_rows_survive_a_round_trip() {
+    for row in [
+        Row::MsaaSupport {
+            at: 10,
+            counts: 2 | 4 | 8,
+        },
+        Row::Msaa {
+            at: 20,
+            samples: 2,
+            allowed: false,
+        },
+        Row::Msaa {
+            at: 30,
+            samples: 1,
+            allowed: true,
+        },
+    ] {
+        assert_eq!(row.to_string().parse::<Row>(), Ok(row), "{row}");
+    }
+}
+
+/// The cells of the table row that starts with `prefix`, after the prefix.
+fn cells(markdown: &str, prefix: &str) -> Vec<String> {
+    let line = markdown
+        .lines()
+        .find(|line| line.starts_with(prefix))
+        .unwrap_or_else(|| panic!("no row `{prefix}` in\n{markdown}"));
+    line[prefix.len()..]
+        .split('|')
+        .map(|cell| cell.trim().to_owned())
+        .collect()
+}
+
+#[test]
+fn msaa_stretches_leave_out_startup_and_settling_and_keep_each_setting_apart() {
+    const S: u64 = 1_000 * MS;
+    // As recorded: readings start just before the start setting's row.
+    let mut text = String::from("H,1\nS,0,1\nA,1000,4,1\nX,1000,14\n");
+    // Off at 5 s; a refused 2× and a repeated off change nothing; 4× at 15 s; readings
+    // stop at 20 s.
+    text.push_str(&format!(
+        "A,{},1,1\nA,{},2,0\nA,{},1,1\nA,{},4,1\nS,{},0\n",
+        5 * S,
+        10 * S + S / 2,
+        12 * S,
+        15 * S,
+        20 * S
+    ));
+    // Panning every 7 ms for 25 s, with one late update just before 1, 6, 10, 19 and 22 s.
+    let late_before = [1_000, 6_000, 10_000, 19_000, 22_000];
+    let (mut start, mut number) = (0, 1);
+    while start < 25_000 {
+        text.push_str(&format!("{}\n", Row::Main(frame(number, start, 0, 0.05))));
+        let late = late_before.iter().any(|at| start < *at && start + 7 >= *at);
+        start += if late { 14 } else { 7 };
+        number += 1;
+    }
+    // At 2 s the startup; at 15.5 s straddling a change; at 9.5 and 19.5 s settled.
+    for (at_ms, power) in [(2_000, 102), (9_500, 109), (15_500, 999), (19_500, 119)] {
+        text.push_str(&format!("G,{},50,{power},70,60\n", at_ms * MS));
+    }
+    let analysis = Analysis::new(Record::parse(&text).unwrap(), DISPLAY_REFRESH);
+
+    assert_eq!(
+        analysis.stretches,
+        [
+            Stretch {
+                from: 1000,
+                samples: 4,
+                sampling: true,
+                settled: u64::MAX,
+            },
+            Stretch {
+                from: 5 * S,
+                samples: 1,
+                sampling: true,
+                settled: 8 * S,
+            },
+            Stretch {
+                from: 15 * S,
+                samples: 4,
+                sampling: true,
+                settled: 18 * S,
+            },
+            Stretch {
+                from: 20 * S,
+                samples: 4,
+                sampling: false,
+                settled: 18 * S,
+            },
+        ]
+    );
+    let reading = |power: f32| GpuReading([Some(50.0), Some(power), Some(70.0), Some(60.0)]);
+    assert_eq!(
+        analysis.settled_readings(),
+        [
+            (1, Condition::Panning, reading(109.0)),
+            (2, Condition::Panning, reading(119.0))
+        ]
+    );
+
+    let markdown = analysis.markdown(&[]);
+    assert!(
+        markdown.contains("The adapter allows MSAA off, 2×, 4×, 8× for the table's formats."),
+        "{markdown}"
+    );
+    assert!(markdown.contains("- 10.5 s: 2× refused."), "{markdown}");
+    // The late update before 1 s fell in the startup, the one before 6 s while off settled.
+    let left_out = markdown
+        .lines()
+        .find(|line| line.contains("prepares new pipelines"))
+        .unwrap();
+    assert!(
+        left_out.contains(", 1 late), and the first 3 s after each change")
+            && left_out.contains(" updates, 1 late). A GPU reading"),
+        "{left_out}"
+    );
+    assert!(
+        !markdown.contains("| 1 | 0.0 |"),
+        "the startup stretch has no row"
+    );
+
+    // Updates, seconds, late, late %, two render medians, readings, then four GPU cells.
+    let off = cells(&markdown, "| 2 | 5.0 | off | yes | Panning |");
+    assert_eq!((off[1].as_str(), off[2].as_str()), ("7.0", "1"));
+    assert_eq!((off[4].as_str(), off[6].as_str()), ("–", "1"));
+    assert_eq!(off[8], "109 (109–109)", "power");
+    let four = cells(&markdown, "| 3 | 15.0 | 4× | yes | Panning |");
+    assert_eq!(
+        (four[1].as_str(), four[2].as_str(), four[8].as_str()),
+        ("2.0", "1", "119 (119–119)")
+    );
+    let unread = cells(&markdown, "| 4 | 20.0 | 4× | no | Panning |");
+    assert_eq!(
+        (unread[1].as_str(), unread[2].as_str(), unread[6].as_str()),
+        ("5.0", "1", "0")
+    );
+
+    let by_setting = cells(&markdown, "| 4× | yes | Panning |");
+    assert_eq!(
+        (by_setting[1].as_str(), by_setting[2].as_str()),
+        ("2.0", "1")
+    );
+    assert!(
+        markdown.contains("| off | yes | Panning |") && markdown.contains("| 4× | no | Panning |"),
+        "{markdown}"
+    );
+}

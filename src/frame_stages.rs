@@ -6,7 +6,10 @@
 //! unrecorded and the windowed table refuses to start.
 //! `arkham-tabletop --frame-stage-report FILE` summarises it. These are waits inside
 //! the application; none is a display timestamp.
+//!
+//! #189 adds [`msaa`]: while recording, F5, F6 and F7 set the table camera's MSAA.
 
+pub(crate) mod msaa;
 mod report;
 
 pub use report::run as report;
@@ -145,6 +148,19 @@ pub(crate) enum Row {
         height: u32,
         scale: f32,
     },
+    /// The MSAA sample counts the adapter allows for the table's formats, as the
+    /// bitwise or of the counts (2, 4, 8); one sample is always allowed.
+    MsaaSupport {
+        at: u64,
+        counts: u32,
+    },
+    /// The table camera's MSAA was chosen: at startup or by a key press, repeated or
+    /// not. A refused choice left the setting as it was.
+    Msaa {
+        at: u64,
+        samples: u32,
+        allowed: bool,
+    },
 }
 
 impl fmt::Display for Row {
@@ -190,6 +206,12 @@ impl fmt::Display for Row {
                 height,
                 scale,
             } => write!(f, "W,{at},{width},{height},{scale}"),
+            Self::MsaaSupport { at, counts } => write!(f, "X,{at},{counts}"),
+            Self::Msaa {
+                at,
+                samples,
+                allowed,
+            } => write!(f, "A,{at},{samples},{}", u8::from(*allowed)),
         }
     }
 }
@@ -268,6 +290,21 @@ impl FromStr for Row {
                     width: number(&fields, 2)?,
                     height: number(&fields, 3)?,
                     scale: number(&fields, 4)?,
+                })
+            }
+            "X" => {
+                expect(3)?;
+                Ok(Self::MsaaSupport {
+                    at: number(&fields, 1)?,
+                    counts: number(&fields, 2)?,
+                })
+            }
+            "A" => {
+                expect(4)?;
+                Ok(Self::Msaa {
+                    at: number(&fields, 1)?,
+                    samples: number(&fields, 2)?,
+                    allowed: number::<u8>(&fields, 3)? != 0,
                 })
             }
             kind => Err(format!("unknown row kind `{kind}`")),
@@ -536,6 +573,7 @@ impl Plugin for FrameStagesPlugin {
         // The agent seat's tests open the table more than once in one process; a later
         // table keeps the readings the first one started.
         recorder.start_sampling();
+        app.add_plugins(msaa::MsaaComparisonPlugin);
     }
 }
 

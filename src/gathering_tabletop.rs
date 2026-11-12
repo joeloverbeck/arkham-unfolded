@@ -243,7 +243,7 @@ impl Table {
 }
 
 #[derive(Component)]
-struct MainCamera;
+pub(crate) struct MainCamera;
 #[derive(Component)]
 struct ScenePiece;
 #[derive(Component)]

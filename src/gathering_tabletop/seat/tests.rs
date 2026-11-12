@@ -1752,3 +1752,159 @@ fn a_blind_enter_at_round_end_commits_nothing_and_a_named_chooser_row_pays() {
     );
     assert_eq!(settled["observation"], saved(&seat.path));
 }
+
+/// #189's decision-only comparison on a real adapter: F7, F6 and F5 change the table
+/// camera's MSAA while the real table renders, and the table renders at each setting.
+/// `ARKHAM_FRAME_STAGES` names a directory for the record; it installs the comparison.
+/// Set `ARKHAM_MSAA_CAPTURES` to a directory to keep the captures.
+#[test]
+#[ignore = "requires ARKHAM_GATHERING_TEST_ASSETS, ARKHAM_FRAME_STAGES and a graphics adapter"]
+fn msaa_changes_while_the_real_table_renders() {
+    use crate::frame_stages::msaa::{ComparedMsaa, allowed, name};
+    use bevy::{
+        input::{
+            ButtonState,
+            keyboard::{Key, KeyboardInput},
+        },
+        render::view::Msaa,
+        window::PrimaryWindow,
+    };
+
+    let root = std::env::var("ARKHAM_GATHERING_TEST_ASSETS")
+        .expect("set ARKHAM_GATHERING_TEST_ASSETS to the prepared collection");
+    let directory = tempfile::tempdir().unwrap();
+    let captures = std::env::var_os("ARKHAM_MSAA_CAPTURES")
+        .map_or_else(|| directory.path().to_owned(), PathBuf::from);
+    let save = directory.path().join("attempt.json");
+    let options = parse(
+        directory.path(),
+        &[
+            "--experiment",
+            "gathering",
+            "--agent-seat",
+            "--save",
+            save.to_str().unwrap(),
+            "--art-root",
+            &root,
+        ],
+    )
+    .unwrap()
+    .unwrap();
+    let Seated {
+        mut app, mut seat, ..
+    } = open(&options).unwrap();
+    let mut greeting = Vec::new();
+    seat.serve(&mut app, &b""[..], &mut greeting).unwrap();
+    let ready: Value = serde_json::from_slice(&greeting).unwrap();
+    assert_eq!(ready["status"], "ready", "{ready}");
+    let counts = app
+        .world()
+        .get_resource::<ComparedMsaa>()
+        .expect("set ARKHAM_FRAME_STAGES so that the comparison is installed")
+        .counts
+        .expect("the adapter's MSAA support is checked before the table is ready");
+    eprintln!("Adapter {}: MSAA counts {counts}", ready["adapter"]);
+    let window = app
+        .world_mut()
+        .query_filtered::<Entity, With<PrimaryWindow>>()
+        .single(app.world())
+        .unwrap();
+
+    let mut expected = Msaa::Sample4;
+    for (code, logical, msaa) in [
+        (KeyCode::F7, Key::F7, Msaa::Off),
+        (KeyCode::F6, Key::F6, Msaa::Sample2),
+        (KeyCode::F5, Key::F5, Msaa::Sample4),
+    ] {
+        for state in [ButtonState::Pressed, ButtonState::Released] {
+            app.world_mut().write_message(KeyboardInput {
+                key_code: code,
+                logical_key: logical.clone(),
+                state,
+                text: None,
+                repeat: false,
+                window,
+            });
+            app.update();
+        }
+        if allowed(Some(counts), msaa) {
+            expected = msaa;
+        }
+        let camera = app
+            .world_mut()
+            .query_filtered::<&Msaa, With<MainCamera>>()
+            .single(app.world())
+            .copied()
+            .unwrap();
+        assert_eq!(camera, expected, "after {code:?}");
+        // The cameras that draw text into images keep Bevy's default.
+        let others: Vec<Msaa> = app
+            .world_mut()
+            .query_filtered::<&Msaa, (With<Camera>, Without<MainCamera>)>()
+            .iter(app.world())
+            .copied()
+            .collect();
+        assert!(!others.is_empty(), "the table draws text into images");
+        assert!(
+            others.iter().all(|msaa| *msaa == Msaa::Sample4),
+            "after {code:?}: {others:?}"
+        );
+        let path = captures.join(format!("msaa-{}.png", expected.samples()));
+        let captured = tell(&mut seat, &mut app, json!({"op": "capture", "path": path}));
+        assert_eq!(
+            captured["status"],
+            "captured",
+            "{} {captured}",
+            name(expected)
+        );
+        assert!(not_blank(&path), "{}", name(expected));
+    }
+
+    // The record marks the support, the start setting and every press. Its writer
+    // flushes at most once a second, on a row.
+    let started = std::time::Instant::now();
+    while started.elapsed() < Duration::from_millis(1_500) {
+        app.update();
+    }
+    let records = std::env::var_os("ARKHAM_FRAME_STAGES").unwrap();
+    let newest = std::fs::read_dir(&records)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("frames-"))
+        })
+        .max()
+        .expect("a frame-stage record");
+    let text = std::fs::read_to_string(&newest).unwrap();
+    let rows: Vec<crate::frame_stages::Row> =
+        text.lines().filter_map(|line| line.parse().ok()).collect();
+    assert!(
+        rows.iter().any(|row| matches!(
+            row,
+            crate::frame_stages::Row::MsaaSupport { counts: recorded, .. } if *recorded == counts
+        )),
+        "{}",
+        newest.display()
+    );
+    let chosen: Vec<(u32, bool)> = rows
+        .iter()
+        .filter_map(|row| match row {
+            crate::frame_stages::Row::Msaa {
+                samples, allowed, ..
+            } => Some((*samples, *allowed)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        chosen,
+        [
+            (4, true),
+            (1, true),
+            (2, allowed(Some(counts), Msaa::Sample2)),
+            (4, true)
+        ],
+        "{}",
+        newest.display()
+    );
+}
