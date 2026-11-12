@@ -30,7 +30,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
    - merges the integration branch tip into its own branch before reporting done;
    - finishes or stops every background command it started, then reports
 
-5. Once an **implementer subagent** completes, merge its work to the integration branch with a **merger subagent**.
+5. Once an **implementer subagent** completes, bring its work into the integration branch: fast-forward when its branch already contains the integration tip, and otherwise merge it with a **merger subagent**.
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
