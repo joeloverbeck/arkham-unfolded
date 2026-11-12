@@ -989,3 +989,61 @@ impl Session {
         Ok(session)
     }
 }
+
+#[cfg(test)]
+mod saved_randomness {
+    //! Numbers recorded at 4e7a014, while the generator still lived in this
+    //! repository. A saved game stores the generator's state, so it continues
+    //! only while a given state keeps producing these numbers.
+    use super::*;
+
+    /// Wide enough that about half of the generator's values are rejected: the
+    /// eleven indexes below took fifteen steps.
+    const WIDE: usize = (1 << 63) + 1;
+    const RANGES: [usize; 11] = [1, 2, 6, 16, 33, 52, 1000, WIDE, WIDE, WIDE, WIDE];
+    const INDEXES: [usize; 11] = [
+        0,
+        1,
+        4,
+        8,
+        10,
+        13,
+        244,
+        790_593_979_517_193_502,
+        3_061_971_736_353_442_415,
+        7_495_161_214_544_515_997,
+        3_495_176_742_473_237_818,
+    ];
+    const STATE_AFTER_INDEXES: u64 = 4_990_025_626_462_012_820;
+
+    #[test]
+    fn play_generator_repeats_its_recorded_indexes() {
+        let mut session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
+        let game = session.runtime.as_mut().expect("Fixture runtime");
+        game.random = 89;
+        let indexes = RANGES.map(|upper| game.random_index(upper));
+        assert_eq!((indexes, game.random), (INDEXES, STATE_AFTER_INDEXES));
+    }
+
+    #[test]
+    fn setup_generator_repeats_its_recorded_deck_shuffle_from_a_saved_state() {
+        let mut session = Session::with_seed(89);
+        assert_eq!(session.random, 89, "A fresh generator starts at its seed");
+        session.random = STATE_AFTER_INDEXES;
+        let dealt: Vec<u16> = session.decks[0].iter().map(|card| card.id).collect();
+        session.shuffle_deck(0);
+        let order: Vec<usize> = session.decks[0]
+            .iter()
+            .map(|card| dealt.iter().position(|id| *id == card.id).unwrap())
+            .collect();
+        assert_eq!(
+            order,
+            [
+                9, 10, 21, 3, 2, 5, 26, 16, 11, 4, 14, 1, 19, 25, 13, 18, 29, 7, 6, 22, 20, 17, 8,
+                15, 24, 12, 31, 33, 0, 23, 27, 32, 28, 30
+            ],
+            "Each shuffled card's position in the deck before the shuffle"
+        );
+        assert_eq!(session.random, 12_278_733_189_936_530_505);
+    }
+}
