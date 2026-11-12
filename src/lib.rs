@@ -6,6 +6,8 @@ pub mod asset_config;
 pub mod assets;
 #[cfg(feature = "tabletop")]
 mod attempts;
+#[cfg(feature = "tabletop")]
+pub mod frame_stages;
 pub mod gathering;
 #[cfg(feature = "tabletop")]
 pub mod gathering_tabletop;

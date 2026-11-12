@@ -138,7 +138,9 @@ pub(super) fn open(options: &Options) -> Result<Seated, String> {
         .add_plugins(agent_seat::windowless(prepared.asset_plugin()))
         .add_plugins(MeshPickingPlugin)
         .add_plugins(crate::tabletop_chaos_pouch::ChaosPouchPlugin)
-        .add_plugins(SeatAdmissionPlugin);
+        .add_plugins(SeatAdmissionPlugin)
+        // Lets the recorder be exercised on a real adapter without a window.
+        .add_plugins(crate::frame_stages::FrameStagesPlugin { required: false });
     let art = prepared.load(app.world().resource::<AssetServer>());
     app.insert_resource(art);
     agent_seat::install::<MainCamera>(&mut app, SIZE);

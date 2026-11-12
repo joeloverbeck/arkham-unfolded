@@ -692,7 +692,8 @@ fn run_window(
         .add_plugins(MeshPickingPlugin)
         .add_plugins(crate::tabletop_chaos_pouch::ChaosPouchPlugin)
         .add_plugins(TabletopPacingPlugin)
-        .add_plugins(TabletopHealthPlugin);
+        .add_plugins(TabletopHealthPlugin)
+        .add_plugins(crate::frame_stages::FrameStagesPlugin { required: true });
     let art = prepared.load(app.world().resource::<AssetServer>());
     app.insert_resource(art);
     install(&mut app);
