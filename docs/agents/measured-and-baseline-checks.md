@@ -40,15 +40,22 @@ Require a finished, successful baseline record before returning to the candidate
 
 Cargo identifies this repository's own packages by their path inside the workspace, which is the same in every checkout, and decides freshness by comparing the current checkout's file times with the shared artifact. Checkouts that share a target directory therefore share one artifact per package: a checkout whose files are older than the last build from another reports the package `Fresh` and runs the other checkout's code. A two-tree probe with Cargo 1.97 showed this in both directions on 2026-11-11.
 
-Give each checkout that shares a target its own `codegen-units` value for the repository's packages; dependencies keep sharing artifacts. For worktrees, set the shared directory with `[build] target-dir` in a `.cargo/config.toml` above them, outside the repository, and put a distinct value in a `.cargo/config.toml` in each worktree's parent directory:
+Give each checkout that shares a target its own `codegen-units` value for the repository's packages; dependencies keep sharing artifacts. From the owner's checkout, create a worktree that builds into the owner's target with:
 
-```toml
-[profile.dev.package.arkham-unfolded-experiment]
-codegen-units = 249
-[profile.dev.package.arkham-tools]
-codegen-units = 249
+```sh
+scripts/tools worktree add --from REVISION [--branch NAME] DIR
 ```
 
-Cargo reads these files when it runs from inside the worktree. For one command run elsewhere, `--config 'profile.dev.package.<package>.codegen-units=<n>'` does the same, as in the baseline recipe above. The owner's checkout keeps the default profile, and a worktree that builds into the owner's target uses its own value, so the owner's next build compiles the owner's code.
+It creates `DIR` outside the owner's checkout, puts the checkout at `DIR/worktree`, and writes `DIR/.cargo/config.toml`, which Cargo reads when it runs inside the checkout. That file sets `[build] target-dir` to the owner's `target` and gives every workspace package one value below 250 that no Cargo configuration of another registered worktree uses. Checkouts that are not registered worktrees of this clone are invisible to that choice.
 
-The final executables (`arkham-tabletop`, `arkham-driver`, `arkham-assets`) are copied to one unhashed path per target and profile, and Cargo releases its lock before tests run. A build from another checkout can replace them while a suite that executes them through `CARGO_BIN_EXE_*` runs: the driver, agent-seat, asset-launch and artwork suites. Rerun such a failure alone before diagnosing it, and run an integration branch's final gate with no other build in progress.
+Once the work is merged, remove such worktrees with:
+
+```sh
+scripts/tools worktree remove --merged-into REF DIR...
+```
+
+For each `DIR` made by `add`, it requires the checkout's commit to be part of `REF`: a branch, remote branch or tag other than the checkout's own branch. It refuses ignored files outside `target/`, such as evidence under `local/`, because `git worktree remove` deletes them, and `git worktree remove` itself refuses changes or untracked files. It then deletes the checkout, its branch while that still names the checked commit, and the configuration file, and deletes `DIR` unless it holds other files. A `DIR` that fails a check keeps everything, and a branch that moves after the checks is kept and reported. Discarding unmerged work is the owner's decision.
+
+For one command run elsewhere, `--config 'profile.dev.package.<package>.codegen-units=<n>'` does the same, as in the baseline recipe above. The owner's checkout keeps the default profile, and a worktree that builds into the owner's target uses its own value, so the owner's next build compiles the owner's code.
+
+The final executables (`arkham-tabletop`, `arkham-driver`, `arkham-assets`) are copied to one unhashed path per target and profile, and Cargo releases its lock before tests run. A build from another checkout can replace them while a suite that executes them through `CARGO_BIN_EXE_*` runs: the driver, agent-seat, asset-launch and artwork suites. Rerun such a failure alone before diagnosing it, and run an integration branch's final gate with no other build in progress. In a worktree made by `scripts/tools worktree add`, those paths are in the owner's `target`, so a README command naming `target/debug/arkham-tabletop` finds nothing inside the checkout. For a run that follows the README as written, or one that must keep a single build, copy the executable into the checkout's own `target/debug/` after building it.

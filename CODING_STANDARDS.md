@@ -6,6 +6,8 @@ For input and presentation regressions, verify that tests use the production reg
 
 A change to an existing test that shrinks its fixture, widens a tolerance or removes an assertion names the accepted behavior change it reflects. Without one, report it as a regression the test now hides, citing the base and candidate versions of the test.
 
+Documentation that states how the code behaves keeps the conditions the code applies. Check each such claim against the lines it cites or that implement it, and report a dropped guard or exception with both locations.
+
 For tabletop presentation, controls or rules-text changes, apply the [visual and wording review](docs/agents/native-verification.md#visual-and-wording-review) to the affected player journey, including existing cards and panels it exposes. Report observed defects separately from layout preferences and identify any unverified interaction. The guide owns these judgment criteria; automated checks own mechanical requirements.
 
 Choice legality, equivalence and single-option resolution belong to the rules session, so the table, the agent seat and the headless driver meet the same decisions; presentation does not filter, merge or auto-pick choices. Cost wording in option labels comes from the effective cost, never a phrase written into a card's effect text.
