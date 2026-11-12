@@ -77,11 +77,28 @@ pub use investigator::Investigator;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, io::Read};
+use unfolded_tabletop::random::SeededRandom;
 
 pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-runtime-v4";
 const DECK_PROJECTION: &str = include_str!("../docs/research/issue-1-decks.json");
 const DECK_PROJECTION_SHA256: &str =
     "fcd3bb06ed278652e61bdfe43c080982b0c95649a2e4944043757d5326cbe7bb";
+
+/// The generator is shared from unfolded-tabletop. Its state stays here as the
+/// plain number a save holds, never player-visible; setup and play both draw
+/// through these two functions.
+fn random_index(state: &mut u64, upper: usize) -> usize {
+    let mut random = SeededRandom::new(*state);
+    let index = random.index(upper);
+    *state = random.state();
+    index
+}
+
+fn shuffle<T>(state: &mut u64, items: &mut [T]) {
+    let mut random = SeededRandom::new(*state);
+    random.shuffle(items);
+    *state = random.state();
+}
 
 /// Effective selected-card text for readable inspection. Metadata does not imply
 /// that the corresponding gameplay ability has been implemented.
@@ -882,28 +899,8 @@ impl Session {
         Ok((drawn, steps))
     }
 
-    fn random_index(&mut self, upper: usize) -> usize {
-        // SplitMix64 with rejection sampling; deterministic state is saved, never
-        // player-visible. Avoid modulo bias when selecting a shuffle position.
-        let upper = upper as u64;
-        let threshold = upper.wrapping_neg() % upper;
-        loop {
-            self.random = self.random.wrapping_add(0x9e3779b97f4a7c15);
-            let mut value = self.random;
-            value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-            value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
-            value ^= value >> 31;
-            if value >= threshold {
-                return (value % upper) as usize;
-            }
-        }
-    }
-
     fn shuffle_deck(&mut self, index: usize) {
-        for last in (1..self.decks[index].len()).rev() {
-            let other = self.random_index(last + 1);
-            self.decks[index].swap(last, other);
-        }
+        shuffle(&mut self.random, &mut self.decks[index]);
     }
 
     fn assemble_scenario(&mut self) -> Result<(), RuleError> {
@@ -914,10 +911,7 @@ impl Session {
                 usize::from(entry.quantity),
             ));
         }
-        for last in (1..self.encounter_deck.len()).rev() {
-            let other = self.random_index(last + 1);
-            self.encounter_deck.swap(last, other);
-        }
+        shuffle(&mut self.random, &mut self.encounter_deck);
         for investigator in &mut self.investigators {
             investigator.location = Some("01111".into());
         }
