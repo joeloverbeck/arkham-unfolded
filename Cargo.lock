@@ -4962,7 +4962,7 @@ dependencies = [
 [[package]]
 name = "unfolded-tabletop"
 version = "0.1.0"
-source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=0e04e86eea6cdb012cc647ee5b930e3f9ecb8769#0e04e86eea6cdb012cc647ee5b930e3f9ecb8769"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=60d700a109ece9ac8b4f4a7c7e5a4b24d186a4a2#60d700a109ece9ac8b4f4a7c7e5a4b24d186a4a2"
 dependencies = [
  "bevy",
  "image",
@@ -5278,7 +5278,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "30.0.1"
-source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=0e04e86eea6cdb012cc647ee5b930e3f9ecb8769#0e04e86eea6cdb012cc647ee5b930e3f9ecb8769"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=60d700a109ece9ac8b4f4a7c7e5a4b24d186a4a2#60d700a109ece9ac8b4f4a7c7e5a4b24d186a4a2"
 dependencies = [
  "android_system_properties",
  "arrayvec",

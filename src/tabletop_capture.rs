@@ -1,21 +1,27 @@
-//! Arkham's exits over the screen capture shared in `unfolded-tabletop`, which
-//! holds the timed diagnostics and the actual write outcome of each screenshot.
+//! Timed diagnostics and actual write outcomes for Bevy screenshots. The picture
+//! itself is written by the code shared in `unfolded-tabletop`, as the agent
+//! seat's is.
 
 use bevy::{prelude::*, render::view::screenshot::ScreenshotCaptured};
-use std::{path::PathBuf, time::Duration};
-use unfolded_tabletop::capture;
-pub(crate) use unfolded_tabletop::capture::save_to_disk;
-#[cfg(test)]
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 use unfolded_tabletop::capture::write_image;
 
-/// The table exits successfully only for a saved file while graphics health
-/// still allows play.
+pub(crate) fn save_to_disk(path: PathBuf, elapsed: Duration) -> impl FnMut(On<ScreenshotCaptured>) {
+    let mut write = writer(path, elapsed);
+    move |captured| {
+        let _ = write(&captured.image);
+    }
+}
+
 pub(crate) fn save_to_disk_and_exit(
     path: PathBuf,
     elapsed: Duration,
 ) -> impl FnMut(On<ScreenshotCaptured>, Res<crate::tabletop_health::RenderHealth>, MessageWriter<AppExit>)
 {
-    let mut write = capture::writer(path, elapsed);
+    let mut write = writer(path, elapsed);
     move |captured, health, mut exit| {
         exit.write(if write(&captured.image).is_ok() && health.allows_play() {
             AppExit::Success
@@ -31,7 +37,33 @@ pub(crate) fn save_selection_and_exit(
     path: PathBuf,
     elapsed: Duration,
 ) -> impl FnMut(On<ScreenshotCaptured>, MessageWriter<AppExit>) {
-    capture::save_to_disk_and_exit(path, elapsed)
+    let mut write = writer(path, elapsed);
+    move |captured, mut exit| {
+        exit.write(if write(&captured.image).is_ok() {
+            AppExit::Success
+        } else {
+            AppExit::error()
+        });
+    }
+}
+
+fn writer(path: PathBuf, elapsed: Duration) -> impl FnMut(&Image) -> Result<(), String> {
+    let requested = Instant::now();
+    info!(elapsed_seconds = elapsed.as_secs_f64(), path = %path.display(), "Screenshot requested");
+    move |image| {
+        let span = info_span!("Screenshot write", write_started_seconds = (elapsed + requested.elapsed()).as_secs_f64(), path = %path.display());
+        let _entered = span.enter();
+        let result = write_image(image.clone(), &path);
+        match &result {
+            Ok(()) => info!("Screenshot saved to {}", path.display()),
+            Err(error) => error!("Cannot save screenshot: {error}"),
+        }
+        info!(
+            elapsed_seconds = (elapsed + requested.elapsed()).as_secs_f64(),
+            "Screenshot writer returned"
+        );
+        result
+    }
 }
 
 #[cfg(test)]

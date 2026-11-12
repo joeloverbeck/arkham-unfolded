@@ -16,7 +16,7 @@ default = []
 tabletop = ["dep:bevy", "unfolded-tabletop/render", "rustix/process", "rustix/event"]
 
 [dependencies]
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "0e04e86eea6cdb012cc647ee5b930e3f9ecb8769" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "60d700a109ece9ac8b4f4a7c7e5a4b24d186a4a2" }
 serde ={ version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -70,4 +70,4 @@ debug = "full"
 debug = "full"
 
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "0e04e86eea6cdb012cc647ee5b930e3f9ecb8769" }
+wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "60d700a109ece9ac8b4f4a7c7e5a4b24d186a4a2" }
