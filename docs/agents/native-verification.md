@@ -111,7 +111,8 @@ ends sooner, announce that earlier time and reduce the route. Restarts inherit
 their original app timeout as well as the approval deadline, so a short capture
 run is unsuitable as the starting point for an interactive restart. An owner-run
 ordinary launch can instead use a prepared isolated command without a diagnostic
-timer; this supplies no agent desktop access.
+timer; this supplies no agent desktop access. For one that measures, follow the
+[owner-run measurement launch](../../.claude/skills/diagnosing-bugs/native-performance.md#owner-run-measurement-launch).
 
 For an animation change, prepare the [short recording recipe](#record-a-short-motion-clip) before the desktop timer starts. Put the loop, reduced-motion and relevant focus-loss/resume cases early in the route, before repeating static layouts. Frame both the moving object and its stationary neighbors, with relevant labels visible; inspect the clip after cleanup when possible. Reserve time for affected fresh-process reopening checks. At a context interruption, recover only the handoff, run manifest and last acknowledged event/capture, retaining the original deadline. An acknowledgement without a terminal result can hide partial input: inspect the existing helper's events before deciding whether any retry is safe. If the remaining budget cannot fit the next operation and cleanup, stop and leave that observation pending. The deadline and cleanup rules below remain controlling.
 

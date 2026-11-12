@@ -48,6 +48,8 @@ scripts/tools worktree add --from REVISION [--branch NAME] DIR
 
 It creates `DIR` outside the owner's checkout, puts the checkout at `DIR/worktree`, and writes `DIR/.cargo/config.toml`, which Cargo reads when it runs inside the checkout. That file sets `[build] target-dir` to the owner's `target` and gives every workspace package one value below 250 that no Cargo configuration of another registered worktree uses. Checkouts that are not registered worktrees of this clone are invisible to that choice.
 
+A harness whose session stays in the owner's checkout can refuse an edit to a file in `DIR/worktree` that it has not read there. Read each file before editing it, and again after a formatter or another command rewrites it. Send a check only once the edits it depends on have succeeded: a check sent beside a refused edit passes on unchanged code.
+
 Once the work is merged, remove such worktrees with:
 
 ```sh
