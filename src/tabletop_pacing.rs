@@ -19,9 +19,11 @@ use std::{
 /// Caps settled dispatch, and bounds the step of any update that follows a settled one.
 /// Moving frames follow FIFO presentation: the owner saw sleep caps judder at 144 Hz (#151).
 const SETTLED_FRAME: Duration = Duration::from_nanos(16_666_667);
-/// How often a table that only shows slow looping decorations is drawn (#188).
-/// A wait that input interrupts paces it, not a sleep after dispatch.
-const DECORATIVE_FRAME: Duration = Duration::from_nanos(33_333_333);
+/// How often a table that only shows slow looping decorations is drawn: 60/s. A wait
+/// that input interrupts paces it, not a sleep after dispatch. In #188's launch the
+/// owner found the cue's breathing less smooth at 30/s and noticed no issue at 60/s,
+/// which drew about 120 W less than the display rate there.
+const DECORATIVE_FRAME: Duration = Duration::from_nanos(16_666_667);
 const INPUT_SETTLE: Duration = Duration::from_millis(150);
 const STARTUP_SETTLE: Duration = Duration::from_secs(2);
 
@@ -71,14 +73,6 @@ impl Redraw {
     /// something else holds the display rate. Its phase must come from `PresentationTime`.
     pub(crate) fn decorate(&mut self) {
         self.demand = self.demand.max(Demand::Decorative);
-    }
-}
-
-#[cfg(test)]
-impl Redraw {
-    /// Whether this update's requests asked only for decorative frames.
-    pub(crate) fn decorative_only(&self) -> bool {
-        self.demand == Demand::Decorative
     }
 }
 
@@ -213,7 +207,6 @@ fn update_clock(
     mut cadence: ResMut<Cadence>,
     mut time: ResMut<PresentationTime>,
     mut events: MessageReader<WindowEvent>,
-    recording: Option<Res<comparison::Recording>>,
     mut stats: Local<UpdateStats>,
 ) {
     let now = Instant::now();
@@ -235,13 +228,6 @@ fn update_clock(
             elapsed.as_secs_f64(),
             stats.longest_gap.as_secs_f64() * 1000.0,
             cadence.pace.label()
-        );
-        comparison::record_updates(
-            recording.as_deref(),
-            stats.count,
-            elapsed,
-            stats.longest_gap,
-            cadence.pace,
         );
         stats.since = Some(now);
         stats.count = 0;
@@ -285,22 +271,9 @@ fn select_cadence(
     mut redraw: ResMut<Redraw>,
     mut settings: ResMut<WinitSettings>,
     settled: Res<Settled>,
-    compared: Option<Res<comparison::ComparedRate>>,
 ) {
-    let demand = std::mem::take(&mut redraw.demand);
     let previous = cadence.pace;
-    let frame = compared.map_or(Some(DECORATIVE_FRAME), |compared| compared.frame());
-    let mut next = cadence.finish(match frame {
-        // Display rate: decorations count as ordinary requests, as before #188.
-        None if demand == Demand::Decorative => Demand::Display,
-        _ => demand,
-    });
-    if let Some(frame) = frame
-        && cadence.pace == Pace::Decorative
-    {
-        next.focused_mode = UpdateMode::reactive_low_power(frame);
-        next.unfocused_mode = UpdateMode::reactive_low_power(frame);
-    }
+    let next = cadence.finish(std::mem::take(&mut redraw.demand));
     settled.set(cadence.pace == Pace::Settled);
     if cadence.pace != previous {
         debug!("Tabletop cadence: {}", cadence.pace.label());
@@ -311,6 +284,5 @@ fn select_cadence(
     }
 }
 
-pub(crate) mod comparison;
 #[cfg(test)]
 mod tests;

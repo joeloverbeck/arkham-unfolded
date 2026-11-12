@@ -57,7 +57,4 @@ mod tabletop_support;
 
 mod rules_types;
 pub use rules_types::{Choice, RuleError, TokenFace, TokenStatus};
-/// Decision-only #188 comparison report, removed with its switch.
-#[cfg(feature = "tabletop")]
-pub use tabletop_pacing::comparison::report as decorative_report;
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");

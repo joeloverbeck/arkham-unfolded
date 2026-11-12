@@ -1227,39 +1227,3 @@ fn supplied_token_save_opens_on_visible_guidance() {
     }
     assert_eq!(std::fs::read(&path).unwrap(), before);
 }
-
-/// Decision-only check of #188's launch save, removed with the F5/F6/F7 comparison switch.
-#[test]
-#[ignore = "Read-only startup check for #188's supplied reveal-step save"]
-fn supplied_reveal_step_save_breathes_on_several_components_and_offers_the_reveal_control() {
-    let path =
-        std::env::var("ARKHAM_GATHERING_REVIEW_SAVE").expect("Supply a reveal-step save path");
-    let before = std::fs::read(&path).unwrap();
-    let table = Table::open(path.clone().into()).unwrap();
-    assert!(!table.modal());
-    let mut app = host_with_table(table, true);
-    app.world_mut().resource_mut::<Table>().dirty = true;
-    for _ in 0..4 {
-        app.update();
-    }
-    let view = app.world().resource::<Table>().view();
-    assert!(view.choices.iter().any(|choice| choice.id == "test:reveal"));
-    let world = app.world_mut();
-    let available: Vec<_> = world
-        .query::<(&ContextTarget, &CardFeedback)>()
-        .iter(world)
-        .filter(|(_, cue)| cue.opportunity)
-        .map(|(target, _)| format!("{:?}", target.source))
-        .collect();
-    println!("Breathing availability cues: {available:?}");
-    assert!(available.len() >= 3, "{available:?}");
-    assert!(
-        app.world_mut()
-            .query_filtered::<(), With<crate::tabletop_reveal::RevealButton>>()
-            .iter(app.world())
-            .next()
-            .is_some()
-    );
-    assert!(rendered_text(&mut app).contains("tokens"));
-    assert_eq!(std::fs::read(&path).unwrap(), before);
-}

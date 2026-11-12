@@ -1,7 +1,7 @@
 use super::*;
 use bevy::window::{CursorMoved, WindowFocused};
 
-pub(super) fn app() -> App {
+fn app() -> App {
     let mut app = App::new();
     app.add_message::<WindowEvent>()
         .init_resource::<ButtonInput<KeyCode>>()
@@ -11,7 +11,7 @@ pub(super) fn app() -> App {
     app
 }
 
-pub(super) fn pace(app: &App) -> Pace {
+fn pace(app: &App) -> Pace {
     app.world().resource::<Cadence>().pace
 }
 
@@ -23,12 +23,12 @@ fn settled(app: &mut App) {
 }
 
 /// One update in which only a slow looping decoration asks for a frame.
-pub(super) fn decorate(app: &mut App) {
+fn decorate(app: &mut App) {
     app.world_mut().resource_mut::<Redraw>().decorate();
     app.update();
 }
 
-pub(super) fn end_active_interval(app: &mut App) {
+fn end_active_interval(app: &mut App) {
     app.world_mut().resource_mut::<Cadence>().active_until = Some(Instant::now());
 }
 
@@ -125,9 +125,10 @@ fn decorative_frames_keep_their_phase_but_input_does_not_inherit_the_wait() {
     cadence.begin(frame, false);
     cadence.finish(Demand::Decorative);
     assert_eq!(cadence.pace, Pace::Decorative);
-    // A timed frame advances presentation by its whole interval, so the breath keeps pace.
-    let frame = frame + DECORATIVE_FRAME;
-    assert_eq!(cadence.begin(frame, false), DECORATIVE_FRAME);
+    // A timed frame advances presentation by its whole interval, even a late one longer
+    // than the input bound, so the breath keeps pace.
+    let frame = frame + Duration::from_millis(30);
+    assert_eq!(cadence.begin(frame, false), Duration::from_millis(30));
     cadence.finish(Demand::Decorative);
     // Input that ends the wait moves at most one 60/s step, as on a settled table.
     assert_eq!(
