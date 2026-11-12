@@ -481,7 +481,7 @@ RUST_LOG=info,wgpu=error,naga=warn,arkham_unfolded_experiment::tabletop_pacing=d
   target/debug/arkham-tabletop 2>&1 | tee /absolute/path/to/new-launch.log
 ```
 
-`RUST_LOG` replaces Bevy's default filter, so the command restates those defaults. The target names the library crate, not the package or executable. Each `Tabletop updates: N in Xs; longest gap …` line covers one interval of main-app updates, not GPU presentation timestamps; `Tabletop cadence: idle|active` marks transitions.
+`RUST_LOG` replaces Bevy's default filter, so the command restates those defaults. The target names the library crate, not the package or executable. Each `Tabletop updates: N in Xs; longest gap …` line covers one interval of main-app updates, not GPU presentation timestamps; `Tabletop cadence: active|decorative|settled` marks transitions, and each updates line ends with the pace at its end. `decorative` means only slow looping decorations, such as the availability cue's breathing, ask for frames: the table then waits a fixed interval between frames, and window input ends the wait at once.
 
 Record usable foreground duration or sample count alongside total elapsed time and measured rates. Background time does not satisfy the graphics check. A supervisor timeout without enough foreground evidence is **inconclusive**, not evidence of GPU failure; retain any independently reported renderer error separately. Keep the original absolute deadline, cleanup reserve and existing focus guards. Focus loss consumes the remaining allowance; it does not authorize a longer run or another attempt.
 

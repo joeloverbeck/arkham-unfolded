@@ -125,3 +125,21 @@ These counters time application updates; they are not presentation timestamps. T
 Decision: Joel judged the no-active-cap mode the smoothest but not a full fix. Before the logged launch, he accepted adopting it as a partial result if that launch confirmed each mode's rate. Both caps held their rates. With no cap, the mean was 136.3 updates per second, short of one frame per refresh; that shortfall is the overrun described above. Active frames are no longer capped, and FIFO presentation paces them. The 60 Hz limiter still applies while the table stays settled. Idle throttling, the upload-memory patch and the rendering-health guard are unchanged.
 
 This knowingly departs from the issue's "one-line revert": the limiter needs the settled state from the main app, so the change shares a flag with the render-extract sub-app. The remaining hitch needs its own diagnosis decision; [#151](https://github.com/joeloverbeck/arkham-unfolded/issues/151) holds the current status.
+
+## Decorative rate comparison
+
+[#188](https://github.com/joeloverbeck/arkham-unfolded/issues/188) tested, on 2026-11-12, whether slow looping decorations could be drawn below the display rate. Since the change above, any request held the display rate. While a choice is offered, the window is focused and Reduced motion is off, the availability cue asks for a frame on every update. So the table drew at 144 Hz through most of play, even with the camera still. The display and adapter were those described above. At its start the log gave the window as 6010×3318 physical pixels; whether it stayed maximised was not reported.
+
+A decision-only build, commit `79f1092` (executable SHA-256 `38a7709ccfcbceeedc56437aae5a83c9a24f72e9c639df0d466f0d214541cf1a`), added a third pacing state. When only the cue's breathing, the reveal control's pouch bob and the encounter reading's tendrils ask for frames, Winit waits a fixed interval that window input ends at once. Keys selected 60/s, 30/s, or the display rate as before. The build recorded the update counter and one `nvidia-smi` reading per second. The launch stood at a pending token reveal, with the cue on three components. Its route asked Joel to hold each setting for 75 s with his hands off the mouse and keyboard; every measured hold lasted at least 60 s, and only stretches in which the window was focused were measured. The [evidence record](https://github.com/joeloverbeck/arkham-unfolded/issues/188#issuecomment-6828779965) holds the full readings and limits.
+
+| Decorative rate | Mean power W | Updates per second | Joel's judgement |
+| --- | --- | --- | --- |
+| Display rate (before) | 198.9 | 143.7 | Reference |
+| 60/s | 78.0 | 60.2 | "At 60/s and up, I didn't notice any particular issue" |
+| 30/s | 69.6 | 30.3 | The breathing "didn't look as smooth"; "it felt like it didn't progress smoothly from opaque to translucid and back" |
+
+Joel said the pouch bob "did seem to look the same", without naming a rate. Between holds, while the window was briefly unfocused, the table settled and the card drew 30–45 W. Joel did not hear the fans run high.
+
+Decision: under the accepted rule, the lowest capped rate that Joel judged unchanged and that drew at least 40 W less than display rate is 60/s. The cue's breathing and the pouch bob are drawn at 60/s when nothing else asks for frames. Camera, card and map motion, presentations, checks, captures, the hover fade and any input keep the display rate. An update that input wakes after a decorative wait moves at most one 60/s step. The encounter reading's tendrils were not judged, because no reading came up in the launch, so they keep the display rate. An open reading does not count as presenting. During a reading, the tendrils hold that rate while the window is focused, Reduced motion is off and rendering health allows play. The rendering-health hang watchdog stays armed while decorative. The progress check after admission still counts only display-rate frames.
+
+The comparison covers one scene, view and window state on one display. It does not establish judgement of the tendrils at a capped rate, nor the fans' long-run behaviour.
