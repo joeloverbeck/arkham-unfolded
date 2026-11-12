@@ -318,3 +318,147 @@ fn a_failed_write_stops_before_any_readback() {
     assert!(!output.status.success());
     assert_eq!(github.calls().len(), 1);
 }
+
+const TITLE: &str = "Turn MSAA off on the table camera";
+const ISSUE_URL: &str = "https://github.com/joeloverbeck/arkham-unfolded/issues/192";
+
+fn open_issue(github: &Github, labels: &[&str]) -> Output {
+    let file = github.body_file(BODY);
+    let mut args = vec![
+        "issue",
+        "--title",
+        TITLE,
+        "--body-file",
+        file.to_str().unwrap(),
+    ];
+    for label in labels {
+        args.extend(["--label", *label]);
+    }
+    github.run(&args)
+}
+
+const LABELS: [&str; 2] = ["enhancement", "needs-triage"];
+
+/// Both labels exist, the issue is opened, and reading it back gives `stored`
+/// with the exit status `status`.
+fn opened_issue(github: &mut Github, stored: Value, status: u8) {
+    for label in LABELS {
+        github.step(
+            get(&format!("{API}/labels/{label}")),
+            json!({"name": label}),
+            0,
+        );
+    }
+    github.step(
+        write("POST", &format!("{API}/issues")),
+        json!({"number": 192, "html_url": ISSUE_URL}),
+        0,
+    );
+    github.step(get(&format!("{API}/issues/192")), stored, status);
+}
+
+#[test]
+fn an_issue_is_opened_with_its_title_labels_and_body_and_read_back() {
+    let mut github = Github::new();
+    opened_issue(
+        &mut github,
+        json!({
+            "title": TITLE,
+            "body": BODY,
+            "labels": [{"name": "enhancement"}, {"name": "needs-triage"}],
+        }),
+        0,
+    );
+    let output = open_issue(&github, &LABELS);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        github.sent(2),
+        json!({"title": TITLE, "body": BODY, "labels": LABELS})
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains(ISSUE_URL));
+    assert_eq!(github.calls().len(), 4);
+}
+
+#[test]
+fn an_unknown_or_differently_spelt_label_is_refused_before_the_issue_exists() {
+    for (label, response, status, expected) in [
+        ("needs-triag", json!(null), 1, "could not be confirmed"),
+        (
+            "Needs-Triage",
+            json!({"name": "needs-triage"}),
+            0,
+            "is spelt \"needs-triage\"",
+        ),
+    ] {
+        let mut github = Github::new();
+        github.step(get(&format!("{API}/labels/{label}")), response, status);
+        let output = open_issue(&github, &[label]);
+        assert!(!output.status.success());
+        let message = stderr(&output);
+        assert!(message.contains(expected), "{message}");
+        assert!(message.contains("nothing was opened"), "{message}");
+        assert_eq!(github.calls().len(), 1);
+    }
+}
+
+#[test]
+fn an_issue_title_with_a_private_path_is_refused_before_github_is_contacted() {
+    let github = Github::new();
+    let file = github.body_file(BODY);
+    let output = github.run(&[
+        "issue",
+        "--title",
+        "Logs in /home/someone/run",
+        "--body-file",
+        file.to_str().unwrap(),
+    ]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("The title"), "{}", stderr(&output));
+    let output = github.run(&[
+        "issue",
+        "--title",
+        " Spaced title",
+        "--body-file",
+        file.to_str().unwrap(),
+    ]);
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("surrounding spaces"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(github.calls().is_empty());
+}
+
+#[test]
+fn an_opened_issue_that_reads_back_differently_is_named_so_it_is_not_opened_twice() {
+    let labels = json!([{"name": "enhancement"}, {"name": "needs-triage"}]);
+    for (stored, status, expected) in [
+        (json!(null), 1, "reading it back failed"),
+        (
+            json!({"title": TITLE, "body": "@/tmp/body.md", "labels": labels}),
+            0,
+            "line 1",
+        ),
+        (
+            json!({"title": "Turn MSAA off", "body": BODY, "labels": labels}),
+            0,
+            "GitHub stored the title \"Turn MSAA off\"",
+        ),
+        (
+            json!({"title": TITLE, "body": BODY, "labels": [{"name": "enhancement"}]}),
+            0,
+            "needs-triage",
+        ),
+    ] {
+        let mut github = Github::new();
+        opened_issue(&mut github, stored, status);
+        let output = open_issue(&github, &LABELS);
+        assert!(!output.status.success(), "{output:?}");
+        let message = stderr(&output);
+        assert!(message.contains(ISSUE_URL), "{message}");
+        assert!(message.contains("rather than opening another"), "{message}");
+        assert!(message.contains(expected), "{message}");
+        assert_eq!(github.calls().len(), 4);
+    }
+}

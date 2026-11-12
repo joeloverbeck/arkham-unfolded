@@ -1,5 +1,7 @@
 //! Optional sampling runs in the check supervisor: no sampler child or thread can outlive it.
 
+pub mod summary;
+
 use anyhow::Result;
 use serde::Serialize;
 use std::{
@@ -57,12 +59,17 @@ struct Sample {
     child_cgroup: Option<Cgroup>,
 }
 
+/// Readings that [`summary`] reads back, named once for both sides.
+const HOST_CPU: &str = "/proc/stat";
+const HOST_CPU_PRESSURE: &str = "/proc/pressure/cpu";
+const CGROUP_CPU: &str = "cpu.stat";
+
 impl Sample {
     fn read(pid: Option<u32>) -> Result<Self> {
         let mut host: BTreeMap<_, _> = [
             "/proc/meminfo",
-            "/proc/stat",
-            "/proc/pressure/cpu",
+            HOST_CPU,
+            HOST_CPU_PRESSURE,
             "/proc/pressure/memory",
             "/proc/pressure/io",
         ]
@@ -70,7 +77,7 @@ impl Sample {
         .map(|path| (path, Reading::read(path)))
         .collect();
         // Aggregate CPU counters suffice; per-CPU/interrupt lists add noise and size.
-        if let Some(text) = &mut host.get_mut("/proc/stat").unwrap().text {
+        if let Some(text) = &mut host.get_mut(HOST_CPU).unwrap().text {
             *text = text.lines().next().unwrap_or_default().to_string();
         }
         let child_cgroup_source = pid.map(|pid| Reading::read(format!("/proc/{pid}/cgroup")));
@@ -89,7 +96,7 @@ impl Sample {
                     "memory.max",
                     "memory.swap.max",
                     "cpu.max",
-                    "cpu.stat",
+                    CGROUP_CPU,
                     "memory.pressure",
                     "io.pressure",
                 ]

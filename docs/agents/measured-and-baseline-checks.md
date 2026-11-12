@@ -14,6 +14,14 @@ target/debug/arkham-tools record-check --resources \
 
 The output directory must be new and its parent must exist. `run.json` retains the command's status and exit code; `resources.jsonl` samples host memory, CPU counters and pressure plus the child's visible cgroup about once per second. Kernel values retain their original names and units. Each reading exposes unavailable files as errors; `resources.error` reports capture/write failures without changing the command's exit status. Sampling runs inside the recorder, so completion or interruption leaves no separate sampler process. Only a finished record with exit code zero proves check success. Resource samples can miss short spikes or the last counters before a scope disappears; an observed `memory.peak` is not a guaranteed final peak. An abruptly killed recorder leaves incomplete evidence.
 
+Read the samples back with `scripts/tools resource-summary OUTPUT-DIR`. Each row is a window, 10 seconds unless `--window-seconds` says otherwise, timed from the first sample or from `--origin-unix-ms`, such as another record's start. Every figure is a counter difference between consecutive samples, about a second apart; an interval is shared by time among the windows it covers. Each figure after Sampled s has a mean for the window and a max: the highest single interval overlapping the window, so a spike near an edge appears in every row it overlaps. A window's columns are:
+- **Sampled s:** how much of it the samples cover. Windows with none are left out.
+- **Host CPU:** the busy share of all CPUs.
+- **Command CPU:** the CPU used by the recorded command's cgroup, in cores. It counts only intervals whose two samples read the same cgroup. That cgroup is the scope the command ran in, so it can also hold the terminal that started it.
+- **CPU pressure:** the share of time in which some task on the host waited for a CPU, from the `some total=` counter.
+
+Host CPU rising while the command's stays level was spent outside its cgroup: by another program, or for the command by the desktop or the kernel.
+
 ## Behavior-preserving refactor baselines
 
 When a refactor comparison needs a temporary baseline tree, record its revision and the test/helper files copied onto it.
@@ -48,7 +56,7 @@ scripts/tools worktree add --from REVISION [--branch NAME] DIR
 
 It creates `DIR` outside the owner's checkout, puts the checkout at `DIR/worktree`, and writes `DIR/.cargo/config.toml`, which Cargo reads when it runs inside the checkout. That file sets `[build] target-dir` to the owner's `target` and gives every workspace package one value below 250 that no Cargo configuration of another registered worktree uses. Checkouts that are not registered worktrees of this clone are invisible to that choice.
 
-A harness whose session stays in the owner's checkout can refuse an edit to a file in `DIR/worktree` that it has not read there. Read each file before editing it, and again after a formatter or another command rewrites it. Send a check only once the edits it depends on have succeeded: a check sent beside a refused edit passes on unchanged code.
+A harness whose session stays in the owner's checkout can refuse an edit to a file in `DIR/worktree` that it has not read there. Read each file with the harness's own file-read tool before editing it, and again after a formatter or another command rewrites it; a shell read such as `sed` or `cat` does not count. Send a check only once the edits it depends on have succeeded: a check sent beside a refused edit passes on unchanged code.
 
 Once the work is merged, remove such worktrees with:
 
