@@ -18,7 +18,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 ## Steps
 
-1. Read the spec and tickets to understand the task graph.
+1. Read the spec and tickets to understand the task graph. A ticket that verifies the finished candidate, such as an agent verification round, also waits for the **frozen candidate** of step 7.
 
 2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. Ensure the exploration subagent can save files - it should save its markdown notes in a directory outside the repo, accessible by all future subagents. This lets **implementer subagents** focus on implementation rather than exploration.
 
@@ -34,8 +34,8 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
-7. Once all tickets are complete, call the Skill tool with `code-review` on the integration branch. Fix all issues raised by the code review in a single **implementer subagent**.
+7. Once all other tickets are complete, call the Skill tool with `code-review` on the integration branch. Fix all issues raised by the code review in a single **implementer subagent**, then review the fix commits with `code-review` as a refresh. The reviewed tip is the **frozen candidate**: run the verifying tickets against it, and limit later changes to what their findings require, each disclosed in the PR.
 
-8. Mark the PR ready for review, then publish and close out as [the tracker workflow](../../../docs/agents/issue-tracker.md#conventions) describes: watch the head's CI, merge with `scripts/tools merge-reviewed`, update the local `main`, and close each ticket, then the spec, with a comment once its acceptance criteria are met. Joel's invocation of this skill authorizes these steps (2026-11-12) unless it says otherwise. The spec's closeout comment lists the judgement calls made within the delegated scope, each rejectable on its own. A ticket with an unmet acceptance criterion stays open and goes in your report.
+8. Mark the PR ready for review, then publish and close out as [the tracker workflow](../../../docs/agents/issue-tracker.md#conventions) describes: if `main` has moved, merge it in and rerun the affected checks CI does not run, such as ignored real-table tests; watch the head's CI; merge with `scripts/tools merge-reviewed`, update the local `main`, and close each ticket, then the spec, with a comment once its acceptance criteria are met. Joel's invocation of this skill authorizes these steps (2026-11-12) unless it says otherwise. The spec's closeout comment lists the judgement calls made within the delegated scope, each rejectable on its own. A ticket with an unmet acceptance criterion stays open and goes in your report.
 
 9. Remove every **implementer subagent** worktree with `scripts/tools worktree remove --merged-into <integration branch> DIR...`. Report each one it refuses, with its reason, and leave those for the owner.
