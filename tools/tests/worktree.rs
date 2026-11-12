@@ -22,6 +22,25 @@ fn git(root: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().into()
 }
 
+/// A worktree added by hand beside `owner`, with its own Cargo configuration file.
+fn manual_worktree(owner: &Path, name: &str, file: &str, config: &str) -> PathBuf {
+    let manual = owner.parent().unwrap().join(name);
+    fs::create_dir_all(manual.join(".cargo")).unwrap();
+    fs::write(manual.join(".cargo").join(file), config).unwrap();
+    let checkout = manual.join("worktree");
+    git(
+        owner,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "--detach",
+            checkout.to_str().unwrap(),
+        ],
+    );
+    manual
+}
+
 /// A repository whose workspace has two packages, like this one.
 fn repository(root: &Path) -> PathBuf {
     let owner = root.join("owner");
@@ -39,6 +58,7 @@ fn repository(root: &Path) -> PathBuf {
         "[package]\nname = \"demo-member\"\n",
     )
     .unwrap();
+    fs::write(owner.join(".gitignore"), "/target/\n/local/\n").unwrap();
     git(&owner, &["add", "."]);
     git(&owner, &["commit", "--quiet", "-m", "base"]);
     owner
@@ -95,24 +115,11 @@ fn commit_in(checkout: &Path, file: &str) {
 fn added_checkouts_share_the_owners_target_with_values_no_other_worktree_uses() {
     let directory = tempfile::tempdir().unwrap();
     let owner = repository(directory.path());
-    // A worktree laid out by hand, as before this command, holds the first free value.
-    let manual = directory.path().join("manual");
-    fs::create_dir_all(manual.join(".cargo")).unwrap();
-    fs::write(
-        manual.join(".cargo/config.toml"),
-        "[profile.dev.package.demo]\ncodegen-units = 249\n",
-    )
-    .unwrap();
-    git(
-        &owner,
-        &[
-            "worktree",
-            "add",
-            "--quiet",
-            "--detach",
-            "../manual/worktree",
-        ],
-    );
+    // Worktrees laid out by hand, as before this command, hold the first free values,
+    // one in the configuration file name Cargo still reads without an extension.
+    let units = |value| format!("[profile.dev.package.demo]\ncodegen-units = {value}\n");
+    manual_worktree(&owner, "manual", "config.toml", &units(249));
+    manual_worktree(&owner, "legacy", "config", &units(248));
 
     let first = directory.path().join("agents/first");
     let printed = succeeds(worktree(
@@ -152,7 +159,7 @@ fn added_checkouts_share_the_owners_target_with_values_no_other_worktree_uses() 
     assert_ne!(values[0], values[1]);
     for value in values {
         // 256 is Cargo's default, which the owner keeps; the baseline recipe passes 250.
-        assert!((1..250).contains(&value) && value != 249, "{value}");
+        assert!((1..248).contains(&value), "{value}");
     }
 }
 
@@ -172,6 +179,29 @@ fn add_refuses_an_existing_directory_and_leaves_it_alone() {
         "mine\n"
     );
     assert!(!taken.join(".cargo").exists());
+}
+
+#[test]
+fn add_resolves_parent_components_before_checking_where_dir_is() {
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    fs::create_dir(directory.path().join("agents")).unwrap();
+
+    succeeds(worktree(
+        &owner,
+        &["add", "--from", "main", "../agents/relative"],
+    ));
+    let hidden = directory.path().join("agents/../owner/inside");
+    let output = worktree(&owner, &["add", "--from", "main", hidden.to_str().unwrap()]);
+
+    assert!(
+        directory
+            .path()
+            .join("agents/relative/worktree/Cargo.toml")
+            .exists()
+    );
+    assert!(!output.status.success());
+    assert!(!owner.join("inside").exists());
 }
 
 #[test]
@@ -205,6 +235,9 @@ fn remove_takes_merged_checkouts_their_branches_and_only_what_add_wrote() {
         ],
     );
     fs::write(noted.join("notes.md"), "kept\n").unwrap();
+    // A copy staged for a README run is build output, which goes with the checkout.
+    fs::create_dir_all(merged.join("worktree/target/debug")).unwrap();
+    fs::write(merged.join("worktree/target/debug/demo"), "build\n").unwrap();
 
     succeeds(worktree(
         &owner,
@@ -233,12 +266,12 @@ fn remove_takes_merged_checkouts_their_branches_and_only_what_add_wrote() {
 }
 
 #[test]
-fn remove_keeps_unmerged_or_dirty_checkouts_and_layouts_it_did_not_write() {
+fn remove_keeps_checkouts_that_fail_a_check_and_layouts_it_did_not_write() {
     let directory = tempfile::tempdir().unwrap();
     let owner = repository(directory.path());
-    let unmerged = directory.path().join("unmerged");
-    let dirty = directory.path().join("dirty");
-    for (dir, branch) in [(&unmerged, "agents/unmerged"), (&dirty, "agents/dirty")] {
+    let dir = |name: &str| directory.path().join(name);
+    for name in ["unmerged", "dirty", "evidence", "own"] {
+        let branch = format!("agents/{name}");
         succeeds(worktree(
             &owner,
             &[
@@ -246,39 +279,53 @@ fn remove_keeps_unmerged_or_dirty_checkouts_and_layouts_it_did_not_write() {
                 "--from",
                 "main",
                 "--branch",
-                branch,
-                dir.to_str().unwrap(),
+                &branch,
+                dir(name).to_str().unwrap(),
             ],
         ));
     }
-    commit_in(&unmerged.join("worktree"), "unmerged");
-    fs::write(dirty.join("worktree/untracked.txt"), "work\n").unwrap();
-    let manual = directory.path().join("manual");
-    fs::create_dir_all(manual.join(".cargo")).unwrap();
-    fs::write(manual.join(".cargo/config.toml"), "[build]\njobs = 1\n").unwrap();
-    git(
-        &owner,
-        &[
-            "worktree",
-            "add",
-            "--quiet",
-            "--detach",
-            "../manual/worktree",
-        ],
-    );
+    commit_in(&dir("unmerged").join("worktree"), "unmerged");
+    fs::write(dir("dirty").join("worktree/untracked.txt"), "work\n").unwrap();
+    // Ignored, so `git worktree remove` alone would delete it.
+    fs::create_dir_all(dir("evidence").join("worktree/local/verification")).unwrap();
+    fs::write(
+        dir("evidence").join("worktree/local/verification/record.txt"),
+        "evidence\n",
+    )
+    .unwrap();
+    manual_worktree(&owner, "manual", "config.toml", "[build]\njobs = 1\n");
+    let main_commit = git(&owner, &["rev-parse", "main"]);
 
-    for dir in [&unmerged, &dirty, &manual] {
+    let attempts = [
+        ("unmerged", "main"),
+        ("dirty", "main"),
+        ("evidence", "main"),
+        ("manual", "main"),
+        // Its own branch would be deleted, and a bare commit keeps nothing reachable.
+        ("own", "agents/own"),
+        ("own", main_commit.as_str()),
+    ];
+    for (name, merged_into) in attempts {
         let output = worktree(
             &owner,
-            &["remove", "--merged-into", "main", dir.to_str().unwrap()],
+            &[
+                "remove",
+                "--merged-into",
+                merged_into,
+                dir(name).to_str().unwrap(),
+            ],
         );
-        assert!(!output.status.success(), "{}", dir.display());
-        assert!(
-            dir.join("worktree/Cargo.toml").exists(),
-            "{}",
-            dir.display()
-        );
-        assert!(dir.join(".cargo/config.toml").exists(), "{}", dir.display());
+        assert!(!output.status.success(), "{name} {merged_into}");
+        assert!(dir(name).join("worktree/Cargo.toml").exists(), "{name}");
+        assert!(dir(name).join(".cargo/config.toml").exists(), "{name}");
     }
-    assert_eq!(branches(&owner), "agents/dirty\nagents/unmerged\nmain");
+    assert!(
+        dir("evidence")
+            .join("worktree/local/verification/record.txt")
+            .exists()
+    );
+    assert_eq!(
+        branches(&owner),
+        "agents/dirty\nagents/evidence\nagents/own\nagents/unmerged\nmain"
+    );
 }

@@ -10,7 +10,7 @@ use std::{
     ffi::OsStr,
     fs::{self, File},
     io::ErrorKind,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command as Process,
 };
 
@@ -60,17 +60,18 @@ pub fn run(command: Command) -> Result<u8> {
 }
 
 fn add(repository: &Repository, args: AddArgs) -> Result<u8> {
-    let dir = std::path::absolute(&args.dir)?;
+    let dir = resolve_new(&args.dir)?;
     ensure!(
-        !dir.starts_with(&repository.owner),
+        !dir.starts_with(fs::canonicalize(&repository.owner)?),
         "{} is inside the owner's checkout; Cargo would read its configuration there",
         dir.display()
     );
     let packages = repository.packages(&args.from)?;
     // Held until the new worktree is registered, so a concurrent `add` sees its value.
     let _lock = repository.lock()?;
-    let value = free_value(&repository.values_in_use()?)
-        .context("every codegen-units value below 250 is in use by a registered worktree")?;
+    let value = free_value(&repository.values_in_use()?).with_context(|| {
+        format!("every codegen-units value below {CEILING} is in use by a registered worktree")
+    })?;
     if let Some(parent) = dir.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -94,7 +95,7 @@ fn add(repository: &Repository, args: AddArgs) -> Result<u8> {
             git(&repository.cwd, &git_args).map(drop)
         });
     if let Err(error) = created {
-        // Undo only what this call made; the directory did not exist before it.
+        // Undo the new directory and what this call wrote in it; parents made for it stay.
         let _ = fs::remove_file(config_file(&dir));
         let _ = fs::remove_dir(dir.join(".cargo"));
         let _ = fs::remove_dir(&dir);
@@ -109,19 +110,39 @@ fn add(repository: &Repository, args: AddArgs) -> Result<u8> {
     Ok(0)
 }
 
+/// The ref that keeps every removed checkout's commit reachable, and its commit.
+struct MergedInto {
+    reference: String,
+    commit: String,
+}
+
 fn remove(repository: &Repository, args: RemoveArgs) -> Result<u8> {
-    let merged_into = git_text(
+    let reference = git_text(
         &repository.cwd,
         &[
             OsStr::new("rev-parse"),
             OsStr::new("--verify"),
-            OsStr::new(&format!("{}^{{commit}}", args.merged_into)),
+            OsStr::new("--symbolic-full-name"),
+            OsStr::new(&args.merged_into),
         ],
     )?;
-    let worktrees = repository.worktrees()?;
+    ensure!(
+        reference.starts_with("refs/"),
+        "--merged-into {} must name a branch, so the merged commits stay reachable",
+        args.merged_into
+    );
+    let commit = git_text(
+        &repository.cwd,
+        &[
+            OsStr::new("rev-parse"),
+            OsStr::new("--verify"),
+            OsStr::new(&format!("{reference}^{{commit}}")),
+        ],
+    )?;
+    let merged_into = MergedInto { reference, commit };
     let mut failed = false;
     for dir in &args.dirs {
-        match remove_one(repository, &worktrees, dir, &merged_into) {
+        match remove_one(repository, dir, &merged_into) {
             Ok(report) => println!("{report}"),
             Err(error) => {
                 eprintln!("arkham-tools: kept {}: {error:#}", dir.display());
@@ -132,12 +153,7 @@ fn remove(repository: &Repository, args: RemoveArgs) -> Result<u8> {
     Ok(u8::from(failed))
 }
 
-fn remove_one(
-    repository: &Repository,
-    worktrees: &[Worktree],
-    dir: &Path,
-    merged_into: &str,
-) -> Result<String> {
+fn remove_one(repository: &Repository, dir: &Path, merged_into: &MergedInto) -> Result<String> {
     let dir = fs::canonicalize(dir).context("no such directory")?;
     let written = fs::read_to_string(config_file(&dir)).unwrap_or_default();
     ensure!(
@@ -145,12 +161,23 @@ fn remove_one(
         "`scripts/tools worktree add` did not make it"
     );
     let checkout = fs::canonicalize(dir.join(CHECKOUT)).context("its checkout is gone")?;
-    let worktree = worktrees
-        .iter()
+    // Read for each DIR, so a commit made during an earlier removal is seen.
+    let worktree = repository
+        .worktrees()?
+        .into_iter()
         .find(|worktree| fs::canonicalize(&worktree.path).ok().as_deref() == Some(&checkout))
         .context("its checkout is not a registered worktree")?;
+    ensure!(
+        worktree.branch.as_deref() != Some(&merged_into.reference),
+        "--merged-into names its own branch, which removing it would delete"
+    );
     let merged = Process::new("git")
-        .args(["merge-base", "--is-ancestor", &worktree.head, merged_into])
+        .args([
+            "merge-base",
+            "--is-ancestor",
+            &worktree.head,
+            &merged_into.commit,
+        ])
         .current_dir(&repository.cwd)
         .status()?;
     match merged.code() {
@@ -158,6 +185,18 @@ fn remove_one(
         Some(1) => bail!("its commit {} is not merged", worktree.head),
         _ => bail!("git merge-base failed for {}", worktree.head),
     }
+    let ignored = ignored_outside_target(&checkout)?;
+    ensure!(
+        ignored.is_empty(),
+        "its checkout holds ignored files that `git worktree remove` would delete: {}; move what \
+         should be kept, such as evidence under local/, and run it again",
+        ignored.join(", ")
+    );
+    let head = git_text(&checkout, &[OsStr::new("rev-parse"), OsStr::new("HEAD")])?;
+    ensure!(
+        head == worktree.head,
+        "its checkout moved to {head} during the checks"
+    );
     // Git refuses a checkout with changes or untracked files here.
     git(
         &repository.cwd,
@@ -182,14 +221,57 @@ fn remove_one(
         report += &format!(" and {}", branch.trim_start_matches("refs/heads/"));
     }
     fs::remove_file(config_file(&dir))?;
-    for kept in [dir.join(".cargo"), dir.clone()] {
-        if let Err(error) = fs::remove_dir(&kept) {
+    for directory in [dir.join(".cargo"), dir.clone()] {
+        if let Err(error) = fs::remove_dir(&directory) {
             ensure!(error.kind() == ErrorKind::DirectoryNotEmpty, error);
-            report += &format!("; kept {}, which holds other files", kept.display());
+            report += &format!("; kept {}, which holds other files", directory.display());
             return Ok(report);
         }
     }
     Ok(report + &format!("; deleted {}", dir.display()))
+}
+
+/// Ignored paths in a checkout, apart from build output under `target/`.
+fn ignored_outside_target(checkout: &Path) -> Result<Vec<String>> {
+    let listing = git(
+        checkout,
+        &[
+            OsStr::new("ls-files"),
+            OsStr::new("--others"),
+            OsStr::new("--ignored"),
+            OsStr::new("--exclude-standard"),
+            OsStr::new("--directory"),
+            OsStr::new("-z"),
+        ],
+    )?;
+    Ok(String::from_utf8_lossy(&listing)
+        .split('\0')
+        .filter(|path| !path.is_empty() && !path.starts_with("target/"))
+        .map(str::to_owned)
+        .collect())
+}
+
+/// A path that does not exist yet, resolved through its deepest existing directory, so
+/// neither `..` nor a symbolic link can hide where it is.
+fn resolve_new(dir: &Path) -> Result<PathBuf> {
+    let dir = std::path::absolute(dir)?;
+    let existing = dir
+        .ancestors()
+        .find(|ancestor| ancestor.exists())
+        .context("none of it exists")?;
+    let rest = dir.strip_prefix(existing)?;
+    ensure!(
+        !rest.as_os_str().is_empty(),
+        "{} already exists",
+        dir.display()
+    );
+    ensure!(
+        rest.components()
+            .all(|component| matches!(component, Component::Normal(_))),
+        "{} has `.` or `..` below a directory that does not exist",
+        dir.display()
+    );
+    Ok(fs::canonicalize(existing)?.join(rest))
 }
 
 fn config_file(dir: &Path) -> PathBuf {
@@ -316,8 +398,12 @@ impl Repository {
         let mut read = BTreeSet::new();
         let mut values = BTreeSet::new();
         for worktree in self.worktrees()? {
-            for directory in worktree.path.ancestors() {
-                let file = config_file(directory);
+            // Cargo still reads the older name without an extension.
+            let files = worktree
+                .path
+                .ancestors()
+                .flat_map(|directory| [config_file(directory), directory.join(".cargo/config")]);
+            for file in files {
                 if !read.insert(file.clone()) {
                     continue;
                 }
