@@ -23,6 +23,9 @@
 //!    do not apply.
 //! 9. Sitting marks the table with [`agent_seat::SeatedAgent`], so a Credits link
 //!    reports its address instead of reaching the desktop's opener.
+//! 10. With `--socket`, the launching command claims the socket and starts the seat as
+//!     a detached process of its own ([`agent_seat::socket`]), which performs this same
+//!     admission and then serves the socket instead of standard input.
 
 use super::*;
 use crate::{
