@@ -60,7 +60,7 @@ target/debug/arkham-tabletop --experiment gathering --agent-seat --save /absolut
 
 It is the same table, rules session, save path and artwork verification as native play: an existing compatible file resumes, an unused path starts setup, and each committed decision autosaves there. `--experiment gathering` and `--save` are required. `--art-root` and `--initial-view` work as above; `--attempt` and `--screenshot` are refused. The seat opens no window and no dialog: it has no window event loop, and artwork recovery, the artwork-folder chooser and the return to scenario selection are not part of it. The seat refuses to open external links: a Credits link, which native play hands to the desktop's opener, only sets `notice` to its address. A startup problem, including a refused option, is one `refused` response, the same text on standard error and an unsuccessful exit.
 
-In batch form the seat reads one JSON request per line on standard input and writes one JSON response per line on standard output. Diagnostics go to standard error. A [held session](#held-session) exchanges the same lines over a local socket instead. The first response has status `ready` and names the graphics `adapter` that rendered the table. Every response carries `ok`, `mode: "seat"`, `status`, an `error` when refused, the player-visible `observation` exactly as the headless driver prints it, and `table`, what the table shows:
+In batch form the seat reads one JSON request per line on standard input and writes one JSON response per line on standard output. Diagnostics go to standard error. A [held session](#held-session) exchanges the same lines over a local socket instead. The first response has status `ready` and names the graphics `adapter` that rendered the table. Every response carries `ok`, `mode: "seat"`, `status`, an `error` when refused or skipped, the player-visible `observation` exactly as the headless driver prints it, and `table`, what the table shows:
 
 - `settled` and `pending`: whether the table will accept input, and what is still in progress when it will not. A dialog or menu waiting for the player is settled.
 - `shows_latest`: false while the table is still presenting its way to the observation, for example behind a reading dialog.
@@ -75,25 +75,69 @@ In batch form the seat reads one JSON request per line on standard input and wri
 | `{"op":"observe"}` | Return the current observation without advancing the table. |
 | `{"op":"activate","revision":N,"component":"NAME"}` | Move the pointer onto the named component, then press and release. |
 | `{"op":"activate","revision":N,"choice":"ID"}` | The same for the one shown control offering that choice. |
-| `{"op":"key","key":"Escape"}` | Press and release one key: `Escape`, `Enter`, `Space`, `Tab`, `Home`, `End`, `PageUp`, `PageDown`, the four `Arrow` keys, `KeyW`, `KeyA`, `KeyS`, `KeyD`, `Minus` or `Equal`. |
+| `{"op":"key","revision":N,"key":"Escape"}` | Press and release one key: `Escape`, `Enter`, `Space`, `Tab`, `Home`, `End`, `PageUp`, `PageDown`, the four `Arrow` keys, `KeyW`, `KeyA`, `KeyS`, `KeyD`, `Minus` or `Equal`. |
+| `{"op":"key","revision":N,"key":"Enter","focused":"NAME"}` | The same for `Enter` or `Space`, which can commit a choice or dismiss a reading: it presses only when the focused control is the one named. |
 | `{"op":"settle","steps":N}` | Step the table until it settles or `steps` is reached (default 1,800, at most 7,200). An `unsettled` response names what remains; ask again to continue. |
 | `{"op":"capture","path":"/absolute/path.png"}` | Write a picture of the table. The response follows the completed file. |
 | `{"op":"quit"}` | End the session. The attempt stays resumable. |
 
-Selecting a component and choosing from its menu are two activations, as for a player. `revision` is the observation revision the request was decided on; a different current revision is refused as outdated. Names match exactly: an absent, ambiguous or off-screen name is refused, never matched to something near. One choice shown both by an open contextual menu's row and by another control, such as the decision bar, names the menu row, because the open menu captures the pointer. Activations and keys are refused while the table is busy, because the table drops input while presenting. A key that moves the camera leaves the table busy until the camera rests, so settle before the next request. The seat rests the pointer on a part of the named component that nothing covers, as a player would beside a counter standing on a card; when it presses at a later point, `covered` reports the first point it tried and what the pointer found there. When every part is covered it answers `missed`, reports what the pointer is over in `hit` and presses nothing. Table time advances only in the seat's own fixed steps of one sixtieth of a second, never with the wall clock.
+Selecting a component and choosing from its menu are two activations, as for a player. `revision`, required on every activation and key, is the observation revision the request was decided on; a different current revision is refused as outdated and nothing is pressed. Names match exactly: an absent, ambiguous or off-screen name is refused, never matched to something near. One choice shown both by an open contextual menu's row and by another control, such as the decision bar, names the menu row, because the open menu captures the pointer. Activations and keys are refused while the table is busy, because the table drops input while presenting. While the camera still moves, `pending` names `camera motion` (see **Camera views** below), so settle before the next request. The seat rests the pointer on a part of the named component that nothing covers, as a player would beside a counter standing on a card; when it presses at a later point, `covered` reports the first point it tried and what the pointer found there. When every part is covered it answers `missed`, reports what the pointer is over in `hit` and presses nothing. Table time advances only in the seat's own fixed steps of one sixtieth of a second, never with the wall clock.
 
-Controls without a choice identity are reached with `Tab` and `Enter` where the table's tab order includes them, or closed with `Escape`. The **Menu** button comes after the portrait rail and the decision panel in that order, so the utilities menu (action history, save, restart, motion, Credits) is within reach; **Save and return to scenario selection** saves and ends the session with `exited`, and no selection window opens. Known limits of this increment: the Crystal Pendulum and Violin pickers compose their choice from several presses and are keyboard-only. It is not established whether the table could drop a choice pressed on a dialog while consequences still resolve behind it, after the seat has answered `activated`; an unchanged `revision` in the response would show it.
+**Guarded keys.** `Enter` and `Space` are the keys that can commit a choice or dismiss a reading: a focused button activates on either, and in the group clue payment `Enter` on a focused investigator row spends the clues, so that row, which has no choice identity, is named by its label. A request for either must name, in `focused`, the control it expects to press: the focused control's `choice` when it has one, otherwise its `label`, matched exactly. When nothing has focus, or something else does, the key is refused, nothing is pressed and the revision is unchanged; the error says what has focus. Every other key moves focus, the camera or a scroll position, steps the group clue payment's amounts, or closes a menu or dialog without deciding, so it needs only `revision`; a `focused` given with it is checked the same way. With a test result's **Continue** focused at revision 12, and with the `turn:end` control focused at revision 13:
+
+```json
+{"op":"key","revision":12,"key":"Enter","focused":"Continue"}
+{"op":"key","revision":13,"key":"Space","focused":"turn:end"}
+```
+
+`{"op":"key","revision":12,"key":"Enter"}` is refused, as is the first request above when no reading is up and focus is on another control.
+
+**Stop after a refusal.** Standard input is one connection. After the first `refused` response on it, including one for a malformed line, the seat stops acting: every later `activate` and `key` is answered with status `skipped`, `ok: false`, nothing pressed, and an `error` naming the refused request and its reason. `observe`, `settle` and `capture` are still served, and `quit` still ends the session. In this batch, sent when no reading was up, the Enter is refused, so the activation planned after it is skipped instead of acting on a table the agent did not expect:
+
+```text
+{"op":"key","revision":12,"key":"Enter","focused":"Continue"}   refused: focus is on another control
+{"op":"activate","revision":12,"choice":"turn:end"}             skipped
+{"op":"observe"}                                                 observed
+```
+
+Controls without a choice identity are reached with `Tab` and `Enter` where the table's tab order includes them, naming their `label` in `focused`, or closed with `Escape`. The **Menu** button comes after the portrait rail and the decision panel in that order, so the utilities menu (action history, save, restart, motion, Credits) is within reach; **Save and return to scenario selection** saves and ends the session with `exited`, and no selection window opens. Known limits of this increment: the Crystal Pendulum and Violin pickers compose their choice from several presses and are keyboard-only. It is not established whether the table could drop a choice pressed on a dialog while consequences still resolve behind it, after the seat has answered `activated`; an unchanged `revision` in the response would show it.
+
+**Where choices appear.** `observation.choices` lists every legal choice, and the table offers each one in one place:
+
+- A choice that belongs to no piece, such as ending a turn, Undo or a confirmation, is a decision-bar control in `controls`, with its `choice`. While a dialog is open, the decision bar offers no choices; the dialog's own buttons carry them.
+- A choice that belongs to a card or another piece, such as playing a card, moving to a location or choosing the lead investigator, is only a row of that piece's contextual menu. Activate the component first; the response then shows `menu`, with the choice among `menu.rows`, and a second activation chooses it. A component marked `available` has at least one choice in its menu. A piece with no choice and one thing to inspect opens the inspection instead of a menu.
+- A choice that belongs to no shown piece is a row of the menu titled `Current decision`, opened by the decision bar's **Pending decision** control. That control has no `choice`, so reach it with `Tab` and `Enter`.
+
+So a choice whose identity is a `choice` in `controls` is one activation away; any other needs its piece, marked `available`, or **Pending decision** first.
+
+**Readings.** A test result, a story reading (an act or agenda reverse) and an encounter card each open a reading over the table, which `modal` names `test result`, `story reading` or `encounter reading`. **Continue** has focus when a reading opens, and `Enter` naming it presses it. On a test result or story reading, Continue only dismisses, and `focused` names it by its label, `Continue`. On an encounter reading whose revelation is still to resolve, Continue carries the choice `revelation:resolve` and commits the revelation: it is a decision, not a dismissal, and `focused` names it `revelation:resolve`. A response such as Ward of Protection is another control on that reading, chosen before Continue. When a test offers effects after its result, `modal` is `result opportunities` and focus starts on the first effect, such as Lucky!, or on the decline when no effect is listed; `Enter` there commits that choice. `Escape` closes none of these. It closes the contextual menu, the utilities menu, an inspection (including Credits), the action history, the restart confirmation, and the Crystal Pendulum, Violin and group clue payment choosers.
+
+Opening a save shows again the test results and story readings its most recent committed decision produced, and the encounter card of a revelation still to resolve. They return even when they were dismissed before the previous launch ended, and when the headless driver made that decision. In batch form, the first `Enter` of a launch can meet such a reading instead of the table.
+
+**Tab order and focus.** With no dialog or menu open, `Tab` moves through four groups, then wraps to the start:
+
+1. the portrait rail: **Focus Tony Morgan**, **Focus Patrice Hathaway** and **Focus Jacqueline Fine** (the current investigator's label ends in `· current turn`), then **Scenario**, **Test**, **Overview**, and **Resolve** while a resolution drawer is open;
+2. the decision panel's controls;
+3. the sideboard headings, one for each location group on the enemy sideboard, then on the attachment sideboard;
+4. the **Menu** button.
+
+While a dialog or menu has focus, `Tab` cycles through its own buttons. `controls` lists buttons in screen reading order, not Tab order. The seat reports `focused` only for controls and menu rows: a sideboard heading is a component and carries no `focused`, so a `Tab` response with nothing focused means a heading has focus. A player's `Enter` there selects its location, but the seat refuses `Enter` and `Space` on a heading, because `focused` cannot name it; activate the heading's component instead. With no dialog or menu open, focus normally starts on the first decision-bar control that carries a `choice`, or on **Overview** when there is none, and returns there whenever the table changes, such as after a commit, a dismissed reading or a new camera view. An `Enter` meant for a reading that is not shown would therefore press that control; naming the expected control in `focused` (see **Guarded keys**) has it refused instead. Read `focused` after each `Tab` instead of counting presses; the count depends on which controls and headings are shown.
+
+**Camera views.** Each launch starts at **Overview** unless `--initial-view` names another view. To change view, `Tab` to its rail button and press `Enter`: **Scenario** frames the map and both sideboards, **Test** the test area, **Overview** the whole table, a **Focus** portrait that investigator's area and **Resolve** the resolution drawer. A portrait only moves the camera; it does not choose who acts. The view changes at once. `pending` names `camera motion` only while the camera still moves, for example while camera following is on (**Menu → Resume camera following**); then settle before the next request. `Home`, the arrow keys, `Minus` and `Equal` move the camera only while no button has focus, and a button normally has focus, so use the rail buttons. To start in a view, launch with `--initial-view overview`, `scenario`, `test`, `tony`, `patrice`, `jacqueline` or `resolve`. `resolve` needs an existing save with an open resolution drawer; otherwise the seat refuses to start. `Home` still means **Overview**.
 
 Every committed decision is saved, so in batch form a shell that runs one command at a time can send a batch of requests in one launch and resume the attempt in the next. Camera position and an open menu do not survive a launch; a held session keeps them.
 
-Each response repeats the whole observation and table, about 15 KB, so keep the responses in a file and read only what the next decision needs:
+Each response repeats the whole observation and table, about 15 KB, so keep the responses in a file and read only what the next decision needs. This batch dismisses a test result read at revision 12, settles and quits; `focused` in the view is what the next guarded key must name:
 
 ```sh
-printf '%s\n' '{"op":"observe"}' '{"op":"quit"}' |
+printf '%s\n' '{"op":"key","revision":12,"key":"Enter","focused":"Continue"}' \
+    '{"op":"settle"}' '{"op":"quit"}' |
   target/debug/arkham-tabletop --experiment gathering --agent-seat \
     --save /absolute/path/to/attempt.json > responses.jsonl
 jq -c '{status, error, revision: .observation.revision, settled: .table.settled,
-        pending: .table.pending, modal: .table.modal, menu: .table.menu}' responses.jsonl
+        pending: .table.pending, modal: .table.modal, menu: .table.menu,
+        focused: [(.table.controls[]?, .table.menu.rows[]?) | select(.focused) | {choice, label}]}' \
+  responses.jsonl
 ```
 
 **Evidence limits.** A seat run can establish presentation logic, layout, controls and rendered output on the seat's image, with real artwork and a real graphics adapter. It cannot establish window behaviour, display pacing, focus or physical input, and it is not acceptance of native play. The seat's own admission requires decoded artwork, the registered symbol font, ready render pipelines and completed GPU work for its image; it makes no claim about display rate, and native rendering health is unchanged. Protocol behaviour is checked without a graphics card in the ordinary tests. The real table, including admission, mesh picking, capture, resuming, the end of a session when artwork becomes unavailable and a held session between tool commands, is checked only where the prepared collection and a graphics adapter exist:
@@ -119,15 +163,16 @@ target/debug/arkham-tabletop --experiment gathering --agent-seat \
 
 The start command returns as soon as the table is admitted. It prints the same `ready` response as batch form and exits successfully, while the seat keeps running as a separate process, detached from the shell and its process group. The seat keeps none of the shell's standard input, output or error, so the start command finishes like any other command. It needs no background-process feature of the shell or agent harness. A startup problem prints one `refused` response and exits unsuccessfully, with no socket left and no seat running. `--socket` needs an absolute path, at most 107 bytes long, and `--agent-seat`; a path that already exists is refused and left unchanged. The socket file is accessible only to its owner.
 
-Then send requests from any later command. Each command sends its requests over one connection, as arguments or as standard-input lines, and prints each response line unchanged:
+Then send requests from any later command. Each command sends its requests over one connection, as arguments or as standard-input lines, and prints each response line unchanged. Here one command opens Tony's menu and the next, after reading its rows, chooses from it:
 
 ```sh
-scripts/tools seat /absolute/path/to/seat.sock '{"op":"observe"}' > responses.jsonl
-printf '%s\n' '{"op":"settle"}' '{"op":"capture","path":"/absolute/path/to/table.png"}' |
+scripts/tools seat /absolute/path/to/seat.sock \
+  '{"op":"activate","revision":0,"component":"investigator:tony"}' > responses.jsonl
+printf '%s\n' '{"op":"activate","revision":0,"choice":"lead:tony"}' '{"op":"settle"}' |
   scripts/tools seat /absolute/path/to/seat.sock > responses.jsonl
 ```
 
-The command exits unsuccessfully when a response is `refused` or `skipped`, or when the session ends before every request is answered. When no seat is listening on the path, it says so, names the path and exits unsuccessfully: start a seat first. The `jq` view above reads its output the same way.
+The command exits unsuccessfully when a response is `refused` or `skipped`, or when the session ends before every request is answered. When no seat is listening on the path, it says so, names the path and exits unsuccessfully: start a seat first. The `jq` view above reads its output the same way. Each command is one connection for **Stop after a refusal**: a refusal skips only the rest of that command's activations and keys.
 
 Between commands the table keeps its camera, open contextual menu, dialogs, readings and group clue payment chooser, so reading a menu's rows and choosing from it can be two commands. A reading dismissed in a held session stays dismissed. Every committed decision still autosaves, so the attempt stays resumable. Connections are answered one at a time, in arrival order; closing one does not end the session.
 

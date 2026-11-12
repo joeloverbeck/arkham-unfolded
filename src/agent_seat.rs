@@ -3,8 +3,13 @@
 //! input and output in batch form, or held across shell commands on a local socket
 //! ([`socket`], #175). This module owns the windowless host, fixed-step stepping,
 //! pointer and key synthesis, capture and the protocol loop both forms share. It reaches
-//! the game only through [`Game`]: produce an observation, resolve a name to a screen
-//! position (and a hit back to a name), and report whether the table is settled.
+//! the game only through [`Game`]: produce an observation and its revision, resolve a
+//! name to a screen position (and a hit back to a name), say what has keyboard focus,
+//! and report whether the table is settled.
+//!
+//! The protocol's guards live here, so every transport gets them (#175): activations and
+//! keys act only on the revision they were decided on, a key that can commit presses
+//! only the control it names, and a connection stops acting after its first refusal.
 //!
 //! Input enters where Bevy's own window-event conversion writes it: `PointerInput` and
 //! `KeyboardInput` messages plus the logical window's cursor position. Everything after
@@ -78,6 +83,52 @@ pub(crate) struct Hit {
     pub description: Value,
 }
 
+/// What has keyboard focus, which a key that can commit must name.
+pub(crate) enum Focus {
+    Nothing,
+    /// A shown control or contextual-menu row.
+    Control {
+        choice: Option<String>,
+        label: String,
+    },
+    /// Something that is not a shown control or menu row, as the game describes it.
+    Other(Value),
+}
+
+impl Focus {
+    /// A control is named by its choice identity, or by its label when it has none.
+    /// The match is exact.
+    fn is_named(&self, expected: &str) -> bool {
+        match self {
+            Self::Control {
+                choice: Some(id), ..
+            } => id == expected,
+            Self::Control {
+                choice: None,
+                label,
+            } => label == expected,
+            Self::Nothing | Self::Other(_) => false,
+        }
+    }
+
+    fn describe(&self) -> String {
+        match self {
+            Self::Nothing => "nothing has focus".into(),
+            Self::Control {
+                choice: Some(id),
+                label,
+            } => format!("focus is on choice {id} ({label:?})"),
+            Self::Control {
+                choice: None,
+                label,
+            } => format!("focus is on {label:?}, which has no choice identity"),
+            Self::Other(description) => {
+                format!("focus is on {description}, which is not a shown control or menu row")
+            }
+        }
+    }
+}
+
 pub(crate) struct Observed {
     /// The player-visible observation, as the headless player driver prints it.
     pub observation: Value,
@@ -88,12 +139,16 @@ pub(crate) struct Observed {
 /// The whole game-facing interface of the seat.
 pub(crate) trait Game {
     fn observe(&self, world: &mut World) -> Observed;
-    /// Logical screen positions on exactly one shown component or control, as seen
-    /// at `revision`: its middle first, then other points where a pointer could rest.
-    /// Absent, ambiguous, off-screen and outdated names are errors, never a near match.
-    fn resolve(&self, world: &mut World, name: &Name, revision: u64) -> Result<Vec<Vec2>, String>;
+    /// The observation revision the attempt is at, which a request names to act.
+    fn revision(&self, world: &mut World) -> u64;
+    /// Logical screen positions on exactly one shown component or control: its
+    /// middle first, then other points where a pointer could rest. Absent, ambiguous
+    /// and off-screen names are errors, never a near match.
+    fn resolve(&self, world: &mut World, name: &Name) -> Result<Vec<Vec2>, String>;
     /// The inverse of `resolve` for one picked entity.
     fn identify(&self, world: &mut World, entity: Entity) -> Hit;
+    /// What a key press would reach now.
+    fn focus(&self, world: &mut World) -> Focus;
     /// The conditions still in progress; empty when the table will accept input.
     fn unsettled(&self, world: &mut World) -> Vec<String>;
 }
@@ -173,6 +228,9 @@ enum Request {
     },
     Key {
         key: String,
+        revision: u64,
+        #[serde(default)]
+        focused: Option<String>,
     },
     Settle {
         #[serde(default)]
@@ -191,6 +249,35 @@ pub(crate) enum Session {
     Open,
     /// `quit` or the table's own exit ended the session.
     Ended,
+}
+
+/// One connection's requests: standard input in batch form, or one connection to the
+/// seat. After its first refused response the connection stops acting: every later
+/// activation and key is skipped, so one wrong assumption cannot cascade into several
+/// commits. Observing, settling, capturing and quitting are still served.
+#[derive(Default)]
+struct Connection {
+    /// The first refused request and the reason it was refused.
+    refused: Option<(String, String)>,
+}
+
+impl Connection {
+    /// Why `request` is skipped, if it is.
+    fn skips(&self, request: &Request) -> Option<String> {
+        let (line, reason) = self.refused.as_ref()?;
+        matches!(request, Request::Activate { .. } | Request::Key { .. }).then(|| {
+            format!(
+                "Skipped: an earlier request on this connection was refused, so its activations and keys are no longer acted on. Nothing was pressed. Refused request: {line}. Reason: {reason}"
+            )
+        })
+    }
+
+    fn answered(&mut self, line: &str, response: &Value) {
+        if self.refused.is_none() && response["status"] == "refused" {
+            let reason = response["error"].as_str().unwrap_or_default();
+            self.refused = Some((line.trim().to_owned(), reason.to_owned()));
+        }
+    }
 }
 
 /// Present while an agent sits at the table. The agent operates the table, never the
@@ -317,19 +404,22 @@ impl<G: Game> Seat<G> {
     }
 
     /// Answer one connection's requests in order until `quit`, the end of its input or
-    /// the table's own exit. An error is this connection's input or output failing.
+    /// the table's own exit. Each call is a connection of its own, so a refusal stops
+    /// only the rest of this call's actions. An error is this connection's input or
+    /// output failing.
     pub(crate) fn converse(
         &mut self,
         app: &mut App,
         input: impl BufRead,
         mut output: impl Write,
     ) -> Result<Session, String> {
+        let mut connection = Connection::default();
         for line in input.lines() {
             let line = line.map_err(|error| error.to_string())?;
             if line.trim().is_empty() {
                 continue;
             }
-            let (response, proceed) = self.respond(app, &line);
+            let (response, proceed) = self.respond_on(app, &mut connection, &line);
             let sent = emit(&mut output, &response);
             if !proceed {
                 // Over even if its last response could not be delivered.
@@ -348,12 +438,33 @@ impl<G: Game> Seat<G> {
         }
     }
 
-    /// One request, one response. The flag is false when the session has ended.
+    /// One request on a connection of its own, one response, for protocol tests that
+    /// send requests one at a time. The flag is false when the session has ended.
+    #[cfg(test)]
     pub(crate) fn respond(&mut self, app: &mut App, line: &str) -> (Value, bool) {
-        let request = match serde_json::from_str::<Request>(line) {
-            Ok(request) => request,
-            Err(error) => return (self.refused(app, error.to_string()), true),
+        self.respond_on(app, &mut Connection::default(), line)
+    }
+
+    /// One request on `connection`, one response. The flag is false when the session
+    /// has ended.
+    fn respond_on(
+        &mut self,
+        app: &mut App,
+        connection: &mut Connection,
+        line: &str,
+    ) -> (Value, bool) {
+        let (response, proceed) = match serde_json::from_str::<Request>(line) {
+            Err(error) => (self.refused(app, error.to_string()), true),
+            Ok(request) => match connection.skips(&request) {
+                Some(error) => (self.response(app, "skipped", Some(error)), true),
+                None => self.perform(app, request),
+            },
         };
+        connection.answered(line, &response);
+        (response, proceed)
+    }
+
+    fn perform(&mut self, app: &mut App, request: Request) -> (Value, bool) {
         let response = match request {
             Request::Observe {} => self.response(app, "observed", None),
             Request::Activate {
@@ -368,7 +479,11 @@ impl<G: Game> Seat<G> {
                     "activate needs exactly one of component or choice".into(),
                 ),
             },
-            Request::Key { key } => self.key(app, &key),
+            Request::Key {
+                key,
+                revision,
+                focused,
+            } => self.key(app, &key, revision, focused.as_deref()),
             Request::Settle { steps } => self.settle(app, steps),
             Request::Capture { path } => self.capture(app, &path),
             Request::Quit {} => return (self.response(app, "bye", None), false),
@@ -397,12 +512,29 @@ impl<G: Game> Seat<G> {
         self.response(app, "refused", Some(error))
     }
 
-    fn activate(&mut self, app: &mut App, name: Name, revision: u64) -> Value {
+    /// Why a request decided on `revision` must not act now, if it must not: the table
+    /// is presenting and would drop the input, or the attempt has moved on.
+    fn unready(&self, app: &mut App, revision: u64) -> Option<Value> {
         let pending = self.game.unsettled(app.world_mut());
         if !pending.is_empty() {
-            return self.busy(app, &pending);
+            return Some(self.busy(app, &pending));
         }
-        let candidates = match self.game.resolve(app.world_mut(), &name, revision) {
+        let current = self.game.revision(app.world_mut());
+        (revision != current).then(|| {
+            self.refused(
+                app,
+                format!(
+                    "Outdated: the request names revision {revision}, but the attempt is at revision {current}. Observe again."
+                ),
+            )
+        })
+    }
+
+    fn activate(&mut self, app: &mut App, name: Name, revision: u64) -> Value {
+        if let Some(refusal) = self.unready(app, revision) {
+            return refusal;
+        }
+        let candidates = match self.game.resolve(app.world_mut(), &name) {
             Ok(candidates) => candidates,
             Err(error) => return self.refused(app, error),
         };
@@ -556,7 +688,9 @@ impl<G: Game> Seat<G> {
         Ok(())
     }
 
-    fn key(&mut self, app: &mut App, name: &str) -> Value {
+    /// Press and release one key decided on `revision`. A key that can commit, or any
+    /// key given `focused`, presses only when the named control has focus.
+    fn key(&mut self, app: &mut App, name: &str, revision: u64, focused: Option<&str>) -> Value {
         let Some((code, logical)) = key_named(name) else {
             let known: Vec<&str> = KEYS.iter().map(|(known, ..)| *known).collect();
             return self.refused(
@@ -564,9 +698,25 @@ impl<G: Game> Seat<G> {
                 format!("Unknown key {name:?}. Known keys: {}.", known.join(", ")),
             );
         };
-        let pending = self.game.unsettled(app.world_mut());
-        if !pending.is_empty() {
-            return self.busy(app, &pending);
+        if let Some(refusal) = self.unready(app, revision) {
+            return refusal;
+        }
+        if COMMITTING.contains(&code) || focused.is_some() {
+            let focus = self.game.focus(app.world_mut());
+            let error = match focused {
+                None => Some(format!(
+                    "{name} can commit a choice or dismiss a reading, so its request must name the control it expects to press in \"focused\": the control's choice identity, or its label when it has none. Nothing was pressed; {}.",
+                    focus.describe()
+                )),
+                Some(expected) if !focus.is_named(expected) => Some(format!(
+                    "{name} names {expected:?}, but {}. Nothing was pressed.",
+                    focus.describe()
+                )),
+                Some(_) => None,
+            };
+            if let Some(error) = error {
+                return self.refused(app, error);
+            }
         }
         let world = app.world_mut();
         let Ok(window) = world
@@ -744,6 +894,12 @@ static KEYS: [(&str, KeyCode, Logical); 18] = [
     ("Minus", KeyCode::Minus, Logical::Typed("-")),
     ("Equal", KeyCode::Equal, Logical::Typed("=")),
 ];
+
+/// Keys that can commit a choice or dismiss a reading, so a request for one names the
+/// control it expects to press. A focused Bevy button activates on Enter or Space, and
+/// a table's own keyboard handling may confirm with Enter. Every other key in [`KEYS`]
+/// moves focus, the camera, a scroll position or a stepper, or closes without deciding.
+const COMMITTING: [KeyCode; 2] = [KeyCode::Enter, KeyCode::Space];
 
 fn key_named(name: &str) -> Option<(KeyCode, Key)> {
     KEYS.iter()

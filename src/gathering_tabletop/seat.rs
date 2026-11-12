@@ -26,7 +26,7 @@
 
 use super::*;
 use crate::{
-    agent_seat::{self, Game, Hit, Name, Observed, Seat, socket},
+    agent_seat::{self, Focus, Game, Hit, Name, Observed, Seat, socket},
     tabletop_health::SeatAdmissionPlugin,
     tabletop_support::asset_settings::Collection,
 };
@@ -195,14 +195,12 @@ impl Game for Gathering {
         }
     }
 
-    fn resolve(&self, world: &mut World, name: &Name, revision: u64) -> Result<Vec<Vec2>, String> {
+    fn revision(&self, world: &mut World) -> u64 {
+        world.resource::<Table>().session.observe().revision
+    }
+
+    fn resolve(&self, world: &mut World, name: &Name) -> Result<Vec<Vec2>, String> {
         let table = world.resource::<Table>();
-        let current = table.session.observe().revision;
-        if revision != current {
-            return Err(format!(
-                "Outdated: the request names revision {revision}, but the attempt is at revision {current}. Observe again."
-            ));
-        }
         // Production accepts a selection only from a piece built for this table state.
         let shown_state = (table.epoch, table.view().revision);
         let (position, reach) = match name {
@@ -321,6 +319,25 @@ impl Game for Gathering {
 
     fn unsettled(&self, world: &mut World) -> Vec<String> {
         unsettled(world).into_iter().map(str::to_owned).collect()
+    }
+
+    /// The focused control or menu row exactly as `controls` and `menu.rows` report
+    /// it; any other focused entity is described as a pointer hit would be.
+    fn focus(&self, world: &mut World) -> Focus {
+        let Some(entity) = world
+            .get_resource::<InputFocus>()
+            .and_then(InputFocus::get)
+            .filter(|entity| world.get_entity(*entity).is_ok())
+        else {
+            return Focus::Nothing;
+        };
+        match controls(world).into_iter().find(|control| control.focused) {
+            Some(control) => Focus::Control {
+                choice: control.choice,
+                label: control.label,
+            },
+            None => Focus::Other(self.identify(world, entity).description),
+        }
     }
 }
 

@@ -173,7 +173,7 @@ fn activation_is_refused_while_the_table_is_busy_and_settle_names_what_remains()
         busy["error"]
     );
     // A key pressed now could be dropped just as silently as a pointer press.
-    let key = seat.ask(json!({"op": "key", "key": "Enter"}));
+    let key = seat.ask(json!({"op": "key", "key": "Enter", "revision": 1, "focused": "Overview"}));
     assert_eq!(key["status"], "refused");
     assert!(key["error"].as_str().unwrap().contains("busy"));
 
@@ -397,11 +397,11 @@ fn keys_travel_the_keyboard_path_and_unknown_keys_are_refused() {
     assert_eq!(focused.len(), 1, "{menu}");
     assert_eq!(focused[0]["choice"], "lead:patrice");
 
-    let unknown = seat.ask(json!({"op": "key", "key": "F13"}));
+    let unknown = seat.ask(json!({"op": "key", "key": "F13", "revision": 0}));
     assert_eq!(unknown["status"], "refused");
     assert!(unknown["error"].as_str().unwrap().contains("Unknown key"));
 
-    let moved = seat.ask(json!({"op": "key", "key": "Tab"}));
+    let moved = seat.ask(json!({"op": "key", "key": "Tab", "revision": 0}));
     assert_eq!(moved["status"], "pressed", "{moved}");
     let focused: Vec<_> = rows(&moved)
         .into_iter()
@@ -411,18 +411,306 @@ fn keys_travel_the_keyboard_path_and_unknown_keys_are_refused() {
     assert_eq!(focused[0]["label"], "Inspect");
     assert_eq!(focused[0]["choice"], Value::Null);
 
-    let dismissed = seat.ask(json!({"op": "key", "key": "Escape"}));
+    let dismissed = seat.ask(json!({"op": "key", "key": "Escape", "revision": 0}));
     assert_eq!(dismissed["status"], "pressed", "{dismissed}");
     assert_eq!(dismissed["table"]["menu"], Value::Null);
     assert!(!seat.path.exists());
 
     seat.open_menu(Investigator::Patrice);
-    let chosen = seat.ask(json!({"op": "key", "key": "Enter"}));
+    let chosen =
+        seat.ask(json!({"op": "key", "key": "Enter", "revision": 0, "focused": "lead:patrice"}));
     assert_eq!(chosen["status"], "pressed", "{chosen}");
     let settled = seat.ask(json!({"op": "settle"}));
     assert_eq!(settled["observation"]["revision"], 1);
     assert_eq!(settled["observation"]["lead"], "patrice");
     assert_eq!(settled["observation"], saved(&seat.path));
+}
+
+#[test]
+fn a_key_names_its_revision_and_an_outdated_key_presses_nothing() {
+    let mut seat = sit();
+    seat.open_menu(Investigator::Patrice);
+    let menu = seat.ask(json!({"op": "observe"}));
+
+    let stale = seat.ask(json!({"op": "key", "key": "Tab", "revision": 7}));
+    assert_eq!(stale["status"], "refused", "{stale}");
+    let stale_choice = seat.ask(json!({"op": "activate", "revision": 7, "choice": "lead:patrice"}));
+    assert_eq!(
+        stale["error"], stale_choice["error"],
+        "an outdated key is refused as an outdated activation is"
+    );
+    assert!(stale["error"].as_str().unwrap().starts_with("Outdated"));
+    assert_eq!(rows(&stale), rows(&menu), "Tab moved no focus");
+    assert_eq!(stale["observation"]["revision"], 0);
+
+    let unnamed = seat.ask(json!({"op": "key", "key": "Tab"}));
+    assert_eq!(unnamed["status"], "refused", "{unnamed}");
+    assert!(
+        unnamed["error"].as_str().unwrap().contains("revision"),
+        "{}",
+        unnamed["error"]
+    );
+    assert_eq!(rows(&unnamed), rows(&menu));
+    assert!(!seat.path.exists());
+}
+
+#[test]
+fn enter_presses_only_the_control_the_agent_names() {
+    let mut seat = sit();
+    seat.open_menu(Investigator::Patrice);
+    let menu = seat.ask(json!({"op": "observe"}));
+    let focused_row: Vec<_> = rows(&menu)
+        .into_iter()
+        .filter(|row| row["focused"] == true)
+        .collect();
+    assert_eq!(focused_row[0]["choice"], "lead:patrice", "{menu}");
+
+    for request in [
+        // The menu's other choice is shown, but focus is elsewhere.
+        json!({"op": "key", "key": "Enter", "revision": 0, "focused": LEAD_TONY}),
+        // A choice's label is not its name: the match is exact.
+        json!({"op": "key", "key": "Enter", "revision": 0, "focused": focused_row[0]["label"]}),
+        // Enter and Space can commit, so they must say what they expect to press.
+        json!({"op": "key", "key": "Enter", "revision": 0}),
+        json!({"op": "key", "key": "Space", "revision": 0}),
+    ] {
+        let refused = seat.ask(request.clone());
+        assert_eq!(refused["status"], "refused", "{request}: {refused}");
+        let error = refused["error"].as_str().unwrap();
+        assert!(
+            error.contains("lead:patrice"),
+            "the refusal says what has focus: {request}: {error}"
+        );
+        assert_eq!(refused["observation"]["revision"], 0, "{request}");
+        assert_eq!(
+            rows(&refused),
+            rows(&menu),
+            "{request}: nothing was pressed"
+        );
+        assert!(!seat.path.exists(), "{request} committed nothing");
+    }
+
+    let chosen =
+        seat.ask(json!({"op": "key", "key": "Enter", "revision": 0, "focused": "lead:patrice"}));
+    assert_eq!(chosen["status"], "pressed", "{chosen}");
+    let settled = seat.ask(json!({"op": "settle"}));
+    assert_eq!(settled["observation"]["revision"], 1);
+    assert_eq!(settled["observation"]["lead"], "patrice");
+    assert_eq!(settled["observation"], saved(&seat.path));
+}
+
+#[test]
+fn enter_with_nothing_focused_presses_nothing() {
+    let mut seat = sit();
+    // The table keeps a control focused nearly always; clearing focus stands for a
+    // table where nothing has it.
+    seat.app.world_mut().resource_mut::<InputFocus>().clear();
+    let unfocused = seat.ask(json!({"op": "observe"}));
+    assert_eq!(
+        focused(&unfocused),
+        None,
+        "{}",
+        unfocused["table"]["controls"]
+    );
+
+    let refused =
+        seat.ask(json!({"op": "key", "key": "Enter", "revision": 0, "focused": "Overview"}));
+    assert_eq!(refused["status"], "refused", "{refused}");
+    assert!(
+        refused["error"]
+            .as_str()
+            .unwrap()
+            .contains("nothing has focus"),
+        "{}",
+        refused["error"]
+    );
+    assert_eq!(refused["observation"]["revision"], 0);
+    assert_eq!(refused["table"], unfocused["table"], "nothing was pressed");
+    assert!(!seat.path.exists());
+}
+
+#[test]
+fn enter_naming_continue_dismisses_a_test_result_and_decides_nothing() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("result.json");
+    let session = super::super::tests::results::quick_thinking_session();
+    let table = Table::new(session, path.clone());
+    let mut seat = sit_at(host_with_table(table, true), path, directory);
+    let reading = seat.ask(json!({"op": "observe"}));
+    assert_eq!(
+        reading["table"]["modal"], "test result",
+        "{}",
+        reading["table"]
+    );
+    assert_eq!(focused(&reading).as_deref(), Some("Continue"));
+    let revision = reading["observation"]["revision"].clone();
+
+    let unnamed = seat.ask(json!({"op": "key", "key": "Enter", "revision": revision}));
+    assert_eq!(unnamed["status"], "refused", "{unnamed}");
+    assert!(
+        unnamed["error"].as_str().unwrap().contains(r#""Continue""#),
+        "the refusal says what has focus: {}",
+        unnamed["error"]
+    );
+    assert_eq!(unnamed["table"]["modal"], "test result");
+
+    let dismissed =
+        seat.ask(json!({"op": "key", "key": "Enter", "revision": revision, "focused": "Continue"}));
+    assert_eq!(dismissed["status"], "pressed", "{dismissed}");
+    let settled = seat.ask(json!({"op": "settle"}));
+    assert_eq!(settled["status"], "settled", "{settled}");
+    assert_ne!(
+        settled["table"]["modal"], "test result",
+        "{}",
+        settled["table"]
+    );
+    assert_eq!(
+        settled["observation"]["revision"], revision,
+        "a test result's Continue commits no choice"
+    );
+}
+
+#[test]
+fn keys_that_cannot_commit_need_only_the_revision_and_a_named_focus_is_checked() {
+    let mut seat = sit();
+    seat.open_menu(Investigator::Patrice);
+    let moved = seat.ask(json!({"op": "key", "key": "Tab", "revision": 0}));
+    assert_eq!(moved["status"], "pressed", "{moved}");
+    let focused_row = |response: &Value| {
+        rows(response)
+            .into_iter()
+            .find(|row| row["focused"] == true)
+            .map(|row| row["label"].clone())
+    };
+    assert_eq!(focused_row(&moved), Some(json!("Inspect")));
+
+    let wrong =
+        seat.ask(json!({"op": "key", "key": "Tab", "revision": 0, "focused": "lead:patrice"}));
+    assert_eq!(wrong["status"], "refused", "{wrong}");
+    assert!(
+        wrong["error"].as_str().unwrap().contains(r#""Inspect""#),
+        "{}",
+        wrong["error"]
+    );
+    assert_eq!(
+        focused_row(&wrong),
+        Some(json!("Inspect")),
+        "Tab moved no focus"
+    );
+
+    let named = seat.ask(json!({"op": "key", "key": "Tab", "revision": 0, "focused": "Inspect"}));
+    assert_eq!(named["status"], "pressed", "{named}");
+    assert_ne!(focused_row(&named), Some(json!("Inspect")));
+    assert!(!seat.path.exists());
+}
+
+/// Send lines over one connection, as batch form sends standard input, and return
+/// the responses after `ready`.
+fn converse(seat: &mut Sitting, lines: &[String]) -> Vec<Value> {
+    let input: String = lines.iter().map(|line| format!("{line}\n")).collect();
+    let mut output = Vec::new();
+    seat.seat
+        .serve(&mut seat.app, input.as_bytes(), &mut output)
+        .unwrap();
+    let mut responses: Vec<Value> = String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(responses.remove(0)["status"], "ready");
+    responses
+}
+
+fn statuses(responses: &[Value]) -> Vec<&str> {
+    responses
+        .iter()
+        .map(|response| response["status"].as_str().unwrap())
+        .collect()
+}
+
+#[test]
+fn after_a_refusal_the_connection_skips_its_activations_and_keys() {
+    let mut seat = sit();
+    seat.open_menu(Investigator::Patrice);
+    let menu = seat.ask(json!({"op": "observe"}));
+    let capture = seat.path.with_extension("png");
+    let lines: Vec<String> = [
+        // Focus is on lead:patrice, so this Enter is refused.
+        json!({"op": "key", "key": "Enter", "revision": 0, "focused": LEAD_TONY}),
+        json!({"op": "activate", "revision": 0, "choice": "lead:patrice"}),
+        json!({"op": "key", "key": "Enter", "revision": 0, "focused": "lead:patrice"}),
+        json!({"op": "key", "key": "Tab", "revision": 0}),
+        json!({"op": "observe"}),
+        json!({"op": "settle"}),
+        json!({"op": "capture", "path": capture}),
+        json!({"op": "quit"}),
+        json!({"op": "observe"}),
+    ]
+    .iter()
+    .map(Value::to_string)
+    .collect();
+    let responses = converse(&mut seat, &lines);
+    assert_eq!(
+        statuses(&responses),
+        [
+            "refused", "skipped", "skipped", "skipped", "observed", "settled", "refused", "bye"
+        ]
+    );
+    let reason = responses[0]["error"].as_str().unwrap();
+    for skipped in &responses[1..4] {
+        assert_eq!(skipped["ok"], false);
+        let error = skipped["error"].as_str().unwrap();
+        assert!(
+            error.contains(&lines[0]) && error.contains(reason),
+            "a skip names the refused request and its reason: {error}"
+        );
+        assert_eq!(skipped["observation"]["revision"], 0);
+        assert_eq!(rows(skipped), rows(&menu), "nothing was pressed");
+    }
+    // Capture is served: this host refuses it for its own reason.
+    assert!(
+        responses[6]["error"]
+            .as_str()
+            .unwrap()
+            .contains("renders no image"),
+        "{}",
+        responses[6]["error"]
+    );
+    assert_eq!(rows(&responses[5]), rows(&menu));
+    assert!(
+        !seat.path.exists(),
+        "the skipped requests committed nothing"
+    );
+}
+
+#[test]
+fn a_malformed_line_stops_the_connection_and_the_next_connection_starts_afresh() {
+    let mut seat = sit();
+    seat.open_menu(Investigator::Patrice);
+    let activate = json!({"op": "activate", "revision": 0, "choice": "lead:patrice"}).to_string();
+    let responses = converse(
+        &mut seat,
+        &[
+            r#"{"op":"key","key":"Enter","revison":0}"#.to_owned(),
+            activate.clone(),
+            json!({"op": "observe"}).to_string(),
+        ],
+    );
+    assert_eq!(statuses(&responses), ["refused", "skipped", "observed"]);
+    assert!(
+        responses[1]["error"]
+            .as_str()
+            .unwrap()
+            .contains(r#"{"op":"key","key":"Enter","revison":0}"#),
+        "{}",
+        responses[1]["error"]
+    );
+    assert!(!seat.path.exists());
+
+    let responses = converse(&mut seat, &[activate, json!({"op": "settle"}).to_string()]);
+    assert_eq!(statuses(&responses), ["activated", "settled"]);
+    assert_eq!(responses[1]["observation"]["lead"], "patrice");
+    assert_eq!(responses[1]["observation"], saved(&seat.path));
 }
 
 /// The label of the one focused control outside a contextual menu.
@@ -443,7 +731,8 @@ impl Sitting {
             if focused(&response).as_deref() == Some(label) {
                 return response;
             }
-            response = self.ask(json!({"op": "key", "key": "Tab"}));
+            let revision = &response["observation"]["revision"];
+            response = self.ask(json!({"op": "key", "key": "Tab", "revision": revision}));
             assert_eq!(response["status"], "pressed", "{response}");
         }
         panic!(
@@ -452,8 +741,11 @@ impl Sitting {
         );
     }
 
-    fn enter(&mut self) -> Value {
-        let pressed = self.ask(json!({"op": "key", "key": "Enter"}));
+    /// Press Enter on the focused control, named by its label.
+    fn enter(&mut self, label: &str) -> Value {
+        let revision = self.ask(json!({"op": "observe"}))["observation"]["revision"].clone();
+        let pressed =
+            self.ask(json!({"op": "key", "key": "Enter", "revision": revision, "focused": label}));
         assert_eq!(pressed["status"], "pressed", "{pressed}");
         let settled = self.ask(json!({"op": "settle"}));
         assert_eq!(settled["status"], "settled", "{settled}");
@@ -465,13 +757,13 @@ impl Sitting {
 fn the_seat_reaches_the_menu_by_tab_and_refuses_to_open_external_links() {
     let mut seat = sit();
     seat.tab_to("Menu");
-    let menu = seat.enter();
+    let menu = seat.enter("Menu");
     assert_eq!(menu["table"]["modal"], "utilities menu", "{menu}");
     seat.tab_to("Credits");
-    let credits = seat.enter();
+    let credits = seat.enter("Credits");
     assert_eq!(credits["table"]["modal"], "inspection", "{credits}");
     seat.tab_to("Chalice drops — source");
-    let refused = seat.enter();
+    let refused = seat.enter("Chalice drops — source");
     let notice = refused["table"]["notice"].as_str().unwrap_or_default();
     assert!(
         notice.contains("agent seat")
@@ -585,7 +877,7 @@ fn an_attached_card_has_its_own_marker_and_heading_names() {
     ));
     // Scenario frames both sideboards, so the heading is shown.
     seat.tab_to("Scenario");
-    let response = seat.enter();
+    let response = seat.enter("Scenario");
     let names: Vec<&str> = response["table"]["components"]
         .as_array()
         .unwrap()
@@ -712,7 +1004,7 @@ fn a_held_session_keeps_a_dialog_opened_through_one_connection_until_quit_remove
         crate::gathering::SearchFixture::TonyEvents,
     ));
     seat.tab_to("Scenario");
-    seat.enter();
+    seat.enter("Scenario");
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("seat.sock");
     let heading = "location:01114/attachment-sideboard";
@@ -756,7 +1048,7 @@ fn a_held_session_keeps_an_open_menu_and_its_focus_between_connections() {
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("seat.sock");
     let (moved, held) = seat.hold(&socket, |socket| {
-        let moved = Connection::open(socket).ask(json!({"op": "key", "key": "Tab"}));
+        let moved = Connection::open(socket).ask(json!({"op": "key", "key": "Tab", "revision": 0}));
         let mut second = Connection::open(socket);
         let held = second.ask(json!({"op": "observe"}));
         second.ask(json!({"op": "quit"}));
@@ -784,13 +1076,16 @@ fn a_held_session_keeps_an_open_menu_and_its_focus_between_connections() {
 fn the_tables_own_exit_ends_a_held_session_and_removes_its_socket() {
     let mut seat = sit();
     seat.tab_to("Menu");
-    seat.enter();
+    seat.enter("Menu");
     seat.tab_to("Save and return to scenario selection");
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("seat.sock");
     let (exited, after) = seat.hold(&socket, |socket| {
         let mut connection = Connection::open(socket);
-        let exited = connection.ask(json!({"op": "key", "key": "Enter"}));
+        let exited = connection.ask(json!({
+            "op": "key", "key": "Enter", "revision": 0,
+            "focused": "Save and return to scenario selection",
+        }));
         // The session is over: the seat closes the connection.
         let mut after = String::new();
         connection.reader.read_line(&mut after).unwrap();
@@ -903,7 +1198,11 @@ fn the_real_table_is_admitted_and_played_without_a_window() {
     );
     assert_ne!(study["covered"]["position"], study["position"]);
     assert_eq!(study["table"]["modal"], "inspection");
-    let closed = tell(&mut seat, &mut app, json!({"op": "key", "key": "Escape"}));
+    let closed = tell(
+        &mut seat,
+        &mut app,
+        json!({"op": "key", "key": "Escape", "revision": 0}),
+    );
     assert_eq!(closed["status"], "pressed", "{closed}");
     assert_eq!(closed["table"]["modal"], Value::Null);
     assert_eq!(closed["observation"]["revision"], 0);
@@ -1011,7 +1310,7 @@ fn the_real_table_is_admitted_and_played_without_a_window() {
     app.world_mut()
         .resource_mut::<Assets<Image>>()
         .remove(study.id());
-    let (ended, proceed) = seat.respond(&mut app, r#"{"op":"key","key":"Home"}"#);
+    let (ended, proceed) = seat.respond(&mut app, r#"{"op":"key","key":"Home","revision":1}"#);
     assert_eq!(ended["status"], "exited", "{ended}");
     assert_eq!(ended["ok"], false);
     assert!(
@@ -1074,13 +1373,13 @@ fn the_seat_pays_the_group_clue_payment_by_choice_identity_and_keyboard() {
     let tony = "Tony Morgan · 3 clues held · Hallway · pays 3";
     assert_eq!(focused(&opened).as_deref(), Some(tony));
     // The arrow keys change the focused row; an incomplete total offers no payment.
-    let lowered = seat.ask(json!({"op": "key", "key": "ArrowDown"}));
+    let lowered = seat.ask(json!({"op": "key", "key": "ArrowDown", "revision": revision}));
     assert_eq!(
         focused(&lowered).as_deref(),
         Some("Tony Morgan · 3 clues held · Hallway · pays 2")
     );
     assert_eq!(control_choice(&lowered, "Spend 9 clues and advance"), None);
-    let restored = seat.ask(json!({"op": "key", "key": "ArrowUp"}));
+    let restored = seat.ask(json!({"op": "key", "key": "ArrowUp", "revision": revision}));
     assert_eq!(focused(&restored).as_deref(), Some(tony));
     let revision = restored["observation"]["revision"].as_u64().unwrap();
     assert_eq!(
@@ -1093,6 +1392,71 @@ fn the_seat_pays_the_group_clue_payment_by_choice_identity_and_keyboard() {
         "{}",
         restored["table"]["controls"]
     );
+    let settled = seat.ask(json!({"op": "settle"}));
+    assert_eq!(
+        settled["observation"]["play"]["act"], 3,
+        "{}",
+        settled["observation"]["prompt"]
+    );
+    assert_eq!(settled["observation"], saved(&seat.path));
+}
+
+/// The focused control outside a contextual menu, as a guarded key names it.
+fn focused_name(response: &Value) -> Option<String> {
+    let control = response["table"]["controls"]
+        .as_array()?
+        .iter()
+        .find(|control| control["focused"] == true)?;
+    control["choice"]
+        .as_str()
+        .or_else(|| control["label"].as_str())
+        .map(str::to_owned)
+}
+
+#[test]
+fn a_blind_enter_at_round_end_commits_nothing_and_a_named_chooser_row_pays() {
+    let mut seat = sit_at_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
+    let observed = seat.ask(json!({"op": "observe"}));
+    let revision = observed["observation"]["revision"].clone();
+    // #173: Enter meant for a reading pressed whatever had focus instead, here a
+    // decision-bar choice.
+    let decline = focused_name(&observed).expect("a decision-bar control has focus");
+    assert_eq!(
+        control_choice(&observed, &focused(&observed).unwrap()).as_deref(),
+        Some(decline.as_str()),
+        "Enter would commit a choice"
+    );
+    let blind =
+        seat.ask(json!({"op": "key", "key": "Enter", "revision": revision, "focused": "Continue"}));
+    assert_eq!(blind["status"], "refused", "{blind}");
+    assert!(
+        blind["error"].as_str().unwrap().contains(&decline),
+        "{}",
+        blind["error"]
+    );
+    assert_eq!(blind["observation"], observed["observation"]);
+    assert!(!seat.path.exists(), "the blind Enter committed nothing");
+
+    click_source(&mut seat.app, controls::Source::Act);
+    seat.ask(json!({"op": "settle"}));
+    let opened = seat
+        .ask(json!({"op": "activate", "revision": revision, "choice": "act:pay:<contributions>"}));
+    assert_eq!(opened["status"], "activated", "{opened}");
+    let opened = seat.ask(json!({"op": "settle"}));
+    assert_eq!(opened["table"]["modal"], "group clue payment", "{opened}");
+    // Enter on a focused investigator row spends the clues, so the row is named by
+    // its label, which carries the amounts it would spend.
+    let row = focused_name(&opened).expect("an investigator row has focus");
+    assert_eq!(row, "Tony Morgan · 3 clues held · Hallway · pays 3");
+    let elsewhere = seat.ask(
+        json!({"op": "key", "key": "Enter", "revision": revision, "focused": "act:pay:3:3:3"}),
+    );
+    assert_eq!(elsewhere["status"], "refused", "{elsewhere}");
+    assert!(elsewhere["error"].as_str().unwrap().contains(&row));
+    assert_eq!(elsewhere["table"]["modal"], "group clue payment");
+
+    let paid = seat.ask(json!({"op": "key", "key": "Enter", "revision": revision, "focused": row}));
+    assert_eq!(paid["status"], "pressed", "{paid}");
     let settled = seat.ask(json!({"op": "settle"}));
     assert_eq!(
         settled["observation"]["play"]["act"], 3,
