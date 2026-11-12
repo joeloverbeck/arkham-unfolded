@@ -30,11 +30,11 @@ Communication to and from subagents should be sparse. Communicate primarily thro
    - merges the integration branch tip into its own branch before reporting done;
    - finishes or stops every background command it started, then reports
 
-5. Once an **implementer subagent** completes, bring its work into the integration branch: fast-forward when its branch already contains the integration tip, and otherwise merge it with a **merger subagent**.
+5. Once an **implementer subagent** completes, bring its work into the integration branch: fast-forward when its branch already contains the integration tip, merge it yourself when it merges cleanly, and use a **merger subagent** for conflicts.
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
-7. Once all other tickets are complete, call the Skill tool with `code-review` on the integration branch. Fix all issues raised by the code review in a single **implementer subagent**, then review the fix commits with `code-review` as a refresh. The reviewed tip is the **frozen candidate**: run the verifying tickets against it, and limit later changes to what their findings require, each disclosed in the PR.
+7. Once all other tickets are complete, call the Skill tool with `code-review` on the integration branch. Fix all issues raised by the code review in a single **implementer subagent**, then review the fix commits with `code-review` as a refresh. The reviewed tip is the **frozen candidate**: run the verifying tickets against it. A change after the freeze is either wording their findings require, disclosed in the PR, or a new candidate that goes through the review and the verifying tickets again.
 
 8. Mark the PR ready for review, then publish and close out as [the tracker workflow](../../../docs/agents/issue-tracker.md#conventions) describes: if `main` has moved, merge it in and rerun the affected checks CI does not run, such as ignored real-table tests; watch the head's CI; merge with `scripts/tools merge-reviewed`, update the local `main`, and close each ticket, then the spec, with a comment once its acceptance criteria are met. Joel's invocation of this skill authorizes these steps (2026-11-12) unless it says otherwise. The spec's closeout comment lists the judgement calls made within the delegated scope, each rejectable on its own. A ticket with an unmet acceptance criterion stays open and goes in your report.
 
