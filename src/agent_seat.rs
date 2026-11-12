@@ -979,3 +979,68 @@ fn key_named(name: &str) -> Option<(KeyCode, Key)> {
             )
         })
 }
+
+/// The windowless host without a graphics adapter. The protocol is tested through the
+/// table that sits at it, in `gathering_tabletop::seat`.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::{
+        camera::RenderTarget, render::render_resource::TextureFormat, window::PrimaryWindow,
+    };
+
+    #[derive(Component)]
+    struct Seen;
+
+    #[test]
+    fn the_windowless_host_has_no_window_event_loop() {
+        assert!(!windowless(AssetPlugin::default()).enabled::<WinitPlugin>());
+    }
+
+    #[test]
+    fn the_seats_image_is_rendered_by_the_named_camera_behind_a_logical_window() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<Image>();
+        install::<Seen>(&mut app, UVec2::new(640, 360));
+        let other = app.world_mut().spawn(Camera3d::default()).id();
+        let seen = app.world_mut().spawn((Camera3d::default(), Seen)).id();
+        app.update();
+
+        let Some(RenderTarget::Image(target)) = app.world().get::<RenderTarget>(seen) else {
+            panic!("the named camera does not render an image");
+        };
+        let image = app
+            .world()
+            .resource::<Assets<Image>>()
+            .get(&target.handle)
+            .unwrap();
+        assert_eq!(image.size(), UVec2::new(640, 360));
+        assert_eq!(
+            image.texture_descriptor.format,
+            TextureFormat::Rgba8UnormSrgb
+        );
+        // UI is drawn to the image only for the default UI camera.
+        assert!(
+            app.world()
+                .get::<bevy::ui::IsDefaultUiCamera>(seen)
+                .is_some()
+        );
+        assert!(!matches!(
+            app.world().get::<RenderTarget>(other),
+            Some(RenderTarget::Image(_))
+        ));
+
+        // Picking ignores every pointer without a primary window.
+        let mut windows = app
+            .world_mut()
+            .query_filtered::<&Window, With<PrimaryWindow>>();
+        let window = windows.single(app.world()).unwrap();
+        assert_eq!((window.width(), window.height()), (640.0, 360.0));
+        assert!(window.focused);
+
+        // The seat steps the presentation clock itself; native pacing is not installed.
+        assert!(app.world().contains_resource::<PresentationTime>());
+        assert!(app.world().contains_resource::<Redraw>());
+    }
+}

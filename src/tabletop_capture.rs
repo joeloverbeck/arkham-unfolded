@@ -268,4 +268,81 @@ mod tests {
         }
         println!("{VERIFIED}");
     }
+
+    fn picture(format: TextureFormat, pixel: &[u8]) -> Image {
+        Image::new_fill(
+            Extent3d {
+                width: 2,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            pixel,
+            format,
+            RenderAssetUsages::MAIN_WORLD,
+        )
+    }
+
+    /// What a captured picture becomes on disk, for the native captures and the
+    /// agent seat alike.
+    #[test]
+    fn saved_pictures_are_eight_bit_rgb_without_alpha_and_converted_from_linear_light() {
+        let directory = tempfile::tempdir().unwrap();
+        let saved = |name: &str, image: Image| {
+            let path = directory.path().join(name);
+            write_image(image, &path).unwrap();
+            let image::DynamicImage::ImageRgb8(pixels) = image::open(&path).unwrap() else {
+                panic!("{name} is not 8-bit RGB");
+            };
+            assert_eq!((pixels.width(), pixels.height()), (2, 1), "{name}");
+            let first = pixels.get_pixel(0, 0).0;
+            assert!(pixels.pixels().all(|pixel| pixel.0 == first), "{name}");
+            first
+        };
+        // Alpha can carry brightness, not coverage: a zero must not blank the pixel.
+        let eight_bit = picture(TextureFormat::Rgba8UnormSrgb, &[10, 20, 30, 0]);
+        assert_eq!(saved("eight-bit.png", eight_bit), [10, 20, 30]);
+        // Linear 1.0, 0.2 and 0.0. The sRGB transfer function gives
+        // 1.055 * 0.2^(1/2.4) - 0.055 = 0.4845, which is 123.6 of 255.
+        let linear: Vec<u8> = [1.0_f32, 0.2, 0.0, 7.0]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect();
+        let floating = picture(TextureFormat::Rgba32Float, &linear);
+        assert_eq!(saved("floating-point.png", floating), [255, 124, 0]);
+    }
+
+    /// Selection exits on the saved file alone: no graphics health exists there.
+    #[test]
+    fn selection_capture_exits_on_the_actual_write_result_without_graphics_health() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut world = World::new();
+        world.init_resource::<Messages<AppExit>>();
+        for (name, succeeds) in [("saved.png", true), ("stale.unsupported", false)] {
+            let path = directory.path().join(name);
+            std::fs::write(&path, "older file").unwrap();
+            world.resource_mut::<Messages<AppExit>>().clear();
+            let entity = world
+                .spawn_empty()
+                .observe(save_selection_and_exit(path.clone(), Duration::ZERO))
+                .id();
+            world.trigger(ScreenshotCaptured {
+                entity,
+                image: picture(TextureFormat::Rgba8UnormSrgb, &[255, 0, 0, 255]),
+            });
+            let exits: Vec<_> = world
+                .resource::<Messages<AppExit>>()
+                .iter_current_update_messages()
+                .collect();
+            assert_eq!(exits.len(), 1, "{name}");
+            assert_eq!(exits[0].is_success(), succeeds, "{name}");
+            assert_eq!(
+                std::fs::read(&path)
+                    .unwrap()
+                    .starts_with(b"\x89PNG\r\n\x1a\n"),
+                succeeds,
+                "{name}"
+            );
+        }
+    }
 }
