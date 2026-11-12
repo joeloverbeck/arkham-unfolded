@@ -182,17 +182,21 @@ fn add_refuses_an_existing_directory_and_leaves_it_alone() {
 }
 
 #[test]
-fn add_resolves_parent_components_before_checking_where_dir_is() {
+fn add_resolves_parent_components_and_links_before_checking_where_dir_is() {
     let directory = tempfile::tempdir().unwrap();
     let owner = repository(directory.path());
     fs::create_dir(directory.path().join("agents")).unwrap();
+    std::os::unix::fs::symlink(&owner, directory.path().join("link")).unwrap();
 
     succeeds(worktree(
         &owner,
         &["add", "--from", "main", "../agents/relative"],
     ));
-    let hidden = directory.path().join("agents/../owner/inside");
-    let output = worktree(&owner, &["add", "--from", "main", hidden.to_str().unwrap()]);
+    for hidden in ["agents/../owner/inside", "link/inside"] {
+        let hidden = directory.path().join(hidden);
+        let output = worktree(&owner, &["add", "--from", "main", hidden.to_str().unwrap()]);
+        assert!(!output.status.success(), "{}", hidden.display());
+    }
 
     assert!(
         directory
@@ -200,7 +204,6 @@ fn add_resolves_parent_components_before_checking_where_dir_is() {
             .join("agents/relative/worktree/Cargo.toml")
             .exists()
     );
-    assert!(!output.status.success());
     assert!(!owner.join("inside").exists());
 }
 
@@ -238,6 +241,8 @@ fn remove_takes_merged_checkouts_their_branches_and_only_what_add_wrote() {
     // A copy staged for a README run is build output, which goes with the checkout.
     fs::create_dir_all(merged.join("worktree/target/debug")).unwrap();
     fs::write(merged.join("worktree/target/debug/demo"), "build\n").unwrap();
+    // An ignored directory with nothing in it loses nothing.
+    fs::create_dir_all(merged.join("worktree/local/verification")).unwrap();
 
     succeeds(worktree(
         &owner,

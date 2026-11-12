@@ -51,10 +51,10 @@ It creates `DIR` outside the owner's checkout, puts the checkout at `DIR/worktre
 Once the work is merged, remove such worktrees with:
 
 ```sh
-scripts/tools worktree remove --merged-into BRANCH DIR...
+scripts/tools worktree remove --merged-into REF DIR...
 ```
 
-For each `DIR` made by `add`, it requires the checkout's commit to be part of `BRANCH`, a branch other than the checkout's own. It refuses ignored files outside `target/`, such as evidence under `local/`, because `git worktree remove` deletes them, and `git worktree remove` itself refuses changes or untracked files. It then deletes the checkout, its branch while that still names the checked commit, and the configuration file, and deletes `DIR` unless it holds other files. A `DIR` that fails a check keeps everything. Discarding unmerged work is the owner's decision.
+For each `DIR` made by `add`, it requires the checkout's commit to be part of `REF`: a branch, remote branch or tag other than the checkout's own branch. It refuses ignored files outside `target/`, such as evidence under `local/`, because `git worktree remove` deletes them, and `git worktree remove` itself refuses changes or untracked files. It then deletes the checkout, its branch while that still names the checked commit, and the configuration file, and deletes `DIR` unless it holds other files. A `DIR` that fails a check keeps everything, and a branch that moves after the checks is kept and reported. Discarding unmerged work is the owner's decision.
 
 For one command run elsewhere, `--config 'profile.dev.package.<package>.codegen-units=<n>'` does the same, as in the baseline recipe above. The owner's checkout keeps the default profile, and a worktree that builds into the owner's target uses its own value, so the owner's next build compiles the owner's code.
 

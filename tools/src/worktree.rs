@@ -39,7 +39,8 @@ pub struct RemoveArgs {
     /// Directories made by `add`.
     #[arg(required = true)]
     dirs: Vec<PathBuf>,
-    /// The revision each checkout's commit must already be part of.
+    /// A branch, remote branch or tag that each checkout's commit must already be part
+    /// of, other than the checkout's own branch.
     #[arg(long)]
     merged_into: String,
 }
@@ -128,7 +129,8 @@ fn remove(repository: &Repository, args: RemoveArgs) -> Result<u8> {
     )?;
     ensure!(
         reference.starts_with("refs/"),
-        "--merged-into {} must name a branch, so the merged commits stay reachable",
+        "--merged-into {} must name one branch, remote branch or tag, so the merged commits stay \
+         reachable",
         args.merged_into
     );
     let commit = git_text(
@@ -143,7 +145,10 @@ fn remove(repository: &Repository, args: RemoveArgs) -> Result<u8> {
     let mut failed = false;
     for dir in &args.dirs {
         match remove_one(repository, dir, &merged_into) {
-            Ok(report) => println!("{report}"),
+            Ok((report, complete)) => {
+                println!("{report}");
+                failed |= !complete;
+            }
             Err(error) => {
                 eprintln!("arkham-tools: kept {}: {error:#}", dir.display());
                 failed = true;
@@ -153,7 +158,12 @@ fn remove(repository: &Repository, args: RemoveArgs) -> Result<u8> {
     Ok(u8::from(failed))
 }
 
-fn remove_one(repository: &Repository, dir: &Path, merged_into: &MergedInto) -> Result<String> {
+/// The report, and whether everything was removed.
+fn remove_one(
+    repository: &Repository,
+    dir: &Path,
+    merged_into: &MergedInto,
+) -> Result<(String, bool)> {
     let dir = fs::canonicalize(dir).context("no such directory")?;
     let written = fs::read_to_string(config_file(&dir)).unwrap_or_default();
     ensure!(
@@ -207,9 +217,11 @@ fn remove_one(repository: &Repository, dir: &Path, merged_into: &MergedInto) -> 
         ],
     )?;
     let mut report = format!("removed {}", checkout.display());
+    let mut complete = true;
     if let Some(branch) = &worktree.branch {
+        let name = branch.trim_start_matches("refs/heads/");
         // Deleted only while it still names the commit found merged.
-        git(
+        let deleted = git(
             &repository.cwd,
             &[
                 OsStr::new("update-ref"),
@@ -217,18 +229,23 @@ fn remove_one(repository: &Repository, dir: &Path, merged_into: &MergedInto) -> 
                 OsStr::new(branch),
                 OsStr::new(&worktree.head),
             ],
-        )?;
-        report += &format!(" and {}", branch.trim_start_matches("refs/heads/"));
+        );
+        if deleted.is_ok() {
+            report += &format!(" and {name}");
+        } else {
+            report += &format!("; kept {name}, which moved after the checks");
+            complete = false;
+        }
     }
     fs::remove_file(config_file(&dir))?;
     for directory in [dir.join(".cargo"), dir.clone()] {
         if let Err(error) = fs::remove_dir(&directory) {
             ensure!(error.kind() == ErrorKind::DirectoryNotEmpty, error);
             report += &format!("; kept {}, which holds other files", directory.display());
-            return Ok(report);
+            return Ok((report, complete));
         }
     }
-    Ok(report + &format!("; deleted {}", dir.display()))
+    Ok((report + &format!("; deleted {}", dir.display()), complete))
 }
 
 /// Ignored paths in a checkout, apart from build output under `target/`.
@@ -241,6 +258,7 @@ fn ignored_outside_target(checkout: &Path) -> Result<Vec<String>> {
             OsStr::new("--ignored"),
             OsStr::new("--exclude-standard"),
             OsStr::new("--directory"),
+            OsStr::new("--no-empty-directory"),
             OsStr::new("-z"),
         ],
     )?;
