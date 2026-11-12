@@ -425,6 +425,40 @@ fn initial_table_remains_visible_through_mulligans_and_reopening() {
     );
 }
 
+#[test]
+fn table_camera_draws_without_msaa_and_text_image_cameras_keep_the_default() {
+    use crate::gathering::{BoostFixture, HostileFixture};
+    use bevy::camera::RenderTarget;
+    // A controlled Mask gives slot labels text, so their camera exists beside the printed text's.
+    let session = Session::with_hostile_fixture(HostileFixture::Boosts(BoostFixture::MaskRetry));
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = unstarted_host(
+        Table::new(session, directory.path().join("msaa.json")),
+        false,
+    );
+    // Natively, bevy_render's camera plugin gives every camera this default.
+    app.register_required_components::<Camera, Msaa>();
+    app.update();
+    let world = app.world_mut();
+    let table = world
+        .query_filtered::<&Msaa, With<MainCamera>>()
+        .single(world)
+        .unwrap();
+    assert_eq!(*table, Msaa::Off);
+    // #189 compared only the table camera; the cameras drawing text into images keep 4×.
+    let image_camera_msaa = world
+        .query_filtered::<(&Msaa, &RenderTarget), With<Camera2d>>()
+        .iter(world)
+        .filter(|(_, target)| matches!(target, RenderTarget::Image(_)))
+        .map(|(msaa, _)| *msaa)
+        .collect::<Vec<_>>();
+    assert!(image_camera_msaa.len() >= 2, "{image_camera_msaa:?}");
+    assert!(
+        image_camera_msaa.iter().all(|msaa| *msaa == Msaa::Sample4),
+        "{image_camera_msaa:?}"
+    );
+}
+
 pub(super) fn host(path: PathBuf) -> App {
     host_with_pointer_input(path, false)
 }
