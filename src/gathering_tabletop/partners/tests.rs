@@ -1127,4 +1127,43 @@ fn the_humans_own_turn_choice_is_shown_waiting_until_the_partner_passes() {
     assert!(!rendered_text(&mut app).contains("waits for the other players to pass"));
 }
 
+/// Review fix G2 (F1: a fast play moves the decision on, so the active player
+/// decides again). Joel's held click in his own turn is released when Patrice's
+/// partner plays her Violin instead of passing: his decision display says that his
+/// choice was not applied because another player acted first, and asks him to
+/// choose again.
+#[test]
+fn the_humans_held_choice_released_by_a_fast_play_is_announced() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, socket, partner, violin) = patrices_partner_in_jacquelines_turn(directory.path());
+    let at = revision(&app);
+    choose(&mut app, "turn:end");
+    app.update();
+    assert_eq!(revision(&app), at, "Held for her pass");
+
+    let played = exchange(
+        &mut app,
+        &socket,
+        &[json!({"op": "choose", "partner": partner, "revision": at, "id": violin})],
+    );
+    assert_eq!(played[0]["status"], "chosen", "{}", played[0]);
+    finish_presentation(&mut app);
+    assert_eq!(revision(&app), at + 1, "Her Violin, not his held choice");
+    let shown = rendered_text(&mut app);
+    assert!(
+        !shown.contains("waits for the other players to pass"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("End this investigator's turn, was not applied: another player acted"),
+        "{shown}"
+    );
+    assert!(shown.contains("Choose again"), "{shown}");
+    assert!(
+        offered(&mut app).iter().any(|id| id == "turn:end"),
+        "He decides again: {:?}",
+        offered(&mut app)
+    );
+}
+
 mod pacing;

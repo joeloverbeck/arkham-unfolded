@@ -169,6 +169,9 @@ pub struct Host<R> {
     /// The active investigator's player's choice while it waits for the other
     /// players with a fast option to pass (F1).
     turn_hold: Option<TurnHold>,
+    /// Why the human's held turn choice was released, at the revision of the
+    /// decision he chooses again (review fix G2).
+    human_released: Option<(u64, String)>,
 }
 
 /// A choice of the active investigator's player, held at its revision for the
@@ -301,6 +304,7 @@ impl<R> Default for Host<R> {
             sharing: shared::Sharing::default(),
             talk: talk::Talk::default(),
             turn_hold: None,
+            human_released: None,
         }
     }
 }
@@ -485,6 +489,7 @@ impl<R> Host<R> {
             // other player with a fast option has passed on this revision. A
             // later click replaces it.
             self.turn_hold = Some(TurnHold::new(human, &moment.observation, id));
+            self.human_released = None;
             return Ok(HumanChoice::Ready);
         }
         // His own choice applied at once drops the one he held.
@@ -958,6 +963,7 @@ impl<R> Host<R> {
             self.release(
                 &hold,
                 "another player acted in the player window first, so the decision moved on",
+                revision,
             );
             return false;
         }
@@ -970,7 +976,11 @@ impl<R> Host<R> {
             != Some(&hold.player)
         {
             let hold = self.turn_hold.take().expect("Held");
-            self.release(&hold, "the investigator it was for is no longer yours");
+            self.release(
+                &hold,
+                "the investigator it was for is no longer yours",
+                revision,
+            );
             return false;
         }
         if !table.settled()
@@ -997,28 +1007,41 @@ impl<R> Host<R> {
                     known.outcome = Some(("chosen", None));
                 }
             }
-            (Controller::Partner(_), Err(reason)) => self.release(&hold, reason),
+            (Controller::Partner(_), Err(reason)) => self.release(&hold, reason, revision),
             (_, Err(error)) => {
                 eprintln!("Agent partners: the human's turn choice was not applied: {error}");
+                self.release(&hold, error, revision);
             }
             (_, Ok(())) => {}
         }
         result.is_ok()
     }
 
-    /// Tell a partner its held turn choice was released, not applied, and why.
-    fn release(&mut self, hold: &TurnHold, why: &str) {
-        if let Controller::Partner(partner) = &hold.player
-            && let Some(known) = self.partners.iter_mut().find(|known| known.id == *partner)
-        {
-            known.outcome = Some((
-                RELEASED,
-                Some(format!(
-                    "Your held choice, {}, was not applied: {why}. Decide again from the current view.",
-                    hold.label
-                )),
-            ));
+    /// Tell the holder its held turn choice was released, not applied, and why: a
+    /// partner through its next wait, the human in his decision display while the
+    /// decision stays at `revision`.
+    fn release(&mut self, hold: &TurnHold, why: &str, revision: u64) {
+        let released = format!("Your held choice, {}, was not applied: {why}.", hold.label);
+        match &hold.player {
+            Controller::Partner(partner) => {
+                if let Some(known) = self.partners.iter_mut().find(|known| known.id == *partner) {
+                    known.outcome = Some((
+                        RELEASED,
+                        Some(format!("{released} Decide again from the current view.")),
+                    ));
+                }
+            }
+            _ => self.human_released = Some((revision, format!("{released} Choose again."))),
         }
+    }
+
+    /// Why the human's held choice in his own turn was not applied, while the
+    /// decision that released it is pending.
+    pub fn human_released(&self, session: &Session) -> Option<&str> {
+        self.human_released
+            .as_ref()
+            .filter(|(revision, _)| *revision == session.revision())
+            .map(|(_, notice)| notice.as_str())
     }
 
     /// Drop `player`'s held turn choice: a choice of its own was applied at once.

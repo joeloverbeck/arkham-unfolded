@@ -711,6 +711,10 @@ pub(super) fn render(
                     PARTNER,
                 ));
             }
+            // Another player acted before his held choice could be applied.
+            if let Some(released) = &table.partners.released {
+                p.spawn(art.text(released, 15., PARTNER));
+            }
             if !table.is_presenting() {
                 for (_, label) in controls::window_opportunities(view) {
                     p.spawn(art.text(

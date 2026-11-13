@@ -95,6 +95,9 @@ pub(super) struct Shown {
     /// The label of the human's choice in his own turn while it waits for the
     /// other players with a fast option to pass (F1).
     pub held: Option<String>,
+    /// Why the human's held choice was not applied, while he chooses again: another
+    /// player acted first (review fix G2).
+    pub released: Option<String>,
     /// History entries a partner's decision made in this sitting, and its
     /// investigator. Runtime only: the save's history is replayed from decisions.
     pub attributed: Vec<(usize, Investigator)>,
@@ -680,6 +683,10 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         shared: routed.shared,
         human_pass: routed.human_pass,
         held: routed.held,
+        released: partners
+            .host
+            .human_released(&table.session)
+            .map(str::to_owned),
         // Compared below with what the table shows, so copied, not moved out of it.
         attributed: table.partners.attributed.clone(),
     };
