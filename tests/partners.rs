@@ -971,8 +971,9 @@ fn turning_partners_off_returns_every_investigator_and_ends_held_waits() {
 /// session. The save names its seed and decisions; the session is replayed, and a
 /// partner playing one investigator waits for and makes each of that
 /// investigator's decisions through the protocol while every other decision is
-/// committed for the table. Prints each partner's join answer and the median and
-/// largest of its later answers, in bytes of the JSON line.
+/// committed for the table. Prints, in bytes of the JSON line, each partner's join
+/// answer, the median, 90th percentile and largest of its later answers, and the
+/// complete view a partner joining at the save's position would receive.
 #[test]
 #[ignore = "measures partner answers over ARKHAM_PARTNER_VIEW_SAVE, a real Gathering session save"]
 fn partner_answer_sizes_over_a_real_session() {
@@ -1009,17 +1010,21 @@ fn partner_answer_sizes_over_a_real_session() {
             assert_eq!(chosen["status"], "chosen", "{id}: {chosen}");
             sizes.push(chosen.to_string().len());
         }
+        let rejoined = sitting.ask(json!({"op": "observe", "partner": partner, "full": true}));
         let total: usize = sizes.iter().sum();
         let mut sorted = sizes.clone();
         sorted.sort_unstable();
+        let at = |share: usize| sorted.get(sorted.len() * share / 100).copied().unwrap_or(0);
         println!(
-            "{}: join {} bytes; {} later answers, median {} bytes, largest {} bytes, total {} bytes",
+            "{}: join {} bytes; {} later answers, median {} bytes, 90th percentile {} bytes, largest {} bytes, total {} bytes; complete view at the save's position {} bytes",
             who.name(),
             joined.to_string().len(),
             sizes.len(),
-            sorted.get(sorted.len() / 2).copied().unwrap_or(0),
+            at(50),
+            at(90),
             sorted.last().copied().unwrap_or(0),
             total,
+            rejoined.to_string().len(),
         );
     }
 }
