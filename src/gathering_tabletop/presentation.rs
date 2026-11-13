@@ -91,11 +91,20 @@ impl Presentation {
             .is_none_or(|(at, control, _)| *at != revision || *control != self.control);
         if stale {
             let routing = crate::partners::Routing::of(session, &self.control);
-            let ids = routing
+            let human = crate::partners::Controller::Human;
+            let mut ids: Vec<String> = routing
                 .options()
-                .filter(|(_, _, controller)| **controller != crate::partners::Controller::Human)
+                .filter(|(_, _, controller)| **controller != human)
                 .map(|(id, _, _)| id.to_owned())
                 .collect();
+            // A shared decision's completing option is the readiness of each
+            // player taking part in it.
+            for shared in routing.shared() {
+                if !shared.players(&self.control).contains(&human) {
+                    ids.push(shared.close.clone());
+                    ids.push("round-end:decline-act".into());
+                }
+            }
             *others = Some((revision, self.control.clone(), ids));
         }
         let (_, _, ids) = others.as_ref().expect("Just routed");

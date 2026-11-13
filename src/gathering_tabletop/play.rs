@@ -363,13 +363,23 @@ pub(super) fn framing(view: &Observation) -> (Vec3, f32) {
         .map_or_else(|| sideboard::focus(focus(view)), |tray| tray.focus())
 }
 
-pub(super) fn status(view: &Observation) -> Option<String> {
+/// The status line. `awaited` names the investigators the table waits on when an
+/// agent partner's is among them; otherwise the decision's own investigator.
+pub(super) fn status(view: &Observation, awaited: &[Investigator]) -> Option<String> {
     let play = view.play.as_ref()?;
     let phase = phase_banner::name(play.phase);
     let actor = play.actor.map_or("No active turn", Investigator::name);
-    let owner = view
-        .decision_owner
-        .map_or("No pending player decision", Investigator::name);
+    let owner = if awaited.is_empty() {
+        view.decision_owner
+            .map_or("No pending player decision", Investigator::name)
+            .to_owned()
+    } else {
+        awaited
+            .iter()
+            .map(|who| who.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     let mut lines = vec![format!(
         "Round {} · {phase} · Turn: {actor} · Decision: {owner}",
         play.round
@@ -1261,6 +1271,20 @@ pub(super) fn render(
                         committed.owner.name()
                     ),
                     &committed.card.code,
+                )
+            });
+        }
+        // Another player's pending cards in a shared commitment: still in their
+        // hand, shown here as pending, not as commitments (agent partners, #208).
+        let pending = paint.context.others_pending;
+        for (slot, (owner, card)) in pending.iter().enumerate() {
+            paint.card(CardSpec {
+                source: Some(Source::Card(card.id)),
+                physical_id: None,
+                ..CardSpec::new(
+                    layout::test_commitment(test_count + pending.len(), test_count + slot),
+                    &format!("{}\n{}: pending, not confirmed", card.title, owner.name()),
+                    &card.code,
                 )
             });
         }

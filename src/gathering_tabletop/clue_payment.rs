@@ -35,6 +35,9 @@ pub(super) struct Chooser {
     payment: GroupCluePayment,
     allocation: Allocation,
     focus: Option<Input>,
+    /// With agent partners sharing the payment (#208): the investigators whose
+    /// clues the human sets. The others' parts are their players' pending ones.
+    mine: Option<[bool; 3]>,
 }
 
 impl Chooser {
@@ -50,22 +53,52 @@ impl Chooser {
         self.payment.contributors[who.index()].limit(self.payment.required)
     }
 
+    /// Whether the human sets `who`'s clues here.
+    fn sets(&self, who: Investigator) -> bool {
+        self.mine.is_none_or(|mine| mine[who.index()])
+    }
+
     fn can_add(&self, who: Investigator) -> bool {
-        self.allocation[who] < self.limit(who) && self.paid() < u16::from(self.payment.required)
+        self.sets(who)
+            && self.allocation[who] < self.limit(who)
+            && self.paid() < u16::from(self.payment.required)
     }
 
     fn can_remove(&self, who: Investigator) -> bool {
-        self.allocation[who] > 0
+        self.sets(who) && self.allocation[who] > 0
     }
 
     /// The session's choice for this allocation, once it is complete and legal.
+    /// In a shared payment, the human's part with the others' pending ones,
+    /// complete or not: it is his readiness.
     fn choice(&self) -> Option<String> {
-        self.payment.choice_for(self.allocation)
+        if self.mine.is_none() {
+            return self.payment.choice_for(self.allocation);
+        }
+        let within = Investigator::ALL
+            .into_iter()
+            .all(|who| self.allocation[who] <= self.limit(who));
+        (within && self.paid() <= u16::from(self.payment.required)).then(|| {
+            format!(
+                "act:pay:{}:{}:{}",
+                self.allocation[Investigator::Tony],
+                self.allocation[Investigator::Patrice],
+                self.allocation[Investigator::Jacqueline]
+            )
+        })
     }
 
     fn action(&self, table: &Table, input: Input) -> Action {
         Action::CluePayment(table.epoch, self.revision, input)
     }
+}
+
+/// The shared payment the human takes part in, while partners share it.
+fn shared(table: &Table) -> Option<&crate::partners::SharedState> {
+    table.partners.shared.iter().find(|state| {
+        matches!(state.kind, crate::partners::SharedKind::Payment { .. })
+            && state.of(&crate::partners::Controller::Human).is_some()
+    })
 }
 
 pub(super) fn open(table: &mut Table, epoch: u64, revision: u64) {
@@ -76,12 +109,20 @@ pub(super) fn open(table: &mut Table, epoch: u64, revision: u64) {
     let Some(payment) = view.group_clue_payment else {
         return;
     };
+    let shared = shared(table).map(|state| {
+        let control = table.presentation.control();
+        let mine = Investigator::ALL
+            .map(|who| control.controller(who) == crate::partners::Controller::Human);
+        (mine, state.clues)
+    });
     table.clue_payment = Some(Chooser {
         revision,
-        // The program never chooses a strategy: only a forced split is pre-filled.
-        allocation: payment.forced.unwrap_or_default(),
+        // The program never chooses a strategy: only a forced split is pre-filled,
+        // or the parts already pending in a shared payment.
+        allocation: shared.map_or_else(|| payment.forced.unwrap_or_default(), |(_, clues)| clues),
         payment,
         focus: None,
+        mine: shared.map(|(mine, _)| mine),
     });
     table.context.reset();
     table.epoch += 1;
@@ -97,7 +138,35 @@ pub(super) fn sync(table: &mut Table) {
         table.clue_payment = None;
         table.epoch += 1;
         table.dirty = true;
+        return;
     }
+    // Another player's pending part follows its changes.
+    let pending = shared(table).map(|state| state.clues);
+    if let Some(chooser) = table.clue_payment.as_mut()
+        && let (Some(mine), Some(pending)) = (chooser.mine, pending)
+    {
+        let mut changed = false;
+        for who in Investigator::ALL {
+            if !mine[who.index()] && chooser.allocation[who] != pending[who] {
+                chooser.allocation[who] = pending[who];
+                changed = true;
+            }
+        }
+        if changed {
+            table.epoch += 1;
+            table.dirty = true;
+        }
+    }
+}
+
+/// Whether the player of `who` is ready on the shared payment, while partners
+/// share it.
+fn ready(table: &Table, who: Investigator) -> Option<bool> {
+    shared(table)?
+        .players
+        .iter()
+        .find(|player| player.investigators.contains(&who))
+        .map(|player| player.ready)
 }
 
 /// Local edits are consumed here. Paying and declining rejoin the adapter's
@@ -123,6 +192,7 @@ pub(super) fn dispatch(table: &mut Table, action: Action) -> Option<Action> {
             if chooser.payment.contributors[who.index()]
                 .ineligible
                 .is_none()
+                && chooser.sets(who)
             {
                 chooser.focus = Some(input);
             }
@@ -215,7 +285,13 @@ pub(super) fn render(
         && table.inspection.is_none()
         && health.allows_play()
         && !health.just_became_ready();
-    let key = (table.epoch, visible, size, table.notice.clone());
+    // A partner's readiness changes what the chooser shows without a new epoch.
+    let key = (
+        table.epoch,
+        visible,
+        size,
+        format!("{}|{:?}", table.notice, shared(&table)),
+    );
     if previous.as_ref() == Some(&key) {
         return;
     }
@@ -249,7 +325,7 @@ pub(super) fn render(
     let portraits = ui::portraits(&art, &images);
     let first_row = Investigator::ALL
         .into_iter()
-        .find(|who| payment.contributors[who.index()].ineligible.is_none());
+        .find(|who| payment.contributors[who.index()].ineligible.is_none() && chooser.sets(*who));
     let focus = chooser.focus.or(first_row.map(Input::Row));
     let barrier = commands
         .spawn((
@@ -315,6 +391,13 @@ pub(super) fn render(
                 18.,
                 if chooser.complete() { GOLD } else { PAPER },
             ));
+            if chooser.mine.is_some() {
+                panel.spawn(art.text(
+                    "Agent partners set their own investigators' clues. Your Spend is your readiness: the clues are spent once every player is ready on exactly the requirement.",
+                    13.,
+                    PAPER,
+                ));
+            }
             panel.spawn(art.text(
                 "Tab: next investigator · Arrows: change · Enter: spend · Esc: cancel. Nothing is spent until you confirm.",
                 12.,
@@ -338,12 +421,21 @@ pub(super) fn render(
                             .entity(other)
                             .insert(ChoiceControl("round-end:decline-act".into()));
                     }
+                    let label = if chooser.mine.is_some() && !chooser.complete() {
+                        format!(
+                            "Ready with my part ({} / {} clues)",
+                            chooser.paid(),
+                            payment.required
+                        )
+                    } else {
+                        format!("Spend {} clues and advance", payment.required)
+                    };
                     let spend = control(
                         buttons,
                         &art,
                         &table,
                         chooser,
-                        &format!("Spend {} clues and advance", payment.required),
+                        &label,
                         Input::Confirm,
                         focus,
                     );
@@ -388,8 +480,15 @@ fn row(
             ..default()
         })
         .with_children(|line| {
+            // In a shared payment each contribution carries its player's readiness.
+            let readiness = match ready(table, who) {
+                Some(true) => " · ready",
+                Some(false) if !chooser.sets(who) => " · its partner is deciding",
+                Some(false) => " · not ready",
+                None => "",
+            };
             let details = match contributor.ineligible {
-                None => format!("{} · {held} · pays {paid}", who.name()),
+                None => format!("{} · {held} · pays {paid}{readiness}", who.name()),
                 Some(reason) => format!("{} · {held} · {}", who.name(), reason.reason()),
             };
             let entity = ui::button(art, line, &details, chooser.action(table, Input::Row(who)));
@@ -426,7 +525,8 @@ fn row(
                     .entity(entity)
                     .insert_children(0, &[preview]);
             }
-            if contributor.ineligible.is_some() {
+            // Another player's investigator: its player sets its part.
+            if contributor.ineligible.is_some() || !chooser.sets(who) {
                 line.commands()
                     .entity(entity)
                     .remove::<TabIndex>()
