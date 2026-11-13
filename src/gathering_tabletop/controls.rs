@@ -498,7 +498,7 @@ fn global(id: &str) -> bool {
             | "resolution:burn"
             | "resolution:refuse"
             | "round-end:finish"
-            | "round-end:decline-act"
+            | crate::gathering::GroupCluePayment::DECLINE
             | "enemy:attacks"
             | "enemy:attacks-complete"
             | "enemy:next-investigator"

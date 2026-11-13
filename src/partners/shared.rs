@@ -21,9 +21,6 @@ use serde_json::{Value, json};
 /// players cannot keep answering each other's changes.
 pub const REOPENINGS: u8 = 3;
 
-/// The Barrier's round-end alternative to paying its clues.
-const DECLINE: &str = GroupCluePayment::DECLINE;
-
 /// Which shared decision a record belongs to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Key {
@@ -324,7 +321,7 @@ impl Sharing {
         let current = self
             .find(&pending.key)
             .map_or([0; 3], |record| record.clues);
-        let named = if id == DECLINE {
+        let named = if id == GroupCluePayment::DECLINE {
             let mut named = current;
             for who in Investigator::ALL {
                 if control.controller(who) == *player {
@@ -415,7 +412,8 @@ impl Sharing {
                         .unwrap_or(first);
                     return Some((id, payer));
                 }
-                (at_round_end && clues == [0; 3]).then(|| (DECLINE.to_owned(), first))
+                (at_round_end && clues == [0; 3])
+                    .then(|| (GroupCluePayment::DECLINE.to_owned(), first))
             }
         }
     }

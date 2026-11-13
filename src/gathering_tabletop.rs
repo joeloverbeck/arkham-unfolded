@@ -1441,7 +1441,9 @@ struct CardSpec<'a> {
 
 impl<'a> CardSpec<'a> {
     fn new(at: Vec3, title: &'a str, inspect_code: &'a str) -> Self {
-        let landscape = matches!(inspect_code, "06003" | "06005" | "60401");
+        let landscape = Investigator::ALL
+            .iter()
+            .any(|who| who.card_code() == inspect_code);
         Self {
             title,
             inspect_code,

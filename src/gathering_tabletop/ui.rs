@@ -7,7 +7,8 @@ pub(super) fn portraits(
     art: &art::Art,
     images: &Assets<Image>,
 ) -> [Option<(Handle<Image>, Vec2)>; 3] {
-    ["06003", "06005", "60401"].map(|code| {
+    Investigator::ALL.map(|who| {
+        let code = who.card_code();
         art.image(&format!("standee/{code}")).and_then(|handle| {
             images
                 .get(&handle)
@@ -1156,10 +1157,12 @@ fn inspection_image(
     code: &str,
     width: f32,
 ) {
-    let landscape = matches!(
-        code,
-        "06003" | "06005" | "60401" | "01105" | "01106" | "01107" | "01108" | "01109" | "01110"
-    );
+    // Investigator cards, agendas and acts are printed landscape.
+    let landscape = Investigator::ALL.iter().any(|who| who.card_code() == code)
+        || matches!(
+            code,
+            "01105" | "01106" | "01107" | "01108" | "01109" | "01110"
+        );
     screen::card_image(parent, image, landscape, width);
 }
 

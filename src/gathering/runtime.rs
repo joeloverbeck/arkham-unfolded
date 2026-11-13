@@ -568,7 +568,7 @@ impl Game {
             .enumerate()
             .map(|(index, player)| {
                 let definition =
-                    cards::definition(["06003", "06005", "60401"][index]).expect("Investigator");
+                    cards::definition(player.investigator.card_code()).expect("Investigator");
                 PlayerState {
                     investigator: player.investigator,
                     location: "01111".into(),
@@ -627,7 +627,7 @@ impl Game {
             .iter()
             .enumerate()
             .map(|(index, investigator)| {
-                let definition = cards::definition(["06003", "06005", "60401"][index])
+                let definition = cards::definition(investigator.investigator.card_code())
                     .expect("Selected investigator");
                 PlayerState {
                     investigator: investigator.investigator,
