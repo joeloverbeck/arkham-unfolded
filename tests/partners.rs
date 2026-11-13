@@ -7,7 +7,10 @@
 //! the lead), not from the implementation.
 
 use arkham_unfolded_experiment::{
-    gathering::{HostileFixture, Investigator, RetryFixture, Session, continuity},
+    gathering::{
+        HostileFixture, Investigator, Observation, RetryFixture, Session, TokenFixture, continuity,
+        inspection::{self, Sight},
+    },
     partners::{Controller, Host, Table},
 };
 use serde_json::{Value, json};
@@ -363,6 +366,167 @@ fn names_card(value: &Value, id: u16, code: &str) -> bool {
         Value::Array(items) => items.iter().any(|item| names_card(item, id, code)),
         _ => false,
     }
+}
+
+/// Every code of a card in `who`'s hand at `observation`.
+fn hand_codes(observation: &Observation, who: Investigator) -> Vec<String> {
+    observation
+        .play
+        .as_ref()
+        .map_or_else(
+            || &observation.investigators[who.index()].hand,
+            |play| &play.players[who.index()].hand,
+        )
+        .iter()
+        .map(|card| card.code.clone())
+        .collect()
+}
+
+/// A Gathering in play after every mulligan, with the partner joined for `partners`.
+fn in_play(partners: &[Investigator]) -> (Sitting, String) {
+    let mut sitting = Sitting::after_lead(&[]);
+    for _ in Investigator::ALL {
+        sitting.human("confirm-mulligan");
+    }
+    for who in partners {
+        sitting.host.set_selected(*who, true);
+    }
+    let partner = sitting.join(&[]);
+    (sitting, partner)
+}
+
+/// Ticket #206, Inspect: a partner inspects any card it can see and receives the
+/// text the table's Inspect shows; a card in another player's hand or only in a deck
+/// is refused exactly as a code that names no card, so the refusal reveals nothing.
+#[test]
+fn inspect_gives_a_visible_cards_table_text_and_refuses_a_hidden_card_as_no_card() {
+    let (mut sitting, partner) = in_play(&[Patrice]);
+    let observation = sitting.rules.session.observe();
+    let table = |code: &str| inspection::table_card(&observation, code, Sight::Table);
+    let mine = hand_codes(&observation, Patrice);
+    let visible: Vec<String> = mine
+        .iter()
+        .cloned()
+        .chain(
+            [
+                "06003", "06005", "60401", "01104", "01105", "01108", "01111",
+            ]
+            .map(String::from),
+        )
+        .collect();
+    for code in &visible {
+        let answer = sitting.ask(json!({"op": "inspect", "partner": partner, "card": code}));
+        assert_eq!(answer["status"], "inspected", "{code}: {answer}");
+        assert_eq!(answer["ok"], true);
+        assert_eq!(
+            answer["text"].as_str(),
+            table(code).as_deref(),
+            "{code}: the table's own Inspect text"
+        );
+    }
+    // Every investigator card carries its asset slots, as at the table.
+    let tony = sitting.ask(json!({"op": "inspect", "partner": partner, "card": "06003"}));
+    assert!(
+        tony["text"].as_str().unwrap().contains("Asset slots"),
+        "{tony}"
+    );
+
+    // At the start of play only hands and permanents hold player cards.
+    let permanent = |code: &str| {
+        observation
+            .investigators
+            .iter()
+            .any(|setup| setup.permanents.iter().any(|card| card.code == code))
+    };
+    let theirs: Vec<String> = hand_codes(&observation, Tony)
+        .into_iter()
+        .chain(hand_codes(&observation, Jacqueline))
+        .filter(|code| !mine.contains(code) && !permanent(code))
+        .collect();
+    assert!(!theirs.is_empty(), "Some cards are only in other hands");
+    let in_hands: Vec<String> = Investigator::ALL
+        .into_iter()
+        .flat_map(|who| hand_codes(&observation, who))
+        .collect();
+    let in_deck: Vec<String> = observation.source.decks[Tony.index()]
+        .inventory
+        .iter()
+        .map(|entry| entry.code.clone())
+        .filter(|code| !in_hands.contains(code) && !permanent(code))
+        .collect();
+    assert!(
+        !in_deck.is_empty(),
+        "Some of Tony's cards are only in his deck"
+    );
+    let nothing = sitting.ask(json!({"op": "inspect", "partner": partner, "card": "99999"}));
+    assert_eq!(nothing["status"], "refused", "{nothing}");
+    for code in theirs.iter().chain(&in_deck) {
+        let answer = sitting.ask(json!({"op": "inspect", "partner": partner, "card": code}));
+        assert_eq!(answer["status"], "refused", "{code}: {answer}");
+        assert_eq!(
+            answer["error"]
+                .as_str()
+                .map(|error| error.replace(code.as_str(), "99999")),
+            nothing["error"].as_str().map(str::to_owned),
+            "{code}: refused as a code that names no card"
+        );
+        let title = arkham_unfolded_experiment::gathering::card_title(code).unwrap();
+        assert!(!answer.to_string().contains(title), "{code}: {answer}");
+    }
+}
+
+/// Ticket #206, Inspect: the text in force, as the table shows it. Dark Prophecy
+/// (04032) is on taboo list 10 and Katarina Sojka (11069) has Legacy FAQ 2.5 errata;
+/// Dark Prophecy is in Jacqueline's hand, so only her player may read it, while
+/// Katarina is in play for everyone.
+#[test]
+fn inspect_shows_the_text_in_force_with_its_taboo_and_errata_notes() {
+    let session =
+        Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::VoiceRaGuidance));
+    let observation = session.observe();
+    let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
+    let patrices = sitting.join(&["patrice"]);
+    let jacquelines = sitting.join(&["jacqueline"]);
+    let katarina = sitting.ask(json!({"op": "inspect", "partner": patrices, "card": "11069"}));
+    assert_eq!(katarina["status"], "inspected", "{katarina}");
+    assert!(
+        katarina["text"]
+            .as_str()
+            .unwrap()
+            .contains("Legacy FAQ 2.5 errata"),
+        "{katarina}"
+    );
+    let hidden = sitting.ask(json!({"op": "inspect", "partner": patrices, "card": "04032"}));
+    assert_eq!(hidden["status"], "refused", "{hidden}");
+    let prophecy = sitting.ask(json!({"op": "inspect", "partner": jacquelines, "card": "04032"}));
+    assert_eq!(prophecy["status"], "inspected", "{prophecy}");
+    let text = prophecy["text"].as_str().unwrap();
+    assert!(text.contains("taboo list 10"), "{text}");
+    assert_eq!(
+        Some(text),
+        inspection::table_card(&observation, "04032", Sight::Table).as_deref()
+    );
+}
+
+/// Ticket #206, Hidden information: a Watcher from Another Dimension hidden in
+/// Patrice's hand cannot be inspected by another partner; her own player can.
+#[test]
+fn a_watcher_hidden_in_patrices_hand_cannot_be_inspected_by_another_partner() {
+    let session = Session::with_hostile_fixture(HostileFixture::Retry(RetryFixture::HandWatcher));
+    let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
+    let patrices = sitting.join(&["patrice"]);
+    let jacquelines = sitting.join(&["jacqueline"]);
+    let theirs = sitting.ask(json!({"op": "inspect", "partner": jacquelines, "card": "06017"}));
+    assert_eq!(theirs["status"], "refused", "{theirs}");
+    assert!(!theirs.to_string().contains("Watcher"), "{theirs}");
+    let hers = sitting.ask(json!({"op": "inspect", "partner": patrices, "card": "06017"}));
+    assert_eq!(hers["status"], "inspected", "{hers}");
+    assert!(
+        hers["text"]
+            .as_str()
+            .unwrap()
+            .contains("Secretly add this enemy to your hand")
+    );
 }
 
 /// Ticket #205, Choosing: a stale, unlisted or unowned choice is refused with its

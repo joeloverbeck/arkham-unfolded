@@ -20,7 +20,10 @@ mod view;
 
 pub use routing::Routing;
 
-use crate::gathering::{Investigator, OptionOwner, Session};
+use crate::gathering::{
+    Investigator, OptionOwner, Session,
+    inspection::{self, Sight},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -150,6 +153,10 @@ enum Request {
         #[serde(default)]
         all_cards: bool,
     },
+    Inspect {
+        partner: String,
+        card: String,
+    },
     Choose {
         partner: String,
         revision: u64,
@@ -271,7 +278,7 @@ impl<R> Host<R> {
                     .ok()
                     .and_then(|value| value["partner"].as_str().map(str::to_owned));
                 let reason = format!(
-                    "Not a partner request ({error}). A partner may join, wait, observe, choose or leave."
+                    "Not a partner request ({error}). A partner may join, wait, observe, inspect, choose or leave."
                 );
                 let answer = match partner.filter(|id| self.known(id)) {
                     Some(id) => self.answer(&id, "refused", Some(reason), table, false, now),
@@ -286,6 +293,7 @@ impl<R> Host<R> {
             }
             Request::Wait { partner, .. }
             | Request::Observe { partner, .. }
+            | Request::Inspect { partner, .. }
             | Request::Choose { partner, .. }
             | Request::Leave { partner } => partner.clone(),
         };
@@ -305,6 +313,7 @@ impl<R> Host<R> {
                     self.answer(&id, "observed", None, table, all_cards, now),
                 )]
             }
+            Request::Inspect { card, .. } => vec![(reply, self.inspect(&id, &card, table, now))],
             Request::Leave { .. } => {
                 self.partners.retain(|partner| partner.id != id);
                 for claim in &mut self.claims {
@@ -490,6 +499,26 @@ impl<R> Host<R> {
             heard: now,
         });
         self.answer(&id, "joined", None, table, false, now)
+    }
+
+    /// A visible card's full text, as the table's Inspect shows it. A card this
+    /// partner cannot see is refused exactly as a code that names no card.
+    fn inspect(&mut self, id: &str, card: &str, table: &impl Table, now: Instant) -> Value {
+        self.hear(id, now);
+        let mine = self.control().held_by(id);
+        let observation = table.session().observe();
+        match inspection::table_card(&observation, card, Sight::Player(&mine)) {
+            Some(text) => json!({
+                "ok": true, "mode": "partner", "status": "inspected", "partner": id,
+                "investigators": mine, "card": card, "text": text,
+            }),
+            None => {
+                let reason = format!(
+                    "No card {card} is in your sight. Inspect a card you can see by its code: in your investigators' hands, in play, being resolved or in a public pile."
+                );
+                self.answer(id, "refused", Some(reason), table, false, now)
+            }
+        }
     }
 
     /// Whether `partner` may submit `id` at `revision` now, and as which investigator.
