@@ -30,8 +30,10 @@
 
 use super::*;
 use crate::{
-    agent_seat::{self, Admission, Focus, Game, Hit, Name, Observed, Seat, Unadmitted, socket},
-    tabletop_health::{self, RenderHealth, SeatAdmissionPlugin},
+    agent_seat::{
+        self, Admission, Focus, Game, Hit, Name, Observed, Seat, SeatKey, refuse, socket,
+    },
+    tabletop_health::{self, SeatAdmissionPlugin},
     tabletop_pacing::PresentationTime,
     tabletop_support::asset_settings::Collection,
 };
@@ -82,16 +84,6 @@ fn idle(options: &Options) -> Duration {
     options.idle_minutes.map_or(socket::IDLE, |minutes| {
         Duration::from_secs(u64::from(minutes) * 60)
     })
-}
-
-/// A startup problem: one `refused` response on standard output, which the agent (or
-/// the launching command) reads. The returned error reaches standard error.
-fn refuse<T>(error: String) -> Result<T, String> {
-    println!(
-        "{}",
-        json!({"ok": false, "mode": "seat", "status": "refused", "error": error})
-    );
-    Err(error)
 }
 
 /// The same artwork verification and play lease as native startup. Native startup
@@ -147,16 +139,7 @@ pub(super) fn open(options: &Options) -> Result<Seated, String> {
     install(&mut app);
     crate::tabletop_startup::require_artwork(&mut app, &collection);
     let mut seat = Seat::open(Gathering, &mut app)?;
-    seat.admit(&mut app, ADMISSION_LIMIT)
-        .map_err(|unadmitted| match unadmitted {
-            Unadmitted::Refused(reason) => reason,
-            // Admission was still checking at the limit: say what blocks it.
-            Unadmitted::Unfinished => format!(
-                "The seat could not admit play within {} seconds. No game decision was made; saves are unchanged.\n{}",
-                ADMISSION_LIMIT.as_secs(),
-                tabletop_health::admission_blocker(app.world())
-            ),
-        })?;
+    agent_seat::admit(&mut seat, &mut app, ADMISSION_LIMIT)?;
     Ok(Seated {
         app,
         seat,
@@ -349,14 +332,11 @@ impl Game for Gathering {
 
     /// Seat admission (difference 6 above), as its rendering health reports it.
     fn admission(&self, world: &World) -> Admission {
-        let health = world.resource::<RenderHealth>();
-        if health.allows_play() {
-            Admission::Admitted
-        } else if health.is_checking() {
-            Admission::Checking
-        } else {
-            Admission::Refused(health.status().to_owned())
-        }
+        tabletop_health::admission(world)
+    }
+
+    fn keys(&self) -> &[SeatKey] {
+        &agent_seat::KEYS
     }
 
     fn pipelines_ready(&self, world: &World) -> bool {

@@ -7,18 +7,119 @@
 //! `gathering_tabletop::seat` implements: produce an observation and its revision,
 //! resolve a name to a screen position (and a hit back to a name), say what has
 //! keyboard focus, report whether the table is settled, advance the presentation clock,
-//! and say whether the table is admitted and its render pipelines are ready.
+//! say whether the table is admitted and its render pipelines are ready, and name the
+//! keys the seat may press.
 //!
 //! What stays here is Arkham's: the plugins of its windowless host, the two pacing
-//! resources its table reads, the name that marks a launched seat, and how long a held
-//! session idles unless told otherwise.
+//! resources its table reads, the keys the table reads and the two of them that can
+//! commit, what the seat says when admission runs out of time, the name that marks a
+//! launched seat, and how long a held session idles unless told otherwise.
 
-use crate::tabletop_pacing::{PresentationTime, Redraw};
-use bevy::{app::PluginGroupBuilder, asset::AssetPlugin, prelude::*, winit::WinitPlugin};
+use crate::{
+    tabletop_health,
+    tabletop_pacing::{PresentationTime, Redraw},
+};
+use bevy::{
+    app::PluginGroupBuilder, asset::AssetPlugin, input::keyboard::Key, prelude::*,
+    winit::WinitPlugin,
+};
+use std::time::Duration;
 use unfolded_tabletop::capture;
 pub(crate) use unfolded_tabletop::seat::{
-    Admission, Focus, Game, Hit, Name, Observed, Seat, SeatedAgent, Unadmitted,
+    Admission, Focus, Game, Hit, Logical, Name, Observed, Seat, SeatKey, SeatedAgent, Unadmitted,
+    refuse,
 };
+
+/// Keys the table reads, which are the keys the seat may press: the protocol name (its
+/// `KeyCode` name), the physical key, the logical key a keyboard would send with it,
+/// and whether it can commit.
+///
+/// Enter and Space can commit a choice or dismiss a reading, so a request for one names
+/// the control it expects to press. A focused Bevy button activates on Enter or Space,
+/// and the table's own keyboard handling may confirm with Enter. Every other key moves
+/// focus, the camera, a scroll position or a stepper, or closes without deciding.
+pub(crate) static KEYS: [SeatKey; 18] = [
+    key(
+        "Escape",
+        KeyCode::Escape,
+        Logical::Named(Key::Escape),
+        false,
+    ),
+    key("Enter", KeyCode::Enter, Logical::Named(Key::Enter), true),
+    key("Space", KeyCode::Space, Logical::Named(Key::Space), true),
+    key("Tab", KeyCode::Tab, Logical::Named(Key::Tab), false),
+    key("Home", KeyCode::Home, Logical::Named(Key::Home), false),
+    key("End", KeyCode::End, Logical::Named(Key::End), false),
+    key(
+        "PageUp",
+        KeyCode::PageUp,
+        Logical::Named(Key::PageUp),
+        false,
+    ),
+    key(
+        "PageDown",
+        KeyCode::PageDown,
+        Logical::Named(Key::PageDown),
+        false,
+    ),
+    key(
+        "ArrowUp",
+        KeyCode::ArrowUp,
+        Logical::Named(Key::ArrowUp),
+        false,
+    ),
+    key(
+        "ArrowDown",
+        KeyCode::ArrowDown,
+        Logical::Named(Key::ArrowDown),
+        false,
+    ),
+    key(
+        "ArrowLeft",
+        KeyCode::ArrowLeft,
+        Logical::Named(Key::ArrowLeft),
+        false,
+    ),
+    key(
+        "ArrowRight",
+        KeyCode::ArrowRight,
+        Logical::Named(Key::ArrowRight),
+        false,
+    ),
+    key("KeyW", KeyCode::KeyW, Logical::Typed("w"), false),
+    key("KeyA", KeyCode::KeyA, Logical::Typed("a"), false),
+    key("KeyS", KeyCode::KeyS, Logical::Typed("s"), false),
+    key("KeyD", KeyCode::KeyD, Logical::Typed("d"), false),
+    key("Minus", KeyCode::Minus, Logical::Typed("-"), false),
+    key("Equal", KeyCode::Equal, Logical::Typed("="), false),
+];
+
+const fn key(name: &'static str, code: KeyCode, logical: Logical, commits: bool) -> SeatKey {
+    SeatKey {
+        name,
+        code,
+        logical,
+        commits,
+    }
+}
+
+/// Admit the table within `limit`, then settle it. An admission still checking at the
+/// limit is refused with what blocks it.
+pub(crate) fn admit<G: Game>(
+    seat: &mut Seat<G>,
+    app: &mut App,
+    limit: Duration,
+) -> Result<(), String> {
+    seat.admit(app, limit)
+        .map_err(|unadmitted| match unadmitted {
+            Unadmitted::Refused(reason) => reason,
+            Unadmitted::Unfinished => format!(
+                "The seat could not admit play within {} seconds. No game decision was made; saves are unchanged.\n{}",
+                limit.as_secs(),
+                tabletop_health::admission_blocker(app.world())
+            ),
+        })
+}
 
 /// The held session (#175), under Arkham's own names: the shared listener, launcher
 /// and announcement, with the variable that marks a launched Arkham seat and Arkham's
