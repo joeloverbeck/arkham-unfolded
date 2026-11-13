@@ -765,7 +765,7 @@ fn result_and_optional_effect_controls_stay_visible_when_details_scroll() {
     }
 }
 
-fn quick_thinking_until(stop: &str) -> Session {
+pub(in crate::gathering_tabletop) fn quick_thinking_until(stop: &str) -> Session {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tony(TonyEffectFixture::QuickThinking));
     let play = session.observe().play.unwrap();

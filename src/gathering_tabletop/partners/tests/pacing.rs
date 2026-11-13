@@ -4,7 +4,8 @@
 //! presentation contract's "Agent partners and table talk".
 
 use super::super::super::tests::{
-    button_with_label, rendered_text, results::quick_thinking_session,
+    button_with_label, rendered_text,
+    results::{quick_thinking_session, quick_thinking_until},
 };
 use super::*;
 use crate::gathering::{
@@ -465,4 +466,125 @@ fn a_partner_chooses_while_the_human_inspects_and_its_consequences_wait_for_the_
     press(app, "Close menu");
     pump(app, || chosen.is_finished());
     assert_eq!(chosen.join().unwrap()[0]["status"], "chosen");
+}
+
+/// Run frames until the camera has reached what it frames.
+fn still_camera(app: &mut App) -> crate::tabletop_camera::Pose {
+    for _ in 0..400 {
+        if !app.world().resource::<Orbit>().is_moving() {
+            break;
+        }
+        wait(app, 0.05);
+    }
+    assert!(!app.world().resource::<Orbit>().is_moving());
+    app.world().resource::<Orbit>().pose()
+}
+
+/// A table where the human plays Tony and Jacqueline, the lead, and a partner
+/// plays Patrice, with Follow on and the mulligans made: the human's group choice of
+/// who goes first is pending. Returns it, the partner, and the camera's pose before
+/// and after the human's Jacqueline handed the mulligan to the human's Tony.
+fn following() -> (Partnered, String, [crate::tabletop_camera::Pose; 2]) {
+    let mut partnered = partnered(&[Patrice]);
+    press(&mut partnered.app, "Close menu");
+    let partner = join(&mut partnered);
+    let app = &mut partnered.app;
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Follow);
+    app.update();
+    assert!(app.world().resource::<Orbit>().is_following());
+    let jacquelines = still_camera(app);
+    choose(app, "confirm-mulligan"); // Jacqueline's, which brings Tony's
+    settle(app);
+    let tonys = still_camera(app);
+    choose(app, "confirm-mulligan"); // Tony's, which brings Patrice's
+    settle(app);
+    assert_eq!(
+        still_camera(app),
+        tonys,
+        "A partner's decision is not framed"
+    );
+    partner_chooses(&mut partnered, &partner, "confirm-mulligan");
+    (partnered, partner, [jacquelines, tonys])
+}
+
+/// Ticket #210, Camera: with Follow on, a partner's decisions and its tests, and the
+/// human's decision that hands the turn to a partner, leave the camera where it is.
+#[test]
+fn follow_leaves_the_camera_where_it_is_for_a_partners_decisions_and_tests() {
+    let (mut partnered, partner, _) = following();
+    let app = &mut partnered.app;
+    let lead = still_camera(app);
+    choose(app, "turn:patrice");
+    settle(app);
+    assert_eq!(still_camera(app), lead, "Handing the turn to a partner");
+    partner_chooses(&mut partnered, &partner, "action:ordinary:resource");
+    assert_eq!(
+        still_camera(&mut partnered.app),
+        lead,
+        "A partner's decision, and the next it has, leave the camera"
+    );
+    partner_chooses(&mut partnered, &partner, "action:ordinary:investigate");
+    let app = &mut partnered.app;
+    let test = app.world().resource::<Table>().view().play.unwrap().test;
+    assert_eq!(test.map(|test| test.tester), Some(Patrice));
+    assert_eq!(
+        still_camera(app),
+        lead,
+        "A partner's own test is not framed"
+    );
+    assert!(app.world().resource::<Orbit>().is_following());
+}
+
+/// Ticket #210, Camera: with Follow on, the human's own decisions and the tests the
+/// human's investigators take part in are still followed.
+#[test]
+fn follow_frames_the_humans_decisions_and_tests() {
+    let (mut partnered, _, [jacquelines, tonys]) = following();
+    assert_ne!(tonys, jacquelines, "The human's own decision is followed");
+    let app = &mut partnered.app;
+    choose(app, "turn:tony");
+    settle(app);
+    let turn = still_camera(app);
+    choose(app, "action:ordinary:investigate");
+    let test = app.world().resource::<Table>().view().play.unwrap().test;
+    assert_eq!(test.map(|test| test.tester), Some(Tony));
+    assert_ne!(
+        still_camera(app),
+        turn,
+        "A test of the human's investigator is followed"
+    );
+}
+
+/// Ticket #210, Camera: with Follow on, a partner's test plays out, its result
+/// included, without the camera moving to it.
+#[test]
+fn follow_leaves_the_camera_while_a_partners_test_plays_out() {
+    let mut paced = open(quick_thinking_until("test:reveal"), &[Tony]);
+    let joined = exchange(&mut paced.app, &paced.socket, &[json!({"op": "join"})]);
+    let partner = joined[0]["partner"].as_str().unwrap().to_owned();
+    let app = &mut paced.app;
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Follow);
+    app.update();
+    assert!(app.world().resource::<Orbit>().is_following());
+    let before = still_camera(app);
+    let revision = app.world().resource::<Table>().session.revision();
+    let chosen = exchange(
+        app,
+        &paced.socket,
+        &[json!({"op": "choose", "partner": partner, "revision": revision, "id": "test:reveal"})],
+    );
+    assert_eq!(chosen[0]["status"], "chosen", "{}", chosen[0]);
+    let mut moved = false;
+    for _ in 0..200 {
+        wait(app, 0.1);
+        moved |= app.world().resource::<Orbit>().pose() != before;
+    }
+    assert!(!moved, "The camera never left");
+    assert!(app.world().resource::<Orbit>().is_following());
 }

@@ -1173,7 +1173,10 @@ fn handle_actions(
                 }
                 match table.commit(revision, &id) {
                     Ok(()) => {
-                        orbit.update_follow_target(Some(play::framing(&table.view())));
+                        orbit.update_follow_target(play::follow(
+                            &table.view(),
+                            table.presentation.control(),
+                        ));
                         if reveal_focus {
                             orbit.focus(play::framing(&table.view()));
                         }
@@ -1240,7 +1243,10 @@ fn handle_actions(
                 table.context.dismiss();
                 let following = !orbit.is_following();
                 orbit.set_following(following);
-                orbit.update_follow_target(Some(play::framing(&table.view())));
+                orbit.update_follow_target(play::follow(
+                    &table.view(),
+                    table.presentation.control(),
+                ));
                 table.dirty = true;
             }
             Action::Close => {
@@ -1806,7 +1812,7 @@ fn advance_presentation(
         table.dirty = true;
     }
     if progress == presentation::Progress::Moment {
-        orbit.update_follow_target(Some(play::framing(&table.view())));
+        orbit.update_follow_target(play::follow(&table.view(), table.presentation.control()));
     }
 }
 

@@ -434,6 +434,7 @@ pub(super) fn serve(world: &mut World) {
                 table,
                 presented,
                 settled,
+                committed: false,
             };
             for incoming in partners.drain() {
                 answers.extend(partners.host.receive(
@@ -444,6 +445,7 @@ pub(super) fn serve(world: &mut World) {
                 ));
             }
             answers.extend(partners.host.poll(&mut sitting, now));
+            let committed = sitting.committed;
             for (reply, answer) in answers {
                 let _ = reply.send(answer.to_string());
             }
@@ -451,11 +453,24 @@ pub(super) fn serve(world: &mut World) {
                 partners.transport = None;
             }
             show(partners, table, &socket, now);
-            next_frame && partners.host.due(&table.session, true, true, now)
+            (
+                next_frame && partners.host.due(&table.session, true, true, now),
+                committed,
+            )
         })
     });
+    let (redraw, committed) = redraw;
     if redraw && let Some(mut redraw) = world.get_resource_mut::<Redraw>() {
         redraw.request();
+    }
+    if committed {
+        // A partner's decision does not move the camera; Follow frames what follows
+        // it only when that is the human's own decision or test.
+        let table = world.resource::<Table>();
+        let framing = play::follow(&table.view(), table.presentation.control());
+        if let Some(mut orbit) = world.get_resource_mut::<Orbit>() {
+            orbit.update_follow_target(framing);
+        }
     }
 }
 
@@ -631,6 +646,8 @@ struct Sitting<'a> {
     table: &'a mut Table,
     presented: bool,
     settled: bool,
+    /// Whether a decision was committed through this sitting.
+    committed: bool,
 }
 
 impl rules::Table for Sitting<'_> {
@@ -656,6 +673,7 @@ impl rules::Table for Sitting<'_> {
         self.table.commit(revision, id)?;
         self.presented = false;
         self.settled = false;
+        self.committed = true;
         let history = self.table.session.observe().history;
         let entry = (before.history.len()..history.len())
             .find(|index| Some(&history[*index]) == label.as_ref())
