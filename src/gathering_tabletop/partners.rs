@@ -341,7 +341,8 @@ pub(super) fn default_socket() -> PathBuf {
         .join("arkham-unfolded-partners.sock")
 }
 
-/// The line the human pastes into an agent's terminal. It names no investigator.
+/// The line the human pastes into an agent's terminal. It points to the partner
+/// instructions and names no investigator and no human player (#211).
 pub(super) fn line(socket: &Path) -> String {
     let option =
         if socket == default_socket() && std::env::var_os("ARKHAM_PARTNER_SOCKET").is_none() {
@@ -350,7 +351,7 @@ pub(super) fn line(socket: &Path) -> String {
             format!(" --socket {}", socket.display())
         };
     format!(
-        "Join my Arkham Unfolded game as an agent partner: in the arkham-unfolded repository, read `scripts/tools partner --help`, then run `scripts/tools partner{option} join`."
+        "Play at the running Arkham Unfolded table as an agent partner: in the arkham-unfolded repository, read docs/agents/partner-instructions.md, then join with `scripts/tools partner{option} join`."
     )
 }
 

@@ -132,13 +132,10 @@ fn the_socket_lives_only_while_partners_are_enabled_and_serves_several_partners_
     assert!(file.file_type().is_socket());
     assert_eq!(file.permissions().mode() & 0o777, 0o600);
     let shown = rendered_text(&mut partnered.app);
-    assert!(shown.contains("scripts/tools partner"), "{shown}");
-    for who in Investigator::ALL {
-        assert!(
-            !shown.contains(&format!("partner join {}", who.id())),
-            "The line names no investigator"
-        );
-    }
+    assert!(
+        shown.contains(&line(&socket)),
+        "The menu shows the line: {shown}"
+    );
 
     let first = exchange(
         &mut partnered.app,
@@ -178,6 +175,39 @@ fn the_socket_lives_only_while_partners_are_enabled_and_serves_several_partners_
             .control()
             .solo()
     );
+}
+
+/// Ticket #211, the pasted line's final form: it points to the partner instructions
+/// in this repository and gives the join command with the table's socket, and it
+/// names no investigator and no human player (play contract, Agent partners).
+#[test]
+fn the_pasted_line_points_to_the_partner_instructions_and_names_no_player() {
+    let instructions = "docs/agents/partner-instructions.md";
+    let line = line(Path::new("/run/partners-elsewhere.sock"));
+    assert!(line.contains(instructions), "{line}");
+    assert!(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(instructions)
+            .is_file(),
+        "The line points to a document in the repository"
+    );
+    assert!(
+        line.contains("`scripts/tools partner --socket /run/partners-elsewhere.sock join`"),
+        "{line}"
+    );
+    let words: Vec<String> = line
+        .split(|character: char| !character.is_alphanumeric())
+        .map(str::to_lowercase)
+        .collect();
+    let investigators = Investigator::ALL
+        .into_iter()
+        .flat_map(|who| who.name().split(' ').chain([who.id()]));
+    for named in investigators.chain(["i", "me", "my", "human", "joel", "owner"]) {
+        assert!(
+            !words.contains(&named.to_lowercase()),
+            "The line names {named}: {line}"
+        );
+    }
 }
 
 /// Ticket #205: the human's controls offer only options of investigators the
