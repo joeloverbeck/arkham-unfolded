@@ -307,14 +307,69 @@ pub struct Session {
     runtime: Option<runtime::Game>,
 }
 
-/// Table tests only: place an investigator's clues and location where a witness
-/// needs them. No decision is recorded, so Undo cannot reproduce the placement.
-#[cfg(all(test, feature = "tabletop"))]
+/// Tests outside the rules session only (the table, agent partners): place an
+/// investigator's clues and location, or a selected card in a hand or in play,
+/// where a witness needs them. No decision is recorded, so Undo cannot
+/// reproduce the placement.
+#[cfg(test)]
 impl Session {
     pub(crate) fn place_for_test(&mut self, who: Investigator, clues: u8, location: &str) {
         let player = &mut self.runtime.as_mut().expect("Scenario play").players[who.index()];
         player.clues = clues;
         player.location = location.into();
+    }
+
+    /// A card with this code in `to`'s hand: one already there, else the first
+    /// from a deck, else from another hand. Returns its identity.
+    pub(crate) fn hand_for_test(&mut self, to: Investigator, code: &str) -> u16 {
+        let game = self.runtime.as_mut().expect("Scenario play");
+        if let Some(card) = game.players[to.index()]
+            .hand
+            .iter()
+            .find(|card| card.code == code)
+        {
+            return card.id;
+        }
+        let take = |cards: &mut Vec<CardView>| {
+            let at = cards.iter().position(|card| card.code == code)?;
+            Some(cards.remove(at))
+        };
+        let card = game
+            .players
+            .iter_mut()
+            .find_map(|player| take(&mut player.deck))
+            .or_else(|| {
+                game.players
+                    .iter_mut()
+                    .find_map(|player| take(&mut player.hand))
+            })
+            .unwrap_or_else(|| panic!("{code} is in a selected deck"));
+        let id = card.id;
+        game.players[to.index()].hand.push(card);
+        id
+    }
+
+    /// A card with this code ready in play under `to`'s control.
+    pub(crate) fn asset_for_test(&mut self, to: Investigator, code: &str) -> u16 {
+        let id = self.hand_for_test(to, code);
+        let player = &mut self.runtime.as_mut().expect("Scenario play").players[to.index()];
+        let at = player.hand.iter().position(|card| card.id == id).unwrap();
+        let card = player.hand.remove(at);
+        player.assets.push(runtime::AssetState {
+            card,
+            ready: true,
+            uses: 0,
+            damage: 0,
+            horror: 0,
+        });
+        id
+    }
+
+    /// Move every card in `who`'s hand to the bottom of their deck.
+    pub(crate) fn empty_hand_for_test(&mut self, who: Investigator) {
+        let player = &mut self.runtime.as_mut().expect("Scenario play").players[who.index()];
+        let hand = std::mem::take(&mut player.hand);
+        player.deck.extend(hand);
     }
 }
 

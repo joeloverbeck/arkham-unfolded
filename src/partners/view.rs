@@ -4,10 +4,18 @@
 //! investigators only. Other hands, deck order and the encounter deck are absent.
 //! Other players are named only by their investigators.
 
-use super::{Control, Controller, Routing, routing};
+use super::{Control, Controller, Routing, Shared, SharedKind, routing};
 use crate::gathering::{CardView, Investigator, OptionOwner, Session, inspection};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
+
+/// A shared decision this player takes part in, as its view gives it.
+pub(super) struct SharedPart<'a> {
+    pub decision: &'a Shared,
+    pub view: Value,
+    /// Whether it waits on its players now.
+    pub waits: bool,
+}
 
 /// Watcher from Another Dimension: "Hidden. Revelation - Secretly add this enemy
 /// to your hand". Only its holder's player knows where it is.
@@ -28,6 +36,8 @@ pub(super) fn build(
     control: &Control,
     routing: &Routing,
     viewer: Viewer<'_>,
+    awaited: &[(Controller, Option<Investigator>)],
+    shared: &[SharedPart<'_>],
 ) -> Value {
     let me = Controller::Partner(viewer.partner.to_owned());
     let mine: Vec<_> = Investigator::ALL
@@ -135,10 +145,20 @@ pub(super) fn build(
         "stage": observation.stage,
         "you_play": mine,
         "lead": observation.lead,
-        "decision": decision(control, routing, &me, &mine, &observation),
+        "decision": decision(control, routing, &me, &mine, &observation, awaited, shared),
         "investigators": investigators,
     });
     let fields = view.as_object_mut().expect("An object");
+    if !shared.is_empty() {
+        fields.insert(
+            "shared".into(),
+            Value::Array(shared.iter().map(|part| part.view.clone()).collect()),
+        );
+    }
+    // In a commitment it takes part in, every player's pending cards are visible.
+    let sees_pending = shared
+        .iter()
+        .any(|part| part.decision.kind == SharedKind::Commitment);
     if let Some(play) = &observation.play {
         let act = format!("{:05}", 1107 + usize::from(play.act));
         let agenda = format!("{:05}", 1104 + usize::from(play.agenda));
@@ -225,19 +245,36 @@ pub(super) fn build(
             if let Some(source) = &test.source_card {
                 cards.see(&source.code, false);
             }
-            // Pending commitments of another player's investigators are in their hands.
+            // Another player's investigators' cards are in their hands: only the
+            // ones pending in a commitment this player shares are shown.
+            let shown = |id: u64| {
+                own.iter().any(|own| u64::from(*own) == id)
+                    || (sees_pending && test.selected.iter().any(|card| u64::from(*card) == id))
+            };
             if let Some(commitment) = value["commitment"].as_array_mut() {
-                commitment.retain(|entry| {
-                    entry["owner"]
-                        .as_str()
-                        .is_some_and(|owner| mine.iter().any(|who| who.id() == owner))
-                });
+                commitment.retain(|entry| entry["card_id"].as_u64().is_some_and(shown));
             }
             if let Some(selected) = value["selected"].as_array_mut() {
-                selected.retain(|id| {
-                    id.as_u64()
-                        .is_some_and(|id| own.iter().any(|own| u64::from(*own) == id))
-                });
+                selected.retain(|id| id.as_u64().is_some_and(shown));
+            }
+            if sees_pending {
+                let pending: Vec<Value> = play
+                    .players
+                    .iter()
+                    .filter(|player| !is_mine(player.investigator))
+                    .flat_map(|player| {
+                        player
+                            .hand
+                            .iter()
+                            .filter(|card| test.selected.contains(&card.id))
+                            .map(move |card| (player.investigator, card))
+                    })
+                    .map(|(owner, card)| {
+                        cards.see(&card.code, false);
+                        json!({"investigator": owner, "id": card.id, "code": card.code, "title": card.title})
+                    })
+                    .collect();
+                value["others_pending"] = Value::Array(pending);
             }
             fields.insert("test".into(), value);
         }
@@ -250,13 +287,16 @@ pub(super) fn build(
 }
 
 /// The pending decision as this player meets it: its own options, and who else
-/// decides or may act now, by investigator.
+/// decides or may act now, by investigator. A shared decision's completing option
+/// is listed for every player taking part: choosing it is readiness.
 fn decision(
     control: &Control,
     routing: &Routing,
     me: &Controller,
     mine: &[Investigator],
     observation: &crate::gathering::Observation,
+    awaited: &[(Controller, Option<Investigator>)],
+    shared: &[SharedPart<'_>],
 ) -> Value {
     let label = |id: &str| {
         observation
@@ -285,14 +325,35 @@ fn decision(
             }
         }
     }
-    if let Some(who) = routing.awaited_investigator()
-        && routing.awaiting() != Some(me)
-        && !mine.contains(&who)
-    {
-        others.insert(who.index());
+    for part in shared {
+        let decision = part.decision;
+        let investigator = decision
+            .participants
+            .iter()
+            .find(|who| mine.contains(who))
+            .copied();
+        let mut ids = vec![decision.close.as_str()];
+        if decision.kind == (SharedKind::Payment { at_round_end: true }) {
+            ids.push("round-end:decline-act");
+        }
+        for id in ids {
+            let mut label = label(id);
+            if decision.kind != (SharedKind::Payment { at_round_end: true }) {
+                label = format!("{label} (marks you ready)");
+            }
+            options.push(json!({"id": id, "label": label, "investigator": investigator}));
+        }
+    }
+    for (player, who) in awaited {
+        if let Some(who) = who
+            && player != me
+            && !mine.contains(who)
+        {
+            others.insert(who.index());
+        }
     }
     let mut decision = json!({
-        "yours": routing.awaiting() == Some(me),
+        "yours": awaited.iter().any(|(player, _)| player == me),
         "prompt": observation.prompt,
         "options": options,
         "others_deciding": others.into_iter().map(|index| Investigator::ALL[index].name()).collect::<Vec<_>>(),
@@ -300,8 +361,10 @@ fn decision(
     let note = if table {
         Some("The lead investigator is chosen at the table.")
     } else if routing.with_human() && routing.awaiting() != Some(me) {
+        Some("Group choices are made at the table in this version; wait for your next decision.")
+    } else if shared.iter().any(|part| !part.waits) {
         Some(
-            "Group choices and shared decisions are made at the table in this version; wait for your next decision.",
+            "A group clue payment is possible: choose an allocation to propose your investigators' part.",
         )
     } else {
         None
