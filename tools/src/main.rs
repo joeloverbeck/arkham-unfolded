@@ -6,6 +6,7 @@ mod handoff;
 mod interaction;
 mod merge;
 mod native;
+mod partner;
 mod portal;
 use arkham_tools::process;
 mod profile;
@@ -76,6 +77,10 @@ enum Command {
     /// Send requests to a held agent seat over its socket and print each response unchanged.
     #[command(after_help = "Agent seat: README.md#held-session")]
     Seat(seat::Args),
+    /// Play investigators at the running Arkham table as an agent partner: join, wait,
+    /// observe, choose and leave.
+    #[command(after_help = partner::GUIDE)]
+    Partner(partner::Args),
     /// Add or remove checkouts that build into the owner's Cargo target.
     #[command(
         after_help = "Shared target: docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts"
@@ -121,6 +126,7 @@ fn main() -> ExitCode {
         Command::Native { command } => native::run(command),
         Command::ProfileNative(args) => profile::capture(args),
         Command::Seat(args) => seat::run(args),
+        Command::Partner(args) => partner::run(args),
         Command::Worktree { command } => worktree::run(command),
     };
     match result {
