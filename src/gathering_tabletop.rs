@@ -47,6 +47,7 @@ mod shuffle;
 mod sideboard;
 mod slots;
 mod story;
+mod talk;
 mod trays;
 mod ui;
 mod violin;
@@ -145,6 +146,8 @@ struct Table {
     partners: partners::Shown,
     /// Counts restarts in this window, so partner sessions end with their attempt.
     attempt: u64,
+    /// Table talk and partners' action lines (#209): this sitting's, never saved.
+    talk: talk::Talk,
 }
 
 impl Table {
@@ -203,6 +206,7 @@ impl Table {
             clue_payment: None,
             partners: partners::Shown::default(),
             attempt: 0,
+            talk: talk::Talk::default(),
         }
     }
 
@@ -780,6 +784,7 @@ fn return_selection_command(
 fn install(app: &mut App) {
     capture::install(app);
     controls::install(app);
+    talk::install(app);
     app.init_resource::<Actions>()
         .init_resource::<Navigation>()
         .init_resource::<consequences::State>()
@@ -1350,6 +1355,8 @@ fn handle_actions(
                         next.attempt = table.attempt + 1;
                         next.presentation
                             .set_control(table.presentation.control().clone());
+                        // Table talk belongs to the sitting, not the attempt.
+                        next.talk = std::mem::take(&mut table.talk);
                         next.notice = format!(
                             "Started a new Gathering attempt. Previous attempt archived at {}",
                             archive.display()

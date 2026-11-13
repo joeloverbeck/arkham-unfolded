@@ -45,6 +45,8 @@ pub(super) enum Input {
     Hand(Investigator),
     /// Return an investigator to the human at once.
     TakeOver(Investigator),
+    /// Open the message box (#209).
+    Speak,
 }
 
 /// How the table shows the investigator it waits for when a partner plays it.
@@ -413,6 +415,7 @@ pub(super) fn serve(world: &mut World) {
                         partners.host.set_selected(who, !selected);
                     }
                     Input::TakeOver(who) => partners.host.set_selected(who, false),
+                    Input::Speak => table.talk.open(),
                 }
                 table.dirty = true;
             }
@@ -429,6 +432,10 @@ pub(super) fn serve(world: &mut World) {
                 partners.attempt = table.attempt;
             }
             let mut sitting = Sitting { table, settled };
+            if let Some(text) = sitting.table.talk.outgoing.take() {
+                let said = partners.host.human_says(&text, &sitting);
+                sitting.table.talk.said(said);
+            }
             for incoming in partners.drain() {
                 answers.extend(partners.host.receive(
                     &incoming.line,
@@ -438,6 +445,16 @@ pub(super) fn serve(world: &mut World) {
                 ));
             }
             answers.extend(partners.host.poll(&mut sitting, now));
+            sitting.table.talk.closed = partners.host.talk_closed(&sitting);
+            if table.talk.hear(partners.host.table_talk())
+                && table
+                    .inspection
+                    .as_ref()
+                    .is_some_and(|(_, code)| code == talk::LOG)
+            {
+                // Menu → Table talk is open: show the new message there.
+                table.dirty = true;
+            }
             for (reply, answer) in answers {
                 let _ = reply.send(answer.to_string());
             }
@@ -635,6 +652,17 @@ impl rules::Table for Sitting<'_> {
             .unwrap_or(before.history.len());
         if entry < history.len() {
             self.table.partners.attributed.push((entry, by));
+        }
+        // A partner's decision shows as an action line beside its investigator's
+        // portrait (#209); the human's own decisions get none.
+        if let Some(label) = label
+            && matches!(
+                self.table.presentation.control().controller(by),
+                Controller::Partner(_)
+            )
+        {
+            let round = before.play.as_ref().map(|play| play.round);
+            self.table.talk.lines.push(talk::Line { by, label, round });
         }
         Ok(())
     }

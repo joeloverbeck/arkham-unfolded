@@ -496,7 +496,8 @@ pub(super) fn render(
     context: &CardRender,
     reveal_open: bool,
 ) {
-    screen::header(commands, Panel, |p| {
+    // The turn indicator: speech boxes keep clear of it.
+    screen::header(commands, (Panel, talk::Avoid), |p| {
         p.spawn(art.text(
             if view.play.is_some() {
                 "The Gathering · Standard"
@@ -539,11 +540,12 @@ pub(super) fn render(
                 current_turn,
                 &marks,
             );
-            p.commands().entity(entity).observe(
-                move |_: On<Activate>, mut queue: ResMut<Actions>| {
+            p.commands()
+                .entity(entity)
+                .insert(talk::Portrait(who))
+                .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
                     queue.0.push(Action::Focus(Area::Investigator(who.index())));
-                },
-            );
+                });
         }
         for (name, area) in [
             ("Scenario", Area::Scenario),
@@ -569,6 +571,14 @@ pub(super) fn render(
         {
             button(art, p, "Resolve", Action::Resolve);
         }
+        if table.partners.enabled {
+            button(
+                art,
+                p,
+                talk::SPEAK,
+                Action::Partners(partners::Input::Speak),
+            );
+        }
         p.spawn(art.text("WASD: pan\nRight drag: orbit\nWheel: zoom\nHome: overview\n\nFocus does not select who acts.", 11., MUTED));
     });
     let token_decision = !table.is_presenting()
@@ -591,6 +601,7 @@ pub(super) fn render(
             TabGroup::new(1),
             ScrollPosition::default(),
             ScrollablePanel { inspection: false },
+            talk::Avoid,
         ),
         size,
         |p| {
@@ -756,6 +767,14 @@ pub(super) fn render(
             );
             if table.partners.menu_open {
                 partners_menu(p, art, table);
+            }
+            if table.partners.enabled || !table.talk.log.is_empty() {
+                button(
+                    art,
+                    p,
+                    "Table talk",
+                    Action::Inspect("Table talk".into(), talk::LOG.into()),
+                );
             }
             button(
                 art,
@@ -984,6 +1003,18 @@ fn inspection(
                     ] {
                         button(art, body, title, Action::CreditLink(url));
                         body.spawn(art.text(url, 14., MUTED));
+                    }
+                    return;
+                }
+                if code == talk::LOG {
+                    for entry in table.talk.entries() {
+                        body.spawn((
+                            art.text(entry, 18., PAPER),
+                            Node {
+                                width: percent(100),
+                                ..default()
+                            },
+                        ));
                     }
                     return;
                 }
