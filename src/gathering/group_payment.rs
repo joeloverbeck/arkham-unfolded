@@ -145,6 +145,10 @@ pub struct GroupCluePayment {
 }
 
 impl GroupCluePayment {
+    /// The Barrier's round-end alternative to its payment: the act does not
+    /// advance at this round end.
+    pub const DECLINE: &str = "round-end:decline-act";
+
     /// Whether a choice identity is the listed payment, whose allocation is
     /// still to be named.
     pub fn is_listed(id: &str) -> bool {

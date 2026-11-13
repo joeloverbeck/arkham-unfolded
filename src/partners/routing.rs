@@ -13,9 +13,6 @@
 use super::{Control, Controller};
 use crate::gathering::{GroupCluePayment, Investigator, OptionOwner, Session};
 
-/// The Barrier's round-end alternative to its group clue payment.
-const DECLINE: &str = "round-end:decline-act";
-
 /// The players of the pending decision's options.
 #[derive(Clone, Debug)]
 pub struct Routing {
@@ -81,7 +78,8 @@ impl Shared {
         id == self.close
             || match self.kind {
                 SharedKind::Payment { at_round_end } => {
-                    (at_round_end && id == DECLINE) || GroupCluePayment::allocation_of(id).is_some()
+                    (at_round_end && id == GroupCluePayment::DECLINE)
+                        || GroupCluePayment::allocation_of(id).is_some()
                 }
                 _ => false,
             }
@@ -99,7 +97,9 @@ impl Routing {
         let with_human = owned
             .iter()
             .any(|option| option.owner == OptionOwner::Table);
-        let round_end = owned.iter().any(|option| option.id == DECLINE);
+        let round_end = owned
+            .iter()
+            .any(|option| option.id == GroupCluePayment::DECLINE);
         let mut shared: Vec<Shared> = Vec::new();
         let mut options = Vec::new();
         for option in owned {
@@ -109,7 +109,9 @@ impl Routing {
             {
                 let kind = if option.id == "commit:confirm" {
                     SharedKind::Commitment
-                } else if GroupCluePayment::is_listed(&option.id) || option.id == DECLINE {
+                } else if GroupCluePayment::is_listed(&option.id)
+                    || option.id == GroupCluePayment::DECLINE
+                {
                     SharedKind::Payment {
                         at_round_end: round_end,
                     }
@@ -117,7 +119,7 @@ impl Routing {
                     SharedKind::Window
                 };
                 // The Barrier's decline is the round-end payment's other outcome.
-                if option.id != DECLINE {
+                if option.id != GroupCluePayment::DECLINE {
                     shared.push(Shared {
                         kind,
                         close: option.id,

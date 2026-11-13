@@ -13,7 +13,7 @@
 use super::{Control, Controller, Routing, Shared, SharedKind, routing};
 use crate::gathering::{
     CardView, Investigator, OptionOwner, Session,
-    inspection::{self, INVESTIGATOR_CARDS, Sight},
+    inspection::{self, Sight},
 };
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
@@ -85,8 +85,8 @@ pub(super) fn build(
     let observation = session.observe();
     let full = viewer.full || viewer.board.is_none();
     let mut cards = Cards::new(viewer.sent, full);
-    for (code, _) in INVESTIGATOR_CARDS {
-        cards.see(code, false);
+    for who in Investigator::ALL {
+        cards.see(who.card_code(), false);
     }
     if observation.play.is_none() {
         for (code, revealed) in SETUP_CARDS {
@@ -553,7 +553,7 @@ fn decision(
             .copied();
         let mut ids = vec![decision.close.as_str()];
         if decision.kind == (SharedKind::Payment { at_round_end: true }) {
-            ids.push("round-end:decline-act");
+            ids.push(crate::gathering::GroupCluePayment::DECLINE);
         }
         for id in ids {
             let mut label = label(id);

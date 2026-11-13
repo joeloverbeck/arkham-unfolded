@@ -186,12 +186,7 @@ impl InvestigatorView {
     }
 
     fn definition(&self) -> &'static cards::CardDefinition {
-        let code = match self.investigator {
-            Investigator::Tony => "06003",
-            Investigator::Patrice => "06005",
-            Investigator::Jacqueline => "60401",
-        };
-        cards::definition(code).expect("Selected investigator definition")
+        cards::definition(self.investigator.card_code()).expect("Selected investigator definition")
     }
 }
 

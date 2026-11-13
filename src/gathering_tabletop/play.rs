@@ -30,14 +30,6 @@ pub(super) fn location_text(original: &str) -> String {
     text
 }
 
-fn investigator_code(investigator: Investigator) -> &'static str {
-    match investigator {
-        Investigator::Tony => "06003",
-        Investigator::Patrice => "06005",
-        Investigator::Jacqueline => "60401",
-    }
-}
-
 fn pile_text(title: &str, cards: &[CardView]) -> String {
     let mut lines = vec![format!("{title} · {} cards", cards.len())];
     for card in cards {
@@ -464,7 +456,7 @@ impl Painter<'_, '_, '_> {
             self.materials,
             self.context
                 .art
-                .image(&format!("standee/{}", investigator_code(who)))
+                .image(&format!("standee/{}", who.card_code()))
                 .as_ref(),
             position,
             layout::investigator_class(index),
@@ -497,7 +489,7 @@ impl Painter<'_, '_, '_> {
                 source: Source::Investigator(who),
                 at: position,
                 title: who.name().into(),
-                inspect_code: investigator_code(who).into(),
+                inspect_code: who.card_code().into(),
             },
         );
     }
@@ -555,7 +547,7 @@ impl Painter<'_, '_, '_> {
             }
             self.commands.entity(label).insert(ScenePiece);
             let inspect_code = match &source {
-                Source::Investigator(who) => investigator_code(*who).into(),
+                Source::Investigator(who) => who.card_code().into(),
                 Source::Location(code) => code.clone(),
                 _ => String::new(),
             };

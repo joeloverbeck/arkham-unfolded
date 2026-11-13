@@ -48,6 +48,31 @@ pub enum UseKind {
     Key,
 }
 
+impl UseKind {
+    pub const ALL: [Self; 7] = [
+        Self::Ammo,
+        Self::Charge,
+        Self::Supply,
+        Self::Resource,
+        Self::Offering,
+        Self::Bounty,
+        Self::Key,
+    ];
+
+    /// The name of these counters on a card, as Inspect and the table say it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ammo => "Ammo",
+            Self::Charge => "Charges",
+            Self::Supply => "Supplies",
+            Self::Resource => "Resources",
+            Self::Offering => "Offerings",
+            Self::Bounty => "Bounties",
+            Self::Key => "Keys",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct EnemyValues {
     pub combat: u8,

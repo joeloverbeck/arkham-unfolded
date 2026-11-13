@@ -113,11 +113,7 @@ pub(super) fn render(
     let view = context.view;
     for (index, investigator) in view.investigators.iter().enumerate() {
         let who = investigator.investigator;
-        let code = match who {
-            Investigator::Tony => "06003",
-            Investigator::Patrice => "06005",
-            Investigator::Jacqueline => "60401",
-        };
+        let code = who.card_code();
         card(
             commands,
             meshes,

@@ -2,6 +2,16 @@ use super::*;
 use crate::tabletop_pieces as pieces;
 use bevy::ecs::system::RunSystemOnce;
 
+/// Review fix C2: Inspect's text, built without the table, names a card's use
+/// counters as the table's counters do.
+#[test]
+fn inspect_and_the_table_name_each_use_counter_alike() {
+    for kind in crate::gathering::UseKind::ALL {
+        let counter = super::card_counters::use_counter(Some(kind)).expect("A counter");
+        assert_eq!(counter.name(), kind.name(), "{kind:?}");
+    }
+}
+
 #[test]
 fn ability_marker_sits_right_of_jacqueline_and_tracks_only_round_usage() {
     use crate::tabletop_counters::AbilityMarker;

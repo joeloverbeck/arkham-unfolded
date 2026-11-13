@@ -8,13 +8,6 @@ use super::{CardView, Investigator, Observation, cards};
 /// the selected decks, so only her player may know where it is.
 pub const HIDDEN_IN_HAND: (&str, Investigator) = ("06017", Investigator::Patrice);
 
-/// The three investigator cards, which every player sees.
-pub const INVESTIGATOR_CARDS: [(&str, Investigator); 3] = [
-    ("06003", Investigator::Tony),
-    ("06005", Investigator::Patrice),
-    ("60401", Investigator::Jacqueline),
-];
-
 /// Whose hidden cards an inspection may show.
 #[derive(Clone, Copy, Debug)]
 pub enum Sight<'a> {
@@ -49,7 +42,7 @@ pub fn table_card(observation: &Observation, code: &str, sight: Sight<'_>) -> Op
     let Some(play) = observation.play.as_ref() else {
         // Setup: the investigator cards, permanents, the hands this sight includes
         // and the scenario's opening cards.
-        let visible = INVESTIGATOR_CARDS.iter().any(|(card, _)| *card == code)
+        let visible = Investigator::ALL.iter().any(|who| who.card_code() == code)
             || ["01104", "01105", "01108", "01111"].contains(&code)
             || observation.investigators.iter().any(|setup| {
                 setup.permanents.iter().any(|card| card.code == code)
@@ -60,10 +53,10 @@ pub fn table_card(observation: &Observation, code: &str, sight: Sight<'_>) -> Op
             .then(|| card(code).or_else(|| scenario_card(code, code == "01111")))
             .flatten();
     };
-    if let Some(player) = INVESTIGATOR_CARDS
+    if let Some(player) = Investigator::ALL
         .iter()
-        .find(|(card, _)| *card == code)
-        .and_then(|(_, who)| {
+        .find(|who| who.card_code() == code)
+        .and_then(|who| {
             play.players
                 .iter()
                 .find(|player| player.investigator == *who)
@@ -178,8 +171,7 @@ pub fn table_card(observation: &Observation, code: &str, sight: Sight<'_>) -> Op
             for player in &play.players {
                 for asset in &player.assets {
                     let counter = match asset.use_kind() {
-                        Some(cards::UseKind::Supply) => "Supplies",
-                        Some(cards::UseKind::Key) => "Keys",
+                        Some(kind @ (cards::UseKind::Supply | cards::UseKind::Key)) => kind.name(),
                         _ => continue,
                     };
                     if asset.card.code == code {

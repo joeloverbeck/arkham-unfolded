@@ -199,7 +199,7 @@ pub(super) fn dispatch(table: &mut Table, action: Action) -> Option<Action> {
             return Some(Action::Choose(
                 epoch,
                 revision,
-                "round-end:decline-act".into(),
+                GroupCluePayment::DECLINE.into(),
             ));
         }
         Input::Decline => return None,
@@ -410,7 +410,7 @@ pub(super) fn render(
                         buttons
                             .commands()
                             .entity(other)
-                            .insert(ChoiceControl("round-end:decline-act".into()));
+                            .insert(ChoiceControl(GroupCluePayment::DECLINE.into()));
                     }
                     let label = if chooser.mine.is_some() && !chooser.complete() {
                         format!(

@@ -371,19 +371,15 @@ pub(super) fn serve(world: &mut World) {
     // Only this frame's own input and scene rebuild keep the table unsettled: work
     // waiting on settling (a choice, or a shared decision whose players are all
     // ready) can run on the next frame, which nothing else would request.
-    let next_frame = !settled && {
-        let pending = table_unsettled(world);
-        let table = world.resource::<Table>();
-        pending.iter().all(|reason| {
-            matches!(
-                reason,
-                Unsettled::CameraMotion | Unsettled::SceneRebuild | Unsettled::QueuedInput
-            )
-        }) && !table.modal()
-            && !table.menu_open
-            && !table.is_presenting()
-            && !table.context.is_open()
-    };
+    let next_frame = !settled
+        && settled_but(
+            world,
+            &[
+                Unsettled::CameraMotion,
+                Unsettled::SceneRebuild,
+                Unsettled::QueuedInput,
+            ],
+        );
     let redraw = world.resource_scope(|world, mut partners: Mut<Partners>| {
         world.resource_scope(|_, mut table: Mut<Table>| {
             let partners = &mut *partners;
@@ -512,11 +508,15 @@ fn presented(world: &mut World) -> bool {
 /// history, the menu or a card's menu holds the choice until it closes, so its
 /// consequences never start presenting unseen behind it (#210).
 fn settled(world: &mut World) -> bool {
+    settled_but(world, &[Unsettled::CameraMotion])
+}
+
+/// Whether the table is settled apart from `allowed`, with nothing of the human's
+/// open over it.
+fn settled_but(world: &mut World, allowed: &[Unsettled]) -> bool {
     let pending = table_unsettled(world);
     let table = world.resource::<Table>();
-    pending
-        .iter()
-        .all(|reason| *reason == Unsettled::CameraMotion)
+    pending.iter().all(|reason| allowed.contains(reason))
         && !table.modal()
         && !table.menu_open
         && !table.is_presenting()

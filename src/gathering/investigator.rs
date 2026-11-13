@@ -22,6 +22,14 @@ impl Investigator {
             Self::Jacqueline => "jacqueline",
         }
     }
+    /// The code of this investigator's card, which every player sees.
+    pub fn card_code(self) -> &'static str {
+        match self {
+            Self::Tony => "06003",
+            Self::Patrice => "06005",
+            Self::Jacqueline => "60401",
+        }
+    }
     pub fn name(self) -> &'static str {
         match self {
             Self::Tony => "Tony Morgan",

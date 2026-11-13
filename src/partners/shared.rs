@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 pub const REOPENINGS: u8 = 3;
 
 /// The Barrier's round-end alternative to paying its clues.
-const DECLINE: &str = "round-end:decline-act";
+const DECLINE: &str = GroupCluePayment::DECLINE;
 
 /// Which shared decision a record belongs to.
 #[derive(Clone, Debug, PartialEq, Eq)]
