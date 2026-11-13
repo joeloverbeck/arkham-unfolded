@@ -6,7 +6,7 @@ For input and presentation regressions, verify that tests use the production reg
 
 A change to an existing test that shrinks its fixture, widens a tolerance or removes an assertion names the accepted behavior change it reflects. Without one, report it as a regression the test now hides, citing the base and candidate versions of the test.
 
-Documentation that states how the code behaves keeps the conditions the code applies. Check each such claim against the lines it cites or that implement it, and report a dropped guard or exception with both locations.
+Documentation that states how the code behaves keeps each condition the path it documents can reach. Check each such claim against the lines it cites or that implement it, and report a dropped guard or exception with both locations. Report a condition that path cannot reach, such as a guard on a state it never enters, as unreachable, citing each place its value is set; the text leaves it out. When the change adds an exception, check that it also qualifies the general statement it excepts, and report an unqualified one with both locations.
 
 For tabletop presentation, controls or rules-text changes, apply the [visual and wording review](docs/agents/native-verification.md#visual-and-wording-review) to the affected player journey, including existing cards and panels it exposes. Report observed defects separately from layout preferences and identify any unverified interaction. The guide owns these judgment criteria; automated checks own mechanical requirements.
 

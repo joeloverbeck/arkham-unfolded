@@ -54,6 +54,8 @@ State what is out of scope. This prevents the agent from gold-plating or making 
 **Current behavior:**
 Describe what happens now. For bugs, this is the broken behavior.
 For enhancements, this is the status quo the feature builds on.
+Of triage's own readings of the code, state as fact only those
+traced end to end; label the rest as leads for the agent to verify.
 
 **Desired behavior:**
 Describe what should happen after the agent's work is complete.
