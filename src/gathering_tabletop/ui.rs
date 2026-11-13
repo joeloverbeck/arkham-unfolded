@@ -17,6 +17,66 @@ pub(super) fn portraits(
     })
 }
 
+/// What the decision display says of partners: each partner the table waits on,
+/// with Take over, readiness in shared decisions, and the passes before a
+/// decision that lists another player's options (F1): what the human may use
+/// before another player's decision, or his own choice waiting for the others,
+/// or why it was released. His options there, and his pass, are the ones the
+/// partner library gives the view.
+fn partner_lines(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, view: &Observation) {
+    for (who, _) in &table.partners.deciding {
+        let who = *who;
+        let Some(cue) = table.partners.cue(who) else {
+            continue;
+        };
+        p.spawn(art.text(cue, 16., PARTNER));
+        if let Some(uses) = table.partners.uses(who) {
+            p.spawn(art.text(uses, 15., OPPORTUNITY));
+        }
+        screen::controls(p, |row| {
+            control(
+                art,
+                row,
+                &format!("Take over {}", who.name()),
+                Action::Partners(partners::Input::TakeOver(who)),
+            );
+        });
+    }
+    for line in table.partners.readiness_lines() {
+        p.spawn(art.text(line, 15., PARTNER));
+    }
+    if let Some(before) = table.partners.human_window()
+        && !table.is_presenting()
+        && !table.modal()
+    {
+        let uses: Vec<String> = controls::opportunities(view)
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect();
+        let what = if uses.is_empty() {
+            "your options".to_owned()
+        } else {
+            uses.join(", ")
+        };
+        p.spawn(art.text(
+            format!("You may use {what} before {before}"),
+            15.,
+            OPPORTUNITY,
+        ));
+    }
+    if let Some(held) = &table.partners.held {
+        p.spawn(art.text(
+            format!("{held}: waits for the other players to pass"),
+            15.,
+            PARTNER,
+        ));
+    }
+    // His held choice was released without being applied; the notice says why.
+    if let Some(released) = &table.partners.released {
+        p.spawn(art.text(released, 15., PARTNER));
+    }
+}
+
 fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, view: &Observation) {
     let tokens = view.play.as_ref().unwrap().tokens.as_ref().unwrap();
     if let Some(summary) = view.play.as_ref().and_then(test_summary) {
@@ -66,6 +126,17 @@ fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
             },
         ));
     }
+    // A partner's reveal can list Jacqueline's reaction for the human, or the
+    // human's can wait for a partner's (F1).
+    if table.partners.enabled {
+        p.spawn(Node {
+            flex_shrink: 0.,
+            flex_direction: FlexDirection::Column,
+            row_gap: px(4),
+            ..default()
+        })
+        .with_children(|lines| partner_lines(lines, art, table, view));
+    }
     p.spawn((
         Node {
             min_height: px(0),
@@ -89,12 +160,14 @@ fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
             for choice in &view.choices {
                 if matches!(
                     choice.id.as_str(),
-                    "tokens:confirm" | "test:reveal" | "undo"
+                    "tokens:confirm" | "test:reveal" | "undo" | crate::partners::PASS_BEFORE
                 ) {
                     control(
                         art,
                         row,
-                        choice_label(choice),
+                        &table
+                            .partners
+                            .readiness_label(&choice.id, choice_label(choice)),
                         Action::Choose(table.epoch, view.revision, choice.id.clone()),
                     );
                 }
@@ -655,60 +728,7 @@ pub(super) fn render(
             if let Some(summary) = view.play.as_ref().and_then(test_summary) {
                 p.spawn(art.text(summary, 15., GOLD));
             }
-            for (who, _) in &table.partners.deciding {
-                let who = *who;
-                let Some(cue) = table.partners.cue(who) else {
-                    continue;
-                };
-                p.spawn(art.text(cue, 16., PARTNER));
-                if let Some(uses) = table.partners.uses(who) {
-                    p.spawn(art.text(uses, 15., OPPORTUNITY));
-                }
-                screen::controls(p, |row| {
-                    control(
-                        art,
-                        row,
-                        &format!("Take over {}", who.name()),
-                        Action::Partners(partners::Input::TakeOver(who)),
-                    );
-                });
-            }
-            for line in table.partners.readiness_lines() {
-                p.spawn(art.text(line, 15., PARTNER));
-            }
-            // The player window before another investigator's action waits for
-            // the human's pass while he holds a fast option there (F1). His options
-            // there, and his pass, are the ones the partner library gives the view.
-            if let Some(actor) = table.partners.human_turn_window()
-                && !table.is_presenting()
-                && !table.modal()
-            {
-                let uses: Vec<String> = controls::opportunities(view)
-                    .into_iter()
-                    .map(|(_, label)| label)
-                    .collect();
-                let what = if uses.is_empty() {
-                    "your options".to_owned()
-                } else {
-                    uses.join(", ")
-                };
-                p.spawn(art.text(
-                    format!("You may use {what} before {}'s action", actor.name()),
-                    15.,
-                    OPPORTUNITY,
-                ));
-            }
-            if let Some(held) = &table.partners.held {
-                p.spawn(art.text(
-                    format!("{held}: waits for the other players to pass"),
-                    15.,
-                    PARTNER,
-                ));
-            }
-            // His held choice was released without being applied; the notice says why.
-            if let Some(released) = &table.partners.released {
-                p.spawn(art.text(released, 15., PARTNER));
-            }
+            partner_lines(p, art, table, view);
             if !table.is_presenting() {
                 for (_, label) in controls::window_opportunities(view) {
                     p.spawn(art.text(format!("Available now: {label}"), 15., OPPORTUNITY));

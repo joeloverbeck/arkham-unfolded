@@ -87,8 +87,8 @@ pub(super) struct Shown {
     pub awaited: Vec<Investigator>,
     /// The pending shared decisions whose participants several players control.
     pub shared: Vec<SharedState>,
-    /// The label of the human's choice in his own turn while it waits for the
-    /// other players with a fast option to pass (F1).
+    /// The label of the human's choice in his own decision while it waits for
+    /// the other players with an option there to pass (F1).
     pub held: Option<String>,
     /// Why the human's held choice was not applied, while he chooses again: another
     /// player acted first (review fix G2).
@@ -142,20 +142,18 @@ impl Shown {
             .find(|state| state.close == id && state.of(&Controller::Human).is_some())
     }
 
-    /// In another investigator's turn, while the human holds a fast option in the
-    /// player window before that investigator's action and has not passed: that
-    /// investigator (F1). His options there, his pass among them, are the view's.
-    pub(super) fn human_turn_window(&self) -> Option<Investigator> {
-        self.shared.iter().find_map(|state| match state.kind {
-            SharedKind::Turn { actor }
-                if state
+    /// In another player's decision, while the human holds an option there and
+    /// has not passed: what his pass comes before, such as "Tony Morgan's action"
+    /// (F1). His options there, his pass among them, are the view's.
+    pub(super) fn human_window(&self) -> Option<String> {
+        self.shared
+            .iter()
+            .filter(|state| {
+                state
                     .of(&Controller::Human)
-                    .is_some_and(|human| !human.ready) =>
-            {
-                Some(actor)
-            }
-            _ => None,
-        })
+                    .is_some_and(|human| !human.ready)
+            })
+            .find_map(|state| state.kind.before())
     }
 
     /// The shared clue payment the human takes part in, while partners share it.
@@ -193,16 +191,14 @@ impl Shown {
         };
         if human.ready {
             let done = match state.kind {
-                SharedKind::Window | SharedKind::Turn { .. } => "Passed",
+                SharedKind::Window | SharedKind::Before { .. } => "Passed",
                 SharedKind::Commitment => "Confirmed",
                 SharedKind::Payment { .. } => "Ready",
             };
             let outstanding = state.outstanding();
-            // Once every player in a turn's window has passed, its action is next.
-            let waiting = match state.kind {
-                SharedKind::Turn { actor } if outstanding.is_empty() => {
-                    format!("{}'s action", actor.name())
-                }
+            // Once every other player has passed, the decider's choice is next.
+            let waiting = match state.kind.before() {
+                Some(before) if outstanding.is_empty() => before,
                 _ => names(&outstanding),
             };
             return format!("{done} · waiting for {waiting}");
@@ -223,7 +219,9 @@ impl Shown {
                     SharedKind::Commitment => "Commitments".to_owned(),
                     SharedKind::Window => "Window".to_owned(),
                     SharedKind::Payment { .. } => "Clue payment".to_owned(),
-                    SharedKind::Turn { actor } => format!("Before {}'s action", actor.name()),
+                    SharedKind::Before { .. } => {
+                        format!("Before {}", state.kind.before().unwrap_or_default())
+                    }
                 };
                 let players: Vec<String> = state
                     .players
@@ -232,10 +230,10 @@ impl Shown {
                         let names: Vec<_> =
                             player.investigators.iter().map(|who| who.name()).collect();
                         let status = match state.kind {
-                            SharedKind::Window | SharedKind::Turn { .. } if player.ready => {
+                            SharedKind::Window | SharedKind::Before { .. } if player.ready => {
                                 "passed"
                             }
-                            SharedKind::Window | SharedKind::Turn { .. } => "may act",
+                            SharedKind::Window | SharedKind::Before { .. } => "may act",
                             _ if player.ready => "ready",
                             _ => "deciding",
                         };
@@ -636,7 +634,7 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
     let routed = if control.solo() {
         Routed::default()
     } else {
-        let held = partners.host.human_turn(&table.session).map(str::to_owned);
+        let held = partners.host.human_held(&table.session).map(str::to_owned);
         match &partners.routed {
             Some(kept)
                 if kept.revision == revision
@@ -720,11 +718,11 @@ fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &Control
     let awaited = host.awaited(session);
     let observation = session.observe();
     let shared = host.shared(session);
-    // In a turn's player window the rules session lists no pass: what a player may
-    // use there is every option of theirs (F1).
-    let in_turn = |who: Investigator| {
+    // Before another player's decision the rules session lists no pass: what a
+    // player may use there is every option of theirs (F1).
+    let before_decision = |who: Investigator| {
         shared.iter().any(|state| {
-            matches!(state.kind, SharedKind::Turn { .. })
+            matches!(state.kind, SharedKind::Before { .. })
                 && state
                     .players
                     .iter()
@@ -738,7 +736,7 @@ fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &Control
         window.choices = control.choices_of(session, player);
         window
     };
-    let held = host.human_turn(session).map(|id| {
+    let held = host.human_held(session).map(|id| {
         observation
             .choices
             .iter()
@@ -752,7 +750,7 @@ fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &Control
             let who = (*who)?;
             let window = uses(controller);
             let own = format!("{} — ", who.name());
-            let opportunities = if in_turn(who) {
+            let opportunities = if before_decision(who) {
                 controls::opportunities(&window)
             } else {
                 controls::window_opportunities(&window)

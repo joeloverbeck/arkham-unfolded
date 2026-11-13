@@ -5,7 +5,7 @@
 
 use super::super::tests::{button_with_label, finish_presentation, host, rendered_text};
 use super::*;
-use crate::gathering::Investigator::{Jacqueline, Patrice};
+use crate::gathering::Investigator::{Jacqueline, Patrice, Tony};
 use std::{fs, os::unix::fs::FileTypeExt, os::unix::fs::PermissionsExt};
 
 struct Partnered {
@@ -579,6 +579,56 @@ fn the_human_continues_a_partners_encounter_reading_without_resolving_it() {
     assert!(!table.human_may("revelation:resolve"));
 }
 
+/// S1 in an encounter reading. Patrice, handed to partners, drew Vision; the
+/// human's Tony is at her location with A Test of Will ("Play when an investigator
+/// at your location draws a non-weakness treachery card", 60513), which he may play
+/// before her revelation resolves (RR p.24 1.4). The reading offers it and his pass
+/// before Patrice's decision; his pass is taken from the reading, which closes, and
+/// the decision display shows him passed. Placing the card is not a recorded
+/// decision, so this table is never saved and nothing here is committed.
+#[test]
+fn the_human_passes_on_a_test_of_will_from_a_partners_encounter_reading() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::PatriceCancellationVision);
+    let drawers = session.observe().play.unwrap().players[Patrice.index()]
+        .location
+        .clone();
+    session.hand_for_test(Tony, "60513");
+    session.place_for_test(Tony, 0, &drawers);
+    let table = Table::new(session, directory.path().join("encounter.session.json"));
+    let mut app = super::super::tests::host_with_table(table, false);
+    app.insert_resource(PartnerSocket(directory.path().join("partners.sock")));
+    // The reading is up from the start, so the menu cannot open: the menu's
+    // inputs go to the table directly.
+    let inputs = &mut app.world_mut().resource_mut::<Table>().partners.inputs;
+    inputs.extend([Input::Hand(Patrice), Input::Enable(true)]);
+    app.update();
+    app.update();
+    let shown = rendered_text(&mut app);
+    assert!(shown.contains("A Test of Will"), "{shown}");
+    let pass = "Pass before Patrice Hathaway's decision";
+    assert!(button_with_label(&mut app, pass).is_some(), "{shown}");
+
+    let revision = app.world().resource::<Table>().session.revision();
+    press(&mut app, pass);
+    app.update();
+    let table = app.world().resource::<Table>();
+    assert!(
+        table.presentation.encounter().current().is_none(),
+        "His pass closes his reading: {}",
+        table.notice
+    );
+    assert_eq!(table.session.revision(), revision, "Patrice's to resolve");
+    assert!(
+        table.partners.shared.iter().any(|state| state
+            .of(&Controller::Human)
+            .is_some_and(|human| human.ready)),
+        "{:?}",
+        table.partners.shared
+    );
+}
+
 /// Joel's co-play session 1 (#202, comment 6858608958): Jacqueline, Joel's,
 /// investigated, and the table showed Patrice's partner thinking in two player
 /// windows with nothing Joel could see she might do. The windows were legal and
@@ -987,6 +1037,13 @@ fn violin_in_jacquelines_turn(directory: &Path, partners: &[Investigator]) -> (A
     let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Assets(
         crate::gathering::AssetFixture::RobesOpportunity,
     ));
+    opened(session, directory, partners)
+}
+
+/// `session` saved as the window saves it, opened at the table with `partners`
+/// handed to agent partners and partners enabled through the menu, as
+/// `partnered` does, and the menu closed again.
+fn opened(session: Session, directory: &Path, partners: &[Investigator]) -> (App, PathBuf) {
     let save = directory.join("turn.session.json");
     continuity::save_session(&save, &session).unwrap();
     let socket = directory.join("partners.sock");
@@ -1039,7 +1096,7 @@ fn the_human_passes_before_a_partners_action_while_holding_a_fast_option() {
     assert!(
         offered(&mut app)
             .iter()
-            .any(|id| id == crate::partners::TURN_PASS),
+            .any(|id| id == crate::partners::PASS_BEFORE),
         "{:?}",
         offered(&mut app)
     );
@@ -1132,7 +1189,9 @@ fn the_humans_own_turn_choice_is_shown_waiting_until_the_partner_passes() {
     let passed = exchange(
         &mut app,
         &socket,
-        &[json!({"op": "choose", "partner": partner, "revision": at, "id": "turn-window:pass"})],
+        &[
+            json!({"op": "choose", "partner": partner, "revision": at, "id": crate::partners::PASS_BEFORE}),
+        ],
     );
     assert_eq!(passed[0]["status"], "ready", "{}", passed[0]);
     finish_presentation(&mut app);
@@ -1216,6 +1275,144 @@ fn an_unclaimed_seat_with_a_fast_option_holds_the_humans_turn_until_taken_over()
         at + 1,
         "Applied once no other player holds a fast option"
     );
+}
+
+/// Tony's chaos-token reveal as he investigates the Study in his first turn, with
+/// Jacqueline as lead and everyone in the Study, where The Gathering's setup places
+/// them, every window passed and nothing committed; opened at the table with
+/// `partners` handed to agent partners.
+fn tonys_reveal(directory: &Path, partners: &[Investigator]) -> (App, PathBuf) {
+    let mut session = Session::with_seed(89);
+    let step = |session: &mut Session, id: &str| {
+        session
+            .choose(session.revision(), id)
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
+    };
+    for id in [
+        "lead:jacqueline",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "turn:tony",
+    ] {
+        step(&mut session, id);
+    }
+    step(&mut session, "action:ordinary:investigate");
+    while let Some(id) = ["window:pass", "test-card:pass", "commit:confirm"]
+        .into_iter()
+        .find(|id| {
+            session
+                .observe()
+                .choices
+                .iter()
+                .any(|choice| choice.id == *id)
+        })
+    {
+        step(&mut session, id);
+    }
+    let listed: Vec<String> = session
+        .observe()
+        .choices
+        .into_iter()
+        .map(|choice| choice.id)
+        .collect();
+    assert!(
+        listed.iter().any(|id| id == "test:reveal")
+            && listed.iter().any(|id| id == "tokens:jacqueline"),
+        "{listed:?}"
+    );
+    opened(session, directory, partners)
+}
+
+/// S1, Joel's co-play session 2 (#202): Jacqueline's reaction showed in his controls
+/// for about a second, then Tony's partner's reveal resolved without him. Jacqueline
+/// Fine (60401): "[reaction] When an investigator at your location would reveal any
+/// number of chaos tokens…", used before the reveal resolves (RR p.3 "Triggered
+/// Abilities"; p.21 "When"). Over the table host: the token display names her
+/// reaction as what the human may use before Tony's decision and offers Pass; the
+/// partner's reveal is held, and it is applied once he presses Pass.
+#[test]
+fn the_human_passes_on_jacquelines_reaction_before_a_partners_reveal() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, socket) = tonys_reveal(directory.path(), &[Tony]);
+    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    assert_eq!(joined[0]["investigators"], json!(["tony"]), "{}", joined[0]);
+    let partner = joined[0]["partner"].as_str().unwrap().to_owned();
+    app.update();
+    let shown = rendered_text(&mut app);
+    assert!(
+        shown.contains("You may use Jacqueline Fine")
+            && shown.contains("reveal 3 tokens, then cancel before Tony Morgan's decision"),
+        "{shown}"
+    );
+    let pass = "Pass before Tony Morgan's decision";
+    assert!(button_with_label(&mut app, pass).is_some(), "{shown}");
+
+    let at = revision(&app);
+    let held = exchange(
+        &mut app,
+        &socket,
+        &[json!({"op": "choose", "partner": partner, "revision": at, "id": "test:reveal"})],
+    );
+    assert_eq!(held[0]["status"], "held", "{}", held[0]);
+    let told = connect(
+        &socket,
+        &[json!({"op": "wait", "partner": partner, "timeout_seconds": 60})],
+    );
+    for _ in 0..20 {
+        app.update();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!told.is_finished(), "Held for the human's pass");
+    assert_eq!(
+        revision(&app),
+        at,
+        "Not revealed while his reaction is open"
+    );
+    press(&mut app, pass);
+    pump(&mut app, || told.is_finished());
+    let answer = told.join().unwrap();
+    assert_eq!(answer[0]["status"], "chosen", "{}", answer[0]);
+    assert_eq!(revision(&app), at + 1);
+}
+
+/// S1 both ways, over the table host: the human plays Tony and a partner plays
+/// Jacqueline beside him (60401). His reveal waits for her pass: the token display
+/// names his waiting choice and her outstanding pass, and his reveal is applied
+/// once she passes.
+#[test]
+fn the_humans_reveal_is_shown_waiting_for_a_partners_jacqueline() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, socket) = tonys_reveal(directory.path(), &[Jacqueline]);
+    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    let partner = joined[0]["partner"].as_str().unwrap().to_owned();
+    app.update();
+    let at = revision(&app);
+    choose(&mut app, "test:reveal");
+    app.update();
+    assert_eq!(revision(&app), at, "Held for her pass");
+    let shown = rendered_text(&mut app);
+    assert!(
+        shown.contains("Resolve the declared token reveal: waits for the other players to pass"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("Before Tony Morgan's decision: Jacqueline Fine may act"),
+        "{shown}"
+    );
+
+    let passed = exchange(
+        &mut app,
+        &socket,
+        &[
+            json!({"op": "choose", "partner": partner, "revision": at, "id": crate::partners::PASS_BEFORE}),
+        ],
+    );
+    assert_eq!(passed[0]["status"], "ready", "{}", passed[0]);
+    for _ in 0..5 {
+        app.update();
+    }
+    assert_eq!(revision(&app), at + 1, "Applied once she passed");
 }
 
 mod pacing;

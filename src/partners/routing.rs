@@ -10,21 +10,20 @@
 //! own investigators' options in it, and its completing option is every
 //! participating player's readiness, which the host collects (#208).
 //!
-//! A turn's player window comes before each action (RR p.22, p.24 2.2.1). When
-//! another player holds a fast option in it, the window is [`SharedKind::Turn`]:
-//! that player passes with readiness, and the active investigator's player's
-//! next choice, other than Undo or a part of a shared decision, is applied only
-//! once every such player has passed on the current revision (F1, Joel's
-//! decision of 2026-11-13: played as the rules have it).
+//! A decision can list other investigators' options beside its own investigator's
+//! with no option that passes them ([`Session::opportunity_window`]): the player
+//! window before each action of a turn (RR p.22, p.24 2.2.1), a drawn encounter
+//! card's revelation with A Test of Will, a chaos-token reveal with Jacqueline
+//! Fine's reaction. When another player holds an option in one, it is
+//! [`SharedKind::Before`]: that player passes with readiness, and the deciding
+//! investigator's player's next choice, other than Undo or a part of a shared
+//! decision, is applied only once every such player has passed on the current
+//! revision (F1, Joel's decision of 2026-11-13: played as the rules have it, for
+//! every such list since his co-play session 2, S1).
 
-/// A player's pass in a turn's player window. It is co-play's, never the rules
-/// session's: the rules session lists no pass before an action.
-pub const TURN_PASS: &str = "turn-window:pass";
-
-/// The label of a player's pass in the player window before `actor`'s action.
-pub(super) fn turn_pass_label(actor: Investigator) -> String {
-    format!("Pass before {}'s action", actor.name())
-}
+/// A player's pass before another player's decision. It is co-play's, never the
+/// rules session's: the rules session lists no pass there.
+pub const PASS_BEFORE: &str = "pass-before";
 
 use super::{Control, Controller};
 use crate::Choice;
@@ -74,11 +73,28 @@ pub enum SharedKind {
     /// A group clue payment (RR p.7): each player sets its own investigators'
     /// clues. At The Barrier's round end, readiness on no clues declines it.
     Payment { at_round_end: bool },
-    /// The player window before an action of `actor`'s turn, while another player
-    /// holds a fast option in it. Its participants are those players'
-    /// investigators; each passes with [`TURN_PASS`] or readiness, and an action
-    /// restarts the succession. The actor's player's choice waits for them.
-    Turn { actor: Investigator },
+    /// `decider`'s decision while another player holds one of its listed options
+    /// and the rules session lists no pass: the player window before an action of
+    /// `decider`'s turn when `action`, else a revelation or a chaos-token reveal.
+    /// Its participants are those players' investigators; each passes with
+    /// [`PASS_BEFORE`] or readiness, and using an option moves the decision on, so
+    /// the passes start again. The decider's player's choice waits for them.
+    Before { decider: Investigator, action: bool },
+}
+
+impl SharedKind {
+    /// What a [`SharedKind::Before`] comes before, as players read it: the
+    /// decider's next action in a turn, else its decision.
+    pub fn before(&self) -> Option<String> {
+        match self {
+            Self::Before { decider, action } => Some(format!(
+                "{}'s {}",
+                decider.name(),
+                if *action { "action" } else { "decision" }
+            )),
+            _ => None,
+        }
+    }
 }
 
 impl Shared {
@@ -157,10 +173,11 @@ impl Routing {
             };
             options.push((option.id, option.owner, controller));
         }
-        if let Some(actor) = session.turn_window().filter(|_| !with_human)
-            && let Some(window) = turn_window(actor, &options, control)
-        {
-            shared.push(window);
+        if let Some(decider) = session.opportunity_window().filter(|_| !with_human) {
+            let action = session.turn_window() == Some(decider);
+            if let Some(window) = window_before(decider, action, &options, control) {
+                shared.push(window);
+            }
         }
         // A commitment window or a closing window is answered by readiness alone.
         let awaiting = if shared.iter().any(|decision| {
@@ -168,7 +185,7 @@ impl Routing {
                 decision.kind,
                 SharedKind::Payment {
                     at_round_end: false
-                } | SharedKind::Turn { .. }
+                } | SharedKind::Before { .. }
             )
         }) {
             None
@@ -260,7 +277,7 @@ impl Routing {
     }
 
     /// The pending decision's listed options `player` may submit, and its pass
-    /// when it takes part in a turn's player window, which the rules session does
+    /// when it takes part in a [`SharedKind::Before`], which the rules session does
     /// not list (F1).
     pub fn choices_of(
         &self,
@@ -274,14 +291,15 @@ impl Routing {
             .into_iter()
             .filter(|choice| self.may(session, control, player, &choice.id))
             .collect();
-        let window = self.shared.iter().find_map(|decision| match decision.kind {
-            SharedKind::Turn { actor } if decision.players(control).contains(player) => Some(actor),
-            _ => None,
-        });
-        if let Some(actor) = window {
+        let window = self
+            .shared
+            .iter()
+            .filter(|decision| decision.players(control).contains(player))
+            .find_map(|decision| decision.kind.before());
+        if let Some(before) = window {
             choices.push(Choice {
-                id: TURN_PASS.to_owned(),
-                label: turn_pass_label(actor),
+                id: PASS_BEFORE.to_owned(),
+                label: pass_label(&before),
                 cancel_faces: Vec::new(),
             });
         }
@@ -345,27 +363,34 @@ pub(super) fn pays_act(id: &str) -> bool {
     GroupCluePayment::is_listed(id) || GroupCluePayment::allocation_of(id).is_some()
 }
 
-/// The player window before `actor`'s action, when a player other than the
-/// actor's holds one of its options: every such player's investigators with an
-/// option take part. None without such a player. A possible act clue payment
-/// makes no one a participant: it waits until a player proposes it.
-fn turn_window(
-    actor: Investigator,
+/// The label of a player's pass before `before`, as [`SharedKind::before`] names it.
+pub(super) fn pass_label(before: &str) -> String {
+    format!("Pass before {before}")
+}
+
+/// `decider`'s decision, when a player other than the decider's holds one of its
+/// options: every such player's investigators with an option take part. None
+/// without such a player, so no one without an option is waited on. A possible
+/// act clue payment makes no one a participant: it waits until a player proposes
+/// it.
+fn window_before(
+    decider: Investigator,
+    action: bool,
     options: &[(String, OptionOwner, Controller)],
     control: &Control,
 ) -> Option<Shared> {
-    let actors = control.controller(actor);
+    let deciders = control.controller(decider);
     let mut participants: Vec<Investigator> = options
         .iter()
-        .filter(|(id, _, controller)| *controller != actors && !pays_act(id))
+        .filter(|(id, _, controller)| *controller != deciders && !pays_act(id))
         .flat_map(|(_, owner, _)| investigators(owner))
-        .filter(|who| control.controller(*who) != actors)
+        .filter(|who| control.controller(*who) != deciders)
         .collect();
     participants.sort_by_key(|who| who.index());
     participants.dedup();
     (!participants.is_empty()).then(|| Shared {
-        kind: SharedKind::Turn { actor },
-        close: TURN_PASS.to_owned(),
+        kind: SharedKind::Before { decider, action },
+        close: PASS_BEFORE.to_owned(),
         participants,
     })
 }

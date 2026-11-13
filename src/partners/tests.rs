@@ -763,12 +763,20 @@ fn a_partners_fast_option_holds_the_humans_turn_action_until_it_passes() {
         options.iter().any(|id| id.starts_with("violin:")),
         "{options:?}"
     );
-    assert!(options.iter().any(|id| id == TURN_PASS), "{options:?}");
+    assert!(options.iter().any(|id| id == PASS_BEFORE), "{options:?}");
     assert!(
         !options.iter().any(|id| id.starts_with("action:")),
         "Tony's actions are the human's: {options:?}"
     );
-    let window = sitting.shared(|kind| matches!(kind, SharedKind::Turn { actor: Tony }));
+    let window = sitting.shared(|kind| {
+        matches!(
+            kind,
+            SharedKind::Before {
+                decider: Tony,
+                action: true
+            }
+        )
+    });
     assert_eq!(window.outstanding(), [Patrice]);
 
     // The human's action is his part; it waits for Patrice's player to pass.
@@ -778,7 +786,7 @@ fn a_partners_fast_option_holds_the_humans_turn_action_until_it_passes() {
         HumanChoice::Ready
     );
     assert_eq!(sitting.revision(), revision, "Held for the window");
-    let passed = sitting.choose(&partner, TURN_PASS);
+    let passed = sitting.choose(&partner, PASS_BEFORE);
     assert_eq!(passed["status"], "ready", "{passed}");
     assert_eq!(sitting.revision(), revision + 1, "Applied once she passed");
     assert_eq!(resources(&sitting), before + 1);
@@ -814,7 +822,7 @@ fn a_partners_fast_option_holds_the_humans_turn_action_until_it_passes() {
             .host
             .shared(&sitting.rules.session)
             .iter()
-            .all(|state| !matches!(state.kind, SharedKind::Turn { .. }))
+            .all(|state| !matches!(state.kind, SharedKind::Before { .. }))
     );
     assert_eq!(
         sitting.human("action:ordinary:resource"),
@@ -870,11 +878,11 @@ fn a_choice_held_for_the_turn_window_answers_held_and_wait_tells_when_it_is_appl
     assert_eq!(held["status"], "held", "{held}");
     let decision = &held["view"]["decision"];
     assert_eq!(
-        decision["turn_window"]["held"]["id"], "action:ordinary:resource",
+        decision["waits_for_passes"]["held"]["id"], "action:ordinary:resource",
         "{decision}"
     );
     assert_eq!(
-        decision["turn_window"]["waiting_for"],
+        decision["waits_for_passes"]["waiting_for"],
         json!(["Patrice Hathaway"])
     );
     assert_eq!(decision["yours"], false, "It has decided: {decision}");
@@ -889,12 +897,12 @@ fn a_choice_held_for_the_turn_window_answers_held_and_wait_tells_when_it_is_appl
     let replaced = sitting.choose(&partner, "action:ordinary:draw");
     assert_eq!(replaced["status"], "held", "{replaced}");
     assert_eq!(
-        replaced["view"]["decision"]["turn_window"]["held"]["id"],
+        replaced["view"]["decision"]["waits_for_passes"]["held"]["id"],
         "action:ordinary:draw"
     );
 
     // The human passes: the held choice is applied, once, and the wait says so.
-    assert_eq!(sitting.human(TURN_PASS), HumanChoice::Ready);
+    assert_eq!(sitting.human(PASS_BEFORE), HumanChoice::Ready);
     assert_eq!(sitting.revision(), revision + 1);
     let told = sitting.take(waits).expect("The wait tells the outcome");
     assert_eq!(told["status"], "chosen", "{told}");
@@ -995,7 +1003,7 @@ fn the_humans_options_in_another_players_turn_window_include_his_pass() {
     let human = sitting.host.control().human_choices(&sitting.rules.session);
     let pass = human
         .iter()
-        .find(|choice| choice.id == TURN_PASS)
+        .find(|choice| choice.id == PASS_BEFORE)
         .unwrap_or_else(|| panic!("His pass: {human:?}"));
     assert_eq!(pass.label, "Pass before Tony Morgan's action");
     assert!(human.iter().any(|choice| choice.id.starts_with("violin:")));
@@ -1007,7 +1015,7 @@ fn the_humans_options_in_another_players_turn_window_include_his_pass() {
     sitting.join(&[]);
     let human = sitting.host.control().human_choices(&sitting.rules.session);
     assert!(
-        !human.iter().any(|choice| choice.id == TURN_PASS),
+        !human.iter().any(|choice| choice.id == PASS_BEFORE),
         "{human:?}"
     );
 }
@@ -1082,13 +1090,324 @@ fn the_turn_window_is_said_beside_a_possible_clue_payment() {
             .is_some_and(|note| note.contains("group clue payment")),
         "{decision}"
     );
-    let window = &decision["turn_window"];
+    let window = &decision["waits_for_passes"];
     assert_eq!(window["before_action_of"], "Tony Morgan", "{decision}");
     assert_eq!(
         window["waiting_for"],
         json!(["Patrice Hathaway"]),
         "{decision}"
     );
+}
+
+/// Tony's turn with every hand empty and Jacqueline at `jacqueline`, everyone
+/// else in the Study, where everyone starts.
+fn tonys_empty_handed_turn(jacqueline: &str) -> Session {
+    let mut session = turn(Tony);
+    for who in Investigator::ALL {
+        session.empty_hand_for_test(who);
+    }
+    session.place_for_test(Jacqueline, 0, jacqueline);
+    session
+}
+
+/// Tony investigates the Study, and the table reaches his chaos-token reveal, each
+/// step taken by whichever player it belongs to: the human, or the one partner,
+/// which plays `partners`.
+fn at_tonys_token_reveal(session: Session, partners: &[Investigator]) -> (Sitting, String) {
+    let mut sitting = Sitting::new(session, partners);
+    let partner = sitting.join(&[]);
+    let step = |sitting: &mut Sitting, id: &str| {
+        if sitting.host.control().human_may(&sitting.rules.session, id) {
+            assert_eq!(sitting.human(id), HumanChoice::Commit, "{id}");
+        } else {
+            let stepped = sitting.choose(&partner, id);
+            assert_eq!(stepped["status"], "chosen", "{id}: {stepped}");
+        }
+    };
+    step(&mut sitting, "action:ordinary:investigate");
+    for _ in 0..8 {
+        let offered = sitting.offered();
+        if offered.iter().any(|id| id == "test:reveal") {
+            return (sitting, partner);
+        }
+        let id = ["window:pass", "test-card:pass", "commit:confirm"]
+            .into_iter()
+            .find(|id| offered.iter().any(|offered| offered == id))
+            .unwrap_or_else(|| panic!("No step toward the reveal: {offered:?}"));
+        step(&mut sitting, id);
+    }
+    panic!("Did not reach the reveal: {:?}", sitting.offered());
+}
+
+/// Tony's partner at his reveal, with the human's Jacqueline beside him.
+fn tonys_partner_at_his_token_reveal() -> (Sitting, String) {
+    at_tonys_token_reveal(tonys_empty_handed_turn(STUDY), &[Tony])
+}
+
+const STUDY: &str = "01111";
+
+/// S1, Joel's co-play session 2 (#202, comment 6867031634; story 41; the play
+/// contract's "Automation must not silently discard an opportunity"; F1, "strict:
+/// that's how it's supposed to be played legally"). Jacqueline Fine (60401):
+/// "[reaction] When an investigator at your location would reveal any number of
+/// chaos tokens: Reveal 2 additional tokens…". A "when" reaction is used after its
+/// condition initiates but before its impact resolves, optionally, by the player
+/// controlling the card (RR p.3 "Triggered Abilities"; p.21 "When"). So in Tony's
+/// partner's reveal, the human's Jacqueline is a participant: the partner's reveal
+/// is held, answered `held`, until the human passes, and is then applied.
+#[test]
+fn a_partners_token_reveal_is_held_until_the_human_passes_on_jacquelines_reaction() {
+    let (mut sitting, partner) = tonys_partner_at_his_token_reveal();
+    let revision = sitting.revision();
+    let human = sitting.host.control().human_choices(&sitting.rules.session);
+    assert!(
+        human.iter().any(|choice| choice.id == "tokens:jacqueline"),
+        "{human:?}"
+    );
+
+    let held = sitting.choose(&partner, "test:reveal");
+    assert_eq!(held["status"], "held", "{held}");
+    assert_eq!(sitting.revision(), revision, "Not revealed yet");
+    assert!(
+        sitting.offered().iter().any(|id| id == "tokens:jacqueline"),
+        "Her opportunity is still open"
+    );
+    let waits = sitting.wait(&partner);
+    sitting.poll();
+    assert!(sitting.take(waits).is_none(), "Held, not applied");
+
+    assert_eq!(sitting.human(PASS_BEFORE), HumanChoice::Ready);
+    assert_eq!(sitting.revision(), revision + 1, "Applied once she passed");
+    let told = sitting.take(waits).expect("The wait tells the outcome");
+    assert_eq!(told["status"], "chosen", "{told}");
+    assert_eq!(
+        sitting.rules.attributed.last(),
+        Some(&("test:reveal".to_owned(), Tony))
+    );
+}
+
+/// S1 with F1's "no silent rebasing": the human uses Jacqueline's reaction (60401)
+/// instead of passing, which changes the reveal, so the partner's held reveal is
+/// released, not applied, its wait says why, and it decides again on the new
+/// reveal, where no other player holds an option.
+#[test]
+fn a_partners_held_reveal_is_released_when_the_human_uses_jacquelines_reaction() {
+    let (mut sitting, partner) = tonys_partner_at_his_token_reveal();
+    let revision = sitting.revision();
+    let held = sitting.choose(&partner, "test:reveal");
+    assert_eq!(held["status"], "held", "{held}");
+    let applied = sitting.rules.attributed.len();
+    let waits = sitting.wait(&partner);
+
+    assert_eq!(sitting.human("tokens:jacqueline"), HumanChoice::Commit);
+    assert_eq!(sitting.revision(), revision + 1, "Only her reaction");
+    let told = sitting.take(waits).expect("The wait tells the release");
+    assert_eq!(told["status"], "released", "{told}");
+    assert!(
+        told["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("not applied")),
+        "{told}"
+    );
+    assert_eq!(told["view"]["decision"]["yours"], true, "{told}");
+    assert_eq!(sitting.rules.attributed.len(), applied, "Nothing rebased");
+
+    let again = sitting.choose(&partner, "test:reveal");
+    assert_eq!(again["status"], "chosen", "{again}");
+}
+
+/// S1 applies both ways: a partner's option in the human's decision holds the
+/// human's choice. The human plays Tony and a partner plays Jacqueline, beside him
+/// (60401; RR p.3 "Triggered Abilities"). The human's reveal is held; the partner
+/// is woken for the decision, sees what its pass comes before, and once it passes
+/// the human's reveal is applied.
+#[test]
+fn the_humans_token_reveal_is_held_until_a_partners_jacqueline_passes() {
+    let (mut sitting, partner) =
+        at_tonys_token_reveal(tonys_empty_handed_turn(STUDY), &[Jacqueline]);
+    let revision = sitting.revision();
+    assert_eq!(sitting.human("test:reveal"), HumanChoice::Ready);
+    assert_eq!(sitting.revision(), revision, "Held for her pass");
+    assert_eq!(
+        sitting.host.human_held(&sitting.rules.session),
+        Some("test:reveal")
+    );
+
+    let woken = sitting.ask(json!({"op": "wait", "partner": partner}));
+    assert_eq!(woken["status"], "decision", "{woken}");
+    let options = woken["view"]["decision"]["options"].as_array().unwrap();
+    assert!(
+        options
+            .iter()
+            .any(|option| option["id"] == "tokens:jacqueline"),
+        "{options:?}"
+    );
+    let pass = options
+        .iter()
+        .find(|option| option["id"] == PASS_BEFORE)
+        .unwrap_or_else(|| panic!("Her pass: {options:?}"));
+    assert_eq!(
+        pass["label"],
+        "Pass before Tony Morgan's decision (marks you ready)"
+    );
+    let window = woken["view"]["shared"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|shared| shared["ready_with"] == PASS_BEFORE)
+        .unwrap_or_else(|| panic!("Its shared decision: {woken}"));
+    assert_eq!(window["before_decision_of"], "Tony Morgan", "{window}");
+
+    let passed = sitting.choose(&partner, PASS_BEFORE);
+    assert_eq!(passed["status"], "ready", "{passed}");
+    assert_eq!(sitting.revision(), revision + 1, "Applied once she passed");
+}
+
+/// S1: never wait on a phantom. Jacqueline is in the Hallway, not at Tony's
+/// location, so her reaction is not listed (60401: "an investigator at your
+/// location"), and the partner's reveal is applied at once.
+#[test]
+fn a_reveal_waits_on_no_player_without_an_option_in_it() {
+    let (mut sitting, partner) = at_tonys_token_reveal(tonys_empty_handed_turn("01112"), &[Tony]);
+    assert!(
+        !sitting
+            .offered()
+            .iter()
+            .any(|id| id.starts_with("tokens:jacqueline")),
+        "{:?}",
+        sitting.offered()
+    );
+    assert!(sitting.host.shared(&sitting.rules.session).is_empty());
+    let revision = sitting.revision();
+    let chosen = sitting.choose(&partner, "test:reveal");
+    assert_eq!(chosen["status"], "chosen", "{chosen}");
+    assert_eq!(sitting.revision(), revision + 1);
+}
+
+/// S1: every decision that lists another player's option beside the deciding
+/// investigator's, with no pass, holds the deciding partner's choice for the human's
+/// pass, and the human's options there name his pass and what it comes before.
+/// Each list, with the option that makes the human a participant:
+/// - the player window before each action of a turn (RR p.22, p.24 2.2.1):
+///   Premonition (04199, "Fast. Play during any player window") and Patrice's
+///   Violin (06016, a [fast] ability) in Tony's turn;
+/// - a drawn encounter card's revelation: A Test of Will (60513, "Play when an
+///   investigator at your location draws a non-weakness treachery card"; RR p.24
+///   1.4: the drawer resolves the card);
+/// - a chaos-token reveal: Jacqueline Fine's reaction (60401; RR p.3).
+///
+/// A window that lists its own pass (a test's player windows, a phase's, an outcome
+/// or defeat reaction window, the commitment) is a shared decision every player
+/// with an option passes in already (#208).
+#[test]
+fn every_list_with_the_humans_option_holds_the_deciding_partners_choice() {
+    struct Case {
+        list: &'static str,
+        sitting: Sitting,
+        partner: String,
+        decider: Investigator,
+        theirs: &'static str,
+        human: &'static str,
+        before: &'static str,
+    }
+    let in_tonys_turn = |prepare: fn(&mut Session)| {
+        let mut session = turn(Tony);
+        prepare(&mut session);
+        let mut sitting = Sitting::new(session, &[Tony]);
+        let partner = sitting.join(&[]);
+        (sitting, partner)
+    };
+    let (premonition, premonition_partner) = in_tonys_turn(|session| {
+        session.hand_for_test(Jacqueline, "04199");
+    });
+    let (violin, violin_partner) = in_tonys_turn(|session| {
+        session.asset_for_test(Patrice, "06016");
+    });
+    let (reveal, reveal_partner) = tonys_partner_at_his_token_reveal();
+    let (revelation, revelation_partner) = {
+        let mut session = Session::with_hostile_fixture(
+            crate::gathering::HostileFixture::PatriceCancellationVision,
+        );
+        let play = session.observe().play.unwrap();
+        assert_eq!(play.pending_revelation.as_ref().unwrap().drawn_by, Patrice);
+        let drawers = play.players[Patrice.index()].location.clone();
+        session.hand_for_test(Tony, "60513");
+        session.place_for_test(Tony, 0, &drawers);
+        let mut sitting = Sitting::new(session, &[Patrice]);
+        let partner = sitting.join(&[]);
+        (sitting, partner)
+    };
+    let cases = [
+        Case {
+            list: "turn window, Premonition",
+            sitting: premonition,
+            partner: premonition_partner,
+            decider: Tony,
+            theirs: "action:ordinary:resource",
+            human: "premonition:",
+            before: "Tony Morgan's action",
+        },
+        Case {
+            list: "turn window, Patrice's Violin",
+            sitting: violin,
+            partner: violin_partner,
+            decider: Tony,
+            theirs: "action:ordinary:resource",
+            human: "violin:",
+            before: "Tony Morgan's action",
+        },
+        Case {
+            list: "chaos-token reveal, Jacqueline's reaction",
+            sitting: reveal,
+            partner: reveal_partner,
+            decider: Tony,
+            theirs: "test:reveal",
+            human: "tokens:jacqueline",
+            before: "Tony Morgan's decision",
+        },
+        Case {
+            list: "revelation, A Test of Will",
+            sitting: revelation,
+            partner: revelation_partner,
+            decider: Patrice,
+            theirs: "revelation:resolve",
+            human: "test-of-will:",
+            before: "Patrice Hathaway's decision",
+        },
+    ];
+    for Case {
+        list,
+        mut sitting,
+        partner,
+        decider,
+        theirs,
+        human,
+        before,
+    } in cases
+    {
+        let options = sitting.host.control().human_choices(&sitting.rules.session);
+        assert!(
+            options.iter().any(|choice| choice.id.starts_with(human)),
+            "{list}: {options:?}"
+        );
+        let pass = options
+            .iter()
+            .find(|choice| choice.id == PASS_BEFORE)
+            .unwrap_or_else(|| panic!("{list}: his pass in {options:?}"));
+        assert_eq!(pass.label, format!("Pass before {before}"), "{list}");
+
+        let revision = sitting.revision();
+        let held = sitting.choose(&partner, theirs);
+        assert_eq!(held["status"], "held", "{list}: {held}");
+        assert_eq!(sitting.revision(), revision, "{list}");
+        assert_eq!(sitting.human(PASS_BEFORE), HumanChoice::Ready, "{list}");
+        assert_eq!(sitting.revision(), revision + 1, "{list}: applied");
+        assert_eq!(
+            sitting.rules.attributed.last(),
+            Some(&(theirs.to_owned(), decider)),
+            "{list}"
+        );
+    }
 }
 
 /// F1 with Take over (play contract: Take over returns an investigator at once): the

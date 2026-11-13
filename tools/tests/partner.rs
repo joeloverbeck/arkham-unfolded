@@ -246,6 +246,8 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "scripts/tools partner leave PARTNER",
         "decision.undo",
         "before_action_of",
+        "before_decision_of",
+        "waits_for_passes",
         "--socket",
     ];
     let statuses = [

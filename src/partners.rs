@@ -17,10 +17,11 @@
 //! choice is its arbiter's player's, and every partner's wait hears it open (#207).
 //! In a shared decision that spans players, each player sets its own part and marks
 //! itself ready, and the host completes it once every participating player is
-//! ready (#208, `shared`). Before each action of a turn, the active investigator's
-//! player's choice waits until every other player with a fast option there has
-//! passed (F1). Every player may speak, and every other player hears
-//! each message (#209, `talk`).
+//! ready (#208, `shared`). When a decision lists another player's option beside
+//! its own investigator's and no pass, such as before each action of a turn, the
+//! deciding investigator's player's choice waits until every other player with an
+//! option there has passed (F1, S1). Every player may speak, and every other
+//! player hears each message (#209, `talk`).
 //!
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
 
@@ -29,7 +30,7 @@ mod shared;
 mod talk;
 mod view;
 
-pub use routing::{Routing, Shared, SharedKind, TURN_PASS};
+pub use routing::{PASS_BEFORE, Routing, Shared, SharedKind};
 pub use shared::{REOPENINGS, Readiness, SharedState};
 pub use talk::{CHATTER_LIMIT, EXCHANGE_LIMIT, LONGEST_MESSAGE, PERIL, Said};
 
@@ -100,8 +101,8 @@ impl Control {
     /// The options of the session's pending decision that the human may submit,
     /// as the table offers them (#205): every listed one without partners, and
     /// with partners those [`Self::human_may`] allows, as a partner's view lists
-    /// only that partner's options, with his pass in a turn's player window he
-    /// takes part in (F1).
+    /// only that partner's options, with his pass before another player's
+    /// decision he holds an option in (F1).
     pub fn human_choices(&self, session: &Session) -> Vec<Choice> {
         if self.solo() {
             return session.observe().choices;
@@ -168,18 +169,18 @@ pub struct Host<R> {
     /// Readiness, reopenings and pending contributions in shared decisions.
     sharing: shared::Sharing,
     talk: talk::Talk,
-    /// The active investigator's player's choice while it waits for the other
-    /// players with a fast option to pass (F1).
-    turn_hold: Option<TurnHold>,
-    /// Why the human's held turn choice was released, at the revision of the
+    /// The deciding investigator's player's choice while it waits for the other
+    /// players with an option in that decision to pass (F1).
+    hold: Option<Hold>,
+    /// Why the human's held choice was released, at the revision of the
     /// decision he chooses again (review fix G2).
     human_released: Option<(u64, String)>,
 }
 
-/// A choice of the active investigator's player, held at its revision for the
-/// turn's player window (F1). The holder's next choice replaces it; a choice of the
-/// holder's applied at once drops it.
-struct TurnHold {
+/// A choice of the deciding investigator's player, held at its revision until the
+/// other players with an option in that decision have passed (F1). The holder's
+/// next choice replaces it; a choice of the holder's applied at once drops it.
+struct Hold {
     player: Controller,
     revision: u64,
     id: String,
@@ -187,7 +188,7 @@ struct TurnHold {
     label: String,
 }
 
-impl TurnHold {
+impl Hold {
     fn new(player: Controller, observation: &crate::gathering::Observation, id: &str) -> Self {
         let label = observation
             .choices
@@ -305,7 +306,7 @@ impl<R> Default for Host<R> {
             held: Vec::new(),
             sharing: shared::Sharing::default(),
             talk: talk::Talk::default(),
-            turn_hold: None,
+            hold: None,
             human_released: None,
         }
     }
@@ -407,7 +408,7 @@ impl<R> Host<R> {
             return true;
         }
         let mut moment: Option<Moment> = None;
-        // A choice the turn's player window holds is answered at once.
+        // A choice held for the other players' passes is answered at once.
         self.held.iter().any(|held| match &held.pending {
             Pending::Choose { revision, id } => {
                 settled
@@ -487,10 +488,10 @@ impl<R> Host<R> {
             self.sharing.change(pending, &human)?;
         }
         if moment.waits_for_window(&self.sharing, &control, &human, id) {
-            // His click in his own turn is his part: it is applied once every
-            // other player with a fast option has passed on this revision. A
-            // later click replaces it.
-            self.turn_hold = Some(TurnHold::new(human, &moment.observation, id));
+            // His click in his own decision is his part: it is applied once
+            // every other player with an option there has passed on this
+            // revision. A later click replaces it.
+            self.hold = Some(Hold::new(human, &moment.observation, id));
             self.human_released = None;
             return Ok(HumanChoice::Ready);
         }
@@ -499,10 +500,10 @@ impl<R> Host<R> {
         Ok(HumanChoice::Commit)
     }
 
-    /// The human's choice waiting for the other players' passes in his own turn,
-    /// at the session's revision.
-    pub fn human_turn(&self, session: &Session) -> Option<&str> {
-        self.turn_hold
+    /// The human's choice waiting for the other players' passes in his own
+    /// decision, at the session's revision.
+    pub fn human_held(&self, session: &Session) -> Option<&str> {
+        self.hold
             .as_ref()
             .filter(|hold| hold.player == Controller::Human && hold.revision == session.revision())
             .map(|hold| hold.id.as_str())
@@ -654,7 +655,7 @@ impl<R> Host<R> {
     /// partner hears a group choice open, has news of a shared decision or has a
     /// decision, once the table has presented it, has table talk to hear, or whose
     /// period ran out; and a choice once the table has settled, or at once with
-    /// `held` when the turn's player window holds it (F1).
+    /// `held` when it waits for the other players' passes (F1).
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
         self.talk.watch(&*table);
         if !self.settle_hold(table)
@@ -717,9 +718,9 @@ impl<R> Host<R> {
                         None
                     }
                 }
-                // The active investigator's player's choice waits for the turn's
-                // player window to close: it is held, replacing one held before,
-                // and answered at once.
+                // The deciding investigator's player's choice waits for the
+                // other players with an option there to pass: it is held,
+                // replacing one held before, and answered at once.
                 Pending::Choose { revision, id }
                     if self.window_holds(
                         moment.get_or_insert_with(|| self.moment(table.session())),
@@ -729,7 +730,7 @@ impl<R> Host<R> {
                     ) =>
                 {
                     let current = moment.take().expect("Routed just above");
-                    self.turn_hold = Some(TurnHold::new(
+                    self.hold = Some(Hold::new(
                         Controller::Partner(partner.clone()),
                         &current.observation,
                         id,
@@ -881,15 +882,15 @@ impl<R> Host<R> {
     }
 
     /// The pending decision as routed now, with its shared decisions and the
-    /// players it waits for. The active investigator's player has decided while
-    /// its choice is held for the turn's player window.
+    /// players it waits for. The deciding investigator's player has decided while
+    /// its choice is held for the other players' passes.
     fn moment(&self, session: &Session) -> Moment {
         let control = self.control();
         let observation = session.observe();
         let routing = Routing::of(session, &control);
         let pending = self.sharing.pending(routing.shared(), &observation);
         let holding = self
-            .turn_hold
+            .hold
             .as_ref()
             .filter(|hold| hold.revision == observation.revision)
             .map(|hold| &hold.player);
@@ -930,10 +931,10 @@ impl<R> Host<R> {
         })
     }
 
-    /// Whether [`Self::settle_hold`] has work now: the held turn choice is to be
+    /// Whether [`Self::settle_hold`] has work now: the held choice is to be
     /// released, or, at a `settled` table, applied.
     fn hold_due(&self, session: &Session, settled: bool) -> bool {
-        let Some(hold) = &self.turn_hold else {
+        let Some(hold) = &self.hold else {
             return false;
         };
         if hold.revision != session.revision() {
@@ -950,18 +951,18 @@ impl<R> Host<R> {
                 && !moment.waits_for_window(&self.sharing, &control, &hold.player, &hold.id))
     }
 
-    /// Release the held turn choice once the decision has moved on or its player
-    /// no longer answers for it; apply it once the table has settled and every
-    /// other player with a fast option has passed on its revision, or none holds
-    /// one now (F1). Whether a choice was committed.
+    /// Release the held choice once the decision has moved on or its player no
+    /// longer answers for it; apply it once the table has settled and every other
+    /// player with an option there has passed on its revision, or none holds one
+    /// now (F1). Whether a choice was committed.
     fn settle_hold(&mut self, table: &mut impl Table) -> bool {
-        let Some(hold) = &self.turn_hold else {
+        let Some(hold) = &self.hold else {
             return false;
         };
         let session = table.session();
         let revision = session.revision();
         if hold.revision != revision {
-            let hold = self.turn_hold.take().expect("Held");
+            let hold = self.hold.take().expect("Held");
             self.release(
                 &hold,
                 "the decision moved on before it could be applied",
@@ -978,7 +979,7 @@ impl<R> Host<R> {
             .as_ref()
             != Some(&hold.player)
         {
-            let hold = self.turn_hold.take().expect("Held");
+            let hold = self.hold.take().expect("Held");
             self.release(
                 &hold,
                 "the investigator it was for is no longer yours",
@@ -992,7 +993,7 @@ impl<R> Host<R> {
         {
             return false;
         }
-        let hold = self.turn_hold.take().expect("Held");
+        let hold = self.hold.take().expect("Held");
         let by = match &hold.player {
             Controller::Partner(partner) => {
                 self.check(partner, revision, &hold.id, &moment.routing, session)
@@ -1000,8 +1001,8 @@ impl<R> Host<R> {
             _ => match moment.routing.owner(session, &hold.id) {
                 Some(OptionOwner::Investigator(who)) => Ok(who),
                 _ => session
-                    .turn_window()
-                    .ok_or_else(|| "No turn is pending.".to_owned()),
+                    .opportunity_window()
+                    .ok_or_else(|| "No decision is pending.".to_owned()),
             },
         };
         let result = by.and_then(|by| table.commit(revision, &hold.id, by));
@@ -1013,7 +1014,7 @@ impl<R> Host<R> {
             }
             (Controller::Partner(_), Err(reason)) => self.release(&hold, reason, revision, true),
             (_, Err(error)) => {
-                eprintln!("Agent partners: the human's turn choice was not applied: {error}");
+                eprintln!("Agent partners: the human's held choice was not applied: {error}");
                 self.release(&hold, error, revision, true);
             }
             (_, Ok(())) => {}
@@ -1021,12 +1022,12 @@ impl<R> Host<R> {
         result.is_ok()
     }
 
-    /// Tell the holder its held turn choice was released, not applied, and why: a
+    /// Tell the holder its held choice was released, not applied, and why: a
     /// partner through its next wait, the human in his decision display while the
     /// decision stays at `revision`. The human is asked to choose again only while
     /// the investigator it was for is still his (`still_his`): once he has handed it
     /// to partners, the decision may be theirs.
-    fn release(&mut self, hold: &TurnHold, why: &str, revision: u64, still_his: bool) {
+    fn release(&mut self, hold: &Hold, why: &str, revision: u64, still_his: bool) {
         let released = format!("Your held choice, {}, was not applied: {why}.", hold.label);
         match &hold.player {
             Controller::Partner(partner) => {
@@ -1042,8 +1043,8 @@ impl<R> Host<R> {
         }
     }
 
-    /// Why the human's held choice in his own turn was not applied, while the
-    /// decision that released it is pending.
+    /// Why the human's held choice in his own decision was not applied, while
+    /// the decision that released it is pending.
     pub fn human_released(&self, session: &Session) -> Option<&str> {
         self.human_released
             .as_ref()
@@ -1051,14 +1052,14 @@ impl<R> Host<R> {
             .map(|(_, notice)| notice.as_str())
     }
 
-    /// Drop `player`'s held turn choice: a choice of its own was applied at once.
+    /// Drop `player`'s held choice: a choice of its own was applied at once.
     fn drop_hold(&mut self, player: &Controller) {
         if self
-            .turn_hold
+            .hold
             .as_ref()
             .is_some_and(|hold| hold.player == *player)
         {
-            self.turn_hold = None;
+            self.hold = None;
         }
     }
 
@@ -1069,9 +1070,10 @@ impl<R> Host<R> {
             .any(|partner| partner.id == id && partner.outcome.is_some())
     }
 
-    /// Whether `partner`'s held choice of `id` at `revision` waits for the turn's
-    /// player window: a current choice of the active investigator's player while
-    /// another player with a fast option has not passed. A stale one is refused.
+    /// Whether `partner`'s held choice of `id` at `revision` waits for the other
+    /// players' passes: a current choice of the deciding investigator's player
+    /// while another player with an option there has not passed. A stale one is
+    /// refused.
     fn window_holds(&self, moment: &Moment, partner: &str, revision: u64, id: &str) -> bool {
         revision == moment.observation.revision
             && moment.waits_for_window(
@@ -1345,11 +1347,11 @@ impl<R> Host<R> {
         if !talk.is_empty() {
             view["table_talk"] = Value::Array(talk);
         }
-        // In its own investigator's turn, its next choice waits for the players
-        // with a fast option to pass (F1): said in a field of its own, beside any
-        // note.
-        if let Some(window) = self.turn_window_view(&moment, &control, &me) {
-            view["decision"]["turn_window"] = window;
+        // In its own investigator's decision, its next choice waits for the
+        // players with an option there to pass (F1): said in a field of its own,
+        // beside any note.
+        if let Some(passes) = self.passes_view(&moment, &control, &me) {
+            view["decision"]["waits_for_passes"] = passes;
         }
         let mut answer = json!({
             "ok": error.is_none(),
@@ -1365,17 +1367,12 @@ impl<R> Host<R> {
         answer
     }
 
-    /// The turn's player window as the active investigator's player meets it (F1):
-    /// whose passes its next choice waits for, while any is outstanding.
-    fn turn_window_view(
-        &self,
-        moment: &Moment,
-        control: &Control,
-        me: &Controller,
-    ) -> Option<Value> {
-        let pending = moment.turn_window_of(control, me)?;
-        let SharedKind::Turn { actor } = pending.decision.kind else {
-            unreachable!("A turn's player window")
+    /// The other players' passes as the deciding investigator's player meets them
+    /// (F1): whose passes its next choice waits for, while any is outstanding.
+    fn passes_view(&self, moment: &Moment, control: &Control, me: &Controller) -> Option<Value> {
+        let pending = moment.window_before(control, me)?;
+        let SharedKind::Before { decider, action } = pending.decision.kind else {
+            unreachable!("The passes before a decision")
         };
         let waiting: Vec<&str> = self
             .sharing
@@ -1387,21 +1384,26 @@ impl<R> Host<R> {
             return None;
         }
         let names = waiting.join(" and ");
-        let mut window = json!({
-            "before_action_of": actor.name(),
+        let (before, other) = if action {
+            ("before_action_of", "a fast play")
+        } else {
+            ("before_decision_of", "their option")
+        };
+        let mut passes = json!({
+            before: decider.name(),
             "waiting_for": waiting,
             "how": format!(
-                "Your next choice, other than Undo or a part of a shared decision, is held until {names} has passed in this player window: choose answers held at once, and wait answers chosen once it is applied. A later choose replaces a held choice. If a fast play comes first, wait answers released, and you decide again."
+                "Your next choice, other than Undo or a part of a shared decision, is held until {names} has passed or used an option here: choose answers held at once, and wait answers chosen once it is applied. A later choose replaces a held choice. If {other} comes first, wait answers released, and you decide again."
             ),
         });
         if let Some(hold) = self
-            .turn_hold
+            .hold
             .as_ref()
             .filter(|hold| hold.player == *me && hold.revision == moment.observation.revision)
         {
-            window["held"] = json!({"id": hold.id, "label": hold.label});
+            passes["held"] = json!({"id": hold.id, "label": hold.label});
         }
-        Some(window)
+        Some(passes)
     }
 }
 
@@ -1442,10 +1444,10 @@ impl Moment {
         }
     }
 
-    /// Whether `player`'s choice of `id` waits for a turn's player window (F1): it
-    /// is the active investigator's player's choice, other than Undo or a part of a
-    /// shared decision (an act clue payment always is one), and a player with a
-    /// fast option has not yet passed.
+    /// Whether `player`'s choice of `id` waits for the other players' passes (F1):
+    /// it is the deciding investigator's player's choice, other than Undo or a part
+    /// of a shared decision (an act clue payment always is one), and a player with
+    /// an option there has not yet passed.
     fn waits_for_window(
         &self,
         sharing: &shared::Sharing,
@@ -1457,15 +1459,15 @@ impl Moment {
             && self.routing.shared_of(id).is_none()
             && !routing::pays_act(id)
             && self
-                .turn_window_of(control, player)
+                .window_before(control, player)
                 .is_some_and(|pending| !sharing.waiting(pending, control).is_empty())
     }
 
-    /// The player window before an action of an investigator `player` controls,
-    /// while another player with a fast option takes part in it (F1).
-    fn turn_window_of(&self, control: &Control, player: &Controller) -> Option<&shared::Pending> {
+    /// The decision of an investigator `player` controls, while another player
+    /// with an option in it takes part (F1).
+    fn window_before(&self, control: &Control, player: &Controller) -> Option<&shared::Pending> {
         self.pending.iter().find(|pending| {
-            matches!(pending.decision.kind, SharedKind::Turn { actor } if control.controller(actor) == *player)
+            matches!(pending.decision.kind, SharedKind::Before { decider, .. } if control.controller(decider) == *player)
         })
     }
 

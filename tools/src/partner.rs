@@ -40,15 +40,17 @@ the notes to keep.
 
 A wait answers \"decision\" once the table has presented one of your
 investigators' decisions, even while a reading or a dialog is still open; the
-table applies a choice only once it settles, so choose waits until then. In
-another investigator's turn, a fast card or ability of yours wakes you before
-each of that investigator's actions: use it, or pass with ready. In your own
-investigators' turn, while another player may still use one first, choose
-answers \"held\" at once, except for Undo, your part of a shared decision and
-an act's clue payment, which are not held; a later wait answers \"chosen\" once
-the held choice is applied, or \"released\" with its reason when it was not:
-the decision moved on first (for example, another player's fast play), or the
-investigator is no longer yours; then read the current view. After
+table applies a choice only once it settles, so choose waits until then. An
+option of yours in another player's decision wakes you before that decision
+goes ahead: a fast card or ability before each action of a turn, A Test of
+Will against a drawn revelation, or Jacqueline's reaction to a chaos-token
+reveal. Use it, or pass with ready. In your own investigators' decisions,
+while another player may still use one first, choose answers \"held\" at once,
+except for Undo, your part of a shared decision and an act's clue payment,
+which are not held; a later wait answers \"chosen\" once the held choice is
+applied, or \"released\" with its reason when it was not: the decision moved on
+first (for example, another player used its option), or the investigator is
+no longer yours; then read the current view. After
 the first, complete view, each view reports the table as \"changes\" since your
 last. A wait answers \"nothing_yet\" after its timeout (240 s by default, at
 most 590): run it again. When the pasted line names --socket PATH, put it on
@@ -107,8 +109,8 @@ enum Request {
     Inspect { partner: String, code: String },
     /// Choose one of your options by its id at the view's revision; the table
     /// applies it once it settles, and the answer waits until then. A choice
-    /// that waits for other players' passes before your action is answered held
-    /// at once.
+    /// that waits for other players' passes in your decision is answered held at
+    /// once.
     Choose {
         partner: String,
         revision: u64,

@@ -120,12 +120,24 @@ impl Reading {
         .then_some(view)
     }
 
-    pub(super) fn accepts(&self, session: &Session, revision: u64, id: &str) -> bool {
-        self.decision(session).is_some_and(|view| {
-            view.revision == revision
-                && id != "undo"
-                && view.choices.iter().any(|choice| choice.id == id)
-        })
+    /// Whether the reading takes the human's choice of `id` at `revision`: one of
+    /// the options the partner library gives the human, with his pass before a
+    /// partner's decision among them (F1), other than Undo.
+    pub(super) fn accepts(table: &Table, revision: u64, id: &str) -> bool {
+        let session = &table.session;
+        table
+            .presentation
+            .encounter()
+            .decision(session)
+            .is_some_and(|view| {
+                view.revision == revision
+                    && id != "undo"
+                    && table
+                        .presentation
+                        .human_choices(session)
+                        .iter()
+                        .any(|choice| choice.id == id)
+            })
     }
 
     /// The responses the human may choose while reading, from the options the

@@ -1017,11 +1017,7 @@ fn handle_actions(
             && table.presentation.result().is_none()
             && table.result_opportunities();
         let encounter_choice = if let Action::EncounterChoice(epoch, revision, id) = &action {
-            *epoch == table.epoch
-                && table
-                    .presentation
-                    .encounter()
-                    .accepts(&table.session, *revision, id)
+            *epoch == table.epoch && encounter::Reading::accepts(&table, *revision, id)
         } else {
             false
         };
@@ -1163,6 +1159,16 @@ fn handle_actions(
                         Ok(crate::partners::HumanChoice::Commit) => {}
                         Ok(crate::partners::HumanChoice::Ready) => {
                             if table.clue_payment.take().is_some() {
+                                table.epoch += 1;
+                            }
+                            // His pass or his held choice in an encounter reading
+                            // ends his reading, as a committed one does, so the
+                            // decision display shows what it waits for and the
+                            // held choice can apply once the table settles (F1).
+                            if encounter_choice {
+                                table
+                                    .presentation
+                                    .encounter_input(encounter::Input::Continue);
                                 table.epoch += 1;
                             }
                             table.notice.clear();

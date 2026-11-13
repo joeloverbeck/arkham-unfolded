@@ -134,6 +134,22 @@ pub(super) fn turn_window(game: &Game) -> Option<Investigator> {
     }
 }
 
+/// The investigator whose decision the pending one is, when its list can offer
+/// other investigators' options beside its own and lists no option that passes
+/// them: the player window before each action of a turn ([`turn_window`]), a drawn
+/// encounter card's revelation, where another investigator at the drawer's
+/// location may hold A Test of Will (60513; RR p.24 1.4), and a chaos-token
+/// reveal, where Jacqueline Fine's "when … would reveal" reaction may be used
+/// before the reveal resolves (60401; RR p.3 "Triggered Abilities", p.21 "When").
+/// A window that lists its own pass, a commitment window among them, is a shared
+/// decision instead.
+pub(super) fn opportunity_window(game: &Game) -> Option<Investigator> {
+    match Rule::of(game) {
+        Rule::Window { own, close: None } | Rule::Tokens(own) => Some(own),
+        _ => None,
+    }
+}
+
 /// The lead, or after the lead's elimination the next investigator in player
 /// order who remains (RR p.13 "In Player Order"; the play contract's house
 /// practice for choosing a new lead).

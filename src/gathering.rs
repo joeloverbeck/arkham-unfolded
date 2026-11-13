@@ -689,6 +689,19 @@ impl Session {
         }
     }
 
+    /// The investigator whose decision is pending, while its list can offer other
+    /// investigators' options beside its own and lists no pass: the player window
+    /// before an action of a turn, a drawn encounter card's revelation (A Test of
+    /// Will) and a chaos-token reveal (Jacqueline Fine's reaction). Every other
+    /// list is one investigator's, a group choice, or a window or shared decision
+    /// that lists its own pass. Derived, never saved.
+    pub fn opportunity_window(&self) -> Option<Investigator> {
+        match self.stage {
+            Stage::Playing => ownership::opportunity_window(self.runtime.as_ref()?),
+            _ => None,
+        }
+    }
+
     /// The owner of the decision Undo would revert, as the rules session named
     /// it when that decision was made. It is derived by replaying to the
     /// position before that decision, once per revision, and never saved.

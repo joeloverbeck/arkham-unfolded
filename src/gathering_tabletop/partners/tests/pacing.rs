@@ -559,7 +559,9 @@ fn follow_frames_the_humans_decisions_and_tests() {
 }
 
 /// Ticket #210, Camera: with Follow on, a partner's test plays out, its result
-/// included, without the camera moving to it.
+/// included, without the camera moving to it. The human's Jacqueline, at Tony's
+/// location, may react to his reveal (60401), so the partner's reveal waits for the
+/// human's pass (S1).
 #[test]
 fn follow_leaves_the_camera_while_a_partners_test_plays_out() {
     let mut paced = open(quick_thinking_until("test:reveal"), &[Tony]);
@@ -579,12 +581,17 @@ fn follow_leaves_the_camera_while_a_partners_test_plays_out() {
         &paced.socket,
         &[json!({"op": "choose", "partner": partner, "revision": revision, "id": "test:reveal"})],
     );
-    assert_eq!(chosen[0]["status"], "chosen", "{}", chosen[0]);
+    assert_eq!(chosen[0]["status"], "held", "{}", chosen[0]);
+    choose(app, crate::partners::PASS_BEFORE);
     let mut moved = false;
     for _ in 0..200 {
         wait(app, 0.1);
         moved |= app.world().resource::<Orbit>().pose() != before;
     }
+    assert!(
+        app.world().resource::<Table>().session.revision() > revision,
+        "Revealed once he passed"
+    );
     assert!(!moved, "The camera never left");
     assert!(app.world().resource::<Orbit>().is_following());
 }

@@ -31,8 +31,9 @@ pub(super) enum Key {
     Window { close: String, revision: u64 },
     /// A payment's contributions at one revision.
     Payment { revision: u64 },
-    /// A turn's player window at one revision: an action ends it.
-    Turn { revision: u64 },
+    /// The passes before another player's decision at one revision: using an
+    /// option ends them.
+    Before { revision: u64 },
 }
 
 impl Key {
@@ -51,7 +52,7 @@ impl Key {
             SharedKind::Payment { .. } => Self::Payment {
                 revision: observation.revision,
             },
-            SharedKind::Turn { .. } => Self::Turn {
+            SharedKind::Before { .. } => Self::Before {
                 revision: observation.revision,
             },
         }
@@ -387,9 +388,9 @@ impl Sharing {
         let decision = &pending.decision;
         let first = *decision.participants.first()?;
         match decision.kind {
-            // The active investigator's player's held choice completes it; the
+            // The deciding investigator's player's held choice completes it; the
             // host holds that choice.
-            SharedKind::Turn { .. } => None,
+            SharedKind::Before { .. } => None,
             SharedKind::Commitment => {
                 let tester = observation
                     .play
@@ -488,7 +489,7 @@ impl Sharing {
         let state = self.state(pending, control);
         let kind = match state.kind {
             SharedKind::Commitment => "commitment",
-            SharedKind::Window | SharedKind::Turn { .. } => "window",
+            SharedKind::Window | SharedKind::Before { .. } => "window",
             SharedKind::Payment { .. } => "clue_payment",
         };
         let players: Vec<Value> = state
@@ -535,11 +536,24 @@ impl Sharing {
                     "Use an option, or pass (op ready, or choose ready_with). The window closes once every player with an option has passed in succession; an action restarts it."
                 );
             }
-            SharedKind::Turn { actor } => {
-                value["before_action_of"] = json!(actor.name());
+            SharedKind::Before {
+                decider,
+                action: true,
+            } => {
+                value["before_action_of"] = json!(decider.name());
                 value["how"] = json!(format!(
                     "This player window comes before {0}'s next action. Use a fast option, or pass (op ready, or choose ready_with). {0}'s player's next choice waits until every player with an option has passed; a fast play restarts the passes.",
-                    actor.name()
+                    decider.name()
+                ));
+            }
+            SharedKind::Before {
+                decider,
+                action: false,
+            } => {
+                value["before_decision_of"] = json!(decider.name());
+                value["how"] = json!(format!(
+                    "You hold an option in {0}'s decision, such as a reaction to it, which you may use before it goes ahead. Use it, or pass (op ready, or choose ready_with). {0}'s player's choice waits until every player with an option here has passed; using one moves the decision on, and the passes start again.",
+                    decider.name()
                 ));
             }
             SharedKind::Payment { at_round_end } => {

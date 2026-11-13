@@ -556,10 +556,10 @@ fn decision(
             ids.push(crate::gathering::GroupCluePayment::DECLINE);
         }
         for id in ids {
-            let mut label = match decision.kind {
-                SharedKind::Turn { actor } => routing::turn_pass_label(actor),
-                _ => label(id),
-            };
+            let mut label = decision
+                .kind
+                .before()
+                .map_or_else(|| label(id), |before| routing::pass_label(&before));
             if decision.kind != (SharedKind::Payment { at_round_end: true }) {
                 label = format!("{label} (marks you ready)");
             }

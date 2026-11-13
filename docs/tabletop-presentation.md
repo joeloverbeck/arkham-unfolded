@@ -848,13 +848,17 @@ distinct from confirmed commitments. Each participating player's readiness is
 shown by investigator name. Confirm is the human's readiness; while it waits, it
 names whose readiness is outstanding. When another player's change clears the
 human's readiness, the cleared control shows it. Group clue payments show the
-same readiness beside each contribution. In another investigator's turn, while the
-human holds a fast option in the player window before that investigator's action,
-the decision display names what the human may use and offers Pass. In the human's
-own turn, his next choice, whether an action, a fast play of his own or ending the
-turn, waits, named, until every other player with a fast option has passed; Undo
-and his part of a shared decision are not held. When another player's fast play
-comes first, his waiting choice is not applied: the decision display says so, and
+same readiness beside each contribution. Whenever another player's decision lists
+an option of the human's, such as a fast option in the player window before that
+investigator's action, A Test of Will against that investigator's revelation, or
+Jacqueline Fine's reaction to that investigator's chaos-token reveal, the decision
+display (or the token display, or the encounter reading) names what the human may
+use before that decision and offers Pass, naming what it comes before; the other
+player's choice waits for it. In the human's own decision, while another player
+holds an option there, his next choice, whether an action, a fast play of his own,
+ending the turn or a reveal, waits, named, until every such player has passed;
+Undo and his part of a shared decision are not held. When another player uses an
+option first, his waiting choice is not applied: the decision display says so, and
 he chooses again.
 
 **Speech boxes and action lines.** Each table-talk message appears in a speech box
