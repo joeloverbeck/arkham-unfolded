@@ -677,3 +677,60 @@ fn a_stale_submission_in_a_shared_decision_is_refused_with_the_current_view() {
         "Once it has seen it"
     );
 }
+
+/// Review fix A1: the library, not the table, computes the human's options, with
+/// one rule for every listed option. Play contract, Shared decisions: in a group
+/// clue payment each player decides only their own investigators' part, and The
+/// Barrier's round-end decline is that payment's other outcome (01109, RR p.7). The
+/// human may pay or decline exactly when one of the human's investigators can
+/// contribute; Undo is never among the options of a decision.
+#[test]
+fn the_human_may_decline_the_barrier_only_when_taking_part_in_its_payment() {
+    let ids = |sitting: &Sitting| -> Vec<String> {
+        sitting
+            .host
+            .control()
+            .human_choices(&sitting.rules.session)
+            .into_iter()
+            .map(|choice| choice.id)
+            .collect()
+    };
+    let session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
+    let listed = crate::gathering::GroupCluePayment::is_listed;
+
+    // Every investigator is in the Hallway with clues: Tony's and Jacqueline's
+    // player takes part beside Patrice's partner.
+    let mut sitting = Sitting::new(session.clone(), &[Patrice]);
+    sitting.join(&[]);
+    let human = ids(&sitting);
+    assert!(
+        human.iter().any(|id| id == "round-end:decline-act"),
+        "{human:?}"
+    );
+    assert!(human.iter().any(|id| listed(id)), "{human:?}");
+
+    // Tony waits in the Cellar: only the partners' investigators, in the Hallway
+    // with the nine clues The Barrier requires, can contribute.
+    let mut session = session;
+    session.place_for_test(Tony, 3, "01114");
+    session.place_for_test(Patrice, 5, "01112");
+    session.place_for_test(Jacqueline, 4, "01112");
+    let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
+    sitting.join(&["patrice"]);
+    sitting.join(&["jacqueline"]);
+    let human = ids(&sitting);
+    assert!(
+        !human
+            .iter()
+            .any(|id| id == "round-end:decline-act" || listed(id)),
+        "{human:?}"
+    );
+    for id in ["round-end:decline-act", "act:pay:0:5:4"] {
+        assert!(
+            !sitting.host.control().human_may(&sitting.rules.session, id),
+            "{id}"
+        );
+    }
+    assert!(!human.iter().any(|id| id == "undo"), "{human:?}");
+}

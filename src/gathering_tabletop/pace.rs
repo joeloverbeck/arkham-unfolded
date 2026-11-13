@@ -140,7 +140,7 @@ pub(super) fn paced(table: &Table) -> Option<Paced> {
     }
     let responses = reading
         .decision(&table.session)
-        .is_some_and(|decision| !encounter::Reading::responses(table, &decision).is_empty());
+        .is_some_and(|_| !encounter::Reading::responses(table).is_empty());
     (partner(reveal.drawn_by) && !responses).then(|| Paced {
         key: Key::Encounter(reveal.card.id),
         delay: delay(&encounter::text(&reveal.card)),

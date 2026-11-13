@@ -210,12 +210,20 @@ impl Routing {
         self.shared.iter().find(|decision| decision.includes(id))
     }
 
-    /// Whether `player` may submit `id` now: one of its own options, or its
-    /// part in a shared decision it takes part in.
-    pub fn may(&self, session: &Session, control: &Control, player: &Controller, id: &str) -> bool {
+    /// Whether the human may submit `id`: the human's own option, its part in a
+    /// shared decision it takes part in, and Undo only when the decision it would
+    /// revert is the human's (#207). An identity no player may submit alone and no
+    /// shared decision includes is the session's to refuse, as without partners.
+    pub fn human_may(&self, session: &Session, control: &Control, id: &str) -> bool {
+        let human = Controller::Human;
+        if id == "undo" {
+            return self.undoer() == Some(&human);
+        }
         match self.shared_of(id) {
-            Some(decision) => decision.players(control).contains(player),
-            None => self.controller(session, control, id).as_ref() == Some(player),
+            Some(decision) => decision.players(control).contains(&human),
+            None => self
+                .controller(session, control, id)
+                .is_none_or(|controller| controller == human),
         }
     }
 

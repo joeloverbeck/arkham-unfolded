@@ -128,13 +128,15 @@ impl Reading {
         })
     }
 
-    /// The responses the human may choose while reading: with agent partners, only
-    /// those of investigators the human controls (#205).
-    pub(super) fn responses<'a>(table: &Table, view: &'a Observation) -> Vec<&'a crate::Choice> {
-        view.choices
-            .iter()
+    /// The responses the human may choose while reading, from the options the
+    /// partner library gives the human: with agent partners, only those of
+    /// investigators the human controls (#205). Resolving is the reading's Continue.
+    pub(super) fn responses(table: &Table) -> Vec<crate::Choice> {
+        table
+            .presentation
+            .human_choices(&table.session)
+            .into_iter()
             .filter(|choice| !matches!(choice.id.as_str(), "revelation:resolve" | "undo"))
-            .filter(|choice| table.human_may(&choice.id))
             .collect()
     }
 
@@ -162,7 +164,7 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
     let decision = reading.decision(&table.session);
     let responses = decision
         .as_ref()
-        .map(|view| Reading::responses(table, view))
+        .map(|_| Reading::responses(table))
         .unwrap_or_default();
     let title = crate::gathering::inspection::encounter_card_type(&card.code).map_or_else(
         || card.title.clone(),

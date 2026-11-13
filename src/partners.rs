@@ -30,6 +30,7 @@ pub use routing::{Routing, Shared, SharedKind};
 pub use shared::{REOPENINGS, Readiness, SharedState};
 pub use talk::{CHATTER_LIMIT, LONGEST_MESSAGE, PERIL, Said};
 
+use crate::Choice;
 use crate::gathering::{
     Investigator, OptionOwner, Session,
     inspection::{self, Sight},
@@ -87,19 +88,23 @@ impl Control {
     /// partners every option is the human's. With partners, Undo is the human's only
     /// when the decision it would revert belongs to investigators the human controls.
     pub fn human_may(&self, session: &Session, id: &str) -> bool {
+        self.solo() || Routing::of(session, self).human_may(session, self, id)
+    }
+
+    /// The listed options of the session's pending decision that the human may
+    /// submit, as the table offers them (#205): every one without partners, and
+    /// with partners those [`Self::human_may`] allows, as a partner's view lists
+    /// only that partner's options.
+    pub fn human_choices(&self, session: &Session) -> Vec<Choice> {
+        let choices = session.observe().choices;
         if self.solo() {
-            return true;
+            return choices;
         }
         let routing = Routing::of(session, self);
-        if id == "undo" {
-            return routing.undoer() == Some(&Controller::Human);
-        }
-        if routing.shared_of(id).is_some() {
-            return routing.may(session, self, &Controller::Human, id);
-        }
-        routing
-            .controller(session, self, id)
-            .is_none_or(|controller| controller == Controller::Human)
+        choices
+            .into_iter()
+            .filter(|choice| routing.human_may(session, self, &choice.id))
+            .collect()
     }
 
     fn held_by(&self, partner: &str) -> Vec<Investigator> {

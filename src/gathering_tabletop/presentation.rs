@@ -17,8 +17,17 @@ pub(super) struct Presentation {
     /// Who controls each investigator. With partners, the human's controls offer
     /// only the options the human may submit (#205).
     control: crate::partners::Control,
-    /// The options the human may not submit at a revision, under a control.
-    others: std::sync::Mutex<Option<(u64, crate::partners::Control, Vec<String>)>>,
+    /// The human's options, kept until the revision or the control changes.
+    offer: std::sync::Mutex<Option<Offer>>,
+}
+
+/// The options the partner library gives the human at one revision, under one
+/// control.
+#[derive(Clone)]
+struct Offer {
+    revision: u64,
+    control: crate::partners::Control,
+    choices: Vec<crate::Choice>,
 }
 
 /// One coherent scene input, including the transfers acknowledged by this render.
@@ -51,7 +60,7 @@ impl Presentation {
             encounter: encounter::Reading::for_session(session),
             announcement: None,
             control: crate::partners::Control::default(),
-            others: std::sync::Mutex::new(None),
+            offer: std::sync::Mutex::new(None),
         }
     }
 
@@ -62,7 +71,11 @@ impl Presentation {
             .or_else(|| self.map.view())
             .cloned()
             .unwrap_or_else(|| self.base_view(session));
-        self.restrict(session, &mut view);
+        // Only the session's own observation lists choices: every staged view
+        // clears them. With partners, the table offers the human's alone.
+        if !self.control.solo() && !view.choices.is_empty() {
+            view.choices = self.human_choices(session);
+        }
         view
     }
 
@@ -79,40 +92,25 @@ impl Presentation {
         true
     }
 
-    /// Keep only the options the human may submit. Undo is the human's only when
-    /// the decision it would revert is the human's (#207).
-    fn restrict(&self, session: &Session, view: &mut Observation) {
-        if self.control.solo() || view.choices.is_empty() {
-            return;
-        }
+    /// The pending decision's options the human may submit, as the partner library
+    /// computes them (#205, #207): every listed option without partners.
+    pub(super) fn human_choices(&self, session: &Session) -> Vec<crate::Choice> {
         let revision = session.revision();
-        let mut others = self.others.lock().expect("Routed options");
-        let stale = others
-            .as_ref()
-            .is_none_or(|(at, control, _)| *at != revision || *control != self.control);
-        if stale {
-            use crate::partners::Controller;
-            let routing = crate::partners::Routing::of(session, &self.control);
-            let mut ids: Vec<String> = routing
-                .options()
-                .filter(|(_, _, controller)| **controller != Controller::Human)
-                .map(|(id, _, _)| id.to_owned())
-                .collect();
-            if routing.undoer() != Some(&Controller::Human) {
-                ids.push("undo".into());
+        let mut offer = self.offer.lock().expect("The human's options");
+        match offer.as_ref() {
+            Some(kept) if kept.revision == revision && kept.control == self.control => {
+                kept.choices.clone()
             }
-            // A shared decision's completing option is the readiness of each
-            // player taking part in it.
-            for shared in routing.shared() {
-                if !shared.players(&self.control).contains(&Controller::Human) {
-                    ids.push(shared.close.clone());
-                    ids.push("round-end:decline-act".into());
-                }
+            _ => {
+                let choices = self.control.human_choices(session);
+                *offer = Some(Offer {
+                    revision,
+                    control: self.control.clone(),
+                    choices: choices.clone(),
+                });
+                choices
             }
-            *others = Some((revision, self.control.clone(), ids));
         }
-        let (_, _, ids) = others.as_ref().expect("Just routed");
-        view.choices.retain(|choice| !ids.contains(&choice.id));
     }
 
     fn base_view(&self, session: &Session) -> Observation {
