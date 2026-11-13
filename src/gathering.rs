@@ -615,6 +615,11 @@ impl Session {
             .map(|option| option.owner)
     }
 
+    /// The revision a choice must name, as [`Self::observe`] reports it.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
     /// Only the latest live transition, never historical steps; empty after loading.
     pub fn presentation_after(&self, revision: u64) -> &[PresentationMoment] {
         if revision < self.revision {

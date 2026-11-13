@@ -31,6 +31,7 @@ mod encounter;
 mod map_motion;
 mod markers;
 mod motion;
+mod partners;
 mod pendulum;
 mod phase_banner;
 mod play;
@@ -89,6 +90,7 @@ enum Action {
     Focus(Area),
     Resolve,
     Follow,
+    Partners(partners::Input),
 }
 
 impl Action {
@@ -139,6 +141,10 @@ struct Table {
     prediction: Option<pendulum::Picker>,
     violin: Option<violin::Picker>,
     clue_payment: Option<clue_payment::Chooser>,
+    /// Agent partners as the table shows them (#205).
+    partners: partners::Shown,
+    /// Counts restarts in this window, so partner sessions end with their attempt.
+    attempt: u64,
 }
 
 impl Table {
@@ -195,11 +201,49 @@ impl Table {
             prediction: None,
             violin: None,
             clue_payment: None,
+            partners: partners::Shown::default(),
+            attempt: 0,
         }
     }
 
     fn view(&self) -> Observation {
         self.presentation.view(&self.session)
+    }
+
+    /// Save a decision, then present it: the one commit path for the human's
+    /// clicks and agent partners' choices. The camera is the caller's to move.
+    fn commit(&mut self, revision: u64, id: &str) -> Result<(), String> {
+        self.token_options = None;
+        let before = self.view();
+        let draws =
+            continuity::commit_choice_with_draws(&self.save_path, &mut self.session, revision, id)
+                .map_err(|error| error.to_string())?;
+        self.violin = None;
+        self.clue_payment = None;
+        let shuffled = self.reduced_motion
+            && draws.iter().any(|cue| {
+                cue.batch
+                    .steps
+                    .iter()
+                    .any(|step| matches!(step, crate::gathering::DeckStep::Shuffle { .. }))
+            });
+        self.presentation
+            .committed(&self.session, &before, id, draws, self.reduced_motion);
+        self.context.reset();
+        self.epoch += 1;
+        self.notice = if shuffled {
+            "Decks shuffled. Reduced motion is on.".into()
+        } else {
+            String::new()
+        };
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Whether the human may submit `id`: with agent partners, only options of
+    /// the investigators the human controls (#205).
+    fn human_may(&self, id: &str) -> bool {
+        self.presentation.control().human_may(&self.session, id)
     }
 
     fn is_presenting(&self) -> bool {
@@ -751,7 +795,13 @@ fn install(app: &mut App) {
                     remember_attempt,
                 )
                     .chain(),
-                (pendulum::keyboard, clue_payment::keyboard, handle_actions).chain(),
+                (
+                    pendulum::keyboard,
+                    clue_payment::keyboard,
+                    handle_actions,
+                    partners::serve,
+                )
+                    .chain(),
                 (consequences::advance, doom::advance).chain(),
                 reveal::sync,
                 crate::tabletop_reveal::render,
@@ -927,6 +977,17 @@ fn handle_actions(
             Action::ContextInspect(..) => continue,
             action => action,
         };
+        // With agent partners, a control left from an earlier state cannot answer
+        // for an investigator a partner plays.
+        if let Some(id) = action.choice()
+            && !table.human_may(id)
+        {
+            table.notice =
+                "That decision belongs to an investigator a partner plays. Take over to answer it."
+                    .into();
+            table.dirty = true;
+            continue;
+        }
         // The same dispatch boundary as Party: a dialog captures actions that
         // were already queued before its barrier appeared on screen.
         let reading = table.presentation.story().is_some();
@@ -1073,46 +1134,19 @@ fn handle_actions(
                     clue_payment::open(&mut table, epoch, revision);
                     continue;
                 }
-                table.token_options = None;
-                let path = table.save_path.clone();
-                let before = table.view();
-                table.notice = match continuity::commit_choice_with_draws(
-                    &path,
-                    &mut table.session,
-                    revision,
-                    &id,
-                ) {
-                    Ok(draws) => {
-                        let table = &mut *table;
-                        table.violin = None;
-                        table.clue_payment = None;
-                        let shuffled = table.reduced_motion
-                            && draws.iter().any(|cue| {
-                                cue.batch.steps.iter().any(|step| {
-                                    matches!(step, crate::gathering::DeckStep::Shuffle { .. })
-                                })
-                            });
-                        table.presentation.committed(
-                            &table.session,
-                            &before,
-                            &id,
-                            draws,
-                            table.reduced_motion,
-                        );
-                        table.context.reset();
-                        table.epoch += 1;
+                match table.commit(revision, &id) {
+                    Ok(()) => {
                         orbit.update_follow_target(Some(play::framing(&table.view())));
                         if reveal_focus {
                             orbit.focus(play::framing(&table.view()));
                         }
-                        if shuffled {
-                            "Decks shuffled. Reduced motion is on.".into()
-                        } else {
-                            String::new()
-                        }
                     }
-                    Err(error) => format!("Decision not committed: {error}"),
-                };
+                    Err(error) => table.notice = format!("Decision not committed: {error}"),
+                }
+                table.dirty = true;
+            }
+            Action::Partners(input) => {
+                table.partners.inputs.push(input);
                 table.dirty = true;
             }
             Action::Choose(..) | Action::ResultChoice(..) | Action::EncounterChoice(..) => {}
@@ -1286,6 +1320,9 @@ fn handle_actions(
                         let mut next = Table::new(session, table.save_path.clone());
                         next.epoch = table.epoch.wrapping_add(1);
                         next.reduced_motion = table.reduced_motion;
+                        next.attempt = table.attempt + 1;
+                        next.presentation
+                            .set_control(table.presentation.control().clone());
                         next.notice = format!(
                             "Started a new Gathering attempt. Previous attempt archived at {}",
                             archive.display()
@@ -1953,6 +1990,13 @@ fn contextual_feedback(
 /// a choice is offered. A dialog or menu waiting for the player is settled, even when
 /// it holds a presentation or motion in place behind it.
 fn unsettled(world: &mut World) -> Vec<&'static str> {
+    let mut pending = table_unsettled(world);
+    pending.extend(partners::unsettled(world));
+    pending
+}
+
+/// What the table itself must finish, without partner requests.
+fn table_unsettled(world: &mut World) -> Vec<&'static str> {
     let moving = world
         .query_filtered::<(), With<motion::CardMotion>>()
         .iter(world)

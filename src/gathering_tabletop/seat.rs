@@ -159,7 +159,11 @@ impl Game for Gathering {
         // The headless player driver's own observation, unchanged. The table can
         // still be presenting its way there, which `shows_latest` discloses.
         let observation = table.session.observe();
-        let shows_latest = table.view() == observation;
+        // With agent partners the table offers only the human's options (#205),
+        // which is not a presentation still under way.
+        let mut shown = table.view();
+        shown.choices.clone_from(&observation.choices);
+        let shows_latest = shown == observation;
         let control = |control: &Control| {
             json!({
                 "choice": control.choice,

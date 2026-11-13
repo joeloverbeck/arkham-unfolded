@@ -515,12 +515,26 @@ pub(super) fn render(
                 .play
                 .as_ref()
                 .is_some_and(|play| play.scenario.outcome.is_none() && play.actor == Some(who));
+            let mut marks = Vec::new();
+            if table.partners.partner_plays(who) {
+                marks.push("PARTNER".to_owned());
+            }
+            if let Some((deciding, state)) = table.partners.deciding
+                && deciding == who
+            {
+                marks.push(match state {
+                    partners::Deciding::Thinking => "THINKING".to_owned(),
+                    partners::Deciding::Silent(minutes) => format!("SILENT {minutes} MIN"),
+                    partners::Deciding::Unclaimed => "AWAITING PARTNER".to_owned(),
+                });
+            }
             let entity = screen::portrait(
                 p,
                 art.symbol_font(),
                 who.name(),
                 portraits[index].as_ref(),
                 current_turn,
+                &marks,
             );
             p.commands().entity(entity).observe(
                 move |_: On<Activate>, mut queue: ResMut<Actions>| {
@@ -613,6 +627,19 @@ pub(super) fn render(
             if let Some(summary) = view.play.as_ref().and_then(test_summary) {
                 p.spawn(art.text(summary, 15., GOLD));
             }
+            if let Some((who, _)) = table.partners.deciding
+                && let Some(cue) = table.partners.cue(who)
+            {
+                p.spawn(art.text(cue, 16., PARTNER));
+                screen::controls(p, |row| {
+                    control(
+                        art,
+                        row,
+                        &format!("Take over {}", who.name()),
+                        Action::Partners(partners::Input::TakeOver(who)),
+                    );
+                });
+            }
             if !table.is_presenting() {
                 for (_, label) in controls::window_opportunities(view) {
                     p.spawn(art.text(
@@ -702,6 +729,19 @@ pub(super) fn render(
             button(
                 art,
                 p,
+                if table.partners.menu_open {
+                    "Hide agent partners"
+                } else {
+                    "Agent partners"
+                },
+                Action::Partners(partners::Input::Menu),
+            );
+            if table.partners.menu_open {
+                partners_menu(p, art, table);
+            }
+            button(
+                art,
+                p,
                 if orbit.is_following() {
                     "Camera following: on"
                 } else {
@@ -736,6 +776,48 @@ pub(super) fn render(
         inspection(commands, table, view, art, size, context);
     }
 }
+
+/// Shown under the Agent partners button of the menu (#205).
+fn partners_menu(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table) {
+    let shown = &table.partners;
+    p.spawn(art.text(
+        "Hand investigators to agent partners for this session. The save does not record it.",
+        12.,
+        MUTED,
+    ));
+    for who in Investigator::ALL {
+        let label = match (shown.selected[who.index()], shown.joined[who.index()]) {
+            (false, _) => format!("{}: you play", who.name()),
+            (true, false) => format!("{}: a partner plays", who.name()),
+            (true, true) => format!("{}: a partner plays · joined", who.name()),
+        };
+        button(art, p, &label, Action::Partners(partners::Input::Hand(who)));
+    }
+    button(
+        art,
+        p,
+        if shown.enabled {
+            "Turn agent partners off"
+        } else {
+            "Enable agent partners"
+        },
+        Action::Partners(partners::Input::Enable(!shown.enabled)),
+    );
+    if let Some(problem) = &shown.problem {
+        p.spawn(art.text(problem, 12., GOLD));
+    }
+    if let Some(line) = &shown.line {
+        p.spawn(art.text(
+            "Paste into an agent's terminal (the game's terminal shows it too):",
+            12.,
+            MUTED,
+        ));
+        p.spawn(art.text(line, 13., PAPER));
+    }
+}
+
+/// Agent partners' cue in the decision display.
+const PARTNER: Color = Color::srgb(0.55, 0.82, 0.86);
 
 fn restart_confirmation(commands: &mut Commands, table: &Table, art: &art::Art, size: Vec2) {
     let barrier = screen::inspection(
@@ -954,9 +1036,12 @@ fn inspection(
                         results::details(body, art, report);
                     }
                 }
-                for line in &view.history {
+                for (index, line) in view.history.iter().enumerate() {
+                    let line = table
+                        .partners
+                        .history_line(index, controls::display_history(view, line));
                     body.spawn((
-                        art.text(controls::display_history(view, line), 18., PAPER),
+                        art.text(line, 18., PAPER),
                         Node {
                             width: percent(100),
                             ..default()

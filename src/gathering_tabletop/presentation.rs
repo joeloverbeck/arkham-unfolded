@@ -14,6 +14,11 @@ pub(super) struct Presentation {
     results: results::Reading,
     encounter: encounter::Reading,
     announcement: Option<phase_banner::Announcement>,
+    /// Who controls each investigator. With partners, the human's controls offer
+    /// only the options the human may submit (#205).
+    control: crate::partners::Control,
+    /// The options the human may not submit at a revision, under a control.
+    others: std::sync::Mutex<Option<(u64, crate::partners::Control, Vec<String>)>>,
 }
 
 /// One coherent scene input, including the transfers acknowledged by this render.
@@ -45,15 +50,56 @@ impl Presentation {
             results: results::Reading::for_session(session),
             encounter: encounter::Reading::for_session(session),
             announcement: None,
+            control: crate::partners::Control::default(),
+            others: std::sync::Mutex::new(None),
         }
     }
 
     pub(super) fn view(&self, session: &Session) -> Observation {
-        self.draws
+        let mut view = self
+            .draws
             .view()
             .or_else(|| self.map.view())
             .cloned()
-            .unwrap_or_else(|| self.base_view(session))
+            .unwrap_or_else(|| self.base_view(session));
+        self.restrict(session, &mut view);
+        view
+    }
+
+    pub(super) fn control(&self) -> &crate::partners::Control {
+        &self.control
+    }
+
+    /// Returns whether the control changed.
+    pub(super) fn set_control(&mut self, control: crate::partners::Control) -> bool {
+        if self.control == control {
+            return false;
+        }
+        self.control = control;
+        true
+    }
+
+    /// Keep only the options the human may submit. Undo stays the human's.
+    fn restrict(&self, session: &Session, view: &mut Observation) {
+        if self.control.solo() || view.choices.is_empty() {
+            return;
+        }
+        let revision = session.revision();
+        let mut others = self.others.lock().expect("Routed options");
+        let stale = others
+            .as_ref()
+            .is_none_or(|(at, control, _)| *at != revision || *control != self.control);
+        if stale {
+            let routing = crate::partners::Routing::of(session, &self.control);
+            let ids = routing
+                .options()
+                .filter(|(_, _, controller)| **controller != crate::partners::Controller::Human)
+                .map(|(id, _, _)| id.to_owned())
+                .collect();
+            *others = Some((revision, self.control.clone(), ids));
+        }
+        let (_, _, ids) = others.as_ref().expect("Just routed");
+        view.choices.retain(|choice| !ids.contains(&choice.id));
     }
 
     fn base_view(&self, session: &Session) -> Observation {
@@ -144,7 +190,9 @@ impl Presentation {
     /// and draw state only when the whole loaded Session is unchanged.
     pub(super) fn reopen(&mut self, previous: &Session, loaded: &Session) {
         if loaded != previous {
+            let control = std::mem::take(&mut self.control);
             *self = Self::new(loaded);
+            self.control = control;
         }
     }
 

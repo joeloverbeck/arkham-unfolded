@@ -238,12 +238,21 @@ impl<R> Host<R> {
         Some(now.saturating_duration_since(partner.heard))
     }
 
-    /// Whether a request is held for a table that has yet to settle or for a
-    /// decision yet to come.
-    pub fn holds_choice(&self) -> bool {
-        self.held
-            .iter()
-            .any(|held| matches!(held.pending, Pending::Choose { .. }))
+    /// Whether [`Self::poll`] would answer a held request now.
+    pub fn due(&self, session: &Session, settled: bool, now: Instant) -> bool {
+        let mut routing: Option<Routing> = None;
+        self.held.iter().any(|held| match &held.pending {
+            Pending::Choose { .. } => settled,
+            Pending::Wait { deadline } => {
+                now >= *deadline
+                    || self.changed(&held.partner)
+                    || (settled
+                        && routing
+                            .get_or_insert_with(|| Routing::of(session, &self.control()))
+                            .awaiting()
+                            == Some(&Controller::Partner(held.partner.clone())))
+            }
+        })
     }
 
     /// Answer one request line now, or hold it. Answers to held requests come from

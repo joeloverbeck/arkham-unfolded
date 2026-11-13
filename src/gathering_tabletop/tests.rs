@@ -835,7 +835,7 @@ fn gathering_art_override_is_temporary_and_no_art_is_rejected() {
     }
 }
 
-fn button_with_label(app: &mut App, label: &str) -> Option<Entity> {
+pub(super) fn button_with_label(app: &mut App, label: &str) -> Option<Entity> {
     let world = app.world_mut();
     world
         .query_filtered::<(Entity, &Children), With<Button>>()

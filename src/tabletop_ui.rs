@@ -169,12 +169,16 @@ pub(crate) fn portrait(
     name: &str,
     image: Option<&(Handle<Image>, Vec2)>,
     current_turn: bool,
+    marks: &[String],
 ) -> Entity {
     let dimensions = image.map(|(_, size)| *size * (108. / size.x).min(82. / size.y));
-    let label = format!(
+    let mut label = format!(
         "Focus {name}{}",
         if current_turn { " · current turn" } else { "" }
     );
+    for mark in marks {
+        label.push_str(&format!(" · {}", mark.to_lowercase()));
+    }
     parent
         .spawn((
             Button,
@@ -222,9 +226,27 @@ pub(crate) fn portrait(
                     Pickable::IGNORE,
                 ));
             }
+            for mark in marks {
+                p.spawn((
+                    Node {
+                        padding: UiRect::axes(px(6), px(2)),
+                        border_radius: BorderRadius::all(px(3)),
+                        ..default()
+                    },
+                    BackgroundColor(MARK),
+                    Pickable::IGNORE,
+                ))
+                .with_child((
+                    crate::tabletop_harm_text::ui(mark, 11., PAPER, font),
+                    Pickable::IGNORE,
+                ));
+            }
         })
         .id()
 }
+
+/// Agent partners' portrait marks, distinct from the gold TURN badge.
+const MARK: Color = Color::srgb(0.16, 0.36, 0.42);
 
 pub(crate) fn controls(
     parent: &mut ChildSpawnerCommands,
