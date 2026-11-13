@@ -19,7 +19,10 @@
 
 use super::*;
 use crate::gathering::CardView;
-use crate::partners::{self as rules, Controller, Host, Routing};
+use crate::partners::{
+    Control, Controller, DEFAULT_WAIT, Host, HumanChoice, LONGEST_WAIT, Routing, SharedKind,
+    SharedState,
+};
 use serde_json::{Value, json};
 use std::{
     io::{BufRead, BufReader, ErrorKind, Write},
@@ -84,7 +87,7 @@ pub(super) struct Shown {
     /// the status line.
     pub awaited: Vec<Investigator>,
     /// The pending shared decisions whose participants several players control.
-    pub shared: Vec<rules::SharedState>,
+    pub shared: Vec<SharedState>,
     /// History entries a partner's decision made in this sitting, and its
     /// investigator. Runtime only: the save's history is replayed from decisions.
     pub attributed: Vec<(usize, Investigator)>,
@@ -128,10 +131,28 @@ impl Shown {
     }
 
     /// The human's part in the shared decision `id` completes, when it has one.
-    pub(super) fn shared_with_human(&self, id: &str) -> Option<&rules::SharedState> {
+    pub(super) fn shared_with_human(&self, id: &str) -> Option<&SharedState> {
         self.shared
             .iter()
             .find(|state| state.close == id && state.of(&Controller::Human).is_some())
+    }
+
+    /// The shared clue payment the human takes part in, while partners share it.
+    pub(super) fn payment_with_human(&self) -> Option<&SharedState> {
+        self.shared.iter().find(|state| {
+            matches!(state.kind, SharedKind::Payment { .. })
+                && state.of(&Controller::Human).is_some()
+        })
+    }
+
+    /// Whether the player of `who` is ready on the shared payment the human takes
+    /// part in, while partners share it.
+    pub(super) fn payment_ready(&self, who: Investigator) -> Option<bool> {
+        self.payment_with_human()?
+            .players
+            .iter()
+            .find(|player| player.investigators.contains(&who))
+            .map(|player| player.ready)
     }
 
     /// The label of the human's readiness control in a shared decision: as
@@ -151,9 +172,9 @@ impl Shown {
         };
         if human.ready {
             let done = match state.kind {
-                rules::SharedKind::Window => "Passed",
-                rules::SharedKind::Commitment => "Confirmed",
-                rules::SharedKind::Payment { .. } => "Ready",
+                SharedKind::Window => "Passed",
+                SharedKind::Commitment => "Confirmed",
+                SharedKind::Payment { .. } => "Ready",
             };
             return format!("{done} · waiting for {}", names(&state.outstanding()));
         }
@@ -170,9 +191,9 @@ impl Shown {
             .filter(|state| state.active)
             .map(|state| {
                 let what = match state.kind {
-                    rules::SharedKind::Commitment => "Commitments",
-                    rules::SharedKind::Window => "Window",
-                    rules::SharedKind::Payment { .. } => "Clue payment",
+                    SharedKind::Commitment => "Commitments",
+                    SharedKind::Window => "Window",
+                    SharedKind::Payment { .. } => "Clue payment",
                 };
                 let players: Vec<String> = state
                     .players
@@ -181,8 +202,8 @@ impl Shown {
                         let names: Vec<_> =
                             player.investigators.iter().map(|who| who.name()).collect();
                         let status = match state.kind {
-                            rules::SharedKind::Window if player.ready => "passed",
-                            rules::SharedKind::Window => "may act",
+                            SharedKind::Window if player.ready => "passed",
+                            SharedKind::Window => "may act",
                             _ if player.ready => "ready",
                             _ => "deciding",
                         };
@@ -199,7 +220,7 @@ impl Shown {
         let Some(state) = self
             .shared
             .iter()
-            .find(|state| state.kind == rules::SharedKind::Commitment)
+            .find(|state| state.kind == SharedKind::Commitment)
         else {
             return Vec::new();
         };
@@ -263,9 +284,18 @@ pub(super) struct Partners {
     transport: Option<Transport>,
     /// The attempt the partner sessions joined; a restart ends them.
     attempt: u64,
-    /// The decision last routed for the display: revision, control and sharing
-    /// version, and what it showed.
-    routed: Option<(u64, rules::Control, u64, Routed)>,
+    /// The decision last routed for the display, and what it showed.
+    routed: Option<RoutedAt>,
+}
+
+/// A routed decision, kept until its revision, the control or a shared
+/// decision's readiness changes.
+struct RoutedAt {
+    revision: u64,
+    control: Control,
+    /// The host's sharing version.
+    sharing: u64,
+    routed: Routed,
 }
 
 /// What the table shows of a routed decision.
@@ -274,7 +304,7 @@ struct Routed {
     /// The players it waits for, each with the investigator it answers for.
     awaited: Vec<(Controller, Option<Investigator>)>,
     may_use: Vec<(Investigator, Vec<String>)>,
-    shared: Vec<rules::SharedState>,
+    shared: Vec<SharedState>,
 }
 
 impl Default for Partners {
@@ -314,7 +344,7 @@ impl Partners {
         session: &Session,
         revision: u64,
         id: &str,
-    ) -> Result<rules::HumanChoice, String> {
+    ) -> Result<HumanChoice, String> {
         self.host.human(session, revision, id)
     }
 }
@@ -561,14 +591,21 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         Routed::default()
     } else {
         match &partners.routed {
-            Some((at, routed, shared, shown))
-                if *at == revision && *routed == control && *shared == version =>
+            Some(kept)
+                if kept.revision == revision
+                    && kept.control == control
+                    && kept.sharing == version =>
             {
-                shown.clone()
+                kept.routed.clone()
             }
             _ => {
                 let routed = route(&partners.host, &table.session, &control);
-                partners.routed = Some((revision, control.clone(), version, routed.clone()));
+                partners.routed = Some(RoutedAt {
+                    revision,
+                    control: control.clone(),
+                    sharing: version,
+                    routed: routed.clone(),
+                });
                 routed
             }
         }
@@ -625,7 +662,7 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
 /// Route the pending decision for the display: whom it waits for, what each
 /// awaited partner may use in a window (the line the table shows without
 /// partners as "Available now"), and its shared decisions.
-fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &rules::Control) -> Routed {
+fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &Control) -> Routed {
     let awaited = host.awaited(session);
     let routing = Routing::of(session, control);
     let observation = session.observe();
@@ -672,7 +709,7 @@ struct Sitting<'a> {
     committed: bool,
 }
 
-impl rules::Table for Sitting<'_> {
+impl crate::partners::Table for Sitting<'_> {
     fn session(&self) -> &Session {
         &self.table.session
     }
@@ -883,8 +920,8 @@ fn converse(
         let limit = (request["op"] == "wait").then(|| {
             request["timeout_seconds"]
                 .as_u64()
-                .map_or(rules::DEFAULT_WAIT, Duration::from_secs)
-                .min(rules::LONGEST_WAIT)
+                .map_or(DEFAULT_WAIT, Duration::from_secs)
+                .min(LONGEST_WAIT)
                 + Duration::from_secs(5)
         });
         let (reply, answer) = mpsc::channel();

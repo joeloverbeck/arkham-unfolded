@@ -84,14 +84,6 @@ impl Chooser {
     }
 }
 
-/// The shared payment the human takes part in, while partners share it.
-fn shared(table: &Table) -> Option<&crate::partners::SharedState> {
-    table.partners.shared.iter().find(|state| {
-        matches!(state.kind, crate::partners::SharedKind::Payment { .. })
-            && state.of(&crate::partners::Controller::Human).is_some()
-    })
-}
-
 pub(super) fn open(table: &mut Table, epoch: u64, revision: u64) {
     let view = table.session.observe();
     if epoch != table.epoch || revision != view.revision || table.modal() || table.is_presenting() {
@@ -100,7 +92,7 @@ pub(super) fn open(table: &mut Table, epoch: u64, revision: u64) {
     let Some(payment) = view.group_clue_payment else {
         return;
     };
-    let shared = shared(table).map(|state| {
+    let shared = table.partners.payment_with_human().map(|state| {
         let control = table.presentation.control();
         let mine = Investigator::ALL
             .map(|who| control.controller(who) == crate::partners::Controller::Human);
@@ -132,7 +124,7 @@ pub(super) fn sync(table: &mut Table) {
         return;
     }
     // Another player's pending part follows its changes.
-    let pending = shared(table).map(|state| state.clues);
+    let pending = table.partners.payment_with_human().map(|state| state.clues);
     if let Some(chooser) = table.clue_payment.as_mut()
         && let (Some(mine), Some(pending)) = (chooser.mine, pending)
     {
@@ -148,16 +140,6 @@ pub(super) fn sync(table: &mut Table) {
             table.dirty = true;
         }
     }
-}
-
-/// Whether the player of `who` is ready on the shared payment, while partners
-/// share it.
-fn ready(table: &Table, who: Investigator) -> Option<bool> {
-    shared(table)?
-        .players
-        .iter()
-        .find(|player| player.investigators.contains(&who))
-        .map(|player| player.ready)
 }
 
 /// Local edits are consumed here. Paying and declining rejoin the adapter's
@@ -281,7 +263,7 @@ pub(super) fn render(
         table.epoch,
         visible,
         size,
-        format!("{}|{:?}", table.notice, shared(&table)),
+        format!("{}|{:?}", table.notice, table.partners.payment_with_human()),
     );
     if previous.as_ref() == Some(&key) {
         return;
@@ -472,7 +454,7 @@ fn row(
         })
         .with_children(|line| {
             // In a shared payment each contribution carries its player's readiness.
-            let readiness = match ready(table, who) {
+            let readiness = match table.partners.payment_ready(who) {
                 Some(true) => " · ready",
                 Some(false) if !chooser.sets(who) => " · its partner is deciding",
                 Some(false) => " · not ready",
