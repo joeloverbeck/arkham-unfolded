@@ -63,8 +63,8 @@ exits; in Codex, run wait again whenever it answers nothing_yet. Views give the
 current state, not the history: keep brief notes of your plan as you play.
 
 Exit codes: 0 answered, 1 refused, 2 the table cannot be reached or the command
-is malformed, 3 nothing yet (wait only). The first run builds the tool, which can
-take a minute.";
+is malformed, 3 nothing yet (wait only). The first run in a checkout builds the
+tool, which can take a few minutes; later runs start at once.";
 
 #[derive(ClapArgs)]
 pub struct Args {
