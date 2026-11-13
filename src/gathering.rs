@@ -108,6 +108,11 @@ pub fn card_rules(code: &str) -> Option<&'static str> {
     cards::definition(code).map(|card| card.effective_text)
 }
 
+/// The printed title of a selected player or scenario card.
+pub fn card_title(code: &str) -> Option<&'static str> {
+    content::title(code)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
