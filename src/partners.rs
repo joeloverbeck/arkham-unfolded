@@ -70,12 +70,19 @@ impl Control {
     }
 
     /// Whether the human may submit `id` at the session's pending decision. Without
-    /// partners every option is the human's.
+    /// partners every option is the human's. With partners, Undo is the human's only
+    /// when the decision it would revert belongs to investigators the human controls.
     pub fn human_may(&self, session: &Session, id: &str) -> bool {
-        self.solo()
-            || Routing::of(session, self)
-                .controller(session, self, id)
-                .is_none_or(|controller| controller == Controller::Human)
+        if self.solo() {
+            return true;
+        }
+        let routing = Routing::of(session, self);
+        if id == "undo" {
+            return routing.undoer() == Some(&Controller::Human);
+        }
+        routing
+            .controller(session, self, id)
+            .is_none_or(|controller| controller == Controller::Human)
     }
 
     fn held_by(&self, partner: &str) -> Vec<Investigator> {
@@ -530,15 +537,17 @@ impl<R> Host<R> {
         }
         let control = self.control();
         let me = Controller::Partner(partner.to_owned());
-        let Some(controller) = routing.controller(session, &control, id) else {
+        // Undo's owner is that of the decision it would revert.
+        let Some(owner) = routing.owner(session, id) else {
             return Err("That choice is not available at the current decision.".into());
         };
-        let owner = routing.owner(session, id);
-        let named = owner
-            .as_ref()
-            .map(routing::investigators)
-            .unwrap_or_default();
-        if controller != me {
+        let named = routing::investigators(&owner);
+        let names = named
+            .iter()
+            .map(|who| who.name())
+            .collect::<Vec<_>>()
+            .join(" and ");
+        if routing.controller(session, &control, id).as_ref() != Some(&me) {
             let played = self
                 .partners
                 .iter()
@@ -551,30 +560,35 @@ impl<R> Host<R> {
                     lost.name()
                 ));
             }
+            if id == "undo" {
+                return Err(match owner {
+                    OptionOwner::Table => "Undo reverts only your own latest decision; the latest was made at the table.".into(),
+                    _ => format!("Undo reverts only your own latest decision; the latest belongs to {names}."),
+                });
+            }
             return Err(match owner {
-                Some(OptionOwner::Table) => {
+                OptionOwner::Table => {
                     "That choice is made at the table: the lead investigator is chosen there."
                         .into()
                 }
-                Some(OptionOwner::Group { arbiter }) => format!(
+                OptionOwner::Group { arbiter } => format!(
                     "That is a group choice: the player of {}, its arbiter, makes it.",
                     arbiter.name()
                 ),
-                Some(OptionOwner::Shared { .. }) => {
+                OptionOwner::Shared { .. } => {
                     "That choice is a shared decision, made at the table in this version.".into()
                 }
-                _ => format!(
-                    "That choice belongs to {}, whom you do not play.",
-                    named
-                        .iter()
-                        .map(|who| who.name())
-                        .collect::<Vec<_>>()
-                        .join(" and ")
-                ),
+                OptionOwner::Investigator(_) => {
+                    format!("That choice belongs to {names}, whom you do not play.")
+                }
             });
         }
         Ok(match owner {
-            Some(OptionOwner::Investigator(who)) => who,
+            OptionOwner::Investigator(who) => who,
+            // Undo answers for the investigator whose decision it reverts.
+            _ if id == "undo" => *named
+                .first()
+                .expect("A partner's latest decision names its investigator"),
             _ => routing
                 .awaited_investigator()
                 .filter(|who| control.controller(*who) == me)

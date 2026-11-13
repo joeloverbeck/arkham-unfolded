@@ -311,6 +311,17 @@ fn decision(
                 .collect::<Vec<_>>(),
         });
     }
+    // Undo is not an option of the pending decision: it reverts this player's own
+    // latest decision, and is offered only while nothing has followed it.
+    if routing.undoer() == Some(me) {
+        decision["undo"] = json!({
+            "id": "undo",
+            "label": label("undo"),
+            "investigator": routing
+                .undo_owner()
+                .and_then(|owner| routing::investigators(owner).first().copied()),
+        });
+    }
     let note = if table {
         Some("The lead investigator is chosen at the table.")
     } else if routing.with_human() && routing.awaiting() != Some(me) {

@@ -982,9 +982,12 @@ fn handle_actions(
         if let Some(id) = action.choice()
             && !table.human_may(id)
         {
-            table.notice =
+            table.notice = if id == "undo" {
+                "Undo reverts only your own latest decision, and the latest is not yours."
+            } else {
                 "That decision belongs to an investigator a partner plays. Take over to answer it."
-                    .into();
+            }
+            .into();
             table.dirty = true;
             continue;
         }

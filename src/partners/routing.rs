@@ -24,6 +24,10 @@ pub struct Routing {
     awaiting: Option<(Controller, Option<Investigator>)>,
     /// The arbiter of the pending group choice, while one is open.
     group: Option<Investigator>,
+    /// Undo, while the session offers it: the owner of the decision it would
+    /// revert, and the one player who controls every investigator that owner
+    /// names, if one does.
+    undo: Option<(OptionOwner, Option<Controller>)>,
 }
 
 impl Routing {
@@ -49,12 +53,29 @@ impl Routing {
             })
             .collect();
         let awaiting = awaiting(&options, decision_owner, control);
+        let undo = session.undo_owner().map(|owner| {
+            let undoer = sole_controller(&owner, control);
+            (owner, undoer)
+        });
         Self {
             options,
             with_human,
             awaiting,
             group,
+            undo,
         }
+    }
+
+    /// The player who may undo the latest undoable decision: the one who now
+    /// controls every investigator that decision belonged to. `None` while Undo
+    /// is not offered, or when no single player controls them all.
+    pub fn undoer(&self) -> Option<&Controller> {
+        self.undo.as_ref().and_then(|(_, undoer)| undoer.as_ref())
+    }
+
+    /// The owner of the decision Undo would revert, while Undo is offered.
+    pub fn undo_owner(&self) -> Option<&OptionOwner> {
+        self.undo.as_ref().map(|(owner, _)| owner)
     }
 
     /// The player the table waits for, if any option is listed.
@@ -86,15 +107,10 @@ impl Routing {
 
     /// The player who may submit `id`: a listed option, or a number or allocation
     /// in place of a listed option's placeholder. `None` when the pending decision
-    /// does not accept it. Undo is the human's.
+    /// does not accept it. Undo is its [undoer](Self::undoer)'s, if it has one.
     pub fn controller(&self, session: &Session, control: &Control, id: &str) -> Option<Controller> {
         if id == "undo" {
-            return session
-                .observe()
-                .choices
-                .iter()
-                .any(|choice| choice.id == "undo")
-                .then_some(Controller::Human);
+            return self.undoer().cloned();
         }
         if let Some((_, _, controller)) = self.options.iter().find(|(listed, ..)| listed == id) {
             return Some(controller.clone());
@@ -107,8 +123,12 @@ impl Routing {
         })
     }
 
-    /// The owner of `id` as the rules session names it.
+    /// The owner of `id` as the rules session names it; for Undo, the owner of
+    /// the decision it would revert.
     pub fn owner(&self, session: &Session, id: &str) -> Option<OptionOwner> {
+        if id == "undo" {
+            return self.undo_owner().cloned();
+        }
         self.options
             .iter()
             .find(|(listed, ..)| listed == id)
@@ -141,6 +161,19 @@ fn spans_players(owner: &OptionOwner, control: &Control) -> bool {
             players.any(|player| player != first)
         }
     }
+}
+
+/// The one player who controls every investigator `owner` names; the table's
+/// own choice is the human's.
+fn sole_controller(owner: &OptionOwner, control: &Control) -> Option<Controller> {
+    if *owner == OptionOwner::Table {
+        return Some(Controller::Human);
+    }
+    let mut players = investigators(owner)
+        .into_iter()
+        .map(|who| control.controller(who));
+    let first = players.next()?;
+    players.all(|player| player == first).then_some(first)
 }
 
 /// The controller of an owner that is not answered by the human as a whole.

@@ -799,6 +799,115 @@ fn take_over_mid_decision_refuses_the_partners_later_choice_as_no_longer_its_own
     assert_eq!(sitting.revision(), revision);
 }
 
+/// The Undo a partner's view offers, if any.
+fn undo_offered(view: &Value) -> Option<&Value> {
+    view["decision"].get("undo")
+}
+
+/// Ticket #207, Undo (play contract, "Undo and pacing"): with partners enabled each
+/// player may undo only their own latest decision, before anything follows it, and
+/// never across revealed information; Take over makes the investigator's latest
+/// decision the human's to undo; without partners, Undo is the human's as before.
+#[test]
+fn each_player_may_undo_only_their_own_latest_decision() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join(&[]);
+    sitting.human("confirm-mulligan"); // Jacqueline
+    sitting.human("confirm-mulligan"); // Tony
+    sitting.partner(&partner, "confirm-mulligan");
+    sitting.human("turn:patrice");
+    // The human's group choice came last.
+    assert!(sitting.listed().len() > 1 && sitting.human_may("undo"));
+    assert_eq!(undo_offered(&sitting.view(&partner)), None);
+    let revision = sitting.revision();
+    let refused = sitting
+        .ask(json!({"op": "choose", "partner": partner, "revision": revision, "id": "undo"}));
+    assert_eq!(refused["status"], "refused", "{refused}");
+    assert!(
+        refused["error"]
+            .as_str()
+            .unwrap()
+            .contains("your own latest decision"),
+        "{refused}"
+    );
+    assert_eq!(sitting.revision(), revision);
+
+    // Patrice's resource came last: only her partner may undo it.
+    let before = sitting.rules.session.observe().play.unwrap().players[Patrice.index()].resources;
+    sitting.partner(&partner, "action:ordinary:resource");
+    assert!(!sitting.human_may("undo"));
+    let view = sitting.view(&partner);
+    let offered = undo_offered(&view).unwrap_or_else(|| panic!("{}", view["decision"]));
+    assert_eq!(offered["id"], "undo");
+    assert_eq!(offered["investigator"], "patrice");
+    sitting.partner(&partner, "undo");
+    let play = sitting.rules.session.observe().play.unwrap();
+    assert_eq!(play.players[Patrice.index()].resources, before);
+    assert_eq!(
+        sitting.rules.attributed.last(),
+        Some(&("undo".to_owned(), Patrice))
+    );
+    // The human's group choice is the latest again.
+    assert!(sitting.human_may("undo"));
+    assert_eq!(undo_offered(&sitting.view(&partner)), None);
+
+    // A draw reveals her next card: nobody may undo it.
+    sitting.partner(&partner, "action:ordinary:draw");
+    assert!(!sitting.listed().is_empty());
+    assert!(!sitting.human_may("undo"));
+    assert_eq!(undo_offered(&sitting.view(&partner)), None);
+
+    // Take over gives the human Patrice's latest decision; handed back to partners
+    // and unclaimed, it is nobody's to undo; without partners, it is the human's.
+    sitting.partner(&partner, "action:ordinary:resource");
+    assert!(!sitting.human_may("undo"));
+    sitting.host.set_selected(Patrice, false);
+    assert!(sitting.human_may("undo"));
+    sitting.host.set_selected(Patrice, true);
+    assert!(!sitting.human_may("undo"));
+    let _ = sitting.host.set_enabled(false);
+    assert!(sitting.human_may("undo"));
+}
+
+/// Ticket #207, Undo: a later decision by another player puts a partner's own
+/// decision out of its reach; the human's turn choice now comes last.
+#[test]
+fn a_partner_cannot_undo_its_decision_once_another_players_follows_it() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join(&[]);
+    sitting.human("confirm-mulligan");
+    sitting.human("confirm-mulligan");
+    sitting.partner(&partner, "confirm-mulligan");
+    sitting.human("turn:patrice");
+    sitting.partner(&partner, "turn:end");
+    assert!(undo_offered(&sitting.view(&partner)).is_some());
+    assert!(!sitting.human_may("undo"));
+    sitting.human("turn:tony");
+    assert_eq!(undo_offered(&sitting.view(&partner)), None);
+    assert!(sitting.human_may("undo"));
+}
+
+/// Ticket #207, Undo: whose decision came last is derived, not saved. After the
+/// attempt is reopened and partners are enabled again, Patrice's latest decision is
+/// still only her player's to undo.
+#[test]
+fn a_reopened_attempt_still_knows_whose_latest_decision_undo_would_revert() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join(&[]);
+    sitting.human("confirm-mulligan");
+    sitting.human("confirm-mulligan");
+    sitting.partner(&partner, "confirm-mulligan");
+    sitting.human("turn:patrice");
+    sitting.partner(&partner, "action:ordinary:resource");
+
+    let reopened = continuity::load_session(&sitting.rules.save).unwrap();
+    assert_eq!(reopened, sitting.rules.session);
+    let mut sitting = Sitting::new(reopened, &[Patrice]);
+    let partner = sitting.join(&[]);
+    assert!(!sitting.human_may("undo"));
+    assert!(undo_offered(&sitting.view(&partner)).is_some());
+}
+
 /// Ticket #205, Recovery and Waiting: turning partners off returns every
 /// investigator to the human and ends every partner session; a held wait answers
 /// that the table closed for it.

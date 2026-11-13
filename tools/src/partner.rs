@@ -34,7 +34,8 @@ investigators; you never touch the window, saves or settings.
 2. Then loop:
      scripts/tools partner wait PARTNER
    Blocks until one of your investigators has a decision at a settled table
-   (status \"decision\"), the investigators you play change (\"control_changed\"), or
+   (status \"decision\"), a group choice opens (\"group_choice\", once per choice),
+   the investigators you play change (\"control_changed\"), or
    the table closes (\"closed\": stop). After its timeout (240 s by default, --timeout
    SECONDS up to 590) it prints \"nothing_yet\" and exits 3: run it again.
    Read the answer's \"view\": \"decision.options\" lists only your options (\"id\",
@@ -52,10 +53,16 @@ investigators; you never touch the window, saves or settings.
 
 3. When you are done: scripts/tools partner leave PARTNER
 
-In this version the other player makes group choices (such as who takes the next
-turn) and shared decisions (such as committing cards to a test with several
-participants); the view's \"decision.note\" says so. Wait for your next decision.
-Other players are named only by their investigators.
+Group choices, such as who takes the next turn, belong to the lead investigator's
+player (after the lead is eliminated, the next investigator's in player order).
+The view's \"decision.group_choice\" names its \"arbiter\" and what is being chosen;
+only the arbiter's player has its options. In this version the other player makes
+shared decisions (such as committing cards to a test with several participants);
+the view's \"decision.note\" says so. Wait for your next decision. Other players are
+named only by their investigators.
+
+Undo: while your own latest decision is the latest one and nothing has followed
+it, the view's \"decision.undo\" offers it; choose its \"id\" (\"undo\") to revert it.
 
 Waiting costs nothing: in Claude Code, give wait a Bash timeout above its own (for
 example 300000 ms) or let it run in the background, which re-invokes you when it
@@ -84,9 +91,9 @@ enum Request {
         #[arg(value_parser = ["tony", "patrice", "jacqueline"])]
         investigators: Vec<String>,
     },
-    /// Wait until one of your investigators has a decision at a settled table, the
-    /// investigators you play change, or the table closes; exit 3 with nothing_yet
-    /// after the timeout.
+    /// Wait until one of your investigators has a decision at a settled table, a
+    /// group choice opens, the investigators you play change, or the table closes;
+    /// exit 3 with nothing_yet after the timeout.
     Wait {
         partner: String,
         /// Seconds to wait before answering nothing_yet.

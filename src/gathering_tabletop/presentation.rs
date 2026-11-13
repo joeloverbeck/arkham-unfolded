@@ -79,7 +79,8 @@ impl Presentation {
         true
     }
 
-    /// Keep only the options the human may submit. Undo stays the human's.
+    /// Keep only the options the human may submit. Undo is the human's only when
+    /// the decision it would revert is the human's (#207).
     fn restrict(&self, session: &Session, view: &mut Observation) {
         if self.control.solo() || view.choices.is_empty() {
             return;
@@ -90,12 +91,16 @@ impl Presentation {
             .as_ref()
             .is_none_or(|(at, control, _)| *at != revision || *control != self.control);
         if stale {
+            use crate::partners::Controller;
             let routing = crate::partners::Routing::of(session, &self.control);
-            let ids = routing
+            let mut ids: Vec<_> = routing
                 .options()
-                .filter(|(_, _, controller)| **controller != crate::partners::Controller::Human)
+                .filter(|(_, _, controller)| **controller != Controller::Human)
                 .map(|(id, _, _)| id.to_owned())
                 .collect();
+            if routing.undoer() != Some(&Controller::Human) {
+                ids.push("undo".into());
+            }
             *others = Some((revision, self.control.clone(), ids));
         }
         let (_, _, ids) = others.as_ref().expect("Just routed");
