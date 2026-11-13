@@ -376,7 +376,8 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         line: enabled.then(|| line(socket)),
         problem: table.partners.problem.clone(),
         deciding,
-        attributed: std::mem::take(&mut table.partners.attributed),
+        // Compared below with what the table shows, so copied, not moved out of it.
+        attributed: table.partners.attributed.clone(),
     };
     if shown != table.partners {
         table.dirty = true;

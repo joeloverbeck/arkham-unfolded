@@ -283,6 +283,12 @@ fn a_partners_choice_waits_for_the_table_to_settle_and_commits_like_a_click() {
         "A partner's decision does not move the camera"
     );
     finish_presentation(app);
+    // The table settles after the partner's decision: its controls are not
+    // rebuilt under the human's pointer frame after frame (found by the seat run).
+    let control = button_with_label(app, "Overview").expect("The rail");
+    app.update();
+    app.update();
+    assert_eq!(button_with_label(app, "Overview"), Some(control));
     app.world_mut()
         .resource_mut::<Actions>()
         .0
