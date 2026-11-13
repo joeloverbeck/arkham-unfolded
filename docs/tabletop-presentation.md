@@ -850,23 +850,35 @@ names whose readiness is outstanding. When another player's change clears the
 human's readiness, the cleared control shows it. Group clue payments show the
 same readiness beside each contribution.
 
-**Speech boxes.** Each table-talk message appears in a speech box to the right of
-its speaker's portrait on the navigation rail, pointing at the portrait and
-floating over the scene. It never takes focus or input and never blocks camera
-control. It never covers the current decision, the turn indicator, the test
-display, an open menu or a reading. It stays readable for a delay proportional to
-its length, then fades; reduced motion removes the fade, not the delay. Hovering a
-portrait shows its latest message again. Further messages from the same speaker
-queue behind the visible one. Rebuilding the table's panels does not dismiss a
-speech box. A player who plays several investigators speaks beside the first of
-them in player order.
+**Speech boxes and action lines.** Each table-talk message appears in a speech box
+to the right of its speaker's portrait on the navigation rail, pointing at the
+portrait and floating over the scene. When a partner commits a decision, its choice
+label, such as `Fight Ghoul Minion`, appears in the same place beside the acting
+investigator's portrait as an action line: a square, edged plate with no tail and
+no quotation marks, a record rather than speech. The human's own decisions get no
+line. Neither takes focus or input, and neither blocks camera control. Neither
+covers the current decision, the turn indicator, the test display (the Test area
+while a test shows there), an open menu or a reading. A box narrows to keep clear
+of the Test area; one that still would cover any of them is hidden, and its reading
+time waits until it shows again. Each stays readable for a delay proportional to
+its length, then fades; reduced motion removes the fade, not the delay. Further
+messages from the same speaker queue behind the visible one. An action line shows
+at once, stacked with that speaker's message, so table talk never delays it; the
+three newest lines show together. Hovering or focusing a portrait shows its latest
+message again and its investigator's action lines for the round; **Action history**
+remains the complete record. Rebuilding the table's panels dismisses neither. A
+player who plays several investigators speaks beside the first of them in player
+order. Both name investigators only.
 
-The human opens a message box from a button by the rail or with a key, types one
-message and sends it with Enter; Escape closes it without sending. While open, it
-holds keyboard input, so WASD and table keys type instead. A sent message appears
-as the human's speech box. During a peril encounter the message box is
-unavailable and says why. **Menu → Table talk** lists the session's messages with
-speaker and round; the list is not saved with the attempt.
+The human opens a message box from **Speak** on the rail or with T, types one
+message and sends it with Enter; Escape closes it without sending and keeps the
+draft. While open, it holds keyboard input, so WASD and table keys type instead; a
+dialog, the menu or a phase announcement closes it. A sent message appears as the
+human's speech box. During a peril encounter the message box is unavailable and
+says why. A peril card that resolves within the decision that draws it, such as
+Watcher from Another Dimension, keeps talk closed until the table has presented
+that decision. **Menu → Table talk** lists the session's messages with speaker and
+round; the list is not saved with the attempt.
 
 ## Text, symbols and diagnostics
 
