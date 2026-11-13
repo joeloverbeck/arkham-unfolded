@@ -7,8 +7,9 @@
 //! `partner` command and the integration points that name them removes partners.
 //!
 //! A partner joins, which claims investigators the human handed to partners; waits
-//! until one of them has a decision pending at a settled table; observes its view;
-//! chooses an option by identity at the current revision; and leaves. A choice is
+//! until one of them has a decision pending at a settled table; observes its view,
+//! complete once and then as changes (#206); inspects any card it can see; chooses
+//! an option by identity at the current revision; and leaves. A choice is
 //! applied only once the table settles, through the table's own commit path. Group
 //! choices and shared decisions that span players stay with the human in this slice
 //! (#205).
