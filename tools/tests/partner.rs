@@ -58,7 +58,7 @@ fn each_subcommand_sends_its_protocol_request_and_prints_the_answer_unchanged() 
         format!("{JOINED}\n")
     );
 
-    let cases: [(&[&str], serde_json::Value); 8] = [
+    let cases: [(&[&str], serde_json::Value); 9] = [
         (
             &["join", "patrice", "jacqueline"],
             serde_json::json!({"op": "join", "investigators": ["patrice", "jacqueline"]}),
@@ -86,6 +86,10 @@ fn each_subcommand_sends_its_protocol_request_and_prints_the_answer_unchanged() 
         (
             &["choose", "a1b2", "17", "action:ordinary:resource"],
             serde_json::json!({"op": "choose", "partner": "a1b2", "revision": 17, "id": "action:ordinary:resource"}),
+        ),
+        (
+            &["ready", "a1b2", "17"],
+            serde_json::json!({"op": "ready", "partner": "a1b2", "revision": 17}),
         ),
         (
             &["leave", "a1b2"],
@@ -130,6 +134,8 @@ fn malformed_arguments_are_refused_before_connecting() {
         &["observe"],
         &["observe", "a1b2", "--all-cards"],
         &["inspect", "a1b2"],
+        &["ready", "a1b2"],
+        &["ready", "a1b2", "seventeen"],
         &["save", "a1b2"],
     ] {
         let output = partner(&socket, args);
@@ -174,6 +180,7 @@ fn the_default_socket_follows_the_environment_and_help_teaches_the_loop() {
         "partner wait PARTNER",
         "partner choose PARTNER REVISION ID",
         "partner inspect PARTNER CODE",
+        "partner ready PARTNER REVISION",
         "observe PARTNER --full",
         "changes",
         "nothing_yet",
