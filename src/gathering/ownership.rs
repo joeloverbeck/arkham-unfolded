@@ -14,6 +14,7 @@
 use super::runtime::{Frame, Game, Window};
 use super::{GroupCluePayment, Investigator, elimination, group_payment, phases, scenario};
 use crate::Choice;
+use std::sync::{Mutex, PoisonError};
 
 /// Whose player may submit one listed option.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,6 +37,49 @@ pub struct OwnedOption {
     pub id: String,
     pub owner: OptionOwner,
 }
+
+/// Whose decision Undo would revert, kept with the revision it was derived at.
+/// Runtime only and never saved: it compares equal whatever it holds, like the
+/// presentation transition, so rules identity and save admission ignore it.
+#[derive(Debug, Default)]
+pub(super) struct UndoOwner(Mutex<Option<(u64, Option<OptionOwner>)>>);
+
+impl UndoOwner {
+    /// The owner kept for `revision`, or else `derive`d now and kept.
+    pub(super) fn at(
+        &self,
+        revision: u64,
+        derive: impl FnOnce() -> Option<OptionOwner>,
+    ) -> Option<OptionOwner> {
+        if let Some((at, owner)) = &*self.kept()
+            && *at == revision
+        {
+            return owner.clone();
+        }
+        // Derived without the lock held: deriving clones the session, and this.
+        let owner = derive();
+        *self.kept() = Some((revision, owner.clone()));
+        owner
+    }
+
+    fn kept(&self) -> std::sync::MutexGuard<'_, Option<(u64, Option<OptionOwner>)>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl Clone for UndoOwner {
+    fn clone(&self) -> Self {
+        Self(Mutex::new(self.kept().clone()))
+    }
+}
+
+impl PartialEq for UndoOwner {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for UndoOwner {}
 
 /// The owner of each listed option, in listed order.
 pub(super) fn owners(game: &Game, choices: &[Choice]) -> Vec<OptionOwner> {

@@ -8,8 +8,8 @@
 
 use arkham_unfolded_experiment::{
     gathering::{
-        DrawFixture, EtherealFixture, HarmFixture, HostileFixture, Investigator, Observation,
-        RetryFixture, Session, SpellEventFixture, TokenFixture, continuity,
+        DrawFixture, EtherealFixture, HarmFixture, HostileFixture, Investigator, LifecycleFixture,
+        Observation, RetryFixture, Session, SpellEventFixture, TokenFixture, continuity,
         inspection::{self, Sight},
     },
     partners::{Controller, Host, Table},
@@ -140,6 +140,70 @@ impl Sitting {
     fn revision(&self) -> u64 {
         self.rules.session.observe().revision
     }
+
+    /// A partner's choice at the current revision, accepted at once.
+    fn partner(&mut self, partner: &str, id: &str) -> Value {
+        let revision = self.revision();
+        let answer =
+            self.ask(json!({"op": "choose", "partner": partner, "revision": revision, "id": id}));
+        assert_eq!(answer["status"], "chosen", "{id}: {answer}");
+        answer
+    }
+
+    fn view(&mut self, partner: &str) -> Value {
+        self.ask(json!({"op": "observe", "partner": partner}))["view"].clone()
+    }
+
+    fn human_may(&self, id: &str) -> bool {
+        self.host.control().human_may(&self.rules.session, id)
+    }
+
+    /// The listed options of the pending decision, without Undo.
+    fn listed(&self) -> Vec<String> {
+        self.rules
+            .session
+            .observe()
+            .choices
+            .into_iter()
+            .map(|choice| choice.id)
+            .filter(|id| id != "undo")
+            .collect()
+    }
+
+    /// Take `id` as whichever player it belongs to: the human, or the one of
+    /// `partners` whose view lists it.
+    fn play(&mut self, partners: &[&str], id: &str) {
+        if self.human_may(id) {
+            return self.human(id);
+        }
+        let partner = partners
+            .iter()
+            .find(|partner| option_ids(&self.view(partner)).contains(&id))
+            .unwrap_or_else(|| panic!("No player lists {id}"));
+        self.partner(partner, id);
+    }
+
+    /// Pass windows and confirm tests, by whichever player each belongs to, until
+    /// `expected` is listed.
+    fn reach(&mut self, partners: &[&str], expected: &str) {
+        for _ in 0..12 {
+            let listed = self.listed();
+            if listed.iter().any(|id| id == expected) {
+                return;
+            }
+            let id = [
+                "window:pass",
+                "commit:confirm",
+                "test:reveal",
+                "lucky:decline",
+            ]
+            .into_iter()
+            .find(|id| listed.iter().any(|listed| listed == id))
+            .unwrap_or_else(|| panic!("No progression toward {expected}: {listed:?}"));
+            self.play(partners, id);
+        }
+        panic!("Did not reach {expected}");
+    }
 }
 
 fn investigators(answer: &Value) -> Vec<&str> {
@@ -158,6 +222,194 @@ fn option_ids(view: &Value) -> Vec<&str> {
         .iter()
         .map(|option| option["id"].as_str().unwrap())
         .collect()
+}
+
+fn group_choice(answer: &Value) -> &Value {
+    &answer["view"]["decision"]["group_choice"]
+}
+
+/// Ticket #207, Partner as lead and Group-choice events: the lead investigator's
+/// player is the final arbiter of who takes the next turn (RR p.24 2.2; the play
+/// contract's house practice). A group choice opening wakes every partner's wait,
+/// the arbiter's and another partner's alike, once; only the arbiter's view lists
+/// its options, and the human's controls do not offer them.
+#[test]
+fn a_partner_playing_the_lead_chooses_who_takes_the_next_turn_and_every_partner_hears_it_open() {
+    let mut sitting = Sitting::new(Session::with_seed(89), &[Patrice, Jacqueline]);
+    sitting.human("lead:jacqueline");
+    let lead = sitting.join(&["jacqueline"]);
+    let other = sitting.join(&["patrice"]);
+    // Mulligans go in player order from the lead (RR p.13): Jacqueline, Tony, Patrice.
+    sitting.partner(&lead, "confirm-mulligan");
+    let leads = sitting.send(&json!({"op": "wait", "partner": lead, "timeout_seconds": 60}));
+    sitting.human("confirm-mulligan");
+    sitting.poll();
+    assert!(sitting.take(leads).is_none(), "Patrice's mulligan is next");
+    sitting.partner(&other, "confirm-mulligan");
+    sitting.poll();
+
+    let opened = sitting.take(leads).expect("The group choice opened");
+    assert_eq!(opened["status"], "group_choice", "{opened}");
+    assert_eq!(group_choice(&opened)["arbiter"], "jacqueline", "{opened}");
+    assert_eq!(opened["view"]["decision"]["yours"], true);
+    assert_eq!(
+        option_ids(&opened["view"]),
+        ["turn:tony", "turn:patrice", "turn:jacqueline"]
+    );
+    let heard = sitting.ask(json!({"op": "wait", "partner": other}));
+    assert_eq!(heard["status"], "group_choice", "{heard}");
+    assert_eq!(group_choice(&heard)["arbiter"], "jacqueline", "{heard}");
+    assert_eq!(heard["view"]["decision"]["yours"], false);
+    assert_eq!(option_ids(&heard["view"]), Vec::<&str>::new());
+    assert_eq!(
+        heard["view"]["decision"]["others_deciding"],
+        json!(["Jacqueline Fine"])
+    );
+    for id in sitting.listed() {
+        assert!(!sitting.human_may(&id), "{id} is the lead's player's");
+    }
+    // Each partner hears an opening once; the arbiter's next wait is its decision.
+    let quiet = sitting.send(&json!({"op": "wait", "partner": other, "timeout_seconds": 60}));
+    sitting.poll();
+    assert!(sitting.take(quiet).is_none());
+    let decision = sitting.ask(json!({"op": "wait", "partner": lead}));
+    assert_eq!(decision["status"], "decision", "{decision}");
+
+    sitting.partner(&lead, "turn:patrice");
+    assert_eq!(
+        sitting.rules.attributed.last(),
+        Some(&("turn:patrice".to_owned(), Jacqueline))
+    );
+    sitting.poll();
+    let turn = sitting.take(quiet).expect("Patrice's turn began");
+    assert_eq!(turn["status"], "decision", "{turn}");
+}
+
+/// Ticket #207, Joel as lead: the human playing the lead makes the group choice as
+/// before; a partner's wait hears it open, and its view names the arbiter but lists
+/// no options.
+#[test]
+fn the_human_playing_the_lead_makes_the_group_choice_and_a_partner_sees_it_open_without_options() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join(&[]);
+    sitting.human("confirm-mulligan"); // Jacqueline
+    sitting.human("confirm-mulligan"); // Tony
+    sitting.partner(&partner, "confirm-mulligan");
+
+    let heard = sitting.ask(json!({"op": "wait", "partner": partner}));
+    assert_eq!(heard["status"], "group_choice", "{heard}");
+    assert_eq!(group_choice(&heard)["arbiter"], "jacqueline", "{heard}");
+    assert_eq!(heard["view"]["decision"]["yours"], false);
+    assert_eq!(option_ids(&heard["view"]), Vec::<&str>::new());
+    let listed = sitting.listed();
+    assert_eq!(listed, ["turn:tony", "turn:patrice", "turn:jacqueline"]);
+    for id in &listed {
+        assert!(sitting.human_may(id), "{id}");
+    }
+    let held = sitting.send(&json!({"op": "wait", "partner": partner, "timeout_seconds": 60}));
+    sitting.poll();
+    assert!(sitting.take(held).is_none(), "Heard once");
+    sitting.human("turn:patrice");
+    sitting.poll();
+    assert_eq!(sitting.take(held).unwrap()["status"], "decision");
+}
+
+/// Ticket #207: choices a card gives the lead investigator go to the lead's player.
+/// Agenda 1b (01105b): "The lead investigator must decide"; the Hunters' order and
+/// their movement among equally near investigators (RR p.12 "Hunter", p.17
+/// "Priority of Simultaneous Resolution"). With a partner as lead, the partner
+/// hears each one open with its options and the human may not take them; with the
+/// human as lead, the human may, and a partner hears it open without options.
+#[test]
+fn the_leads_player_receives_the_choices_a_card_gives_the_lead() {
+    for (fixture, first, then) in [
+        (
+            HostileFixture::GatheringDoomThreshold,
+            "mythos:begin",
+            "agenda:lead-horror",
+        ),
+        (
+            HostileFixture::GatheringHunters,
+            "enemy:hunter:400",
+            "hunter:move:",
+        ),
+    ] {
+        let session = Session::with_hostile_fixture(fixture);
+        let lead = session.observe().lead.expect("A lead");
+        let mut sitting = Sitting::new(session.clone(), &[lead]);
+        let partner = sitting.join(&[]);
+        let opened = sitting.ask(json!({"op": "wait", "partner": partner}));
+        assert_eq!(opened["status"], "group_choice", "{fixture:?}: {opened}");
+        assert_eq!(group_choice(&opened)["arbiter"], json!(lead));
+        assert!(option_ids(&opened["view"]).contains(&first), "{opened}");
+        assert!(!sitting.human_may(first), "{fixture:?}");
+        sitting.partner(&partner, first);
+        let next = sitting.ask(json!({"op": "wait", "partner": partner}));
+        assert_eq!(next["status"], "group_choice", "{fixture:?}: {next}");
+        let ids = option_ids(&next["view"]);
+        assert!(ids.iter().any(|id| id.starts_with(then)), "{ids:?}");
+        assert_eq!(ids, sitting.listed(), "{fixture:?}");
+        for id in ids {
+            assert!(!sitting.human_may(id), "{id}");
+        }
+
+        let another = Investigator::ALL
+            .into_iter()
+            .find(|who| *who != lead)
+            .unwrap();
+        let mut sitting = Sitting::new(session, &[another]);
+        let partner = sitting.join(&[]);
+        let heard = sitting.ask(json!({"op": "wait", "partner": partner}));
+        assert_eq!(heard["status"], "group_choice", "{fixture:?}: {heard}");
+        assert_eq!(group_choice(&heard)["arbiter"], json!(lead));
+        assert_eq!(option_ids(&heard["view"]), Vec::<&str>::new());
+        assert!(sitting.human_may(first), "{fixture:?}");
+    }
+}
+
+/// Ticket #207, New lead: when the lead is eliminated, the player of the next
+/// investigator in player order chooses the new lead (RR p.14 leaves it to the
+/// remaining players; the play contract's house practice names the arbiter; RR
+/// p.13 player order is clockwise Tony, Patrice, Jacqueline). Jacqueline leads and
+/// is defeated, so Tony's partner chooses; Patrice's partner hears it open.
+#[test]
+fn eliminating_the_lead_gives_the_new_lead_choice_to_the_next_investigators_player() {
+    let session =
+        Session::with_hostile_fixture(HostileFixture::Lifecycle(LifecycleFixture::EndTurnDefeat));
+    assert_eq!(session.observe().lead, Some(Jacqueline));
+    let mut sitting = Sitting::new(session, &[Tony, Patrice]);
+    let tonys = sitting.join(&["tony"]);
+    let patrices = sitting.join(&["patrice"]);
+    let partners = [tonys.as_str(), patrices.as_str()];
+    // Jacqueline takes a resource and the engaged Priest's attack defeats her.
+    for id in [
+        "action:ordinary:resource",
+        "harm:damage:investigator",
+        "harm:damage:investigator",
+    ] {
+        sitting.play(&partners, id);
+    }
+    sitting.reach(&partners, "elimination:lead:tony");
+
+    let chooses = sitting.ask(json!({"op": "wait", "partner": tonys}));
+    assert_eq!(chooses["status"], "group_choice", "{chooses}");
+    assert_eq!(group_choice(&chooses)["arbiter"], "tony");
+    let ids = option_ids(&chooses["view"]);
+    assert!(ids.contains(&"elimination:lead:tony"), "{ids:?}");
+    assert!(
+        ids.iter().all(|id| id.starts_with("elimination:lead:")),
+        "{ids:?}"
+    );
+    let hears = sitting.ask(json!({"op": "wait", "partner": patrices}));
+    assert_eq!(hears["status"], "group_choice", "{hears}");
+    assert_eq!(option_ids(&hears["view"]), Vec::<&str>::new());
+    assert!(!sitting.human_may("elimination:lead:tony"));
+    sitting.partner(&tonys, "elimination:lead:patrice");
+    assert_eq!(sitting.rules.session.observe().lead, Some(Patrice));
+    assert_eq!(
+        sitting.rules.attributed.last(),
+        Some(&("elimination:lead:patrice".to_owned(), Tony))
+    );
 }
 
 /// Ticket #205, Joining: by default a join takes every investigator handed to
@@ -948,6 +1200,115 @@ fn take_over_mid_decision_refuses_the_partners_later_choice_as_no_longer_its_own
     assert_eq!(sitting.revision(), revision);
 }
 
+/// The Undo a partner's view offers, if any.
+fn undo_offered(view: &Value) -> Option<&Value> {
+    view["decision"].get("undo")
+}
+
+/// Ticket #207, Undo (play contract, "Undo and pacing"): with partners enabled each
+/// player may undo only their own latest decision, before anything follows it, and
+/// never across revealed information; Take over makes the investigator's latest
+/// decision the human's to undo; without partners, Undo is the human's as before.
+#[test]
+fn each_player_may_undo_only_their_own_latest_decision() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join(&[]);
+    sitting.human("confirm-mulligan"); // Jacqueline
+    sitting.human("confirm-mulligan"); // Tony
+    sitting.partner(&partner, "confirm-mulligan");
+    sitting.human("turn:patrice");
+    // The human's group choice came last.
+    assert!(sitting.listed().len() > 1 && sitting.human_may("undo"));
+    assert_eq!(undo_offered(&sitting.view(&partner)), None);
+    let revision = sitting.revision();
+    let refused = sitting
+        .ask(json!({"op": "choose", "partner": partner, "revision": revision, "id": "undo"}));
+    assert_eq!(refused["status"], "refused", "{refused}");
+    assert!(
+        refused["error"]
+            .as_str()
+            .unwrap()
+            .contains("your own latest decision"),
+        "{refused}"
+    );
+    assert_eq!(sitting.revision(), revision);
+
+    // Patrice's resource came last: only her partner may undo it.
+    let before = sitting.rules.session.observe().play.unwrap().players[Patrice.index()].resources;
+    sitting.partner(&partner, "action:ordinary:resource");
+    assert!(!sitting.human_may("undo"));
+    let view = sitting.view(&partner);
+    let offered = undo_offered(&view).unwrap_or_else(|| panic!("{}", view["decision"]));
+    assert_eq!(offered["id"], "undo");
+    assert_eq!(offered["investigator"], "patrice");
+    sitting.partner(&partner, "undo");
+    let play = sitting.rules.session.observe().play.unwrap();
+    assert_eq!(play.players[Patrice.index()].resources, before);
+    assert_eq!(
+        sitting.rules.attributed.last(),
+        Some(&("undo".to_owned(), Patrice))
+    );
+    // The human's group choice is the latest again.
+    assert!(sitting.human_may("undo"));
+    assert_eq!(undo_offered(&sitting.view(&partner)), None);
+
+    // A draw reveals her next card: nobody may undo it.
+    sitting.partner(&partner, "action:ordinary:draw");
+    assert!(!sitting.listed().is_empty());
+    assert!(!sitting.human_may("undo"));
+    assert_eq!(undo_offered(&sitting.view(&partner)), None);
+
+    // Take over gives the human Patrice's latest decision; handed back to partners
+    // and unclaimed, it is nobody's to undo; without partners, it is the human's.
+    sitting.partner(&partner, "action:ordinary:resource");
+    assert!(!sitting.human_may("undo"));
+    sitting.host.set_selected(Patrice, false);
+    assert!(sitting.human_may("undo"));
+    sitting.host.set_selected(Patrice, true);
+    assert!(!sitting.human_may("undo"));
+    let _ = sitting.host.set_enabled(false);
+    assert!(sitting.human_may("undo"));
+}
+
+/// Ticket #207, Undo: a later decision by another player puts a partner's own
+/// decision out of its reach; the human's turn choice now comes last.
+#[test]
+fn a_partner_cannot_undo_its_decision_once_another_players_follows_it() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join(&[]);
+    sitting.human("confirm-mulligan");
+    sitting.human("confirm-mulligan");
+    sitting.partner(&partner, "confirm-mulligan");
+    sitting.human("turn:patrice");
+    sitting.partner(&partner, "turn:end");
+    assert!(undo_offered(&sitting.view(&partner)).is_some());
+    assert!(!sitting.human_may("undo"));
+    sitting.human("turn:tony");
+    assert_eq!(undo_offered(&sitting.view(&partner)), None);
+    assert!(sitting.human_may("undo"));
+}
+
+/// Ticket #207, Undo: whose decision came last is derived, not saved. After the
+/// attempt is reopened and partners are enabled again, Patrice's latest decision is
+/// still only her player's to undo.
+#[test]
+fn a_reopened_attempt_still_knows_whose_latest_decision_undo_would_revert() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join(&[]);
+    sitting.human("confirm-mulligan");
+    sitting.human("confirm-mulligan");
+    sitting.partner(&partner, "confirm-mulligan");
+    sitting.human("turn:patrice");
+    sitting.partner(&partner, "action:ordinary:resource");
+
+    let reopened = continuity::load_session(&sitting.rules.save).unwrap();
+    assert_eq!(reopened, sitting.rules.session);
+    let mut sitting = Sitting::new(reopened, &[Patrice]);
+    let partner = sitting.join(&[]);
+    assert!(!sitting.human_may("undo"));
+    assert!(undo_offered(&sitting.view(&partner)).is_some());
+}
+
 /// Ticket #205, Recovery and Waiting: turning partners off returns every
 /// investigator to the human and ends every partner session; a held wait answers
 /// that the table closed for it.
@@ -1045,10 +1406,10 @@ fn a_partner_plays_patrices_mulligan_and_turn_between_waits() {
     );
     assert_eq!(chosen["status"], "chosen", "{chosen}");
 
-    // Who takes the next turn is a group choice, the human's in this slice.
+    // Who takes the next turn is a group choice, the human's as the lead's player.
     let view = sitting.ask(json!({"op": "observe", "partner": partner}))["view"].clone();
     assert_eq!(view["decision"]["yours"], false, "{}", view["decision"]);
-    assert!(view["decision"]["note"].is_string());
+    assert_eq!(view["decision"]["group_choice"]["arbiter"], "jacqueline");
     sitting.human("turn:patrice");
 
     let mut actions = 0;
@@ -1058,6 +1419,11 @@ fn a_partner_plays_patrices_mulligan_and_turn_between_waits() {
         let Some(answer) = sitting.take(waiting) else {
             break waiting;
         };
+        if answer["status"] == "group_choice" {
+            // Her turn has ended: she hears the human's next-turn choice open.
+            assert_eq!(answer["view"]["decision"]["yours"], false, "{answer}");
+            continue;
+        }
         assert_eq!(answer["status"], "decision", "{answer}");
         let view = &answer["view"];
         let ids = option_ids(view);
