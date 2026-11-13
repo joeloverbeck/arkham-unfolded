@@ -35,6 +35,7 @@ investigators; you never touch the window, saves or settings.
      scripts/tools partner wait PARTNER
    Blocks until one of your investigators has a decision at a settled table
    (status \"decision\"), a group choice opens (\"group_choice\", once per choice),
+   another player changes a shared decision you take part in (\"shared\"),
    another player speaks (\"table_talk\"), the investigators you play change
    (\"control_changed\"), or
    the table closes (\"closed\": stop). After its timeout (240 s by default, --timeout
@@ -67,10 +68,22 @@ investigators; you never touch the window, saves or settings.
 Group choices, such as who takes the next turn, belong to the lead investigator's
 player (after the lead is eliminated, the next investigator's in player order).
 The view's \"decision.group_choice\" names its \"arbiter\" and what is being chosen;
-only the arbiter's player has its options. In this version the other player makes
-shared decisions (such as committing cards to a test with several participants);
-the view's \"decision.note\" says so. Wait for your next decision. Other players are
-named only by their investigators.
+only the arbiter's player has its options. Other players are named only by their
+investigators.
+
+Shared decisions: committing cards to a skill test, a group clue payment, and a
+window for fast cards and abilities. Each player sets only its own investigators'
+part, and the view's \"shared\" shows everyone's pending part (the test's
+\"others_pending\" cards, a payment's \"contributions\") and who is ready. Set
+your part with choose (toggle your cards' commit options; for clues, choose
+act:pay:TONY:PATRICE:JACQUELINE with the others' parts as pending), then mark
+yourself ready:
+     scripts/tools partner ready PARTNER REVISION
+or choose the shared decision's \"ready_with\" option (Confirm, or the window's
+pass). It completes once every player is ready on the same parts; any change
+clears the others' readiness and wakes them. After you have been ready, you may
+change your part only a few times (\"reopenings_left\"). A window closes once
+every player with an option in it has passed; any action reopens it.
 
 Undo: while your own latest decision is the latest one and nothing has followed
 it, the view's \"decision.undo\" offers it; choose its \"id\" (\"undo\") to revert it.
@@ -113,8 +126,9 @@ enum Request {
         investigators: Vec<String>,
     },
     /// Wait until one of your investigators has a decision at a settled table, a
-    /// group choice opens, the investigators you play change, or the table closes;
-    /// exit 3 with nothing_yet after the timeout.
+    /// group choice opens, another player changes a shared decision you take part
+    /// in, another player speaks, the investigators you play change, or the table
+    /// closes; exit 3 with nothing_yet after the timeout.
     Wait {
         partner: String,
         /// Seconds to wait before answering nothing_yet.
@@ -136,6 +150,9 @@ enum Request {
         revision: u64,
         id: String,
     },
+    /// Mark yourself ready in the pending shared decision, on the parts your last
+    /// view showed, at its revision.
+    Ready { partner: String, revision: u64 },
     /// Leave the table; your investigators wait for another partner or the player.
     Leave { partner: String },
     /// Say one short message to the table; its words are joined with spaces.
@@ -175,6 +192,10 @@ pub fn run(args: Args) -> Result<u8> {
             id,
         } => (
             json!({"op": "choose", "partner": partner, "revision": revision, "id": id}),
+            None,
+        ),
+        Request::Ready { partner, revision } => (
+            json!({"op": "ready", "partner": partner, "revision": revision}),
             None,
         ),
         Request::Leave { partner } => (json!({"op": "leave", "partner": partner}), None),

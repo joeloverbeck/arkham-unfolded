@@ -548,3 +548,299 @@ fn the_human_continues_a_partners_encounter_reading_without_resolving_it() {
     );
     assert!(!table.human_may("revelation:resolve"));
 }
+
+/// Joel's co-play session 1 (#202, comment 6858608958): Jacqueline, Joel's,
+/// investigated, and the table showed Patrice's partner thinking in two player
+/// windows with nothing Joel could see she might do. The windows were legal and
+/// hers: Patrice's Violin reads "[fast] Choose and discard 1 card from your hand
+/// and exhaust Patrice's Violin: Choose an investigator at your location to either
+/// gain 1 resource or draw 1 card" (06016). A [fast] ability may be used by its
+/// controller in any player window (RR p.3 "Triggered Abilities", p.22), and a
+/// player window follows ST.1 and ST.2 (RR p.26 "Skill Test Timing"). The window
+/// closes when every player with an option has passed (play contract, Agent
+/// partners, Shared decisions), so the table waits on her partner. A thinking cue
+/// is there "so that I know why the table is waiting" (#202 story 70). Without
+/// partners the table names the window's option ("Available now: ..."); with
+/// Patrice handed to a partner it must still say what her partner may use.
+///
+/// Joel's seed and opening: he mulliganed Premonition away, so Jacqueline holds no
+/// fast option in her test's windows; Patrice played her Violin on her turn.
+#[test]
+fn a_partners_player_window_in_the_humans_test_names_what_the_partner_may_use() {
+    let mut session = Session::with_seed(12_374_354_593_772_059_857);
+    for id in [
+        "lead:jacqueline",
+        "mulligan:212",
+        "mulligan:210",
+        "confirm-mulligan",
+        "mulligan:28",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "turn:patrice",
+        "action:ordinary:play:127",
+        "turn:end",
+        "turn:jacqueline",
+        "action:ordinary:investigate",
+    ] {
+        let revision = session.observe().revision;
+        session
+            .choose(revision, id)
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("partners.sock");
+    let table = Table::new(session, directory.path().join("partners.session.json"));
+    let mut app = super::super::tests::host_with_table(table, false);
+    app.insert_resource(PartnerSocket(socket.clone()));
+    finish_presentation(&mut app);
+    // The line naming her option; the asset's own label names only the card.
+    let names_violin = |text: &str| {
+        text.lines()
+            .any(|line| line.contains("Patrice Hathaway") && line.contains("Patrice's Violin"))
+    };
+    let solo = rendered_text(&mut app);
+    assert!(names_violin(&solo), "Without partners:\n{solo}");
+
+    press(&mut app, "Menu");
+    press(&mut app, "Agent partners");
+    press(&mut app, "Patrice Hathaway: you play");
+    press(&mut app, "Enable agent partners");
+    press(&mut app, "Close menu");
+    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    assert_eq!(joined[0]["status"], "joined", "{}", joined[0]);
+    let partner = joined[0]["partner"].as_str().unwrap();
+    // Her partner is woken for the window, and its options are her Violin and Pass.
+    let woken = exchange(
+        &mut app,
+        &socket,
+        &[json!({"op": "wait", "partner": partner})],
+    );
+    assert_eq!(woken[0]["status"], "decision", "{}", woken[0]);
+    let options: Vec<&str> = woken[0]["view"]["decision"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|option| option["id"].as_str().unwrap())
+        .collect();
+    assert!(options.contains(&"window:pass"), "{options:?}");
+    assert!(
+        options
+            .iter()
+            .all(|id| *id == "window:pass" || id.starts_with("violin:127:")),
+        "{options:?}"
+    );
+    app.update();
+    let shown = rendered_text(&mut app);
+    assert!(
+        shown.contains("Patrice Hathaway: partner thinking"),
+        "{shown}"
+    );
+    assert!(
+        names_violin(&shown),
+        "The table waits on Patrice's partner without saying what she may use:\n{shown}"
+    );
+}
+
+/// A table at Tony's commitment window in the Study, where every investigator
+/// starts, reached by genuine decisions so it can commit and save: seed 89 deals
+/// Patrice her Violin (06016, a wild icon, committable to any test). Patrice is
+/// handed to partners. Returns the app, the socket, a card the human's controls
+/// offer to commit, and her Violin.
+fn shared_commitment(directory: &Path) -> (App, PathBuf, String, u16) {
+    let mut session = Session::with_seed(89);
+    for id in [
+        "lead:jacqueline",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "turn:tony",
+        "action:ordinary:investigate",
+    ] {
+        session.choose(session.revision(), id).unwrap();
+    }
+    while session
+        .observe()
+        .choices
+        .iter()
+        .any(|choice| choice.id == "window:pass")
+    {
+        session.choose(session.revision(), "window:pass").unwrap();
+    }
+    let observation = session.observe();
+    let play = observation.play.as_ref().unwrap();
+    let violin = play.players[Patrice.index()]
+        .hand
+        .iter()
+        .find(|card| card.code == "06016")
+        .expect("Seed 89 deals Patrice her Violin")
+        .id;
+    let socket = directory.join("partners.sock");
+    let table = Table::new(session, directory.join("shared.session.json"));
+    let mut app = super::super::tests::host_with_table(table, false);
+    app.insert_resource(PartnerSocket(socket.clone()));
+    finish_presentation(&mut app);
+    press(&mut app, "Menu");
+    press(&mut app, "Agent partners");
+    press(&mut app, "Patrice Hathaway: you play");
+    press(&mut app, "Enable agent partners");
+    press(&mut app, "Close menu");
+    let humans = app
+        .world()
+        .resource::<Table>()
+        .view()
+        .choices
+        .into_iter()
+        .map(|choice| choice.id)
+        .find(|id| id.starts_with("commit:") && id != "commit:confirm")
+        .expect("The human has a card to commit");
+    (app, socket, humans, violin)
+}
+
+fn readable(text: &str) -> String {
+    crate::tabletop_support::readable_text(text.into())
+}
+
+fn revision(app: &App) -> u64 {
+    app.world().resource::<Table>().session.revision()
+}
+
+/// The captions of the cards on the table.
+fn captions(app: &mut App) -> Vec<String> {
+    let world = app.world_mut();
+    world
+        .query::<(&Text, &motion::CardLabel)>()
+        .iter(world)
+        .map(|(text, _)| text.0.clone())
+        .collect()
+}
+
+/// Ticket #208 and the presentation contract ("In a shared decision"): the
+/// partner's pending card appears in the Test area, distinct from confirmed
+/// commitments; each player's readiness is shown by investigator name; Confirm is
+/// the human's readiness and, while it waits, names whose readiness is
+/// outstanding; when the partner's change clears it, the control says so; the
+/// test goes ahead once both are ready (RR p.26 ST.2).
+#[test]
+fn a_shared_commitment_shows_the_partners_pending_card_and_confirm_is_the_humans_readiness() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, socket, humans, violin) = shared_commitment(directory.path());
+    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    let partner = joined[0]["partner"].as_str().unwrap().to_owned();
+    assert!(
+        !offered(&mut app).contains(&format!("commit:{violin}")),
+        "Her card is hers to commit"
+    );
+    let at = revision(&app);
+    let chosen = exchange(
+        &mut app,
+        &socket,
+        &[
+            json!({"op": "choose", "partner": partner, "revision": at, "id": format!("commit:{violin}")}),
+        ],
+    );
+    assert_eq!(chosen[0]["status"], "chosen", "{}", chosen[0]);
+    finish_presentation(&mut app);
+    let pending = captions(&mut app);
+    assert!(
+        pending
+            .iter()
+            .any(|caption| caption.contains("Patrice's Violin")
+                && caption.contains("Patrice Hathaway: pending")),
+        "{pending:?}"
+    );
+    assert!(
+        !pending.iter().any(|caption| caption.contains("commitment")),
+        "Nothing is confirmed yet: {pending:?}"
+    );
+    let shown = rendered_text(&mut app);
+    assert!(
+        shown.contains("Commitments: Tony Morgan") && shown.contains("Patrice Hathaway deciding"),
+        "{shown}"
+    );
+
+    // The human's Confirm is his readiness: the test waits, and Confirm names
+    // whose readiness is outstanding.
+    choose(&mut app, &humans);
+    finish_presentation(&mut app);
+    let before = revision(&app);
+    press(&mut app, "Confirm committed cards");
+    assert_eq!(revision(&app), before, "The test waits for her");
+    let shown = rendered_text(&mut app);
+    assert!(
+        button_with_label(
+            &mut app,
+            &readable("Confirmed · waiting for Patrice Hathaway")
+        )
+        .is_some(),
+        "{shown}"
+    );
+    assert!(shown.contains(&readable(" ready ·")), "{shown}");
+    assert!(shown.contains("Patrice Hathaway deciding"), "{shown}");
+    assert!(shown.contains("Decision: Patrice Hathaway"), "{shown}");
+    assert!(
+        shown.contains("Patrice Hathaway: partner thinking"),
+        "{shown}"
+    );
+
+    // Her change clears his readiness, and the control says so.
+    let at = revision(&app);
+    exchange(
+        &mut app,
+        &socket,
+        &[
+            json!({"op": "choose", "partner": partner, "revision": at, "id": format!("commit:{violin}")}),
+        ],
+    );
+    finish_presentation(&mut app);
+    assert!(
+        button_with_label(
+            &mut app,
+            &readable("Confirm committed cards again · Patrice Hathaway changed it")
+        )
+        .is_some(),
+        "{}",
+        rendered_text(&mut app)
+    );
+
+    // Both ready on the same cards: the test goes ahead.
+    let at = revision(&app);
+    let ready = exchange(
+        &mut app,
+        &socket,
+        &[
+            json!({"op": "choose", "partner": partner, "revision": at, "id": format!("commit:{violin}")}),
+            json!({"op": "ready", "partner": partner, "revision": at + 1}),
+        ],
+    );
+    assert_eq!(ready[1]["status"], "ready", "{}", ready[1]);
+    finish_presentation(&mut app);
+    press(
+        &mut app,
+        &readable("Confirm committed cards again · Patrice Hathaway changed it"),
+    );
+    // The click rebuilt the scene; the next frame finds the table settled.
+    app.update();
+    finish_presentation(&mut app);
+    let test = app
+        .world()
+        .resource::<Table>()
+        .session
+        .observe()
+        .play
+        .unwrap()
+        .test
+        .unwrap();
+    let committed: Vec<u16> = test.committed.iter().map(|card| card.card.id).collect();
+    assert!(
+        committed.contains(&humans.strip_prefix("commit:").unwrap().parse().unwrap())
+            && committed.contains(&violin),
+        "{committed:?}"
+    );
+    let shown = captions(&mut app);
+    assert!(
+        shown
+            .iter()
+            .any(|caption| caption.contains("Patrice Hathaway's commitment")),
+        "{shown:?}"
+    );
+}

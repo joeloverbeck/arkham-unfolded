@@ -12,16 +12,20 @@
 //! an option by identity at the current revision; and leaves. A choice is
 //! applied only once the table settles, through the table's own commit path. A group
 //! choice is its arbiter's player's, and every partner's wait hears it open (#207).
-//! Shared decisions that span players stay with the human in this version.
-//! Every player may speak, and every other player hears each message (#209).
+//! In a shared decision that spans players, each player sets its own part and marks
+//! itself ready, and the host completes it once every participating player is
+//! ready (#208, `shared`). Every player may speak, and every other player hears
+//! each message (#209, `talk`).
 //!
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
 
 mod routing;
+mod shared;
 mod talk;
 mod view;
 
-pub use routing::Routing;
+pub use routing::{Routing, Shared, SharedKind};
+pub use shared::{REOPENINGS, Readiness, SharedState};
 pub use talk::{CHATTER_LIMIT, LONGEST_MESSAGE, PERIL, Said};
 
 use crate::gathering::{
@@ -76,7 +80,8 @@ impl Control {
         self.assigned == [false; 3]
     }
 
-    /// Whether the human may submit `id` at the session's pending decision. Without
+    /// Whether the human may submit `id` at the session's pending decision: its
+    /// own option, or its part in a shared decision it takes part in. Without
     /// partners every option is the human's. With partners, Undo is the human's only
     /// when the decision it would revert belongs to investigators the human controls.
     pub fn human_may(&self, session: &Session, id: &str) -> bool {
@@ -86,6 +91,9 @@ impl Control {
         let routing = Routing::of(session, self);
         if id == "undo" {
             return routing.undoer() == Some(&Controller::Human);
+        }
+        if routing.shared_of(id).is_some() {
+            return routing.may(session, self, &Controller::Human, id);
         }
         routing
             .controller(session, self, id)
@@ -113,6 +121,17 @@ pub trait Table {
 /// One answer to a request, for the connection that sent it.
 pub type Answer<R> = (R, Value);
 
+/// What the human's choice does while partners play.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HumanChoice {
+    /// Commit it through the table's commit path, as without partners.
+    Commit,
+    /// It was the human's readiness in a shared decision, now recorded: Confirm,
+    /// a window's pass, or a clue contribution. The host completes the decision
+    /// once every participating player is ready.
+    Ready,
+}
+
 /// The partner sessions at one table and their requests in progress. `R` is how
 /// the transport answers a request: it travels with the request and comes back
 /// with its answer.
@@ -123,6 +142,8 @@ pub struct Host<R> {
     claims: [Option<String>; 3],
     partners: Vec<Partner>,
     held: Vec<Held<R>>,
+    /// Readiness, reopenings and pending contributions in shared decisions.
+    sharing: shared::Sharing,
     talk: talk::Talk,
 }
 
@@ -139,6 +160,8 @@ struct Partner {
     heard: Instant,
     /// The revision of the last group choice a wait reported to this partner.
     told_group: Option<u64>,
+    /// The shared decisions this partner's last view showed, and their state then.
+    seen: Vec<(shared::Key, shared::Stamp)>,
     /// The table talk this partner has been told: messages before this index.
     told_talk: usize,
 }
@@ -181,6 +204,11 @@ enum Request {
         revision: u64,
         id: String,
     },
+    /// Readiness in the pending shared decision, on the state of the last view.
+    Ready {
+        partner: String,
+        revision: u64,
+    },
     Leave {
         partner: String,
     },
@@ -198,6 +226,7 @@ impl<R> Default for Host<R> {
             claims: [None, None, None],
             partners: Vec::new(),
             held: Vec::new(),
+            sharing: shared::Sharing::default(),
             talk: talk::Talk::default(),
         }
     }
@@ -291,23 +320,83 @@ impl<R> Host<R> {
         self.talk.say(None, speaker, text, table)
     }
 
-    /// Whether [`Self::poll`] would answer a held request now.
+    /// Whether [`Self::poll`] would answer a held request, or complete a shared
+    /// decision, now.
     pub fn due(&self, session: &Session, settled: bool, now: Instant) -> bool {
-        let mut routing: Option<Routing> = None;
+        if settled && self.completion(session).is_some() {
+            return true;
+        }
+        let mut moment: Option<Moment> = None;
         self.held.iter().any(|held| match &held.pending {
             Pending::Choose { .. } => settled,
             Pending::Wait { deadline } => {
                 now >= *deadline
                     || self.changed(&held.partner)
                     || self.talk_untold(&held.partner)
-                    || (settled && {
-                        let routed =
-                            routing.get_or_insert_with(|| Routing::of(session, &self.control()));
-                        routed.awaiting() == Some(&Controller::Partner(held.partner.clone()))
-                            || self.group_untold(&held.partner, routed, session.revision())
-                    })
+                    || (settled
+                        && moment
+                            .get_or_insert_with(|| self.moment(session))
+                            .event(self, &held.partner)
+                            .is_some())
             }
         })
+    }
+
+    /// The players the table waits for, each with the investigator it answers
+    /// for: the player of the pending decision, and every participating player
+    /// not yet ready in a shared decision that waits on its players.
+    pub fn awaited(&self, session: &Session) -> Vec<(Controller, Option<Investigator>)> {
+        self.moment(session).awaited
+    }
+
+    /// The pending shared decisions that span players, as the table shows them.
+    pub fn shared(&self, session: &Session) -> Vec<SharedState> {
+        let control = self.control();
+        self.moment(session)
+            .pending
+            .iter()
+            .map(|pending| self.sharing.state(pending, &control))
+            .collect()
+    }
+
+    /// Moves whenever readiness or a pending contribution changes.
+    pub fn sharing_version(&self) -> u64 {
+        self.sharing.version()
+    }
+
+    /// What the human's choice of `id` does now: commit it, or record the human's
+    /// part in a shared decision. A change to the human's part beyond the reopen
+    /// bound, or a contribution against another player's changed one, is refused.
+    pub fn human(
+        &mut self,
+        session: &Session,
+        revision: u64,
+        id: &str,
+    ) -> Result<HumanChoice, String> {
+        let control = self.control();
+        if control.solo() || revision != session.revision() {
+            // A stale click is refused by the session itself.
+            return Ok(HumanChoice::Commit);
+        }
+        let moment = self.moment(session);
+        let human = Controller::Human;
+        if let Some(pending) = moment
+            .pending
+            .iter()
+            .find(|pending| pending.decision.includes(id))
+        {
+            if !pending.decision.players(&control).contains(&human) {
+                return Err("That shared decision belongs to the other players.".into());
+            }
+            self.mark_ready(pending, &human, Some(id), &moment.observation)?;
+            return Ok(HumanChoice::Ready);
+        }
+        if let Some(pending) = moment.changes(&control, &human)
+            && moment.routing.controller(session, &control, id) == Some(human.clone())
+        {
+            self.sharing.change(pending, &human)?;
+        }
+        Ok(HumanChoice::Commit)
     }
 
     /// Answer one request line now, or hold it. Answers to held requests come from
@@ -326,7 +415,7 @@ impl<R> Host<R> {
                     .ok()
                     .and_then(|value| value["partner"].as_str().map(str::to_owned));
                 let reason = format!(
-                    "Not a partner request ({error}). A partner may join, wait, observe, inspect, choose, say or leave."
+                    "Not a partner request ({error}). A partner may join, wait, observe, inspect, choose, ready, say or leave."
                 );
                 let answer = match partner.filter(|id| self.known(id)) {
                     Some(id) => self.answer(&id, "refused", Some(reason), table, false, now),
@@ -343,6 +432,7 @@ impl<R> Host<R> {
             | Request::Observe { partner, .. }
             | Request::Inspect { partner, .. }
             | Request::Choose { partner, .. }
+            | Request::Ready { partner, .. }
             | Request::Say { partner, .. }
             | Request::Leave { partner } => partner.clone(),
         };
@@ -406,13 +496,24 @@ impl<R> Host<R> {
                 });
                 self.poll(table, now)
             }
+            Request::Ready { revision, .. } => self.ready(&id, revision, None, reply, table, now),
             Request::Choose {
                 revision,
                 id: choice,
                 ..
             } => {
-                let routing = Routing::of(table.session(), &self.control());
-                if let Err(reason) = self.check(&id, revision, &choice, &routing, table.session()) {
+                let moment = self.moment(table.session());
+                if moment.routing.shared_of(&choice).is_some() {
+                    return self.ready(&id, revision, Some(&choice), reply, table, now);
+                }
+                let me = Controller::Partner(id.clone());
+                let checked = self
+                    .check(&id, revision, &choice, &moment.routing, table.session())
+                    .and_then(|_| match moment.changes(&self.control(), &me) {
+                        Some(pending) => self.sharing.may_change(pending, &me),
+                        None => Ok(()),
+                    });
+                if let Err(reason) = checked {
                     return vec![(
                         reply,
                         self.answer(&id, "refused", Some(reason), table, false, now),
@@ -432,38 +533,45 @@ impl<R> Host<R> {
         }
     }
 
-    /// Answer every held request whose moment has come: a wait whose partner has a
-    /// decision at a settled table, hears a group choice open there, has table talk
-    /// to hear, whose control changed or whose period ran out; and a choice once the
-    /// table has settled.
+    /// Complete a shared decision whose players are all ready, then answer every
+    /// held request whose moment has come: a wait whose control changed, or whose
+    /// partner hears a group choice open, has news of a shared decision or has a
+    /// decision at a settled table, has table talk to hear, or whose period ran
+    /// out; and a choice once the table has settled.
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
         self.talk.watch(&*table);
+        if table.settled()
+            && let Some((pending, id, by)) = self.completion(table.session())
+        {
+            let revision = table.session().revision();
+            if let Err(error) = table.commit(revision, &id, by) {
+                eprintln!("Agent partners: the shared decision did not complete: {error}");
+                self.sharing.unready(&pending);
+            }
+        }
         let mut answers = Vec::new();
         let mut index = 0;
         // Routed only once the table has settled, and again after a commit.
-        let mut routing: Option<Routing> = None;
+        let mut moment: Option<Moment> = None;
         while index < self.held.len() {
             let partner = self.held[index].partner.clone();
             let settled = table.settled();
             let revision = table.session().revision();
-            let control = self.control();
-            let mut routed = || {
-                routing
-                    .get_or_insert_with(|| Routing::of(table.session(), &control))
-                    .clone()
+            let event = match &self.held[index].pending {
+                Pending::Wait { .. } if settled && !self.changed(&partner) => moment
+                    .get_or_insert_with(|| self.moment(table.session()))
+                    .event(self, &partner),
+                _ => None,
             };
             let outcome = match &self.held[index].pending {
                 Pending::Wait { deadline } => {
                     if self.changed(&partner) {
                         Some(("control_changed", None))
-                    } else if settled && self.group_untold(&partner, &routed(), revision) {
-                        Some(("group_choice", None))
-                    } else if settled
-                        && routed().awaiting() == Some(&Controller::Partner(partner.clone()))
-                    {
-                        Some(("decision", None))
+                    } else if let Some(event) = event {
+                        Some((event, None))
                     } else if self.talk_untold(&partner) {
-                        // After a decision, whose answer carries the talk as well.
+                        // After the table's own events, whose answers carry the
+                        // talk as well.
                         Some(("table_talk", None))
                     } else if now >= *deadline {
                         let held = self.held.remove(index);
@@ -482,10 +590,26 @@ impl<R> Host<R> {
                 }
                 Pending::Choose { revision, id } if settled => {
                     let (revision, id) = (*revision, id.clone());
-                    let routed = routed();
-                    let checked = self.check(&partner, revision, &id, &routed, table.session());
-                    let result = checked.and_then(|by| table.commit(revision, &id, by));
-                    routing = None;
+                    let current = moment
+                        .take()
+                        .unwrap_or_else(|| self.moment(table.session()));
+                    let me = Controller::Partner(partner.clone());
+                    // A partner's option in a commitment window changes its part.
+                    let change = current.changes(&self.control(), &me).cloned();
+                    let result = self
+                        .check(&partner, revision, &id, &current.routing, table.session())
+                        .and_then(|by| match &change {
+                            Some(pending) => self.sharing.may_change(pending, &me).map(|()| by),
+                            None => Ok(by),
+                        })
+                        .and_then(|by| table.commit(revision, &id, by));
+                    if result.is_ok()
+                        && let Some(pending) = &change
+                    {
+                        self.sharing
+                            .change(pending, &me)
+                            .expect("Checked before committing");
+                    }
                     match result {
                         Ok(()) => Some(("chosen", None)),
                         Err(reason) => Some(("refused", Some(reason))),
@@ -587,10 +711,149 @@ impl<R> Host<R> {
             board: None,
             heard: now,
             told_group: None,
+            seen: Vec::new(),
             // A player hears what is said from when it sits down.
             told_talk: self.talk.said().len(),
         });
         self.answer(&id, "joined", None, table, false, now)
+    }
+
+    /// The pending decision as routed now, with its shared decisions and the
+    /// players it waits for.
+    fn moment(&self, session: &Session) -> Moment {
+        let control = self.control();
+        let observation = session.observe();
+        let routing = Routing::of(session, &control);
+        let pending = self.sharing.pending(routing.shared(), &observation);
+        let mut awaited: Vec<(Controller, Option<Investigator>)> = routing
+            .awaiting()
+            .map(|player| (player.clone(), routing.awaited_investigator()))
+            .into_iter()
+            .collect();
+        for decision in &pending {
+            for (player, who) in self.sharing.waiting(decision, &control) {
+                if !awaited.iter().any(|(listed, _)| *listed == player) {
+                    awaited.push((player, Some(who)));
+                }
+            }
+        }
+        Moment {
+            observation,
+            routing,
+            pending,
+            awaited,
+        }
+    }
+
+    /// A shared decision whose participating players are all ready, with its
+    /// completing choice and the investigator it is attributed to.
+    fn completion(&self, session: &Session) -> Option<(shared::Pending, String, Investigator)> {
+        if !self.sharing.ready_at(session.revision()) {
+            return None;
+        }
+        let control = self.control();
+        let moment = self.moment(session);
+        moment.pending.into_iter().find_map(|pending| {
+            let (id, by) = self
+                .sharing
+                .completion(&pending, &control, &moment.observation)?;
+            Some((pending, id, by))
+        })
+    }
+
+    /// A partner's readiness in a shared decision: through `ready`, or by choosing
+    /// the decision's completing option, a named clue allocation or The Barrier's
+    /// decline. The decision completes here when it was the last one awaited.
+    fn ready(
+        &mut self,
+        partner: &str,
+        revision: u64,
+        id: Option<&str>,
+        reply: R,
+        table: &mut impl Table,
+        now: Instant,
+    ) -> Vec<Answer<R>> {
+        let me = Controller::Partner(partner.to_owned());
+        let moment = self.moment(table.session());
+        let result = if revision != moment.observation.revision {
+            Err(format!(
+                "This readiness is stale: it names revision {revision}, and the decision is now at revision {}. Observe the current decision.",
+                moment.observation.revision
+            ))
+        } else {
+            let control = self.control();
+            let mine =
+                |pending: &&shared::Pending| pending.decision.players(&control).contains(&me);
+            let target = match id {
+                Some(id) => moment
+                    .pending
+                    .iter()
+                    .find(|pending| pending.decision.includes(id)),
+                // A commitment or a window before a payment proposed beside it.
+                None => moment.pending.iter().filter(mine).min_by_key(|pending| {
+                    matches!(pending.decision.kind, SharedKind::Payment { .. })
+                }),
+            };
+            match target {
+                None => Err(
+                    "No shared decision is pending for you to be ready in. Observe the current decision."
+                        .into(),
+                ),
+                Some(pending) if !mine(&pending) => {
+                    Err("You take no part in that shared decision.".into())
+                }
+                Some(pending) => {
+                    let seen = self
+                        .partners
+                        .iter()
+                        .find(|known| known.id == partner)
+                        .and_then(|known| known.seen.iter().find(|(key, _)| *key == pending.key))
+                        .map(|(_, stamp)| *stamp);
+                    if seen == Some(pending.stamp) {
+                        self.mark_ready(pending, &me, id, &moment.observation)
+                    } else {
+                        Err("The shared decision changed since your last view; nothing was rebased. Observe it and decide again.".into())
+                    }
+                }
+            }
+        };
+        if let Err(reason) = result {
+            return vec![(
+                reply,
+                self.answer(partner, "refused", Some(reason), table, false, now),
+            )];
+        }
+        self.hear(partner, now);
+        let mut answers = self.poll(table, now);
+        let answer = self.answer(partner, "ready", None, table, false, now);
+        answers.insert(0, (reply, answer));
+        answers
+    }
+
+    /// Record `player`'s readiness, setting its part of a payment first when `id`
+    /// names an allocation or The Barrier's decline.
+    fn mark_ready(
+        &mut self,
+        pending: &shared::Pending,
+        player: &Controller,
+        id: Option<&str>,
+        observation: &crate::gathering::Observation,
+    ) -> Result<(), String> {
+        let control = self.control();
+        match (pending.decision.kind, id) {
+            (SharedKind::Payment { .. }, Some(id)) if id != pending.decision.close => {
+                let payment = observation
+                    .group_clue_payment
+                    .as_ref()
+                    .ok_or("No group clue payment is pending.")?;
+                self.sharing
+                    .contribute(pending, payment, &control, player, id)
+            }
+            _ => {
+                self.sharing.ready(pending, player);
+                Ok(())
+            }
+        }
     }
 
     /// A visible card's full text, as the table's Inspect shows it. A card this
@@ -666,8 +929,10 @@ impl<R> Host<R> {
                     "That is a group choice: the player of {}, its arbiter, makes it.",
                     arbiter.name()
                 ),
+                // A shared decision that spans players is readiness, answered
+                // before this check; this one is another player's alone.
                 OptionOwner::Shared { .. } => {
-                    "That choice is a shared decision, made at the table in this version.".into()
+                    format!("That choice belongs to the player of {names}, whom you do not play.")
                 }
                 OptionOwner::Investigator(_) => {
                     format!("That choice belongs to {names}, whom you do not play.")
@@ -700,7 +965,20 @@ impl<R> Host<R> {
         now: Instant,
     ) -> Value {
         let control = self.control();
-        let routing = Routing::of(table.session(), &control);
+        let moment = self.moment(table.session());
+        let me = Controller::Partner(id.to_owned());
+        let shared: Vec<view::SharedPart> = moment
+            .pending
+            .iter()
+            .filter(|pending| pending.decision.players(&control).contains(&me))
+            .map(|pending| view::SharedPart {
+                decision: &pending.decision,
+                view: self
+                    .sharing
+                    .view(pending, &control, &me, &moment.observation),
+                waits: self.sharing.active(pending),
+            })
+            .collect();
         let mine = control.held_by(id);
         let partner = self
             .partners
@@ -709,6 +987,11 @@ impl<R> Host<R> {
             .expect("A known partner");
         partner.heard = now;
         partner.reported = mine.clone();
+        partner.seen = moment
+            .pending
+            .iter()
+            .map(|pending| (pending.key.clone(), pending.stamp))
+            .collect();
         for who in &mine {
             if !partner.played.contains(who) {
                 partner.played.push(*who);
@@ -717,13 +1000,15 @@ impl<R> Host<R> {
         let mut view = view::build(
             table.session(),
             &control,
-            &routing,
+            &moment.routing,
             view::Viewer {
                 partner: id,
                 sent: &mut partner.sent,
                 board: &mut partner.board,
                 full,
             },
+            &moment.awaited,
+            &shared,
         );
         // Table talk is outside the board: each message from another player once,
         // with the first answer after it that carries a view.
@@ -744,6 +1029,52 @@ impl<R> Host<R> {
             answer["error"] = json!(error);
         }
         answer
+    }
+}
+
+/// The pending decision at one revision as the host routes it.
+struct Moment {
+    observation: crate::gathering::Observation,
+    routing: Routing,
+    /// Its shared decisions that span players.
+    pending: Vec<shared::Pending>,
+    /// The players it waits for, each with the investigator it answers for.
+    awaited: Vec<(Controller, Option<Investigator>)>,
+}
+
+impl Moment {
+    /// What a held wait of `partner` answers now, at a settled table: a group
+    /// choice it has not been told of, news of a shared decision it takes part in
+    /// that changed since its last view, or a decision of its own.
+    fn event<R>(&self, host: &Host<R>, partner: &str) -> Option<&'static str> {
+        if host.group_untold(partner, &self.routing, self.observation.revision) {
+            return Some("group_choice");
+        }
+        let me = Controller::Partner(partner.to_owned());
+        let control = host.control();
+        let seen = &host.partners.iter().find(|known| known.id == partner)?.seen;
+        let news = self.pending.iter().any(|pending| {
+            pending.decision.players(&control).contains(&me)
+                && seen
+                    .iter()
+                    .any(|(key, stamp)| *key == pending.key && *stamp != pending.stamp)
+        });
+        if news {
+            Some("shared")
+        } else if self.awaited.iter().any(|(player, _)| *player == me) {
+            Some("decision")
+        } else {
+            None
+        }
+    }
+
+    /// The commitment window `player` takes part in, where each of its options
+    /// changes its part.
+    fn changes(&self, control: &Control, player: &Controller) -> Option<&shared::Pending> {
+        self.pending.iter().find(|pending| {
+            pending.decision.kind == SharedKind::Commitment
+                && pending.decision.players(control).contains(player)
+        })
     }
 }
 
@@ -769,3 +1100,6 @@ fn token() -> String {
     }
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
+
+#[cfg(test)]
+mod tests;
