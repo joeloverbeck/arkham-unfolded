@@ -938,6 +938,51 @@ fn a_held_choice_is_released_when_a_fast_play_moves_the_decision_on() {
     assert_eq!(tonys_holdings(&sitting).0, before.0, "Nothing was rebased");
 }
 
+/// Review round 3, T1 (play contract: Take over returns an investigator at once;
+/// partner instructions, "Refusals": after the table takes the investigator over, a
+/// choice answered `held` is `released`). The partner's choice for Tony is held for
+/// the human's pass; the human takes Tony over instead. Its pending wait answers that
+/// its investigators changed, its next wait answers `released` with the take-over
+/// reason, and the held choice is never applied: Tony's next action is the human's.
+#[test]
+fn taking_over_releases_the_partners_held_choice_unapplied() {
+    let (mut sitting, partner) = tonys_partner_before_the_humans_violin();
+    let (revision, before) = (sitting.revision(), tonys_holdings(&sitting));
+    let held = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(held["status"], "held", "{held}");
+    let waits = sitting.wait(&partner);
+
+    sitting.host.set_selected(Tony, false);
+    sitting.poll();
+    let changed = sitting.take(waits).expect("Control changed");
+    assert_eq!(changed["status"], "control_changed", "{changed}");
+    assert_eq!(changed["investigators"], json!([]), "{changed}");
+    let told = sitting.ask(json!({"op": "wait", "partner": partner}));
+    assert_eq!(told["status"], "released", "{told}");
+    assert!(
+        told["reason"].as_str().is_some_and(|reason| reason
+            .contains("was not applied: the investigator it was for is no longer yours")),
+        "{told}"
+    );
+    assert_eq!(sitting.revision(), revision, "Not applied");
+    assert_eq!(tonys_holdings(&sitting), before, "Not applied");
+
+    // Tony's next action is the human's own, applied at once, and the held one
+    // never reaches the table, even once the decision moves on.
+    assert_eq!(sitting.human("action:ordinary:draw"), HumanChoice::Commit);
+    assert_eq!(sitting.revision(), revision + 1);
+    assert_eq!(
+        tonys_holdings(&sitting),
+        (before.0, before.1 + 1),
+        "Only his draw was applied"
+    );
+    assert!(
+        sitting.rules.attributed.is_empty(),
+        "{:?}",
+        sitting.rules.attributed
+    );
+}
+
 /// Review fix G3 (CODING_STANDARDS.md: presentation does not filter, merge or
 /// auto-pick choices). The library gives the human's options in a turn's player
 /// window, his pass among them, and the table only renders them. In Tony's
