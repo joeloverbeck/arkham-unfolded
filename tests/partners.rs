@@ -529,6 +529,7 @@ fn take_over_mid_decision_refuses_the_partners_later_choice_as_no_longer_its_own
     sitting.poll();
     let changed = sitting.take(waiting).expect("Control changed");
     assert_eq!(changed["status"], "control_changed", "{changed}");
+    assert_eq!(changed["ok"], true, "A change of control is not a refusal");
     assert_eq!(changed["investigators"], json!([]));
     sitting.rules.settled = true;
     sitting.poll();

@@ -371,22 +371,23 @@ impl<R> Host<R> {
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
         let mut answers = Vec::new();
         let mut index = 0;
+        // Routed only once the table has settled, and again after a commit.
         let mut routing: Option<Routing> = None;
         while index < self.held.len() {
             let partner = self.held[index].partner.clone();
             let settled = table.settled();
-            let routing_now = routing
-                .get_or_insert_with(|| Routing::of(table.session(), &self.control()))
-                .clone();
+            let control = self.control();
+            let mut routed = || {
+                routing
+                    .get_or_insert_with(|| Routing::of(table.session(), &control))
+                    .clone()
+            };
             let outcome = match &self.held[index].pending {
                 Pending::Wait { deadline } => {
                     if self.changed(&partner) {
-                        Some((
-                            "control_changed",
-                            Some("The investigators you play changed.".to_owned()),
-                        ))
+                        Some(("control_changed", None))
                     } else if settled
-                        && routing_now.awaiting() == Some(&Controller::Partner(partner.clone()))
+                        && routed().awaiting() == Some(&Controller::Partner(partner.clone()))
                     {
                         Some(("decision", None))
                     } else if now >= *deadline {
@@ -406,8 +407,8 @@ impl<R> Host<R> {
                 }
                 Pending::Choose { revision, id } if settled => {
                     let (revision, id) = (*revision, id.clone());
-                    let checked =
-                        self.check(&partner, revision, &id, &routing_now, table.session());
+                    let routed = routed();
+                    let checked = self.check(&partner, revision, &id, &routed, table.session());
                     let result = checked.and_then(|by| table.commit(revision, &id, by));
                     routing = None;
                     match result {
