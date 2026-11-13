@@ -374,10 +374,12 @@ pub(super) fn serve(world: &mut World) {
     let next_frame = !settled && {
         let pending = table_unsettled(world);
         let table = world.resource::<Table>();
-        pending
-            .iter()
-            .all(|reason| matches!(*reason, "camera motion" | "scene rebuild" | "queued input"))
-            && !table.modal()
+        pending.iter().all(|reason| {
+            matches!(
+                reason,
+                Unsettled::CameraMotion | Unsettled::SceneRebuild | Unsettled::QueuedInput
+            )
+        }) && !table.modal()
             && !table.menu_open
             && !table.is_presenting()
             && !table.context.is_open()
@@ -501,7 +503,7 @@ fn presented(world: &mut World) -> bool {
     let table = world.resource::<Table>();
     pending
         .iter()
-        .all(|reason| matches!(*reason, "camera motion" | "reading delay"))
+        .all(|reason| matches!(reason, Unsettled::CameraMotion | Unsettled::ReadingDelay))
         && !table.is_presenting()
 }
 
@@ -512,7 +514,9 @@ fn presented(world: &mut World) -> bool {
 fn settled(world: &mut World) -> bool {
     let pending = table_unsettled(world);
     let table = world.resource::<Table>();
-    pending.iter().all(|reason| *reason == "camera motion")
+    pending
+        .iter()
+        .all(|reason| *reason == Unsettled::CameraMotion)
         && !table.modal()
         && !table.menu_open
         && !table.is_presenting()
@@ -521,7 +525,7 @@ fn settled(world: &mut World) -> bool {
 
 /// The seat steps frames only while the table is unsettled, so partner work it can
 /// do now keeps the table unsettled.
-pub(super) fn unsettled(world: &mut World) -> Option<&'static str> {
+pub(super) fn unsettled(world: &mut World) -> Option<Unsettled> {
     if !world.contains_resource::<Partners>() {
         return None;
     }
@@ -530,7 +534,7 @@ pub(super) fn unsettled(world: &mut World) -> Option<&'static str> {
     let session = &world.resource::<Table>().session;
     partners
         .due(session, readiness, Instant::now())
-        .then_some("partner request")
+        .then_some(Unsettled::PartnerRequest)
 }
 
 fn waker(world: &World) -> Option<PartnerWaker> {

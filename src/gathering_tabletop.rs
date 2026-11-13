@@ -2040,15 +2040,59 @@ fn contextual_feedback(
 /// What must finish before the table takes a decision; empty when it is settled.
 /// `Redraw` cannot answer this: the availability cue requests redraws for as long as
 /// a choice is offered. A dialog or menu waiting for the player is settled, even when
-/// it holds a presentation or motion in place behind it.
+/// it holds a presentation or motion in place behind it. The seat reports each
+/// reason by its [label](Unsettled::label).
 fn unsettled(world: &mut World) -> Vec<&'static str> {
     let mut pending = table_unsettled(world);
     pending.extend(partners::unsettled(world));
-    pending
+    pending.into_iter().map(Unsettled::label).collect()
+}
+
+/// One reason the table is not settled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Unsettled {
+    GraphicsAdmission,
+    InitialSave,
+    Leaving,
+    SceneRebuild,
+    QueuedInput,
+    Announcement,
+    Presentation,
+    Consequences,
+    Trays,
+    SealedTokens,
+    CardMotion,
+    CameraMotion,
+    /// A partner's reading continues on its own (#210); it waits for no one.
+    ReadingDelay,
+    /// Partner work the table can do now (#205).
+    PartnerRequest,
+}
+
+impl Unsettled {
+    /// How the seat names it.
+    fn label(self) -> &'static str {
+        match self {
+            Self::GraphicsAdmission => "graphics admission",
+            Self::InitialSave => "initial save",
+            Self::Leaving => "leaving the table",
+            Self::SceneRebuild => "scene rebuild",
+            Self::QueuedInput => "queued input",
+            Self::Announcement => "announcement",
+            Self::Presentation => "presentation",
+            Self::Consequences => "consequences",
+            Self::Trays => "trays",
+            Self::SealedTokens => "sealed tokens",
+            Self::CardMotion => "card motion",
+            Self::CameraMotion => "camera motion",
+            Self::ReadingDelay => "reading delay",
+            Self::PartnerRequest => "partner request",
+        }
+    }
 }
 
 /// What the table itself must finish, without partner requests.
-fn table_unsettled(world: &mut World) -> Vec<&'static str> {
+fn table_unsettled(world: &mut World) -> Vec<Unsettled> {
     let moving = world
         .query_filtered::<(), With<motion::CardMotion>>()
         .iter(world)
@@ -2060,45 +2104,44 @@ fn table_unsettled(world: &mut World) -> Vec<&'static str> {
     let held = table.motion_blocked();
     let mut pending = Vec::new();
     if !health.allows_play() || health.just_became_ready() {
-        pending.push("graphics admission");
+        pending.push(Unsettled::GraphicsAdmission);
     }
     if table.initial_save_pending {
-        pending.push("initial save");
+        pending.push(Unsettled::InitialSave);
     }
     if table.leaving {
-        pending.push("leaving the table");
+        pending.push(Unsettled::Leaving);
     }
     if table.dirty || table.last_rendered.is_none() {
-        pending.push("scene rebuild");
+        pending.push(Unsettled::SceneRebuild);
     }
     if !world.resource::<Actions>().0.is_empty() {
-        pending.push("queued input");
+        pending.push(Unsettled::QueuedInput);
     }
     if table.presentation.announcement().is_some() {
         // Every action is dropped while a phase announcement shows, even behind a menu.
-        pending.push("announcement");
+        pending.push(Unsettled::Announcement);
     }
     if table.presentation.active() && !table.presentation_blocked() {
-        pending.push("presentation");
+        pending.push(Unsettled::Presentation);
     }
     if consequences.active() && !held {
-        pending.push("consequences");
+        pending.push(Unsettled::Consequences);
     }
     if table.trays.active() && !held {
-        pending.push("trays");
+        pending.push(Unsettled::Trays);
     }
     if table.sealed.active() && !held {
-        pending.push("sealed tokens");
+        pending.push(Unsettled::SealedTokens);
     }
     if moving && !held {
-        pending.push("card motion");
+        pending.push(Unsettled::CardMotion);
     }
     if world.resource::<Orbit>().is_moving() {
-        pending.push("camera motion");
+        pending.push(Unsettled::CameraMotion);
     }
     if table.pace.counting() {
-        // A partner's reading continues on its own (#210); it waits for no one.
-        pending.push("reading delay");
+        pending.push(Unsettled::ReadingDelay);
     }
     pending
 }
