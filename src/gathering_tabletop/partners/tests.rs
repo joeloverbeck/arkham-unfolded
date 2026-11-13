@@ -412,3 +412,95 @@ fn the_human_continues_a_partners_encounter_reading_without_resolving_it() {
     );
     assert!(!table.human_may("revelation:resolve"));
 }
+
+/// Joel's co-play session 1 (#202, comment 6858608958): Jacqueline, Joel's,
+/// investigated, and the table showed Patrice's partner thinking in two player
+/// windows with nothing Joel could see she might do. The windows were legal and
+/// hers: Patrice's Violin reads "[fast] Choose and discard 1 card from your hand
+/// and exhaust Patrice's Violin: Choose an investigator at your location to either
+/// gain 1 resource or draw 1 card" (06016). A [fast] ability may be used by its
+/// controller in any player window (RR p.3 "Triggered Abilities", p.22), and a
+/// player window follows ST.1 and ST.2 (RR p.26 "Skill Test Timing"). The window
+/// closes when every player with an option has passed (play contract, Agent
+/// partners, Shared decisions), so the table waits on her partner. A thinking cue
+/// is there "so that I know why the table is waiting" (#202 story 70). Without
+/// partners the table names the window's option ("Available now: ..."); with
+/// Patrice handed to a partner it must still say what her partner may use.
+///
+/// Joel's seed and opening: he mulliganed Premonition away, so Jacqueline holds no
+/// fast option in her test's windows; Patrice played her Violin on her turn.
+#[test]
+fn a_partners_player_window_in_the_humans_test_names_what_the_partner_may_use() {
+    let mut session = Session::with_seed(12_374_354_593_772_059_857);
+    for id in [
+        "lead:jacqueline",
+        "mulligan:212",
+        "mulligan:210",
+        "confirm-mulligan",
+        "mulligan:28",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "turn:patrice",
+        "action:ordinary:play:127",
+        "turn:end",
+        "turn:jacqueline",
+        "action:ordinary:investigate",
+    ] {
+        let revision = session.observe().revision;
+        session
+            .choose(revision, id)
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("partners.sock");
+    let table = Table::new(session, directory.path().join("partners.session.json"));
+    let mut app = super::super::tests::host_with_table(table, false);
+    app.insert_resource(PartnerSocket(socket.clone()));
+    finish_presentation(&mut app);
+    // The line naming her option; the asset's own label names only the card.
+    let names_violin = |text: &str| {
+        text.lines()
+            .any(|line| line.contains("Patrice Hathaway") && line.contains("Patrice's Violin"))
+    };
+    let solo = rendered_text(&mut app);
+    assert!(names_violin(&solo), "Without partners:\n{solo}");
+
+    press(&mut app, "Menu");
+    press(&mut app, "Agent partners");
+    press(&mut app, "Patrice Hathaway: you play");
+    press(&mut app, "Enable agent partners");
+    press(&mut app, "Close menu");
+    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    assert_eq!(joined[0]["status"], "joined", "{}", joined[0]);
+    let partner = joined[0]["partner"].as_str().unwrap();
+    // Her partner is woken for the window, and its options are her Violin and Pass.
+    let woken = exchange(
+        &mut app,
+        &socket,
+        &[json!({"op": "wait", "partner": partner})],
+    );
+    assert_eq!(woken[0]["status"], "decision", "{}", woken[0]);
+    let options: Vec<&str> = woken[0]["view"]["decision"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|option| option["id"].as_str().unwrap())
+        .collect();
+    assert!(options.contains(&"window:pass"), "{options:?}");
+    assert!(
+        options
+            .iter()
+            .all(|id| *id == "window:pass" || id.starts_with("violin:127:")),
+        "{options:?}"
+    );
+    app.update();
+    let shown = rendered_text(&mut app);
+    assert!(
+        shown.contains("Patrice Hathaway: partner thinking"),
+        "{shown}"
+    );
+    assert!(
+        names_violin(&shown),
+        "The table waits on Patrice's partner without saying what she may use:\n{shown}"
+    );
+}
