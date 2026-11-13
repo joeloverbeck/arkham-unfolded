@@ -868,10 +868,11 @@ label, such as `Fight Ghoul Minion`, appears in the same place beside the acting
 investigator's portrait as an action line: a square, edged plate with no tail and
 no quotation marks, a record rather than speech. The human's own decisions get no
 line. Neither takes focus or input, and neither blocks camera control. Neither
-covers the current decision, the turn indicator, the test display (the Test area
-while a test shows there), an open menu or a reading. A box narrows to keep clear
-of the Test area; one that still would cover any of them is hidden, and its reading
-time waits until it shows again. Each stays readable for a delay proportional to
+covers the current decision, the turn indicator, the test display (the on-screen
+panel that shows a test and its reveal, not the Test area on the table), an open
+menu or a reading. Each keeps one width, and where the camera is over the table
+never narrows or hides one; one that would cover any of them is hidden, and its
+reading time waits until it shows again. Each stays readable for a delay proportional to
 its length, then fades; reduced motion removes the fade, not the delay. Further
 messages from the same speaker queue behind the visible one. An action line shows
 at once, stacked with that speaker's message, so table talk never delays it; the

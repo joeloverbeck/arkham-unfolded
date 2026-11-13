@@ -5,10 +5,11 @@
 //! messages to show them, never saved with the attempt.
 //!
 //! Speech boxes and action lines are overlays outside the rebuilt panels, so a
-//! rebuild never dismisses one. They take no pointer, focus or keyboard input. One
-//! that would cover the decision display, the turn indicator, the Test area during
-//! a test, a menu or a reading is hidden, and its reading time waits until it shows
-//! again. The message box, while open, holds the keyboard: it runs before Bevy
+//! rebuild never dismisses one. They take no pointer, focus or keyboard input. They
+//! keep one width and avoid only the interface: one that would cover the decision
+//! display (which shows a test's reveal), the turn indicator, a menu or a reading
+//! is hidden, and its reading time waits until it shows again. Where the camera is
+//! over the table never narrows or hides one (S3). The message box, while open, holds the keyboard: it runs before Bevy
 //! dispatches keys to the focused control, keeps that focus on itself and clears
 //! the keys the table's own controls read.
 
@@ -38,8 +39,8 @@ const BOX_LAYER: i32 = 44;
 /// The rail's right edge (`tabletop_ui::navigation`: left 10, width 124).
 const RAIL_RIGHT: f32 = 134.;
 const GAP: f32 = 8.;
+/// Every speech box column's width.
 const WIDEST: f32 = 260.;
-const NARROWEST: f32 = 120.;
 /// A speech box or action line stays readable for a base time plus a time per
 /// character, about 900 characters a minute, then fades.
 const READ_BASE: f32 = 2.;
@@ -420,8 +421,8 @@ fn rect(node: &ComputedNode, transform: &UiGlobalTransform) -> Rect {
 }
 
 /// Speech boxes and action lines: take what was said and done, place each
-/// portrait's boxes beside it clear of what they must not cover, and count their
-/// reading time only while they show.
+/// portrait's boxes beside it clear of the interface they must not cover, and
+/// count their reading time only while they show.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn speech(
     mut commands: Commands,
@@ -456,7 +457,6 @@ fn speech(
         &UiGlobalTransform,
         &mut Visibility,
     )>,
-    camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) {
     let Some(table) = table else {
         return;
@@ -483,32 +483,23 @@ fn speech(
     }
     speech.noted = talk.lines.len();
 
-    let play = table
+    let round = table
         .last_rendered
         .as_ref()
-        .and_then(|view| view.play.as_ref());
-    let round = play.map(|play| play.round);
+        .and_then(|view| view.play.as_ref())
+        .map(|play| play.round);
     // What a speech box must not cover, in UI units: the panels it keeps between,
-    // and what floats above it or shows the test.
+    // and what floats above it. Only the interface: never the scene under it.
     let panels: Vec<Rect> = avoided
         .iter()
         .filter(|(_, _, visible)| visible.get())
         .map(|(node, transform, _)| rect(node, transform))
         .collect();
-    let mut covering: Vec<Rect> = layers
+    let covering = layers
         .iter()
         .filter(|(_, _, visible, layer)| visible.get() && layer.0 > SPEECH_LAYER)
-        .map(|(node, transform, ..)| rect(node, transform))
-        .collect();
-    if play.is_some_and(|play| play.test.is_some() || play.tokens.is_some())
-        && let Some(area) = camera
-            .single()
-            .ok()
-            .and_then(|(camera, at)| test_area(camera, at))
-    {
-        covering.push(area);
-    }
-    let protected: Vec<Rect> = panels.iter().chain(&covering).copied().collect();
+        .map(|(node, transform, ..)| rect(node, transform));
+    let protected: Vec<Rect> = panels.iter().copied().chain(covering).collect();
     let height = window.map_or(1000., |window| window.height());
 
     let mut floor_above = f32::NEG_INFINITY;
@@ -607,21 +598,13 @@ fn speech(
             let top = (anchor.center().y - size.y / 2.)
                 .min(floor - size.y)
                 .max(ceiling);
-            let mut widest = WIDEST;
-            for area in &covering {
-                if area.min.y < top + size.y && area.max.y > top && area.min.x > left {
-                    widest = widest.min(area.min.x - GAP - left);
-                }
-            }
             node.left = px(left);
             node.top = px(top);
-            node.width = px(widest.max(NARROWEST));
             let target = Rect::new(left, top, left + size.x, top + size.y);
             let placed = (actual.min - target.min).length() < 1.;
             // A new box waits until it is laid out where it belongs; a shown box
             // stays shown while it moves there, wherever it is clear.
             visible = (placed || slot.visible)
-                && widest >= NARROWEST
                 && top + size.y <= floor
                 && actual.max.y <= height
                 && !protected
@@ -686,25 +669,6 @@ fn panel_edge(panels: &[Rect], column: Rect, y: f32, above: bool) -> f32 {
         }
     }
     edge
-}
-
-/// The Test area on screen, while a test shows there.
-fn test_area(camera: &Camera, at: &GlobalTransform) -> Option<Rect> {
-    let half = layout::TEST_SIZE / 2.;
-    let corners = [(-1., -1.), (1., -1.), (1., 1.), (-1., 1.)]
-        .map(|(x, z)| layout::TEST_CENTER + Vec3::new(x * half.x, 0., z * half.y));
-    let points: Vec<Vec2> = corners
-        .into_iter()
-        .filter_map(|corner| camera.world_to_viewport(at, corner).ok())
-        .collect();
-    let first = *points.first()?;
-    Some(
-        points
-            .iter()
-            .fold(Rect::from_corners(first, first), |area, point| {
-                area.union_point(*point)
-            }),
-    )
 }
 
 /// What a portrait shows without the pointer on it: the message being read, and

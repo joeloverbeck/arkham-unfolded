@@ -748,10 +748,13 @@ fn a_reading_hides_a_speech_box_and_holds_its_time() {
     );
 }
 
-/// Ticket #209: during a test, a speech box stays clear of the Test area on
-/// screen, here with the camera on the Test area.
+/// S3, Joel's co-play session 2 (#202): as the camera neared the Test area during a
+/// test, speech boxes narrowed and then hid ("I don't think we want that to happen
+/// at any point"). A box avoids only the interface it must never cover, never the
+/// scene: wherever the camera is over the table during a test, a long message's box
+/// keeps its width and shows, and it stays clear of the decision display.
 #[test]
-fn a_speech_box_stays_clear_of_the_test_area_during_a_test() {
+fn a_speech_box_keeps_its_width_and_shows_wherever_the_camera_is() {
     let directory = tempfile::tempdir().unwrap();
     let session =
         Session::with_hostile_fixture(crate::gathering::HostileFixture::JacquelineCancellation);
@@ -775,11 +778,6 @@ fn a_speech_box_stays_clear_of_the_test_area_during_a_test() {
     app.update();
     let view = app.world().resource::<Table>().view();
     assert!(view.play.as_ref().unwrap().test.is_some(), "A test shows");
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .push(Action::Focus(Area::Test));
-    wait(&mut app, 3.);
     {
         let mut table = app.world_mut().resource_mut::<Table>();
         table.talk.open();
@@ -791,36 +789,29 @@ fn a_speech_box_stays_clear_of_the_test_area_during_a_test() {
         app.world().resource::<Table>().talk.log[0].speaker,
         [Jacqueline]
     );
-    let beside = slot(&mut app, Jacqueline).expect("The human's message shows");
-    let speech = screen_rect(&app, beside);
-    let world = app.world_mut();
-    let (camera, at) = world
-        .query_filtered::<(&Camera, &GlobalTransform), With<MainCamera>>()
-        .single(world)
-        .unwrap();
-    let half = layout::TEST_SIZE / 2.;
-    let corners: Vec<Vec2> = [(-1., -1.), (1., -1.), (1., 1.), (-1., 1.)]
-        .into_iter()
-        .filter_map(|(x, z)| {
-            camera
-                .world_to_viewport(
-                    at,
-                    layout::TEST_CENTER + Vec3::new(x * half.x, 0., z * half.y),
-                )
-                .ok()
-        })
-        .collect();
-    assert_eq!(corners.len(), 4);
-    let area = corners.iter().fold(
-        Rect::from_corners(corners[0], corners[0]),
-        |area, corner| area.union_point(*corner),
-    );
-    assert!(
-        speech.max.y > area.min.y && speech.min.y < area.max.y,
-        "Level with the Test area {area:?}, so the box keeps to its left: {speech:?}"
-    );
-    assert!(
-        area.intersect(speech).is_empty(),
-        "The speech box {speech:?} covers the Test area {area:?}"
-    );
+    for area in [
+        Area::Test,
+        Area::Overview,
+        Area::Investigator(Jacqueline.index()),
+    ] {
+        app.world_mut()
+            .resource_mut::<Actions>()
+            .0
+            .push(Action::Focus(area));
+        wait(&mut app, 2.);
+        settle(&mut app);
+        let beside = slot(&mut app, Jacqueline)
+            .unwrap_or_else(|| panic!("Shown with the camera on {area:?}"));
+        let speech = screen_rect(&app, beside);
+        assert_eq!(
+            speech.width(),
+            WIDEST,
+            "Its width with the camera on {area:?}"
+        );
+        let decision = panel_showing(&mut app, "LIVE DECISION");
+        assert!(
+            decision.intersect(speech).is_empty(),
+            "With the camera on {area:?}, the speech box {speech:?} covers the decision display {decision:?}"
+        );
+    }
 }
