@@ -31,17 +31,20 @@ impl CounterKind {
         }
     }
 
+    /// The counters' name. A card's use counters are named as the rules side's
+    /// Inspect names them, so the two never differ.
     pub(crate) fn name(self) -> &'static str {
+        use crate::gathering::UseKind;
         match self {
             Self::Clue => "Clues",
-            Self::Resource => "Resources",
-            Self::Supply => "Supplies",
-            Self::Key => "Keys",
-            Self::Ammo => "Ammo",
-            Self::Charge => "Charges",
-            Self::Offering => "Offerings",
-            Self::Bounty => "Bounties",
             Self::Doom => "Doom",
+            Self::Resource => UseKind::Resource.name(),
+            Self::Supply => UseKind::Supply.name(),
+            Self::Key => UseKind::Key.name(),
+            Self::Ammo => UseKind::Ammo.name(),
+            Self::Charge => UseKind::Charge.name(),
+            Self::Offering => UseKind::Offering.name(),
+            Self::Bounty => UseKind::Bounty.name(),
         }
     }
 

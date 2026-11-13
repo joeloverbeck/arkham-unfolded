@@ -49,16 +49,6 @@ pub enum UseKind {
 }
 
 impl UseKind {
-    pub const ALL: [Self; 7] = [
-        Self::Ammo,
-        Self::Charge,
-        Self::Supply,
-        Self::Resource,
-        Self::Offering,
-        Self::Bounty,
-        Self::Key,
-    ];
-
     /// The name of these counters on a card, as Inspect and the table say it.
     pub fn name(self) -> &'static str {
         match self {
