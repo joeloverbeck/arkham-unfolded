@@ -436,11 +436,16 @@ fn wager_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
             control(
                 art,
                 row,
-                choice_label(&choice),
+                &table
+                    .partners
+                    .readiness_label(&choice.id, choice_label(&choice)),
                 Action::Choose(table.epoch, view.revision, choice.id.clone()),
             );
         }
     });
+    for line in table.partners.readiness_lines() {
+        p.spawn(art.text(line, 13., PARTNER));
+    }
     if let Some(summary) = selected_commitments(view) {
         p.spawn(art.text(summary, 12., MUTED));
     }
@@ -519,9 +524,7 @@ pub(super) fn render(
             if table.partners.partner_plays(who) {
                 marks.push("PARTNER".to_owned());
             }
-            if let Some((deciding, state)) = table.partners.deciding
-                && deciding == who
-            {
+            if let Some(state) = table.partners.deciding(who) {
                 marks.push(match state {
                     partners::Deciding::Thinking => "THINKING".to_owned(),
                     partners::Deciding::Silent(minutes) => format!("SILENT {minutes} MIN"),
@@ -621,16 +624,21 @@ pub(super) fn render(
             {
                 p.spawn(art.text(play::location_text(&view.prompt), 18., PAPER));
             }
-            if let Some(status) = play::status(view) {
+            if let Some(status) = play::status(view, &table.partners.awaited) {
                 p.spawn(art.text(status, 15., GOLD));
             }
             if let Some(summary) = view.play.as_ref().and_then(test_summary) {
                 p.spawn(art.text(summary, 15., GOLD));
             }
-            if let Some((who, _)) = table.partners.deciding
-                && let Some(cue) = table.partners.cue(who)
-            {
+            for (who, _) in &table.partners.deciding {
+                let who = *who;
+                let Some(cue) = table.partners.cue(who) else {
+                    continue;
+                };
                 p.spawn(art.text(cue, 16., PARTNER));
+                if let Some(uses) = table.partners.uses(who) {
+                    p.spawn(art.text(uses, 15., Color::srgb(0.78, 0.65, 0.95)));
+                }
                 screen::controls(p, |row| {
                     control(
                         art,
@@ -639,6 +647,9 @@ pub(super) fn render(
                         Action::Partners(partners::Input::TakeOver(who)),
                     );
                 });
+            }
+            for line in table.partners.readiness_lines() {
+                p.spawn(art.text(line, 15., PARTNER));
             }
             if !table.is_presenting() {
                 for (_, label) in controls::window_opportunities(view) {
@@ -655,13 +666,15 @@ pub(super) fn render(
                         let entity = control(
                             art,
                             row,
-                            choice_label(&choice),
+                            &table
+                                .partners
+                                .readiness_label(&choice.id, choice_label(&choice)),
                             Action::Choose(table.epoch, view.revision, choice.id.clone()),
                         );
                         // While a partner decides, Enter must not undo the human's
                         // own latest decision under it.
                         let undo_under_partner =
-                            choice.id == "undo" && table.partners.deciding.is_some();
+                            choice.id == "undo" && !table.partners.deciding.is_empty();
                         if index == 0
                             && !table.menu_open
                             && !table.context.is_open()

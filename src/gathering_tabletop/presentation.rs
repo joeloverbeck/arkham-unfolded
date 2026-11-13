@@ -93,13 +93,21 @@ impl Presentation {
         if stale {
             use crate::partners::Controller;
             let routing = crate::partners::Routing::of(session, &self.control);
-            let mut ids: Vec<_> = routing
+            let mut ids: Vec<String> = routing
                 .options()
                 .filter(|(_, _, controller)| **controller != Controller::Human)
                 .map(|(id, _, _)| id.to_owned())
                 .collect();
             if routing.undoer() != Some(&Controller::Human) {
                 ids.push("undo".into());
+            }
+            // A shared decision's completing option is the readiness of each
+            // player taking part in it.
+            for shared in routing.shared() {
+                if !shared.players(&self.control).contains(&Controller::Human) {
+                    ids.push(shared.close.clone());
+                    ids.push("round-end:decline-act".into());
+                }
             }
             *others = Some((revision, self.control.clone(), ids));
         }

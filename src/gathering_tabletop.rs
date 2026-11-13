@@ -314,6 +314,9 @@ struct CardRender<'a> {
     epoch: u64,
     story: &'a story::Faces,
     consequences: &'a consequences::State,
+    /// Cards other players' investigators have pending in a shared commitment,
+    /// shown in the Test area beside the confirmed commitments.
+    others_pending: &'a [(Investigator, crate::gathering::CardView)],
 }
 
 impl CardRender<'_> {
@@ -920,6 +923,7 @@ fn handle_actions(
     mut exit: MessageWriter<AppExit>,
     navigation: Res<Navigation>,
     seated: Option<Res<crate::agent_seat::SeatedAgent>>,
+    mut partnered: Option<ResMut<partners::Partners>>,
 ) {
     if table.leaving {
         actions.0.clear();
@@ -1146,6 +1150,26 @@ fn handle_actions(
                 if clue_payment::opens(&id) {
                     clue_payment::open(&mut table, epoch, revision);
                     continue;
+                }
+                // With partners, the human's Confirm, pass or clue part in a shared
+                // decision is his readiness: the partner host completes it.
+                if let Some(partnered) = partnered.as_mut() {
+                    match partnered.human(&table.session, revision, &id) {
+                        Ok(crate::partners::HumanChoice::Commit) => {}
+                        Ok(crate::partners::HumanChoice::Ready) => {
+                            if table.clue_payment.take().is_some() {
+                                table.epoch += 1;
+                            }
+                            table.notice.clear();
+                            table.dirty = true;
+                            continue;
+                        }
+                        Err(reason) => {
+                            table.notice = reason;
+                            table.dirty = true;
+                            continue;
+                        }
+                    }
                 }
                 match table.commit(revision, &id) {
                     Ok(()) => {
@@ -1658,12 +1682,14 @@ fn render(
     table.last_rendered = Some(view.clone());
     let reduced_motion = table.reduced_motion;
     table.trays.prepare(&view, reduced_motion);
+    let others_pending = table.partners.others_pending(&view);
     let context = CardRender {
         art: &art,
         view: &view,
         epoch: table.epoch,
         story: &story,
         consequences: &consequences,
+        others_pending: &others_pending,
     };
     scene::render(&mut commands, &mut meshes, &mut materials, &context);
     surfaces.0.render(

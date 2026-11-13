@@ -17,6 +17,7 @@
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
 
 use super::*;
+use crate::gathering::CardView;
 use crate::partners::{self as rules, Controller, Host, Routing};
 use serde_json::{Value, json};
 use std::{
@@ -71,7 +72,16 @@ pub(super) struct Shown {
     pub line: Option<String>,
     /// Why partners could not be enabled.
     pub problem: Option<String>,
-    pub deciding: Option<(Investigator, Deciding)>,
+    /// Each partner-played investigator the table waits on, and how.
+    pub deciding: Vec<(Investigator, Deciding)>,
+    /// What each awaited partner's investigator may use in the open window: the
+    /// titles of the cards and abilities its options use.
+    pub may_use: Vec<(Investigator, Vec<String>)>,
+    /// Every investigator the table waits on when a partner's is among them, for
+    /// the status line.
+    pub awaited: Vec<Investigator>,
+    /// The pending shared decisions whose participants several players control.
+    pub shared: Vec<rules::SharedState>,
     /// History entries a partner's decision made in this sitting, and its
     /// investigator. Runtime only: the save's history is replayed from decisions.
     pub attributed: Vec<(usize, Investigator)>,
@@ -83,16 +93,136 @@ impl Shown {
         self.enabled && self.selected[who.index()]
     }
 
+    /// How the partner deciding for `who` is shown, while the table waits on it.
+    pub(super) fn deciding(&self, who: Investigator) -> Option<Deciding> {
+        self.deciding
+            .iter()
+            .find(|(deciding, _)| *deciding == who)
+            .map(|(_, state)| *state)
+    }
+
     /// What the table says of a partner deciding for `who`.
     pub(super) fn cue(&self, who: Investigator) -> Option<String> {
-        let (deciding, state) = self.deciding?;
-        (deciding == who).then(|| match state {
+        Some(match self.deciding(who)? {
             Deciding::Thinking => format!("{}: partner thinking…", who.name()),
             Deciding::Silent(minutes) => {
                 format!("{}: no word from its partner for {minutes} min", who.name())
             }
             Deciding::Unclaimed => format!("{}: waiting for a partner to join", who.name()),
         })
+    }
+
+    /// Why the table waits on `who`'s partner in a window: what it may use there.
+    pub(super) fn uses(&self, who: Investigator) -> Option<String> {
+        let (_, titles) = self.may_use.iter().find(|(user, _)| *user == who)?;
+        (!titles.is_empty()).then(|| {
+            format!(
+                "{} may use {} before this window closes",
+                who.name(),
+                titles.join(", ")
+            )
+        })
+    }
+
+    /// The human's part in the shared decision `id` completes, when it has one.
+    pub(super) fn shared_with_human(&self, id: &str) -> Option<&rules::SharedState> {
+        self.shared
+            .iter()
+            .find(|state| state.close == id && state.of(&Controller::Human).is_some())
+    }
+
+    /// The label of the human's readiness control in a shared decision: as
+    /// listed until he is ready, then naming whose readiness is outstanding, and
+    /// saying so when another player's change cleared it.
+    pub(super) fn readiness_label(&self, id: &str, label: &str) -> String {
+        let Some(state) = self.shared_with_human(id) else {
+            return label.to_owned();
+        };
+        let human = state.of(&Controller::Human).expect("The human takes part");
+        let names = |investigators: &[Investigator]| {
+            investigators
+                .iter()
+                .map(|who| who.name())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        if human.ready {
+            let done = match state.kind {
+                rules::SharedKind::Window => "Passed",
+                rules::SharedKind::Commitment => "Confirmed",
+                rules::SharedKind::Payment { .. } => "Ready",
+            };
+            return format!("{done} · waiting for {}", names(&state.outstanding()));
+        }
+        match &human.cleared_by {
+            Some(changer) => format!("{label} again · {} changed it", names(changer)),
+            None => label.to_owned(),
+        }
+    }
+
+    /// Each shared decision's readiness by investigator, for the decision display.
+    pub(super) fn readiness_lines(&self) -> Vec<String> {
+        self.shared
+            .iter()
+            .filter(|state| state.active)
+            .map(|state| {
+                let what = match state.kind {
+                    rules::SharedKind::Commitment => "Commitments",
+                    rules::SharedKind::Window => "Window",
+                    rules::SharedKind::Payment { .. } => "Clue payment",
+                };
+                let players: Vec<String> = state
+                    .players
+                    .iter()
+                    .map(|player| {
+                        let names: Vec<_> =
+                            player.investigators.iter().map(|who| who.name()).collect();
+                        let status = match state.kind {
+                            rules::SharedKind::Window if player.ready => "passed",
+                            rules::SharedKind::Window => "may act",
+                            _ if player.ready => "ready",
+                            _ => "deciding",
+                        };
+                        format!("{} {status}", names.join(" and "))
+                    })
+                    .collect();
+                format!("{what}: {}", players.join(" · "))
+            })
+            .collect()
+    }
+
+    /// Cards another player's investigators have pending in a shared commitment.
+    pub(super) fn others_pending(&self, view: &Observation) -> Vec<(Investigator, CardView)> {
+        let Some(state) = self
+            .shared
+            .iter()
+            .find(|state| state.kind == rules::SharedKind::Commitment)
+        else {
+            return Vec::new();
+        };
+        let others: Vec<Investigator> = state
+            .players
+            .iter()
+            .filter(|player| player.player != Controller::Human)
+            .flat_map(|player| player.investigators.iter().copied())
+            .collect();
+        let Some(play) = &view.play else {
+            return Vec::new();
+        };
+        let Some(test) = &play.test else {
+            return Vec::new();
+        };
+        play.players
+            .iter()
+            .filter(|player| others.contains(&player.investigator))
+            .flat_map(|player| {
+                player
+                    .hand
+                    .iter()
+                    .filter(|card| test.selected.contains(&card.id))
+                    .map(|card| (player.investigator, card.clone()))
+            })
+            .collect()
     }
 
     /// The history line as the action history shows it.
@@ -130,12 +260,19 @@ pub(super) struct Partners {
     transport: Option<Transport>,
     /// The attempt the partner sessions joined; a restart ends them.
     attempt: u64,
-    /// The decision last routed for the cue: revision, control, and its result.
-    routed: Option<(u64, rules::Control, Option<Awaited>)>,
+    /// The decision last routed for the display: revision, control and sharing
+    /// version, and what it showed.
+    routed: Option<(u64, rules::Control, u64, Routed)>,
 }
 
-/// The player a decision waits for, and the investigator that player answers for.
-type Awaited = (Controller, Option<Investigator>);
+/// What the table shows of a routed decision.
+#[derive(Clone, Debug, Default)]
+struct Routed {
+    /// The players it waits for, each with the investigator it answers for.
+    awaited: Vec<(Controller, Option<Investigator>)>,
+    may_use: Vec<(Investigator, Vec<String>)>,
+    shared: Vec<rules::SharedState>,
+}
 
 impl Default for Partners {
     fn default() -> Self {
@@ -164,6 +301,18 @@ impl Partners {
         let incoming: Vec<_> = inbox.try_iter().collect();
         self.queued.fetch_sub(incoming.len(), Ordering::AcqRel);
         incoming
+    }
+
+    /// What the human's choice of `id` does: commit it as usual, or record the
+    /// human's part in a shared decision, which the next [`serve`] completes once
+    /// every participating player is ready.
+    pub(super) fn human(
+        &mut self,
+        session: &Session,
+        revision: u64,
+        id: &str,
+    ) -> Result<rules::HumanChoice, String> {
+        self.host.human(session, revision, id)
     }
 }
 
@@ -215,7 +364,20 @@ pub(super) fn serve(world: &mut World) {
         .get_resource::<PartnerSocket>()
         .map_or_else(default_socket, |socket| socket.0.clone());
     let settled = settled(world);
-    world.resource_scope(|world, mut partners: Mut<Partners>| {
+    // Only this frame's own input and scene rebuild keep the table unsettled: work
+    // waiting on settling (a choice, or a shared decision whose players are all
+    // ready) can run on the next frame, which nothing else would request.
+    let next_frame = !settled && {
+        let pending = table_unsettled(world);
+        let table = world.resource::<Table>();
+        pending
+            .iter()
+            .all(|reason| matches!(*reason, "camera motion" | "scene rebuild" | "queued input"))
+            && !table.modal()
+            && !table.is_presenting()
+            && !table.context.is_open()
+    };
+    let redraw = world.resource_scope(|world, mut partners: Mut<Partners>| {
         world.resource_scope(|_, mut table: Mut<Table>| {
             let partners = &mut *partners;
             let table = &mut *table;
@@ -283,8 +445,12 @@ pub(super) fn serve(world: &mut World) {
                 partners.transport = None;
             }
             show(partners, table, &socket, now);
-        });
+            next_frame && partners.host.due(&table.session, true, now)
+        })
     });
+    if redraw && let Some(mut redraw) = world.get_resource_mut::<Redraw>() {
+        redraw.request();
+    }
 }
 
 /// Whether a partner's choice may be applied now, and a wait for a decision
@@ -332,39 +498,49 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         table.dirty = true;
     }
     let revision = table.session.revision();
-    let awaited = if control.solo() {
-        None
+    let version = partners.host.sharing_version();
+    let routed = if control.solo() {
+        Routed::default()
     } else {
         match &partners.routed {
-            Some((at, routed, awaited)) if *at == revision && *routed == control => awaited.clone(),
+            Some((at, routed, shared, shown))
+                if *at == revision && *routed == control && *shared == version =>
+            {
+                shown.clone()
+            }
             _ => {
-                let routing = Routing::of(&table.session, &control);
-                let awaited = routing
-                    .awaiting()
-                    .cloned()
-                    .map(|controller| (controller, routing.awaited_investigator()));
-                partners.routed = Some((revision, control.clone(), awaited.clone()));
-                awaited
+                let routed = route(&partners.host, &table.session, &control);
+                partners.routed = Some((revision, control.clone(), version, routed.clone()));
+                routed
             }
         }
     };
-    let deciding = awaited.and_then(|(controller, who)| {
-        let who = who?;
-        Some((
-            who,
-            match controller {
-                Controller::Human => return None,
-                Controller::Unclaimed => Deciding::Unclaimed,
-                Controller::Partner(_) => {
-                    let silence = partners.host.silence(who, now).unwrap_or_default();
-                    match silence.as_secs() / 60 {
-                        0 => Deciding::Thinking,
-                        minutes => Deciding::Silent(minutes),
+    let deciding: Vec<(Investigator, Deciding)> = routed
+        .awaited
+        .iter()
+        .filter_map(|(controller, who)| {
+            let who = (*who)?;
+            Some((
+                who,
+                match controller {
+                    Controller::Human => return None,
+                    Controller::Unclaimed => Deciding::Unclaimed,
+                    Controller::Partner(_) => {
+                        let silence = partners.host.silence(who, now).unwrap_or_default();
+                        match silence.as_secs() / 60 {
+                            0 => Deciding::Thinking,
+                            minutes => Deciding::Silent(minutes),
+                        }
                     }
-                }
-            },
-        ))
-    });
+                },
+            ))
+        })
+        .collect();
+    let awaited = if deciding.is_empty() {
+        Vec::new()
+    } else {
+        routed.awaited.iter().filter_map(|(_, who)| *who).collect()
+    };
     let enabled = partners.host.enabled();
     let shown = Shown {
         menu_open: table.partners.menu_open,
@@ -376,6 +552,9 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         line: enabled.then(|| line(socket)),
         problem: table.partners.problem.clone(),
         deciding,
+        may_use: routed.may_use,
+        awaited,
+        shared: routed.shared,
         // Compared below with what the table shows, so copied, not moved out of it.
         attributed: table.partners.attributed.clone(),
     };
@@ -383,6 +562,47 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         table.dirty = true;
     }
     table.partners = shown;
+}
+
+/// Route the pending decision for the display: whom it waits for, what each
+/// awaited partner may use in a window (the line the table shows without
+/// partners as "Available now"), and its shared decisions.
+fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &rules::Control) -> Routed {
+    let awaited = host.awaited(session);
+    let routing = Routing::of(session, control);
+    let observation = session.observe();
+    let may_use = awaited
+        .iter()
+        .filter(|(controller, _)| *controller != Controller::Human)
+        .filter_map(|(controller, who)| {
+            let who = (*who)?;
+            let theirs: Vec<&str> = routing
+                .options()
+                .filter(|(_, _, player)| *player == controller)
+                .map(|(id, ..)| id)
+                .collect();
+            let mut window = observation.clone();
+            window.choices.retain(|choice| {
+                theirs.contains(&choice.id.as_str())
+                    || matches!(choice.id.as_str(), "window:pass" | "phase-window:pass")
+            });
+            let own = format!("{} — ", who.name());
+            let titles = controls::window_opportunities(&window)
+                .into_iter()
+                .map(|(_, label)| {
+                    label
+                        .strip_prefix(&own)
+                        .map_or(label.clone(), str::to_owned)
+                })
+                .collect();
+            Some((who, titles))
+        })
+        .collect();
+    Routed {
+        awaited,
+        may_use,
+        shared: host.shared(session),
+    }
 }
 
 /// The table as the partner host reaches it.
