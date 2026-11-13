@@ -23,7 +23,6 @@ pub const REOPENINGS: u8 = 3;
 
 /// The Barrier's round-end alternative to paying its clues.
 const DECLINE: &str = "round-end:decline-act";
-const PAY: &str = "act:pay:";
 
 /// Which shared decision a record belongs to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -329,9 +328,10 @@ impl Sharing {
             }
             named
         } else {
-            parse(id).ok_or_else(|| {
+            let named = GroupCluePayment::allocation_of(id).ok_or_else(|| {
                 format!("A clue contribution is named act:pay:TONY:PATRICE:JACQUELINE, not {id}.")
-            })?
+            })?;
+            Investigator::ALL.map(|who| named[who])
         };
         for who in Investigator::ALL {
             let index = who.index();
@@ -559,14 +559,4 @@ impl Sharing {
         }
         value
     }
-}
-
-/// The clues a named allocation gives each investigator, complete or not.
-fn parse(id: &str) -> Option<[u8; 3]> {
-    let mut parts = id.strip_prefix(PAY)?.split(':');
-    let mut clues = [0; 3];
-    for paid in &mut clues {
-        *paid = parts.next()?.parse().ok()?;
-    }
-    parts.next().is_none().then_some(clues)
 }

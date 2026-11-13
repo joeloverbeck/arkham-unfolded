@@ -73,19 +73,10 @@ impl Chooser {
     /// complete or not: it is his readiness.
     fn choice(&self) -> Option<String> {
         if self.mine.is_none() {
-            return self.payment.choice_for(self.allocation);
+            self.payment.choice_for(self.allocation)
+        } else {
+            self.payment.part_for(self.allocation)
         }
-        let within = Investigator::ALL
-            .into_iter()
-            .all(|who| self.allocation[who] <= self.limit(who));
-        (within && self.paid() <= u16::from(self.payment.required)).then(|| {
-            format!(
-                "act:pay:{}:{}:{}",
-                self.allocation[Investigator::Tony],
-                self.allocation[Investigator::Patrice],
-                self.allocation[Investigator::Jacqueline]
-            )
-        })
     }
 
     fn action(&self, table: &Table, input: Input) -> Action {

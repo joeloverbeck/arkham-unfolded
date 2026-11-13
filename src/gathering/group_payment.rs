@@ -157,16 +157,36 @@ impl GroupCluePayment {
         self.accepts(allocation).then(|| allocation.id())
     }
 
+    /// The identity naming this allocation as the players' parts of a payment
+    /// they share (#208), when each investigator is within their limit and no
+    /// more than the requirement is named in all. A part need not be complete:
+    /// only [`Self::choice_for`]'s identity pays.
+    pub fn part_for(&self, allocation: impl Into<Allocation>) -> Option<String> {
+        let allocation = allocation.into();
+        self.within(allocation).then(|| allocation.id())
+    }
+
+    /// The allocation a payment's or a part's identity names, in its one canonical
+    /// spelling.
+    pub fn allocation_of(id: &str) -> Option<Allocation> {
+        Allocation::parse(id)
+    }
+
     /// Complete and legal: each investigator within their limit, and exactly the
     /// requirement in all.
     fn accepts(&self, allocation: Allocation) -> bool {
+        self.within(allocation) && allocation.total() == u16::from(self.required)
+    }
+
+    /// Each investigator within their limit, and no more than the requirement.
+    fn within(&self, allocation: Allocation) -> bool {
         self.contributors.len() == allocation.0.len()
             && self
                 .contributors
                 .iter()
                 .zip(allocation.0)
                 .all(|(contributor, clues)| clues <= contributor.limit(self.required))
-            && allocation.total() == u16::from(self.required)
+            && allocation.total() <= u16::from(self.required)
     }
 
     fn label(&self, allocation: Allocation) -> String {
@@ -670,6 +690,29 @@ mod tests {
         assert_eq!(session.observe().play.unwrap().actor, None);
         assert!(!ids(&session).contains(&LISTED.to_owned()));
         assert_eq!(session.observe().group_clue_payment, None);
+    }
+
+    /// Review fix B1 (#208): a part of a shared payment is named and judged on
+    /// the rules side. Players set their own investigators' clues one part at a
+    /// time, so a part may be incomplete; RR p.7 still bounds each investigator by
+    /// the clues they hold, and The Barrier requires exactly 9 here.
+    #[test]
+    fn a_shared_payments_part_is_named_within_holdings_and_the_requirement() {
+        let session = Session::with_hostile_fixture(HostileFixture::GatheringRoundEnd);
+        let payment = session.observe().group_clue_payment.unwrap();
+        assert_eq!(payment.part_for([3, 0, 0]), Some("act:pay:3:0:0".into()));
+        assert_eq!(payment.part_for([3, 3, 3]), Some("act:pay:3:3:3".into()));
+        assert_eq!(payment.part_for([4, 0, 0]), None, "Tony holds 3 clues");
+        assert_eq!(
+            payment.choice_for([3, 0, 0]),
+            None,
+            "Only a complete one pays"
+        );
+        assert_eq!(
+            super::GroupCluePayment::allocation_of("act:pay:0:2:1"),
+            Some(Allocation::from([0, 2, 1]))
+        );
+        assert_eq!(super::GroupCluePayment::allocation_of(LISTED), None);
     }
 
     #[test]

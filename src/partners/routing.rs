@@ -81,8 +81,7 @@ impl Shared {
         id == self.close
             || match self.kind {
                 SharedKind::Payment { at_round_end } => {
-                    (at_round_end && id == DECLINE)
-                        || (id.starts_with("act:pay:") && !GroupCluePayment::is_listed(id))
+                    (at_round_end && id == DECLINE) || GroupCluePayment::allocation_of(id).is_some()
                 }
                 _ => false,
             }
