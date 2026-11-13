@@ -546,6 +546,19 @@ pub(super) fn render(
                 .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
                     queue.0.push(Action::Focus(Area::Investigator(who.index())));
                 });
+            // The portrait's marks take no input: Take over is a control of its
+            // own, directly under the portrait of the partner deciding (#202).
+            if table.partners.deciding(who).is_some() {
+                let take_over = button(
+                    art,
+                    p,
+                    "Take over",
+                    Action::Partners(partners::Input::TakeOver(who)),
+                );
+                p.commands()
+                    .entity(take_over)
+                    .insert(AccessibleLabel::new(format!("Take over {}", who.name())));
+            }
         }
         for (name, area) in [
             ("Scenario", Area::Scenario),

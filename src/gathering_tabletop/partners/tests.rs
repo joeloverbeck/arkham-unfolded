@@ -875,4 +875,60 @@ fn a_shared_commitment_shows_the_partners_pending_card_and_confirm_is_the_humans
     );
 }
 
+/// The control directly below `who`'s portrait on the rail, when it is a button.
+fn below_portrait(app: &mut App, who: Investigator) -> Option<(Entity, String)> {
+    let world = app.world_mut();
+    let portrait = world
+        .query::<(Entity, &talk::Portrait)>()
+        .iter(world)
+        .find(|(_, portrait)| portrait.0 == who)
+        .map(|(entity, _)| entity)
+        .expect("The rail's portrait");
+    let rail = world.get::<ChildOf>(portrait)?.parent();
+    let children: Vec<Entity> = world.get::<Children>(rail)?.iter().collect();
+    let next = *children.get(children.iter().position(|child| *child == portrait)? + 1)?;
+    world.get::<Button>(next)?;
+    let label = world.get::<AccessibleLabel>(next)?.0.clone();
+    Some((next, crate::tabletop_support::readable_text(label)))
+}
+
+/// Review fix D1 (spec #202, Table: "The thinking cue and **Take over** on the
+/// portrait and in the compact decision display"; presentation contract: while a
+/// partner is deciding, its portrait offers Take over). The portrait's marks take
+/// no input, so the rail holds a real control under the portrait, and only while
+/// that investigator's partner decides.
+#[test]
+fn a_deciding_partners_portrait_offers_take_over() {
+    let mut partnered = partnered(&[Patrice]);
+    join(&mut partnered);
+    let app = &mut partnered.app;
+    let take_over = |app: &mut App, who: Investigator| {
+        below_portrait(app, who)
+            .filter(|(_, label)| *label == format!("Take over {}", who.name()))
+            .map(|(entity, _)| entity)
+    };
+    assert_eq!(
+        take_over(app, Patrice),
+        None,
+        "Jacqueline's mulligan is first"
+    );
+    choose(app, "confirm-mulligan"); // Jacqueline
+    finish_presentation(app);
+    choose(app, "confirm-mulligan"); // Tony
+    finish_presentation(app);
+    assert!(rendered_text(app).contains("Patrice Hathaway: partner thinking"));
+    let control = take_over(app, Patrice).expect("Patrice's portrait offers Take over");
+    assert_eq!(take_over(app, Investigator::Tony), None);
+    assert_eq!(take_over(app, Jacqueline), None);
+    app.world_mut().trigger(Activate { entity: control });
+    app.update();
+    assert!(
+        offered(app).iter().any(|id| id == "confirm-mulligan"),
+        "{:?}",
+        offered(app)
+    );
+    assert!(!rendered_text(app).contains("partner thinking"));
+    assert_eq!(take_over(app, Patrice), None);
+}
+
 mod pacing;
