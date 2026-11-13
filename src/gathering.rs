@@ -303,6 +303,9 @@ pub struct Session {
     // never appears here, so restoring a position cannot recursively replay it.
     active_decisions: Vec<usize>,
     undo_floor: usize,
+    // Whose decision Undo would revert: derived when asked, never saved.
+    #[serde(skip)]
+    undo_owner: ownership::UndoOwner,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     verification_fixture: Option<HostileFixture>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -444,7 +447,7 @@ impl Session {
                 deck_projection_sha256: digest, taboo_id: 10, decks: sources },
             lead: None, mulligan_index: 0, investigators, decks,
             excluded_weaknesses: vec![vec![], vec![], vec![]], encounter_deck: vec![],
-            scenario: None, decisions: vec![], live: Default::default(), transition: Default::default(), baseline: Default::default(), active_decisions: vec![], undo_floor: 0, verification_fixture: None, runtime: None,
+            scenario: None, decisions: vec![], live: Default::default(), transition: Default::default(), baseline: Default::default(), active_decisions: vec![], undo_floor: 0, undo_owner: Default::default(), verification_fixture: None, runtime: None,
             history: vec!["Fresh campaign preparation: choose the lead investigator. The retained starting lists use the three owner-selected basic weaknesses; no previous campaign history is imported. Rules and taboo 10 are pinned to the #89 research, not claimed to be the latest available release.".into()],
         };
         Ok(session)
@@ -615,6 +618,22 @@ impl Session {
                     .any(|template| id.starts_with(template))
             })
             .map(|option| option.owner)
+    }
+
+    /// The owner of the decision Undo would revert, as the rules session named
+    /// it when that decision was made. It is derived by replaying to the
+    /// position before that decision, once per revision, and never saved.
+    /// `None` while Undo is not offered, or if that replay fails.
+    pub fn undo_owner(&self) -> Option<OptionOwner> {
+        if self.active_decisions.len() <= self.undo_floor {
+            return None;
+        }
+        self.undo_owner.at(self.revision, || {
+            let latest = self.decisions.get(*self.active_decisions.last()?)?;
+            let mut previous = self.clone();
+            previous.restore_previous_position().ok()?;
+            previous.option_owner(latest)
+        })
     }
 
     /// The revision a choice must name, as [`Self::observe`] reports it.

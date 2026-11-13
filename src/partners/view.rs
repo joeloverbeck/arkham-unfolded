@@ -3,24 +3,59 @@
 //! default: public information, and the hidden information of the partner's own
 //! investigators only. Other hands, deck order and the encounter deck are absent.
 //! Other players are named only by their investigators.
+//!
+//! A partner session's first view is complete. Every later view carries the fields
+//! in [`NOW`] whole, the decision and what it is about, and reports the rest of the
+//! table, the board, only as `changes` from the board this partner last received.
+//! Changes are computed between two of this partner's own views, so they hold
+//! nothing either view did not: no history line, label or caption reaches them.
 
 use super::{Control, Controller, Routing, routing};
-use crate::gathering::{CardView, Investigator, OptionOwner, Session, inspection};
+use crate::gathering::{
+    CardView, Investigator, OptionOwner, Session,
+    inspection::{self, INVESTIGATOR_CARDS, Sight},
+};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
-/// Watcher from Another Dimension: "Hidden. Revelation - Secretly add this enemy
-/// to your hand". Only its holder's player knows where it is.
-const HIDDEN_IN_HAND: &str = "06017";
-/// The three investigator cards, which every player sees.
-const INVESTIGATOR_CARDS: [&str; 3] = ["06003", "06005", "60401"];
+/// The fields every view carries whole: where the game is, the pending decision and
+/// what it is about. Every other field is the board, sent whole in a complete view
+/// and otherwise reported as changes.
+const NOW: [&str; 11] = [
+    "revision",
+    "stage",
+    "you_play",
+    "round",
+    "phase",
+    "turn",
+    "decision",
+    "test",
+    "encounter_card",
+    "harm",
+    "resolving",
+];
+
+/// Board fields reported whole when they change: a completed test is a new result,
+/// not an edit of the previous one.
+const RECORDS: [&str; 1] = ["last_test"];
+
+/// The opening scenario cards every player sees during setup: the scenario
+/// reference, Agenda 1a, Act 1a and the Study.
+const SETUP_CARDS: [(&str, bool); 4] = [
+    ("01104", false),
+    ("01105", false),
+    ("01108", false),
+    ("01111", true),
+];
 
 pub(super) struct Viewer<'a> {
     pub partner: &'a str,
     /// Card text already sent to this partner, by code and visible face.
     pub sent: &'a mut BTreeSet<String>,
-    /// Send every visible card's text again.
-    pub all_cards: bool,
+    /// The board of the last view this partner received; none before its first.
+    pub board: &'a mut Option<Map<String, Value>>,
+    /// Send the complete view and every visible card's text again.
+    pub full: bool,
 }
 
 pub(super) fn build(
@@ -36,9 +71,15 @@ pub(super) fn build(
         .collect();
     let is_mine = |who: Investigator| mine.contains(&who);
     let observation = session.observe();
-    let mut cards = Cards::new(viewer.sent, viewer.all_cards);
-    for code in INVESTIGATOR_CARDS {
+    let full = viewer.full || viewer.board.is_none();
+    let mut cards = Cards::new(viewer.sent, full);
+    for (code, _) in INVESTIGATOR_CARDS {
         cards.see(code, false);
+    }
+    if observation.play.is_none() {
+        for (code, revealed) in SETUP_CARDS {
+            cards.see(code, revealed);
+        }
     }
 
     let investigators: Vec<Value> = Investigator::ALL
@@ -142,6 +183,7 @@ pub(super) fn build(
     if let Some(play) = &observation.play {
         let act = format!("{:05}", 1107 + usize::from(play.act));
         let agenda = format!("{:05}", 1104 + usize::from(play.agenda));
+        cards.see("01104", false);
         cards.see(&act, false);
         cards.see(&agenda, false);
         let scenario = &play.scenario;
@@ -184,12 +226,11 @@ pub(super) fn build(
             "chaos_bag_count": play.bag_count,
             "outcome": scenario.outcome,
         })));
-        let visible =
-            |card: &CardView, holder: Investigator| card.code != HIDDEN_IN_HAND || is_mine(holder);
+        let sight = Sight::Player(&mine);
         if let Some(revelation) = play
             .pending_revelation
             .as_ref()
-            .filter(|revelation| visible(&revelation.card, revelation.drawn_by))
+            .filter(|revelation| sight.shows(&revelation.card))
         {
             cards.see(&revelation.card.code, false);
             fields.insert(
@@ -204,7 +245,7 @@ pub(super) fn build(
         let resolving: Vec<_> = pending
             .resolving_cards
             .iter()
-            .filter(|card| card.code != HIDDEN_IN_HAND || is_mine(Investigator::Patrice))
+            .filter(|card| sight.shows(card))
             .map(|card| {
                 cards.see(&card.code, false);
                 card_json(card)
@@ -214,7 +255,14 @@ pub(super) fn build(
             fields.insert("resolving".into(), Value::Array(resolving));
         }
         if let Some(harm) = &pending.harm {
-            fields.insert("harm".into(), json!(harm));
+            let mut value = json!(harm);
+            // A hidden card attacking from its holder's hand names itself only to
+            // that player: the others see the harm, not its source.
+            let (hidden, holder) = inspection::HIDDEN_IN_HAND;
+            if harm.source.contains(&format!("[{hidden}]")) && !sight.sees(holder) {
+                value.as_object_mut().expect("An object").remove("source");
+            }
+            fields.insert("harm".into(), value);
         }
         if let Some(test) = &play.test {
             let own: Vec<u16> = mine
@@ -245,8 +293,177 @@ pub(super) fn build(
             fields.insert("last_test".into(), json!(last));
         }
     }
+    let board: Map<String, Value> = fields
+        .iter()
+        .filter(|(field, _)| !NOW.contains(&field.as_str()))
+        .map(|(field, value)| (field.clone(), value.clone()))
+        .collect();
+    let last = viewer.board.replace(board.clone());
+    if let Some(last) = last.filter(|_| !full) {
+        fields.retain(|field, _| NOW.contains(&field.as_str()));
+        let mut changes = Vec::new();
+        diff(
+            "",
+            &Value::Object(last),
+            &Value::Object(board),
+            &mut changes,
+        );
+        fields.insert("changes".into(), Value::Array(changes));
+    }
     fields.insert("cards".into(), Value::Object(cards.into_text()));
     view
+}
+
+/// What changed from `old` to `new`, as entries naming where (`at`, a path of field
+/// names and identities) and how: `was` and `now` for a changed value, `now` alone
+/// for a new or replaced structure (`null` when it is gone), and `added` or
+/// `removed` for members of a collection. Collections of cards, enemies, locations
+/// and investigators are matched by identity, so a change inside one names it.
+fn diff(at: &str, old: &Value, new: &Value, changes: &mut Vec<Value>) {
+    if old == new {
+        return;
+    }
+    let field = at.rsplit('.').next().unwrap_or(at);
+    match (old, new) {
+        (Value::Object(_), Value::Object(_)) if RECORDS.contains(&field) => {
+            changes.push(json!({"at": at, "now": new}));
+        }
+        (Value::Object(previous), Value::Object(current)) if face(previous) => {
+            changes.push(json!({"at": at, "was": old, "now": current}));
+        }
+        (Value::Object(previous), Value::Object(current)) => {
+            for (key, value) in current {
+                let path = join(at, key);
+                match previous.get(key) {
+                    Some(before) => diff(&path, before, value, changes),
+                    None => changes.push(json!({"at": path, "now": value})),
+                }
+            }
+            for key in previous.keys().filter(|key| !current.contains_key(*key)) {
+                changes.push(json!({"at": join(at, key), "now": null}));
+            }
+        }
+        (Value::Array(previous), Value::Array(current)) => {
+            match (identified(previous), identified(current)) {
+                (Some(before), Some(after)) => {
+                    let added: Vec<&Value> = after
+                        .iter()
+                        .filter(|(key, _)| !before.iter().any(|(old, _)| old == key))
+                        .map(|(_, value)| *value)
+                        .collect();
+                    let removed: Vec<Value> = before
+                        .iter()
+                        .filter(|(key, _)| !after.iter().any(|(new, _)| new == key))
+                        .map(|(_, value)| reference(value))
+                        .collect();
+                    if !added.is_empty() {
+                        changes.push(json!({"at": at, "added": added}));
+                    }
+                    if !removed.is_empty() {
+                        changes.push(json!({"at": at, "removed": removed}));
+                    }
+                    for (key, value) in &after {
+                        if let Some((_, before)) = before.iter().find(|(old, _)| old == key) {
+                            diff(&join(at, key), before, value, changes);
+                        }
+                    }
+                }
+                _ if previous.iter().chain(current).all(scalar) => {
+                    let added = without(current, previous);
+                    let removed = without(previous, current);
+                    if added.is_empty() && removed.is_empty() {
+                        changes.push(json!({"at": at, "now": new}));
+                    }
+                    if !added.is_empty() {
+                        changes.push(json!({"at": at, "added": added}));
+                    }
+                    if !removed.is_empty() {
+                        changes.push(json!({"at": at, "removed": removed}));
+                    }
+                }
+                _ => changes.push(json!({"at": at, "now": new})),
+            }
+        }
+        _ if scalar(old) && scalar(new) => changes.push(json!({"at": at, "was": old, "now": new})),
+        _ => changes.push(json!({"at": at, "now": new})),
+    }
+}
+
+fn join(at: &str, key: &str) -> String {
+    if at.is_empty() {
+        key.to_owned()
+    } else {
+        format!("{at}.{key}")
+    }
+}
+
+fn scalar(value: &Value) -> bool {
+    !value.is_object() && !value.is_array()
+}
+
+/// A printed face rather than a physical card: a code with plain fields, such as a
+/// location, act or agenda named where something is. It changes as a whole.
+fn face(fields: &Map<String, Value>) -> bool {
+    fields.contains_key("code") && !fields.contains_key("id") && fields.values().all(scalar)
+}
+
+/// The members of a collection by identity, when every member has one and no two
+/// share it: an investigator, a physical card or enemy by id, a location by code.
+fn identified(values: &[Value]) -> Option<Vec<(String, &Value)>> {
+    let members: Vec<(String, &Value)> = values
+        .iter()
+        .map(|value| {
+            let fields = value.as_object()?;
+            let identity = ["investigator", "id", "code"]
+                .into_iter()
+                .find_map(|key| fields.get(key))?;
+            Some((
+                identity
+                    .as_str()
+                    .map_or_else(|| identity.to_string(), str::to_owned),
+                value,
+            ))
+        })
+        .collect::<Option<_>>()?;
+    let mut keys: Vec<&String> = members.iter().map(|(key, _)| key).collect();
+    keys.sort();
+    keys.dedup();
+    (keys.len() == members.len() && !members.is_empty()).then_some(members)
+}
+
+/// A removed member, named but not repeated.
+fn reference(value: &Value) -> Value {
+    value.as_object().map_or_else(
+        || value.clone(),
+        |fields| {
+            Value::Object(
+                fields
+                    .iter()
+                    .filter(|(key, _)| {
+                        ["investigator", "id", "code", "title", "name"].contains(&key.as_str())
+                    })
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+            )
+        },
+    )
+}
+
+/// The members of `from` left after removing one occurrence of each of `taken`.
+fn without(from: &[Value], taken: &[Value]) -> Vec<Value> {
+    let mut left = taken.to_vec();
+    from.iter()
+        .filter(
+            |value| match left.iter().position(|taken| taken == *value) {
+                Some(index) => {
+                    left.remove(index);
+                    false
+                }
+                None => true,
+            },
+        )
+        .cloned()
+        .collect()
 }
 
 /// The pending decision as this player meets it: its own options, and who else
@@ -297,12 +514,35 @@ fn decision(
         "options": options,
         "others_deciding": others.into_iter().map(|index| Investigator::ALL[index].name()).collect::<Vec<_>>(),
     });
+    // Every player hears a group choice open and what it is about; only its
+    // arbiter's player has its options.
+    if let Some(arbiter) = routing.group() {
+        decision["group_choice"] = json!({
+            "arbiter": arbiter,
+            "yours": control.controller(arbiter) == *me,
+            "choosing_among": observation
+                .choices
+                .iter()
+                .filter(|choice| choice.id != "undo")
+                .map(|choice| choice.label.as_str())
+                .collect::<Vec<_>>(),
+        });
+    }
+    // Undo is not an option of the pending decision: it reverts this player's own
+    // latest decision, and is offered only while nothing has followed it.
+    if routing.undoer() == Some(me) {
+        decision["undo"] = json!({
+            "id": "undo",
+            "label": label("undo"),
+            "investigator": routing
+                .undo_owner()
+                .and_then(|owner| routing::investigators(owner).first().copied()),
+        });
+    }
     let note = if table {
         Some("The lead investigator is chosen at the table.")
     } else if routing.with_human() && routing.awaiting() != Some(me) {
-        Some(
-            "Group choices and shared decisions are made at the table in this version; wait for your next decision.",
-        )
+        Some("Shared decisions are made at the table in this version; wait for your next decision.")
     } else {
         None
     };

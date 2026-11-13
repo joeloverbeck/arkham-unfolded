@@ -52,34 +52,12 @@ fn pile_text(title: &str, cards: &[CardView]) -> String {
 }
 
 /// Only faces and piles represented by this player-safe observation are inspectable.
+/// A card's own text is the Bevy-free table inspection, which agent partners share
+/// with a narrower sight.
 pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
     let play = view.play.as_ref()?;
     if code == "total-doom" {
         return Some(doom::inspection(play));
-    }
-    if let Some(player) = play
-        .players
-        .iter()
-        .find(|player| investigator_code(player.investigator) == code)
-    {
-        let slots = player
-            .slot_usage()
-            .iter()
-            .map(|slot| slot.details())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let masks = player.masks_controlled();
-        let mask_limit = if masks == 0 {
-            String::new()
-        } else {
-            format!(
-                "\n\nMask limit: {masks}/1\nYou cannot play or take control of another Mask while you control one. This is a control limit, not an equipment slot; it does not allow slot-style replacement."
-            )
-        };
-        return Some(format!(
-            "{}\n\nAsset slots\n{slots}\nCounts show occupied slot units. Slotless assets do not use these limits.{mask_limit}",
-            crate::gathering::inspection::card(code)?
-        ));
     }
     if code == "chaos-bag" {
         let mut counts = std::collections::BTreeMap::new();
@@ -201,110 +179,7 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
             play.encounter_deck_count
         ));
     }
-    if let Some(room) = play
-        .scenario
-        .locations
-        .iter()
-        .find(|room| room.code == code)
-    {
-        return crate::gathering::inspection::scenario_card(code, room.revealed);
-    }
-    let agenda = format!("{:05}", 1104 + usize::from(play.agenda));
-    let act = format!("{:05}", 1107 + usize::from(play.act));
-    let scenario_visible = code == "01104"
-        || code == agenda
-        || code == act
-        || (code == "01117" && play.scenario.lita_in_play)
-        || play
-            .scenario
-            .locations
-            .iter()
-            .any(|room| room.fog.as_ref().is_some_and(|card| card.code == code))
-        || play
-            .scenario
-            .enemies
-            .iter()
-            .any(|enemy| enemy.card.code == code)
-        || play
-            .encounter_discard
-            .iter()
-            .chain(&play.scenario.victory)
-            .chain(&play.scenario.removed)
-            .any(|card| card.code == code)
-        || play.searched_encounter.iter().any(|card| card.code == code)
-        || play
-            .pending_revelation
-            .as_ref()
-            .is_some_and(|pending| pending.card.code == code);
-    let player_visible = play
-        .pending
-        .resolving_cards
-        .iter()
-        .any(|card| card.code == code)
-        || play.pending.discard.as_ref().is_some_and(|discard| {
-            discard
-                .remaining
-                .iter()
-                .chain(&discard.ordered)
-                .any(|card| card.code == code)
-        })
-        || play.searched_player.iter().any(|card| card.code == code)
-        || play
-            .backpacks
-            .iter()
-            .flat_map(|attached| &attached.cards)
-            .any(|card| card.code == code)
-        || play
-            .premonition
-            .as_ref()
-            .is_some_and(|sealed| sealed.card.code == code)
-        || play.players.iter().any(|player| {
-            code == investigator_code(player.investigator)
-                || player
-                    .hand
-                    .iter()
-                    .chain(&player.discard)
-                    .chain(&player.threats)
-                    .chain(&player.removed)
-                    .any(|card| card.code == code)
-                || player.assets.iter().any(|asset| asset.card.code == code)
-        })
-        || play.test.as_ref().is_some_and(|test| {
-            test.source_card
-                .as_ref()
-                .is_some_and(|card| card.code == code)
-                || test.committed.iter().any(|entry| entry.card.code == code)
-        });
-    (scenario_visible || player_visible)
-        .then(|| {
-            crate::gathering::inspection::card(code)
-                .or_else(|| crate::gathering::inspection::scenario_card(code, true))
-        })
-        .flatten()
-        .map(|mut text| {
-            for player in &play.players {
-                for asset in &player.assets {
-                    if asset.card.code == code
-                        && matches!(
-                            asset.use_kind(),
-                            Some(
-                                crate::gathering::UseKind::Supply | crate::gathering::UseKind::Key
-                            )
-                        )
-                    {
-                        text.push_str(&format!(
-                            "\n\n{} — {}: {}",
-                            player.investigator.name(),
-                            card_counters::use_counter(asset.use_kind())
-                                .expect("Named use counter")
-                                .name(),
-                            asset.uses
-                        ));
-                    }
-                }
-            }
-            text
-        })
+    crate::gathering::inspection::table_card(view, code, crate::gathering::inspection::Sight::Table)
 }
 
 /// An inspection target retains the physical enemy identity privately so two
