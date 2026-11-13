@@ -762,6 +762,28 @@ impl Session {
         &self.live
     }
 
+    /// The skill test the latest decision completed, as it stood before that
+    /// decision: what it attempted and on what (#210). The attempt's record keeps a
+    /// completed test's result, not its target, so this replays the active
+    /// decisions to that position; it is never saved. `None` unless `index` names
+    /// the first test the latest decision completed.
+    #[cfg(feature = "tabletop")]
+    pub(crate) fn completed_test_view(&self, index: usize) -> Option<TestView> {
+        if index != self.live.completed_before {
+            return None;
+        }
+        let (_, earlier) = self.active_decisions.split_last()?;
+        let mut previous = Self::from_origin(self.seed, self.verification_fixture).ok()?;
+        for &at in earlier {
+            let decision = self
+                .decisions
+                .get(at)
+                .filter(|decision| decision.as_str() != "undo")?;
+            previous.choose(previous.revision, decision).ok()?;
+        }
+        previous.observe().play?.test
+    }
+
     #[cfg(feature = "tabletop")]
     pub(crate) fn pending_test_view(&self) -> Option<TestView> {
         let mut game = self.runtime.clone()?;

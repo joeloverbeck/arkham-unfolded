@@ -871,6 +871,38 @@ fn a_basic_fight_names_its_enemy_during_the_test_and_in_its_result() {
     assert!(!shown.contains("Combat test"), "{shown}");
 }
 
+/// Review fix D4 (#210: a result names the test's action and target). Reopening
+/// an attempt whose latest decision completed Tony's Fight shows its result again
+/// from the attempt's record, which names only the action; the target comes from
+/// the rules session, without changing the save.
+#[test]
+fn a_reopened_attempts_last_result_still_names_its_target() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("reopened.json");
+    continuity::save_session(&path, &quick_thinking_session()).unwrap();
+    let saved = std::fs::read(&path).unwrap();
+    let session = continuity::load_session(&path).unwrap();
+    let mut app = host_with_table(Table::new(session, path.clone()), false);
+    finish_presentation(&mut app);
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_some(),
+        "The reopened attempt shows its last result"
+    );
+    let shown = rendered_text(&mut app);
+    let result =
+        crate::tabletop_support::readable_text("Tony Morgan · Fight · Ghoul Minion".into());
+    assert!(shown.contains(&result), "{shown}");
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        saved,
+        "The save is unchanged"
+    );
+}
+
 /// #210, tests name their action and target: an investigation, an evasion and a
 /// treachery's test each say what they attempt in the decision display.
 #[test]

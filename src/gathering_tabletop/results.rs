@@ -39,7 +39,7 @@ impl Reading {
         }
     }
 
-    pub(super) fn synchronize(&mut self, view: &Observation) {
+    pub(super) fn synchronize(&mut self, view: &Observation, session: &Session) {
         if self.pending.is_some() {
             return;
         }
@@ -63,6 +63,15 @@ impl Reading {
             }
         }
         self.pending = play.completed_tests.get(self.acknowledged).cloned();
+        // A result no view showed live, as on reopening an attempt: its record
+        // names only the action, so the rules session gives the test it was.
+        if let Some(stored) = &mut self.pending
+            && let Some(test) = session
+                .completed_test_view(self.acknowledged)
+                .filter(|test| test.tester == stored.tester)
+        {
+            stored.source = named(&test);
+        }
         self.pending_from_test = false;
         if self.pending.is_none() && self.acknowledged == play.completed_tests.len() {
             self.pending = play

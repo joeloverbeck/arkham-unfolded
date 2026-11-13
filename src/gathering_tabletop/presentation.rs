@@ -246,7 +246,7 @@ impl Presentation {
                     self.moments.get(self.index).map(|moment| moment.sequence),
                 );
             }
-            self.results.synchronize(&view);
+            self.results.synchronize(&view, session);
         }
         let story = if let Some(moment) = self.moments.get(self.index) {
             story::Faces::from_codes(moment.revealed_story.iter().map(String::as_str))
