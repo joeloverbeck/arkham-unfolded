@@ -267,6 +267,17 @@ pub(super) struct PartnerSocket(pub PathBuf);
 #[derive(Resource, Clone)]
 pub(super) struct PartnerWaker(pub Arc<dyn Fn() + Send + Sync>);
 
+/// The partner host's clock, for waits, silence and pacing of partner work: the
+/// monotonic clock natively; tests set it ahead to show a silent partner.
+#[derive(Resource, Clone)]
+pub(super) struct PartnerClock(pub Arc<dyn Fn() -> Instant + Send + Sync>);
+
+fn now(world: &World) -> Instant {
+    world
+        .get_resource::<PartnerClock>()
+        .map_or_else(Instant::now, |clock| (clock.0)())
+}
+
 /// One request line and where its answer goes.
 pub(super) struct Incoming {
     pub line: String,
@@ -389,7 +400,7 @@ pub(super) fn line(socket: &Path) -> String {
 /// that arrived, then held requests, then what the table shows. Runs right after
 /// the human's actions, before the scene is rebuilt.
 pub(super) fn serve(world: &mut World) {
-    let now = Instant::now();
+    let now = now(world);
     if !world.contains_resource::<Partners>() {
         world.init_resource::<Partners>();
     }
@@ -563,7 +574,7 @@ pub(super) fn unsettled(world: &mut World) -> Option<Unsettled> {
     let partners = world.resource::<Partners>();
     let session = &world.resource::<Table>().session;
     partners
-        .due(session, readiness, Instant::now())
+        .due(session, readiness, now(world))
         .then_some(Unsettled::PartnerRequest)
 }
 

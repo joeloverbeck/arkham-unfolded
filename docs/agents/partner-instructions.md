@@ -32,6 +32,10 @@ A long session gets your context compacted. Views report only changes, and table
 
 Update them when the plan or your part changes, not after every answer. After your context was compacted, read these instructions and your notes again, run `observe PARTNER --full`, then resume waiting. In Claude Code, first check whether your background `wait` is still running.
 
+## Coming back
+
+Only `leave`, or the table ending your session, ends your identity. A cut-off command, a closed terminal or a compacted context does not: your investigators stay yours, and their decisions wait for you while the table marks them silent. Come back with the identity in your notes: run `observe PARTNER --full`, then wait again. Do not join again: a join for investigators your identity still holds is refused. A new session that has lost your identity cannot take them either; it must wait until the table takes them over and hands them back to partners, then join.
+
 ## Wait
 
 Keep exactly one `wait` running at a time. When it answers, act on its status, then wait again.

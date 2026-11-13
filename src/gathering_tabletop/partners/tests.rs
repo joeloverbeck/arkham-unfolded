@@ -931,4 +931,52 @@ fn a_deciding_partners_portrait_offers_take_over() {
     assert_eq!(take_over(app, Patrice), None);
 }
 
+/// Review fix D3 (story 13; presentation contract: "A stalled or disconnected
+/// partner stays shown as such until it returns or is taken over"). A partner
+/// that has sent nothing for minutes while its decision waits is marked with
+/// those minutes on its portrait and in the decision display, and shows as
+/// thinking again once the table hears from it.
+#[test]
+fn a_silent_partner_is_marked_with_its_minutes_until_it_is_heard_from() {
+    let mut partnered = partnered(&[Patrice]);
+    let ahead = Arc::new(Mutex::new(Duration::ZERO));
+    let clock = ahead.clone();
+    partnered
+        .app
+        .insert_resource(PartnerClock(Arc::new(move || {
+            Instant::now() + *clock.lock().unwrap()
+        })));
+    let partner = join(&mut partnered);
+    let app = &mut partnered.app;
+    choose(app, "confirm-mulligan"); // Jacqueline
+    finish_presentation(app);
+    choose(app, "confirm-mulligan"); // Tony
+    finish_presentation(app);
+    assert!(rendered_text(app).contains("Patrice Hathaway: partner thinking"));
+
+    *ahead.lock().unwrap() = Duration::from_secs(150);
+    app.update();
+    let shown = rendered_text(app);
+    assert!(shown.contains("SILENT 2 MIN"), "{shown}");
+    assert!(
+        shown.contains("Patrice Hathaway: no word from its partner for 2 min"),
+        "{shown}"
+    );
+    assert!(button_with_label(app, "Take over Patrice Hathaway").is_some());
+
+    let observed = exchange(
+        app,
+        &partnered.socket,
+        &[json!({"op": "observe", "partner": partner})],
+    );
+    assert_eq!(observed[0]["status"], "observed", "{}", observed[0]);
+    app.update();
+    let shown = rendered_text(app);
+    assert!(!shown.contains("SILENT"), "{shown}");
+    assert!(
+        shown.contains("Patrice Hathaway: partner thinking"),
+        "{shown}"
+    );
+}
+
 mod pacing;
