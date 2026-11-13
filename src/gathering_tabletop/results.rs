@@ -78,6 +78,11 @@ impl Reading {
         self.pending.as_ref()
     }
 
+    /// How many results the table has acknowledged: it tells one reading from the next.
+    pub(super) fn acknowledged(&self) -> usize {
+        self.acknowledged
+    }
+
     pub(super) fn advance(&mut self) {
         if let Some(report) = self.pending.take() {
             self.acknowledged += 1;
@@ -262,6 +267,9 @@ pub(super) fn render(
                         }
                     });
             }
+            if pending.is_some() {
+                pace::progress(footer, art, table);
+            }
             footer
                 .spawn(Node {
                     justify_content: JustifyContent::Center,
@@ -298,6 +306,32 @@ pub(super) fn render(
             }
         },
     );
+}
+
+/// The words a result reading shows, which set its reading delay.
+pub(super) fn text(report: &TestResult) -> String {
+    let detail = &report.breakdown;
+    let mut lines = vec![
+        outcome(report),
+        format!("Total {} Difficulty {}", report.total, report.difficulty),
+        format!("{} {}", report.tester.name(), report.source),
+        format!("Base {:?} {}", detail.skill, detail.base),
+    ];
+    lines.extend(
+        detail
+            .cards
+            .iter()
+            .chain(&detail.bonuses)
+            .map(|row| format!("{} {} {:+}", row.label, row.owner.name(), row.amount)),
+    );
+    lines.extend(
+        detail
+            .tokens
+            .iter()
+            .map(|token| format!("{} {:+}", token.face.label(), token.amount)),
+    );
+    lines.extend(detail.outcome_reason.clone());
+    lines.join("\n")
 }
 
 pub(super) fn outcome(report: &TestResult) -> String {

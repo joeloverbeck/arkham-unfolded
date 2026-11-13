@@ -31,6 +31,7 @@ mod encounter;
 mod map_motion;
 mod markers;
 mod motion;
+mod pace;
 mod partners;
 mod pendulum;
 mod phase_banner;
@@ -145,6 +146,8 @@ struct Table {
     partners: partners::Shown,
     /// Counts restarts in this window, so partner sessions end with their attempt.
     attempt: u64,
+    /// The clock of a reading that continues on its own (#210).
+    pace: pace::Pace,
 }
 
 impl Table {
@@ -203,6 +206,7 @@ impl Table {
             clue_payment: None,
             partners: partners::Shown::default(),
             attempt: 0,
+            pace: pace::Pace::default(),
         }
     }
 
@@ -808,7 +812,13 @@ fn install(app: &mut App) {
                 advance_presentation,
                 keyboard_panel_scroll,
                 camera_controls,
-                (render, phase_banner::render, encounter::animate).chain(),
+                (
+                    render,
+                    phase_banner::render,
+                    encounter::animate,
+                    pace::advance,
+                )
+                    .chain(),
                 (
                     controls::render,
                     violin::render,
@@ -2046,6 +2056,10 @@ fn table_unsettled(world: &mut World) -> Vec<&'static str> {
     }
     if world.resource::<Orbit>().is_moving() {
         pending.push("camera motion");
+    }
+    if table.pace.counting() {
+        // A partner's reading continues on its own (#210); it waits for no one.
+        pending.push("reading delay");
     }
     pending
 }

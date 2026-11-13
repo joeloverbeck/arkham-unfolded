@@ -44,37 +44,37 @@ pub(super) fn panel(
                     AccessibleLabel::new(title),
                 ))
                 .with_children(|panel| {
-                    panel
-                        .spawn(Node {
+                    let mut part = panel.spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        flex_shrink: 0.,
+                        row_gap: px(10),
+                        ..default()
+                    });
+                    pace::frame(&mut part);
+                    part.with_children(heading);
+                    let mut part = panel.spawn((
+                        Node {
+                            min_height: px(0),
+                            overflow: Overflow::scroll_y(),
                             flex_direction: FlexDirection::Column,
-                            flex_shrink: 0.,
-                            row_gap: px(10),
+                            padding: UiRect::all(px(6)),
+                            row_gap: px(8),
                             ..default()
-                        })
-                        .with_children(heading);
-                    panel
-                        .spawn((
-                            Node {
-                                min_height: px(0),
-                                overflow: Overflow::scroll_y(),
-                                flex_direction: FlexDirection::Column,
-                                padding: UiRect::all(px(6)),
-                                row_gap: px(8),
-                                ..default()
-                            },
-                            ScrollPosition::default(),
-                            ScrollablePanel { inspection: true },
-                        ))
-                        .observe(crate::tabletop_ui::scroll_panel)
+                        },
+                        ScrollPosition::default(),
+                        ScrollablePanel { inspection: true },
+                    ));
+                    pace::frame(&mut part);
+                    part.observe(crate::tabletop_ui::scroll_panel)
                         .with_children(details);
-                    panel
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Column,
-                            flex_shrink: 0.,
-                            row_gap: px(10),
-                            ..default()
-                        })
-                        .with_children(footer);
+                    let mut part = panel.spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        flex_shrink: 0.,
+                        row_gap: px(10),
+                        ..default()
+                    });
+                    pace::frame(&mut part);
+                    part.with_children(footer);
                 });
         })
         .id()

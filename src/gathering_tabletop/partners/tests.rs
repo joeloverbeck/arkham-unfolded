@@ -548,3 +548,5 @@ fn the_human_continues_a_partners_encounter_reading_without_resolving_it() {
     );
     assert!(!table.human_may("revelation:resolve"));
 }
+
+mod pacing;
