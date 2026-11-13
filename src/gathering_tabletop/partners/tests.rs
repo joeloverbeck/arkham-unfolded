@@ -981,7 +981,8 @@ fn a_silent_partner_is_marked_with_its_minutes_until_it_is_heard_from() {
 
 /// Jacqueline's turn with Patrice's Violin ready in play (06016: "[fast] ...
 /// usable in any player window"), saved as the window saves it, opened at the
-/// table with `partners` handed to agent partners and partners enabled.
+/// table with `partners` handed to agent partners and partners enabled through the
+/// menu, as `partnered` does, and the menu closed again.
 fn violin_in_jacquelines_turn(directory: &Path, partners: &[Investigator]) -> (App, PathBuf) {
     let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Assets(
         crate::gathering::AssetFixture::RobesOpportunity,
@@ -993,14 +994,17 @@ fn violin_in_jacquelines_turn(directory: &Path, partners: &[Investigator]) -> (A
     app.insert_resource(PartnerSocket(socket.clone()));
     finish_presentation(&mut app);
     if !partners.is_empty() {
-        let mut table = app.world_mut().resource_mut::<Table>();
-        table
-            .partners
-            .inputs
-            .extend(partners.iter().map(|who| Input::Hand(*who)));
-        table.partners.inputs.push(Input::Enable(true));
-        table.dirty = true;
-        app.update();
+        press(&mut app, "Menu");
+        press(&mut app, "Agent partners");
+        for who in partners {
+            press(&mut app, &format!("{}: you play", who.name()));
+        }
+        press(&mut app, "Enable agent partners");
+        // The human closes the menu, as Escape does.
+        app.world_mut()
+            .resource_mut::<Actions>()
+            .0
+            .push(Action::Close);
         app.update();
     }
     (app, socket)
