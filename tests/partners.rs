@@ -431,12 +431,15 @@ fn joining_by_default_takes_every_unclaimed_investigator_handed_to_partners() {
     let late = sitting.ask(json!({"op": "join"}));
     assert_eq!(late["status"], "refused", "{late}");
     assert_eq!(late["ok"], false);
+    let reason = late["error"].as_str().unwrap();
     assert!(
-        late["error"]
-            .as_str()
-            .unwrap()
-            .contains("No investigator is open to partners")
+        reason.contains("No investigator is open to partners"),
+        "{reason}"
     );
+    // Review fix E3: a session that has not joined cannot speak at the table, so
+    // the refusal sends it nowhere; it says there is nothing for it to play.
+    assert!(!reason.contains("Ask at the table"), "{reason}");
+    assert!(reason.contains("nothing for you to play"), "{reason}");
 }
 
 /// Ticket #205, Joining: a join naming investigators takes only those no partner

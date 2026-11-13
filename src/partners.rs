@@ -712,7 +712,7 @@ impl<R> Host<R> {
         };
         if taking.is_empty() {
             return refused(
-                "No investigator is open to partners right now. Ask at the table for one to be handed to partners (Menu, Agent partners)."
+                "No investigator is open to partners right now: the table has handed none to partners, or other partner sessions play every one it handed. There is nothing for you to play, so stop."
                     .into(),
             );
         }
