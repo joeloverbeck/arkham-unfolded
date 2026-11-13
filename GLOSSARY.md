@@ -178,4 +178,28 @@ _Avoid_: Source archive, cache
 
 **Agent seat**:
 An agent's place at the real 3D table, where it sees and chooses only what a player can, without using the owner's desktop. It is distinct from the headless player driver, which plays the rules with no table.
-_Avoid_: Headless player driver, remote desktop control
+_Avoid_: Headless player driver, remote desktop control, agent partner
+
+**Player**:
+A participant who controls one or more investigators and makes their genuine decisions. The human at the window and each agent partner are players; investigators, not players, take turns and perform tests.
+_Avoid_: Seat, user, controller when referring to the participant
+
+**Agent partner**:
+An agent playing one or more investigators as a player in a running game alongside the human player, seeing and choosing only what that player can. It is distinct from the agent seat, which operates the whole table in order to test it.
+_Avoid_: Agent seat, bot, AI opponent
+
+**Group choice**:
+A choice the rules leave to the investigators collectively, or give to the lead investigator, such as who takes the next turn. The lead investigator's player is its final arbiter.
+_Avoid_: Shared decision, vote
+
+**Shared decision**:
+A pending decision in which several players each decide only their own investigators' part, such as commitments to a skill test or a group clue payment. It completes when every participating player is ready on the same contributions.
+_Avoid_: Group choice, simultaneous decision
+
+**Table talk**:
+Messages between players during play, heard by every player at the table. Table talk can persuade but never makes a decision, and it is not part of the scenario attempt.
+_Avoid_: Chat log, narration, instruction
+
+**Speech box**:
+The transient display of one table-talk message beside its speaker's investigator portrait.
+_Avoid_: Banner, dialog, tooltip

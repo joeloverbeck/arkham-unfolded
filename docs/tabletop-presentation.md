@@ -796,6 +796,56 @@ reaction, following Then priority. Preserve that real choice and automatically
 finish remaining shuffle/discard cleanup. Retain no-match disclosure and retract
 the drawer only after motion and any other resident content have finished.
 
+## Agent partners and table talk
+
+These conventions apply only while [agent partners](foundation/play-contract.md#agent-partners)
+play some investigators; with none enabled, the table is unchanged. Partners never
+use the pointer, camera, menus or keyboard focus ([ADR 0007](adr/0007-agent-partners-join-the-running-table.md)).
+
+**Menu → Agent partners** lists each investigator with whether a partner plays it,
+enables or disables partners, and shows a one-line instruction to paste into an
+agent's terminal. The instruction does not say which investigators the human
+plays. A portrait of a partner-played investigator carries a distinct text-bearing
+mark. While a partner is deciding, its portrait and the compact decision display
+say so by investigator name and offer **Take over**. A stalled or disconnected
+partner stays shown as such until it returns or is taken over.
+
+A partner's decisions never move the camera. Follow frames only decisions of the
+human's own investigators and tests they take part in. The human may inspect,
+browse and use menus while a partner thinks. A partner's consequences wait until
+a blocking dialog closes, so none passes unseen.
+
+A partner's own test results, and the encounter cards it draws, are shown as
+usual. They then continue on their own after a reading delay proportional to
+their text, with visible progress. Hovering or clicking holds the reading, and
+Enter continues it at once. Story readings, the scenario's end and readings that
+affect the human's investigators still wait for the human's Continue.
+
+In a shared decision, the other players' pending cards appear in the Test area,
+distinct from confirmed commitments. Each participating player's readiness is
+shown by investigator name. Confirm is the human's readiness; while it waits, it
+names whose readiness is outstanding. When another player's change clears the
+human's readiness, the cleared control shows it. Group clue payments show the
+same readiness beside each contribution.
+
+**Speech boxes.** Each table-talk message appears in a speech box to the right of
+its speaker's portrait on the navigation rail, pointing at the portrait and
+floating over the scene. It never takes focus or input and never blocks camera
+control. It never covers the current decision, the turn indicator, the test
+display, an open menu or a reading. It stays readable for a delay proportional to
+its length, then fades; reduced motion removes the fade, not the delay. Hovering a
+portrait shows its latest message again. Further messages from the same speaker
+queue behind the visible one. Rebuilding the table's panels does not dismiss a
+speech box. A player who plays several investigators speaks beside the first of
+them in player order.
+
+The human opens a message box from a button by the rail or with a key, types one
+message and sends it with Enter; Escape closes it without sending. While open, it
+holds keyboard input, so WASD and table keys type instead. A sent message appears
+as the human's speech box. During a peril encounter the message box is
+unavailable and says why. **Menu → Table talk** lists the session's messages with
+speaker and round; the list is not saved with the attempt.
+
 ## Text, symbols and diagnostics
 
 Use prepared willpower, intellect, combat and agility glyphs consistently in
