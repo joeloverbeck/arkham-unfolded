@@ -1166,4 +1166,43 @@ fn the_humans_held_choice_released_by_a_fast_play_is_announced() {
     );
 }
 
+/// Review fix G6 (F1 under the stall policy: a decision that waits on a partner
+/// waits, marked, until one joins or the human takes over; nothing is decided for
+/// him). Patrice is handed to partners and holds her Violin in Jacqueline's turn,
+/// Joel's, but no partner has joined: ending the turn waits for her seat's pass,
+/// the decision display names whose pass is outstanding and marks the seat as
+/// awaiting a partner, and Take over applies his choice.
+#[test]
+fn an_unclaimed_seat_with_a_fast_option_holds_the_humans_turn_until_taken_over() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, _) = violin_in_jacquelines_turn(directory.path(), &[Patrice]);
+    let at = revision(&app);
+    choose(&mut app, "turn:end");
+    app.update();
+    assert_eq!(revision(&app), at, "Held for Patrice's seat");
+    let shown = rendered_text(&mut app);
+    assert!(
+        shown.contains("End this investigator's turn: waits for the other players to pass"),
+        "{shown}"
+    );
+    assert!(shown.contains("Patrice Hathaway may act"), "{shown}");
+    assert!(
+        shown.contains("Patrice Hathaway: waiting for a partner to join"),
+        "{shown}"
+    );
+    assert!(shown.contains("AWAITING PARTNER"), "{shown}");
+
+    press(&mut app, "Take over Patrice Hathaway");
+    // Applied on a frame at which the table has settled from the Take over.
+    for _ in 0..5 {
+        app.update();
+    }
+    finish_presentation(&mut app);
+    assert_eq!(
+        revision(&app),
+        at + 1,
+        "Applied once no other player holds a fast option"
+    );
+}
+
 mod pacing;
