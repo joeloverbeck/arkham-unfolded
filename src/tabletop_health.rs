@@ -26,7 +26,7 @@ use std::{
 };
 
 mod seat;
-pub(crate) use seat::{SeatAdmissionPlugin, admission_blocker, pipelines_ready};
+pub(crate) use seat::{SeatAdmissionPlugin, admission, admission_blocker, pipelines_ready};
 
 const WARMUP: Duration = Duration::from_secs(2);
 const SAMPLE: Duration = Duration::from_secs(1);

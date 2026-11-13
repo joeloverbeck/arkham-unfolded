@@ -1,9 +1,10 @@
 //! The Gathering table's side of the agent seat (#153): startup assembly and the
-//! narrow interface the game-neutral [`crate::agent_seat`] reaches the table through.
-//! Deleting this file, `agent_seat.rs` with `agent_seat/socket.rs` (the held session's
-//! socket and launcher, #175), `tabletop_health/seat.rs`, the tools' `seat` command
-//! (`tools/src/seat.rs` and `tools/tests/seat.rs`) and the integration points that name
-//! them removes the seat.
+//! narrow interface the game-neutral seat reaches the table through. That seat is
+//! `unfolded-tabletop`'s `seat`, with its held session's socket and launcher (#175);
+//! [`crate::agent_seat`] names it for Arkham. Deleting this file, `agent_seat.rs`,
+//! `tabletop_health/seat.rs`, the tools' `seat` command (`tools/src/seat.rs` and
+//! `tools/tests/seat.rs`) and the integration points that name them, and asking the
+//! shared library for `render` in place of `seat` in `Cargo.toml`, removes the seat.
 //!
 //! The seat is the same table as native play: the same `install`, rules session,
 //! continuity and save path, and artwork verification. Every difference from native
@@ -29,8 +30,11 @@
 
 use super::*;
 use crate::{
-    agent_seat::{self, Focus, Game, Hit, Name, Observed, Seat, socket},
-    tabletop_health::SeatAdmissionPlugin,
+    agent_seat::{
+        self, Admission, Focus, Game, Hit, Name, Observed, Seat, SeatKey, refuse, socket,
+    },
+    tabletop_health::{self, SeatAdmissionPlugin},
+    tabletop_pacing::PresentationTime,
     tabletop_support::asset_settings::Collection,
 };
 use bevy::{camera::primitives::Aabb, ui::CalculatedClip};
@@ -80,16 +84,6 @@ fn idle(options: &Options) -> Duration {
     options.idle_minutes.map_or(socket::IDLE, |minutes| {
         Duration::from_secs(u64::from(minutes) * 60)
     })
-}
-
-/// A startup problem: one `refused` response on standard output, which the agent (or
-/// the launching command) reads. The returned error reaches standard error.
-fn refuse<T>(error: String) -> Result<T, String> {
-    println!(
-        "{}",
-        json!({"ok": false, "mode": "seat", "status": "refused", "error": error})
-    );
-    Err(error)
 }
 
 /// The same artwork verification and play lease as native startup. Native startup
@@ -145,7 +139,7 @@ pub(super) fn open(options: &Options) -> Result<Seated, String> {
     install(&mut app);
     crate::tabletop_startup::require_artwork(&mut app, &collection);
     let mut seat = Seat::open(Gathering, &mut app)?;
-    seat.admit(&mut app, ADMISSION_LIMIT)?;
+    agent_seat::admit(&mut seat, &mut app, ADMISSION_LIMIT)?;
     Ok(Seated {
         app,
         seat,
@@ -329,6 +323,24 @@ impl Game for Gathering {
 
     fn unsettled(&self, world: &mut World) -> Vec<String> {
         unsettled(world).into_iter().map(str::to_owned).collect()
+    }
+
+    /// The seat alone advances the presentation clock (difference 5 above).
+    fn advance(&self, world: &mut World, by: Duration) {
+        world.resource_mut::<PresentationTime>().advance_by(by);
+    }
+
+    /// Seat admission (difference 6 above), as its rendering health reports it.
+    fn admission(&self, world: &World) -> Admission {
+        tabletop_health::admission(world)
+    }
+
+    fn keys(&self) -> &[SeatKey] {
+        &agent_seat::KEYS
+    }
+
+    fn pipelines_ready(&self, world: &World) -> bool {
+        tabletop_health::pipelines_ready(world)
     }
 
     /// The focused control or menu row exactly as `controls` and `menu.rows` report
