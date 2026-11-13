@@ -1151,22 +1151,11 @@ impl<R> Host<R> {
         if !talk.is_empty() {
             view["table_talk"] = Value::Array(talk);
         }
-        // In its own investigator's turn, a choice waits for the players with a
-        // fast option to pass (F1).
-        let passing: Vec<&str> = moment
-            .pending
-            .iter()
-            .filter(|pending| {
-                matches!(pending.decision.kind, SharedKind::Turn { actor } if control.controller(actor) == me)
-            })
-            .flat_map(|pending| self.sharing.waiting(pending, &control))
-            .map(|(_, who)| who.name())
-            .collect();
-        if !passing.is_empty() && view["decision"]["note"].is_null() {
-            view["decision"]["note"] = json!(format!(
-                "Your choice is applied once {} has passed in this player window. If a fast play comes first, the decision moves on and you decide again.",
-                passing.join(" and ")
-            ));
+        // In its own investigator's turn, its next choice waits for the players
+        // with a fast option to pass (F1): said in a field of its own, beside any
+        // note.
+        if let Some(window) = self.turn_window_view(&moment, &control, &me) {
+            view["decision"]["turn_window"] = window;
         }
         let mut answer = json!({
             "ok": error.is_none(),
@@ -1180,6 +1169,37 @@ impl<R> Host<R> {
             answer["error"] = json!(error);
         }
         answer
+    }
+
+    /// The turn's player window as the active investigator's player meets it (F1):
+    /// whose passes its next choice waits for, while any is outstanding.
+    fn turn_window_view(
+        &self,
+        moment: &Moment,
+        control: &Control,
+        me: &Controller,
+    ) -> Option<Value> {
+        let pending = moment.turn_window_of(control, me)?;
+        let SharedKind::Turn { actor } = pending.decision.kind else {
+            unreachable!("A turn's player window")
+        };
+        let waiting: Vec<&str> = self
+            .sharing
+            .waiting(pending, control)
+            .into_iter()
+            .map(|(_, who)| who.name())
+            .collect();
+        if waiting.is_empty() {
+            return None;
+        }
+        Some(json!({
+            "before_action_of": actor.name(),
+            "waiting_for": waiting,
+            "how": format!(
+                "Your next choice, other than Undo or a part of a shared decision, is applied once {} has passed in this player window. If a fast play comes first, the decision moves on and you decide again.",
+                waiting.join(" and ")
+            ),
+        }))
     }
 }
 
@@ -1232,10 +1252,17 @@ impl Moment {
     ) -> bool {
         id != "undo"
             && self.routing.shared_of(id).is_none()
-            && self.pending.iter().any(|pending| {
-                matches!(pending.decision.kind, SharedKind::Turn { actor } if control.controller(actor) == *player)
-                    && !sharing.waiting(pending, control).is_empty()
-            })
+            && self
+                .turn_window_of(control, player)
+                .is_some_and(|pending| !sharing.waiting(pending, control).is_empty())
+    }
+
+    /// The player window before an action of an investigator `player` controls,
+    /// while another player with a fast option takes part in it (F1).
+    fn turn_window_of(&self, control: &Control, player: &Controller) -> Option<&shared::Pending> {
+        self.pending.iter().find(|pending| {
+            matches!(pending.decision.kind, SharedKind::Turn { actor } if control.controller(actor) == *player)
+        })
     }
 
     /// The commitment window `player` takes part in, where each of its options

@@ -839,6 +839,38 @@ fn a_turn_waits_on_no_player_without_a_fast_option() {
     assert_eq!(sitting.revision(), revision + 1);
 }
 
+/// Review fix H2 (F1; play contract, Shared decisions): the active player's view
+/// names whose passes its next choice waits for in a field of its own, so that never
+/// displaces another note. In Tony's partner's turn, the human holds Patrice's Violin
+/// ([fast], usable in any player window: 06016, RR p.3), and Tony and Patrice could
+/// pay Trapped's clues as a group (01108; RR p.3 "Act Deck and Agenda Deck": any or
+/// all investigators may contribute), which no one has proposed: both are said.
+#[test]
+fn the_turn_window_is_said_beside_a_possible_clue_payment() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    session.place_for_test(Tony, 4, "01111");
+    session.place_for_test(Patrice, 2, "01111");
+    session.place_for_test(Jacqueline, 0, "01111");
+    let mut sitting = Sitting::new(session, &[Tony]);
+    let partner = sitting.join(&[]);
+    let observed = sitting.ask(json!({"op": "observe", "partner": partner}));
+    let decision = &observed["view"]["decision"];
+    assert!(
+        decision["note"]
+            .as_str()
+            .is_some_and(|note| note.contains("group clue payment")),
+        "{decision}"
+    );
+    let window = &decision["turn_window"];
+    assert_eq!(window["before_action_of"], "Tony Morgan", "{decision}");
+    assert_eq!(
+        window["waiting_for"],
+        json!(["Patrice Hathaway"]),
+        "{decision}"
+    );
+}
+
 /// F1 with Take over (play contract: Take over returns an investigator at once): the
 /// human's choice held for Patrice's partner's pass is applied once the human takes
 /// Patrice over, since no other player then holds a fast option.
