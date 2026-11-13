@@ -850,10 +850,12 @@ names whose readiness is outstanding. When another player's change clears the
 human's readiness, the cleared control shows it. Group clue payments show the
 same readiness beside each contribution. In another investigator's turn, while the
 human holds a fast option in the player window before that investigator's action,
-the decision display names what the human may use and offers Pass; in the human's
-own turn, his choice waits, named, until every other player with a fast option has
-passed. When another player's fast play comes first, his waiting choice is not
-applied: the decision display says so, and he chooses again.
+the decision display names what the human may use and offers Pass. In the human's
+own turn, his next choice, whether an action, a fast play of his own or ending the
+turn, waits, named, until every other player with a fast option has passed; Undo
+and his part of a shared decision are not held. When another player's fast play
+comes first, his waiting choice is not applied: the decision display says so, and
+he chooses again.
 
 **Speech boxes and action lines.** Each table-talk message appears in a speech box
 to the right of its speaker's portrait on the navigation rail, pointing at the

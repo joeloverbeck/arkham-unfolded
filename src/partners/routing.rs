@@ -12,9 +12,10 @@
 //!
 //! A turn's player window comes before each action (RR p.22, p.24 2.2.1). When
 //! another player holds a fast option in it, the window is [`SharedKind::Turn`]:
-//! that player passes with readiness, and the active investigator's action is
-//! applied only once every such player has passed on the current revision (F1,
-//! Joel's decision of 2026-11-13: played as the rules have it).
+//! that player passes with readiness, and the active investigator's player's
+//! next choice, other than Undo or a part of a shared decision, is applied only
+//! once every such player has passed on the current revision (F1, Joel's
+//! decision of 2026-11-13: played as the rules have it).
 
 /// A player's pass in a turn's player window. It is co-play's, never the rules
 /// session's: the rules session lists no pass before an action.

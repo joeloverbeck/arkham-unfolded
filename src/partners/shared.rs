@@ -540,7 +540,7 @@ impl Sharing {
             SharedKind::Turn { actor } => {
                 value["before_action_of"] = json!(actor.name());
                 value["how"] = json!(format!(
-                    "This player window comes before {}'s next action. Use a fast option, or pass (op ready, or choose ready_with). The action waits until every player with an option has passed; a fast play restarts the passes.",
+                    "This player window comes before {0}'s next action. Use a fast option, or pass (op ready, or choose ready_with). {0}'s player's next choice waits until every player with an option has passed; a fast play restarts the passes.",
                     actor.name()
                 ));
             }
