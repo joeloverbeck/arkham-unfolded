@@ -424,14 +424,16 @@ responses. A test already underway does not make a nested search/revelation
 test content: preserve the parent test while it resolves separately. A revelation
 that starts a test uses Test without duplicating its physical source.
 
-After each actual encounter-deck draw arrives, pause for an untimed reading
-overlay: dim the table, center a large upright intact card, label it **Encounter
+After each actual encounter-deck draw arrives, pause for a reading overlay. It is
+untimed, except for a draw by an agent partner's investigator
+([Agent partners](#agent-partners-and-table-talk)). Dim the table, center a large upright intact card, label it **Encounter
 card**, name its actual drawer, and show its title and printed type. When that
 encounter still awaits resolution, show its actual legal responses (such as Ward
 of Protection or A Test of Will) on this screen. Explain that **Continue** resolves
 the encounter unless a response is chosen first. Continue commits the existing
 resolution choice directly, so a mandatory test starts without another Resolve
-click in the investigator's drawer. Bind choices to the live revision and this
+click in the investigator's drawer. For a draw by a partner's investigator,
+Continue only closes the reading, and the partner resolves the card. Bind choices to the live revision and this
 physical encounter; retain the screen and display the error if saving fails.
 Already committed encounters need only reading acknowledgment. Preserve the
 existing tray/Test resolution afterward, including each enemy's own Spawn and
@@ -454,8 +456,8 @@ feedback removes the local Pause/Resume buttons; global Reduced motion still use
 a still surround. Pause decoration when unfocused and resume without catching up.
 Keep responses, Continue and **Read rules** outside the scrolling body, with button
 labels contained and focus outlines separated. Read rules provides readable
-effective text at small viewports. There is no countdown, flashing, camera movement
-or audio cue.
+effective text at small viewports. There is no flashing, camera movement or audio
+cue, and no countdown except a partner's reading delay.
 
 Give Hornet's nine visible candidates a 3-by-3 arrangement with its event alongside,
 and Backpack's six-card search its explicit completion. Display all cards the
@@ -822,16 +824,24 @@ mark. While a partner is deciding, its portrait and the compact decision display
 say so by investigator name and offer **Take over**. A stalled or disconnected
 partner stays shown as such until it returns or is taken over.
 
-A partner's decisions never move the camera. Follow frames only decisions of the
-human's own investigators and tests they take part in. The human may inspect,
-browse and use menus while a partner thinks. A partner's consequences wait until
-a blocking dialog closes, so none passes unseen.
+A partner's decisions never move the camera. Follow frames only the human's own
+investigators' decisions, the tests they test or commit to, play on their turns,
+and the scenario's end. The human may inspect, browse and use menus while a
+partner thinks. The partner learns of its decision meanwhile, but its choice
+waits until Inspect, the history, the menu or a card's menu closes. Its
+consequences therefore never start behind a dialog.
 
-A partner's own test results, and the encounter cards it draws, are shown as
-usual. They then continue on their own after a reading delay proportional to
-their text, with visible progress. Hovering or clicking holds the reading, and
-Enter continues it at once. Story readings, the scenario's end and readings that
-affect the human's investigators still wait for the human's Continue.
+A partner's own test results, and the encounter cards its investigators draw, are
+shown as usual. They then continue on their own after a reading delay
+proportional to their text, with a countdown and a progress bar. The pointer over
+the reading holds it, a click on it holds it until Continue, and Enter continues
+it at once. Reduced motion removes the bar, not the delay. The partner learns of
+its decision for an encounter card while the card is read, and its choice waits
+until the reading has continued. Some readings still wait for the human's
+Continue: story readings, anything at the scenario's end, and a result or
+encounter reading that names one of the human's investigators. A result names an
+investigator as its tester or through a committed card or bonus; an encounter
+reading does so by offering that investigator a response.
 
 In a shared decision, the other players' pending cards appear in the Test area,
 distinct from confirmed commitments. Each participating player's readiness is
