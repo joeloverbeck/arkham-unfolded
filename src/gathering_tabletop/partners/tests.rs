@@ -1071,4 +1071,60 @@ fn without_partners_a_turns_choice_commits_at_once() {
     assert_eq!(revision(&app), at + 1);
 }
 
+/// Jacqueline's turn, Joel's, with Patrice and her Violin handed to a partner that
+/// has joined: the partner's identity and the Violin's option for Patrice herself.
+fn patrices_partner_in_jacquelines_turn(directory: &Path) -> (App, PathBuf, String, String) {
+    let (mut app, socket) = violin_in_jacquelines_turn(directory, &[Patrice]);
+    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    assert_eq!(
+        joined[0]["investigators"],
+        json!(["patrice"]),
+        "{}",
+        joined[0]
+    );
+    let partner = joined[0]["partner"].as_str().unwrap().to_owned();
+    let violin = joined[0]["view"]["decision"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|option| option["id"].as_str())
+        .find(|id| id.starts_with("violin:") && id.ends_with(":target:patrice:draw"))
+        .unwrap_or_else(|| panic!("Her Violin: {}", joined[0]))
+        .to_owned();
+    app.update();
+    (app, socket, partner, violin)
+}
+
+/// Review fix G7 (F1; presentation contract: in the human's own turn, his choice
+/// waits, named, until every other player with a fast option has passed). Joel
+/// ends Jacqueline's turn while Patrice's partner holds her Violin, usable in the
+/// player window before each action (06016; RR p.22, p.24 2.2.1): the decision
+/// display names his waiting choice and whose pass is outstanding, and his choice
+/// is applied once she passes.
+#[test]
+fn the_humans_own_turn_choice_is_shown_waiting_until_the_partner_passes() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, socket, partner, _) = patrices_partner_in_jacquelines_turn(directory.path());
+    let at = revision(&app);
+    choose(&mut app, "turn:end");
+    app.update();
+    assert_eq!(revision(&app), at, "Held for her pass");
+    let shown = rendered_text(&mut app);
+    assert!(
+        shown.contains("End this investigator's turn: waits for the other players to pass"),
+        "{shown}"
+    );
+    assert!(shown.contains("Patrice Hathaway may act"), "{shown}");
+
+    let passed = exchange(
+        &mut app,
+        &socket,
+        &[json!({"op": "choose", "partner": partner, "revision": at, "id": "turn-window:pass"})],
+    );
+    assert_eq!(passed[0]["status"], "ready", "{}", passed[0]);
+    finish_presentation(&mut app);
+    assert_eq!(revision(&app), at + 1, "Applied once she passed");
+    assert!(!rendered_text(&mut app).contains("waits for the other players to pass"));
+}
+
 mod pacing;
