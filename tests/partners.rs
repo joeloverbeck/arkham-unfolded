@@ -278,13 +278,13 @@ fn the_view_holds_only_its_players_hidden_information_and_names_others_by_invest
     let observed = sitting.ask(json!({"op": "observe", "partner": partner}));
     assert_eq!(observed["status"], "observed", "{observed}");
     let view = &observed["view"];
-    // Only cards not yet sent, unless all are asked for again.
+    // Only cards not yet sent, unless the complete view is asked for again.
     assert!(
         view["cards"].get(opening[0].code.as_str()).is_none(),
         "{}",
         view["cards"]
     );
-    let all = sitting.ask(json!({"op": "observe", "partner": partner, "all_cards": true}));
+    let all = sitting.ask(json!({"op": "observe", "partner": partner, "full": true}));
     assert!(all["view"]["cards"].get(opening[0].code.as_str()).is_some());
     assert_eq!(view["decision"]["yours"], false);
     assert_eq!(option_ids(view), Vec::<&str>::new());
@@ -295,7 +295,9 @@ fn the_view_holds_only_its_players_hidden_information_and_names_others_by_invest
 
     sitting.human("confirm-mulligan");
     sitting.human("confirm-mulligan");
-    let view = sitting.ask(json!({"op": "observe", "partner": partner}))["view"].clone();
+    // #206: later views report changes; the complete view holds the whole board.
+    let view =
+        sitting.ask(json!({"op": "observe", "partner": partner, "full": true}))["view"].clone();
     let observation = sitting.rules.session.observe();
     let hand = &observation.investigators[Patrice.index()].hand;
     assert_eq!(
@@ -345,10 +347,10 @@ fn a_watcher_hidden_in_patrices_hand_is_absent_from_another_partners_view() {
     let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
     let patrices = sitting.join(&["patrice"]);
     let jacquelines = sitting.join(&["jacqueline"]);
-    let theirs = sitting.ask(json!({"op": "observe", "partner": jacquelines}));
+    let theirs = sitting.ask(json!({"op": "observe", "partner": jacquelines, "full": true}));
     assert!(!theirs.to_string().contains("06017"), "{theirs}");
     assert!(!theirs.to_string().contains("Watcher"), "{theirs}");
-    let hers = sitting.ask(json!({"op": "observe", "partner": patrices}));
+    let hers = sitting.ask(json!({"op": "observe", "partner": patrices, "full": true}));
     assert!(
         hers["view"]["investigators"][1]["hand"]
             .to_string()
@@ -526,6 +528,160 @@ fn a_watcher_hidden_in_patrices_hand_cannot_be_inspected_by_another_partner() {
             .as_str()
             .unwrap()
             .contains("Secretly add this enemy to your hand")
+    );
+}
+
+/// The entries of a view's changes at `at`.
+fn changes_at<'a>(view: &'a Value, at: &str) -> Vec<&'a Value> {
+    view["changes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no changes: {view}"))
+        .iter()
+        .filter(|change| change["at"] == at)
+        .collect()
+}
+
+/// Ticket #206, Changes: a partner's first view is complete; each later view keeps
+/// the decision whole but reports the rest of the table only as what changed since
+/// the partner's last view, never as history.
+#[test]
+fn after_the_complete_first_view_each_view_reports_only_what_changed() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let joined = sitting.ask(json!({"op": "join"}));
+    let partner = joined["partner"].as_str().unwrap().to_owned();
+    let complete = &joined["view"];
+    assert!(complete["investigators"].is_array(), "{complete}");
+    assert!(complete.get("changes").is_none(), "{complete}");
+
+    let quiet = sitting.ask(json!({"op": "observe", "partner": partner}));
+    let view = &quiet["view"];
+    assert_eq!(view["changes"], json!([]), "Nothing happened: {view}");
+    assert!(view.get("investigators").is_none(), "{view}");
+    assert_eq!(view["revision"], complete["revision"]);
+    assert_eq!(
+        view["decision"], complete["decision"],
+        "The decision is always whole"
+    );
+
+    // Jacqueline and Tony keep their opening hands.
+    sitting.human("confirm-mulligan");
+    sitting.human("confirm-mulligan");
+    let later = sitting.ask(json!({"op": "observe", "partner": partner}));
+    let view = &later["view"];
+    for who in ["jacqueline", "tony"] {
+        assert_eq!(
+            changes_at(view, &format!("investigators.{who}.mulligan_complete")),
+            [
+                &json!({"at": format!("investigators.{who}.mulligan_complete"), "was": false, "now": true})
+            ],
+            "{view}"
+        );
+    }
+    assert!(view.get("investigators").is_none(), "{view}");
+    assert!(!later.to_string().contains("history"), "{later}");
+    assert!(
+        view["decision"]["yours"].as_bool().unwrap(),
+        "Patrice's mulligan"
+    );
+}
+
+/// Ticket #206, Changes: a partner's own action is reported as the changes it made.
+/// A resource action gains one resource (Rules Reference p.17, Resource Action)
+/// and is one of the three actions of the investigator's turn (p.24).
+#[test]
+fn a_partners_resource_action_is_answered_with_one_more_resource_and_one_action_fewer() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join(&[]);
+    sitting.human("confirm-mulligan");
+    sitting.human("confirm-mulligan");
+    let mulligan = sitting.ask(json!({"op": "wait", "partner": partner}));
+    let revision = mulligan["view"]["revision"].as_u64().unwrap();
+    sitting.ask(
+        json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}),
+    );
+    sitting.human("turn:patrice");
+    let turn = sitting.ask(json!({"op": "wait", "partner": partner}));
+    assert_eq!(turn["status"], "decision", "{turn}");
+    let before = sitting.rules.session.observe().play.unwrap().players[Patrice.index()].resources;
+    let revision = turn["view"]["revision"].as_u64().unwrap();
+    let chosen = sitting.ask(json!({"op": "choose", "partner": partner, "revision": revision, "id": "action:ordinary:resource"}));
+    assert_eq!(chosen["status"], "chosen", "{chosen}");
+    let view = &chosen["view"];
+    assert_eq!(
+        changes_at(view, "investigators.patrice.resources"),
+        [&json!({"at": "investigators.patrice.resources", "was": before, "now": before + 1})],
+        "{view}"
+    );
+    assert_eq!(
+        changes_at(view, "investigators.patrice.actions_remaining"),
+        [&json!({"at": "investigators.patrice.actions_remaining", "was": 3, "now": 2})],
+        "{view}"
+    );
+}
+
+/// Ticket #206, Changes: `observe` with `full` gives the complete view and every
+/// visible card's text again, after which views report changes from it; a partner
+/// that leaves and joins again is a new session and starts with a complete view.
+#[test]
+fn a_full_observe_and_a_new_session_each_give_the_complete_view_once() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let joined = sitting.ask(json!({"op": "join"}));
+    let partner = joined["partner"].as_str().unwrap().to_owned();
+    let complete = joined["view"].clone();
+    sitting.ask(json!({"op": "observe", "partner": partner}));
+    let full = sitting.ask(json!({"op": "observe", "partner": partner, "full": true}));
+    assert_eq!(full["view"], complete, "Nothing changed since the join");
+    let next = sitting.ask(json!({"op": "observe", "partner": partner}));
+    assert_eq!(next["view"]["changes"], json!([]), "{next}");
+    assert_eq!(next["view"]["cards"], json!({}), "{next}");
+
+    sitting.ask(json!({"op": "leave", "partner": partner}));
+    let again = sitting.ask(json!({"op": "join"}));
+    assert_eq!(again["status"], "joined", "{again}");
+    assert_eq!(again["view"], complete, "A new session starts complete");
+}
+
+/// Ticket #206, Hidden information: another player's mulligan changes no card a
+/// partner can see. Neither Jacqueline's opening hand nor her replacements appear in
+/// the changes Patrice's partner receives (Rules Reference p.15, Mulligan: a player
+/// mulligans the cards they do not wish to keep in their own starting hand).
+#[test]
+fn another_players_mulligan_reaches_a_partners_changes_without_naming_a_card() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join(&[]);
+    let opening = sitting.rules.session.observe().investigators[Jacqueline.index()]
+        .hand
+        .clone();
+    let mut answers = Vec::new();
+    for card in opening.iter().take(2) {
+        sitting.human(&format!("mulligan:{}", card.id));
+        answers.push(sitting.ask(json!({"op": "observe", "partner": partner})));
+    }
+    sitting.human("confirm-mulligan");
+    answers.push(sitting.ask(json!({"op": "observe", "partner": partner})));
+    let replaced = sitting.rules.session.observe().investigators[Jacqueline.index()]
+        .hand
+        .clone();
+    assert_ne!(opening, replaced, "Jacqueline replaced two cards");
+    for answer in &answers {
+        for card in opening.iter().chain(&replaced) {
+            assert!(
+                !names_card(answer, card.id, &card.code),
+                "{} in {answer}",
+                card.title
+            );
+            assert!(
+                !answer.to_string().contains(&card.title),
+                "{} in {answer}",
+                card.title
+            );
+        }
+    }
+    let last = &answers[2]["view"];
+    assert_eq!(
+        last["changes"],
+        json!([{"at": "investigators.jacqueline.mulligan_complete", "was": false, "now": true}]),
+        "{last}"
     );
 }
 
@@ -726,6 +882,63 @@ fn turning_partners_off_returns_every_investigator_and_ends_held_waits() {
     assert!(sitting.host.control().solo());
     let after = sitting.ask(json!({"op": "observe", "partner": partner}));
     assert_eq!(after["status"], "refused", "{after}");
+}
+
+/// Ticket #206: the sizes of the answers a partner receives over a real Gathering
+/// session. The save names its seed and decisions; the session is replayed, and a
+/// partner playing one investigator waits for and makes each of that
+/// investigator's decisions through the protocol while every other decision is
+/// committed for the table. Prints each partner's join answer and the median and
+/// largest of its later answers, in bytes of the JSON line.
+#[test]
+#[ignore = "measures partner answers over ARKHAM_PARTNER_VIEW_SAVE, a real Gathering session save"]
+fn partner_answer_sizes_over_a_real_session() {
+    let path = std::env::var("ARKHAM_PARTNER_VIEW_SAVE")
+        .expect("ARKHAM_PARTNER_VIEW_SAVE names a Gathering session save");
+    let saved: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let payload = &saved["payload"];
+    let seed = payload["seed"].as_u64().unwrap();
+    let decisions: Vec<String> = serde_json::from_value(payload["decisions"].clone()).unwrap();
+    for who in Investigator::ALL {
+        let mut sitting = Sitting::new(Session::with_seed(seed), &[who]);
+        let joined = sitting.ask(json!({"op": "join"}));
+        let partner = joined["partner"].as_str().unwrap().to_owned();
+        let mut sizes = Vec::new();
+        for id in &decisions {
+            let control = sitting.host.control();
+            let revision = sitting.revision();
+            if control.human_may(&sitting.rules.session, id) {
+                continuity::commit_choice(
+                    &sitting.rules.save,
+                    &mut sitting.rules.session,
+                    revision,
+                    id,
+                )
+                .unwrap_or_else(|error| panic!("{id}: {error}"));
+                continue;
+            }
+            // What its wait would answer: the view at its decision.
+            let observed = sitting.ask(json!({"op": "observe", "partner": partner}));
+            assert_eq!(observed["status"], "observed", "{id}: {observed}");
+            sizes.push(observed.to_string().len());
+            let chosen = sitting
+                .ask(json!({"op": "choose", "partner": partner, "revision": revision, "id": id}));
+            assert_eq!(chosen["status"], "chosen", "{id}: {chosen}");
+            sizes.push(chosen.to_string().len());
+        }
+        let total: usize = sizes.iter().sum();
+        let mut sorted = sizes.clone();
+        sorted.sort_unstable();
+        println!(
+            "{}: join {} bytes; {} later answers, median {} bytes, largest {} bytes, total {} bytes",
+            who.name(),
+            joined.to_string().len(),
+            sizes.len(),
+            sorted.get(sorted.len() / 2).copied().unwrap_or(0),
+            sorted.last().copied().unwrap_or(0),
+            total,
+        );
+    }
 }
 
 /// The tracer's end-to-end path at the protocol: the partner takes Patrice's

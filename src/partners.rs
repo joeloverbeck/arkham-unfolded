@@ -122,6 +122,8 @@ struct Partner {
     played: Vec<Investigator>,
     /// Card text already sent, by code and face.
     sent: BTreeSet<String>,
+    /// The board of the last view sent, which the next view's changes start from.
+    board: Option<serde_json::Map<String, Value>>,
     heard: Instant,
 }
 
@@ -150,8 +152,9 @@ enum Request {
     },
     Observe {
         partner: String,
+        /// The complete view and every visible card's text again.
         #[serde(default)]
-        all_cards: bool,
+        full: bool,
     },
     Inspect {
         partner: String,
@@ -307,11 +310,8 @@ impl<R> Host<R> {
         }
         match request {
             Request::Join { .. } => unreachable!("Answered above"),
-            Request::Observe { all_cards, .. } => {
-                vec![(
-                    reply,
-                    self.answer(&id, "observed", None, table, all_cards, now),
-                )]
+            Request::Observe { full, .. } => {
+                vec![(reply, self.answer(&id, "observed", None, table, full, now))]
             }
             Request::Inspect { card, .. } => vec![(reply, self.inspect(&id, &card, table, now))],
             Request::Leave { .. } => {
@@ -496,6 +496,7 @@ impl<R> Host<R> {
             reported: Vec::new(),
             played: Vec::new(),
             sent: BTreeSet::new(),
+            board: None,
             heard: now,
         });
         self.answer(&id, "joined", None, table, false, now)
@@ -596,7 +597,7 @@ impl<R> Host<R> {
         status: &str,
         error: Option<String>,
         table: &impl Table,
-        all_cards: bool,
+        full: bool,
         now: Instant,
     ) -> Value {
         let control = self.control();
@@ -621,7 +622,8 @@ impl<R> Host<R> {
             view::Viewer {
                 partner: id,
                 sent: &mut partner.sent,
-                all_cards,
+                board: &mut partner.board,
+                full,
             },
         );
         let mut answer = json!({
