@@ -97,7 +97,7 @@ impl Pace {
 /// A reading that continues on its own.
 pub(super) struct Paced {
     key: Key,
-    pub delay: f32,
+    delay: f32,
     /// The human's Continue for this reading.
     continuation: Action,
 }
