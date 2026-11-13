@@ -297,12 +297,24 @@ fn decision(
         "options": options,
         "others_deciding": others.into_iter().map(|index| Investigator::ALL[index].name()).collect::<Vec<_>>(),
     });
+    // Every player hears a group choice open and what it is about; only its
+    // arbiter's player has its options.
+    if let Some(arbiter) = routing.group() {
+        decision["group_choice"] = json!({
+            "arbiter": arbiter,
+            "yours": control.controller(arbiter) == *me,
+            "choosing_among": observation
+                .choices
+                .iter()
+                .filter(|choice| choice.id != "undo")
+                .map(|choice| choice.label.as_str())
+                .collect::<Vec<_>>(),
+        });
+    }
     let note = if table {
         Some("The lead investigator is chosen at the table.")
     } else if routing.with_human() && routing.awaiting() != Some(me) {
-        Some(
-            "Group choices and shared decisions are made at the table in this version; wait for your next decision.",
-        )
+        Some("Shared decisions are made at the table in this version; wait for your next decision.")
     } else {
         None
     };

@@ -9,9 +9,9 @@
 //! A partner joins, which claims investigators the human handed to partners; waits
 //! until one of them has a decision pending at a settled table; observes its view;
 //! chooses an option by identity at the current revision; and leaves. A choice is
-//! applied only once the table settles, through the table's own commit path. Group
-//! choices and shared decisions that span players stay with the human in this slice
-//! (#205).
+//! applied only once the table settles, through the table's own commit path. A group
+//! choice is its arbiter's player's, and every partner's wait hears it open (#207).
+//! Shared decisions that span players stay with the human in this version.
 //!
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
 
@@ -120,6 +120,8 @@ struct Partner {
     /// Card text already sent, by code and face.
     sent: BTreeSet<String>,
     heard: Instant,
+    /// The revision of the last group choice a wait reported to this partner.
+    told_group: Option<u64>,
 }
 
 struct Held<R> {
@@ -246,11 +248,12 @@ impl<R> Host<R> {
             Pending::Wait { deadline } => {
                 now >= *deadline
                     || self.changed(&held.partner)
-                    || (settled
-                        && routing
-                            .get_or_insert_with(|| Routing::of(session, &self.control()))
-                            .awaiting()
-                            == Some(&Controller::Partner(held.partner.clone())))
+                    || (settled && {
+                        let routed =
+                            routing.get_or_insert_with(|| Routing::of(session, &self.control()));
+                        routed.awaiting() == Some(&Controller::Partner(held.partner.clone()))
+                            || self.group_untold(&held.partner, routed, session.revision())
+                    })
             }
         })
     }
@@ -366,8 +369,8 @@ impl<R> Host<R> {
     }
 
     /// Answer every held request whose moment has come: a wait whose partner has a
-    /// decision at a settled table, whose control changed or whose period ran out,
-    /// and a choice once the table has settled.
+    /// decision at a settled table, hears a group choice open there, whose control
+    /// changed or whose period ran out; and a choice once the table has settled.
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
         let mut answers = Vec::new();
         let mut index = 0;
@@ -376,6 +379,7 @@ impl<R> Host<R> {
         while index < self.held.len() {
             let partner = self.held[index].partner.clone();
             let settled = table.settled();
+            let revision = table.session().revision();
             let control = self.control();
             let mut routed = || {
                 routing
@@ -386,6 +390,8 @@ impl<R> Host<R> {
                 Pending::Wait { deadline } => {
                     if self.changed(&partner) {
                         Some(("control_changed", None))
+                    } else if settled && self.group_untold(&partner, &routed(), revision) {
+                        Some(("group_choice", None))
                     } else if settled
                         && routed().awaiting() == Some(&Controller::Partner(partner.clone()))
                     {
@@ -421,6 +427,11 @@ impl<R> Host<R> {
             match outcome {
                 Some((status, error)) => {
                     let held = self.held.remove(index);
+                    if status == "group_choice"
+                        && let Some(known) = self.partners.iter_mut().find(|p| p.id == partner)
+                    {
+                        known.told_group = Some(revision);
+                    }
                     let answer = self.answer(&partner, status, error, table, false, now);
                     answers.push((held.reply, answer));
                 }
@@ -438,6 +449,15 @@ impl<R> Host<R> {
         if let Some(partner) = self.partners.iter_mut().find(|partner| partner.id == id) {
             partner.heard = now;
         }
+    }
+
+    /// Whether a group choice is open at `revision` and no wait has told `id` yet.
+    fn group_untold(&self, id: &str, routing: &Routing, revision: u64) -> bool {
+        routing.group().is_some()
+            && self
+                .partners
+                .iter()
+                .any(|partner| partner.id == id && partner.told_group != Some(revision))
     }
 
     fn changed(&self, id: &str) -> bool {
@@ -488,6 +508,7 @@ impl<R> Host<R> {
             played: Vec::new(),
             sent: BTreeSet::new(),
             heard: now,
+            told_group: None,
         });
         self.answer(&id, "joined", None, table, false, now)
     }
@@ -535,9 +556,12 @@ impl<R> Host<R> {
                     "That choice is made at the table: the lead investigator is chosen there."
                         .into()
                 }
-                Some(OptionOwner::Group { .. } | OptionOwner::Shared { .. }) => {
-                    "That choice is a group choice or shared decision, made at the table in this version."
-                        .into()
+                Some(OptionOwner::Group { arbiter }) => format!(
+                    "That is a group choice: the player of {}, its arbiter, makes it.",
+                    arbiter.name()
+                ),
+                Some(OptionOwner::Shared { .. }) => {
+                    "That choice is a shared decision, made at the table in this version.".into()
                 }
                 _ => format!(
                     "That choice belongs to {}, whom you do not play.",
