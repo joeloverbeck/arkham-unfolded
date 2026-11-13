@@ -675,6 +675,42 @@ pub(super) fn render(
             for line in table.partners.readiness_lines() {
                 p.spawn(art.text(line, 15., PARTNER));
             }
+            // The player window before another investigator's action waits for
+            // the human's pass while he holds a fast option there (F1).
+            if let Some((actor, uses)) = &table.partners.human_pass
+                && !table.is_presenting()
+                && !table.modal()
+            {
+                let what = if uses.is_empty() {
+                    "your options".to_owned()
+                } else {
+                    uses.join(", ")
+                };
+                p.spawn(art.text(
+                    format!("You may use {what} before {}'s action", actor.name()),
+                    15.,
+                    Color::srgb(0.78, 0.65, 0.95),
+                ));
+                screen::controls(p, |row| {
+                    control(
+                        art,
+                        row,
+                        &format!("Pass, let {} act", actor.name()),
+                        Action::Choose(
+                            table.epoch,
+                            view.revision,
+                            crate::partners::TURN_PASS.into(),
+                        ),
+                    );
+                });
+            }
+            if let Some(held) = &table.partners.held {
+                p.spawn(art.text(
+                    format!("{held}: waits for the other players to pass"),
+                    15.,
+                    PARTNER,
+                ));
+            }
             if !table.is_presenting() {
                 for (_, label) in controls::window_opportunities(view) {
                     p.spawn(art.text(

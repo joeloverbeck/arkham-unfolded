@@ -34,6 +34,8 @@ pub(super) enum Key {
     Window { close: String, revision: u64 },
     /// A payment's contributions at one revision.
     Payment { revision: u64 },
+    /// A turn's player window at one revision: an action ends it.
+    Turn { revision: u64 },
 }
 
 impl Key {
@@ -50,6 +52,9 @@ impl Key {
                 revision: observation.revision,
             },
             SharedKind::Payment { .. } => Self::Payment {
+                revision: observation.revision,
+            },
+            SharedKind::Turn { .. } => Self::Turn {
                 revision: observation.revision,
             },
         }
@@ -385,6 +390,9 @@ impl Sharing {
         let decision = &pending.decision;
         let first = *decision.participants.first()?;
         match decision.kind {
+            // The active investigator's player's held choice completes it; the
+            // host holds that choice.
+            SharedKind::Turn { .. } => None,
             SharedKind::Commitment => {
                 let tester = observation
                     .play
@@ -482,7 +490,7 @@ impl Sharing {
         let state = self.state(pending, control);
         let kind = match state.kind {
             SharedKind::Commitment => "commitment",
-            SharedKind::Window => "window",
+            SharedKind::Window | SharedKind::Turn { .. } => "window",
             SharedKind::Payment { .. } => "clue_payment",
         };
         let players: Vec<Value> = state
@@ -528,6 +536,13 @@ impl Sharing {
                 value["how"] = json!(
                     "Use an option, or pass (op ready, or choose ready_with). The window closes once every player with an option has passed in succession; an action restarts it."
                 );
+            }
+            SharedKind::Turn { actor } => {
+                value["before_action_of"] = json!(actor.name());
+                value["how"] = json!(format!(
+                    "This player window comes before {}'s next action. Use a fast option, or pass (op ready, or choose ready_with). The action waits until every player with an option has passed; a fast play restarts the passes.",
+                    actor.name()
+                ));
             }
             SharedKind::Payment { at_round_end } => {
                 if let Some(payment) = &observation.group_clue_payment {

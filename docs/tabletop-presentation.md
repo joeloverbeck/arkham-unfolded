@@ -848,7 +848,11 @@ distinct from confirmed commitments. Each participating player's readiness is
 shown by investigator name. Confirm is the human's readiness; while it waits, it
 names whose readiness is outstanding. When another player's change clears the
 human's readiness, the cleared control shows it. Group clue payments show the
-same readiness beside each contribution.
+same readiness beside each contribution. In another investigator's turn, while the
+human holds a fast option in the player window before that investigator's action,
+the decision display names what the human may use and offers Pass; in the human's
+own turn, his choice waits, named, until every other player with a fast option has
+passed.
 
 **Speech boxes and action lines.** Each table-talk message appears in a speech box
 to the right of its speaker's portrait on the navigation rail, pointing at the

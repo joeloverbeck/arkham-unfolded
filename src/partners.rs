@@ -17,7 +17,9 @@
 //! choice is its arbiter's player's, and every partner's wait hears it open (#207).
 //! In a shared decision that spans players, each player sets its own part and marks
 //! itself ready, and the host completes it once every participating player is
-//! ready (#208, `shared`). Every player may speak, and every other player hears
+//! ready (#208, `shared`). Before each action of a turn, the active investigator's
+//! player's choice waits until every other player with a fast option there has
+//! passed (F1). Every player may speak, and every other player hears
 //! each message (#209, `talk`).
 //!
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
@@ -27,7 +29,7 @@ mod shared;
 mod talk;
 mod view;
 
-pub use routing::{Routing, Shared, SharedKind};
+pub use routing::{Routing, Shared, SharedKind, TURN_PASS};
 pub use shared::{REOPENINGS, Readiness, SharedState};
 pub use talk::{CHATTER_LIMIT, EXCHANGE_LIMIT, LONGEST_MESSAGE, PERIL, Said};
 
@@ -164,6 +166,9 @@ pub struct Host<R> {
     /// Readiness, reopenings and pending contributions in shared decisions.
     sharing: shared::Sharing,
     talk: talk::Talk,
+    /// The human's choice in his own turn, at its revision, while it waits for the
+    /// other players with a fast option to pass (F1).
+    human_turn: Option<(u64, String)>,
 }
 
 struct Partner {
@@ -261,6 +266,7 @@ impl<R> Default for Host<R> {
             held: Vec::new(),
             sharing: shared::Sharing::default(),
             talk: talk::Talk::default(),
+            human_turn: None,
         }
     }
 }
@@ -357,12 +363,21 @@ impl<R> Host<R> {
     /// decision, now, at a table that has `presented` its decision and is `settled`
     /// or not, as [`Table`] names them.
     pub fn due(&self, session: &Session, presented: bool, settled: bool, now: Instant) -> bool {
-        if settled && self.completion(session).is_some() {
+        if settled && (self.human_turn_due(session).is_some() || self.completion(session).is_some())
+        {
             return true;
         }
         let mut moment: Option<Moment> = None;
         self.held.iter().any(|held| match &held.pending {
-            Pending::Choose { .. } => settled,
+            Pending::Choose { revision, id } => {
+                settled
+                    && !self.window_holds(
+                        moment.get_or_insert_with(|| self.moment(session)),
+                        &held.partner,
+                        *revision,
+                        id,
+                    )
+            }
             Pending::Wait { deadline, listen } => {
                 now >= *deadline
                     || self.changed(&held.partner)
@@ -430,7 +445,22 @@ impl<R> Host<R> {
         {
             self.sharing.change(pending, &human)?;
         }
+        if moment.waits_for_window(&self.sharing, &control, &human, id) {
+            // His click in his own turn is his part: it is applied once every
+            // other player with a fast option has passed on this revision.
+            self.human_turn = Some((revision, id.to_owned()));
+            return Ok(HumanChoice::Ready);
+        }
         Ok(HumanChoice::Commit)
+    }
+
+    /// The human's choice waiting for the other players' passes in his own turn,
+    /// at the session's revision.
+    pub fn human_turn(&self, session: &Session) -> Option<&str> {
+        self.human_turn
+            .as_ref()
+            .filter(|(revision, _)| *revision == session.revision())
+            .map(|(_, id)| id.as_str())
     }
 
     /// Answer one request line now, or hold it. Answers to held requests come from
@@ -578,6 +608,14 @@ impl<R> Host<R> {
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
         self.talk.watch(&*table);
         if table.settled()
+            && let Some((id, by)) = self.human_turn_due(table.session())
+        {
+            self.human_turn = None;
+            let revision = table.session().revision();
+            if let Err(error) = table.commit(revision, &id, by) {
+                eprintln!("Agent partners: the human's turn choice was not applied: {error}");
+            }
+        } else if table.settled()
             && let Some((pending, id, by)) = self.completion(table.session())
         {
             let revision = table.session().revision();
@@ -628,6 +666,19 @@ impl<R> Host<R> {
                     } else {
                         None
                     }
+                }
+                // The active investigator's player's choice waits for the turn's
+                // player window to close.
+                Pending::Choose { revision, id }
+                    if settled
+                        && self.window_holds(
+                            moment.get_or_insert_with(|| self.moment(table.session())),
+                            &partner,
+                            *revision,
+                            id,
+                        ) =>
+                {
+                    None
                 }
                 Pending::Choose { revision, id } if settled => {
                     let (revision, id) = (*revision, id.clone());
@@ -801,6 +852,40 @@ impl<R> Host<R> {
                 .completion(&pending, &control, &moment.observation)?;
             Some((pending, id, by))
         })
+    }
+
+    /// The human's held choice in his own turn once nothing holds it any more: every
+    /// other player with a fast option has passed on this revision, or none holds
+    /// one now. Its investigator is the one the choice belongs to. None once the
+    /// choice is no longer the human's.
+    fn human_turn_due(&self, session: &Session) -> Option<(String, Investigator)> {
+        let id = self.human_turn(session)?;
+        let control = self.control();
+        let moment = self.moment(session);
+        let human = Controller::Human;
+        if !moment.routing.human_may(session, &control, id)
+            || moment.waits_for_window(&self.sharing, &control, &human, id)
+        {
+            return None;
+        }
+        let by = match moment.routing.owner(session, id) {
+            Some(OptionOwner::Investigator(who)) => who,
+            _ => session.turn_window()?,
+        };
+        Some((id.to_owned(), by))
+    }
+
+    /// Whether `partner`'s held choice of `id` at `revision` waits for the turn's
+    /// player window: a current choice of the active investigator's player while
+    /// another player with a fast option has not passed. A stale one is refused.
+    fn window_holds(&self, moment: &Moment, partner: &str, revision: u64, id: &str) -> bool {
+        revision == moment.observation.revision
+            && moment.waits_for_window(
+                &self.sharing,
+                &self.control(),
+                &Controller::Partner(partner.to_owned()),
+                id,
+            )
     }
 
     /// A partner's readiness in a shared decision: through `ready`, or by choosing
@@ -1066,6 +1151,23 @@ impl<R> Host<R> {
         if !talk.is_empty() {
             view["table_talk"] = Value::Array(talk);
         }
+        // In its own investigator's turn, a choice waits for the players with a
+        // fast option to pass (F1).
+        let passing: Vec<&str> = moment
+            .pending
+            .iter()
+            .filter(|pending| {
+                matches!(pending.decision.kind, SharedKind::Turn { actor } if control.controller(actor) == me)
+            })
+            .flat_map(|pending| self.sharing.waiting(pending, &control))
+            .map(|(_, who)| who.name())
+            .collect();
+        if !passing.is_empty() && view["decision"]["note"].is_null() {
+            view["decision"]["note"] = json!(format!(
+                "Your choice is applied once {} has passed in this player window. If a fast play comes first, the decision moves on and you decide again.",
+                passing.join(" and ")
+            ));
+        }
         let mut answer = json!({
             "ok": error.is_none(),
             "mode": "partner",
@@ -1116,6 +1218,24 @@ impl Moment {
         } else {
             None
         }
+    }
+
+    /// Whether `player`'s choice of `id` waits for a turn's player window (F1): it
+    /// is the active investigator's player's choice, other than Undo or a part of a
+    /// shared decision, and a player with a fast option has not yet passed.
+    fn waits_for_window(
+        &self,
+        sharing: &shared::Sharing,
+        control: &Control,
+        player: &Controller,
+        id: &str,
+    ) -> bool {
+        id != "undo"
+            && self.routing.shared_of(id).is_none()
+            && self.pending.iter().any(|pending| {
+                matches!(pending.decision.kind, SharedKind::Turn { actor } if control.controller(actor) == *player)
+                    && !sharing.waiting(pending, control).is_empty()
+            })
     }
 
     /// The commitment window `player` takes part in, where each of its options

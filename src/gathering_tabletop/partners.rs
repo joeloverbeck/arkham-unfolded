@@ -88,6 +88,13 @@ pub(super) struct Shown {
     pub awaited: Vec<Investigator>,
     /// The pending shared decisions whose participants several players control.
     pub shared: Vec<SharedState>,
+    /// In another investigator's turn, while the human holds a fast option there
+    /// and has not passed: the active investigator, and the titles of what the
+    /// human may use before that action (F1).
+    pub human_pass: Option<(Investigator, Vec<String>)>,
+    /// The label of the human's choice in his own turn while it waits for the
+    /// other players with a fast option to pass (F1).
+    pub held: Option<String>,
     /// History entries a partner's decision made in this sitting, and its
     /// investigator. Runtime only: the save's history is replayed from decisions.
     pub attributed: Vec<(usize, Investigator)>,
@@ -172,7 +179,7 @@ impl Shown {
         };
         if human.ready {
             let done = match state.kind {
-                SharedKind::Window => "Passed",
+                SharedKind::Window | SharedKind::Turn { .. } => "Passed",
                 SharedKind::Commitment => "Confirmed",
                 SharedKind::Payment { .. } => "Ready",
             };
@@ -191,9 +198,10 @@ impl Shown {
             .filter(|state| state.active)
             .map(|state| {
                 let what = match state.kind {
-                    SharedKind::Commitment => "Commitments",
-                    SharedKind::Window => "Window",
-                    SharedKind::Payment { .. } => "Clue payment",
+                    SharedKind::Commitment => "Commitments".to_owned(),
+                    SharedKind::Window => "Window".to_owned(),
+                    SharedKind::Payment { .. } => "Clue payment".to_owned(),
+                    SharedKind::Turn { actor } => format!("Before {}'s action", actor.name()),
                 };
                 let players: Vec<String> = state
                     .players
@@ -202,8 +210,10 @@ impl Shown {
                         let names: Vec<_> =
                             player.investigators.iter().map(|who| who.name()).collect();
                         let status = match state.kind {
-                            SharedKind::Window if player.ready => "passed",
-                            SharedKind::Window => "may act",
+                            SharedKind::Window | SharedKind::Turn { .. } if player.ready => {
+                                "passed"
+                            }
+                            SharedKind::Window | SharedKind::Turn { .. } => "may act",
                             _ if player.ready => "ready",
                             _ => "deciding",
                         };
@@ -306,6 +316,8 @@ struct RoutedAt {
     control: Control,
     /// The host's sharing version.
     sharing: u64,
+    /// The human's choice waiting in his own turn.
+    held: Option<String>,
     routed: Routed,
 }
 
@@ -316,6 +328,8 @@ struct Routed {
     awaited: Vec<(Controller, Option<Investigator>)>,
     may_use: Vec<(Investigator, Vec<String>)>,
     shared: Vec<SharedState>,
+    human_pass: Option<(Investigator, Vec<String>)>,
+    held: Option<String>,
 }
 
 impl Default for Partners {
@@ -601,11 +615,13 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
     let routed = if control.solo() {
         Routed::default()
     } else {
+        let held = partners.host.human_turn(&table.session).map(str::to_owned);
         match &partners.routed {
             Some(kept)
                 if kept.revision == revision
                     && kept.control == control
-                    && kept.sharing == version =>
+                    && kept.sharing == version
+                    && kept.held == held =>
             {
                 kept.routed.clone()
             }
@@ -615,6 +631,7 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
                     revision,
                     control: control.clone(),
                     sharing: version,
+                    held,
                     routed: routed.clone(),
                 });
                 routed
@@ -661,6 +678,8 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         may_use: routed.may_use,
         awaited,
         shared: routed.shared,
+        human_pass: routed.human_pass,
+        held: routed.held,
         // Compared below with what the table shows, so copied, not moved out of it.
         attributed: table.partners.attributed.clone(),
     };
@@ -677,23 +696,62 @@ fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &Control
     let awaited = host.awaited(session);
     let routing = Routing::of(session, control);
     let observation = session.observe();
+    let shared = host.shared(session);
+    // In a turn's player window no pass is listed: what a player may use there is
+    // every option of theirs (F1).
+    let turn = shared.iter().find_map(|state| match state.kind {
+        SharedKind::Turn { actor } => Some((actor, state)),
+        _ => None,
+    });
+    let in_turn = |who: Investigator| {
+        turn.is_some_and(|(_, state)| {
+            state
+                .players
+                .iter()
+                .any(|player| player.investigators.contains(&who))
+        })
+    };
+    let uses = |player: &Controller| {
+        let theirs: Vec<&str> = routing
+            .options()
+            .filter(|(_, _, controller)| *controller == player)
+            .map(|(id, ..)| id)
+            .collect();
+        let mut window = observation.clone();
+        window.choices.retain(|choice| {
+            theirs.contains(&choice.id.as_str())
+                || matches!(choice.id.as_str(), "window:pass" | "phase-window:pass")
+        });
+        window
+    };
+    let human_pass = turn.and_then(|(actor, state)| {
+        let human = state.of(&Controller::Human).filter(|human| !human.ready)?;
+        let titles = controls::opportunities(&uses(&human.player))
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect();
+        Some((actor, titles))
+    });
+    let held = host.human_turn(session).map(|id| {
+        observation
+            .choices
+            .iter()
+            .find(|choice| choice.id == id)
+            .map_or_else(|| id.to_owned(), |choice| choice.label.clone())
+    });
     let may_use = awaited
         .iter()
         .filter(|(controller, _)| *controller != Controller::Human)
         .filter_map(|(controller, who)| {
             let who = (*who)?;
-            let theirs: Vec<&str> = routing
-                .options()
-                .filter(|(_, _, player)| *player == controller)
-                .map(|(id, ..)| id)
-                .collect();
-            let mut window = observation.clone();
-            window.choices.retain(|choice| {
-                theirs.contains(&choice.id.as_str())
-                    || matches!(choice.id.as_str(), "window:pass" | "phase-window:pass")
-            });
+            let window = uses(controller);
             let own = format!("{} — ", who.name());
-            let titles = controls::window_opportunities(&window)
+            let opportunities = if in_turn(who) {
+                controls::opportunities(&window)
+            } else {
+                controls::window_opportunities(&window)
+            };
+            let titles = opportunities
                 .into_iter()
                 .map(|(_, label)| {
                     label
@@ -707,7 +765,9 @@ fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &Control
     Routed {
         awaited,
         may_use,
-        shared: host.shared(session),
+        shared,
+        human_pass,
+        held,
     }
 }
 

@@ -9,6 +9,16 @@
 //! participants several players control is [`Shared`]: each player answers its
 //! own investigators' options in it, and its completing option is every
 //! participating player's readiness, which the host collects (#208).
+//!
+//! A turn's player window comes before each action (RR p.22, p.24 2.2.1). When
+//! another player holds a fast option in it, the window is [`SharedKind::Turn`]:
+//! that player passes with readiness, and the active investigator's action is
+//! applied only once every such player has passed on the current revision (F1,
+//! Joel's decision of 2026-11-13: played as the rules have it).
+
+/// A player's pass in a turn's player window. It is co-play's, never the rules
+/// session's: the rules session lists no pass before an action.
+pub const TURN_PASS: &str = "turn-window:pass";
 
 use super::{Control, Controller};
 use crate::gathering::{GroupCluePayment, Investigator, OptionOwner, Session};
@@ -57,6 +67,11 @@ pub enum SharedKind {
     /// A group clue payment (RR p.7): each player sets its own investigators'
     /// clues. At The Barrier's round end, readiness on no clues declines it.
     Payment { at_round_end: bool },
+    /// The player window before an action of `actor`'s turn, while another player
+    /// holds a fast option in it. Its participants are those players'
+    /// investigators; each passes with [`TURN_PASS`] or readiness, and an action
+    /// restarts the succession. The actor's player's choice waits for them.
+    Turn { actor: Investigator },
 }
 
 impl Shared {
@@ -135,13 +150,18 @@ impl Routing {
             };
             options.push((option.id, option.owner, controller));
         }
+        if let Some(actor) = session.turn_window().filter(|_| !with_human)
+            && let Some(window) = turn_window(actor, &options, control)
+        {
+            shared.push(window);
+        }
         // A commitment window or a closing window is answered by readiness alone.
         let awaiting = if shared.iter().any(|decision| {
             !matches!(
                 decision.kind,
                 SharedKind::Payment {
                     at_round_end: false
-                }
+                } | SharedKind::Turn { .. }
             )
         }) {
             None
@@ -272,6 +292,30 @@ pub(super) fn investigators(owner: &OptionOwner) -> Vec<Investigator> {
         OptionOwner::Shared { participants } => participants.clone(),
         OptionOwner::Table => vec![],
     }
+}
+
+/// The player window before `actor`'s action, when a player other than the
+/// actor's holds one of its options: every such player's investigators with an
+/// option take part. None without such a player.
+fn turn_window(
+    actor: Investigator,
+    options: &[(String, OptionOwner, Controller)],
+    control: &Control,
+) -> Option<Shared> {
+    let actors = control.controller(actor);
+    let mut participants: Vec<Investigator> = options
+        .iter()
+        .filter(|(_, _, controller)| *controller != actors)
+        .flat_map(|(_, owner, _)| investigators(owner))
+        .filter(|who| control.controller(*who) != actors)
+        .collect();
+    participants.sort_by_key(|who| who.index());
+    participants.dedup();
+    (!participants.is_empty()).then(|| Shared {
+        kind: SharedKind::Turn { actor },
+        close: TURN_PASS.to_owned(),
+        participants,
+    })
 }
 
 /// Participants more than one player controls.

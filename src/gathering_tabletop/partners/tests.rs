@@ -979,4 +979,88 @@ fn a_silent_partner_is_marked_with_its_minutes_until_it_is_heard_from() {
     );
 }
 
+/// Jacqueline's turn with Patrice's Violin ready in play (06016: "[fast] ...
+/// usable in any player window"), saved as the window saves it, opened at the
+/// table with `partners` handed to agent partners and partners enabled.
+fn violin_in_jacquelines_turn(directory: &Path, partners: &[Investigator]) -> (App, PathBuf) {
+    let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Assets(
+        crate::gathering::AssetFixture::RobesOpportunity,
+    ));
+    let save = directory.join("turn.session.json");
+    continuity::save_session(&save, &session).unwrap();
+    let socket = directory.join("partners.sock");
+    let mut app = super::super::tests::host_with_table(Table::new(session, save), false);
+    app.insert_resource(PartnerSocket(socket.clone()));
+    finish_presentation(&mut app);
+    if !partners.is_empty() {
+        let mut table = app.world_mut().resource_mut::<Table>();
+        table
+            .partners
+            .inputs
+            .extend(partners.iter().map(|who| Input::Hand(*who)));
+        table.partners.inputs.push(Input::Enable(true));
+        table.dirty = true;
+        app.update();
+        app.update();
+    }
+    (app, socket)
+}
+
+/// F1, Joel's decision of 2026-11-13 (strict), over the table host. In Jacqueline's
+/// partner's turn the human holds Patrice's Violin, usable in the player window
+/// before each action (RR p.22, p.24 2.2.1): the decision display names what he may
+/// use and offers Pass, and the partner's choice waits until he passes.
+#[test]
+fn the_human_passes_before_a_partners_action_while_holding_a_fast_option() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, socket) = violin_in_jacquelines_turn(directory.path(), &[Jacqueline]);
+    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    assert_eq!(
+        joined[0]["investigators"],
+        json!(["jacqueline"]),
+        "{}",
+        joined[0]
+    );
+    let partner = joined[0]["partner"].as_str().unwrap().to_owned();
+    app.update();
+    let shown = rendered_text(&mut app);
+    assert!(
+        shown.contains("You may use") && shown.contains("Patrice's Violin"),
+        "{shown}"
+    );
+    let pass = "Pass, let Jacqueline Fine act";
+    assert!(button_with_label(&mut app, pass).is_some(), "{shown}");
+
+    let at = revision(&app);
+    let chosen = connect(
+        &socket,
+        &[json!({"op": "choose", "partner": partner, "revision": at, "id": "turn:end"})],
+    );
+    for _ in 0..20 {
+        app.update();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!chosen.is_finished(), "Held for the human's pass");
+    assert_eq!(revision(&app), at);
+    press(&mut app, pass);
+    pump(&mut app, || chosen.is_finished());
+    let answer = chosen.join().unwrap();
+    assert_eq!(answer[0]["status"], "chosen", "{}", answer[0]);
+    assert_eq!(revision(&app), at + 1);
+}
+
+/// F1: without partners the human plays every investigator, so no player window
+/// waits on anyone: no Pass is offered and the turn's choice commits at once.
+#[test]
+fn without_partners_a_turns_choice_commits_at_once() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, _) = violin_in_jacquelines_turn(directory.path(), &[]);
+    let shown = rendered_text(&mut app);
+    assert!(!shown.contains("You may use"), "{shown}");
+    assert!(button_with_label(&mut app, "Pass, let Jacqueline Fine act").is_none());
+    let at = revision(&app);
+    choose(&mut app, "turn:end");
+    assert_eq!(revision(&app), at + 1);
+}
+
 mod pacing;

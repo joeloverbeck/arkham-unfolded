@@ -734,3 +734,131 @@ fn the_human_may_decline_the_barrier_only_when_taking_part_in_its_payment() {
     }
     assert!(!human.iter().any(|id| id == "undo"), "{human:?}");
 }
+
+/// F1, Joel's decision of 2026-11-13 ("strict": played as the rules have it), story
+/// 41 and the play contract's Shared decisions. A player window comes before each
+/// action of a turn, and play returns to it after each action (RR p.22 timing
+/// chart; p.24 2.2.1); a [fast] ability such as Patrice's Violin may be used in any
+/// player window (RR p.3, 06016). In Tony's turn, Patrice's player holds her Violin:
+/// it is woken for the window, the human's action waits until it passes, and a fast
+/// play instead moves the decision on, so the human decides again on the new state.
+#[test]
+fn a_partners_fast_option_holds_the_humans_turn_action_until_it_passes() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join(&[]);
+    let resources = |sitting: &Sitting| {
+        sitting.rules.session.observe().play.unwrap().players[Tony.index()].resources
+    };
+
+    let waits = sitting.wait(&partner);
+    sitting.poll();
+    let woken = sitting
+        .take(waits)
+        .expect("Patrice may use her Violin before Tony's action");
+    assert_eq!(woken["status"], "decision", "{woken}");
+    let options = option_ids(&woken["view"]);
+    assert!(
+        options.iter().any(|id| id.starts_with("violin:")),
+        "{options:?}"
+    );
+    assert!(options.iter().any(|id| id == TURN_PASS), "{options:?}");
+    assert!(
+        !options.iter().any(|id| id.starts_with("action:")),
+        "Tony's actions are the human's: {options:?}"
+    );
+    let window = sitting.shared(|kind| matches!(kind, SharedKind::Turn { actor: Tony }));
+    assert_eq!(window.outstanding(), [Patrice]);
+
+    // The human's action is his part; it waits for Patrice's player to pass.
+    let (revision, before) = (sitting.revision(), resources(&sitting));
+    assert_eq!(
+        sitting.human("action:ordinary:resource"),
+        HumanChoice::Ready
+    );
+    assert_eq!(sitting.revision(), revision, "Held for the window");
+    let passed = sitting.choose(&partner, TURN_PASS);
+    assert_eq!(passed["status"], "ready", "{passed}");
+    assert_eq!(sitting.revision(), revision + 1, "Applied once she passed");
+    assert_eq!(resources(&sitting), before + 1);
+    assert_eq!(
+        sitting.rules.attributed.last(),
+        Some(&("action:ordinary:resource".to_owned(), Tony))
+    );
+
+    // Back in the window before Tony's next action, she plays her Violin instead.
+    let woken = sitting.ask(json!({"op": "wait", "partner": partner}));
+    assert_eq!(woken["status"], "decision", "{woken}");
+    let violin = option_ids(&woken["view"])
+        .into_iter()
+        .find(|id| id.starts_with("violin:") && id.ends_with(":target:patrice:draw"))
+        .expect("Her Violin, for herself");
+    let revision = sitting.revision();
+    assert_eq!(
+        sitting.human("action:ordinary:resource"),
+        HumanChoice::Ready
+    );
+    let played = sitting.choose(&partner, &violin);
+    assert_eq!(played["status"], "chosen", "{played}");
+    assert_eq!(sitting.revision(), revision + 1);
+    assert_eq!(
+        resources(&sitting),
+        before + 1,
+        "Tony's held action was not applied: he decides again"
+    );
+    // Her Violin is exhausted, so she holds no fast option: no one else is in the
+    // window, and his action is applied at once.
+    assert!(
+        sitting
+            .host
+            .shared(&sitting.rules.session)
+            .iter()
+            .all(|state| !matches!(state.kind, SharedKind::Turn { .. }))
+    );
+    assert_eq!(
+        sitting.human("action:ordinary:resource"),
+        HumanChoice::Commit
+    );
+    assert_eq!(resources(&sitting), before + 2);
+}
+
+/// F1: the window is the same with the roles reversed. In Patrice's partner's
+/// turn, the human holds no fast option, so the partner's action is applied at
+/// once, as before; a player with no option is never waited on.
+#[test]
+fn a_turn_waits_on_no_player_without_a_fast_option() {
+    let mut session = turn(Patrice);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join(&[]);
+    assert!(sitting.host.shared(&sitting.rules.session).is_empty());
+    let revision = sitting.revision();
+    let chosen = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(chosen["status"], "chosen", "{chosen}");
+    assert_eq!(sitting.revision(), revision + 1);
+}
+
+/// F1 with Take over (play contract: Take over returns an investigator at once): the
+/// human's choice held for Patrice's partner's pass is applied once the human takes
+/// Patrice over, since no other player then holds a fast option.
+#[test]
+fn taking_over_the_only_other_player_with_a_fast_option_applies_the_held_choice() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    sitting.join(&[]);
+    let revision = sitting.revision();
+    assert_eq!(
+        sitting.human("action:ordinary:resource"),
+        HumanChoice::Ready
+    );
+    assert_eq!(sitting.revision(), revision);
+    sitting.host.set_selected(Patrice, false);
+    sitting.poll();
+    assert_eq!(sitting.revision(), revision + 1);
+    assert_eq!(
+        sitting.rules.attributed.last(),
+        Some(&("action:ordinary:resource".to_owned(), Tony))
+    );
+}

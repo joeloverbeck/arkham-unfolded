@@ -679,6 +679,16 @@ impl Session {
             .map(|option| option.owner)
     }
 
+    /// The active investigator, while the pending decision is the player window
+    /// before one of their actions (RR p.22, p.24 2.2.1): the other investigators'
+    /// listed options are [fast] plays in that window. Derived, never saved.
+    pub fn turn_window(&self) -> Option<Investigator> {
+        match self.stage {
+            Stage::Playing => ownership::turn_window(self.runtime.as_ref()?),
+            _ => None,
+        }
+    }
+
     /// The owner of the decision Undo would revert, as the rules session named
     /// it when that decision was made. It is derived by replaying to the
     /// position before that decision, once per revision, and never saved.

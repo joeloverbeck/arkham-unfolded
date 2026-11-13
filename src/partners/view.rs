@@ -556,7 +556,10 @@ fn decision(
             ids.push(crate::gathering::GroupCluePayment::DECLINE);
         }
         for id in ids {
-            let mut label = label(id);
+            let mut label = match decision.kind {
+                SharedKind::Turn { actor } => format!("Pass before {}'s action", actor.name()),
+                _ => label(id),
+            };
             if decision.kind != (SharedKind::Payment { at_round_end: true }) {
                 label = format!("{label} (marks you ready)");
             }

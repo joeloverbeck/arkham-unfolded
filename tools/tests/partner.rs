@@ -186,6 +186,7 @@ fn the_default_socket_follows_the_environment_and_help_teaches_the_loop() {
         "observe PARTNER --full",
         "changes",
         "nothing_yet",
+        "pass with ready",
         "Exit codes",
     ] {
         assert!(help.contains(step), "{step} in {help}");
@@ -223,6 +224,7 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "scripts/tools partner say PARTNER MESSAGE",
         "scripts/tools partner leave PARTNER",
         "decision.undo",
+        "before_action_of",
         "--socket",
     ];
     let statuses = [

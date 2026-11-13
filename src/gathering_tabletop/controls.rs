@@ -743,6 +743,12 @@ pub(super) fn window_opportunities(view: &Observation) -> Vec<(Source, String)> 
     {
         return vec![];
     }
+    opportunities(view)
+}
+
+/// The cards and abilities the view's choices use, each once, named by its
+/// holder: what a player may use in a window.
+pub(super) fn opportunities(view: &Observation) -> Vec<(Source, String)> {
     let mut result = Vec::new();
     for choice in &view.choices {
         let Route::Sources(mut sources) = route(view, &choice.id) else {

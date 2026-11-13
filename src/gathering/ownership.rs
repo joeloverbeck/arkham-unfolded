@@ -122,6 +122,18 @@ pub(super) fn owners(game: &Game, choices: &[Choice]) -> Vec<OptionOwner> {
         .collect()
 }
 
+/// The active investigator whose turn the pending decision is: the player window
+/// before each of their actions (RR p.22 timing chart; p.24 2.2.1, "after an
+/// investigator takes an action, return to the previous player window"). Another
+/// investigator's option listed beside their actions is a [fast] play in that
+/// window, by the player of the card it uses.
+pub(super) fn turn_window(game: &Game) -> Option<Investigator> {
+    match Rule::of(game) {
+        Rule::Window { own, close: None } if game.frames.is_empty() => Some(own),
+        _ => None,
+    }
+}
+
 /// The lead, or after the lead's elimination the next investigator in player
 /// order who remains (RR p.13 "In Player Order"; the play contract's house
 /// practice for choosing a new lead).

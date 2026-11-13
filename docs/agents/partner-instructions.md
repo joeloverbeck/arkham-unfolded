@@ -79,7 +79,7 @@ Run `wait` in the foreground with its default period, 240 s, which ends inside C
 `view.decision` holds the pending decision:
 
 - `options` lists only your options, each with its `id`, its `label` and the `investigator` it is for.
-- `yours` is true when the table waits for you. Options can be listed while it waits for another player, such as a fast card or ability you may use during another investigator's turn; `wait` does not wake you for those.
+- `yours` is true when the table waits for you, including for your pass in another investigator's turn while you hold a fast option there (see [Shared decisions](#shared-decisions)).
 - `prompt` says what is being decided, and `others_deciding` names the investigators whose players decide now. A `note` explains what your options leave out: that the lead is chosen at the window during setup, or that you could propose a clue payment.
 - At the view's top level, `test`, `encounter_card`, `harm` and `resolving` say what the decision is about: the skill test and the cards committed to it, an encounter card your investigator drew, the damage and horror to assign, and the cards being resolved. When `view.shared` lists a decision, see [Shared decisions](#shared-decisions).
 
@@ -107,9 +107,9 @@ Group choices belong to the lead investigator's player: who takes the next turn,
 
 ## Shared decisions
 
-Committing cards to a skill test, a group clue payment, and a window for fast cards and abilities can involve several players at once. Each player sets only their own investigators' part. `view.shared` lists each one you take part in:
+Committing cards to a skill test, a group clue payment, and a window for fast cards and abilities can involve several players at once. Each player sets only their own investigators' part. The player window before each action of a turn is one too: while you hold a fast card or ability in another investigator's turn, `wait` wakes you with `decision`, and that investigator's action waits until you use an option or pass. In your own investigators' turn, your choice waits the same way for the others, and `decision.note` says so; when one of them plays a fast card instead, your choice is refused as stale, and you decide again. `view.shared` lists each one you take part in:
 
-- `kind`: `commitment`, `clue_payment` or `window`.
+- `kind`: `commitment`, `clue_payment` or `window`; a turn's window also names `before_action_of`.
 - `players`, each with its `investigators` and whether it is `ready`. `waiting_for` names the investigators whose players are not yet ready, and `you_are_ready` is yours.
 - `cleared_by`: whose change cleared your readiness.
 - `reopenings_left`: how many more times you may change your part.

@@ -40,7 +40,9 @@ the notes to keep.
 
 A wait answers \"decision\" once the table has presented one of your
 investigators' decisions, even while a reading or a dialog is still open; the
-table applies a choice only once it settles, so choose waits until then. After
+table applies a choice only once it settles, so choose waits until then. In
+another investigator's turn, a fast card or ability of yours wakes you before
+each of that investigator's actions: use it, or pass with ready. After
 the first, complete view, each view reports the table as \"changes\" since your
 last. A wait answers \"nothing_yet\" after its timeout (240 s by default, at
 most 590): run it again. When the pasted line names --socket PATH, put it on
