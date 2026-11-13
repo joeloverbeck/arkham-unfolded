@@ -661,7 +661,7 @@ pub(super) fn render(
                 };
                 p.spawn(art.text(cue, 16., PARTNER));
                 if let Some(uses) = table.partners.uses(who) {
-                    p.spawn(art.text(uses, 15., Color::srgb(0.78, 0.65, 0.95)));
+                    p.spawn(art.text(uses, 15., OPPORTUNITY));
                 }
                 screen::controls(p, |row| {
                     control(
@@ -694,7 +694,7 @@ pub(super) fn render(
                 p.spawn(art.text(
                     format!("You may use {what} before {}'s action", actor.name()),
                     15.,
-                    Color::srgb(0.78, 0.65, 0.95),
+                    OPPORTUNITY,
                 ));
             }
             if let Some(held) = &table.partners.held {
@@ -710,11 +710,7 @@ pub(super) fn render(
             }
             if !table.is_presenting() {
                 for (_, label) in controls::window_opportunities(view) {
-                    p.spawn(art.text(
-                        format!("Available now: {label}"),
-                        15.,
-                        Color::srgb(0.78, 0.65, 0.95),
-                    ));
+                    p.spawn(art.text(format!("Available now: {label}"), 15., OPPORTUNITY));
                 }
             }
             screen::controls(p, |row| {
@@ -901,6 +897,9 @@ fn partners_menu(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table) {
 
 /// Agent partners' cue in the decision display.
 const PARTNER: Color = Color::srgb(0.55, 0.82, 0.86);
+
+/// What a player may use in an open window, in the decision display.
+const OPPORTUNITY: Color = Color::srgb(0.78, 0.65, 0.95);
 
 fn restart_confirmation(commands: &mut Commands, table: &Table, art: &art::Art, size: Vec2) {
     let barrier = screen::inspection(
