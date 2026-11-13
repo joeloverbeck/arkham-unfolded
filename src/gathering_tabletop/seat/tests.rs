@@ -391,6 +391,21 @@ fn the_listed_pendulum_prediction_opens_its_picker_by_identity_and_commits_nothi
     assert!(!seat.path.exists(), "opening the picker commits nothing");
 }
 
+/// The keys are the table's own, named for the shared seat, which joins them into its
+/// refusal of a key the table does not read.
+#[test]
+fn a_key_the_table_does_not_read_is_refused_with_the_eighteen_it_does() {
+    let mut seat = sit();
+
+    let unknown = seat.ask(json!({"op": "key", "key": "F13", "revision": 0}));
+
+    assert_eq!(unknown["status"], "refused");
+    assert_eq!(
+        unknown["error"],
+        "Unknown key \"F13\". Known keys: Escape, Enter, Space, Tab, Home, End, PageUp, PageDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, KeyW, KeyA, KeyS, KeyD, Minus, Equal."
+    );
+}
+
 #[test]
 fn keys_travel_the_keyboard_path_and_unknown_keys_are_refused() {
     let mut seat = sit();
