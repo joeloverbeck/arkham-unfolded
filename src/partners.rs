@@ -514,9 +514,7 @@ impl<R> Host<R> {
                 "investigators": mine, "card": card, "text": text,
             }),
             None => {
-                let reason = format!(
-                    "No card {card} is in your sight. Inspect a card you can see by its code: in your investigators' hands, in play, being resolved or in a public pile."
-                );
+                let reason = "No card with that code is in your sight. Inspect a card you can see by its code: in your investigators' hands, in play, being resolved or in a public pile.".to_owned();
                 self.answer(id, "refused", Some(reason), table, false, now)
             }
         }

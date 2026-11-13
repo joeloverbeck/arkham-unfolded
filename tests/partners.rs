@@ -8,7 +8,8 @@
 
 use arkham_unfolded_experiment::{
     gathering::{
-        HostileFixture, Investigator, Observation, RetryFixture, Session, TokenFixture, continuity,
+        DrawFixture, EtherealFixture, HarmFixture, HostileFixture, Investigator, Observation,
+        RetryFixture, Session, SpellEventFixture, TokenFixture, continuity,
         inspection::{self, Sight},
     },
     partners::{Controller, Host, Table},
@@ -466,10 +467,7 @@ fn inspect_gives_a_visible_cards_table_text_and_refuses_a_hidden_card_as_no_card
         let answer = sitting.ask(json!({"op": "inspect", "partner": partner, "card": code}));
         assert_eq!(answer["status"], "refused", "{code}: {answer}");
         assert_eq!(
-            answer["error"]
-                .as_str()
-                .map(|error| error.replace(code.as_str(), "99999")),
-            nothing["error"].as_str().map(str::to_owned),
+            answer["error"], nothing["error"],
             "{code}: refused as a code that names no card"
         );
         let title = arkham_unfolded_experiment::gathering::card_title(code).unwrap();
@@ -529,6 +527,91 @@ fn a_watcher_hidden_in_patrices_hand_cannot_be_inspected_by_another_partner() {
             .unwrap()
             .contains("Secretly add this enemy to your hand")
     );
+}
+
+/// Whether Watcher from Another Dimension is in Patrice's hand.
+fn watcher_in_patrices_hand(session: &Session) -> bool {
+    hand_codes(&session.observe(), Patrice).contains(&"06017".to_owned())
+}
+
+/// Ticket #206, Hidden information: in every prepared state where Watcher from
+/// Another Dimension is hidden in Patrice's hand ("Secretly add this enemy to your
+/// hand"; FAQ 2.5 Hidden rules: it counts toward her hand size), and through the
+/// decisions that follow while it stays there, nothing Jacqueline's partner
+/// receives names it: not its views, their changes or card text, nor inspection.
+/// The table makes each following decision, preferring an option not yet taken:
+/// the first listed, or in a second walk one that acts on Watcher. The walks fight
+/// Watcher from Patrice's hand and take its attack when her deck runs out.
+#[test]
+fn a_watcher_hidden_in_patrices_hand_never_reaches_another_partner() {
+    let fixtures = [
+        HostileFixture::Retry(RetryFixture::HandWatcher),
+        HostileFixture::Ethereal(EtherealFixture::Watcher),
+        HostileFixture::Ethereal(EtherealFixture::WatcherAttack),
+        HostileFixture::SpellEvents(SpellEventFixture::RazorWatcher),
+        HostileFixture::Draws(DrawFixture::PatriceExhaustion),
+        HostileFixture::Harm(HarmFixture::IdolAttack),
+    ];
+    for (fixture, on_watcher) in fixtures
+        .into_iter()
+        .flat_map(|fixture| [(fixture, false), (fixture, true)])
+    {
+        let session = Session::with_hostile_fixture(fixture);
+        assert!(watcher_in_patrices_hand(&session), "{fixture:?}");
+        let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
+        sitting.join(&["patrice"]);
+        let jacquelines = sitting.ask(json!({"op": "join", "investigators": ["jacqueline"]}));
+        let partner = jacquelines["partner"].as_str().unwrap().to_owned();
+        let mut answers = vec![jacquelines];
+        let mut step = 0;
+        let mut taken: Vec<String> = Vec::new();
+        loop {
+            answers.push(sitting.ask(json!({"op": "observe", "partner": partner})));
+            answers.push(sitting.ask(json!({"op": "observe", "partner": partner, "full": true})));
+            answers
+                .push(sitting.ask(json!({"op": "inspect", "partner": partner, "card": "06017"})));
+            for answer in &answers {
+                let text = answer.to_string();
+                assert!(
+                    !text.contains("06017") && !text.contains("Watcher"),
+                    "{fixture:?} after {step} decisions: {answer}"
+                );
+            }
+            answers.clear();
+            let observation = sitting.rules.session.observe();
+            // An option not taken before, so that toggles do not loop.
+            let fresh = || {
+                observation
+                    .choices
+                    .iter()
+                    .filter(|choice| choice.id != "undo" && !taken.contains(&choice.id))
+            };
+            let Some(choice) = fresh()
+                .find(|choice| on_watcher && choice.label.contains("Watcher"))
+                .or_else(|| fresh().next())
+                .or_else(|| {
+                    observation
+                        .choices
+                        .iter()
+                        .find(|choice| choice.id != "undo")
+                })
+            else {
+                break;
+            };
+            taken.push(choice.id.clone());
+            continuity::commit_choice(
+                &sitting.rules.save,
+                &mut sitting.rules.session,
+                observation.revision,
+                &choice.id,
+            )
+            .unwrap();
+            step += 1;
+            if step == 16 || !watcher_in_patrices_hand(&sitting.rules.session) {
+                break;
+            }
+        }
+    }
 }
 
 /// The entries of a view's changes at `at`.

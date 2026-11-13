@@ -255,7 +255,14 @@ pub(super) fn build(
             fields.insert("resolving".into(), Value::Array(resolving));
         }
         if let Some(harm) = &pending.harm {
-            fields.insert("harm".into(), json!(harm));
+            let mut value = json!(harm);
+            // A hidden card attacking from its holder's hand names itself only to
+            // that player: the others see the harm, not its source.
+            let (hidden, holder) = inspection::HIDDEN_IN_HAND;
+            if harm.source.contains(&format!("[{hidden}]")) && !sight.sees(holder) {
+                value.as_object_mut().expect("An object").remove("source");
+            }
+            fields.insert("harm".into(), value);
         }
         if let Some(test) = &play.test {
             let own: Vec<u16> = mine
