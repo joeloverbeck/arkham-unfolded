@@ -871,6 +871,58 @@ fn a_basic_fight_names_its_enemy_during_the_test_and_in_its_result() {
     assert!(!shown.contains("Combat test"), "{shown}");
 }
 
+/// #210, tests name their action and target: an investigation, an evasion and a
+/// treachery's test each say what they attempt in the decision display.
+#[test]
+fn investigate_evade_and_treachery_tests_name_what_they_attempt() {
+    use crate::gathering::{CryptChillFixture, SearchFixture};
+    let choose = |session: &mut Session, id: &str| {
+        let revision = session.revision();
+        session.choose(revision, id).unwrap();
+    };
+    let mut investigation = Session::with_seed(89);
+    for id in [
+        "lead:tony",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "turn:patrice",
+        "action:ordinary:investigate",
+    ] {
+        choose(&mut investigation, id);
+    }
+    let mut evasion =
+        Session::with_hostile_fixture(HostileFixture::Search(SearchFixture::GetOverHereFrozen));
+    let rats = evasion
+        .observe()
+        .play
+        .unwrap()
+        .scenario
+        .enemies
+        .iter()
+        .find(|enemy| enemy.card.code == "01159")
+        .unwrap()
+        .card
+        .id;
+    choose(&mut evasion, &format!("action:ordinary:evade:{rats}"));
+    let mut treachery =
+        Session::with_hostile_fixture(HostileFixture::CryptChill(CryptChillFixture::Assets));
+    choose(&mut treachery, "revelation:resolve");
+    for (session, named) in [
+        (investigation, "Patrice Hathaway investigates Study"),
+        (evasion, "Tony Morgan evades Swarm of Rats"),
+        (treachery, "Tony Morgan tests Willpower for Crypt Chill"),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("named.json");
+        continuity::save_session(&path, &session).unwrap();
+        let mut app = host_with_table(Table::new(session, path), false);
+        finish_presentation(&mut app);
+        let shown = rendered_text(&mut app);
+        assert!(shown.contains(named), "{named}: {shown}");
+    }
+}
+
 #[test]
 fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
     let directory = tempfile::tempdir().unwrap();
