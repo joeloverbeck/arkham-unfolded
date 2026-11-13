@@ -32,7 +32,9 @@ mod live;
 mod moments;
 mod option_labels;
 pub use option_labels::counted;
+mod ownership;
 mod peter;
+pub use ownership::{OptionOwner, OwnedOption};
 mod phases;
 pub use moments::{DeckStep, DrawBatch, DrawCue, DrawSource, PresentationMoment};
 pub use peter::PeterFixture;
@@ -241,6 +243,8 @@ pub struct Observation {
     pub history: Vec<String>,
     pub source: PreparationSources,
     pub lead: Option<Investigator>,
+    /// Display focus only: whose decision the table names and frames. Who may
+    /// answer each option is [`Session::ownership`].
     pub decision_owner: Option<Investigator>,
     pub investigators: Vec<InvestigatorView>,
     pub scenario: Option<ScenarioSetup>,
@@ -551,6 +555,59 @@ impl Session {
             play: self.runtime.as_ref().map(runtime::Game::observe),
             group_clue_payment,
         }
+    }
+
+    /// Who may answer each listed option of the pending decision, in listed
+    /// order. Undo is left out: it reverts the previous decision rather than
+    /// answering this one. Derived from the session each time; never saved.
+    pub fn ownership(&self) -> Vec<OwnedOption> {
+        let choices: Vec<_> = self
+            .observe()
+            .choices
+            .into_iter()
+            .filter(|choice| choice.id != "undo")
+            .collect();
+        let owners = match self.stage {
+            Stage::ChooseLead => vec![OptionOwner::Table; choices.len()],
+            Stage::Mulligan => {
+                vec![
+                    OptionOwner::Investigator(self.decision_owner().expect("Mulligan owner"));
+                    choices.len()
+                ]
+            }
+            Stage::GameplayUnavailable => vec![],
+            Stage::Playing => {
+                ownership::owners(self.runtime.as_ref().expect("Runtime stage"), &choices)
+            }
+        };
+        choices
+            .into_iter()
+            .zip(owners)
+            .map(|(choice, owner)| OwnedOption {
+                id: choice.id,
+                owner,
+            })
+            .collect()
+    }
+
+    /// The owner of an option the pending decision accepts: a listed option,
+    /// or a number or allocation named in place of a listed option's
+    /// placeholder, which belongs to the owner of that listed option.
+    pub fn option_owner(&self, id: &str) -> Option<OptionOwner> {
+        let owned = self.ownership();
+        if let Some(option) = owned.iter().find(|option| option.id == id) {
+            return Some(option.owner.clone());
+        }
+        self.runtime.as_ref()?.direct_choice(id)?;
+        owned
+            .into_iter()
+            .find(|option| {
+                [GROUP_CLUE_CONTRIBUTIONS, PREDICTION_MARGIN]
+                    .iter()
+                    .filter_map(|placeholder| option.id.strip_suffix(placeholder))
+                    .any(|template| id.starts_with(template))
+            })
+            .map(|option| option.owner)
     }
 
     /// Only the latest live transition, never historical steps; empty after loading.
