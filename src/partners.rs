@@ -8,7 +8,8 @@
 //!
 //! A partner joins, which claims investigators the human handed to partners; waits
 //! until one of them has a decision pending once the table has presented it (a
-//! reading or the human's dialog may still be open, #210); observes its view,
+//! reading or the human's dialog may still be open, #210), or listens to the table
+//! without being answered its own decision; observes its view,
 //! complete once and then as changes (#206); inspects any card it can see; chooses
 //! an option by identity at the current revision; and leaves. A choice is
 //! applied only once the table settles, with nothing of the human's open over it,
@@ -193,8 +194,15 @@ struct Held<R> {
 }
 
 enum Pending {
-    Wait { deadline: Instant },
-    Choose { revision: u64, id: String },
+    /// A wait; a listening one never answers its partner's own decision.
+    Wait {
+        deadline: Instant,
+        listen: bool,
+    },
+    Choose {
+        revision: u64,
+        id: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -208,6 +216,10 @@ enum Request {
         partner: String,
         #[serde(default)]
         timeout_seconds: Option<u64>,
+        /// Hear the table while a decision of this partner's waits: answer only
+        /// another event, or the period's end (stories 28-29).
+        #[serde(default)]
+        listen: bool,
     },
     Observe {
         partner: String,
@@ -351,14 +363,14 @@ impl<R> Host<R> {
         let mut moment: Option<Moment> = None;
         self.held.iter().any(|held| match &held.pending {
             Pending::Choose { .. } => settled,
-            Pending::Wait { deadline } => {
+            Pending::Wait { deadline, listen } => {
                 now >= *deadline
                     || self.changed(&held.partner)
                     || self.talk_untold(&held.partner)
                     || (presented
                         && moment
                             .get_or_insert_with(|| self.moment(session))
-                            .event(self, &held.partner)
+                            .event(self, &held.partner, *listen)
                             .is_some())
             }
         })
@@ -503,7 +515,9 @@ impl<R> Host<R> {
                 answers
             }
             Request::Wait {
-                timeout_seconds, ..
+                timeout_seconds,
+                listen,
+                ..
             } => {
                 self.hear(&id, now);
                 let period = timeout_seconds
@@ -514,6 +528,7 @@ impl<R> Host<R> {
                     partner: id,
                     pending: Pending::Wait {
                         deadline: now + period,
+                        listen,
                     },
                 });
                 self.poll(table, now)
@@ -581,13 +596,16 @@ impl<R> Host<R> {
             let (presented, settled) = (table.presented(), table.settled());
             let revision = table.session().revision();
             let event = match &self.held[index].pending {
-                Pending::Wait { .. } if presented && !self.changed(&partner) => moment
-                    .get_or_insert_with(|| self.moment(table.session()))
-                    .event(self, &partner),
+                Pending::Wait { listen, .. } if presented && !self.changed(&partner) => {
+                    let listen = *listen;
+                    moment
+                        .get_or_insert_with(|| self.moment(table.session()))
+                        .event(self, &partner, listen)
+                }
                 _ => None,
             };
             let outcome = match &self.held[index].pending {
-                Pending::Wait { deadline } => {
+                Pending::Wait { deadline, .. } => {
                     if self.changed(&partner) {
                         Some(("control_changed", None))
                     } else if let Some(event) = event {
@@ -1075,10 +1093,10 @@ struct Moment {
 
 impl Moment {
     /// What a held wait of `partner` answers now, at a table that has presented its
-    /// decision: a group
-    /// choice it has not been told of, news of a shared decision it takes part in
-    /// that changed since its last view, or a decision of its own.
-    fn event<R>(&self, host: &Host<R>, partner: &str) -> Option<&'static str> {
+    /// decision: a group choice it has not been told of, news of a shared decision
+    /// it takes part in that changed since its last view, or, unless it listens, a
+    /// decision of its own.
+    fn event<R>(&self, host: &Host<R>, partner: &str, listen: bool) -> Option<&'static str> {
         if host.group_untold(partner, &self.routing, self.observation.revision) {
             return Some("group_choice");
         }
@@ -1093,7 +1111,7 @@ impl Moment {
         });
         if news {
             Some("shared")
-        } else if self.awaited.iter().any(|(player, _)| *player == me) {
+        } else if !listen && self.awaited.iter().any(|(player, _)| *player == me) {
             Some("decision")
         } else {
             None

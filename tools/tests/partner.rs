@@ -58,7 +58,7 @@ fn each_subcommand_sends_its_protocol_request_and_prints_the_answer_unchanged() 
         format!("{JOINED}\n")
     );
 
-    let cases: [(&[&str], serde_json::Value); 9] = [
+    let cases: [(&[&str], serde_json::Value); 10] = [
         (
             &["join", "patrice", "jacqueline"],
             serde_json::json!({"op": "join", "investigators": ["patrice", "jacqueline"]}),
@@ -70,6 +70,10 @@ fn each_subcommand_sends_its_protocol_request_and_prints_the_answer_unchanged() 
         (
             &["wait", "a1b2", "--timeout", "30"],
             serde_json::json!({"op": "wait", "partner": "a1b2", "timeout_seconds": 30}),
+        ),
+        (
+            &["wait", "a1b2", "--listen"],
+            serde_json::json!({"op": "wait", "partner": "a1b2", "timeout_seconds": 240, "listen": true}),
         ),
         (
             &["observe", "a1b2"],
@@ -175,6 +179,7 @@ fn the_default_socket_follows_the_environment_and_help_teaches_the_loop() {
         INSTRUCTIONS,
         "partner join",
         "partner wait PARTNER",
+        "wait PARTNER --listen",
         "partner choose PARTNER REVISION ID",
         "partner inspect PARTNER CODE",
         "partner ready PARTNER REVISION",
@@ -209,6 +214,7 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "scripts/tools partner join",
         "join patrice",
         "scripts/tools partner wait PARTNER",
+        "wait PARTNER --listen",
         "scripts/tools partner observe PARTNER",
         "observe PARTNER --full",
         "scripts/tools partner inspect PARTNER CODE",

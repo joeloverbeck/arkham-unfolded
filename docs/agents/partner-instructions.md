@@ -56,6 +56,16 @@ It answers with the first thing that concerns you, or with `nothing_yet` once it
 | `closed` | Your session ended, and `reason` says why. It carries no view. | Stop. When the reason says the attempt restarted, join again. |
 | `nothing_yet` | The period ended with nothing for you (exit status 3). | Wait again. |
 
+### Listening first
+
+A plain `wait` answers `decision` at once while one of your decisions is pending. To hear the table before you decide, say what you are weighing if it helps, then listen:
+
+```sh
+scripts/tools partner wait PARTNER --listen
+```
+
+A listening wait never answers your own pending decision. It answers another player's message, a group choice opening, a change to a shared decision, a change of the investigators you play or the end of your session, or `nothing_yet` once its period ends. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
+
 ### Waiting in Claude Code
 
 Run `wait` with the Bash tool's `run_in_background` option and `--timeout 590`, then end your turn. Claude Code re-invokes you when the command exits, and you read its output then; waiting this way spends no tokens. Run every other command in the foreground. Give `choose` the Bash tool's longest timeout, 600000 ms, because it [waits for the table to settle](#decide).
@@ -93,7 +103,7 @@ It answers `inspected` with the card's full text as the table's Inspect shows it
 
 ## Group choices
 
-Group choices belong to the lead investigator's player: who takes the next turn, choices a card gives "the lead investigator", and the order of simultaneous effects. After the lead is eliminated, the player of the next investigator in player order makes them, starting with the choice of a new lead. `decision.group_choice` names its `arbiter`, says whether it is `yours`, and lists what it is `choosing_among`; only the arbiter's player has its options. Every player is told when one opens and may speak before it is made. When you arbitrate, weigh what the other players have said; the choice is yours.
+Group choices belong to the lead investigator's player: who takes the next turn, choices a card gives "the lead investigator", and the order of simultaneous effects. After the lead is eliminated, the player of the next investigator in player order makes them, starting with the choice of a new lead. `decision.group_choice` names its `arbiter`, says whether it is `yours`, and lists what it is `choosing_among`; only the arbiter's player has its options. Every player is told when one opens and may speak before it is made. When you arbitrate, weigh what the other players have said, and [listen first](#listening-first) when you want to hear them; the choice is yours.
 
 ## Shared decisions
 

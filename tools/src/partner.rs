@@ -29,6 +29,7 @@ the notes to keep.
 
   scripts/tools partner join [INVESTIGATOR...]    keep the answer's \"partner\"
   scripts/tools partner wait PARTNER [--timeout SECONDS]
+  scripts/tools partner wait PARTNER --listen     hear the table first
   scripts/tools partner observe PARTNER
   scripts/tools partner observe PARTNER --full    the complete view and recent talk
   scripts/tools partner inspect PARTNER CODE
@@ -79,6 +80,10 @@ enum Request {
         /// Seconds to wait before answering nothing_yet.
         #[arg(long, default_value_t = 240, value_parser = clap::value_parser!(u64).range(1..=590))]
         timeout: u64,
+        /// Hear the table before deciding: never answer your own pending decision,
+        /// only another event or nothing_yet.
+        #[arg(long)]
+        listen: bool,
     },
     /// Print your current view, with the changes since your last.
     Observe {
@@ -118,11 +123,18 @@ pub fn run(args: Args) -> Result<u8> {
         Request::Join { investigators } => {
             (json!({"op": "join", "investigators": investigators}), None)
         }
-        Request::Wait { partner, timeout } => (
-            json!({"op": "wait", "partner": partner, "timeout_seconds": timeout}),
+        Request::Wait {
+            partner,
+            timeout,
+            listen,
+        } => {
+            let mut request = json!({"op": "wait", "partner": partner, "timeout_seconds": timeout});
+            if listen {
+                request["listen"] = json!(true);
+            }
             // The table answers at its timeout; this only bounds a table that stops.
-            Some(Duration::from_secs(timeout + 30)),
-        ),
+            (request, Some(Duration::from_secs(timeout + 30)))
+        }
         Request::Observe { partner, full } => {
             let mut request = json!({"op": "observe", "partner": partner});
             if full {
