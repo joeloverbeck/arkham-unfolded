@@ -1143,7 +1143,7 @@ fn the_humans_own_turn_choice_is_shown_waiting_until_the_partner_passes() {
 /// Review fix G2 (F1: a fast play moves the decision on, so the active player
 /// decides again). Joel's held click in his own turn is released when Patrice's
 /// partner plays her Violin instead of passing: his decision display says that his
-/// choice was not applied because another player acted first, and asks him to
+/// choice was not applied because the decision moved on first, and asks him to
 /// choose again.
 #[test]
 fn the_humans_held_choice_released_by_a_fast_play_is_announced() {
@@ -1168,7 +1168,7 @@ fn the_humans_held_choice_released_by_a_fast_play_is_announced() {
         "{shown}"
     );
     assert!(
-        shown.contains("End this investigator's turn, was not applied: another player acted"),
+        shown.contains("End this investigator's turn, was not applied: the decision moved on"),
         "{shown}"
     );
     assert!(shown.contains("Choose again"), "{shown}");

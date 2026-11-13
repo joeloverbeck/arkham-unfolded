@@ -44,8 +44,10 @@ table applies a choice only once it settles, so choose waits until then. In
 another investigator's turn, a fast card or ability of yours wakes you before
 each of that investigator's actions: use it, or pass with ready. In your own
 investigators' turn, while another player may still use one first, choose
-answers \"held\" at once; a later wait answers \"chosen\" once it is applied, or
-\"released\" when a fast play came first and you decide again. After
+answers \"held\" at once, except for Undo, your part of a shared decision and
+an act's clue payment, which are not held; a later wait answers \"chosen\" once
+the held choice is applied, or \"released\" when a fast play came first and you
+decide again. After
 the first, complete view, each view reports the table as \"changes\" since your
 last. A wait answers \"nothing_yet\" after its timeout (240 s by default, at
 most 590): run it again. When the pasted line names --socket PATH, put it on

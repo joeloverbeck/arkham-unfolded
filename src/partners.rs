@@ -964,8 +964,9 @@ impl<R> Host<R> {
             let hold = self.turn_hold.take().expect("Held");
             self.release(
                 &hold,
-                "another player acted in the player window first, so the decision moved on",
+                "the decision moved on before it could be applied",
                 revision,
+                true,
             );
             return false;
         }
@@ -982,6 +983,7 @@ impl<R> Host<R> {
                 &hold,
                 "the investigator it was for is no longer yours",
                 revision,
+                false,
             );
             return false;
         }
@@ -1009,10 +1011,10 @@ impl<R> Host<R> {
                     known.outcome = Some(("chosen", None));
                 }
             }
-            (Controller::Partner(_), Err(reason)) => self.release(&hold, reason, revision),
+            (Controller::Partner(_), Err(reason)) => self.release(&hold, reason, revision, true),
             (_, Err(error)) => {
                 eprintln!("Agent partners: the human's turn choice was not applied: {error}");
-                self.release(&hold, error, revision);
+                self.release(&hold, error, revision, true);
             }
             (_, Ok(())) => {}
         }
@@ -1021,8 +1023,10 @@ impl<R> Host<R> {
 
     /// Tell the holder its held turn choice was released, not applied, and why: a
     /// partner through its next wait, the human in his decision display while the
-    /// decision stays at `revision`.
-    fn release(&mut self, hold: &TurnHold, why: &str, revision: u64) {
+    /// decision stays at `revision`. The human is asked to choose again only while
+    /// the investigator it was for is still his (`still_his`): once he has handed it
+    /// to partners, the decision may be theirs.
+    fn release(&mut self, hold: &TurnHold, why: &str, revision: u64, still_his: bool) {
         let released = format!("Your held choice, {}, was not applied: {why}.", hold.label);
         match &hold.player {
             Controller::Partner(partner) => {
@@ -1033,7 +1037,10 @@ impl<R> Host<R> {
                     ));
                 }
             }
-            _ => self.human_released = Some((revision, format!("{released} Choose again."))),
+            _ if still_his => {
+                self.human_released = Some((revision, format!("{released} Choose again.")));
+            }
+            _ => self.human_released = Some((revision, released)),
         }
     }
 
