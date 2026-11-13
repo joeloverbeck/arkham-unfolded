@@ -1031,10 +1031,8 @@ impl<R> Host<R> {
         match &hold.player {
             Controller::Partner(partner) => {
                 if let Some(known) = self.partners.iter_mut().find(|known| known.id == *partner) {
-                    known.outcome = Some((
-                        RELEASED,
-                        Some(format!("{released} Decide again from the current view.")),
-                    ));
+                    known.outcome =
+                        Some((RELEASED, Some(format!("{released} Read the current view."))));
                 }
             }
             _ if still_his => {

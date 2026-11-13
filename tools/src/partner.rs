@@ -46,8 +46,9 @@ each of that investigator's actions: use it, or pass with ready. In your own
 investigators' turn, while another player may still use one first, choose
 answers \"held\" at once, except for Undo, your part of a shared decision and
 an act's clue payment, which are not held; a later wait answers \"chosen\" once
-the held choice is applied, or \"released\" when a fast play came first and you
-decide again. After
+the held choice is applied, or \"released\" with its reason when it was not:
+the decision moved on first (for example, another player's fast play), or the
+investigator is no longer yours; then read the current view. After
 the first, complete view, each view reports the table as \"changes\" since your
 last. A wait answers \"nothing_yet\" after its timeout (240 s by default, at
 most 590): run it again. When the pasted line names --socket PATH, put it on
