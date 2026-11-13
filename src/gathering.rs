@@ -275,6 +275,15 @@ impl Observation {
     }
 }
 
+/// A peril encounter as [`Session::peril`] reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Peril {
+    /// An encounter card with the Peril keyword awaits its revelation.
+    Resolving,
+    /// The latest decision drew one and resolved its revelation.
+    Resolved,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Session {
@@ -637,6 +646,34 @@ impl Session {
     /// The revision a choice must name, as [`Self::observe`] reports it.
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// A peril encounter, while its investigator cannot confer with the other
+    /// players (RR p.16): an encounter card with the Peril keyword awaiting its
+    /// revelation, or one the latest decision drew and resolved. Watcher from Another
+    /// Dimension's revelation usually resolves within the decision that draws it;
+    /// that decision reports it until the next one, and the table decides how long it
+    /// shows the encounter. Derived each time and never saved; after loading, only a
+    /// pending revelation is reported, as the latest transition is not kept.
+    pub fn peril(&self) -> Option<Peril> {
+        let pending = self.runtime.as_ref().is_some_and(|game| {
+            game.frames.iter().any(|frame| {
+                matches!(frame, runtime::Frame::Revelation(revelation)
+                    if cards::peril(&revelation.card.code))
+            })
+        });
+        let drawn = self.transition.steps.iter().any(|moment| {
+            moment
+                .play
+                .pending_revelation
+                .as_ref()
+                .is_some_and(|revelation| cards::peril(&revelation.card.code))
+        });
+        if pending {
+            Some(Peril::Resolving)
+        } else {
+            drawn.then_some(Peril::Resolved)
+        }
     }
 
     /// Only the latest live transition, never historical steps; empty after loading.

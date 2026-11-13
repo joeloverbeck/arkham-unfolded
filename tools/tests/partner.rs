@@ -182,3 +182,45 @@ fn the_default_socket_follows_the_environment_and_help_teaches_the_loop() {
         assert!(help.contains(step), "{step} in {help}");
     }
 }
+
+/// #209: `say` sends one message, its words joined as the player typed them, and a
+/// refused message exits 1; help teaches table talk.
+#[test]
+fn say_sends_one_message_and_help_teaches_table_talk() {
+    let (sent, output) = exchange(
+        &["say", "a1b2", "I'll", "take the", "Attic."],
+        r#"{"ok":true,"status":"said"}"#,
+    );
+    assert_eq!(
+        sent,
+        serde_json::json!({"op": "say", "partner": "a1b2", "text": "I'll take the Attic."})
+    );
+    assert!(output.status.success(), "{output:?}");
+    let (_, output) = exchange(
+        &["say", "a1b2", "Again."],
+        r#"{"ok":false,"status":"refused","error":"chatter limit"}"#,
+    );
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+
+    let directory = tempfile::tempdir().unwrap();
+    let output = partner(&directory.path().join("partners.sock"), &["say", "a1b2"]);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "A message is required: {output:?}"
+    );
+
+    let help = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .args(["partner", "--help"])
+        .output()
+        .unwrap();
+    let help = String::from_utf8(help.stdout).unwrap();
+    for taught in [
+        "partner say PARTNER MESSAGE",
+        "table_talk",
+        "peril",
+        "in a row",
+    ] {
+        assert!(help.contains(taught), "{taught} in {help}");
+    }
+}

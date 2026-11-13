@@ -1727,6 +1727,7 @@ pub(super) fn lita_definition() -> &'static cards::CardDefinition {
         health: Some(3),
         sanity: Some(3),
         enemy: None,
+        peril: false,
         effective_text: "While you control Lita Chantler, she gains:\n\"Each investigator at your location gets +1 [combat].\n[reaction] When an investigator at your location successfully attacks a [[Monster]] enemy: That investigator deals +1 damage.\"",
     };
     &LITA

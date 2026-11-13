@@ -35,7 +35,8 @@ investigators; you never touch the window, saves or settings.
      scripts/tools partner wait PARTNER
    Blocks until one of your investigators has a decision at a settled table
    (status \"decision\"), a group choice opens (\"group_choice\", once per choice),
-   the investigators you play change (\"control_changed\"), or
+   another player speaks (\"table_talk\"), the investigators you play change
+   (\"control_changed\"), or
    the table closes (\"closed\": stop). After its timeout (240 s by default, --timeout
    SECONDS up to 590) it prints \"nothing_yet\" and exits 3: run it again.
    Read the answer's \"view\": \"decision.options\" lists only your options (\"id\",
@@ -73,6 +74,16 @@ named only by their investigators.
 
 Undo: while your own latest decision is the latest one and nothing has followed
 it, the view's \"decision.undo\" offers it; choose its \"id\" (\"undo\") to revert it.
+
+Table talk: every player hears every message, and a message never makes a decision.
+     scripts/tools partner say PARTNER MESSAGE
+says one short message (up to 280 characters) as your investigators. Speak as a
+player, not in character, and only when it matters: plans, warnings, offers and
+replies. Do not name or read out the cards in your hand. Another player's messages
+reach you once, in the next answer's \"view.table_talk\", each with its \"speaker\"
+(that player's investigators), \"text\" and \"round\". You may send at most 3
+messages in a row until play moves on or another player speaks, and no one may
+speak while a peril encounter resolves; a refused say exits 1.
 
 Waiting costs nothing: in Claude Code, give wait a Bash timeout above its own (for
 example 300000 ms) or let it run in the background, which re-invokes you when it
@@ -127,6 +138,12 @@ enum Request {
     },
     /// Leave the table; your investigators wait for another partner or the player.
     Leave { partner: String },
+    /// Say one short message to the table; its words are joined with spaces.
+    Say {
+        partner: String,
+        #[arg(required = true, value_name = "MESSAGE")]
+        words: Vec<String>,
+    },
 }
 
 /// Exit 0 when the table answered, 1 when it refused, 3 when a wait found nothing yet.
@@ -161,6 +178,10 @@ pub fn run(args: Args) -> Result<u8> {
             None,
         ),
         Request::Leave { partner } => (json!({"op": "leave", "partner": partner}), None),
+        Request::Say { partner, words } => (
+            json!({"op": "say", "partner": partner, "text": words.join(" ")}),
+            None,
+        ),
     };
     let stream = connect(&socket)?;
     // Wake regularly so an interrupt is honoured during a long wait.

@@ -13,13 +13,16 @@
 //! applied only once the table settles, through the table's own commit path. A group
 //! choice is its arbiter's player's, and every partner's wait hears it open (#207).
 //! Shared decisions that span players stay with the human in this version.
+//! Every player may speak, and every other player hears each message (#209).
 //!
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
 
 mod routing;
+mod talk;
 mod view;
 
 pub use routing::Routing;
+pub use talk::{CHATTER_LIMIT, LONGEST_MESSAGE, PERIL, Said};
 
 use crate::gathering::{
     Investigator, OptionOwner, Session,
@@ -120,6 +123,7 @@ pub struct Host<R> {
     claims: [Option<String>; 3],
     partners: Vec<Partner>,
     held: Vec<Held<R>>,
+    talk: talk::Talk,
 }
 
 struct Partner {
@@ -135,6 +139,8 @@ struct Partner {
     heard: Instant,
     /// The revision of the last group choice a wait reported to this partner.
     told_group: Option<u64>,
+    /// The table talk this partner has been told: messages before this index.
+    told_talk: usize,
 }
 
 struct Held<R> {
@@ -178,6 +184,10 @@ enum Request {
     Leave {
         partner: String,
     },
+    Say {
+        partner: String,
+        text: String,
+    },
 }
 
 impl<R> Default for Host<R> {
@@ -188,6 +198,7 @@ impl<R> Default for Host<R> {
             claims: [None, None, None],
             partners: Vec::new(),
             held: Vec::new(),
+            talk: talk::Talk::default(),
         }
     }
 }
@@ -258,6 +269,28 @@ impl<R> Host<R> {
         Some(now.saturating_duration_since(partner.heard))
     }
 
+    /// The sitting's table talk, oldest first: kept while the table is open, and
+    /// never saved with the attempt.
+    pub fn table_talk(&self) -> &[Said] {
+        self.talk.said()
+    }
+
+    /// Why no one may speak now, if no one may.
+    pub fn talk_closed(&mut self, table: &impl Table) -> Option<&'static str> {
+        self.talk.closed(table)
+    }
+
+    /// The human at the window speaks, as the investigators the human plays. Every
+    /// partner's wait hears it at the next [`Self::poll`].
+    pub fn human_says(&mut self, text: &str, table: &impl Table) -> Result<(), String> {
+        let control = self.control();
+        let speaker = Investigator::ALL
+            .into_iter()
+            .filter(|who| control.controller(*who) == Controller::Human)
+            .collect();
+        self.talk.say(None, speaker, text, table)
+    }
+
     /// Whether [`Self::poll`] would answer a held request now.
     pub fn due(&self, session: &Session, settled: bool, now: Instant) -> bool {
         let mut routing: Option<Routing> = None;
@@ -266,6 +299,7 @@ impl<R> Host<R> {
             Pending::Wait { deadline } => {
                 now >= *deadline
                     || self.changed(&held.partner)
+                    || self.talk_untold(&held.partner)
                     || (settled && {
                         let routed =
                             routing.get_or_insert_with(|| Routing::of(session, &self.control()));
@@ -292,7 +326,7 @@ impl<R> Host<R> {
                     .ok()
                     .and_then(|value| value["partner"].as_str().map(str::to_owned));
                 let reason = format!(
-                    "Not a partner request ({error}). A partner may join, wait, observe, inspect, choose or leave."
+                    "Not a partner request ({error}). A partner may join, wait, observe, inspect, choose, say or leave."
                 );
                 let answer = match partner.filter(|id| self.known(id)) {
                     Some(id) => self.answer(&id, "refused", Some(reason), table, false, now),
@@ -309,6 +343,7 @@ impl<R> Host<R> {
             | Request::Observe { partner, .. }
             | Request::Inspect { partner, .. }
             | Request::Choose { partner, .. }
+            | Request::Say { partner, .. }
             | Request::Leave { partner } => partner.clone(),
         };
         if !self.known(&id) {
@@ -325,6 +360,18 @@ impl<R> Host<R> {
                 vec![(reply, self.answer(&id, "observed", None, table, full, now))]
             }
             Request::Inspect { card, .. } => vec![(reply, self.inspect(&id, &card, table, now))],
+            Request::Say { text, .. } => {
+                self.hear(&id, now);
+                let speaker = self.control().held_by(&id);
+                let answer = match self.talk.say(Some(&id), speaker, &text, &*table) {
+                    Ok(()) => self.answer(&id, "said", None, table, false, now),
+                    Err(reason) => self.answer(&id, "refused", Some(reason), table, false, now),
+                };
+                // Every other partner's wait hears it now.
+                let mut answers = vec![(reply, answer)];
+                answers.extend(self.poll(table, now));
+                answers
+            }
             Request::Leave { .. } => {
                 self.partners.retain(|partner| partner.id != id);
                 for claim in &mut self.claims {
@@ -386,9 +433,11 @@ impl<R> Host<R> {
     }
 
     /// Answer every held request whose moment has come: a wait whose partner has a
-    /// decision at a settled table, hears a group choice open there, whose control
-    /// changed or whose period ran out; and a choice once the table has settled.
+    /// decision at a settled table, hears a group choice open there, has table talk
+    /// to hear, whose control changed or whose period ran out; and a choice once the
+    /// table has settled.
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
+        self.talk.watch(&*table);
         let mut answers = Vec::new();
         let mut index = 0;
         // Routed only once the table has settled, and again after a commit.
@@ -413,6 +462,9 @@ impl<R> Host<R> {
                         && routed().awaiting() == Some(&Controller::Partner(partner.clone()))
                     {
                         Some(("decision", None))
+                    } else if self.talk_untold(&partner) {
+                        // After a decision, whose answer carries the talk as well.
+                        Some(("table_talk", None))
                     } else if now >= *deadline {
                         let held = self.held.remove(index);
                         answers.push((
@@ -466,6 +518,14 @@ impl<R> Host<R> {
         if let Some(partner) = self.partners.iter_mut().find(|partner| partner.id == id) {
             partner.heard = now;
         }
+    }
+
+    /// Whether another player has said something `id` has not been told.
+    fn talk_untold(&self, id: &str) -> bool {
+        self.partners
+            .iter()
+            .find(|partner| partner.id == id)
+            .is_some_and(|partner| self.talk.unheard(partner.told_talk, id))
     }
 
     /// Whether a group choice is open at `revision` and no wait has told `id` yet.
@@ -527,6 +587,8 @@ impl<R> Host<R> {
             board: None,
             heard: now,
             told_group: None,
+            // A player hears what is said from when it sits down.
+            told_talk: self.talk.said().len(),
         });
         self.answer(&id, "joined", None, table, false, now)
     }
@@ -652,7 +714,7 @@ impl<R> Host<R> {
                 partner.played.push(*who);
             }
         }
-        let view = view::build(
+        let mut view = view::build(
             table.session(),
             &control,
             &routing,
@@ -663,6 +725,13 @@ impl<R> Host<R> {
                 full,
             },
         );
+        // Table talk is outside the board: each message from another player once,
+        // with the first answer after it that carries a view.
+        let talk = self.talk.since(partner.told_talk, id);
+        partner.told_talk = self.talk.said().len();
+        if !talk.is_empty() {
+            view["table_talk"] = Value::Array(talk);
+        }
         let mut answer = json!({
             "ok": error.is_none(),
             "mode": "partner",
