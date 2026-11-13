@@ -228,6 +228,51 @@ pub(super) fn focus(view: &Observation) -> Area {
         .map_or(Area::Scenario, |owner| Area::Investigator(owner.index()))
 }
 
+/// What Follow frames for `view`, or `None` to leave the camera where it is. With
+/// agent partners, Follow frames only the human's own investigators' decisions and
+/// the tests they take part in, and the scenario's end (#210).
+pub(super) fn follow(
+    view: &Observation,
+    control: &crate::partners::Control,
+) -> Option<(Vec3, f32)> {
+    followed(view, control).then(|| framing(view))
+}
+
+fn followed(view: &Observation, control: &crate::partners::Control) -> bool {
+    use crate::partners::Controller;
+    if control.solo() {
+        return true;
+    }
+    let humans = |who: Investigator| control.controller(who) == Controller::Human;
+    if let Some(play) = &view.play {
+        if play.scenario.outcome.is_some() {
+            return true;
+        }
+        if let Some(test) = &play.test {
+            return humans(test.tester)
+                || test.committed.iter().any(|card| humans(card.owner))
+                || test
+                    .commitment
+                    .iter()
+                    .any(|card| card.selected && humans(card.owner));
+        }
+    }
+    match view.decision_owner {
+        Some(owner) => humans(owner),
+        // A group choice is the human's when the human's controls offer it, since
+        // the table's view keeps only the human's options; Undo decides nothing.
+        // A presentation moment names no decision, only whose turn it is.
+        None => {
+            view.choices.iter().any(|choice| choice.id != "undo")
+                || view
+                    .play
+                    .as_ref()
+                    .and_then(|play| play.actor)
+                    .is_some_and(humans)
+        }
+    }
+}
+
 pub(super) fn framing(view: &Observation) -> (Vec3, f32) {
     view.play
         .as_ref()

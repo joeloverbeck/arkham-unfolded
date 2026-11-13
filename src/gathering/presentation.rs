@@ -81,6 +81,75 @@ pub struct DiscardView {
     pub ordered: Vec<CardView>,
 }
 
+/// What a skill test attempts, as players name it (#210).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TestAction {
+    Fight,
+    Evade,
+    Investigate,
+    /// Parley with a card in play: Lita Chantler.
+    Parley,
+    /// A test a card calls for: a treachery's revelation, a threat in play, or an
+    /// event such as A Test of Will.
+    Card,
+}
+
+/// What a skill test acts on (the enemy fought or evaded, the location
+/// investigated, Lita for a parley) or, for a test a card calls for, that card.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TestTarget {
+    /// The card's or the location's code.
+    pub code: String,
+    pub title: String,
+}
+
+pub(super) fn test_action(test: &SkillTest) -> TestAction {
+    match test.operation {
+        TestOperation::Fight { .. } => TestAction::Fight,
+        TestOperation::Evade { .. } => TestAction::Evade,
+        TestOperation::Investigate { .. } => TestAction::Investigate,
+        TestOperation::LitaParley => TestAction::Parley,
+        TestOperation::CancelRevelation { .. }
+        | TestOperation::RottingRemains { .. }
+        | TestOperation::GraspingHands { .. }
+        | TestOperation::CryptChill { .. }
+        | TestOperation::DiscardThreat { .. } => TestAction::Card,
+    }
+}
+
+pub(super) fn test_target(game: &Game, test: &SkillTest) -> Option<TestTarget> {
+    let named = |code: &str| TestTarget {
+        code: code.to_owned(),
+        title: super::content::title(code).unwrap_or(code).to_owned(),
+    };
+    let card = |card: &CardView| TestTarget {
+        code: card.code.clone(),
+        title: card.title.clone(),
+    };
+    match &test.operation {
+        TestOperation::Fight { enemy, .. } | TestOperation::Evade { enemy } => game
+            .scenario
+            .enemies
+            .iter()
+            .map(|enemy| &enemy.card)
+            // A weakness enemy can be fought from its owner's hand.
+            .chain(game.players.iter().flat_map(|player| &player.hand))
+            .find(|card| card.id == *enemy)
+            .map(card),
+        TestOperation::Investigate { location, .. } => Some(named(location)),
+        TestOperation::LitaParley => Some(named("01117")),
+        TestOperation::DiscardThreat { owner, card: id } => game.players[owner.index()]
+            .threats
+            .iter()
+            .find(|threat| threat.id == *id)
+            .map(card),
+        TestOperation::CancelRevelation { .. }
+        | TestOperation::RottingRemains { .. }
+        | TestOperation::GraspingHands { .. }
+        | TestOperation::CryptChill { .. } => test_source(game, test).as_ref().map(card),
+    }
+}
+
 /// Temporary test sources otherwise held by a continuation still need their
 /// actual face in Test. This projection does not move a card between rules zones.
 pub(super) fn test_source(game: &Game, test: &SkillTest) -> Option<CardView> {

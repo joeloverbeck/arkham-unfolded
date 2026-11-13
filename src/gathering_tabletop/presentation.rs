@@ -143,6 +143,11 @@ impl Presentation {
         self.results.current()
     }
 
+    /// How many results the table has acknowledged, which tells results apart.
+    pub(super) fn results_acknowledged(&self) -> usize {
+        self.results.acknowledged()
+    }
+
     pub(super) fn story(&self) -> Option<story::StoryCard> {
         self.story.current()
     }

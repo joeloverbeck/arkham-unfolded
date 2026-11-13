@@ -52,9 +52,9 @@ impl Said {
 #[derive(Default)]
 pub(super) struct Talk {
     said: Vec<Said>,
-    /// The decision at which the table was last seen settled: a peril encounter that
-    /// decision drew has been shown and is over.
-    settled_at: Option<u64>,
+    /// The decision whose presentation the table was last seen to have finished: a
+    /// peril encounter that decision drew has been shown and is over.
+    presented_at: Option<u64>,
 }
 
 impl Talk {
@@ -68,15 +68,16 @@ impl Talk {
         let session = table.session();
         match session.peril() {
             Some(Peril::Resolving) => Some(PERIL),
-            Some(Peril::Resolved) if self.settled_at != Some(session.revision()) => Some(PERIL),
+            Some(Peril::Resolved) if self.presented_at != Some(session.revision()) => Some(PERIL),
             _ => None,
         }
     }
 
-    /// Note whether the table has settled since the latest decision.
+    /// Note whether the table has finished presenting the latest decision. Talk
+    /// itself never waits for the table: it decides nothing.
     pub fn watch(&mut self, table: &impl Table) {
-        if table.settled() {
-            self.settled_at = Some(table.session().revision());
+        if table.presented() {
+            self.presented_at = Some(table.session().revision());
         }
     }
 

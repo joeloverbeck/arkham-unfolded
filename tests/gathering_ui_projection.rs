@@ -112,6 +112,81 @@ fn discovery_motion_uses_the_actual_investigation_operation_and_rejects_forgery(
     assert!(forged.validate().is_err());
 }
 
+/// #210, tests name their action and target: every test's view says what it
+/// attempts and on what, or which card calls for it, from the rules session's own
+/// operation. The driver's observation does not change.
+#[test]
+fn every_skill_test_names_its_operation_and_target() {
+    use arkham_unfolded_experiment::gathering::{CryptChillFixture, SearchFixture, TestAction::*};
+    fn named(session: &Session) -> (TestAction, String, String) {
+        let test = session.observe().play.unwrap().test.expect("A skill test");
+        let target = test.target.expect("Every test here names its target");
+        (
+            test.operation.expect("A live view names it"),
+            target.code,
+            target.title,
+        )
+    }
+    use arkham_unfolded_experiment::gathering::TestAction;
+    let frozen =
+        || Session::with_hostile_fixture(HostileFixture::Search(SearchFixture::GetOverHereFrozen));
+    let swarm = |session: &Session| {
+        session
+            .observe()
+            .play
+            .unwrap()
+            .scenario
+            .enemies
+            .iter()
+            .find(|enemy| enemy.card.code == "01159")
+            .unwrap()
+            .card
+            .id
+    };
+
+    let mut investigation = prepared();
+    choose(&mut investigation, "turn:patrice");
+    choose(&mut investigation, "action:ordinary:investigate");
+    assert_eq!(
+        named(&investigation),
+        (Investigate, "01111".into(), "Study".into())
+    );
+
+    let mut fight = frozen();
+    let rats = swarm(&fight);
+    choose(&mut fight, &format!("action:ordinary:fight:{rats}"));
+    assert_eq!(
+        named(&fight),
+        (Fight, "01159".into(), "Swarm of Rats".into())
+    );
+    let mut evade = frozen();
+    let rats = swarm(&evade);
+    choose(&mut evade, &format!("action:ordinary:evade:{rats}"));
+    assert_eq!(
+        named(&evade),
+        (Evade, "01159".into(), "Swarm of Rats".into())
+    );
+
+    // Card-caused and treachery tests name the card that calls for them.
+    let mut chill =
+        Session::with_hostile_fixture(HostileFixture::CryptChill(CryptChillFixture::Assets));
+    choose(&mut chill, "revelation:resolve");
+    assert_eq!(named(&chill), (Card, "01167".into(), "Crypt Chill".into()));
+    let mut parley = Session::with_hostile_fixture(HostileFixture::GatheringLitaParley);
+    choose(&mut parley, "action:ordinary:parley:lita");
+    assert_eq!(
+        named(&parley),
+        (Parley, "01117".into(), "Lita Chantler".into())
+    );
+
+    let observed = serde_json::to_value(fight.observe()).unwrap();
+    let test = observed["play"]["test"].as_object().unwrap();
+    assert!(
+        !test.contains_key("operation") && !test.contains_key("target"),
+        "The driver's observation is unchanged: {test:?}"
+    );
+}
+
 #[test]
 fn setup_capacities_and_tonys_restricted_action_are_authoritative() {
     let setup = Session::with_seed(89).observe();

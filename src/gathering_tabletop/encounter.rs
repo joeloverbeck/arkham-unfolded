@@ -130,7 +130,7 @@ impl Reading {
 
     /// The responses the human may choose while reading: with agent partners, only
     /// those of investigators the human controls (#205).
-    fn responses<'a>(table: &Table, view: &'a Observation) -> Vec<&'a crate::Choice> {
+    pub(super) fn responses<'a>(table: &Table, view: &'a Observation) -> Vec<&'a crate::Choice> {
         view.choices
             .iter()
             .filter(|choice| !matches!(choice.id.as_str(), "revelation:resolve" | "undo"))
@@ -144,6 +144,13 @@ impl Reading {
             Input::Rules => self.rules = !self.rules,
         }
     }
+}
+
+/// The words an encounter reading shows, which set its reading delay: the card's
+/// title and its effective text.
+pub(super) fn text(card: &CardView) -> String {
+    let rules = crate::gathering::inspection::scenario_card(&card.code, false).unwrap_or_default();
+    format!("{}\n{rules}", card.title)
 }
 
 pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, size: Vec2) {
@@ -239,6 +246,7 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
             if !table.notice.is_empty() {
                 footer.spawn(art.text(&table.notice, 14., PAPER));
             }
+            pace::progress(footer, art, table);
             footer
                 .spawn(Node {
                     display: Display::Grid,
