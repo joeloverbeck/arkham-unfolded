@@ -171,7 +171,8 @@ pub(super) struct Speech {
 struct Slot {
     messages: VecDeque<Timed>,
     lines: Vec<Timed>,
-    entity: Option<Entity>,
+    /// Its boxes are spawned and not yet laid out.
+    spawning: bool,
     shown: Vec<Shown>,
     /// Whether its boxes showed on the last frame.
     visible: bool,
@@ -441,15 +442,14 @@ fn speech(
         ),
         Without<SpeechSlot>,
     >,
-    mut slots: Query<
-        (
-            &mut Node,
-            &ComputedNode,
-            &UiGlobalTransform,
-            &mut Visibility,
-        ),
-        With<SpeechSlot>,
-    >,
+    mut slots: Query<(
+        Entity,
+        &SpeechSlot,
+        &mut Node,
+        &ComputedNode,
+        &UiGlobalTransform,
+        &mut Visibility,
+    )>,
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) {
     let Some(table) = table else {
@@ -522,34 +522,53 @@ fn speech(
         } else {
             live(slot, reduced)
         };
+        let existing = slots
+            .iter()
+            .find(|(_, owner, ..)| owner.0 == who)
+            .map(|(entity, ..)| entity);
         if content.is_empty() {
-            if let Some(entity) = slot.entity.take() {
+            if let Some(entity) = existing {
                 commands.entity(entity).despawn();
             }
             slot.shown.clear();
             slot.visible = false;
+            slot.spawning = false;
             continue;
         }
-        let entity = *slot.entity.get_or_insert_with(|| {
-            commands
-                .spawn((
-                    SpeechSlot(who),
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: px(RAIL_RIGHT + GAP),
-                        top: px(0),
-                        width: px(WIDEST),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::FlexStart,
-                        row_gap: px(4),
-                        ..default()
-                    },
-                    GlobalZIndex(SPEECH_LAYER),
-                    Pickable::IGNORE,
-                    Visibility::Hidden,
-                ))
-                .id()
-        });
+        let Some(entity) = existing else {
+            if !slot.spawning {
+                commands
+                    .spawn((
+                        SpeechSlot(who),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: px(RAIL_RIGHT + GAP),
+                            top: px(0),
+                            width: px(WIDEST),
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::FlexStart,
+                            row_gap: px(4),
+                            ..default()
+                        },
+                        GlobalZIndex(SPEECH_LAYER),
+                        Pickable::IGNORE,
+                        Visibility::Hidden,
+                    ))
+                    .with_children(|p| {
+                        for shown in &content {
+                            spawn_box(p, shown);
+                        }
+                    });
+                slot.shown = content;
+                slot.spawning = true;
+            }
+            if let Some(redraw) = redraw.as_mut() {
+                // The next frame lays the new boxes out.
+                redraw.request();
+            }
+            continue;
+        };
+        slot.spawning = false;
         if slot.shown != content {
             commands
                 .entity(entity)
@@ -561,7 +580,8 @@ fn speech(
                 });
             slot.shown = content;
         }
-        let Ok((mut node, computed, transform, mut visibility)) = slots.get_mut(entity) else {
+        let Ok((_, _, mut node, computed, transform, mut visibility)) = slots.get_mut(entity)
+        else {
             continue;
         };
         let actual = rect(computed, transform);
