@@ -64,7 +64,9 @@ impl Reading {
         }
         self.pending = play.completed_tests.get(self.acknowledged).cloned();
         // A result no view showed live, as on reopening an attempt: its record
-        // names only the action, so the rules session gives the test it was.
+        // names only the action, so the rules session gives the test it was. It
+        // always can, since a test's reveal is a decision of its own (see
+        // `Session::completed_test_view`); otherwise the action alone names it.
         if let Some(stored) = &mut self.pending
             && let Some(test) = session
                 .completed_test_view(self.acknowledged)

@@ -767,6 +767,14 @@ impl Session {
     /// completed test's result, not its target, so this replays the active
     /// decisions to that position; it is never saved. `None` unless `index` names
     /// the first test the latest decision completed.
+    ///
+    /// That position always holds the test (review fix I5): a test begun by one
+    /// decision stops for its chaos-token reveal, `test:reveal`, which is a genuine
+    /// decision that single-option resolution never performs (`single_option`), and
+    /// a test completes only after its reveal (`Game::finish_test`). So the decision
+    /// that completes a test never also begins it. Were that to change, this would
+    /// give `None`, and the result would keep its record's own naming, the action
+    /// alone.
     #[cfg(feature = "tabletop")]
     pub(crate) fn completed_test_view(&self, index: usize) -> Option<TestView> {
         if index != self.live.completed_before {
