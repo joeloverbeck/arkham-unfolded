@@ -366,3 +366,49 @@ fn leaving_the_table_ends_every_partner_session() {
     assert_eq!(ended[0]["status"], "closed", "{}", ended[0]);
     assert!(fs::symlink_metadata(&partnered.socket).is_err());
 }
+
+/// An encounter card a partner's investigator draws is read at the table as usual.
+/// Its Continue only closes the reading for the human: resolving the card is the
+/// partner's decision, taken once the table has settled (RR p.24 1.4).
+#[test]
+fn the_human_continues_a_partners_encounter_reading_without_resolving_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::PatriceCancellationVision);
+    let table = Table::new(session, directory.path().join("encounter.session.json"));
+    let mut app = super::super::tests::host_with_table(table, false);
+    app.insert_resource(PartnerSocket(directory.path().join("partners.sock")));
+    // The reading is up from the start, so the menu cannot open: the menu's
+    // inputs go to the table directly.
+    let inputs = &mut app.world_mut().resource_mut::<Table>().partners.inputs;
+    inputs.extend([Input::Hand(Patrice), Input::Enable(true)]);
+    app.update();
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .partners
+            .partner_plays(Patrice)
+    );
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .encounter()
+            .current()
+            .is_some()
+    );
+    let revision = app.world().resource::<Table>().session.revision();
+    press(&mut app, "Continue");
+    let table = app.world().resource::<Table>();
+    assert!(
+        table.presentation.encounter().current().is_none(),
+        "{}",
+        table.notice
+    );
+    assert_eq!(
+        table.session.revision(),
+        revision,
+        "Only the partner resolves it"
+    );
+    assert!(!table.human_may("revelation:resolve"));
+}

@@ -216,7 +216,7 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
             ));
             footer.spawn((
                 art.text(
-                    if decision.is_some() {
+                    if decision.is_some() && table.human_may("revelation:resolve") {
                         "Continue to resolve this encounter, or choose a response first."
                     } else {
                         "Read the card, then continue."
@@ -248,20 +248,22 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
                     ..default()
                 })
                 .with_children(|row| {
+                    // A card a partner's investigator drew is the partner's to
+                    // resolve: Continue only closes the reading for the human.
+                    let resolves = decision
+                        .as_ref()
+                        .filter(|_| table.human_may("revelation:resolve"));
                     let continue_button = ui::button(
                         art,
                         row,
                         "Continue",
-                        decision.as_ref().map_or(
-                            Action::Encounter(table.epoch, Input::Continue),
-                            |view| {
-                                Action::EncounterChoice(
-                                    table.epoch,
-                                    view.revision,
-                                    "revelation:resolve".into(),
-                                )
-                            },
-                        ),
+                        resolves.map_or(Action::Encounter(table.epoch, Input::Continue), |view| {
+                            Action::EncounterChoice(
+                                table.epoch,
+                                view.revision,
+                                "revelation:resolve".into(),
+                            )
+                        }),
                     );
                     row.commands().entity(continue_button).insert(AutoFocus);
                     ui::button(
