@@ -203,22 +203,32 @@ impl Timed {
         self.age >= reading_delay(&self.text) + if reduced_motion { 0. } else { FADE }
     }
 
-    /// Opacity in twentieths: whole while readable, fading after, unless reduced.
-    fn opacity(&self, reduced_motion: bool) -> u8 {
+    /// Opacity: whole while readable, then falling evenly over the fade, unless
+    /// motion is reduced.
+    fn opacity(&self, reduced_motion: bool) -> f32 {
         let delay = reading_delay(&self.text);
         if reduced_motion || self.age <= delay {
-            return 20;
+            return 1.;
         }
-        ((1. - (self.age - delay) / FADE).clamp(0., 1.) * 20.).round() as u8
+        (1. - (self.age - delay) / FADE).clamp(0., 1.)
     }
 }
 
+/// What one box shows. Its opacity is not part of it: a fading box is the same
+/// box, faded in place, never respawned (S4).
 #[derive(Clone, PartialEq)]
 struct Shown {
     kind: Kind,
     text: String,
     label: String,
-    opacity: u8,
+}
+
+/// A speech box's part that fades: its colours at full opacity.
+#[derive(Component, Clone, Copy, Default)]
+struct Opaque {
+    background: Option<Color>,
+    border: Option<Color>,
+    text: Option<Color>,
 }
 
 pub(super) fn install(app: &mut App) {
@@ -457,6 +467,13 @@ fn speech(
         &UiGlobalTransform,
         &mut Visibility,
     )>,
+    children: Query<&Children>,
+    mut faded: Query<(
+        &Opaque,
+        Option<&mut BackgroundColor>,
+        Option<&mut BorderColor>,
+        Option<&mut TextColor>,
+    )>,
 ) {
     let Some(table) = table else {
         return;
@@ -514,11 +531,13 @@ fn speech(
                 (rect(node, transform), recalled)
             });
         let recalled = portrait.is_some_and(|(_, recalled)| recalled);
-        let content: Vec<Shown> = if recalled {
+        let (content, opacities): (Vec<Shown>, Vec<f32>) = if recalled {
             recall(talk, who, round)
         } else {
             live(slot, reduced)
-        };
+        }
+        .into_iter()
+        .unzip();
         let existing = slots
             .iter()
             .find(|(_, owner, ..)| owner.0 == who)
@@ -552,8 +571,8 @@ fn speech(
                         Visibility::Hidden,
                     ))
                     .with_children(|p| {
-                        for shown in &content {
-                            spawn_box(p, shown);
+                        for (shown, opacity) in content.iter().zip(&opacities) {
+                            spawn_box(p, shown, *opacity);
                         }
                     });
                 slot.shown = content;
@@ -571,11 +590,23 @@ fn speech(
                 .entity(entity)
                 .despawn_children()
                 .with_children(|p| {
-                    for shown in &content {
-                        spawn_box(p, shown);
+                    for (shown, opacity) in content.iter().zip(&opacities) {
+                        spawn_box(p, shown, *opacity);
                     }
                 });
             slot.shown = content;
+        } else {
+            // The same boxes: fade them in place, so a fading box keeps its layout
+            // and draws on every frame (S4).
+            let boxes = children.get(entity).map(|boxes| &boxes[..]).unwrap_or(&[]);
+            for (boxed, opacity) in boxes.iter().zip(&opacities) {
+                let parts = children.get(*boxed).map(|parts| &parts[..]).unwrap_or(&[]);
+                for part in std::iter::once(boxed).chain(parts) {
+                    if let Ok(part) = faded.get_mut(*part) {
+                        fade(part, *opacity);
+                    }
+                }
+            }
         }
         let Ok((_, _, mut node, computed, transform, mut visibility)) = slots.get_mut(entity)
         else {
@@ -672,26 +703,28 @@ fn panel_edge(panels: &[Rect], column: Rect, y: f32, above: bool) -> f32 {
 }
 
 /// What a portrait shows without the pointer on it: the message being read, and
-/// the newest action lines.
-fn live(slot: &Slot, reduced: bool) -> Vec<Shown> {
+/// the newest action lines, each with its opacity.
+fn live(slot: &Slot, reduced: bool) -> Vec<(Shown, f32)> {
     let lines = slot.lines.len().saturating_sub(LINES_SHOWN);
     slot.messages
         .front()
         .map(|message| (Kind::Speech, message))
         .into_iter()
         .chain(slot.lines[lines..].iter().map(|line| (Kind::Line, line)))
-        .map(|(kind, timed)| Shown {
-            kind,
-            text: timed.text.clone(),
-            label: timed.label.clone(),
-            opacity: timed.opacity(reduced),
+        .map(|(kind, timed)| {
+            let shown = Shown {
+                kind,
+                text: timed.text.clone(),
+                label: timed.label.clone(),
+            };
+            (shown, timed.opacity(reduced))
         })
         .collect()
 }
 
-/// What hovering or focusing a portrait recalls: its latest message, and its
-/// investigator's action lines this round.
-fn recall(talk: &Talk, who: Investigator, round: Option<u16>) -> Vec<Shown> {
+/// What hovering or focusing a portrait recalls, whole: its latest message, and
+/// its investigator's action lines this round.
+fn recall(talk: &Talk, who: Investigator, round: Option<u16>) -> Vec<(Shown, f32)> {
     let message = talk
         .log
         .iter()
@@ -701,7 +734,6 @@ fn recall(talk: &Talk, who: Investigator, round: Option<u16>) -> Vec<Shown> {
             kind: Kind::Speech,
             text: format!("\"{}\"", said.text),
             label: format!("{} says: {}", names(&said.speaker), said.text),
-            opacity: 20,
         });
     message
         .into_iter()
@@ -713,14 +745,34 @@ fn recall(talk: &Talk, who: Investigator, round: Option<u16>) -> Vec<Shown> {
                     kind: Kind::Line,
                     text: line.label.clone(),
                     label: format!("{}: {}", who.name(), line.label),
-                    opacity: 20,
                 }),
         )
+        .map(|shown| (shown, 1.))
         .collect()
 }
 
-fn spawn_box(p: &mut ChildSpawnerCommands, shown: &Shown) {
-    let alpha = f32::from(shown.opacity) / 20.;
+/// A speech box part's colours, as [`fade`] sets them.
+type Colours<'a> = (
+    &'a Opaque,
+    Option<Mut<'a, BackgroundColor>>,
+    Option<Mut<'a, BorderColor>>,
+    Option<Mut<'a, TextColor>>,
+);
+
+/// Set a speech box part's colours to `opacity`, changing only what differs.
+fn fade((opaque, background, border, text): Colours, opacity: f32) {
+    if let (Some(base), Some(mut background)) = (opaque.background, background) {
+        background.set_if_neq(BackgroundColor(base.with_alpha(opacity)));
+    }
+    if let (Some(base), Some(mut border)) = (opaque.border, border) {
+        border.set_if_neq(BorderColor::all(base.with_alpha(opacity)));
+    }
+    if let (Some(base), Some(mut text)) = (opaque.text, text) {
+        text.set_if_neq(TextColor(base.with_alpha(opacity)));
+    }
+}
+
+fn spawn_box(p: &mut ChildSpawnerCommands, shown: &Shown, opacity: f32) {
     let (background, border, ink, radius) = match shown.kind {
         Kind::Speech => (SPEECH, SPEECH, INK, 10.),
         Kind::Line => (INK, GOLD, PAPER, 0.),
@@ -735,8 +787,13 @@ fn spawn_box(p: &mut ChildSpawnerCommands, shown: &Shown) {
             border_radius: BorderRadius::all(px(radius)),
             ..default()
         },
-        BackgroundColor(background.with_alpha(alpha)),
-        BorderColor::all(border.with_alpha(alpha)),
+        BackgroundColor(background.with_alpha(opacity)),
+        BorderColor::all(border.with_alpha(opacity)),
+        Opaque {
+            background: Some(background),
+            border: Some(border),
+            ..default()
+        },
         AccessibleLabel::new(shown.label.clone()),
         Pickable::IGNORE,
     ))
@@ -753,15 +810,25 @@ fn spawn_box(p: &mut ChildSpawnerCommands, shown: &Shown) {
                     ..default()
                 },
                 UiTransform::from_rotation(Rot2::degrees(45.)),
-                BackgroundColor(background.with_alpha(alpha)),
+                BackgroundColor(background.with_alpha(opacity)),
+                Opaque {
+                    background: Some(background),
+                    ..default()
+                },
                 Pickable::IGNORE,
             ));
         }
-        p.spawn(text(
-            shown.text.clone(),
-            14.,
-            ink.with_alpha(alpha),
-            Pickable::IGNORE,
+        p.spawn((
+            text(
+                shown.text.clone(),
+                14.,
+                ink.with_alpha(opacity),
+                Pickable::IGNORE,
+            ),
+            Opaque {
+                text: Some(ink),
+                ..default()
+            },
         ));
     });
 }

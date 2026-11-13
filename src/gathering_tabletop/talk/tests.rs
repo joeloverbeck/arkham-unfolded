@@ -815,3 +815,75 @@ fn a_speech_box_keeps_its_width_and_shows_wherever_the_camera_is() {
         );
     }
 }
+
+/// S4, Joel's co-play session 2 (#202): "When the speech dialogue faded away, it
+/// fluttered/flickered; it didn't go away smoothly, but as if it wasn't rendering
+/// fully well." Frame by frame at 60 frames a second through its fade, a speech box
+/// stays the same node, laid out at its size on every frame, and its box, border,
+/// tail and text fade together: their opacity is one value, which never rises and
+/// passes through the fade before the box goes.
+#[test]
+fn a_speech_box_fades_as_one_node_whose_opacity_only_falls() {
+    let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
+    let partner = join_as(&mut talking, &[]);
+    say(&mut talking, &partner, "Short.");
+    let app = &mut talking.app;
+    settle(app);
+    let (_, _, first) = shown(app, Patrice)[0];
+    let parts_of = |app: &App, boxed: Entity| -> Vec<Entity> {
+        app.world().get::<Children>(boxed).unwrap().to_vec()
+    };
+    let parts = parts_of(app, first);
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(Duration::from_millis(16));
+    let mut opacities = Vec::new();
+    for frame in 0..400 {
+        app.update();
+        let Some(boxed) = shown(app, Patrice).first().map(|(_, _, boxed)| *boxed) else {
+            break;
+        };
+        assert_eq!(boxed, first, "Frame {frame}: the box was respawned");
+        assert_eq!(
+            parts_of(app, boxed),
+            parts,
+            "Frame {frame}: its parts were respawned"
+        );
+        let world = app.world();
+        let size = world.get::<ComputedNode>(boxed).unwrap().size();
+        assert!(size.x > 0. && size.y > 0., "Frame {frame}: drawn at {size}");
+        let mut alphas = vec![
+            world.get::<BackgroundColor>(boxed).unwrap().0.alpha(),
+            world.get::<BorderColor>(boxed).unwrap().top.alpha(),
+        ];
+        for part in &parts {
+            let laid = world.get::<ComputedNode>(*part).unwrap().size();
+            assert!(
+                laid.x > 0. && laid.y > 0.,
+                "Frame {frame}: a part at {laid}"
+            );
+            alphas.push(match world.get::<TextColor>(*part) {
+                Some(color) => color.0.alpha(),
+                None => world.get::<BackgroundColor>(*part).unwrap().0.alpha(),
+            });
+        }
+        assert!(
+            alphas.iter().all(|alpha| (alpha - alphas[0]).abs() < 1e-6),
+            "Frame {frame}: box, border, tail and text out of step: {alphas:?}"
+        );
+        opacities.push(alphas[0]);
+    }
+    app.world_mut()
+        .resource_mut::<PresentationTime>()
+        .advance_by(Duration::ZERO);
+    assert!(shown(app, Patrice).is_empty(), "It went");
+    assert!(
+        opacities.windows(2).all(|pair| pair[1] <= pair[0]),
+        "Its opacity only falls: {opacities:?}"
+    );
+    let fading = opacities.iter().filter(|alpha| **alpha < 1.).count();
+    assert!(
+        fading >= (FADE / 0.016) as usize - 2,
+        "It fades over {FADE} s, one step a frame: {opacities:?}"
+    );
+}
