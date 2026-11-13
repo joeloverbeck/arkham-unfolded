@@ -42,6 +42,8 @@ Joel accepted [complete replay retirement](../adr/0003-retire-replay.md) on 2026
 
 Joel selected [experiment retirement and scenario selection](../adr/0005-retire-experiments-and-select-scenarios.md) on 2026-11-07. The maintained entry offers only original The Gathering on Standard with the three selected starting decks, marked in development. Browsing selection needs no game session or artwork. Retired experiment evidence remains historical; this choice does not complete the campaign or accept #89's full native playing experience.
 
+Joel selected [agent partners](../adr/0007-agent-partners-join-the-running-table.md) on 2026-11-13 as an occasional way to play. For a session, he may hand chosen investigators to agents, who play them as players at the table while he concentrates on his own. Playing all three himself remains the default, and the delivered slice is unchanged. Partners receive only the decisions and information the [play contract](play-contract.md#agent-partners) gives the player of their investigators, and the program still administers the game. Play stays local to one machine and one window. This creates no commitment to network multiplayer, other human players or hosted agents, and a partner's judgement is never a rules authority.
+
 ## Code shared with the sibling games
 
 Arkham consumes `unfolded-tabletop`, the public library that holds mechanisms first written here, at one immutable revision pinned in `Cargo.toml` and `Cargo.lock`. Rules, cards, saves and presentation policy stay in this repository, in adapters over the shared code, and shared code imports no game's domain. A change to a shared mechanism reaches Arkham only through a new pin, with Arkham's own checks and acceptance.
