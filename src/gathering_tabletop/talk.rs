@@ -117,7 +117,11 @@ impl Talk {
                 let when = said
                     .round
                     .map_or_else(|| "Setup".to_owned(), |round| format!("Round {round}"));
-                format!("{when} · {}: {}", names(&said.speaker), said.text)
+                format!(
+                    "{when} · {}: {}",
+                    names(&said.speaker),
+                    crate::tabletop_support::drawable_text(&said.text)
+                )
             })
             .collect()
     }
@@ -395,9 +399,11 @@ fn message_box(
     }
 }
 
+/// Table talk's text, in the characters the interface's face draws: what players
+/// say is theirs, so it may hold characters the face lacks (S2).
 fn text(value: impl Into<String>, size: f32, color: Color, pickable: Pickable) -> impl Bundle {
     (
-        Text::new(value),
+        Text::new(crate::tabletop_support::drawable_text(&value.into())),
         TextFont {
             font_size: FontSize::Px(size),
             ..default()
@@ -462,7 +468,7 @@ fn speech(
     for said in &talk.log[speech.heard..] {
         if let Some(first) = said.speaker.first() {
             speech.slots[first.index()].messages.push_back(Timed::new(
-                format!("“{}”", said.text),
+                format!("\"{}\"", said.text),
                 format!("{} says: {}", names(&said.speaker), said.text),
             ));
         }
@@ -729,7 +735,7 @@ fn recall(talk: &Talk, who: Investigator, round: Option<u16>) -> Vec<Shown> {
         .find(|said| said.speaker.first() == Some(&who))
         .map(|said| Shown {
             kind: Kind::Speech,
-            text: format!("“{}”", said.text),
+            text: format!("\"{}\"", said.text),
             label: format!("{} says: {}", names(&said.speaker), said.text),
             opacity: 20,
         });

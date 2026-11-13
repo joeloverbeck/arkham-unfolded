@@ -637,6 +637,42 @@ fn the_message_box_holds_the_keyboard_and_sends_with_enter() {
     assert_eq!(std::fs::read(&talking.save).unwrap(), saved, "Never saved");
 }
 
+/// S2, Joel's co-play session 2 (#202): the message box's header showed empty boxes
+/// where its separators were, and a partner's speech box showed boxes at the start
+/// and end of its message. The interface's face draws only what its character map
+/// has (`font_checks` reads it), so everything table talk shows, the message box,
+/// speech boxes and Menu → Table talk, is drawn in those characters: typographic
+/// quotes, apostrophes, dashes and ellipses as their plain forms, anything else
+/// the face lacks as "?".
+#[test]
+fn table_talk_draws_only_characters_its_face_has() {
+    let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
+    let partner = join_as(&mut talking, &[]);
+    say(&mut talking, &partner, "“Don’t go — it’s cold…” naïve ✓");
+    let app = &mut talking.app;
+    settle(app);
+    let boxes = shown(app, Patrice);
+    let spoken = &boxes.first().expect("Her speech box").1;
+    for part in ["\"\"Don't go", "it's cold...\"", "na?ve ?\""] {
+        assert!(spoken.contains(part), "{part} in {spoken}");
+    }
+    tap(app, KeyCode::KeyT, Key::Character("t".into()));
+    type_text(app, "Hi");
+    settle(app);
+    assert!(app.world().resource::<Table>().talk.open);
+    crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
+
+    tap(app, KeyCode::Escape, Key::Escape);
+    press(app, "Menu");
+    press(app, "Table talk");
+    assert!(
+        rendered_text(app).contains("Patrice Hathaway: \"Don't go"),
+        "{}",
+        rendered_text(app)
+    );
+    crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
+}
+
 /// Ticket #209, Peril silence: while the table presents Patrice drawing Watcher
 /// from Another Dimension (seed 224's first draw; "Peril", RR p.16), the message
 /// box says why it cannot send, and sends nothing; once the encounter is over it
