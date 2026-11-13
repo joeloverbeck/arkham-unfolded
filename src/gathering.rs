@@ -619,9 +619,9 @@ impl Session {
     }
 
     /// The owner of the decision Undo would revert, as the rules session named
-    /// it when that decision was made; `None` while Undo is not offered. It is
-    /// derived by replaying to the position before that decision, once per
-    /// revision, and never saved.
+    /// it when that decision was made. It is derived by replaying to the
+    /// position before that decision, once per revision, and never saved.
+    /// `None` while Undo is not offered, or if that replay fails.
     pub fn undo_owner(&self) -> Option<OptionOwner> {
         if self.active_decisions.len() <= self.undo_floor {
             return None;
