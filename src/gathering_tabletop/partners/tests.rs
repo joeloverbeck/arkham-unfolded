@@ -1028,8 +1028,17 @@ fn the_human_passes_before_a_partners_action_while_holding_a_fast_option() {
         shown.contains("You may use") && shown.contains("Patrice's Violin"),
         "{shown}"
     );
-    let pass = "Pass, let Jacqueline Fine act";
+    // Review fix G3: his pass is one of the options the partner library gives the
+    // table, rendered as any other choice.
+    let pass = "Pass before Jacqueline Fine's action";
     assert!(button_with_label(&mut app, pass).is_some(), "{shown}");
+    assert!(
+        offered(&mut app)
+            .iter()
+            .any(|id| id == crate::partners::TURN_PASS),
+        "{:?}",
+        offered(&mut app)
+    );
 
     // Review fix G1: the held choice is answered at once, and a wait tells the
     // partner once it is applied.
@@ -1065,7 +1074,7 @@ fn without_partners_a_turns_choice_commits_at_once() {
     let (mut app, _) = violin_in_jacquelines_turn(directory.path(), &[]);
     let shown = rendered_text(&mut app);
     assert!(!shown.contains("You may use"), "{shown}");
-    assert!(button_with_label(&mut app, "Pass, let Jacqueline Fine act").is_none());
+    assert!(button_with_label(&mut app, "Pass before Jacqueline Fine's action").is_none());
     let at = revision(&app);
     choose(&mut app, "turn:end");
     assert_eq!(revision(&app), at + 1);

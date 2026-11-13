@@ -480,6 +480,7 @@ fn global(id: &str) -> bool {
             | "lucky:decline"
             | "window:pass"
             | "phase-window:pass"
+            | crate::partners::TURN_PASS
             | "success:pass"
             | "after-test:pass"
             | "test-card:pass"

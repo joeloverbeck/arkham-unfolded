@@ -20,8 +20,7 @@
 use super::*;
 use crate::gathering::CardView;
 use crate::partners::{
-    Control, Controller, DEFAULT_WAIT, Host, HumanChoice, LONGEST_WAIT, Routing, SharedKind,
-    SharedState,
+    Control, Controller, DEFAULT_WAIT, Host, HumanChoice, LONGEST_WAIT, SharedKind, SharedState,
 };
 use serde_json::{Value, json};
 use std::{
@@ -88,10 +87,6 @@ pub(super) struct Shown {
     pub awaited: Vec<Investigator>,
     /// The pending shared decisions whose participants several players control.
     pub shared: Vec<SharedState>,
-    /// In another investigator's turn, while the human holds a fast option there
-    /// and has not passed: the active investigator, and the titles of what the
-    /// human may use before that action (F1).
-    pub human_pass: Option<(Investigator, Vec<String>)>,
     /// The label of the human's choice in his own turn while it waits for the
     /// other players with a fast option to pass (F1).
     pub held: Option<String>,
@@ -147,6 +142,22 @@ impl Shown {
             .find(|state| state.close == id && state.of(&Controller::Human).is_some())
     }
 
+    /// In another investigator's turn, while the human holds a fast option in the
+    /// player window before that investigator's action and has not passed: that
+    /// investigator (F1). His options there, his pass among them, are the view's.
+    pub(super) fn human_turn_window(&self) -> Option<Investigator> {
+        self.shared.iter().find_map(|state| match state.kind {
+            SharedKind::Turn { actor }
+                if state
+                    .of(&Controller::Human)
+                    .is_some_and(|human| !human.ready) =>
+            {
+                Some(actor)
+            }
+            _ => None,
+        })
+    }
+
     /// The shared clue payment the human takes part in, while partners share it.
     pub(super) fn payment_with_human(&self) -> Option<&SharedState> {
         self.shared.iter().find(|state| {
@@ -186,7 +197,15 @@ impl Shown {
                 SharedKind::Commitment => "Confirmed",
                 SharedKind::Payment { .. } => "Ready",
             };
-            return format!("{done} · waiting for {}", names(&state.outstanding()));
+            let outstanding = state.outstanding();
+            // Once every player in a turn's window has passed, its action is next.
+            let waiting = match state.kind {
+                SharedKind::Turn { actor } if outstanding.is_empty() => {
+                    format!("{}'s action", actor.name())
+                }
+                _ => names(&outstanding),
+            };
+            return format!("{done} · waiting for {waiting}");
         }
         match &human.cleared_by {
             Some(changer) => format!("{label} again · {} changed it", names(changer)),
@@ -331,7 +350,6 @@ struct Routed {
     awaited: Vec<(Controller, Option<Investigator>)>,
     may_use: Vec<(Investigator, Vec<String>)>,
     shared: Vec<SharedState>,
-    human_pass: Option<(Investigator, Vec<String>)>,
     held: Option<String>,
 }
 
@@ -681,7 +699,6 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         may_use: routed.may_use,
         awaited,
         shared: routed.shared,
-        human_pass: routed.human_pass,
         held: routed.held,
         released: partners
             .host
@@ -701,44 +718,26 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
 /// partners as "Available now"), and its shared decisions.
 fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &Control) -> Routed {
     let awaited = host.awaited(session);
-    let routing = Routing::of(session, control);
     let observation = session.observe();
     let shared = host.shared(session);
-    // In a turn's player window no pass is listed: what a player may use there is
-    // every option of theirs (F1).
-    let turn = shared.iter().find_map(|state| match state.kind {
-        SharedKind::Turn { actor } => Some((actor, state)),
-        _ => None,
-    });
+    // In a turn's player window the rules session lists no pass: what a player may
+    // use there is every option of theirs (F1).
     let in_turn = |who: Investigator| {
-        turn.is_some_and(|(_, state)| {
-            state
-                .players
-                .iter()
-                .any(|player| player.investigators.contains(&who))
+        shared.iter().any(|state| {
+            matches!(state.kind, SharedKind::Turn { .. })
+                && state
+                    .players
+                    .iter()
+                    .any(|player| player.investigators.contains(&who))
         })
     };
+    // Each player's options as the partner library gives them; the table only
+    // names the cards and abilities they use.
     let uses = |player: &Controller| {
-        let theirs: Vec<&str> = routing
-            .options()
-            .filter(|(_, _, controller)| *controller == player)
-            .map(|(id, ..)| id)
-            .collect();
         let mut window = observation.clone();
-        window.choices.retain(|choice| {
-            theirs.contains(&choice.id.as_str())
-                || matches!(choice.id.as_str(), "window:pass" | "phase-window:pass")
-        });
+        window.choices = control.choices_of(session, player);
         window
     };
-    let human_pass = turn.and_then(|(actor, state)| {
-        let human = state.of(&Controller::Human).filter(|human| !human.ready)?;
-        let titles = controls::opportunities(&uses(&human.player))
-            .into_iter()
-            .map(|(_, label)| label)
-            .collect();
-        Some((actor, titles))
-    });
     let held = host.human_turn(session).map(|id| {
         observation
             .choices
@@ -773,7 +772,6 @@ fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &Control
         awaited,
         may_use,
         shared,
-        human_pass,
         held,
     }
 }

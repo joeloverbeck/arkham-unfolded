@@ -97,20 +97,22 @@ impl Control {
         self.solo() || Routing::of(session, self).human_may(session, self, id)
     }
 
-    /// The listed options of the session's pending decision that the human may
-    /// submit, as the table offers them (#205): every one without partners, and
+    /// The options of the session's pending decision that the human may submit,
+    /// as the table offers them (#205): every listed one without partners, and
     /// with partners those [`Self::human_may`] allows, as a partner's view lists
-    /// only that partner's options.
+    /// only that partner's options, with his pass in a turn's player window he
+    /// takes part in (F1).
     pub fn human_choices(&self, session: &Session) -> Vec<Choice> {
-        let choices = session.observe().choices;
         if self.solo() {
-            return choices;
+            return session.observe().choices;
         }
-        let routing = Routing::of(session, self);
-        choices
-            .into_iter()
-            .filter(|choice| routing.human_may(session, self, &choice.id))
-            .collect()
+        self.choices_of(session, &Controller::Human)
+    }
+
+    /// The options of the session's pending decision that `player` may submit:
+    /// see [`Routing::choices_of`].
+    pub fn choices_of(&self, session: &Session, player: &Controller) -> Vec<Choice> {
+        Routing::of(session, self).choices_of(session, self, player)
     }
 
     fn held_by(&self, partner: &str) -> Vec<Investigator> {

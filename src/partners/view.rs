@@ -557,7 +557,7 @@ fn decision(
         }
         for id in ids {
             let mut label = match decision.kind {
-                SharedKind::Turn { actor } => format!("Pass before {}'s action", actor.name()),
+                SharedKind::Turn { actor } => routing::turn_pass_label(actor),
                 _ => label(id),
             };
             if decision.kind != (SharedKind::Payment { at_round_end: true }) {

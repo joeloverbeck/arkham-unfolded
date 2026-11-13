@@ -20,7 +20,13 @@
 /// session's: the rules session lists no pass before an action.
 pub const TURN_PASS: &str = "turn-window:pass";
 
+/// The label of a player's pass in the player window before `actor`'s action.
+pub(super) fn turn_pass_label(actor: Investigator) -> String {
+    format!("Pass before {}'s action", actor.name())
+}
+
 use super::{Control, Controller};
+use crate::Choice;
 use crate::gathering::{GroupCluePayment, Investigator, OptionOwner, Session};
 
 /// The players of the pending decision's options.
@@ -231,21 +237,54 @@ impl Routing {
         self.shared.iter().find(|decision| decision.includes(id))
     }
 
-    /// Whether the human may submit `id`: the human's own option, its part in a
-    /// shared decision it takes part in, and Undo only when the decision it would
-    /// revert is the human's (#207). An identity no player may submit alone and no
-    /// shared decision includes is the session's to refuse, as without partners.
+    /// Whether the human may submit `id`: see [`Self::may`].
     pub fn human_may(&self, session: &Session, control: &Control, id: &str) -> bool {
-        let human = Controller::Human;
+        self.may(session, control, &Controller::Human, id)
+    }
+
+    /// Whether `player` may submit `id`: its own option, its part in a shared
+    /// decision it takes part in, and Undo only when the decision it would revert
+    /// is its own (#207). An identity no player may submit alone and no shared
+    /// decision includes is the session's to refuse, as without partners.
+    pub fn may(&self, session: &Session, control: &Control, player: &Controller, id: &str) -> bool {
         if id == "undo" {
-            return self.undoer() == Some(&human);
+            return self.undoer() == Some(player);
         }
         match self.shared_of(id) {
-            Some(decision) => decision.players(control).contains(&human),
+            Some(decision) => decision.players(control).contains(player),
             None => self
                 .controller(session, control, id)
-                .is_none_or(|controller| controller == human),
+                .is_none_or(|controller| controller == *player),
         }
+    }
+
+    /// The pending decision's listed options `player` may submit, and its pass
+    /// when it takes part in a turn's player window, which the rules session does
+    /// not list (F1).
+    pub fn choices_of(
+        &self,
+        session: &Session,
+        control: &Control,
+        player: &Controller,
+    ) -> Vec<Choice> {
+        let mut choices: Vec<Choice> = session
+            .observe()
+            .choices
+            .into_iter()
+            .filter(|choice| self.may(session, control, player, &choice.id))
+            .collect();
+        let window = self.shared.iter().find_map(|decision| match decision.kind {
+            SharedKind::Turn { actor } if decision.players(control).contains(player) => Some(actor),
+            _ => None,
+        });
+        if let Some(actor) = window {
+            choices.push(Choice {
+                id: TURN_PASS.to_owned(),
+                label: turn_pass_label(actor),
+                cancel_faces: Vec::new(),
+            });
+        }
+        choices
     }
 
     /// The player who may submit `id`: a listed option, or a number or allocation

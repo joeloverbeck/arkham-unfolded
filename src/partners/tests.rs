@@ -938,6 +938,35 @@ fn a_held_choice_is_released_when_a_fast_play_moves_the_decision_on() {
     assert_eq!(tonys_holdings(&sitting).0, before.0, "Nothing was rebased");
 }
 
+/// Review fix G3 (CODING_STANDARDS.md: presentation does not filter, merge or
+/// auto-pick choices). The library gives the human's options in a turn's player
+/// window, his pass among them, and the table only renders them. In Tony's
+/// partner's turn the human holds Patrice's Violin: his options are her Violin and
+/// his pass before Tony's action, none of Tony's actions. In his own turn he has no
+/// pass to make.
+#[test]
+fn the_humans_options_in_another_players_turn_window_include_his_pass() {
+    let (sitting, _) = tonys_partner_before_the_humans_violin();
+    let human = sitting.host.control().human_choices(&sitting.rules.session);
+    let pass = human
+        .iter()
+        .find(|choice| choice.id == TURN_PASS)
+        .unwrap_or_else(|| panic!("His pass: {human:?}"));
+    assert_eq!(pass.label, "Pass before Tony Morgan's action");
+    assert!(human.iter().any(|choice| choice.id.starts_with("violin:")));
+    assert!(!human.iter().any(|choice| choice.id.starts_with("action:")));
+
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    sitting.join(&[]);
+    let human = sitting.host.control().human_choices(&sitting.rules.session);
+    assert!(
+        !human.iter().any(|choice| choice.id == TURN_PASS),
+        "{human:?}"
+    );
+}
+
 /// Review fix H2 (F1; play contract, Shared decisions): the active player's view
 /// names whose passes its next choice waits for in a field of its own, so that never
 /// displaces another note. In Tony's partner's turn, the human holds Patrice's Violin

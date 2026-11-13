@@ -676,11 +676,16 @@ pub(super) fn render(
                 p.spawn(art.text(line, 15., PARTNER));
             }
             // The player window before another investigator's action waits for
-            // the human's pass while he holds a fast option there (F1).
-            if let Some((actor, uses)) = &table.partners.human_pass
+            // the human's pass while he holds a fast option there (F1). His options
+            // there, and his pass, are the ones the partner library gives the view.
+            if let Some(actor) = table.partners.human_turn_window()
                 && !table.is_presenting()
                 && !table.modal()
             {
+                let uses: Vec<String> = controls::opportunities(view)
+                    .into_iter()
+                    .map(|(_, label)| label)
+                    .collect();
                 let what = if uses.is_empty() {
                     "your options".to_owned()
                 } else {
@@ -691,18 +696,6 @@ pub(super) fn render(
                     15.,
                     Color::srgb(0.78, 0.65, 0.95),
                 ));
-                screen::controls(p, |row| {
-                    control(
-                        art,
-                        row,
-                        &format!("Pass, let {} act", actor.name()),
-                        Action::Choose(
-                            table.epoch,
-                            view.revision,
-                            crate::partners::TURN_PASS.into(),
-                        ),
-                    );
-                });
             }
             if let Some(held) = &table.partners.held {
                 p.spawn(art.text(
