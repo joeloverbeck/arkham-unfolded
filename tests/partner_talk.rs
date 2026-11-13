@@ -9,7 +9,7 @@
 
 use arkham_unfolded_experiment::{
     gathering::{Investigator, Session, continuity},
-    partners::{CHATTER_LIMIT, Host, LONGEST_MESSAGE, PERIL, Table},
+    partners::{CHATTER_LIMIT, EXCHANGE_LIMIT, Host, LONGEST_MESSAGE, PERIL, Table},
 };
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf, time::Instant};
@@ -347,6 +347,79 @@ fn a_partner_speaks_at_most_the_chatter_limit_in_a_row_between_decisions() {
     for _ in 0..CHATTER_LIMIT + 2 {
         sitting.host.human_says("Noted.", &sitting.rules).unwrap();
     }
+}
+
+/// Review fix D2 (story 61: "so that two agents cannot flood the table or spend
+/// tokens chatting"; play contract: exchanges between partners are limited until
+/// play moves on or another player speaks). Two partners who answer each other
+/// never send three in a row, yet share one exchange: once EXCHANGE_LIMIT messages
+/// have been said at a decision since a player new to it last spoke, a partner
+/// waits until play moves on or a player who has not spoken at this decision
+/// speaks. Every player's messages count alike, so the limit says nothing of who
+/// is human; only the human is never refused.
+#[test]
+fn two_partners_answering_each_other_wait_once_their_exchange_reaches_its_limit() {
+    assert!((4..=8).contains(&EXCHANGE_LIMIT), "A small fixed number");
+    let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
+    let tonys = sitting.join(&["tony"]);
+    let patrices = sitting.join(&["patrice"]);
+    let said = |answer: &Value| answer["status"] == "said";
+
+    // Tony's partner opens; Patrice's joins the exchange, which counts from her.
+    assert!(said(&sitting.say(&tonys, "Who takes the Attic?")));
+    let mut since_new = 0;
+    let mut speaker = [&patrices, &tonys].into_iter().cycle();
+    let refused = loop {
+        let partner = speaker.next().unwrap().clone();
+        let answer = sitting.say(&partner, &format!("Reply {since_new}."));
+        if !said(&answer) {
+            break answer;
+        }
+        since_new += 1;
+        assert!(since_new <= EXCHANGE_LIMIT, "The exchange is never limited");
+    };
+    assert_eq!(since_new, EXCHANGE_LIMIT);
+    let reason = refused["error"].as_str().unwrap();
+    assert!(
+        reason.contains("exchange limit") && reason.contains(&EXCHANGE_LIMIT.to_string()),
+        "{reason}"
+    );
+    assert!(refused["view"].is_object(), "{refused}");
+    assert!(!said(&sitting.say(&tonys, "Still there?")));
+
+    // The human, new to this exchange, speaks: it counts from that message.
+    sitting
+        .host
+        .human_says("Patrice, go first.", &sitting.rules)
+        .unwrap();
+    for time in 1..EXCHANGE_LIMIT {
+        let partner = if time % 2 == 1 { &patrices } else { &tonys };
+        let answer = sitting.say(partner, "Agreed.");
+        assert!(said(&answer), "{time}: {answer}");
+    }
+    assert!(!said(&sitting.say(&patrices, "One more.")));
+    // The human has spoken here already: speaking again opens nothing, and the
+    // human is never refused.
+    sitting
+        .host
+        .human_says("Then decide.", &sitting.rules)
+        .unwrap();
+    assert!(!said(&sitting.say(&tonys, "Will do.")));
+
+    // Play moves on: the human's mulligan is committed.
+    sitting.human("confirm-mulligan");
+    assert!(said(&sitting.say(&tonys, "Kept my hand.")));
+
+    // The human's messages count as any player's.
+    sitting.host.human_says("Ready?", &sitting.rules).unwrap();
+    for _ in 1..EXCHANGE_LIMIT {
+        sitting
+            .host
+            .human_says("Still deciding.", &sitting.rules)
+            .unwrap();
+    }
+    assert!(!said(&sitting.say(&tonys, "Take your time.")));
+    assert!(said(&sitting.say(&patrices, "I'm here too.")), "New to it");
 }
 
 /// Ticket #209: a message is one short line, a partner with no investigator has no

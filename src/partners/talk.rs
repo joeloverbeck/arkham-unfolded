@@ -5,8 +5,13 @@
 //! evidence.
 //!
 //! No one speaks while a peril encounter resolves (play contract, after RR p.16).
-//! A partner may send at most [`CHATTER_LIMIT`] messages in a row between committed
-//! decisions unless another player has spoken since its last one.
+//! Exchanges are limited until play moves on or another player speaks. Between
+//! committed decisions, a partner may send at most [`CHATTER_LIMIT`] messages in a
+//! row unless another player has spoken since its last one. And once
+//! [`EXCHANGE_LIMIT`] messages have been said since the latest message of a player
+//! new to that decision's talk, partners wait until play moves on or a player who
+//! has not spoken at it speaks. Every player's messages count alike, so the limits
+//! reveal nothing of who is human; only the human is never refused.
 
 use super::Table;
 use crate::gathering::{Investigator, Peril, Session};
@@ -17,6 +22,9 @@ pub const LONGEST_MESSAGE: usize = 280;
 /// How many messages a partner may send in a row between committed decisions,
 /// unless another player has spoken since its last one.
 pub const CHATTER_LIMIT: usize = 3;
+/// How many messages an exchange holds: at one decision, counted from the latest
+/// message of a player who had not spoken at it before.
+pub const EXCHANGE_LIMIT: usize = 6;
 /// Why no one may speak; the table's message box says the same.
 pub const PERIL: &str = "Table talk is closed: no one may speak while a peril encounter resolves (Rules Reference p. 16). It opens again once the encounter has resolved.";
 
@@ -123,6 +131,12 @@ impl Talk {
                     "You have sent {run} messages in a row since the last decision, the chatter limit of {CHATTER_LIMIT}. Speak again once play moves on or another player speaks."
                 ));
             }
+            let (speakers, heard) = self.exchange(revision);
+            if speakers.contains(&from) && heard >= EXCHANGE_LIMIT {
+                return Err(format!(
+                    "The table has heard {heard} messages since a player new to this exchange spoke, the exchange limit of {EXCHANGE_LIMIT}. Speak again once play moves on or a player who has not spoken since the last decision speaks."
+                ));
+            }
         }
         self.said.push(Said {
             speaker: in_player_order(session, speaker),
@@ -132,6 +146,29 @@ impl Talk {
             revision,
         });
         Ok(())
+    }
+
+    /// The players who have spoken since the decision at `revision` was reached,
+    /// and how many messages have been said since the latest first message of one
+    /// of them.
+    fn exchange(&self, revision: u64) -> (Vec<Option<&str>>, usize) {
+        let at_decision = self
+            .said
+            .iter()
+            .rev()
+            .take_while(|said| said.revision == revision)
+            .count();
+        let mut speakers = Vec::new();
+        let mut heard = 0;
+        for said in &self.said[self.said.len() - at_decision..] {
+            let from = said.from.as_deref();
+            if !speakers.contains(&from) {
+                speakers.push(from);
+                heard = 0;
+            }
+            heard += 1;
+        }
+        (speakers, heard)
     }
 
     /// The messages from `told` on that `listener` did not say itself.

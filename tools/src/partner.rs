@@ -43,7 +43,9 @@ table applies a choice only once it settles, so choose waits until then. After
 the first, complete view, each view reports the table as \"changes\" since your
 last. A wait answers \"nothing_yet\" after its timeout (240 s by default, at
 most 590): run it again. When the pasted line names --socket PATH, put it on
-every command.
+every command. Table talk is limited: at most three messages in a row from
+you, and six in an exchange, until play moves on or a player who has not
+spoken since the last decision speaks.
 
 Exit codes: 0 answered (\"closed\" included: stop), 1 refused (decide again from
 the view in the answer), 2 the table cannot be reached, did not answer a wait in

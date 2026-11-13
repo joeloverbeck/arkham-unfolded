@@ -237,7 +237,12 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "refused",
     ];
     let waiting = ["Claude Code", "run_in_background", "Codex", "240 s", "590"];
-    let talk = ["280 characters", "three messages in a row", "peril"];
+    let talk = [
+        "280 characters",
+        "three messages in a row",
+        "six messages",
+        "peril",
+    ];
     let notes = ["compacted", "local/partners/"];
     for taught in requests.into_iter().chain(waiting).chain(talk).chain(notes) {
         assert!(instructions.contains(taught), "{taught} in {INSTRUCTIONS}");
@@ -280,4 +285,9 @@ fn say_sends_one_message_and_help_names_it() {
 
     let help = help();
     assert!(help.contains("partner say PARTNER MESSAGE"), "{help}");
+    // Review fix D2: the guide names both limits of table talk.
+    assert!(
+        help.contains("three messages in a row") && help.contains("six in an exchange"),
+        "{help}"
+    );
 }

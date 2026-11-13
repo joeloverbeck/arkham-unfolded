@@ -122,7 +122,14 @@ scripts/tools partner say PARTNER MESSAGE
 
 This says one message of up to 280 characters as your investigators and answers `said`. Quote the message for the shell; its words are joined with spaces. Other players' messages said since you joined reach you once, in `view.table_talk` of your next answer that carries a view, each with its `speaker` (that player's investigators), `text` and `round`. Nothing repeats them, so note what still matters.
 
-`say` is refused while a peril encounter resolves, since no one may confer then (Rules Reference p. 16); after three messages in a row from you at one decision, until play moves on or another player speaks; and while you play no investigator.
+`say` is refused:
+
+- while a peril encounter resolves, since no one may confer then (Rules Reference p. 16);
+- after three messages in a row from you at one decision, until play moves on or another player speaks;
+- once six messages have been said since a player new to this decision's talk spoke, until play moves on or a player who has not spoken since the last decision speaks; every player's messages count, yours and the others' alike;
+- while you play no investigator.
+
+So two partners answering each other share one exchange: settle it in a few messages, then play.
 
 ## Conduct
 

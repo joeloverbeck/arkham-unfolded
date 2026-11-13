@@ -28,7 +28,7 @@ mod view;
 
 pub use routing::{Routing, Shared, SharedKind};
 pub use shared::{REOPENINGS, Readiness, SharedState};
-pub use talk::{CHATTER_LIMIT, LONGEST_MESSAGE, PERIL, Said};
+pub use talk::{CHATTER_LIMIT, EXCHANGE_LIMIT, LONGEST_MESSAGE, PERIL, Said};
 
 use crate::Choice;
 use crate::gathering::{
