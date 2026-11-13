@@ -46,6 +46,9 @@ use std::time::{Duration, Instant};
 pub const DEFAULT_WAIT: Duration = Duration::from_secs(240);
 /// The longest wait a partner may ask for, under Claude Code's command limit.
 pub const LONGEST_WAIT: Duration = Duration::from_secs(590);
+/// How many of the latest messages heard since joining a complete view gives back,
+/// for a partner whose answer was lost to a cut-off command.
+pub const RECOVERED_TALK: usize = 20;
 
 /// The player who controls an investigator.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,6 +182,8 @@ struct Partner {
     seen: Vec<(shared::Key, shared::Stamp)>,
     /// The table talk this partner has been told: messages before this index.
     told_talk: usize,
+    /// The table talk said before this partner sat down: messages before this index.
+    joined_talk: usize,
 }
 
 struct Held<R> {
@@ -206,7 +211,8 @@ enum Request {
     },
     Observe {
         partner: String,
-        /// The complete view and every visible card's text again.
+        /// The complete view, every visible card's text and the latest table talk
+        /// heard since joining, again.
         #[serde(default)]
         full: bool,
     },
@@ -731,6 +737,7 @@ impl<R> Host<R> {
             seen: Vec::new(),
             // A player hears what is said from when it sits down.
             told_talk: self.talk.said().len(),
+            joined_talk: self.talk.said().len(),
         });
         self.answer(&id, "joined", None, table, false, now)
     }
@@ -1028,8 +1035,15 @@ impl<R> Host<R> {
             &shared,
         );
         // Table talk is outside the board: each message from another player once,
-        // with the first answer after it that carries a view.
-        let talk = self.talk.since(partner.told_talk, id);
+        // with the first answer after it that carries a view. A complete view gives
+        // back the latest heard since joining, which a lost answer may have carried.
+        let talk = if full {
+            let mut talk = self.talk.since(partner.joined_talk, id);
+            talk.drain(..talk.len().saturating_sub(RECOVERED_TALK));
+            talk
+        } else {
+            self.talk.since(partner.told_talk, id)
+        };
         partner.told_talk = self.talk.said().len();
         if !talk.is_empty() {
             view["table_talk"] = Value::Array(talk);

@@ -9,7 +9,9 @@
 
 use arkham_unfolded_experiment::{
     gathering::{Investigator, Session, continuity},
-    partners::{CHATTER_LIMIT, EXCHANGE_LIMIT, Host, LONGEST_MESSAGE, PERIL, Table},
+    partners::{
+        CHATTER_LIMIT, EXCHANGE_LIMIT, Host, LONGEST_MESSAGE, PERIL, RECOVERED_TALK, Table,
+    },
 };
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf, time::Instant};
@@ -218,6 +220,57 @@ fn every_message_reaches_every_other_player_named_by_investigator() {
             (vec![Patrice], "I'll take the Attic."),
             (vec![Jacqueline], "Good plan.")
         ]
+    );
+}
+
+/// Review fix E2 (partner instructions, Cut-off commands): an answer lost to a
+/// cut-off command carried table talk that nothing repeats. A complete observe
+/// gives back the talk the partner has heard since it joined, at most the latest
+/// RECOVERED_TALK messages, and never what was said before it sat down.
+#[test]
+fn a_complete_observe_gives_back_the_talk_heard_since_joining() {
+    let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
+    sitting
+        .host
+        .human_says("Before anyone joined.", &sitting.rules)
+        .unwrap();
+    let tonys = sitting.join(&["tony"]);
+    let patrices = sitting.join(&["patrice"]);
+    let lost = sitting.wait(&tonys);
+    assert_eq!(
+        sitting.say(&patrices, "I'll take the Attic.")["status"],
+        "said"
+    );
+    assert_eq!(sitting.say(&tonys, "Fine by me.")["status"], "said");
+    sitting.poll();
+    // The wait's answer carried Patrice's message, and its command was cut off.
+    assert_eq!(sitting.take(lost).unwrap()["status"], "table_talk");
+    assert!(heard(&sitting.ask(json!({"op": "observe", "partner": tonys}))).is_empty());
+
+    let full = sitting.ask(json!({"op": "observe", "partner": tonys, "full": true}));
+    assert_eq!(
+        heard(&full),
+        [(
+            names(&["Patrice Hathaway"]),
+            "I'll take the Attic.".to_owned()
+        )],
+        "{}",
+        full["view"]
+    );
+
+    assert!((10..=50).contains(&RECOVERED_TALK), "A bounded count");
+    for said in 0..RECOVERED_TALK + 3 {
+        sitting
+            .host
+            .human_says(&format!("Note {said}."), &sitting.rules)
+            .unwrap();
+    }
+    let full = sitting.ask(json!({"op": "observe", "partner": tonys, "full": true}));
+    let recovered = heard(&full);
+    assert_eq!(recovered.len(), RECOVERED_TALK);
+    assert_eq!(
+        recovered.last().unwrap().1,
+        format!("Note {}.", RECOVERED_TALK + 2)
     );
 }
 

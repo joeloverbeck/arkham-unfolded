@@ -30,7 +30,7 @@ the notes to keep.
   scripts/tools partner join [INVESTIGATOR...]    keep the answer's \"partner\"
   scripts/tools partner wait PARTNER [--timeout SECONDS]
   scripts/tools partner observe PARTNER
-  scripts/tools partner observe PARTNER --full    the complete view again
+  scripts/tools partner observe PARTNER --full    the complete view and recent talk
   scripts/tools partner inspect PARTNER CODE
   scripts/tools partner choose PARTNER REVISION ID
   scripts/tools partner ready PARTNER REVISION
@@ -83,7 +83,8 @@ enum Request {
     /// Print your current view, with the changes since your last.
     Observe {
         partner: String,
-        /// Print the complete view and every visible card's text again.
+        /// Print the complete view, every visible card's text and the latest table
+        /// talk heard since joining again.
         #[arg(long)]
         full: bool,
     },

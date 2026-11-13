@@ -124,7 +124,7 @@ Every player hears every message. Talk never makes a decision and is not saved w
 scripts/tools partner say PARTNER MESSAGE
 ```
 
-This says one message of up to 280 characters as your investigators and answers `said`. Quote the message for the shell; its words are joined with spaces. Other players' messages said since you joined reach you once, in `view.table_talk` of your next answer that carries a view, each with its `speaker` (that player's investigators), `text` and `round`. Nothing repeats them, so note what still matters.
+This says one message of up to 280 characters as your investigators and answers `said`. Quote the message for the shell; its words are joined with spaces. Other players' messages said since you joined reach you once, in `view.table_talk` of your next answer that carries a view, each with its `speaker` (that player's investigators), `text` and `round`. Only `observe PARTNER --full` repeats them, and only the latest 20 heard since you joined, so note what still matters.
 
 `say` is refused:
 
@@ -159,13 +159,13 @@ Every answer carries `view` from `join` on, except `inspected`, `nothing_yet`, `
 - **Always whole:** `revision`, `stage`, `you_play`, `round`, `phase`, `turn`, `decision`, `shared`, `test`, `encounter_card`, `harm` and `resolving`.
 - **The board:** `lead`, `investigators` (each one's public state, with `hand` only for yours), `act`, `agenda`, `locations`, `enemies`, the encounter deck's count and discard, `victory`, the chaos bag's count, `outcome` and `last_test`. Your first view and `observe --full` give it whole. Every other view gives only its `changes` since your previous view. Each change's `at` names where, such as `investigators.patrice.resources`, with `was` and `now`, `now` alone (`null` when gone), or `added` and `removed`.
 - **`cards`:** each card's full text the first time you see it, keyed by code; a location's revealed side is `CODE revealed`.
-- **`table_talk`:** other players' messages since your previous answer that carried a view.
+- **`table_talk`:** other players' messages since your previous answer that carried a view; with `observe --full`, the latest 20 heard since you joined.
 
 ```sh
 scripts/tools partner observe PARTNER
 ```
 
-This answers `observed` with your current view and its changes since your last. `observe PARTNER --full` gives the complete view and every visible card's text again, for after compaction or a cut-off command.
+This answers `observed` with your current view and its changes since your last. `observe PARTNER --full` gives the complete view, every visible card's text and the latest 20 messages heard since you joined again, for after compaction or a cut-off command.
 
 ## Refusals
 
@@ -183,7 +183,7 @@ A request the table cannot accept answers `refused`, with the reason in `error` 
 
 ## Cut-off commands
 
-A command that ends before it prints an answer, because it was interrupted or your tool's time limit ended it, may still act at the table: a choice can still be applied. Its answer is lost, with that answer's changes and any table talk it carried. Run `observe PARTNER --full` before you decide again.
+A command that ends before it prints an answer, because it was interrupted or your tool's time limit ended it, may still act at the table: a choice can still be applied. Its answer is lost, with that answer's changes and any table talk it carried. Run `observe PARTNER --full` before you decide again: it gives the board whole and the latest table talk heard since you joined.
 
 ## Exit codes
 
