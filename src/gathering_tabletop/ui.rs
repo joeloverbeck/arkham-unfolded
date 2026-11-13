@@ -329,7 +329,7 @@ fn test_summary(play: &crate::gathering::PlayObservation) -> Option<String> {
         result: (test.resolved).then_some(test.would_succeed).flatten(),
     }
     .label_with_pending(preview);
-    let mut label = format!("{} · {summary}", test.tester.name());
+    let mut label = format!("{} · {summary}", results::attempt(test));
     if test.modifiers.other != 0 {
         label.push_str(&format!(
             "\nOther bonuses {:+} are included in the value.",

@@ -385,10 +385,22 @@ advancement at their proper timings. Optional effects such as Quick Thinking
 appear directly in the test flow with explicit use/decline; Continue never
 silently declines them. A generic administrative finish prompt is unnecessary.
 
-Every completed test, including encounter tests, has an untimed result modal and
-explicit centered Continue. Show prominent outcome/margin, one total-versus-
-difficulty comparison, quieter investigator/source context and aligned contribution
-rows. Full meaningful detail is visible by default: base skill, each card and owner,
+Every test names what it attempts. Throughout the test, the decision display
+names the investigator, the action and its target, such as **Tony Morgan fights
+Ghoul Minion** or **Patrice Hathaway investigates Study**. A test a card calls for
+names its skill and that card, such as **Tony Morgan tests Willpower for Crypt
+Chill**. A weapon, spell or event that makes the test follows as **with .45
+Automatic**.
+
+Every completed test, including encounter tests, has a result modal and explicit
+centered Continue. It is untimed, except for an agent partner's own result
+([Agent partners](#agent-partners-and-table-talk)). Show prominent outcome/margin,
+one total-versus-difficulty comparison, and quieter context naming the
+investigator, action and target, such as **Tony Morgan · Fight · Ghoul Minion** or
+**Tony Morgan · Willpower test · Crypt Chill**, then any card that made the test.
+A result read from the attempt's saved record, as after reopening, keeps that
+record's shorter name, such as **Fight** or **Crypt Chill**: the save does not keep
+the target. Show aligned contribution rows. Full meaningful detail is visible by default: base skill, each card and owner,
 abilities/paid bonuses, each revealed token, final total, difficulty and margin.
 Keep zero-valued tokens and separate canceled/ignored states; omit empty groups
 and duplicate outcome text. Show unknown chaos as pending, not zero. Show special

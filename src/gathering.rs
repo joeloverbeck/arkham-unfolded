@@ -40,7 +40,9 @@ pub use moments::{DeckStep, DrawBatch, DrawCue, DrawSource, PresentationMoment};
 pub use peter::PeterFixture;
 mod player_cards;
 mod presentation;
-pub use presentation::{DiscardView, HarmAllocation, HarmView, HeldDrawView, PendingView};
+pub use presentation::{
+    DiscardView, HarmAllocation, HarmView, HeldDrawView, PendingView, TestAction, TestTarget,
+};
 mod slots;
 mod tokens;
 pub use scenario::{Resolution, ResolutionRecord};

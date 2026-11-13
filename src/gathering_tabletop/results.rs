@@ -1,7 +1,7 @@
 //! Reading a recorded result never runs a rules decision. Optional effects use
 //! the ordinary revision-bound choices, after the result has been acknowledged.
 use super::*;
-use crate::gathering::{Session, TestResult, TestView};
+use crate::gathering::{Session, TestAction, TestResult, TestView};
 use crate::tabletop_ui as screen;
 
 #[derive(Default)]
@@ -86,13 +86,55 @@ impl Reading {
     }
 }
 
+/// What a test attempts, for the decision display throughout it (#210):
+/// `Tony Morgan fights Ghoul Minion`, `Tony Morgan tests Willpower for Crypt Chill`.
+/// A weapon, spell or event that makes the test is named after it.
+pub(super) fn attempt(test: &TestView) -> String {
+    let who = test.tester.name();
+    let target = test.target.as_ref().map(|target| target.title.as_str());
+    let named = match (test.operation, target) {
+        (Some(TestAction::Fight), Some(enemy)) => format!("{who} fights {enemy}"),
+        (Some(TestAction::Evade), Some(enemy)) => format!("{who} evades {enemy}"),
+        (Some(TestAction::Investigate), Some(location)) => format!("{who} investigates {location}"),
+        (Some(TestAction::Parley), Some(card)) => format!("{who} parleys with {card}"),
+        (_, Some(card)) => format!("{who} tests {:?} for {card}", test.skill),
+        (_, None) => format!("{who} tests {:?}", test.skill),
+    };
+    match made_with(test) {
+        Some(source) => format!("{named} with {source}"),
+        None => named,
+    }
+}
+
+/// The result's context after the tester (#210): `Fight · Ghoul Minion`,
+/// `Willpower test · Crypt Chill`, then any weapon, spell or event that made it.
+fn named(test: &TestView) -> String {
+    let action = match test.operation {
+        Some(TestAction::Fight) => "Fight".to_owned(),
+        Some(TestAction::Evade) => "Evade".to_owned(),
+        Some(TestAction::Investigate) => "Investigate".to_owned(),
+        Some(TestAction::Parley) => "Parley".to_owned(),
+        Some(TestAction::Card) | None => format!("{:?} test", test.skill),
+    };
+    test.target
+        .as_ref()
+        .map(|target| target.title.as_str())
+        .into_iter()
+        .chain(made_with(test))
+        .fold(action, |named, part| format!("{named} · {part}"))
+}
+
+/// The card that makes the test, when it is not the test's target.
+fn made_with(test: &TestView) -> Option<&str> {
+    let source = test.source_card.as_ref()?;
+    (test.target.as_ref().map(|target| &target.code) != Some(&source.code))
+        .then_some(source.title.as_str())
+}
+
 fn result(test: &TestView) -> Option<TestResult> {
     Some(TestResult {
         tester: test.tester,
-        source: test.source_card.as_ref().map_or_else(
-            || format!("{:?} test", test.skill),
-            |card| card.title.clone(),
-        ),
+        source: named(test),
         total: test.total?,
         difficulty: test.difficulty,
         success: test.would_succeed?,

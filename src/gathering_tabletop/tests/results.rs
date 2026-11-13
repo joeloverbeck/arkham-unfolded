@@ -820,34 +820,23 @@ fn quick_thinking_until(stop: &str) -> Session {
     panic!("Quick Thinking was never offered")
 }
 
-#[test]
-fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("live.json");
-    let session = quick_thinking_until("test:reveal");
-    continuity::save_session(&path, &session).unwrap();
-    let mut app = host_with_table(Table::new(session, path), false);
-    activate_choice(&mut app, "test:reveal");
-    // Play the genuine cancellation/outcome decisions until ST6 fixes the result.
+/// Play the genuine cancellation and outcome decisions after a reveal until ST6
+/// fixes the result and the table shows it.
+pub(in crate::gathering_tabletop) fn reach_result(app: &mut App) {
+    let shown = |app: &App| {
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_some()
+    };
     for _ in 0..40 {
-        if app
-            .world()
-            .resource::<Table>()
-            .presentation
-            .result()
-            .is_some()
-        {
-            break;
+        if shown(app) {
+            return;
         }
-        finish_presentation(&mut app);
-        if app
-            .world()
-            .resource::<Table>()
-            .presentation
-            .result()
-            .is_some()
-        {
-            break;
+        finish_presentation(app);
+        if shown(app) {
+            return;
         }
         let view = app.world().resource::<Table>().view();
         let id = ["lucky:decline", "success:pass"]
@@ -859,6 +848,38 @@ fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
         app.world_mut().resource_mut::<Actions>().0.push(action);
         app.update();
     }
+}
+
+/// #210, tests name their action and target, in the example Joel chose: a basic
+/// Fight names its enemy in the decision display throughout the test, and in its
+/// result, instead of only the skill.
+#[test]
+fn a_basic_fight_names_its_enemy_during_the_test_and_in_its_result() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("named.json");
+    let session = quick_thinking_until("test:reveal");
+    continuity::save_session(&path, &session).unwrap();
+    let mut app = host_with_table(Table::new(session, path), false);
+    let shown = rendered_text(&mut app);
+    assert!(shown.contains("Tony Morgan fights Ghoul Minion"), "{shown}");
+    activate_choice(&mut app, "test:reveal");
+    reach_result(&mut app);
+    let shown = rendered_text(&mut app);
+    let result =
+        crate::tabletop_support::readable_text("Tony Morgan · Fight · Ghoul Minion".into());
+    assert!(shown.contains(&result), "{shown}");
+    assert!(!shown.contains("Combat test"), "{shown}");
+}
+
+#[test]
+fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("live.json");
+    let session = quick_thinking_until("test:reveal");
+    continuity::save_session(&path, &session).unwrap();
+    let mut app = host_with_table(Table::new(session, path), false);
+    activate_choice(&mut app, "test:reveal");
+    reach_result(&mut app);
     let table = app.world().resource::<Table>();
     assert!(table.presentation.result().is_some());
     let epoch = table.epoch;
