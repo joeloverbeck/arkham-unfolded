@@ -11,12 +11,13 @@ resolver = "3"
 
 [features]
 default = []
-# The agent seat's held session starts its own session with `setsid` and waits for
-# requests with `poll` until its idle end.
-tabletop = ["dep:bevy", "unfolded-tabletop/render", "rustix/process", "rustix/event"]
+# The agent seat comes from the shared library's `seat` feature, which implies its
+# `render` and brings what the held session needs to start its own session and to wait
+# for requests until its idle end.
+tabletop = ["dep:bevy", "unfolded-tabletop/seat"]
 
 [dependencies]
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "2e3fdff601c904dfe466782ce016c4cd02fb7c02" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "423a9024b9902b356de29d1327d5cdb2929e3cd8" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -70,4 +71,4 @@ debug = "full"
 debug = "full"
 
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "2e3fdff601c904dfe466782ce016c4cd02fb7c02" }
+wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "423a9024b9902b356de29d1327d5cdb2929e3cd8" }

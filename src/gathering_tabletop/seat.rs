@@ -1,9 +1,10 @@
 //! The Gathering table's side of the agent seat (#153): startup assembly and the
-//! narrow interface the game-neutral [`crate::agent_seat`] reaches the table through.
-//! Deleting this file, `agent_seat.rs` with `agent_seat/socket.rs` (the held session's
-//! socket and launcher, #175), `tabletop_health/seat.rs`, the tools' `seat` command
-//! (`tools/src/seat.rs` and `tools/tests/seat.rs`) and the integration points that name
-//! them removes the seat.
+//! narrow interface the game-neutral seat reaches the table through. That seat is
+//! `unfolded-tabletop`'s `seat`, with its held session's socket and launcher (#175);
+//! [`crate::agent_seat`] names it for Arkham. Deleting this file, `agent_seat.rs`,
+//! `tabletop_health/seat.rs`, the tools' `seat` command (`tools/src/seat.rs` and
+//! `tools/tests/seat.rs`) and the integration points that name them, and asking the
+//! shared library for `render` in place of `seat` in `Cargo.toml`, removes the seat.
 //!
 //! The seat is the same table as native play: the same `install`, rules session,
 //! continuity and save path, and artwork verification. Every difference from native
@@ -29,8 +30,9 @@
 
 use super::*;
 use crate::{
-    agent_seat::{self, Focus, Game, Hit, Name, Observed, Seat, socket},
-    tabletop_health::SeatAdmissionPlugin,
+    agent_seat::{self, Admission, Focus, Game, Hit, Name, Observed, Seat, Unadmitted, socket},
+    tabletop_health::{self, RenderHealth, SeatAdmissionPlugin},
+    tabletop_pacing::PresentationTime,
     tabletop_support::asset_settings::Collection,
 };
 use bevy::{camera::primitives::Aabb, ui::CalculatedClip};
@@ -145,7 +147,16 @@ pub(super) fn open(options: &Options) -> Result<Seated, String> {
     install(&mut app);
     crate::tabletop_startup::require_artwork(&mut app, &collection);
     let mut seat = Seat::open(Gathering, &mut app)?;
-    seat.admit(&mut app, ADMISSION_LIMIT)?;
+    seat.admit(&mut app, ADMISSION_LIMIT)
+        .map_err(|unadmitted| match unadmitted {
+            Unadmitted::Refused(reason) => reason,
+            // Admission was still checking at the limit: say what blocks it.
+            Unadmitted::Unfinished => format!(
+                "The seat could not admit play within {} seconds. No game decision was made; saves are unchanged.\n{}",
+                ADMISSION_LIMIT.as_secs(),
+                tabletop_health::admission_blocker(app.world())
+            ),
+        })?;
     Ok(Seated {
         app,
         seat,
@@ -329,6 +340,27 @@ impl Game for Gathering {
 
     fn unsettled(&self, world: &mut World) -> Vec<String> {
         unsettled(world).into_iter().map(str::to_owned).collect()
+    }
+
+    /// The seat alone advances the presentation clock (difference 5 above).
+    fn advance(&self, world: &mut World, by: Duration) {
+        world.resource_mut::<PresentationTime>().advance_by(by);
+    }
+
+    /// Seat admission (difference 6 above), as its rendering health reports it.
+    fn admission(&self, world: &World) -> Admission {
+        let health = world.resource::<RenderHealth>();
+        if health.allows_play() {
+            Admission::Admitted
+        } else if health.is_checking() {
+            Admission::Checking
+        } else {
+            Admission::Refused(health.status().to_owned())
+        }
+    }
+
+    fn pipelines_ready(&self, world: &World) -> bool {
+        tabletop_health::pipelines_ready(world)
     }
 
     /// The focused control or menu row exactly as `controls` and `menu.rows` report
