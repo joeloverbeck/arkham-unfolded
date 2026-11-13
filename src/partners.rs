@@ -1439,7 +1439,8 @@ impl Moment {
 
     /// Whether `player`'s choice of `id` waits for a turn's player window (F1): it
     /// is the active investigator's player's choice, other than Undo or a part of a
-    /// shared decision, and a player with a fast option has not yet passed.
+    /// shared decision (an act clue payment always is one), and a player with a
+    /// fast option has not yet passed.
     fn waits_for_window(
         &self,
         sharing: &shared::Sharing,
@@ -1449,6 +1450,7 @@ impl Moment {
     ) -> bool {
         id != "undo"
             && self.routing.shared_of(id).is_none()
+            && !routing::pays_act(id)
             && self
                 .turn_window_of(control, player)
                 .is_some_and(|pending| !sharing.waiting(pending, control).is_empty())

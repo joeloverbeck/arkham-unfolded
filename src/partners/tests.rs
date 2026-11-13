@@ -967,6 +967,53 @@ fn the_humans_options_in_another_players_turn_window_include_his_pass() {
     );
 }
 
+/// Review fix G4. RR p.3 "Act Deck and Agenda Deck": the investigators advance the
+/// act by spending its requisite clues as a group, normally as a [free] player
+/// ability (so in any player window, p.22), and any or all may contribute (Trapped,
+/// 01108). An act clue payment is a group payment that a player able to contribute
+/// proposes, as #208's shared payment, and proposing wakes the others; its
+/// possibility alone makes no one a participant in a turn's player window, however
+/// many players could contribute. The active player's own payment is its part of
+/// that group payment, which the window does not hold.
+#[test]
+fn a_possible_act_payment_makes_no_one_a_turn_window_participant() {
+    // In Tony's turn, the human's, only Patrice's partner can pay Trapped.
+    let mut session = turn(Tony);
+    session.place_for_test(Tony, 0, "01111");
+    session.place_for_test(Patrice, 6, "01111");
+    session.place_for_test(Jacqueline, 0, "01111");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join(&[]);
+    assert!(
+        sitting
+            .offered()
+            .contains(&"act:pay:<contributions>".to_owned())
+    );
+    assert!(sitting.host.shared(&sitting.rules.session).is_empty());
+    let waits = sitting.wait(&partner);
+    sitting.poll();
+    assert!(
+        sitting.take(waits).is_none(),
+        "The possibility wakes no one"
+    );
+    let revision = sitting.revision();
+    assert_eq!(
+        sitting.human("action:ordinary:resource"),
+        HumanChoice::Commit,
+        "Not held for her"
+    );
+    assert_eq!(sitting.revision(), revision + 1);
+
+    // In Tony's partner's turn the human holds Patrice's Violin, and only Tony can
+    // pay: the partner's payment is applied, not held for the human's pass.
+    let (mut sitting, partner) = tonys_partner_before_the_humans_violin();
+    sitting.rules.session.place_for_test(Tony, 6, "01111");
+    sitting.rules.session.place_for_test(Patrice, 0, "01111");
+    sitting.rules.session.place_for_test(Jacqueline, 0, "01111");
+    let paid = sitting.choose(&partner, "act:pay:6:0:0");
+    assert_eq!(paid["status"], "chosen", "{paid}");
+}
+
 /// Review fix H2 (F1; play contract, Shared decisions): the active player's view
 /// names whose passes its next choice waits for in a field of its own, so that never
 /// displaces another note. In Tony's partner's turn, the human holds Patrice's Violin

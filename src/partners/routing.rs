@@ -333,9 +333,21 @@ pub(super) fn investigators(owner: &OptionOwner) -> Vec<Investigator> {
     }
 }
 
+/// Whether `id` pays an act's clues: the listed group clue payment or a named
+/// allocation. The investigators spend them as a group, normally as a [free]
+/// player ability, and any or all may contribute (RR p.3, "Act Deck and Agenda
+/// Deck"). Each player able to contribute may propose its part, as #208's shared
+/// payment, and a proposal wakes the others; so it is every contributing player's
+/// part of one group payment, even when one player alone can contribute (review
+/// fix G4).
+pub(super) fn pays_act(id: &str) -> bool {
+    GroupCluePayment::is_listed(id) || GroupCluePayment::allocation_of(id).is_some()
+}
+
 /// The player window before `actor`'s action, when a player other than the
 /// actor's holds one of its options: every such player's investigators with an
-/// option take part. None without such a player.
+/// option take part. None without such a player. A possible act clue payment
+/// makes no one a participant: it waits until a player proposes it.
 fn turn_window(
     actor: Investigator,
     options: &[(String, OptionOwner, Controller)],
@@ -344,7 +356,7 @@ fn turn_window(
     let actors = control.controller(actor);
     let mut participants: Vec<Investigator> = options
         .iter()
-        .filter(|(_, _, controller)| *controller != actors)
+        .filter(|(id, _, controller)| *controller != actors && !pays_act(id))
         .flat_map(|(_, owner, _)| investigators(owner))
         .filter(|who| control.controller(*who) != actors)
         .collect();
