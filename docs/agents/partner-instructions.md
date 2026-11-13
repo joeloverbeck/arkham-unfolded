@@ -97,7 +97,7 @@ To read a card again, with its current counters:
 scripts/tools partner inspect PARTNER CODE
 ```
 
-It answers `inspected` with the card's full text as the table's Inspect shows it. Give the `code` your view names, for any card you can see: in your investigators' hands, in play, being resolved or in a public pile. A card you cannot see is refused.
+It answers `inspected` with the card's full text as the table's Inspect shows it, including what `cards` leaves out: an investigator's slots and a card's supplies or keys now. Give the `code` your view names, for any card you can see: in your investigators' hands, in play, being resolved or in a public pile. A card you cannot see is refused.
 
 **Undo.** When the latest decision belongs to investigators you play, `decision.undo` offers to revert it: choose its `id`, `undo`. It is not offered for a decision that belongs to another player or was shared between players, nor once a choice has revealed hidden information or a random outcome, such as a drawn card or a chaos token.
 
@@ -168,7 +168,7 @@ Every answer carries `view` from `join` on, except `inspected`, `nothing_yet`, `
 
 - **Always whole:** `revision`, `stage`, `you_play`, `round`, `phase`, `turn`, `decision`, `shared`, `test`, `encounter_card`, `harm` and `resolving`.
 - **The board:** `lead`, `investigators` (each one's public state, with `hand` only for yours), `act`, `agenda`, `locations`, `enemies`, the encounter deck's count and discard, `victory`, the chaos bag's count, `outcome` and `last_test`. Your first view and `observe --full` give it whole. Every other view gives only its `changes` since your previous view. Each change's `at` names where, such as `investigators.patrice.resources`, with `was` and `now`, `now` alone (`null` when gone), or `added` and `removed`.
-- **`cards`:** each card's full text the first time you see it, keyed by code; a location's revealed side is `CODE revealed`.
+- **`cards`:** each card's printed and effective text the first time you see it, keyed by code; a location's revealed side is `CODE revealed`. It is sent once, so it leaves out what changes during play: the board gives the uses, damage and horror of each card in play, and `inspect` gives the text with an investigator's slots and a card's counters as they stand now.
 - **`table_talk`:** other players' messages since your previous answer that carried a view; with `observe --full`, the latest 20 heard since you joined.
 
 ```sh

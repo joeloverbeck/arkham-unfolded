@@ -621,7 +621,10 @@ fn decision(
 }
 
 /// Card text on first sight: each visible card's printed fields and effective
-/// text, keyed by code, sent once per partner unless asked for again.
+/// text, keyed by code, sent once per partner unless asked for again. It leaves
+/// out what changes during play (an investigator's slots, a card's supplies or
+/// keys), which a once-sent text would let go stale: the board carries uses, and
+/// `inspect` gives the table's Inspect text with them as they stand (#206).
 struct Cards<'a> {
     sent: &'a mut BTreeSet<String>,
     all: bool,
