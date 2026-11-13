@@ -7,12 +7,14 @@
 //! `partner` command and the integration points that name them removes partners.
 //!
 //! A partner joins, which claims investigators the human handed to partners; waits
-//! until one of them has a decision pending at a settled table; observes its view;
-//! chooses an option by identity at the current revision; and leaves. A choice is
-//! applied only once the table settles, through the table's own commit path. Group
-//! choices stay with the human in this slice (#205). In a shared decision that
-//! spans players, each player sets its own part and marks itself ready, and the
-//! host completes it once every participating player is ready (#208, `shared`).
+//! until one of them has a decision pending at a settled table; observes its view,
+//! complete once and then as changes (#206); inspects any card it can see; chooses
+//! an option by identity at the current revision; and leaves. A choice is
+//! applied only once the table settles, through the table's own commit path. A group
+//! choice is its arbiter's player's, and every partner's wait hears it open (#207).
+//! In a shared decision that spans players, each player sets its own part and marks
+//! itself ready, and the host completes it once every participating player is
+//! ready (#208, `shared`).
 //!
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
 
@@ -23,7 +25,10 @@ mod view;
 pub use routing::{Routing, Shared, SharedKind};
 pub use shared::{REOPENINGS, Readiness, SharedState};
 
-use crate::gathering::{Investigator, OptionOwner, Session};
+use crate::gathering::{
+    Investigator, OptionOwner, Session,
+    inspection::{self, Sight},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -74,12 +79,16 @@ impl Control {
 
     /// Whether the human may submit `id` at the session's pending decision: its
     /// own option, or its part in a shared decision it takes part in. Without
-    /// partners every option is the human's.
+    /// partners every option is the human's. With partners, Undo is the human's only
+    /// when the decision it would revert belongs to investigators the human controls.
     pub fn human_may(&self, session: &Session, id: &str) -> bool {
         if self.solo() {
             return true;
         }
         let routing = Routing::of(session, self);
+        if id == "undo" {
+            return routing.undoer() == Some(&Controller::Human);
+        }
         if routing.shared_of(id).is_some() {
             return routing.may(session, self, &Controller::Human, id);
         }
@@ -142,7 +151,11 @@ struct Partner {
     played: Vec<Investigator>,
     /// Card text already sent, by code and face.
     sent: BTreeSet<String>,
+    /// The board of the last view sent, which the next view's changes start from.
+    board: Option<serde_json::Map<String, Value>>,
     heard: Instant,
+    /// The revision of the last group choice a wait reported to this partner.
+    told_group: Option<u64>,
     /// The shared decisions this partner's last view showed, and their state then.
     seen: Vec<(shared::Key, shared::Stamp)>,
 }
@@ -172,8 +185,13 @@ enum Request {
     },
     Observe {
         partner: String,
+        /// The complete view and every visible card's text again.
         #[serde(default)]
-        all_cards: bool,
+        full: bool,
+    },
+    Inspect {
+        partner: String,
+        card: String,
     },
     Choose {
         partner: String,
@@ -363,7 +381,7 @@ impl<R> Host<R> {
                     .ok()
                     .and_then(|value| value["partner"].as_str().map(str::to_owned));
                 let reason = format!(
-                    "Not a partner request ({error}). A partner may join, wait, observe, choose, ready or leave."
+                    "Not a partner request ({error}). A partner may join, wait, observe, inspect, choose, ready or leave."
                 );
                 let answer = match partner.filter(|id| self.known(id)) {
                     Some(id) => self.answer(&id, "refused", Some(reason), table, false, now),
@@ -378,6 +396,7 @@ impl<R> Host<R> {
             }
             Request::Wait { partner, .. }
             | Request::Observe { partner, .. }
+            | Request::Inspect { partner, .. }
             | Request::Choose { partner, .. }
             | Request::Ready { partner, .. }
             | Request::Leave { partner } => partner.clone(),
@@ -392,12 +411,10 @@ impl<R> Host<R> {
         }
         match request {
             Request::Join { .. } => unreachable!("Answered above"),
-            Request::Observe { all_cards, .. } => {
-                vec![(
-                    reply,
-                    self.answer(&id, "observed", None, table, all_cards, now),
-                )]
+            Request::Observe { full, .. } => {
+                vec![(reply, self.answer(&id, "observed", None, table, full, now))]
             }
+            Request::Inspect { card, .. } => vec![(reply, self.inspect(&id, &card, table, now))],
             Request::Leave { .. } => {
                 self.partners.retain(|partner| partner.id != id);
                 for claim in &mut self.claims {
@@ -470,9 +487,10 @@ impl<R> Host<R> {
     }
 
     /// Complete a shared decision whose players are all ready, then answer every
-    /// held request whose moment has come: a wait whose partner has a decision or
-    /// news of a shared decision at a settled table, whose control changed or
-    /// whose period ran out, and a choice once the table has settled.
+    /// held request whose moment has come: a wait whose control changed, or whose
+    /// partner hears a group choice open, has news of a shared decision or has a
+    /// decision at a settled table, or whose period ran out; and a choice once the
+    /// table has settled.
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
         if table.settled()
             && let Some((pending, id, by)) = self.completion(table.session())
@@ -490,6 +508,7 @@ impl<R> Host<R> {
         while index < self.held.len() {
             let partner = self.held[index].partner.clone();
             let settled = table.settled();
+            let revision = table.session().revision();
             let event = match &self.held[index].pending {
                 Pending::Wait { .. } if settled && !self.changed(&partner) => moment
                     .get_or_insert_with(|| self.moment(table.session()))
@@ -549,6 +568,11 @@ impl<R> Host<R> {
             match outcome {
                 Some((status, error)) => {
                     let held = self.held.remove(index);
+                    if status == "group_choice"
+                        && let Some(known) = self.partners.iter_mut().find(|p| p.id == partner)
+                    {
+                        known.told_group = Some(revision);
+                    }
                     let answer = self.answer(&partner, status, error, table, false, now);
                     answers.push((held.reply, answer));
                 }
@@ -566,6 +590,15 @@ impl<R> Host<R> {
         if let Some(partner) = self.partners.iter_mut().find(|partner| partner.id == id) {
             partner.heard = now;
         }
+    }
+
+    /// Whether a group choice is open at `revision` and no wait has told `id` yet.
+    fn group_untold(&self, id: &str, routing: &Routing, revision: u64) -> bool {
+        routing.group().is_some()
+            && self
+                .partners
+                .iter()
+                .any(|partner| partner.id == id && partner.told_group != Some(revision))
     }
 
     fn changed(&self, id: &str) -> bool {
@@ -615,7 +648,9 @@ impl<R> Host<R> {
             reported: Vec::new(),
             played: Vec::new(),
             sent: BTreeSet::new(),
+            board: None,
             heard: now,
+            told_group: None,
             seen: Vec::new(),
         });
         self.answer(&id, "joined", None, table, false, now)
@@ -759,6 +794,24 @@ impl<R> Host<R> {
         }
     }
 
+    /// A visible card's full text, as the table's Inspect shows it. A card this
+    /// partner cannot see is refused exactly as a code that names no card.
+    fn inspect(&mut self, id: &str, card: &str, table: &impl Table, now: Instant) -> Value {
+        self.hear(id, now);
+        let mine = self.control().held_by(id);
+        let observation = table.session().observe();
+        match inspection::table_card(&observation, card, Sight::Player(&mine)) {
+            Some(text) => json!({
+                "ok": true, "mode": "partner", "status": "inspected", "partner": id,
+                "investigators": mine, "card": card, "text": text,
+            }),
+            None => {
+                let reason = "No card with that code is in your sight. Inspect a card you can see by its code: in your investigators' hands, in play, being resolved or in a public pile.".to_owned();
+                self.answer(id, "refused", Some(reason), table, false, now)
+            }
+        }
+    }
+
     /// Whether `partner` may submit `id` at `revision` now, and as which investigator.
     fn check(
         &self,
@@ -776,15 +829,17 @@ impl<R> Host<R> {
         }
         let control = self.control();
         let me = Controller::Partner(partner.to_owned());
-        let Some(controller) = routing.controller(session, &control, id) else {
+        // Undo's owner is that of the decision it would revert.
+        let Some(owner) = routing.owner(session, id) else {
             return Err("That choice is not available at the current decision.".into());
         };
-        let owner = routing.owner(session, id);
-        let named = owner
-            .as_ref()
-            .map(routing::investigators)
-            .unwrap_or_default();
-        if controller != me {
+        let named = routing::investigators(&owner);
+        let names = named
+            .iter()
+            .map(|who| who.name())
+            .collect::<Vec<_>>()
+            .join(" and ");
+        if routing.controller(session, &control, id).as_ref() != Some(&me) {
             let played = self
                 .partners
                 .iter()
@@ -797,26 +852,37 @@ impl<R> Host<R> {
                     lost.name()
                 ));
             }
+            if id == "undo" {
+                return Err(match owner {
+                    OptionOwner::Table => "Undo reverts only your own latest decision; the latest was made at the table.".into(),
+                    _ => format!("Undo reverts only your own latest decision; the latest belongs to {names}."),
+                });
+            }
             return Err(match owner {
-                Some(OptionOwner::Table) => {
+                OptionOwner::Table => {
                     "That choice is made at the table: the lead investigator is chosen there."
                         .into()
                 }
-                Some(OptionOwner::Group { .. }) => {
-                    "That choice is a group choice, made at the table in this version.".into()
-                }
-                _ => format!(
-                    "That choice belongs to {}, whom you do not play.",
-                    named
-                        .iter()
-                        .map(|who| who.name())
-                        .collect::<Vec<_>>()
-                        .join(" and ")
+                OptionOwner::Group { arbiter } => format!(
+                    "That is a group choice: the player of {}, its arbiter, makes it.",
+                    arbiter.name()
                 ),
+                // A shared decision that spans players is readiness, answered
+                // before this check; this one is another player's alone.
+                OptionOwner::Shared { .. } => {
+                    format!("That choice belongs to the player of {names}, whom you do not play.")
+                }
+                OptionOwner::Investigator(_) => {
+                    format!("That choice belongs to {names}, whom you do not play.")
+                }
             });
         }
         Ok(match owner {
-            Some(OptionOwner::Investigator(who)) => who,
+            OptionOwner::Investigator(who) => who,
+            // Undo answers for the investigator whose decision it reverts.
+            _ if id == "undo" => *named
+                .first()
+                .expect("A partner's latest decision names its investigator"),
             _ => routing
                 .awaited_investigator()
                 .filter(|who| control.controller(*who) == me)
@@ -833,7 +899,7 @@ impl<R> Host<R> {
         status: &str,
         error: Option<String>,
         table: &impl Table,
-        all_cards: bool,
+        full: bool,
         now: Instant,
     ) -> Value {
         let control = self.control();
@@ -876,7 +942,8 @@ impl<R> Host<R> {
             view::Viewer {
                 partner: id,
                 sent: &mut partner.sent,
-                all_cards,
+                board: &mut partner.board,
+                full,
             },
             &moment.awaited,
             &shared,
@@ -907,10 +974,13 @@ struct Moment {
 }
 
 impl Moment {
-    /// What a held wait of `partner` answers now, at a settled table: news of a
-    /// shared decision it takes part in, changed since its last view, or a
-    /// decision of its own.
+    /// What a held wait of `partner` answers now, at a settled table: a group
+    /// choice it has not been told of, news of a shared decision it takes part in
+    /// that changed since its last view, or a decision of its own.
     fn event<R>(&self, host: &Host<R>, partner: &str) -> Option<&'static str> {
+        if host.group_untold(partner, &self.routing, self.observation.revision) {
+            return Some("group_choice");
+        }
         let me = Controller::Partner(partner.to_owned());
         let control = host.control();
         let seen = &host.partners.iter().find(|known| known.id == partner)?.seen;

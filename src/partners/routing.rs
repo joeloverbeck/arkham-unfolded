@@ -2,12 +2,13 @@
 //! for. Ownership comes from the rules session ([`Session::ownership`]); this
 //! module only maps owners to the players who control them.
 //!
-//! The human makes every group choice and the table's setup choice of the lead,
-//! with all of that decision's options. A shared decision whose participants one
-//! player controls is that player's. One whose participants several players
-//! control is [`Shared`]: each player answers its own investigators' options in
-//! it, and its completing option is every participating player's readiness,
-//! which the host collects (#208).
+//! A group choice belongs to the player of its arbiter, the lead investigator or
+//! the one standing in for an eliminated lead (#207). The human makes the table's
+//! setup choice of the lead, with all of that decision's options. A shared
+//! decision whose participants one player controls is that player's. One whose
+//! participants several players control is [`Shared`]: each player answers its
+//! own investigators' options in it, and its completing option is every
+//! participating player's readiness, which the host collects (#208).
 
 use super::{Control, Controller};
 use crate::gathering::{GroupCluePayment, Investigator, OptionOwner, Session};
@@ -21,13 +22,18 @@ pub struct Routing {
     /// Each listed option one player may submit, except Undo: its owner and that
     /// player. A shared decision's completing options are in `shared` instead.
     options: Vec<(String, OptionOwner, Controller)>,
-    /// The human answers the whole decision: a group choice or the setup choice
-    /// of the lead.
+    /// The human answers the whole decision: the setup choice of the lead.
     with_human: bool,
     /// The player the table waits for outside shared decisions, and the
     /// investigator that player answers for.
     awaiting: Option<(Controller, Option<Investigator>)>,
     shared: Vec<Shared>,
+    /// The arbiter of the pending group choice, while one is open.
+    group: Option<Investigator>,
+    /// Undo, while the session offers it: the owner of the decision it would
+    /// revert, and the one player who controls every investigator that owner
+    /// names, if one does.
+    undo: Option<(OptionOwner, Option<Controller>)>,
 }
 
 /// A shared decision whose participants more than one player controls (#208).
@@ -87,9 +93,13 @@ impl Routing {
     pub fn of(session: &Session, control: &Control) -> Self {
         let decision_owner = session.observe().decision_owner;
         let owned = session.ownership();
+        let group = owned.iter().find_map(|option| match option.owner {
+            OptionOwner::Group { arbiter } => Some(arbiter),
+            _ => None,
+        });
         let with_human = owned
             .iter()
-            .any(|option| matches!(option.owner, OptionOwner::Group { .. } | OptionOwner::Table));
+            .any(|option| option.owner == OptionOwner::Table);
         let round_end = owned.iter().any(|option| option.id == DECLINE);
         let mut shared: Vec<Shared> = Vec::new();
         let mut options = Vec::new();
@@ -137,12 +147,30 @@ impl Routing {
         } else {
             awaiting(&options, decision_owner, control)
         };
+        let undo = session.undo_owner().map(|owner| {
+            let undoer = sole_controller(&owner, control);
+            (owner, undoer)
+        });
         Self {
             options,
             with_human,
             awaiting,
             shared,
+            group,
+            undo,
         }
+    }
+
+    /// The player who may undo the latest undoable decision: the one who now
+    /// controls every investigator that decision belonged to. `None` while Undo
+    /// is not offered, or when no single player controls them all.
+    pub fn undoer(&self) -> Option<&Controller> {
+        self.undo.as_ref().and_then(|(_, undoer)| undoer.as_ref())
+    }
+
+    /// The owner of the decision Undo would revert, while Undo is offered.
+    pub fn undo_owner(&self) -> Option<&OptionOwner> {
+        self.undo.as_ref().map(|(owner, _)| owner)
     }
 
     /// The player the table waits for outside shared decisions, if any.
@@ -150,13 +178,17 @@ impl Routing {
         self.awaiting.as_ref().map(|(controller, _)| controller)
     }
 
+    /// The arbiter of the pending group choice, while one is open.
+    pub fn group(&self) -> Option<Investigator> {
+        self.group
+    }
+
     /// The investigator the awaited player answers for, when one is named.
     pub fn awaited_investigator(&self) -> Option<Investigator> {
         self.awaiting.as_ref().and_then(|(_, who)| *who)
     }
 
-    /// Whether the human answers the whole decision: a group choice or the setup
-    /// choice of the lead.
+    /// Whether the human answers the whole decision: the setup choice of the lead.
     pub fn with_human(&self) -> bool {
         self.with_human
     }
@@ -189,15 +221,11 @@ impl Routing {
 
     /// The player who may submit `id`: a listed option, or a number or allocation
     /// in place of a listed option's placeholder. `None` when the pending decision
-    /// does not accept it from one player alone. Undo is the human's.
+    /// does not accept it from one player alone. Undo is its
+    /// [undoer](Self::undoer)'s, if it has one.
     pub fn controller(&self, session: &Session, control: &Control, id: &str) -> Option<Controller> {
         if id == "undo" {
-            return session
-                .observe()
-                .choices
-                .iter()
-                .any(|choice| choice.id == "undo")
-                .then_some(Controller::Human);
+            return self.undoer().cloned();
         }
         if let Some((_, _, controller)) = self.options.iter().find(|(listed, ..)| listed == id) {
             return Some(controller.clone());
@@ -213,8 +241,12 @@ impl Routing {
         })
     }
 
-    /// The owner of `id` as the rules session names it.
+    /// The owner of `id` as the rules session names it; for Undo, the owner of
+    /// the decision it would revert.
     pub fn owner(&self, session: &Session, id: &str) -> Option<OptionOwner> {
+        if id == "undo" {
+            return self.undo_owner().cloned();
+        }
         self.options
             .iter()
             .find(|(listed, ..)| listed == id)
@@ -242,26 +274,46 @@ fn spans_players(participants: &[Investigator], control: &Control) -> bool {
     players.any(|player| player != first)
 }
 
-/// The controller of an owner that is not answered by the human as a whole.
+/// The one player who controls every investigator `owner` names; the table's
+/// own choice is the human's. No one does for a shared decision that spans
+/// players, so no one may undo one.
+fn sole_controller(owner: &OptionOwner, control: &Control) -> Option<Controller> {
+    if *owner == OptionOwner::Table {
+        return Some(Controller::Human);
+    }
+    let mut players = investigators(owner)
+        .into_iter()
+        .map(|who| control.controller(who));
+    let first = players.next()?;
+    players.all(|player| player == first).then_some(first)
+}
+
+/// The controller of an option one player answers.
 fn single_controller(owner: &OptionOwner, control: &Control) -> Controller {
     match owner {
-        OptionOwner::Investigator(who) => control.controller(*who),
+        OptionOwner::Investigator(who) | OptionOwner::Group { arbiter: who } => {
+            control.controller(*who)
+        }
         OptionOwner::Shared { participants } => participants
             .first()
             .map_or(Controller::Human, |who| control.controller(*who)),
-        OptionOwner::Group { .. } | OptionOwner::Table => Controller::Human,
+        OptionOwner::Table => Controller::Human,
     }
 }
 
-/// The player the table waits for. When several players have options, the
-/// player of the investigator whose decision it is (the table's display focus)
-/// answers, and the others' options stay available to them.
+/// The player the table waits for. A group choice waits for its arbiter's
+/// player. When several players have options, the player of the investigator
+/// whose decision it is (the table's display focus) answers, and the others'
+/// options stay available to them.
 fn awaiting(
     options: &[(String, OptionOwner, Controller)],
     decision_owner: Option<Investigator>,
     control: &Control,
 ) -> Option<(Controller, Option<Investigator>)> {
     let (_, first_owner, first) = options.first()?;
+    if let OptionOwner::Group { arbiter } = first_owner {
+        return Some((first.clone(), Some(*arbiter)));
+    }
     let has_options = |controller: &Controller| {
         options
             .iter()

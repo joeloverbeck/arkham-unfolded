@@ -79,7 +79,8 @@ impl Presentation {
         true
     }
 
-    /// Keep only the options the human may submit. Undo stays the human's.
+    /// Keep only the options the human may submit. Undo is the human's only when
+    /// the decision it would revert is the human's (#207).
     fn restrict(&self, session: &Session, view: &mut Observation) {
         if self.control.solo() || view.choices.is_empty() {
             return;
@@ -90,17 +91,20 @@ impl Presentation {
             .as_ref()
             .is_none_or(|(at, control, _)| *at != revision || *control != self.control);
         if stale {
+            use crate::partners::Controller;
             let routing = crate::partners::Routing::of(session, &self.control);
-            let human = crate::partners::Controller::Human;
             let mut ids: Vec<String> = routing
                 .options()
-                .filter(|(_, _, controller)| **controller != human)
+                .filter(|(_, _, controller)| **controller != Controller::Human)
                 .map(|(id, _, _)| id.to_owned())
                 .collect();
+            if routing.undoer() != Some(&Controller::Human) {
+                ids.push("undo".into());
+            }
             // A shared decision's completing option is the readiness of each
             // player taking part in it.
             for shared in routing.shared() {
-                if !shared.players(&self.control).contains(&human) {
+                if !shared.players(&self.control).contains(&Controller::Human) {
                     ids.push(shared.close.clone());
                     ids.push("round-end:decline-act".into());
                 }

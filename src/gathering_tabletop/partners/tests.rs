@@ -343,6 +343,142 @@ fn take_over_returns_the_decision_to_the_human_and_refuses_the_partners_later_ch
     assert_eq!(app.world().resource::<Table>().session.revision(), revision);
 }
 
+/// A partner's choice over the socket, applied once the table settles.
+fn partner_chooses(partnered: &mut Partnered, partner: &str, id: &str) {
+    let revision = partnered.app.world().resource::<Table>().session.revision();
+    let answer = exchange(
+        &mut partnered.app,
+        &partnered.socket,
+        &[json!({"op": "choose", "partner": partner, "revision": revision, "id": id})],
+    );
+    assert_eq!(answer[0]["status"], "chosen", "{id}: {}", answer[0]);
+    settle(&mut partnered.app);
+}
+
+/// Finish the presentation, continuing every story reading as the human would.
+fn settle(app: &mut App) {
+    loop {
+        finish_presentation(app);
+        if app
+            .world()
+            .resource::<Table>()
+            .presentation
+            .story()
+            .is_none()
+        {
+            return;
+        }
+        app.world_mut()
+            .resource_mut::<Actions>()
+            .0
+            .push(Action::ContinueStory);
+        app.update();
+    }
+}
+
+/// The choice control holding keyboard focus, if any.
+fn focused_choice(app: &App) -> Option<String> {
+    let world = app.world();
+    let focus = world.resource::<InputFocus>().get()?;
+    world
+        .get::<ChoiceControl>(focus)
+        .map(|control| control.0.clone())
+}
+
+/// Ticket #207: with a partner playing the lead, the human's controls do not offer
+/// the group choice of who takes the next turn, and the lead's portrait shows its
+/// partner deciding. Undo is offered to the human only for the human's own latest
+/// decision, and does not take keyboard focus while a partner decides.
+#[test]
+fn the_humans_controls_leave_a_partner_leads_group_choice_and_its_undo_to_that_partner() {
+    let mut partnered = partnered(&[Jacqueline]);
+    // An open menu holds the table's presentation, and with it a partner's choice.
+    press(&mut partnered.app, "Close menu");
+    let partner = join(&mut partnered);
+    partner_chooses(&mut partnered, &partner, "confirm-mulligan"); // Jacqueline
+    let app = &mut partnered.app;
+    choose(app, "confirm-mulligan"); // Tony
+    settle(app);
+    choose(app, "confirm-mulligan"); // Patrice
+    settle(app);
+    let listed = app.world().resource::<Table>().session.observe().choices;
+    assert!(listed.iter().any(|choice| choice.id == "turn:tony"));
+    assert!(
+        offered(app).iter().all(|id| !id.starts_with("turn:")),
+        "{:?}",
+        offered(app)
+    );
+    let shown = rendered_text(app);
+    assert!(
+        shown.contains("Jacqueline Fine: partner thinking"),
+        "{shown}"
+    );
+
+    partner_chooses(&mut partnered, &partner, "turn:tony");
+    let app = &mut partnered.app;
+    let listed = app.world().resource::<Table>().session.observe().choices;
+    assert!(
+        listed.iter().any(|choice| choice.id == "undo"),
+        "The partner's group choice can be undone"
+    );
+    assert!(
+        !offered(app).iter().any(|id| id == "undo"),
+        "Not by the human"
+    );
+    assert!(offered(app).iter().any(|id| id == "turn:end"));
+    // The human's own latest decision is the human's to undo.
+    choose(app, "action:ordinary:resource");
+    settle(app);
+    assert!(offered(app).iter().any(|id| id == "undo"));
+    choose(app, "turn:end");
+    settle(app);
+    assert!(
+        rendered_text(app).contains("Jacqueline Fine: partner thinking"),
+        "The lead's partner chooses the next turn"
+    );
+    assert!(offered(app).iter().any(|id| id == "undo"));
+    assert_ne!(focused_choice(app).as_deref(), Some("undo"));
+}
+
+/// Ticket #207, Joel as lead: with a partner playing another investigator, the
+/// human playing the lead receives the next-turn group choice at the table as
+/// before, and Undo of that partner's decision is not the human's.
+#[test]
+fn the_human_playing_the_lead_keeps_the_group_choice_at_the_table() {
+    let mut partnered = partnered(&[Patrice]);
+    press(&mut partnered.app, "Close menu");
+    let partner = join(&mut partnered);
+    let app = &mut partnered.app;
+    choose(app, "confirm-mulligan"); // Jacqueline
+    settle(app);
+    choose(app, "confirm-mulligan"); // Tony
+    settle(app);
+    partner_chooses(&mut partnered, &partner, "confirm-mulligan"); // Patrice
+    let app = &mut partnered.app;
+    let table = app.world().resource::<Table>();
+    let shown: Vec<_> = table.view().choices.into_iter().map(|c| c.id).collect();
+    for id in ["turn:tony", "turn:patrice", "turn:jacqueline"] {
+        assert!(shown.iter().any(|offer| offer == id), "{shown:?}");
+        assert!(table.human_may(id));
+    }
+    assert!(!rendered_text(app).contains("partner thinking"));
+
+    choose(app, "turn:patrice");
+    settle(app);
+    partner_chooses(&mut partnered, &partner, "action:ordinary:resource");
+    let app = &mut partnered.app;
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .session
+            .observe()
+            .choices
+            .iter()
+            .any(|choice| choice.id == "undo")
+    );
+    assert!(!offered(app).iter().any(|id| id == "undo"));
+}
+
 /// Ticket #205: leaving the table ends every partner session and its socket.
 #[test]
 fn leaving_the_table_ends_every_partner_session() {

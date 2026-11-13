@@ -34,33 +34,50 @@ investigators; you never touch the window, saves or settings.
 2. Then loop:
      scripts/tools partner wait PARTNER
    Blocks until one of your investigators has a decision at a settled table
-   (status \"decision\"), the investigators you play change (\"control_changed\"), or
+   (status \"decision\"), a group choice opens (\"group_choice\", once per choice),
+   the investigators you play change (\"control_changed\"), or
    the table closes (\"closed\": stop). After its timeout (240 s by default, --timeout
    SECONDS up to 590) it prints \"nothing_yet\" and exits 3: run it again.
    Read the answer's \"view\": \"decision.options\" lists only your options (\"id\",
    \"label\", \"investigator\"); \"decision.yours\" says the table waits for you;
-   \"investigators\", \"locations\", \"enemies\", \"act\", \"agenda\" and \"test\" are
-   what a player sees; \"cards\" gives each card's full text the first time you see
-   it (observe --all-cards repeats every visible card's text).
+   \"test\", \"encounter_card\", \"harm\" and \"resolving\" say what it is about.
+   Your first view, from join, is complete: \"investigators\", \"locations\",
+   \"enemies\", \"act\", \"agenda\" and the rest of the table. Every later view
+   keeps the decision whole and reports the table only as \"changes\" since your
+   last view: \"at\" names where (such as investigators.patrice.resources), with
+   \"was\" and \"now\", \"now\" alone, or \"added\" and \"removed\". \"cards\" gives
+   each card's full text the first time you see it.
      scripts/tools partner choose PARTNER REVISION ID
    with the view's \"revision\" and one option's \"id\". It waits until the table
    has finished presenting, then prints \"chosen\" with the new view. A stale,
    unlisted or not-yours choice prints \"refused\" with the reason and the current
    view, and exits 1: decide again from that view.
      scripts/tools partner observe PARTNER
-   prints the current view at any time.
+   prints the current view, with the changes since your last, at any time;
+     scripts/tools partner observe PARTNER --full
+   prints the complete view and every visible card's text again, for example
+   after your context was compacted.
+     scripts/tools partner inspect PARTNER CODE
+   prints the full text of a card you can see, by its \"code\", as the table's
+   Inspect shows it, with its current counters; a card you cannot see is refused.
 
 3. When you are done: scripts/tools partner leave PARTNER
 
-In this version the other player makes group choices (such as who takes the next
-turn) and shared decisions (such as committing cards to a test with several
-participants); the view's \"decision.note\" says so. Wait for your next decision.
-Other players are named only by their investigators.
+Group choices, such as who takes the next turn, belong to the lead investigator's
+player (after the lead is eliminated, the next investigator's in player order).
+The view's \"decision.group_choice\" names its \"arbiter\" and what is being chosen;
+only the arbiter's player has its options. In this version the other player makes
+shared decisions (such as committing cards to a test with several participants);
+the view's \"decision.note\" says so. Wait for your next decision. Other players are
+named only by their investigators.
+
+Undo: while your own latest decision is the latest one and nothing has followed
+it, the view's \"decision.undo\" offers it; choose its \"id\" (\"undo\") to revert it.
 
 Waiting costs nothing: in Claude Code, give wait a Bash timeout above its own (for
 example 300000 ms) or let it run in the background, which re-invokes you when it
-exits; in Codex, run wait again whenever it answers nothing_yet. Views give the
-current state, not the history: keep brief notes of your plan as you play.
+exits; in Codex, run wait again whenever it answers nothing_yet. Views give
+changes, not the history: keep brief notes of the table and your plan as you play.
 
 Exit codes: 0 answered, 1 refused, 2 the table cannot be reached or the command
 is malformed, 3 nothing yet (wait only). The first run in a checkout builds the
@@ -84,22 +101,24 @@ enum Request {
         #[arg(value_parser = ["tony", "patrice", "jacqueline"])]
         investigators: Vec<String>,
     },
-    /// Wait until one of your investigators has a decision at a settled table, the
-    /// investigators you play change, or the table closes; exit 3 with nothing_yet
-    /// after the timeout.
+    /// Wait until one of your investigators has a decision at a settled table, a
+    /// group choice opens, the investigators you play change, or the table closes;
+    /// exit 3 with nothing_yet after the timeout.
     Wait {
         partner: String,
         /// Seconds to wait before answering nothing_yet.
         #[arg(long, default_value_t = 240, value_parser = clap::value_parser!(u64).range(1..=590))]
         timeout: u64,
     },
-    /// Print your current view.
+    /// Print your current view, with the changes since your last.
     Observe {
         partner: String,
-        /// Repeat the full text of every visible card, not only cards new to you.
+        /// Print the complete view and every visible card's text again.
         #[arg(long)]
-        all_cards: bool,
+        full: bool,
     },
+    /// Print the full text of a card you can see, by its code.
+    Inspect { partner: String, code: String },
     /// Choose one of your options by its id at the view's revision.
     Choose {
         partner: String,
@@ -122,13 +141,17 @@ pub fn run(args: Args) -> Result<u8> {
             // The table answers at its timeout; this only bounds a table that stops.
             Some(Duration::from_secs(timeout + 30)),
         ),
-        Request::Observe { partner, all_cards } => {
+        Request::Observe { partner, full } => {
             let mut request = json!({"op": "observe", "partner": partner});
-            if all_cards {
-                request["all_cards"] = json!(true);
+            if full {
+                request["full"] = json!(true);
             }
             (request, None)
         }
+        Request::Inspect { partner, code } => (
+            json!({"op": "inspect", "partner": partner, "card": code}),
+            None,
+        ),
         Request::Choose {
             partner,
             revision,

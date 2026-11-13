@@ -671,10 +671,15 @@ pub(super) fn render(
                                 .readiness_label(&choice.id, choice_label(&choice)),
                             Action::Choose(table.epoch, view.revision, choice.id.clone()),
                         );
+                        // While a partner decides, Enter must not undo the human's
+                        // own latest decision under it.
+                        let undo_under_partner =
+                            choice.id == "undo" && !table.partners.deciding.is_empty();
                         if index == 0
                             && !table.menu_open
                             && !table.context.is_open()
                             && !reveal_open
+                            && !undo_under_partner
                         {
                             row.commands().entity(entity).insert(AutoFocus);
                         }
