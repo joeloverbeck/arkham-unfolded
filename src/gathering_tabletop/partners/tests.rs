@@ -1031,20 +1031,28 @@ fn the_human_passes_before_a_partners_action_while_holding_a_fast_option() {
     let pass = "Pass, let Jacqueline Fine act";
     assert!(button_with_label(&mut app, pass).is_some(), "{shown}");
 
+    // Review fix G1: the held choice is answered at once, and a wait tells the
+    // partner once it is applied.
     let at = revision(&app);
-    let chosen = connect(
+    let held = exchange(
+        &mut app,
         &socket,
         &[json!({"op": "choose", "partner": partner, "revision": at, "id": "turn:end"})],
+    );
+    assert_eq!(held[0]["status"], "held", "{}", held[0]);
+    let told = connect(
+        &socket,
+        &[json!({"op": "wait", "partner": partner, "timeout_seconds": 60})],
     );
     for _ in 0..20 {
         app.update();
         thread::sleep(Duration::from_millis(5));
     }
-    assert!(!chosen.is_finished(), "Held for the human's pass");
+    assert!(!told.is_finished(), "Held for the human's pass");
     assert_eq!(revision(&app), at);
     press(&mut app, pass);
-    pump(&mut app, || chosen.is_finished());
-    let answer = chosen.join().unwrap();
+    pump(&mut app, || told.is_finished());
+    let answer = told.join().unwrap();
     assert_eq!(answer[0]["status"], "chosen", "{}", answer[0]);
     assert_eq!(revision(&app), at + 1);
 }

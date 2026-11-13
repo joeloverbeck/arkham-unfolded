@@ -114,6 +114,9 @@ fn a_refusal_exits_1_and_a_wait_with_nothing_yet_exits_3_after_printing_the_answ
         (r#"{"ok":true,"status":"nothing_yet"}"#, 3),
         (r#"{"ok":true,"status":"decision"}"#, 0),
         (r#"{"ok":true,"status":"closed"}"#, 0),
+        // Review fix G1: a held choice's outcome is news, not a refusal.
+        (r#"{"ok":true,"status":"chosen"}"#, 0),
+        (r#"{"ok":true,"status":"released","reason":"moved on"}"#, 0),
         ("not json", 1),
     ] {
         let (_, output) = exchange(&["wait", "a1b2", "--timeout", "1"], answer);
@@ -122,6 +125,24 @@ fn a_refusal_exits_1_and_a_wait_with_nothing_yet_exits_3_after_printing_the_answ
             String::from_utf8(output.stdout).unwrap(),
             format!("{answer}\n")
         );
+    }
+}
+
+/// Review fix G1: a choice the turn's player window holds is answered `held` at
+/// once, which the command prints and exits 0 for, and help says how its outcome
+/// arrives.
+#[test]
+fn a_held_choice_exits_0_and_help_says_a_wait_tells_its_outcome() {
+    let answer = r#"{"ok":true,"status":"held"}"#;
+    let (_, output) = exchange(&["choose", "a1b2", "17", "turn:end"], answer);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("{answer}\n")
+    );
+    let help = help();
+    for taught in ["\"held\"", "\"chosen\"", "\"released\""] {
+        assert!(help.contains(taught), "{taught} in {help}");
     }
 }
 
@@ -239,6 +260,8 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "observed",
         "inspected",
         "chosen",
+        "held",
+        "released",
         "ready",
         "said",
         "left",

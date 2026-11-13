@@ -52,6 +52,8 @@ It answers with the first thing that concerns you, or with `nothing_yet` once it
 | `group_choice` | A [group choice](#group-choices) opened. Every player hears each one once. | When you arbitrate it, decide. Otherwise you may speak before it is made. |
 | `shared` | Another player changed a [shared decision](#shared-decisions) you take part in. | Read `view.shared` and decide again: any readiness you had is cleared. |
 | `table_talk` | Another player spoke. | Read `view.table_talk`, and reply only when it calls for a reply. |
+| `chosen` | The choice that `choose` answered `held` for was applied. | Read the view: when `decision.yours` is true, decide; otherwise wait. |
+| `released` | The choice that `choose` answered `held` for was not applied, and `reason` says why: usually another player used a fast card or ability first, so the decision moved on. | Decide again from the view. |
 | `control_changed` | The investigators you play changed: the table took one over. | Read `investigators` and update your notes. With none left, keep waiting: table talk still reaches you, and if a player says an investigator is open to partners again, join again for it and note your new identity. |
 | `closed` | Your session ended, and `reason` says why. It carries no view. | Stop. When the reason says the attempt restarted, join again. |
 | `nothing_yet` | The period ended with nothing for you (exit status 3). | Wait again. |
@@ -64,7 +66,7 @@ A plain `wait` answers `decision` at once while one of your decisions is pending
 scripts/tools partner wait PARTNER --listen
 ```
 
-A listening wait never answers your own pending decision. It answers another player's message, a group choice opening, a change to a shared decision, a change of the investigators you play or the end of your session, or `nothing_yet` once its period ends. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
+A listening wait never answers your own pending decision. It answers another player's message, a group choice opening, a change to a shared decision, what became of a held choice, a change of the investigators you play or the end of your session, or `nothing_yet` once its period ends. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
 
 ### Waiting in Claude Code
 
@@ -91,6 +93,8 @@ Give the view's `revision` and one option's `id` exactly as listed. An `id` that
 
 The table applies a choice only once it settles: nothing is presenting, and no reading, dialog or menu is open at the window. `choose` waits until then, however long that takes, and answers `chosen` with the new view. When that view's `decision.yours` is true again, decide from it at once; otherwise wait.
 
+In your own investigators' turn, a choice can also wait for the other players: while `decision.turn_window` is listed, a player holding a fast card or ability has not yet passed before your investigator's action (see [Shared decisions](#shared-decisions)). Then `choose` answers `held` at once, and `decision.turn_window.held` names the held choice. It is not applied yet: keep waiting. A wait answers `chosen` once it is applied, or `released` when another player's fast play came first, and you decide again. A later `choose` replaces the held choice, and a choice of yours that is applied at once, such as Undo, drops it.
+
 To read a card again, with its current counters:
 
 ```sh
@@ -107,7 +111,7 @@ Group choices belong to the lead investigator's player: who takes the next turn,
 
 ## Shared decisions
 
-Committing cards to a skill test, a group clue payment, and a window for fast cards and abilities can involve several players at once. Each player sets only their own investigators' part. The player window before each action of a turn is one too: while you hold a fast card or ability in another investigator's turn, `wait` wakes you with `decision`, and that investigator's action waits until you use an option or pass. In your own investigators' turn, your choice waits the same way for the others, and `decision.turn_window` names whose passes it waits for; when one of them plays a fast card instead, your choice is refused as stale, and you decide again. `view.shared` lists each one you take part in:
+Committing cards to a skill test, a group clue payment, and a window for fast cards and abilities can involve several players at once. Each player sets only their own investigators' part. The player window before each action of a turn is one too: while you hold a fast card or ability in another investigator's turn, `wait` wakes you with `decision`, and that investigator's action waits until you use an option or pass. In your own investigators' turn, your choice waits the same way for the others: `decision.turn_window` names whose passes it waits for, and `choose` answers `held` (see [Decide](#decide)). When one of them plays a fast card instead, a wait answers `released`, and you decide again. `view.shared` lists each one you take part in:
 
 - `kind`: `commitment`, `clue_payment` or `window`; a turn's window also names `before_action_of`.
 - `players`, each with its `investigators` and whether it is `ready`. `waiting_for` names the investigators whose players are not yet ready, and `you_are_ready` is yours.
@@ -189,7 +193,7 @@ A request the table cannot accept answers `refused`, with the reason in `error` 
 - the card is not in your sight;
 - no partner with your identity plays at the table: your session ended while the table stayed open, as when the attempt restarts, so join again.
 
-`choose` is checked when you send it and again when the table applies it, so a held choice can still be refused, for example after the table takes the investigator over. Sending the same choice twice at one revision is safe: at most one is applied, and the other is refused as stale.
+`choose` is checked when you send it and again when the table applies it, so a choice that waited can still be refused, for example after the table takes the investigator over; a choice answered `held` is then `released`. Sending the same choice twice at one revision is safe: at most one is applied, and the other is refused as stale or replaces the held one.
 
 ## Cut-off commands
 

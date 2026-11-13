@@ -839,6 +839,105 @@ fn a_turn_waits_on_no_player_without_a_fast_option() {
     assert_eq!(sitting.revision(), revision + 1);
 }
 
+/// Tony's turn with Patrice's Violin in play ([fast], usable in any player window:
+/// 06016, RR p.3), Tony handed to a partner, which has joined.
+fn tonys_partner_before_the_humans_violin() -> (Sitting, String) {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Tony]);
+    let partner = sitting.join(&[]);
+    (sitting, partner)
+}
+
+/// Tony's resources and hand size.
+fn tonys_holdings(sitting: &Sitting) -> (u8, usize) {
+    let play = sitting.rules.session.observe().play.unwrap();
+    let tony = &play.players[Tony.index()];
+    (tony.resources, tony.hand.len())
+}
+
+/// Review fix G1 (F1; a partner's command is cut off after Claude Code's 600 s or
+/// Codex's five-minute window). The active player's choice that the turn's player
+/// window holds is answered at once, `held`, naming it and whose passes it waits
+/// for. It stays pending, and the partner's `wait` says `chosen` once it is applied.
+/// A second choice while one is held replaces it, so at most one is applied.
+#[test]
+fn a_choice_held_for_the_turn_window_answers_held_and_wait_tells_when_it_is_applied() {
+    let (mut sitting, partner) = tonys_partner_before_the_humans_violin();
+    let (revision, before) = (sitting.revision(), tonys_holdings(&sitting));
+
+    let held = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(held["status"], "held", "{held}");
+    let decision = &held["view"]["decision"];
+    assert_eq!(
+        decision["turn_window"]["held"]["id"], "action:ordinary:resource",
+        "{decision}"
+    );
+    assert_eq!(
+        decision["turn_window"]["waiting_for"],
+        json!(["Patrice Hathaway"])
+    );
+    assert_eq!(decision["yours"], false, "It has decided: {decision}");
+    assert_eq!(sitting.revision(), revision);
+
+    // Its own held decision does not answer its wait.
+    let waits = sitting.wait(&partner);
+    sitting.poll();
+    assert!(sitting.take(waits).is_none());
+
+    // It changes its mind: the second choice replaces the first.
+    let replaced = sitting.choose(&partner, "action:ordinary:draw");
+    assert_eq!(replaced["status"], "held", "{replaced}");
+    assert_eq!(
+        replaced["view"]["decision"]["turn_window"]["held"]["id"],
+        "action:ordinary:draw"
+    );
+
+    // The human passes: the held choice is applied, once, and the wait says so.
+    assert_eq!(sitting.human(TURN_PASS), HumanChoice::Ready);
+    assert_eq!(sitting.revision(), revision + 1);
+    let told = sitting.take(waits).expect("The wait tells the outcome");
+    assert_eq!(told["status"], "chosen", "{told}");
+    assert_eq!(
+        tonys_holdings(&sitting),
+        (before.0, before.1 + 1),
+        "Only the held draw was applied"
+    );
+    assert_eq!(
+        sitting.rules.attributed.last(),
+        Some(&("action:ordinary:draw".to_owned(), Tony))
+    );
+}
+
+/// Review fix G1 (F1: a fast play moves the decision on, so the active player
+/// decides again; no one is silently rebased). When the human plays Patrice's
+/// Violin first, the partner's held choice is released, not applied, and its
+/// `wait` says so with the reason, on a view where the decision is its own again.
+#[test]
+fn a_held_choice_is_released_when_a_fast_play_moves_the_decision_on() {
+    let (mut sitting, partner) = tonys_partner_before_the_humans_violin();
+    let before = tonys_holdings(&sitting);
+    let held = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(held["status"], "held", "{held}");
+    let waits = sitting.wait(&partner);
+    let violin = sitting
+        .offered()
+        .into_iter()
+        .find(|id| id.starts_with("violin:") && id.ends_with(":target:patrice:draw"))
+        .expect("Her Violin, for herself");
+    assert_eq!(sitting.human(&violin), HumanChoice::Commit);
+    let told = sitting.take(waits).expect("The wait tells the release");
+    assert_eq!(told["status"], "released", "{told}");
+    assert!(
+        told["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("not applied")),
+        "{told}"
+    );
+    assert_eq!(told["view"]["decision"]["yours"], true, "{told}");
+    assert_eq!(tonys_holdings(&sitting).0, before.0, "Nothing was rebased");
+}
+
 /// Review fix H2 (F1; play contract, Shared decisions): the active player's view
 /// names whose passes its next choice waits for in a field of its own, so that never
 /// displaces another note. In Tony's partner's turn, the human holds Patrice's Violin

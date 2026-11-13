@@ -42,7 +42,10 @@ A wait answers \"decision\" once the table has presented one of your
 investigators' decisions, even while a reading or a dialog is still open; the
 table applies a choice only once it settles, so choose waits until then. In
 another investigator's turn, a fast card or ability of yours wakes you before
-each of that investigator's actions: use it, or pass with ready. After
+each of that investigator's actions: use it, or pass with ready. In your own
+investigators' turn, while another player may still use one first, choose
+answers \"held\" at once; a later wait answers \"chosen\" once it is applied, or
+\"released\" when a fast play came first and you decide again. After
 the first, complete view, each view reports the table as \"changes\" since your
 last. A wait answers \"nothing_yet\" after its timeout (240 s by default, at
 most 590): run it again. When the pasted line names --socket PATH, put it on
@@ -75,8 +78,9 @@ enum Request {
     },
     /// Wait until the table has presented a decision of one of your investigators,
     /// a group choice opens, another player changes a shared decision you take
-    /// part in, another player speaks, the investigators you play change, or the
-    /// table closes; exit 3 with nothing_yet after the timeout.
+    /// part in, your held choice is applied or released, another player speaks,
+    /// the investigators you play change, or the table closes; exit 3 with
+    /// nothing_yet after the timeout.
     Wait {
         partner: String,
         /// Seconds to wait before answering nothing_yet.
@@ -98,7 +102,9 @@ enum Request {
     /// Print the full text of a card you can see, by its code.
     Inspect { partner: String, code: String },
     /// Choose one of your options by its id at the view's revision; the table
-    /// applies it once it settles, and the answer waits until then.
+    /// applies it once it settles, and the answer waits until then. A choice
+    /// that waits for other players' passes before your action is answered held
+    /// at once.
     Choose {
         partner: String,
         revision: u64,
