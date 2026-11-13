@@ -5,12 +5,12 @@
 //! evidence.
 //!
 //! No one speaks while a peril encounter resolves (play contract, after RR p.16).
-//! Exchanges are limited until play moves on or another player speaks. Between
+//! Partners' messages are limited at each decision, until play moves on. Between
 //! committed decisions, a partner may send at most [`CHATTER_LIMIT`] messages in a
 //! row unless another player has spoken since its last one. And once
 //! [`EXCHANGE_LIMIT`] messages have been said since the latest message of a player
-//! new to that decision's talk, partners wait until play moves on or a player who
-//! has not spoken at it speaks. Every player's messages count alike, so the limits
+//! new to that decision's talk, the partners that have spoken at it wait until play
+//! moves on or a player who has not spoken at it speaks. Every player's messages count alike, so the limits
 //! reveal nothing of who is human; only the human is never refused.
 
 use super::Table;
@@ -134,7 +134,7 @@ impl Talk {
             let (speakers, heard) = self.exchange(revision);
             if speakers.contains(&from) && heard >= EXCHANGE_LIMIT {
                 return Err(format!(
-                    "The table has heard {heard} messages since a player new to this exchange spoke, the exchange limit of {EXCHANGE_LIMIT}. Speak again once play moves on or a player who has not spoken since the last decision speaks."
+                    "The table has heard {heard} messages since a player new to this exchange spoke, the exchange limit of {EXCHANGE_LIMIT}. Speak again once play moves on or a player who has not yet spoken at this decision speaks."
                 ));
             }
         }

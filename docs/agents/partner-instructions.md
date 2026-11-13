@@ -144,7 +144,7 @@ This says one message of up to 280 characters as your investigators and answers 
 
 - while a peril encounter resolves, since no one may confer then (Rules Reference p. 16);
 - after three messages in a row from you at one decision, until play moves on or another player speaks;
-- once six messages have been said since a player new to this decision's talk spoke, until play moves on or a player who has not spoken since the last decision speaks; every player's messages count, yours and the others' alike;
+- once you have spoken at this decision and six messages have been said since a player new to its talk spoke, until play moves on or a player who has not yet spoken at this decision speaks; every player's messages count, yours and the others' alike;
 - while you play no investigator.
 
 So two partners answering each other share one exchange: settle it in a few messages, then play.

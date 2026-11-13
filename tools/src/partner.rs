@@ -50,8 +50,9 @@ the first, complete view, each view reports the table as \"changes\" since your
 last. A wait answers \"nothing_yet\" after its timeout (240 s by default, at
 most 590): run it again. When the pasted line names --socket PATH, put it on
 every command. Table talk is limited: at most three messages in a row from
-you, and six in an exchange, until play moves on or a player who has not
-spoken since the last decision speaks.
+you, until play moves on or another player speaks, and six in an exchange,
+until play moves on or a player who has not yet spoken at that decision
+speaks.
 
 Exit codes: 0 answered (\"closed\" included: stop), 1 refused (decide again from
 the view in the answer), 2 the table cannot be reached, did not answer a wait in

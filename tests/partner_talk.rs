@@ -403,8 +403,8 @@ fn a_partner_speaks_at_most_the_chatter_limit_in_a_row_between_decisions() {
 }
 
 /// Review fix D2 (story 61: "so that two agents cannot flood the table or spend
-/// tokens chatting"; play contract: exchanges between partners are limited until
-/// play moves on or another player speaks). Two partners who answer each other
+/// tokens chatting"; play contract: partners' messages are limited at each
+/// decision, until play moves on). Two partners who answer each other
 /// never send three in a row, yet share one exchange: once EXCHANGE_LIMIT messages
 /// have been said at a decision since a player new to it last spoke, a partner
 /// waits until play moves on or a player who has not spoken at this decision
