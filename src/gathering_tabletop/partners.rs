@@ -131,12 +131,11 @@ pub(super) struct Partners {
     /// The attempt the partner sessions joined; a restart ends them.
     attempt: u64,
     /// The decision last routed for the cue: revision, control, and its result.
-    routed: Option<(
-        u64,
-        rules::Control,
-        Option<(Controller, Option<Investigator>)>,
-    )>,
+    routed: Option<(u64, rules::Control, Option<Awaited>)>,
 }
+
+/// The player a decision waits for, and the investigator that player answers for.
+type Awaited = (Controller, Option<Investigator>);
 
 impl Default for Partners {
     fn default() -> Self {
