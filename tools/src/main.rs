@@ -78,7 +78,7 @@ enum Command {
     #[command(after_help = "Agent seat: README.md#held-session")]
     Seat(seat::Args),
     /// Play investigators at the running Arkham table as an agent partner: join, wait,
-    /// observe, choose and leave.
+    /// observe, inspect, choose, ready, say and leave.
     #[command(after_help = partner::GUIDE)]
     Partner(partner::Args),
     /// Add or remove checkouts that build into the owner's Cargo target.

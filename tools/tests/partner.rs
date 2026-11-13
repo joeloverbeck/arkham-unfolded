@@ -170,12 +170,9 @@ fn the_default_socket_follows_the_environment_and_help_teaches_the_loop() {
     let sent: serde_json::Value = serde_json::from_str(&table.join().unwrap()).unwrap();
     assert_eq!(sent["op"], "join");
 
-    let help = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
-        .args(["partner", "--help"])
-        .output()
-        .unwrap();
-    let help = String::from_utf8(help.stdout).unwrap();
+    let help = help();
     for step in [
+        INSTRUCTIONS,
         "partner join",
         "partner wait PARTNER",
         "partner choose PARTNER REVISION ID",
@@ -190,10 +187,74 @@ fn the_default_socket_follows_the_environment_and_help_teaches_the_loop() {
     }
 }
 
-/// #209: `say` sends one message, its words joined as the player typed them, and a
-/// refused message exits 1; help teaches table talk.
+/// The partner instructions every pasted line and `--help` point to (#211).
+const INSTRUCTIONS: &str = "docs/agents/partner-instructions.md";
+
+fn help() -> String {
+    let help = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .args(["partner", "--help"])
+        .output()
+        .unwrap();
+    String::from_utf8(help.stdout).unwrap()
+}
+
+/// #211: the instructions describe every partner request and every status the
+/// table answers with (`src/partners.rs`), the waiting loop of Claude Code and of
+/// Codex, table talk's limits (#209), and notes kept against context compaction.
 #[test]
-fn say_sends_one_message_and_help_teaches_table_talk() {
+fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let instructions = std::fs::read_to_string(repository.join(INSTRUCTIONS)).unwrap();
+    let requests = [
+        "scripts/tools partner join",
+        "join patrice",
+        "scripts/tools partner wait PARTNER",
+        "scripts/tools partner observe PARTNER",
+        "observe PARTNER --full",
+        "scripts/tools partner inspect PARTNER CODE",
+        "scripts/tools partner choose PARTNER REVISION ID",
+        "scripts/tools partner ready PARTNER REVISION",
+        "scripts/tools partner say PARTNER MESSAGE",
+        "scripts/tools partner leave PARTNER",
+        "decision.undo",
+        "--socket",
+    ];
+    let statuses = [
+        "joined",
+        "decision",
+        "group_choice",
+        "shared",
+        "table_talk",
+        "control_changed",
+        "closed",
+        "nothing_yet",
+        "observed",
+        "inspected",
+        "chosen",
+        "ready",
+        "said",
+        "left",
+        "refused",
+    ];
+    let waiting = ["Claude Code", "run_in_background", "Codex", "240 s", "590"];
+    let talk = ["280 characters", "three messages in a row", "peril"];
+    let notes = ["compacted", "local/partners/"];
+    for taught in requests.into_iter().chain(waiting).chain(talk).chain(notes) {
+        assert!(instructions.contains(taught), "{taught} in {INSTRUCTIONS}");
+    }
+    for status in statuses {
+        assert!(
+            instructions.contains(&format!("`{status}`")),
+            "status {status} in {INSTRUCTIONS}"
+        );
+    }
+}
+
+/// #209: `say` sends one message, its words joined as the player typed them, and a
+/// refused message exits 1; help names the command. Since #211 table talk's limits
+/// are taught by the partner instructions help points to (tested above).
+#[test]
+fn say_sends_one_message_and_help_names_it() {
     let (sent, output) = exchange(
         &["say", "a1b2", "I'll", "take the", "Attic."],
         r#"{"ok":true,"status":"said"}"#,
@@ -217,17 +278,6 @@ fn say_sends_one_message_and_help_teaches_table_talk() {
         "A message is required: {output:?}"
     );
 
-    let help = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
-        .args(["partner", "--help"])
-        .output()
-        .unwrap();
-    let help = String::from_utf8(help.stdout).unwrap();
-    for taught in [
-        "partner say PARTNER MESSAGE",
-        "table_talk",
-        "peril",
-        "in a row",
-    ] {
-        assert!(help.contains(taught), "{taught} in {help}");
-    }
+    let help = help();
+    assert!(help.contains("partner say PARTNER MESSAGE"), "{help}");
 }

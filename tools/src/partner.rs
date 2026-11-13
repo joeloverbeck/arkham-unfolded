@@ -17,99 +17,42 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// What `scripts/tools partner --help` teaches a fresh agent session.
+/// What `scripts/tools partner --help` teaches a fresh agent session: the commands
+/// and the loop in brief. The partner instructions it points to own the rest (#211).
 pub const GUIDE: &str = "\
-You are an agent partner: a player at a running Arkham Horror: The Card Game table \
-(The Gathering, Standard) in the Arkham Unfolded window. Another player plays the \
-other investigators. Play your investigators on your own judgement, toward the \
-team's success. You only choose among the options the table lists for your \
-investigators; you never touch the window, saves or settings.
+You are an agent partner: a player at a running Arkham Horror: The Card Game table
+in the Arkham Unfolded window. Before you join, read
+docs/agents/partner-instructions.md in this repository, and read it again after
+your context is compacted. It describes every answer and status, waiting in
+Claude Code and in Codex, group and shared decisions, table talk, conduct and
+the notes to keep.
 
-1. Join once:
-     scripts/tools partner join
-   Takes every investigator handed to partners that no partner plays (or name them:
-   join patrice). The answer's \"partner\" is your identity: keep it, every later
-   command needs it. \"investigators\" says whom you play.
+  scripts/tools partner join [INVESTIGATOR...]    keep the answer's \"partner\"
+  scripts/tools partner wait PARTNER [--timeout SECONDS]
+  scripts/tools partner observe PARTNER
+  scripts/tools partner observe PARTNER --full    the complete view again
+  scripts/tools partner inspect PARTNER CODE
+  scripts/tools partner choose PARTNER REVISION ID
+  scripts/tools partner ready PARTNER REVISION
+  scripts/tools partner say PARTNER MESSAGE
+  scripts/tools partner leave PARTNER
 
-2. Then loop:
-     scripts/tools partner wait PARTNER
-   Blocks until one of your investigators has a decision at a settled table
-   (status \"decision\"), a group choice opens (\"group_choice\", once per choice),
-   another player changes a shared decision you take part in (\"shared\"),
-   another player speaks (\"table_talk\"), the investigators you play change
-   (\"control_changed\"), or
-   the table closes (\"closed\": stop). After its timeout (240 s by default, --timeout
-   SECONDS up to 590) it prints \"nothing_yet\" and exits 3: run it again.
-   Read the answer's \"view\": \"decision.options\" lists only your options (\"id\",
-   \"label\", \"investigator\"); \"decision.yours\" says the table waits for you;
-   \"test\", \"encounter_card\", \"harm\" and \"resolving\" say what it is about.
-   Your first view, from join, is complete: \"investigators\", \"locations\",
-   \"enemies\", \"act\", \"agenda\" and the rest of the table. Every later view
-   keeps the decision whole and reports the table only as \"changes\" since your
-   last view: \"at\" names where (such as investigators.patrice.resources), with
-   \"was\" and \"now\", \"now\" alone, or \"added\" and \"removed\". \"cards\" gives
-   each card's full text the first time you see it.
-     scripts/tools partner choose PARTNER REVISION ID
-   with the view's \"revision\" and one option's \"id\". It waits until the table
-   has finished presenting, then prints \"chosen\" with the new view. A stale,
-   unlisted or not-yours choice prints \"refused\" with the reason and the current
-   view, and exits 1: decide again from that view.
-     scripts/tools partner observe PARTNER
-   prints the current view, with the changes since your last, at any time;
-     scripts/tools partner observe PARTNER --full
-   prints the complete view and every visible card's text again, for example
-   after your context was compacted.
-     scripts/tools partner inspect PARTNER CODE
-   prints the full text of a card you can see, by its \"code\", as the table's
-   Inspect shows it, with its current counters; a card you cannot see is refused.
+A wait answers \"decision\" once the table has presented one of your
+investigators' decisions, even while a reading or a dialog is still open; the
+table applies a choice only once it settles, so choose waits until then. After
+the first, complete view, each view reports the table as \"changes\" since your
+last. A wait answers \"nothing_yet\" after its timeout (240 s by default, at
+most 590): run it again. When the pasted line names --socket PATH, put it on
+every command.
 
-3. When you are done: scripts/tools partner leave PARTNER
-
-Group choices, such as who takes the next turn, belong to the lead investigator's
-player (after the lead is eliminated, the next investigator's in player order).
-The view's \"decision.group_choice\" names its \"arbiter\" and what is being chosen;
-only the arbiter's player has its options. Other players are named only by their
-investigators.
-
-Shared decisions: committing cards to a skill test, a group clue payment, and a
-window for fast cards and abilities. Each player sets only its own investigators'
-part, and the view's \"shared\" shows everyone's pending part (the test's
-\"others_pending\" cards, a payment's \"contributions\") and who is ready. Set
-your part with choose (toggle your cards' commit options; for clues, choose
-act:pay:TONY:PATRICE:JACQUELINE with the others' parts as pending), then mark
-yourself ready:
-     scripts/tools partner ready PARTNER REVISION
-or choose the shared decision's \"ready_with\" option (Confirm, or the window's
-pass). It completes once every player is ready on the same parts; any change
-clears the others' readiness and wakes them. After you have been ready, you may
-change your part only a few times (\"reopenings_left\"). A window closes once
-every player with an option in it has passed; any action reopens it.
-
-Undo: while your own latest decision is the latest one and nothing has followed
-it, the view's \"decision.undo\" offers it; choose its \"id\" (\"undo\") to revert it.
-
-Table talk: every player hears every message, and a message never makes a decision.
-     scripts/tools partner say PARTNER MESSAGE
-says one short message (up to 280 characters) as your investigators. Speak as a
-player, not in character, and only when it matters: plans, warnings, offers and
-replies. Do not name or read out the cards in your hand. Another player's messages
-reach you once, in the next answer's \"view.table_talk\", each with its \"speaker\"
-(that player's investigators), \"text\" and \"round\". You may send at most 3
-messages in a row until play moves on or another player speaks, and no one may
-speak while a peril encounter resolves; a refused say exits 1.
-
-Waiting costs nothing: in Claude Code, give wait a Bash timeout above its own (for
-example 300000 ms) or let it run in the background, which re-invokes you when it
-exits; in Codex, run wait again whenever it answers nothing_yet. Views give
-changes, not the history: keep brief notes of the table and your plan as you play.
-
-Exit codes: 0 answered, 1 refused, 2 the table cannot be reached or the command
-is malformed, 3 nothing yet (wait only). The first run in a checkout builds the
-tool, which can take a few minutes; later runs start at once.";
+Exit codes: 0 answered (\"closed\" included: stop), 1 refused (decide again from
+the view in the answer), 2 the table cannot be reached, did not answer a wait in
+time, or the command is malformed, 3 nothing yet (wait only). The first run in a
+checkout builds the tool, which can take a few minutes.";
 
 #[derive(ClapArgs)]
 pub struct Args {
-    /// The table's partner socket, when the player's line names one. Default:
+    /// The table's partner socket, when the pasted line names one. Default:
     /// $ARKHAM_PARTNER_SOCKET, else arkham-unfolded-partners.sock in $XDG_RUNTIME_DIR.
     #[arg(long, global = true, value_name = "PATH")]
     socket: Option<PathBuf>,
@@ -125,10 +68,10 @@ enum Request {
         #[arg(value_parser = ["tony", "patrice", "jacqueline"])]
         investigators: Vec<String>,
     },
-    /// Wait until one of your investigators has a decision at a settled table, a
-    /// group choice opens, another player changes a shared decision you take part
-    /// in, another player speaks, the investigators you play change, or the table
-    /// closes; exit 3 with nothing_yet after the timeout.
+    /// Wait until the table has presented a decision of one of your investigators,
+    /// a group choice opens, another player changes a shared decision you take
+    /// part in, another player speaks, the investigators you play change, or the
+    /// table closes; exit 3 with nothing_yet after the timeout.
     Wait {
         partner: String,
         /// Seconds to wait before answering nothing_yet.
@@ -144,7 +87,8 @@ enum Request {
     },
     /// Print the full text of a card you can see, by its code.
     Inspect { partner: String, code: String },
-    /// Choose one of your options by its id at the view's revision.
+    /// Choose one of your options by its id at the view's revision; the table
+    /// applies it once it settles, and the answer waits until then.
     Choose {
         partner: String,
         revision: u64,
@@ -153,7 +97,8 @@ enum Request {
     /// Mark yourself ready in the pending shared decision, on the parts your last
     /// view showed, at its revision.
     Ready { partner: String, revision: u64 },
-    /// Leave the table; your investigators wait for another partner or the player.
+    /// Leave the table; your investigators' decisions wait for another partner, or
+    /// for the table to take them over.
     Leave { partner: String },
     /// Say one short message to the table; its words are joined with spaces.
     Say {
@@ -247,7 +192,7 @@ fn default_socket() -> PathBuf {
 fn connect(socket: &Path) -> Result<UnixStream> {
     UnixStream::connect(socket).map_err(|error| match error.kind() {
         ErrorKind::NotFound | ErrorKind::ConnectionRefused => anyhow!(
-            "No Arkham table hosts agent partners on {} ({error}). The player enables partners in the game (Menu, Agent partners); use the --socket their line names, if any.",
+            "No Arkham table hosts agent partners on {} ({error}). Partners are enabled in the game (Menu, Agent partners); use the --socket the pasted line names, if any.",
             socket.display()
         ),
         _ => anyhow!("cannot reach the table on {}: {error}", socket.display()),
