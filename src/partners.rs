@@ -7,10 +7,12 @@
 //! `partner` command and the integration points that name them removes partners.
 //!
 //! A partner joins, which claims investigators the human handed to partners; waits
-//! until one of them has a decision pending at a settled table; observes its view,
+//! until one of them has a decision pending once the table has presented it (a
+//! reading or the human's dialog may still be open, #210); observes its view,
 //! complete once and then as changes (#206); inspects any card it can see; chooses
 //! an option by identity at the current revision; and leaves. A choice is
-//! applied only once the table settles, through the table's own commit path. A group
+//! applied only once the table settles, with nothing of the human's open over it,
+//! through the table's own commit path. A group
 //! choice is its arbiter's player's, and every partner's wait hears it open (#207).
 //! In a shared decision that spans players, each player sets its own part and marks
 //! itself ready, and the host completes it once every participating player is
@@ -108,7 +110,15 @@ impl Control {
 /// The table a partner plays at, as the host reaches it.
 pub trait Table {
     fn session(&self) -> &Session;
-    /// The table has finished presenting and would take the human's click now.
+    /// The table has finished presenting the pending decision, so a wait may tell
+    /// its players of it, even while a reading or the human's dialog is still open
+    /// (#210). By default, only once the table has settled.
+    fn presented(&self) -> bool {
+        self.settled()
+    }
+    /// The table has finished presenting, would take the human's click now, and
+    /// shows nothing of the human's over it: a choice applied now presents its
+    /// consequences at once.
     fn settled(&self) -> bool;
     /// Commit `id` through the human's commit path, saving before presenting. The
     /// table attributes the decision to `by` in its action history.
@@ -288,8 +298,9 @@ impl<R> Host<R> {
     }
 
     /// Whether [`Self::poll`] would answer a held request, or complete a shared
-    /// decision, now.
-    pub fn due(&self, session: &Session, settled: bool, now: Instant) -> bool {
+    /// decision, now, at a table that has `presented` its decision and is `settled`
+    /// or not, as [`Table`] names them.
+    pub fn due(&self, session: &Session, presented: bool, settled: bool, now: Instant) -> bool {
         if settled && self.completion(session).is_some() {
             return true;
         }
@@ -299,7 +310,7 @@ impl<R> Host<R> {
             Pending::Wait { deadline } => {
                 now >= *deadline
                     || self.changed(&held.partner)
-                    || (settled
+                    || (presented
                         && moment
                             .get_or_insert_with(|| self.moment(session))
                             .event(self, &held.partner)
@@ -489,8 +500,8 @@ impl<R> Host<R> {
     /// Complete a shared decision whose players are all ready, then answer every
     /// held request whose moment has come: a wait whose control changed, or whose
     /// partner hears a group choice open, has news of a shared decision or has a
-    /// decision at a settled table, or whose period ran out; and a choice once the
-    /// table has settled.
+    /// decision, once the table has presented it, or whose period ran out; and a
+    /// choice once the table has settled.
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
         if table.settled()
             && let Some((pending, id, by)) = self.completion(table.session())
@@ -503,14 +514,15 @@ impl<R> Host<R> {
         }
         let mut answers = Vec::new();
         let mut index = 0;
-        // Routed only once the table has settled, and again after a commit.
+        // Routed only once the table has presented its decision, and again after a
+        // commit.
         let mut moment: Option<Moment> = None;
         while index < self.held.len() {
             let partner = self.held[index].partner.clone();
-            let settled = table.settled();
+            let (presented, settled) = (table.presented(), table.settled());
             let revision = table.session().revision();
             let event = match &self.held[index].pending {
-                Pending::Wait { .. } if settled && !self.changed(&partner) => moment
+                Pending::Wait { .. } if presented && !self.changed(&partner) => moment
                     .get_or_insert_with(|| self.moment(table.session()))
                     .event(self, &partner),
                 _ => None,
@@ -974,7 +986,8 @@ struct Moment {
 }
 
 impl Moment {
-    /// What a held wait of `partner` answers now, at a settled table: a group
+    /// What a held wait of `partner` answers now, at a table that has presented its
+    /// decision: a group
     /// choice it has not been told of, news of a shared decision it takes part in
     /// that changed since its last view, or a decision of its own.
     fn event<R>(&self, host: &Host<R>, partner: &str) -> Option<&'static str> {

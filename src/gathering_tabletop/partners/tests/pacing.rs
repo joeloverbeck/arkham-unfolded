@@ -340,9 +340,10 @@ fn defeat_the_priest(session: &mut Session) {
     panic!("The Priest's defeat never reached the scenario's end");
 }
 
-/// Ticket #210, Encounter cards: a partner's choice to resolve the encounter card its
-/// investigator drew is held while the card is read, and applied no earlier than the
-/// reading delay after the card is shown.
+/// Ticket #210, Encounter cards: while the encounter card a partner's investigator
+/// drew is read, the partner is told of its decision and may choose; its choice to
+/// resolve the card is held until the reading has continued on its own, so it is
+/// applied no earlier than the reading delay after the card is shown.
 #[test]
 fn a_partners_encounter_choice_waits_for_the_reading_delay() {
     let mut paced = open(
@@ -352,8 +353,23 @@ fn a_partners_encounter_choice_waits_for_the_reading_delay() {
     let joined = exchange(&mut paced.app, &paced.socket, &[json!({"op": "join"})]);
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     let app = &mut paced.app;
-    assert!(rendered_text(app).contains("ENCOUNTER CARD"));
+    let encounter_up = |app: &App| {
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .encounter()
+            .current()
+            .is_some()
+    };
+    assert!(encounter_up(app));
     assert!(countdown(app).is_some(), "Its reading shows progress");
+    let told = exchange(
+        app,
+        &paced.socket,
+        &[json!({"op": "wait", "partner": partner, "timeout_seconds": 30})],
+    );
+    assert_eq!(told[0]["status"], "decision", "{}", told[0]);
+    assert!(encounter_up(app), "Told while the card is still read");
     let revision = app.world().resource::<Table>().session.revision();
     let chosen = connect(
         &paced.socket,
@@ -361,21 +377,92 @@ fn a_partners_encounter_choice_waits_for_the_reading_delay() {
             json!({"op": "choose", "partner": partner, "revision": revision, "id": "revelation:resolve"}),
         ],
     );
-    for _ in 0..10 {
-        wait(app, 0.2);
-        thread::sleep(Duration::from_millis(5));
+    let mut read = 0.;
+    while app.world().resource::<Table>().session.revision() == revision {
+        assert!(read < 60., "The choice was never applied");
+        assert!(!chosen.is_finished(), "Held while the card is read");
+        wait(app, 0.1);
+        thread::sleep(Duration::from_millis(2));
+        read += 0.1;
+        if app.world().resource::<Table>().session.revision() != revision {
+            break;
+        }
+        assert!(
+            encounter_up(app) || read > 1.,
+            "The reading lasts more than a second"
+        );
     }
-    assert_eq!(
-        app.world().resource::<Table>().session.revision(),
-        revision,
-        "Held while the card is read"
+    assert!(
+        !encounter_up(app),
+        "Applied only once the reading has continued"
     );
-    assert!(!chosen.is_finished());
     pump(app, || chosen.is_finished());
     let answer = chosen.join().unwrap();
     assert_eq!(answer[0]["status"], "chosen", "{}", answer[0]);
-    assert_eq!(
-        app.world().resource::<Table>().session.revision(),
-        revision + 1
-    );
+}
+
+/// Ticket #210, Joel's dialogs: while the human has Inspect or the menu open, a
+/// partner is told of its decision and may choose. Its choice, and so its
+/// consequences, wait until the dialog closes, and the human's dialog stays as the
+/// human left it.
+#[test]
+fn a_partner_chooses_while_the_human_inspects_and_its_consequences_wait_for_the_dialog() {
+    let mut partnered = partnered(&[Patrice]);
+    press(&mut partnered.app, "Close menu");
+    let partner = join(&mut partnered);
+    let app = &mut partnered.app;
+    choose(app, "confirm-mulligan"); // Jacqueline
+    finish_presentation(app);
+    choose(app, "confirm-mulligan"); // Tony
+    finish_presentation(app);
+    let inspect = Action::Inspect("Patrice Hathaway".into(), "06005".into());
+    app.world_mut().resource_mut::<Actions>().0.push(inspect);
+    app.update();
+    let held = |partnered: &mut Partnered, id: &str, dialog: fn(&Table) -> bool| {
+        let app = &mut partnered.app;
+        let told = exchange(
+            app,
+            &partnered.socket,
+            &[json!({"op": "wait", "partner": partner, "timeout_seconds": 30})],
+        );
+        assert_eq!(told[0]["status"], "decision", "{}", told[0]);
+        let revision = app.world().resource::<Table>().session.revision();
+        let chosen = connect(
+            &partnered.socket,
+            &[json!({"op": "choose", "partner": partner, "revision": revision, "id": id})],
+        );
+        for _ in 0..20 {
+            wait(app, 0.05);
+            thread::sleep(Duration::from_millis(5));
+        }
+        let table = app.world().resource::<Table>();
+        assert!(dialog(table), "The human's dialog stays open");
+        assert_eq!(table.session.revision(), revision, "Held behind the dialog");
+        assert!(!table.is_presenting(), "No consequence presents behind it");
+        assert!(!chosen.is_finished());
+        chosen
+    };
+    let chosen = held(&mut partnered, "confirm-mulligan", |table| {
+        table.inspection.is_some()
+    });
+    let app = &mut partnered.app;
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Close);
+    pump(app, || chosen.is_finished());
+    assert_eq!(chosen.join().unwrap()[0]["status"], "chosen");
+    settle(app);
+
+    // Patrice takes the next turn; the human opens the menu while she decides.
+    choose(app, "turn:patrice");
+    settle(app);
+    press(app, "Menu");
+    let chosen = held(&mut partnered, "action:ordinary:resource", |table| {
+        table.menu_open
+    });
+    let app = &mut partnered.app;
+    press(app, "Close menu");
+    pump(app, || chosen.is_finished());
+    assert_eq!(chosen.join().unwrap()[0]["status"], "chosen");
 }

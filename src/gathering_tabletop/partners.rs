@@ -8,9 +8,10 @@
 //! access, replacement of a dead socket); the seat's serving loop is not used.
 //! A listener thread accepts any number of connections, one thread each; every
 //! request line crosses a channel polled by [`serve`], which wakes the frame loop.
-//! Held waits and choices never block a frame. A partner's choice is applied only
-//! once the table has settled, through [`Table::commit`], the path the human's
-//! clicks take, and never moves the camera.
+//! Held waits and choices never block a frame. A wait tells a partner of its
+//! decision once the table has presented it, while the human may still be reading
+//! or browsing; its choice is applied only once the table has settled with none of
+//! that open, through [`Table::commit`], the path the human's clicks take (#210).
 //!
 //! The host is part of [`install`], so the agent seat can host partners too.
 //!
@@ -292,8 +293,8 @@ impl Default for Partners {
 impl Partners {
     /// Whether the table has partner work it can do now: a request not yet read,
     /// or a held request whose moment has come.
-    fn due(&self, session: &Session, settled: bool, now: Instant) -> bool {
-        self.queued.load(Ordering::Acquire) > 0 || self.host.due(session, settled, now)
+    fn due(&self, session: &Session, (presented, settled): (bool, bool), now: Instant) -> bool {
+        self.queued.load(Ordering::Acquire) > 0 || self.host.due(session, presented, settled, now)
     }
 
     fn drain(&self) -> Vec<Incoming> {
@@ -363,7 +364,7 @@ pub(super) fn serve(world: &mut World) {
     let socket = world
         .get_resource::<PartnerSocket>()
         .map_or_else(default_socket, |socket| socket.0.clone());
-    let settled = settled(world);
+    let (presented, settled) = (presented(world), settled(world));
     // Only this frame's own input and scene rebuild keep the table unsettled: work
     // waiting on settling (a choice, or a shared decision whose players are all
     // ready) can run on the next frame, which nothing else would request.
@@ -374,6 +375,7 @@ pub(super) fn serve(world: &mut World) {
             .iter()
             .all(|reason| matches!(*reason, "camera motion" | "scene rebuild" | "queued input"))
             && !table.modal()
+            && !table.menu_open
             && !table.is_presenting()
             && !table.context.is_open()
     };
@@ -428,7 +430,11 @@ pub(super) fn serve(world: &mut World) {
                 );
                 partners.attempt = table.attempt;
             }
-            let mut sitting = Sitting { table, settled };
+            let mut sitting = Sitting {
+                table,
+                presented,
+                settled,
+            };
             for incoming in partners.drain() {
                 answers.extend(partners.host.receive(
                     &incoming.line,
@@ -445,7 +451,7 @@ pub(super) fn serve(world: &mut World) {
                 partners.transport = None;
             }
             show(partners, table, &socket, now);
-            next_frame && partners.host.due(&table.session, true, now)
+            next_frame && partners.host.due(&table.session, true, true, now)
         })
     });
     if redraw && let Some(mut redraw) = world.get_resource_mut::<Redraw>() {
@@ -453,14 +459,29 @@ pub(super) fn serve(world: &mut World) {
     }
 }
 
-/// Whether a partner's choice may be applied now, and a wait for a decision
-/// answered: the table would take the human's click. Camera motion does not
-/// matter to a partner; an open menu holds only the presentation that follows.
+/// Whether a wait may tell a partner of its decision: the table has finished
+/// presenting it. A reading counting down, or one waiting for the human, and the
+/// human's Inspect or menus may still be open, so the partner thinks meanwhile
+/// (#210). Camera motion does not matter to a partner.
+fn presented(world: &mut World) -> bool {
+    let pending = table_unsettled(world);
+    let table = world.resource::<Table>();
+    pending
+        .iter()
+        .all(|reason| matches!(*reason, "camera motion" | "reading delay"))
+        && !table.is_presenting()
+}
+
+/// Whether a partner's choice may be applied now: the table would take the human's
+/// click, and nothing of the human's is open over it. A reading, Inspect, the
+/// history, the menu or a card's menu holds the choice until it closes, so its
+/// consequences never start presenting unseen behind it (#210).
 fn settled(world: &mut World) -> bool {
     let pending = table_unsettled(world);
     let table = world.resource::<Table>();
     pending.iter().all(|reason| *reason == "camera motion")
         && !table.modal()
+        && !table.menu_open
         && !table.is_presenting()
         && !table.context.is_open()
 }
@@ -471,11 +492,11 @@ pub(super) fn unsettled(world: &mut World) -> Option<&'static str> {
     if !world.contains_resource::<Partners>() {
         return None;
     }
-    let settled = settled(world);
+    let readiness = (presented(world), settled(world));
     let partners = world.resource::<Partners>();
     let session = &world.resource::<Table>().session;
     partners
-        .due(session, settled, Instant::now())
+        .due(session, readiness, Instant::now())
         .then_some("partner request")
 }
 
@@ -608,12 +629,17 @@ fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &rules::
 /// The table as the partner host reaches it.
 struct Sitting<'a> {
     table: &'a mut Table,
+    presented: bool,
     settled: bool,
 }
 
 impl rules::Table for Sitting<'_> {
     fn session(&self) -> &Session {
         &self.table.session
+    }
+
+    fn presented(&self) -> bool {
+        self.presented
     }
 
     fn settled(&self) -> bool {
@@ -628,6 +654,7 @@ impl rules::Table for Sitting<'_> {
             .find(|choice| choice.id == id)
             .map(|choice| choice.label.clone());
         self.table.commit(revision, id)?;
+        self.presented = false;
         self.settled = false;
         let history = self.table.session.observe().history;
         let entry = (before.history.len()..history.len())
