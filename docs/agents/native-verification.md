@@ -215,8 +215,7 @@ Once the child and its descendants have stopped, the supervisor restores the ori
 Complete preparation before the desktop interval. Run Cargo/build/check jobs one
 at a time: await the producer's terminal result before starting the next job.
 For a recorded check, require `run.json` to say `finished` with exit code 0 and
-unchanged source fingerprints before using its output. `scripts/check` already
-uses `scripts/dev`; do not wrap it in another `scripts/dev`. A lock timeout is a
+unchanged source fingerprints before using its output. A lock timeout is a
 failed invocation, not evidence of a code defect. Diagnose the competing job;
 do not widen the lock timeout or retry while that producer is still running.
 

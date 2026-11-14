@@ -48,7 +48,8 @@ fn main() -> ExitCode {
     // Substitute only the systemd boundary; execute the real check launchers.
     // Effective resource enforcement is verified separately on the actual host.
     if name == "systemd-run" {
-        if let Some(marker) = env::var_os("ARKHAM_FIXTURE_SCOPE_ENTERED") { fs::write(marker, "entered").unwrap(); }
+        // One line per scope entry, naming the checkout that entered it.
+        if let Some(marker) = env::var_os("ARKHAM_FIXTURE_SCOPE_ENTERED") { writeln!(fs::OpenOptions::new().create(true).append(true).open(marker).unwrap(), "{}", env::current_dir().unwrap().display()).unwrap(); }
         if let Some(code) = env::var("ARKHAM_FIXTURE_SCOPE_EXIT").ok().and_then(|value| value.parse::<u8>().ok()).filter(|code| *code != 0) {
             return ExitCode::from(code);
         }
