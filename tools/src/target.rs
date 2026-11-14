@@ -4,11 +4,14 @@
 //! that outlive the checkout: docs/agents/measured-and-baseline-checks.md, "One target for
 //! several checkouts".
 
-use anyhow::{Context, Result, ensure};
+use crate::process;
+use anyhow::{Context, Result, bail, ensure};
 use clap::Args as ClapArgs;
 use std::{
     collections::HashSet,
-    fmt, fs, io,
+    fmt,
+    fs::{self, File, TryLockError},
+    io,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
@@ -237,41 +240,115 @@ pub fn run(args: Args) -> Result<u8> {
         );
         return Ok(u8::from(failed));
     }
-    let (mut count, mut bytes) = (0, 0);
+    // Bytes freed include those of a cache only partly removed.
+    let (mut count, mut freed) = (0, 0);
     for cache in unused {
+        if process::interrupted() {
+            bail!(
+                "interrupted after removing {count} caches, {}; the rest are kept",
+                size(freed)
+            );
+        }
+        let name = cache.name.display();
         match remove(cache, threshold) {
-            Ok(true) => {
+            Ok(Outcome::Removed) => {
+                println!("removed {name}");
                 count += 1;
-                bytes += cache.bytes;
+                freed += cache.bytes;
             }
-            Ok(false) => println!("kept {}, used since it was listed", cache.name.display()),
+            Ok(Outcome::Gone) => println!("already gone {name}"),
+            Ok(Outcome::Used) => println!("kept {name}: used since it was listed"),
+            Ok(Outcome::Locked) => println!("kept {name}: a rustc session holds its lock"),
+            Ok(Outcome::Failed { left, error }) => {
+                eprintln!(
+                    "arkham-tools: removal of {name} failed, {} of {} left: {error}",
+                    size(left),
+                    size(cache.bytes)
+                );
+                freed += cache.bytes.saturating_sub(left);
+                failed = true;
+            }
             Err(error) => {
-                eprintln!("arkham-tools: kept {}: {error:#}", cache.name.display());
+                eprintln!("arkham-tools: kept {name}: {error:#}");
                 failed = true;
             }
         }
     }
     println!(
-        "removed {count} caches, {}; free disk now {}",
-        size(bytes),
+        "removed {count} caches; freed {}; free disk now {}",
+        size(freed),
         size(free_bytes(&target)?)
     );
     Ok(u8::from(failed))
 }
 
-/// Removes a cache unless it was used since the scan. A path that has become a symbolic link
-/// is refused; `remove_dir_all` follows none inside it.
-fn remove(cache: &Cache, threshold: Duration) -> Result<bool> {
-    let metadata = fs::symlink_metadata(&cache.path)?;
+enum Outcome {
+    Removed,
+    /// Removed by another process after the scan.
+    Gone,
+    /// Modified since the scan.
+    Used,
+    /// A rustc session holds a lock file in it.
+    Locked,
+    /// Removal stopped at `error`, leaving `left` bytes.
+    Failed {
+        left: u64,
+        error: io::Error,
+    },
+}
+
+/// Removes a cache unless it is gone, was modified since the scan, or holds a rustc session
+/// lock file that another process holds, which rustc's own clean-up also respects. The locks
+/// it takes stay held until the removal ends, so a rustc starting on the crate meanwhile
+/// cannot copy from the session being removed. Only the cache's own path is checked again:
+/// a path that has become a symbolic link is refused, and `remove_dir_all` follows none
+/// inside it.
+fn remove(cache: &Cache, threshold: Duration) -> Result<Outcome> {
+    let Some(metadata) = present(fs::symlink_metadata(&cache.path))? else {
+        return Ok(Outcome::Gone);
+    };
     ensure!(metadata.is_dir(), "it is no longer a directory");
     let unused_for = SystemTime::now()
         .duration_since(metadata.modified()?)
         .unwrap_or_default();
     if unused_for < threshold {
-        return Ok(false);
+        return Ok(Outcome::Used);
     }
-    fs::remove_dir_all(&cache.path)?;
-    Ok(true)
+    let Some(entries) = present(fs::read_dir(&cache.path))? else {
+        return Ok(Outcome::Gone);
+    };
+    let mut locks = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with("s-") && name.ends_with(".lock") && entry.file_type()?.is_file()) {
+            continue;
+        }
+        let Some(lock) = present(File::open(entry.path()))? else {
+            continue;
+        };
+        match lock.try_lock() {
+            Ok(()) => locks.push(lock),
+            Err(TryLockError::WouldBlock) => return Ok(Outcome::Locked),
+            Err(TryLockError::Error(error)) => {
+                return Err(error).context(format!("lock {}", entry.path().display()));
+            }
+        }
+    }
+    let removal = fs::remove_dir_all(&cache.path);
+    drop(locks);
+    Ok(match removal {
+        Ok(()) => Outcome::Removed,
+        Err(error) => match present(fs::symlink_metadata(&cache.path))? {
+            // Whatever stopped it, nothing of the cache is left.
+            None => Outcome::Removed,
+            Some(_) => Outcome::Failed {
+                left: usage(&cache.path, &mut HashSet::new())?,
+                error,
+            },
+        },
+    })
 }
 
 /// Bytes an unprivileged process can still write on the filesystem that holds `path`, or

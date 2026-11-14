@@ -6,9 +6,11 @@
 
 use std::{
     fs,
-    os::unix::fs::symlink,
+    io::{BufRead, BufReader, Read},
+    os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
+    thread,
     time::{Duration, SystemTime},
 };
 
@@ -94,15 +96,60 @@ fn prune(cwd: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 
-/// An incremental cache under `target`, as rustc lays one out, holding `bytes` and last
-/// used `hours` ago.
+/// An incremental cache under `target`, as rustc lays one out with a session and its lock
+/// file, holding `bytes` and last used `hours` ago.
 fn cache(target: &Path, relative: &str, bytes: usize, hours: u64) -> PathBuf {
     let path = target.join(relative);
     fs::create_dir_all(path.join("s-session")).unwrap();
     fs::write(path.join("s-session/query-cache.bin"), vec![7; bytes]).unwrap();
+    fs::write(path.join("s-session.lock"), "").unwrap();
     let used = SystemTime::now() - Duration::from_secs(hours * 3600);
     fs::File::open(&path).unwrap().set_modified(used).unwrap();
     path
+}
+
+/// Enough unused caches, with names long enough, that their listing overfills a pipe.
+fn fillers(target: &Path) -> Vec<PathBuf> {
+    (0..2000)
+        .map(|n| {
+            let name =
+                format!("debug/incremental/filler-named-at-length-to-overfill-a-pipe-{n:04}");
+            cache(target, &name, 1, 240)
+        })
+        .collect()
+}
+
+/// `target-prune` with its output left unread after the first line, so that it waits to
+/// write the rest of a listing `fillers` made too long for the pipe, before it removes
+/// anything. `meanwhile` runs during that wait and gets its process ID. Returns the exit
+/// code, standard output and standard error.
+fn prune_held(
+    owner: &Path,
+    args: &[&str],
+    meanwhile: impl FnOnce(u32),
+) -> (Option<i32>, String, String) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .arg("target-prune")
+        .args(args)
+        .current_dir(owner)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut printed = String::new();
+    stdout.read_line(&mut printed).unwrap();
+    assert!(printed.starts_with("target "), "{printed}");
+    meanwhile(child.id());
+    stdout.read_to_string(&mut printed).unwrap();
+    let mut error = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut error)
+        .unwrap();
+    (child.wait().unwrap().code(), printed, error)
 }
 
 fn worktree_count(owner: &Path) -> usize {
@@ -516,4 +563,85 @@ fn target_prune_removes_only_directories_inside_incremental_and_refuses_links_ou
             .unwrap()
             .is_symlink()
     );
+}
+
+#[test]
+fn target_prune_interrupted_before_a_removal_removes_nothing_more_and_exits_130() {
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    let caches = fillers(&owner.join("target"));
+
+    let (code, _, error) = prune_held(&owner, &["--delete"], |pid| {
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGINT) }, 0);
+        // The handler records the interrupt on a thread of its own.
+        thread::sleep(Duration::from_millis(500));
+    });
+
+    assert_eq!(code, Some(130), "{error}");
+    assert!(error.contains("interrupted"), "{error}");
+    assert!(caches.iter().all(|cache| cache.exists()));
+}
+
+#[test]
+fn target_prune_keeps_a_cache_whose_rustc_session_lock_is_held() {
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    let target = owner.join("target");
+    let locked = cache(&target, "debug/incremental/demo-locked", 1 << 20, 240);
+    let unlocked = cache(&target, "debug/incremental/demo-unlocked", 1 << 20, 240);
+    // As a rustc compiling the crate holds it.
+    let lock = fs::File::open(locked.join("s-session.lock")).unwrap();
+    lock.lock().unwrap();
+
+    let printed = succeeds(prune(&owner, &["--delete"]));
+
+    assert!(
+        printed.contains("kept debug/incremental/demo-locked: a rustc session holds its lock"),
+        "{printed}"
+    );
+    assert!(locked.join("s-session/query-cache.bin").exists());
+    assert!(!unlocked.exists());
+    assert!(
+        printed.contains("removed debug/incremental/demo-unlocked"),
+        "{printed}"
+    );
+    drop(lock);
+}
+
+#[test]
+fn target_prune_reports_a_cache_already_gone_and_a_failed_removal_with_what_is_left() {
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    let target = owner.join("target");
+    fillers(&target);
+    let gone = cache(&target, "debug/incremental/demo-gone", 1 << 20, 240);
+    let stuck = cache(&target, "debug/incremental/demo-stuck", 1 << 20, 240);
+    // Its session's files cannot be unlinked, except by root, which removes it whole.
+    let session = stuck.join("s-session");
+    fs::set_permissions(&session, fs::Permissions::from_mode(0o500)).unwrap();
+    let root = unsafe { libc::geteuid() } == 0;
+
+    let (code, printed, error) = prune_held(&owner, &["--delete"], |_| {
+        fs::remove_dir_all(&gone).unwrap()
+    });
+    fs::set_permissions(&session, fs::Permissions::from_mode(0o700)).unwrap();
+
+    assert!(
+        printed.contains("already gone debug/incremental/demo-gone"),
+        "{printed}"
+    );
+    assert!(
+        printed.contains(&format!("removed {} caches", 2000 + usize::from(root))),
+        "{printed}"
+    );
+    if !root {
+        assert_eq!(code, Some(1), "{error}");
+        assert!(
+            error.contains(
+                "removal of debug/incremental/demo-stuck failed, 1.0 MiB of 1.0 MiB left"
+            ),
+            "{error}"
+        );
+        assert!(session.join("query-cache.bin").exists());
+    }
 }
