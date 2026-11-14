@@ -12,8 +12,11 @@ presentation and persistence that Gathering actually consumes.
 
 Use scenario selection as the application entry now, rather than deferring it
 until another scenario exists. It needs neither a live game nor artwork to
-browse. Offer only original Gathering on Standard with the three fixed decks,
-visibly in development. New attempts have separate saves; Continue and Open
+browse. Offer only original Gathering on Standard with the three fixed decks.
+The entry was marked in development until Joel accepted complete Gathering play
+on 2026-11-14 ([#89's closing record](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6868075979));
+the [original record](https://github.com/joeloverbeck/arkham-unfolded/blob/ddde9695f60d76530dfef84b139077005912b787/docs/adr/0005-retire-experiments-and-select-scenarios.md)
+keeps that wording. New attempts have separate saves; Continue and Open
 preserve existing attempts. Returning to selection saves the pending decision
 first and keeps play active if saving fails.
 
@@ -27,5 +30,5 @@ The [play contract](../foundation/play-contract.md#scenario-entry) owns entry
 behavior and [README](../../README.md#launch-and-resume-the-gathering) owns launch
 instructions. The [investigation](../research/experiment-retirement.md) and
 [issue #127](https://github.com/joeloverbeck/arkham-unfolded/issues/127) retain
-implementation and verification evidence. Complete Gathering play remains the
+implementation and verification evidence. Complete Gathering play was the
 scope of [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89).
