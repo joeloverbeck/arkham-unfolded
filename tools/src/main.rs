@@ -77,6 +77,11 @@ enum Command {
     /// Send requests to a held agent seat over its socket and print each response unchanged.
     #[command(after_help = "Agent seat: README.md#held-session")]
     Seat(seat::Args),
+    /// Keep a held agent seat's table running while the agent partners it hosts play,
+    /// until the table waits on the seat, a revision or a count of applied choices is
+    /// reached, or the timeout passes.
+    #[command(after_help = seat::WAIT_HELP)]
+    SeatWait(seat::WaitArgs),
     /// Play investigators at the running Arkham table as an agent partner: join, wait,
     /// observe, inspect, choose, ready, say and leave.
     #[command(after_help = partner::GUIDE)]
@@ -126,6 +131,7 @@ fn main() -> ExitCode {
         Command::Native { command } => native::run(command),
         Command::ProfileNative(args) => profile::capture(args),
         Command::Seat(args) => seat::run(args),
+        Command::SeatWait(args) => seat::wait(args),
         Command::Partner(args) => partner::run(args),
         Command::Worktree { command } => worktree::run(command),
     };
