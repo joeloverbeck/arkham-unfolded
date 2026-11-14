@@ -53,7 +53,7 @@ It answers with the first thing that concerns you, or with `nothing_yet` once it
 | `shared` | Another player changed a [shared decision](#shared-decisions) you take part in. | Read `view.shared` and decide again: any readiness you had is cleared. |
 | `table_talk` | Another player spoke. | Read `view.table_talk`, and reply only when it calls for a reply. |
 | `chosen` | The choice that `choose` answered `held` for was applied. | Read the view: when `decision.yours` is true, decide; otherwise wait. |
-| `released` | The choice that `choose` answered `held` for was not applied, and `reason` says why: usually another player used a fast card or ability first, so the decision moved on. | Decide again from the view. |
+| `released` | The choice that `choose` answered `held` for was not applied, and `reason` says why (see [Held choices](#held-choices)). | Read the view: when `decision.yours` is true, decide again; otherwise wait. |
 | `control_changed` | The investigators you play changed: the table took one over. | Read `investigators` and update your notes. With none left, keep waiting: table talk still reaches you, and if a player says an investigator is open to partners again, join again for it and note your new identity. |
 | `closed` | Your session ended, and `reason` says why. It carries no view. | Stop. When the reason says the attempt restarted, join again. |
 | `nothing_yet` | The period ended with nothing for you (exit status 3). | Wait again. |
@@ -91,9 +91,7 @@ scripts/tools partner choose PARTNER REVISION ID
 
 Give the view's `revision` and one option's `id` exactly as listed. An `id` that ends in a placeholder names a value in its place: `<margin>` takes a whole number, for Crystal Pendulum's prediction, and `<contributions>` takes a clue allocation (see [Shared decisions](#shared-decisions)).
 
-The table applies a choice only once it settles: nothing is presenting, and no reading, dialog or menu is open at the window. `choose` waits until then, however long that takes, and answers `chosen` with the new view. When that view's `decision.yours` is true again, decide from it at once; otherwise wait.
-
-In your own investigators' decisions, a choice can also wait for the other players: while `decision.waits_for_passes` is listed, another player holding an option in that decision has not yet passed (see [Shared decisions](#shared-decisions)). It names `before_action_of` your investigator in the player window before each action of a turn, else `before_decision_of`, for example in your investigator's chaos-token reveal while another player's Jacqueline Fine may react to it, and `waiting_for` names whose passes it waits for. Then your next choice, whether an action, a fast play of your own, ending the turn or a reveal, waits too; Undo and your part of a shared decision, such as a clue payment, do not. For a choice that waits, `choose` answers `held` at once, and `decision.waits_for_passes.held` names the held choice. It is not applied yet: keep waiting. A wait answers `chosen` once it is applied, or `released` with a `reason` when it was not: either the decision moved on before it could be applied, for example because another player used its option first, and you decide again from the current view; or the investigator is no longer yours, after a Take over. A later `choose` replaces the held choice, and a choice of yours that is applied at once, such as Undo, drops it.
+The table applies a choice only once it settles: nothing is presenting, and no reading, dialog or menu is open at the window. `choose` waits until then, however long that takes, and answers `chosen` with the new view. When that view's `decision.yours` is true again, decide from it at once; otherwise wait. In your own investigators' decisions, another player's option can also hold your choice: see [Held choices](#held-choices).
 
 To read a card again, with its current counters:
 
@@ -105,22 +103,33 @@ It answers `inspected` with the card's full text as the table's Inspect shows it
 
 **Undo.** When the latest decision belongs to investigators you play, `decision.undo` offers to revert it: choose its `id`, `undo`. It is not offered for a decision that belongs to another player or was shared between players, nor once a choice has revealed hidden information or a random outcome, such as a drawn card or a chaos token.
 
+### Held choices
+
+Another player can hold an option in your own investigators' decision: a fast card or ability in the player window before each action of a turn, A Test of Will against your investigator's drawn revelation, or Jacqueline Fine's reaction to your investigator's chaos-token reveal. While one of them has not yet passed there, `decision.waits_for_passes` is listed:
+
+- `before_action_of` names your investigator in the player window before each action of a turn, else `before_decision_of` names it, as at its chaos-token reveal;
+- `waiting_for` names the investigators whose players have not yet passed. An investigator handed to partners that no partner plays yet is waited on too, until a player plays it and passes;
+- `held` names your held choice, once you have one;
+- `how` gives the next step in brief.
+
+Then your next choice is held, whether an action, a fast play of your own, ending the turn or a reveal; Undo and your part of a shared decision, such as a clue payment, are not. For a held choice, `choose` answers `held` at once. It is not applied yet: keep waiting. A wait answers `chosen` once it is applied, or `released` with a `reason` when it was not: either the decision moved on before it could be applied, for example because another player used its option first, and you decide again from the current view; or the investigator is no longer yours, after a Take over. A later `choose` replaces the held choice, and a choice of yours that is applied at once, such as Undo, drops it.
+
 ## Group choices
 
 Group choices belong to the lead investigator's player: who takes the next turn, choices a card gives "the lead investigator", and the order of simultaneous effects. After the lead is eliminated, the player of the next investigator in player order makes them, starting with the choice of a new lead. `decision.group_choice` names its `arbiter`, says whether it is `yours`, and lists what it is `choosing_among`; only the arbiter's player has its options. Every player is told when one opens and may speak before it is made. When you arbitrate, weigh what the other players have said, and [listen first](#listening-first) when you want to hear them; the choice is yours.
 
 ## Shared decisions
 
-Committing cards to a skill test, a group clue payment, and a window for fast cards and abilities can involve several players at once. Each player sets only their own investigators' part. So can any decision that lists another player's option beside the deciding investigator's: the player window before each action of a turn, where you may hold a fast card or ability; a drawn encounter card's revelation, where you may hold A Test of Will; and a chaos-token reveal, where your Jacqueline Fine may react. While you hold an option in another player's decision, `wait` wakes you with `decision`, and that player's next choice waits until you use an option or pass. In your own investigators' decisions, your next choice waits the same way for the others, unless it is Undo or your part of a shared decision: `decision.waits_for_passes` names whose passes it waits for, and `choose` answers `held` (see [Decide](#decide)). When one of them uses its option instead, a wait answers `released`, and you decide again. A player with no option there is never waited on. `view.shared` lists each one you take part in:
+Committing cards to a skill test, a group clue payment, and a window for fast cards and abilities can involve several players at once. Each player sets only their own investigators' part. So can any decision that lists another player's option beside the deciding investigator's: the player window before each action of a turn, where you may hold a fast card or ability; a drawn encounter card's revelation, where you may hold A Test of Will; and a chaos-token reveal, where your Jacqueline Fine may react. While you hold an option in another player's decision, `wait` wakes you with `decision`, and that player's next choice waits until you use an option or pass. In your own investigators' decisions, the others' options hold your choice the same way (see [Held choices](#held-choices)). A player with no option there is never waited on. `view.shared` lists each one you take part in:
 
 - `kind`: `commitment`, `clue_payment` or `window`; a window before another player's choice also names `before_action_of` that investigator, in its turn, or else `before_decision_of`.
 - `players`, each with its `investigators` and whether it is `ready`. `waiting_for` names the investigators whose players are not yet ready, and `you_are_ready` is yours.
 - `cleared_by`: whose change cleared your readiness.
 - `reopenings_left`: how many more times you may change your part.
 - `ready_with`: the option that marks you ready, such as Confirm or the window's pass.
-- `how`: how to take part in this decision. Follow it.
+- `how`: your next step in this decision, in brief.
 
-In a commitment, choose your cards' commit options to toggle them; `test.others_pending` shows the other players' pending cards. In a clue payment, choose `act:pay:TONY:PATRICE:JACQUELINE` with clue counts in that order: your investigators' clues, and the others' as `contributions` shows them pending. That sets your part and marks you ready. At The Barrier's round end, `round-end:decline-act` contributes none. A clue payment you could make during a turn waits until a player proposes a part, and `decision.note` says so when other players could contribute too; proposing wakes them. An act's clues are always paid as a group (Rules Reference p. 3), so a payment that could be made never makes you or anyone else pass before another player's choice, and your own part is never held for others' passes. In a window, use an option or pass.
+In a commitment, choose your cards' commit options to toggle them; `test.others_pending` shows the other players' pending cards. In a clue payment, choose `act:pay:TONY:PATRICE:JACQUELINE` with clue counts in that order: your investigators' clues, and the others' as `contributions` shows them pending. That sets your part and marks you ready. At The Barrier's round end, `round-end:decline-act` contributes none. A payment is made once every player is ready on parts that add up to exactly the requirement; at round end, it is declined once every player is ready on none. A clue payment you could make during a turn waits until a player proposes a part, and `decision.note` says so when other players could contribute too; proposing wakes them. An act's clues are always paid as a group (Rules Reference p. 3), so a payment that could be made never makes you or anyone else pass before another player's choice, and your own part is never held for others' passes. In a window, use an option, or pass by marking yourself ready.
 
 Mark yourself ready with this command, or by choosing `ready_with`; either answers `ready`:
 
@@ -201,4 +210,4 @@ A command that ends before it prints an answer, because it was interrupted or yo
 
 ## Exit codes
 
-`0`: answered, `closed` included. `1`: refused. `2`: the table cannot be reached, it did not answer a wait in time, or the command is malformed; when this persists, the table no longer hosts partners, so stop. `3`: nothing yet, from `wait` only.
+`0`: answered, `closed` included. `1`: refused. `2`: the table cannot be reached, it did not answer a wait in time, or the command is malformed; when this persists, the table no longer hosts partners, so stop. `3`: nothing yet, from `wait` only. `130`: the command was interrupted before its answer arrived (see [Cut-off commands](#cut-off-commands)).
