@@ -2,7 +2,7 @@
 
 An English-language Arkham Horror: The Card Game application for Ubuntu, implemented in Rust with a 3D tabletop.
 
-**The Gathering is in development; the campaign is not complete.** Scenario selection offers only original The Gathering on Standard with the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine starting decks. Full native scenario play and owner acceptance remain outstanding under [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89). The [Gathering guide](docs/experiments/gathering-setup.md) records implemented behavior and its evidence limits.
+**The Gathering is playable; the campaign is not complete.** Scenario selection offers only original The Gathering on Standard with the selected Tony Morgan, Patrice Hathaway and Jacqueline Fine starting decks. Joel accepted complete Gathering play on his own playtests and closed [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89) on 2026-11-14; its [closing record](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6868075979) states that acceptance's evidence limits and the checks it released unverified. The [Gathering guide](docs/experiments/gathering-setup.md) records implemented behavior and its evidence limits.
 
 ## Launch and resume The Gathering
 
@@ -248,7 +248,7 @@ Content support follows the owner's actual use. Starting decks, campaign content
 - [Prepared asset collection decision](docs/adr/0001-prepared-runtime-assets.md)
 - [Tabletop presentation contract](docs/tabletop-presentation.md) — current layout, interaction, resolution and animation requirements; [ADR 0002](docs/adr/0002-persistent-table-areas.md) explains the spatial decisions.
 - [Issue #1 feasibility assessment](docs/research/issue-1-assessment.md) — accepted source baseline and evidence for the selected bounded experiment
-- [Gathering play and verification](docs/experiments/gathering-setup.md) — current scenario under [issue #89](https://github.com/joeloverbeck/arkham-unfolded/issues/89)
+- [Gathering play and verification](docs/experiments/gathering-setup.md) — the current scenario, accepted under [issue #89](https://github.com/joeloverbeck/arkham-unfolded/issues/89)
 - [Scenario selection and experiment retirement](docs/adr/0005-retire-experiments-and-select-scenarios.md)
 - [Native verification](docs/agents/native-verification.md) — shared launch, consent, capture and evidence procedure
 - [Repository principles](docs/principles/principles-for-repos.md)
