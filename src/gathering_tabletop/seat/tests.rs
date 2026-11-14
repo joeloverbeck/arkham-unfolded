@@ -1871,8 +1871,9 @@ fn without_partners_a_beat_with_cleared_choices_does_not_show_the_latest() {
 /// `Take over NAME` wherever the table offers Take over, and the portrait's
 /// `Focus NAME · partner · CUE`. This pins those exact shapes through the seat's
 /// own observation at a table hosting a partner, while that partner is awaited,
-/// unclaimed and then thinking, and once none is. A renamed label would make
-/// `seat-wait` return at once, as if the seat had to decide.
+/// unclaimed and then thinking, and once none is. A renamed `Take over` label
+/// would make `seat-wait` return at once, as if the seat had to decide; a renamed
+/// portrait label would only drop the cue from its lines.
 #[test]
 fn a_hosted_partner_is_shown_to_seat_wait_by_take_over_and_its_cue() {
     let directory = tempfile::tempdir().unwrap();

@@ -168,13 +168,15 @@ applies a partner's choice). --choices counts the revisions the table advanced
 while it ran: with no other command acting on the seat, each is a partner's
 choice, or a choice of the seat's held for partners' passes. It prints one line
 whenever the revision, the stage or the awaited investigators change and, except
-on exit 2, a last line naming why it returned.
+on exit 2 or 130, a last line naming why it returned.
 
 Exit codes: 0 the table waits on the seat, or --revision or --choices was
 reached; 3 the timeout passed; 4 no seat listens on the socket, from the start
 or once it went away; 2 the command is malformed, the socket cannot be reached
 for another reason, the seat did not answer a request within 10 seconds after
-the timeout, or it answered something other than an observation or a settle.
+the timeout, reading its answer failed other than by a reset connection (which
+counts as the seat having gone), or it answered something other than an
+observation or a settle; 130 the command was interrupted.
 
 Hosting an agent partner: README.md#hosting-an-agent-partner";
 
