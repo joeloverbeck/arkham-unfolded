@@ -32,8 +32,9 @@ pub struct AddArgs {
     /// Create this branch at `--from`. Without it, the checkout is detached.
     #[arg(long)]
     branch: Option<String>,
-    /// Refuse when less than this many GiB are free on the target's filesystem; 0 never
-    /// refuses.
+    /// Refuse when less than this many GiB are free on the target's filesystem. With 0 it
+    /// never refuses for lack of space, but an error reading the free disk or the caches
+    /// still stops it.
     #[arg(long, default_value_t = 40)]
     min_free_gib: u64,
 }

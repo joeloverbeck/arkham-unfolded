@@ -97,7 +97,8 @@ enum Command {
         command: worktree::Command,
     },
     /// Owner-run: list the owner's target's incremental caches unused for a given time, and
-    /// remove them with --delete. Exit 1 when a symbolic link was refused or a removal failed.
+    /// remove them with --delete. Exit 1 when a symbolic link was refused or a cache could not
+    /// be checked or fully removed, and 130 when interrupted.
     #[command(
         after_help = "Shared target: docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts"
     )]
