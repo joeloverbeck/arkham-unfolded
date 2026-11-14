@@ -260,12 +260,20 @@ pub fn run(args: Args) -> Result<u8> {
             Ok(Outcome::Used) => println!("kept {name}: used since it was listed"),
             Ok(Outcome::Locked) => println!("kept {name}: a rustc session holds its lock"),
             Ok(Outcome::Failed { left, error }) => {
-                eprintln!(
-                    "arkham-tools: removal of {name} failed, {} of {} left: {error}",
-                    size(left),
-                    size(cache.bytes)
-                );
-                freed += cache.bytes.saturating_sub(left);
+                match left {
+                    Ok(left) => {
+                        eprintln!(
+                            "arkham-tools: removal of {name} failed, {} of {} left: {error}",
+                            size(left),
+                            size(cache.bytes)
+                        );
+                        freed += cache.bytes.saturating_sub(left);
+                    }
+                    Err(unmeasured) => eprintln!(
+                        "arkham-tools: removal of {name} failed: {error}; what is left could \
+                         not be measured: {unmeasured:#}"
+                    ),
+                }
                 failed = true;
             }
             Err(error) => {
@@ -290,9 +298,9 @@ enum Outcome {
     Used,
     /// A rustc session holds a lock file in it.
     Locked,
-    /// Removal stopped at `error`, leaving `left` bytes.
+    /// Removal stopped at `error`, leaving `left` bytes, or for `Err` an unmeasured rest.
     Failed {
-        left: u64,
+        left: Result<u64>,
         error: io::Error,
     },
 }
@@ -340,11 +348,15 @@ fn remove(cache: &Cache, threshold: Duration) -> Result<Outcome> {
     drop(locks);
     Ok(match removal {
         Ok(()) => Outcome::Removed,
-        Err(error) => match present(fs::symlink_metadata(&cache.path))? {
+        Err(error) => match present(fs::symlink_metadata(&cache.path)) {
             // Whatever stopped it, nothing of the cache is left.
-            None => Outcome::Removed,
-            Some(_) => Outcome::Failed {
-                left: usage(&cache.path, &mut HashSet::new())?,
+            Ok(None) => Outcome::Removed,
+            Ok(Some(_)) => Outcome::Failed {
+                left: usage(&cache.path, &mut HashSet::new()),
+                error,
+            },
+            Err(unchecked) => Outcome::Failed {
+                left: Err(unchecked),
                 error,
             },
         },

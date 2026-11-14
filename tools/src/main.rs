@@ -98,7 +98,9 @@ enum Command {
     },
     /// Owner-run: list the owner's target's incremental caches unused for a given time, and
     /// remove them with --delete. Exit 1 when a symbolic link was refused or a cache could not
-    /// be checked or fully removed, and 130 when interrupted.
+    /// be checked or fully removed, and 2 when the owner's target, free disk or caches could not
+    /// be read. With --delete, an interrupt before the last cache's removal begins stops it
+    /// before the next cache with exit 130.
     #[command(
         after_help = "Shared target: docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts"
     )]

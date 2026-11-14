@@ -645,3 +645,33 @@ fn target_prune_reports_a_cache_already_gone_and_a_failed_removal_with_what_is_l
         assert!(session.join("query-cache.bin").exists());
     }
 }
+
+#[test]
+fn target_prune_reports_a_failed_removal_whose_remainder_cannot_be_measured_as_failed() {
+    // Root reads and removes the session whole.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    let target = owner.join("target");
+    fillers(&target);
+    let unreadable = cache(&target, "debug/incremental/demo-unreadable", 1 << 20, 240);
+    let session = unreadable.join("s-session");
+
+    // Made unreadable after the scan measured it: neither the removal nor the measurement of
+    // what is left can then list the session.
+    let (code, _, error) = prune_held(&owner, &["--delete"], |_| {
+        fs::set_permissions(&session, fs::Permissions::from_mode(0o300)).unwrap()
+    });
+    fs::set_permissions(&session, fs::Permissions::from_mode(0o700)).unwrap();
+
+    assert_eq!(code, Some(1), "{error}");
+    assert!(
+        error.contains("removal of debug/incremental/demo-unreadable failed")
+            && error.contains("could not be measured"),
+        "{error}"
+    );
+    assert!(!error.contains("kept"), "{error}");
+    assert!(session.join("query-cache.bin").exists());
+}
