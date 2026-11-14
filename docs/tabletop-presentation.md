@@ -157,8 +157,12 @@ input through blocking dialogs or unfinished consequence presentation.
 Exactly one Inspect operation opens inspection directly, never a lone gameplay
 action. Multiple distinct inspection targets retain a chooser. This includes
 single-card piles and the idle chaos bag's scenario-reference inspection. A
-single enemy's action is simply **Inspect**; preserve exact physical identity
-and full content. Inspection remains the existing artwork/effective-text modal
+single enemy's action is simply **Inspect**. In location/group choosers, enemy
+rows say **Inspect NAME**, with **1 of 2**-style numbering for duplicate names;
+do not append readiness, counters, engagement or location. Preserve exact physical
+identity and full content. Enemy state remains on the tabletop and in Inspect,
+including meaningful tabletop accessibility labels; gameplay action details above
+remain unchanged. Inspection remains the existing artwork/effective-text modal
 with Close/Escape. It neither acts nor moves the camera, discards pending choices
 or loses a presentation selection. Opening it closes the contextual menu;
 returning cannot dispatch a stale action. Routine actions do not require Inspect.
