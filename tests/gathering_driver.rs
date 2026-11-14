@@ -262,6 +262,50 @@ fn fresh_process_reopens_pending_mulligan_without_redrawing() {
 }
 
 #[test]
+fn fresh_player_process_recovers_previous_record_after_corrupt_active_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let played = run(
+        directory.path(),
+        &["--save", "attempt.json"],
+        &[
+            json!({"op":"choose", "revision":0, "id":"lead:tony"}),
+            json!({"op":"choose", "revision":1, "id":"confirm-mulligan"}),
+        ],
+    );
+    assert_eq!(played[1]["ok"], true);
+    assert_eq!(played[2]["ok"], true);
+    let active = directory.path().join("attempt.json");
+    std::fs::write(&active, b"{interrupted record").unwrap();
+    let before_refusal = directory_state(directory.path());
+    let refused = Command::new(env!("CARGO_BIN_EXE_arkham-driver"))
+        .current_dir(directory.path())
+        .args(["--save", "attempt.json"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    let response: Value = serde_json::from_slice(&refused.stdout).unwrap();
+    assert_eq!(response["ok"], false);
+    assert_eq!(directory_state(directory.path()), before_refusal);
+
+    // Recovery is explicit: open the retained previous record through the same
+    // player driver, preserving the corrupt active file for its owner.
+    let recovered = run(
+        directory.path(),
+        &["--save", "attempt.json.previous"],
+        &[
+            json!({"op":"reopen"}),
+            json!({"op":"choose", "revision":1, "id":"confirm-mulligan"}),
+        ],
+    );
+    assert_eq!(recovered[0]["observation"], played[1]["observation"]);
+    assert_eq!(recovered[1]["observation"], played[1]["observation"]);
+    assert_eq!(recovered[2]["ok"], true);
+    assert_eq!(recovered[2]["observation"], played[2]["observation"]);
+    assert_eq!(std::fs::read(active).unwrap(), b"{interrupted record");
+}
+
+#[test]
 fn player_requests_cannot_control_randomness_or_export_recordings() {
     let directory = tempfile::tempdir().unwrap();
     let result = run(
