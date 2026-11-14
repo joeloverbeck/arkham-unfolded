@@ -33,6 +33,8 @@ fn partner_lines(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, vi
         if let Some(uses) = table.partners.uses(who) {
             p.spawn(art.text(uses, 15., OPPORTUNITY));
         }
+        // `seat-wait` (`tools/src/seat.rs`) reads this label from the agent seat
+        // to know the table waits on a partner; the seat's tests pin its shape.
         screen::controls(p, |row| {
             control(
                 art,
@@ -595,6 +597,8 @@ pub(super) fn render(
                 .play
                 .as_ref()
                 .is_some_and(|play| play.scenario.outcome.is_none() && play.actor == Some(who));
+            // `seat-wait` (`tools/src/seat.rs`) reads the marks after PARTNER in the
+            // portrait's label as the awaited partner's cue; the seat's tests pin it.
             let mut marks = Vec::new();
             if table.partners.partner_plays(who) {
                 marks.push("PARTNER".to_owned());
@@ -622,6 +626,8 @@ pub(super) fn render(
                 });
             // The portrait's marks take no input: Take over is a control of its
             // own, directly under the portrait of the partner deciding (#202).
+            // `seat-wait` (`tools/src/seat.rs`) reads its label from the agent
+            // seat; the seat's tests pin its shape.
             if table.partners.deciding(who).is_some() {
                 let take_over = button(
                     art,

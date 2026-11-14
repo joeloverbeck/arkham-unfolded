@@ -1865,3 +1865,112 @@ fn without_partners_a_beat_with_cleared_choices_does_not_show_the_latest() {
         true
     );
 }
+
+/// #218: `seat-wait` (`tools/src/seat.rs`) learns which partner-played
+/// investigators the table waits on only from the seat's `controls` labels: one
+/// `Take over NAME` wherever the table offers Take over, and the portrait's
+/// `Focus NAME · partner · CUE`. This pins those exact shapes through the seat's
+/// own observation at a table hosting a partner, while that partner is awaited,
+/// unclaimed and then thinking, and once none is. A renamed `Take over` label
+/// would make `seat-wait` return at once, as if the seat had to decide; a renamed
+/// portrait label would only drop the cue from its lines.
+#[test]
+fn a_hosted_partner_is_shown_to_seat_wait_by_take_over_and_its_cue() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("partners.sock");
+    let mut seat = sit();
+    seat.app
+        .insert_resource(partners::PartnerSocket(socket.clone()));
+    // Jacqueline leads, so her mulligan comes first. She is handed to partners
+    // through the menu, as an agent at the seat does it.
+    seat.open_menu(Investigator::Jacqueline);
+    let lead = seat.ask(json!({"op": "activate", "revision": 0, "choice": "lead:jacqueline"}));
+    assert_eq!(lead["status"], "activated", "{lead}");
+    let dealt = seat.ask(json!({"op": "settle"}));
+    assert_eq!(dealt["status"], "settled", "{dealt}");
+    for name in [
+        "Menu",
+        "Agent partners",
+        "Jacqueline Fine: you play",
+        "Enable agent partners",
+    ] {
+        seat.tab_to(name);
+        seat.enter(name);
+    }
+    let closed = seat.ask(json!({"op": "key", "revision": 1, "key": "Escape"}));
+    assert_eq!(closed["status"], "pressed", "{closed}");
+
+    // What `seat-wait` reads: every Take over, and the partner's portrait.
+    let read = |response: &Value| -> Vec<String> {
+        let mut labels: Vec<String> = response["table"]["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|control| control["label"].as_str())
+            .filter(|label| {
+                label.starts_with("Take over ") || label.starts_with("Focus Jacqueline Fine")
+            })
+            .map(str::to_owned)
+            .collect();
+        labels.sort();
+        labels
+    };
+    let unclaimed = seat.ask(json!({"op": "settle"}));
+    assert_eq!(unclaimed["status"], "settled", "{unclaimed}");
+    assert_eq!(unclaimed["table"]["modal"], Value::Null);
+    assert_eq!(
+        read(&unclaimed),
+        [
+            "Focus Jacqueline Fine · partner · awaiting partner",
+            "Take over Jacqueline Fine",
+            "Take over Jacqueline Fine",
+        ]
+    );
+
+    let joined = hosted(&mut seat, &socket, json!({"op": "join"}));
+    assert_eq!(joined["status"], "joined", "{joined}");
+    let thinking = seat.ask(json!({"op": "settle"}));
+    assert_eq!(
+        read(&thinking),
+        [
+            "Focus Jacqueline Fine · partner · thinking",
+            "Take over Jacqueline Fine",
+            "Take over Jacqueline Fine",
+        ]
+    );
+
+    let choose = json!({
+        "op": "choose", "partner": joined["partner"], "revision": 1, "id": "confirm-mulligan",
+    });
+    let chosen = hosted(&mut seat, &socket, choose);
+    assert_eq!(chosen["status"], "chosen", "{chosen}");
+    let seats_own = seat.ask(json!({"op": "settle"}));
+    assert_eq!(seats_own["status"], "settled", "{seats_own}");
+    assert_eq!(seats_own["observation"]["decision_owner"], "tony");
+    assert_eq!(read(&seats_own), ["Focus Jacqueline Fine · partner"]);
+}
+
+/// One partner request on the hosted socket, answered while the seat settles: the
+/// seat runs frames only inside its own requests.
+fn hosted(seat: &mut Sitting, socket: &Path, request: Value) -> Value {
+    let socket = socket.to_owned();
+    let partner = std::thread::spawn(move || {
+        let stream = UnixStream::connect(&socket).expect("The partner socket answers");
+        let mut writer = &stream;
+        writeln!(writer, "{request}").unwrap();
+        stream.shutdown(std::net::Shutdown::Write).unwrap();
+        let mut answer = String::new();
+        std::io::BufReader::new(&stream)
+            .read_line(&mut answer)
+            .unwrap();
+        serde_json::from_str::<Value>(&answer).unwrap()
+    });
+    for _ in 0..1_000 {
+        if partner.is_finished() {
+            return partner.join().unwrap();
+        }
+        seat.ask(json!({"op": "settle"}));
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    panic!("The table never answered the partner");
+}
