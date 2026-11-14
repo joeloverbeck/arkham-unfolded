@@ -17,15 +17,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// What `scripts/tools partner --help` teaches a fresh agent session: the commands
-/// and the loop in brief. The partner instructions it points to own the rest (#211).
+/// What `scripts/tools partner --help` gives a fresh agent session: the pointer to
+/// the partner instructions and the commands. The instructions alone state the
+/// protocol's rules, so this guide does not restate them (#211, #218).
 pub const GUIDE: &str = "\
 You are an agent partner: a player at a running Arkham Horror: The Card Game table
 in the Arkham Unfolded window. Before you join, read
 docs/agents/partner-instructions.md in this repository, and read it again after
-your context is compacted. It describes every answer and status, waiting in
-Claude Code and in Codex, group and shared decisions, table talk, conduct and
-the notes to keep.
+your context is compacted. It states the rules of every command: what each
+answer and status means, which choices wait for other players, waiting in
+Claude Code and in Codex, shared decisions, table talk and its limits, conduct,
+the notes to keep and the exit codes.
 
   scripts/tools partner join [INVESTIGATOR...]    keep the answer's \"partner\"
   scripts/tools partner wait PARTNER [--timeout SECONDS]
@@ -36,38 +38,13 @@ the notes to keep.
   scripts/tools partner choose PARTNER REVISION ID
   scripts/tools partner ready PARTNER REVISION
   scripts/tools partner say PARTNER MESSAGE
-  scripts/tools partner leave PARTNER
-
-A wait answers \"decision\" once the table has presented one of your
-investigators' decisions, even while a reading or a dialog is still open; the
-table applies a choice only once it settles, so choose waits until then. An
-option of yours in another player's decision wakes you before that decision
-goes ahead: a fast card or ability before each action of a turn, A Test of
-Will against a drawn revelation, or Jacqueline's reaction to a chaos-token
-reveal. Use it, or pass with ready. In your own investigators' decisions,
-while another player may still use one first, choose answers \"held\" at once,
-except for Undo, your part of a shared decision and an act's clue payment,
-which are not held; a later wait answers \"chosen\" once the held choice is
-applied, or \"released\" with its reason when it was not: the decision moved on
-first (for example, another player used its option), or the investigator is
-no longer yours; then read the current view. After
-the first, complete view, each view reports the table as \"changes\" since your
-last. A wait answers \"nothing_yet\" after its timeout (240 s by default, at
-most 590): run it again. When the pasted line names --socket PATH, put it on
-every command. Table talk is limited: at most three messages in a row from
-you, until play moves on or another player speaks, and six in an exchange,
-until play moves on or a player who has not yet spoken at that decision
-speaks.
-
-Exit codes: 0 answered (\"closed\" included: stop), 1 refused (decide again from
-the view in the answer), 2 the table cannot be reached, did not answer a wait in
-time, or the command is malformed, 3 nothing yet (wait only). The first run in a
-checkout builds the tool, which can take a few minutes.";
+  scripts/tools partner leave PARTNER";
 
 #[derive(ClapArgs)]
 pub struct Args {
     /// The table's partner socket, when the pasted line names one. Default:
-    /// $ARKHAM_PARTNER_SOCKET, else arkham-unfolded-partners.sock in $XDG_RUNTIME_DIR.
+    /// $ARKHAM_PARTNER_SOCKET, else arkham-unfolded-partners.sock in $XDG_RUNTIME_DIR,
+    /// or in the temporary directory without it.
     #[arg(long, global = true, value_name = "PATH")]
     socket: Option<PathBuf>,
     #[command(subcommand)]
@@ -82,11 +59,8 @@ enum Request {
         #[arg(value_parser = ["tony", "patrice", "jacqueline"])]
         investigators: Vec<String>,
     },
-    /// Wait until the table has presented a decision of one of your investigators,
-    /// a group choice opens, another player changes a shared decision you take
-    /// part in, your held choice is applied or released, another player speaks,
-    /// the investigators you play change, or the table closes; exit 3 with
-    /// nothing_yet after the timeout.
+    /// Wait for the first thing that concerns you, or answer nothing_yet after the
+    /// timeout.
     Wait {
         partner: String,
         /// Seconds to wait before answering nothing_yet.
@@ -107,20 +81,15 @@ enum Request {
     },
     /// Print the full text of a card you can see, by its code.
     Inspect { partner: String, code: String },
-    /// Choose one of your options by its id at the view's revision; the table
-    /// applies it once it settles, and the answer waits until then. A choice
-    /// that waits for other players' passes in your decision is answered held at
-    /// once.
+    /// Choose one of your options by its id at the view's revision.
     Choose {
         partner: String,
         revision: u64,
         id: String,
     },
-    /// Mark yourself ready in the pending shared decision, on the parts your last
-    /// view showed, at its revision.
+    /// Mark yourself ready in the pending shared decision at the view's revision.
     Ready { partner: String, revision: u64 },
-    /// Leave the table; your investigators' decisions wait for another partner, or
-    /// for the table to take them over.
+    /// Leave the table, ending your session.
     Leave { partner: String },
     /// Say one short message to the table; its words are joined with spaces.
     Say {

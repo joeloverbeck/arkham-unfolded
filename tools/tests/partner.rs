@@ -129,10 +129,10 @@ fn a_refusal_exits_1_and_a_wait_with_nothing_yet_exits_3_after_printing_the_answ
 }
 
 /// Review fix G1: a choice the turn's player window holds is answered `held` at
-/// once, which the command prints and exits 0 for, and help says how its outcome
-/// arrives.
+/// once, which the command prints and exits 0 for. How its outcome arrives is the
+/// partner instructions' to say (tested below, #218).
 #[test]
-fn a_held_choice_exits_0_and_help_says_a_wait_tells_its_outcome() {
+fn a_held_choice_exits_0() {
     let answer = r#"{"ok":true,"status":"held"}"#;
     let (_, output) = exchange(&["choose", "a1b2", "17", "turn:end"], answer);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
@@ -140,10 +140,6 @@ fn a_held_choice_exits_0_and_help_says_a_wait_tells_its_outcome() {
         String::from_utf8(output.stdout).unwrap(),
         format!("{answer}\n")
     );
-    let help = help();
-    for taught in ["\"held\"", "\"chosen\"", "\"released\""] {
-        assert!(help.contains(taught), "{taught} in {help}");
-    }
 }
 
 #[test]
@@ -181,8 +177,11 @@ fn no_table_listening_names_the_path_and_says_how_partners_are_enabled() {
     assert!(error.contains("Agent partners"), "{error}");
 }
 
+/// #218: help lists the commands and points to the partner instructions, which
+/// alone state the protocol's rules: what a wait answers and when, which choices
+/// are held, table talk's limits and the exit codes.
 #[test]
-fn the_default_socket_follows_the_environment_and_help_teaches_the_loop() {
+fn the_default_socket_follows_the_environment_and_help_lists_the_commands() {
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("elsewhere.sock");
     let table = listen(&socket, JOINED);
@@ -205,12 +204,21 @@ fn the_default_socket_follows_the_environment_and_help_teaches_the_loop() {
         "partner inspect PARTNER CODE",
         "partner ready PARTNER REVISION",
         "observe PARTNER --full",
-        "changes",
-        "nothing_yet",
-        "pass with ready",
-        "Exit codes",
     ] {
         assert!(help.contains(step), "{step} in {help}");
+    }
+    for rule in [
+        "\"held\"",
+        "\"released\"",
+        "240 s",
+        "three messages",
+        "six in an exchange",
+        "Exit codes",
+    ] {
+        assert!(
+            !help.contains(rule),
+            "{rule} is the instructions' to state, not help's: {help}"
+        );
     }
 }
 
@@ -277,7 +285,21 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "peril",
     ];
     let notes = ["compacted", "local/partners/"];
-    for taught in requests.into_iter().chain(waiting).chain(talk).chain(notes) {
+    // #218: what help and the in-protocol hints no longer restate.
+    let moved = [
+        "`changes`",
+        "pass by marking yourself ready",
+        "exactly the requirement",
+        "no partner plays yet is waited on too",
+        "## Exit codes",
+    ];
+    for taught in requests
+        .into_iter()
+        .chain(waiting)
+        .chain(talk)
+        .chain(notes)
+        .chain(moved)
+    {
         assert!(instructions.contains(taught), "{taught} in {INSTRUCTIONS}");
     }
     for status in statuses {
@@ -289,8 +311,8 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
 }
 
 /// #209: `say` sends one message, its words joined as the player typed them, and a
-/// refused message exits 1; help names the command. Since #211 table talk's limits
-/// are taught by the partner instructions help points to (tested above).
+/// refused message exits 1; help names the command. Table talk's limits are the
+/// partner instructions' alone (tested above, #211, #218).
 #[test]
 fn say_sends_one_message_and_help_names_it() {
     let (sent, output) = exchange(
@@ -318,9 +340,4 @@ fn say_sends_one_message_and_help_names_it() {
 
     let help = help();
     assert!(help.contains("partner say PARTNER MESSAGE"), "{help}");
-    // Review fix D2: the guide names both limits of table talk.
-    assert!(
-        help.contains("three messages in a row") && help.contains("six in an exchange"),
-        "{help}"
-    );
 }
