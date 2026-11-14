@@ -58,6 +58,8 @@ git switch main &&
 git pull --ff-only origin main
 ```
 
+When the owner's checkout is on another branch or has uncommitted changes, another session may be using it: leave it as it is and update only the local `main` with `git fetch origin main:main`. Git refuses that update when `main` is checked out in a worktree, or when the local `main` cannot fast-forward; leave either case for the owner and report the refusal.
+
 Verify the resulting branch, commit and working-tree status before reporting synchronization complete. Keep human decisions between separate command sequences; `&&` supplies failure propagation, not acceptance. This repository's `delete_branch_on_merge` setting deletes a merged PR's head branch on GitHub, so only the local copy remains: remove it with `git branch -d BRANCH`, which refuses an unmerged branch.
 
 Publishing an issue or applying a readiness label follows the authority and feasibility rules in `CLAUDE.md` and the constitution. A draft spec or a closed dependency alone does not activate work.

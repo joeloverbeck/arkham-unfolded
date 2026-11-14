@@ -6,7 +6,7 @@ mod source;
 pub mod summary;
 
 use crate::process::{Completion, OwnedChild};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Args;
 use serde::Serialize;
 use std::{
@@ -81,7 +81,6 @@ fn save(directory: &Path, record: &Record) -> Result<()> {
 }
 
 pub fn run(args: CheckArgs) -> Result<u8> {
-    reject_nested_runner(&args.command)?;
     let mut record = Record {
         command: args.command,
         cwd: std::env::current_dir()?,
@@ -186,24 +185,6 @@ pub fn run(args: CheckArgs) -> Result<u8> {
     // A diagnostic-output failure must not replace the recorded command result.
     let _ = std::io::stderr().write_all(text.as_bytes());
     Ok(code)
-}
-
-fn reject_nested_runner(command: &[String]) -> Result<()> {
-    if let [dev, check, ..] = command
-        && let Ok(dev) = fs::canonicalize(dev)
-        && dev.ends_with("scripts/dev")
-        // scripts/dev changes to its checkout root before executing its argument.
-        && let Some(root) = dev.parent().and_then(Path::parent)
-        && let Ok(check) = fs::canonicalize(root.join(check))
-        && check.ends_with("scripts/check")
-        && dev.parent() == check.parent()
-    {
-        bail!(
-            "scripts/check already runs scripts/dev; nesting them waits on the same checkout lock. \
-             From the checkout root, use: scripts/tools record-check --output-dir <fresh-directory> -- scripts/check"
-        );
-    }
-    Ok(())
 }
 
 fn capture(
