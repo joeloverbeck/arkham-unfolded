@@ -1412,6 +1412,131 @@ fn every_list_with_the_humans_option_holds_the_deciding_partners_choice() {
     }
 }
 
+/// #218, one source for the protocol's rules: the partner instructions hold them.
+/// Every hint a view gives, each shared decision's `how` and the `how` of the
+/// passes a choice waits for, is one short line: it names the next step, and who is
+/// awaited when it is about others' passes, then the section of the instructions
+/// that holds the rules.
+#[test]
+fn every_hint_is_one_short_line_that_points_to_the_partner_instructions() {
+    const INSTRUCTIONS: &str = "docs/agents/partner-instructions.md";
+    const LONGEST_HINT: usize = 240;
+    let instructions = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(INSTRUCTIONS),
+    )
+    .unwrap();
+    let observe = |sitting: &mut Sitting, partner: &str| -> Value {
+        sitting.ask(json!({"op": "observe", "partner": partner}))["view"].clone()
+    };
+    let shared_how = |view: &Value, matches: &dyn Fn(&Value) -> bool| -> Value {
+        view["shared"]
+            .as_array()
+            .and_then(|shared| shared.iter().find(|shared| matches(shared)))
+            .unwrap_or_else(|| panic!("No such shared decision: {view}"))["how"]
+            .clone()
+    };
+    let plain_window = |shared: &Value| {
+        shared["kind"] == "window"
+            && shared["before_action_of"].is_null()
+            && shared["before_decision_of"].is_null()
+    };
+    let mut hints: Vec<(&str, Value, &[&str])> = Vec::new();
+
+    let (session, _, _) = tonys_commitment_window();
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join(&[]);
+    let view = observe(&mut sitting, &partner);
+    let how = shared_how(&view, &|shared| shared["kind"] == "commitment");
+    hints.push(("a commitment", how, &[]));
+
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    session.hand_for_test(Jacqueline, "04199");
+    choose(&mut session, "action:ordinary:investigate");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join(&[]);
+    let view = observe(&mut sitting, &partner);
+    hints.push(("a window", shared_how(&view, &plain_window), &[]));
+
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join(&[]);
+    let view = observe(&mut sitting, &partner);
+    let how = shared_how(&view, &|shared| shared["before_action_of"] == "Tony Morgan");
+    hints.push((
+        "the window before another player's action",
+        how,
+        &["Tony Morgan"],
+    ));
+
+    let (mut sitting, partner) =
+        at_tonys_token_reveal(tonys_empty_handed_turn(STUDY), &[Jacqueline]);
+    let view = observe(&mut sitting, &partner);
+    let how = shared_how(&view, &|shared| {
+        shared["before_decision_of"] == "Tony Morgan"
+    });
+    hints.push((
+        "an option in another player's decision",
+        how,
+        &["Tony Morgan"],
+    ));
+
+    let mut session = turn(Tony);
+    session.place_for_test(Tony, 4, "01111");
+    session.place_for_test(Patrice, 2, "01111");
+    session.place_for_test(Jacqueline, 0, "01111");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join(&[]);
+    let proposed = sitting.choose(&partner, "act:pay:0:1:0");
+    let how = shared_how(&proposed["view"], &|shared| {
+        shared["kind"] == "clue_payment"
+    });
+    hints.push(("a clue payment in a turn", how, &[]));
+
+    let session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join(&[]);
+    let view = observe(&mut sitting, &partner);
+    let how = shared_how(&view, &|shared| shared["kind"] == "clue_payment");
+    hints.push(("a clue payment at round end", how, &[]));
+
+    let (mut sitting, partner) = tonys_partner_before_the_humans_violin();
+    let view = observe(&mut sitting, &partner);
+    let how = view["decision"]["waits_for_passes"]["how"].clone();
+    hints.push(("passes before its own action", how, &["Patrice Hathaway"]));
+
+    let (mut sitting, partner) = tonys_partner_at_his_token_reveal();
+    let view = observe(&mut sitting, &partner);
+    let how = view["decision"]["waits_for_passes"]["how"].clone();
+    hints.push(("passes before its own reveal", how, &["Jacqueline Fine"]));
+
+    let pointer = format!(" in {INSTRUCTIONS}.");
+    for (situation, how, awaited) in hints {
+        let how = how
+            .as_str()
+            .unwrap_or_else(|| panic!("{situation}: no hint"));
+        assert!(
+            !how.contains('\n') && how.chars().count() <= LONGEST_HINT,
+            "{situation}: one short line, not the rules: {how}"
+        );
+        let section = how
+            .strip_suffix(&pointer)
+            .and_then(|start| start.rsplit_once("See "))
+            .map(|(_, section)| section)
+            .unwrap_or_else(|| panic!("{situation}: ends with the rules' section: {how}"));
+        assert!(
+            instructions.lines().any(|line| line.starts_with('#')
+                && line.trim_start_matches('#').trim() == section),
+            "{situation}: {INSTRUCTIONS} has a section {section}"
+        );
+        for name in awaited {
+            assert!(how.contains(name), "{situation}: names {name}: {how}");
+        }
+    }
+}
+
 /// F1 with Take over (play contract: Take over returns an investigator at once): the
 /// human's choice held for Patrice's partner's pass is applied once the human takes
 /// Patrice over, since no other player then holds a fast option.

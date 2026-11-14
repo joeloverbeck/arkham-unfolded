@@ -13,7 +13,7 @@ the candidate for final code review. Include completed check-record paths in the
 review packet, including the real-asset check when the route depends on supplied
 artwork or fonts. This keeps fixture corrections inside the reviewed candidate.
 For Gathering draws, use the [draw checkpoints and timed route](../experiments/gathering-setup.md#card-draw-review-preparation), whose builder is shared with the production-startup checks.
-For Gathering, replace the collection path below and use fresh output directories:
+For Gathering, replace the collection path below with the folder that holds the collection's `manifest.json`, which [README](../../README.md#agent-seat) locates beside its real-table checks: for imported artwork, the `collection` folder of an installation, not the `installation-*` folder above it. Use fresh output directories:
 
 ```sh
 scripts/tools record-check --output-dir /tmp/gathering-review-startup -- \
@@ -22,7 +22,7 @@ scripts/tools record-check --output-dir /tmp/gathering-review-startup -- \
 scripts/tools record-check --output-dir /tmp/gathering-review-assets -- \
   env ARKHAM_GATHERING_TEST_ASSETS=/absolute/path/to/prepared-collection \
   scripts/dev cargo test --locked --features tabletop --lib \
-  gathering_tabletop::art::tests::real_collection_loads_every_verified_image_and_symbol_font \
+  gathering_tabletop::art::tests::real_collection_loads_every_verified_image_font_and_pouch \
   -- --ignored --exact
 ```
 
@@ -215,8 +215,7 @@ Once the child and its descendants have stopped, the supervisor restores the ori
 Complete preparation before the desktop interval. Run Cargo/build/check jobs one
 at a time: await the producer's terminal result before starting the next job.
 For a recorded check, require `run.json` to say `finished` with exit code 0 and
-unchanged source fingerprints before using its output. `scripts/check` already
-uses `scripts/dev`; do not wrap it in another `scripts/dev`. A lock timeout is a
+unchanged source fingerprints before using its output. A lock timeout is a
 failed invocation, not evidence of a code defect. Diagnose the competing job;
 do not widen the lock timeout or retry while that producer is still running.
 
