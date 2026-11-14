@@ -643,7 +643,9 @@ fn the_message_box_holds_the_keyboard_and_sends_with_enter() {
 /// has (`font_checks` reads it), so everything table talk shows, the message box,
 /// speech boxes and Menu → Table talk, is drawn in those characters: typographic
 /// quotes, apostrophes, dashes and ellipses as their plain forms, anything else
-/// the face lacks as "?".
+/// the face lacks as "?". What the human types is drawn so as it is typed, and
+/// once drawn is left alone; the draft, the talk log and the sent message keep it
+/// as typed.
 #[test]
 fn table_talk_draws_only_characters_its_face_has() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
@@ -657,19 +659,49 @@ fn table_talk_draws_only_characters_its_face_has() {
         assert!(spoken.contains(part), "{part} in {spoken}");
     }
     tap(app, KeyCode::KeyT, Key::Character("t".into()));
-    type_text(app, "Hi");
+    type_text(app, "Hi é’");
     settle(app);
     assert!(app.world().resource::<Table>().talk.open);
+    assert_eq!(app.world().resource::<Table>().talk.draft, "Hi é’");
+    let draft = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<Entity, With<Draft>>()
+            .single(world)
+            .unwrap()
+    };
+    assert_eq!(app.world().get::<Text>(draft).unwrap().0, "Hi ?'|");
     crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
+    let changed = |app: &App| {
+        app.world()
+            .entity(draft)
+            .get_change_ticks::<Text>()
+            .unwrap()
+            .changed
+    };
+    let drawn = changed(app);
+    app.update();
+    assert_eq!(
+        changed(app),
+        drawn,
+        "Nothing changed, so the draft is not rewritten"
+    );
 
-    tap(app, KeyCode::Escape, Key::Escape);
+    tap(app, KeyCode::Enter, Key::Enter);
+    settle(app);
+    let table = app.world().resource::<Table>();
+    assert!(!table.talk.open, "Sent: the box closes");
+    let sent = &table.talk.log.last().unwrap().text;
+    assert_eq!(sent, "Hi é’", "Sent as typed");
     press(app, "Menu");
     press(app, "Table talk");
-    assert!(
-        rendered_text(app).contains("Patrice Hathaway: \"Don't go"),
-        "{}",
-        rendered_text(app)
-    );
+    let listed = rendered_text(app);
+    for entry in [
+        "Patrice Hathaway: \"Don't go",
+        "Jacqueline Fine and Tony Morgan: Hi ?'",
+    ] {
+        assert!(listed.contains(entry), "{entry} in {listed}");
+    }
     crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
 }
 

@@ -398,6 +398,12 @@ fn message_box(
             });
         return;
     }
+    // Drawn in the face's characters, as `text` spawns them; the draft keeps what
+    // was typed.
+    let (draft, note) = (
+        crate::tabletop_support::drawable_text(&draft),
+        crate::tabletop_support::drawable_text(&note),
+    );
     for mut text in &mut drafts {
         if text.0 != draft {
             text.0.clone_from(&draft);
