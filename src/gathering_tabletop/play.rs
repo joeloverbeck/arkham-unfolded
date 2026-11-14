@@ -275,6 +275,16 @@ pub(super) fn framing(view: &Observation) -> (Vec3, f32) {
         .map_or_else(|| sideboard::focus(focus(view)), |tray| tray.focus())
 }
 
+/// Describe only the harm types present, for pending amounts and controls.
+pub(super) fn harm_amounts(damage: u8, horror: u8) -> String {
+    match (damage, horror) {
+        (0, 0) => "no harm".into(),
+        (damage, 0) => format!("{damage} damage"),
+        (0, horror) => format!("{horror} horror"),
+        (damage, horror) => format!("{damage} damage and {horror} horror"),
+    }
+}
+
 /// The status line. `awaited` names the investigators the table waits on when an
 /// agent partner's is among them; otherwise the decision's own investigator.
 pub(super) fn status(view: &Observation, awaited: &[Investigator]) -> Option<String> {
@@ -310,21 +320,23 @@ pub(super) fn status(view: &Observation, awaited: &[Investigator]) -> Option<Str
     }
     if let Some(harm) = &play.pending.harm {
         lines.push(format!(
-            "Pending {}{} damage and {} horror on {} · {}",
+            "Pending {}{} on {} · {}",
             if harm.direct { "direct " } else { "" },
-            harm.damage,
-            harm.horror,
+            harm_amounts(harm.damage, harm.horror),
             harm.investigator.name(),
             location_name(&harm.source)
         ));
         for allocation in &harm.allocations {
+            if allocation.damage == 0 && allocation.horror == 0 {
+                continue;
+            }
             let target = allocation.asset.as_ref().map_or_else(
                 || harm.investigator.name().to_string(),
                 |asset| asset.title.clone(),
             );
             lines.push(format!(
-                "Assigned to {target}: {} damage, {} horror (not yet applied)",
-                allocation.damage, allocation.horror
+                "Assigned to {target}: {} (not yet applied)",
+                harm_amounts(allocation.damage, allocation.horror)
             ));
         }
     }

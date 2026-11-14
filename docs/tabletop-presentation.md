@@ -193,6 +193,29 @@ the menu, then clears with it; leaving the card does not close the menu.
 
 ## Player decisions and commitments
 
+At a consequence with legal prevention, show the playable prevention choices
+directly beside the choice that proceeds with the consequence. Keep the card or
+asset's contextual action available too. For assigned harm, this includes Deny
+Existence and Idol of Xanatos between assignment and application; for example,
+**Play Deny Existence — ignore 3 damage** beside **Apply 3 damage**. Deny's Agenda 1
+hand-discard opportunity receives the same direct presentation before the random
+discard. Derive these options from the current legal choices and preserve their
+investigator ownership, costs, aspect and target choices. Do not create an extra
+pause when prevention is unavailable or move other reactions into this timing.
+Joel accepted this treatment on 2026-11-14 after the
+[harm-opportunity investigation](research/gathering-harm-opportunities.md).
+[Issue #233](https://github.com/joeloverbeck/arkham-unfolded/issues/233) owns its
+implementation and verification.
+
+For pending damage/horror, assigned amounts and the application button, omit a
+type whose amount is zero. Damage-only consequences say **Apply N damage**;
+horror-only consequences say **Apply N horror**, with the actual assigned amount.
+Mention both types and
+their simultaneous application only when both are present. Apply the same rule
+to each target's assigned amounts; do not display `0 horror` beside damage or
+`0 damage` beside horror. Joel selected this on 2026-11-14 after inspecting the
+Cellar damage-assignment panel.
+
 Retain explicit Begin/End turn controls, a persistent named turn indicator and a
 distinct text-bearing badge on the active investigator's portrait. Keep these
 independent of camera focus, testing investigator and supporting actor. Name the

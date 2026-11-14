@@ -815,3 +815,50 @@ pub(super) fn eliminate(game: &mut Game, who: Investigator) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gathering::{HostileFixture, Session};
+
+    #[test]
+    fn dissonant_voices_refuses_deny_even_when_encounter_harm_is_assigned() {
+        let mut session =
+            Session::with_hostile_fixture(HostileFixture::Harm(HarmFixture::DenyAttack));
+        for id in ["harm:damage:investigator", "harm:horror:investigator"] {
+            session.choose(session.revision(), id).unwrap();
+        }
+        let deny = session
+            .observe()
+            .choices
+            .into_iter()
+            .find(|c| c.id.starts_with("deny:"))
+            .unwrap()
+            .id;
+        // Privileged placement supplies the prohibition; observations and a
+        // refused real session choice establish its effect (01165, RR "Cannot").
+        let game = session.runtime.as_mut().unwrap();
+        let index = game
+            .encounter_deck
+            .iter()
+            .position(|card| card.code == "01165")
+            .unwrap();
+        let voices = game.encounter_deck.remove(index);
+        game.players[Investigator::Jacqueline.index()]
+            .threats
+            .push(voices);
+        let before = session.clone();
+        assert!(
+            !session
+                .observe()
+                .choices
+                .iter()
+                .any(|c| c.id.starts_with("deny:"))
+        );
+        assert!(session.choose(session.revision(), &deny).is_err());
+        assert_eq!(
+            session, before,
+            "Refusal neither plays the event nor applies harm"
+        );
+    }
+}
