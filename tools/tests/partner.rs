@@ -290,7 +290,7 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "`changes`",
         "pass by marking yourself ready",
         "exactly the requirement",
-        "no partner plays yet",
+        "no partner plays yet is waited on too",
         "## Exit codes",
     ];
     for taught in requests

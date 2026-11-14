@@ -83,7 +83,7 @@ Run `wait` in the foreground with its default period, 240 s, which ends inside C
 - `options` lists only your options, each with its `id`, its `label` and the `investigator` it is for.
 - `yours` is true when the table waits for you, including for your pass in another player's decision while you hold an option there (see [Shared decisions](#shared-decisions)).
 - `prompt` says what is being decided, and `others_deciding` names the investigators whose players decide now. A `note` explains what your options leave out: that the lead is chosen at the window during setup, or that you could propose a clue payment.
-- At the view's top level, `test`, `encounter_card`, `harm` and `resolving` say what the decision is about: the skill test and the cards committed to it, an encounter card your investigator drew, the damage and horror to assign, and the cards being resolved. When `view.shared` lists a decision, see [Shared decisions](#shared-decisions).
+- At the view's top level, `test`, `encounter_card`, `harm` and `resolving` say what the decision is about: the skill test and the cards committed to it, an encounter card whose revelation is still to resolve, with `drawn_by` naming the investigator who drew it, the damage and horror to assign, and the cards being resolved. When `view.shared` lists a decision, see [Shared decisions](#shared-decisions).
 
 ```sh
 scripts/tools partner choose PARTNER REVISION ID
@@ -108,7 +108,7 @@ It answers `inspected` with the card's full text as the table's Inspect shows it
 Another player can hold an option in your own investigators' decision: a fast card or ability in the player window before each action of a turn, A Test of Will against your investigator's drawn revelation, or Jacqueline Fine's reaction to your investigator's chaos-token reveal. While one of them has not yet passed there, `decision.waits_for_passes` is listed:
 
 - `before_action_of` names your investigator in the player window before each action of a turn, else `before_decision_of` names it, as at its chaos-token reveal;
-- `waiting_for` names the investigators whose players have not yet passed. An investigator handed to partners that no partner plays yet is waited on too, until a player plays it and passes;
+- `waiting_for` names one investigator for each player that has not yet passed there: the first of that player's investigators with an option there, in the order Tony, Patrice, Jacqueline. An investigator handed to partners that no partner plays yet is waited on too, until a player plays it and passes; such investigators count as one player here;
 - `held` names your held choice, once you have one;
 - `how` gives the next step in brief.
 
@@ -123,7 +123,7 @@ Group choices belong to the lead investigator's player: who takes the next turn,
 Committing cards to a skill test, a group clue payment, and a window for fast cards and abilities can involve several players at once. Each player sets only their own investigators' part. So can any decision that lists another player's option beside the deciding investigator's: the player window before each action of a turn, where you may hold a fast card or ability; a drawn encounter card's revelation, where you may hold A Test of Will; and a chaos-token reveal, where your Jacqueline Fine may react. While you hold an option in another player's decision, `wait` wakes you with `decision`, and that player's next choice waits until you use an option or pass. In your own investigators' decisions, the others' options hold your choice the same way (see [Held choices](#held-choices)). A player with no option there is never waited on. `view.shared` lists each one you take part in:
 
 - `kind`: `commitment`, `clue_payment` or `window`; a window before another player's choice also names `before_action_of` that investigator, in its turn, or else `before_decision_of`.
-- `players`, each with its `investigators` and whether it is `ready`. `waiting_for` names the investigators whose players are not yet ready, and `you_are_ready` is yours.
+- `players`, each with its `investigators` and whether it is `ready`. `waiting_for` lists every investigator taking part whose player is not yet ready, and `you_are_ready` is yours.
 - `cleared_by`: whose change cleared your readiness.
 - `reopenings_left`: how many more times you may change your part.
 - `ready_with`: the option that marks you ready, such as Confirm or the window's pass.
