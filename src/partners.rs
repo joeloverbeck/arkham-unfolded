@@ -1393,7 +1393,7 @@ impl<R> Host<R> {
             before: decider.name(),
             "waiting_for": waiting,
             "how": format!(
-                "Your next choice, other than Undo or a part of a shared decision, is held until {names} has passed or used an option here: choose answers held at once, and wait answers chosen once it is applied. A later choose replaces a held choice. If {other} comes first, wait answers released, and you decide again."
+                "Your next choice, other than Undo or a part of a shared decision, is held, and is applied only once {names} has passed here: choose answers held at once, and wait answers chosen once it is applied. A later choose replaces a held choice. If another player uses {other} instead of passing, the held choice is released, not applied: wait answers released, and you decide again."
             ),
         });
         if let Some(hold) = self
