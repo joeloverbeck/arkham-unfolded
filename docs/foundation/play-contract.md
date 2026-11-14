@@ -4,7 +4,7 @@ This document defines the intended playing experience and continuity contract. D
 
 ## Scenario entry
 
-[ADR 0005](../adr/0005-retire-experiments-and-select-scenarios.md) establishes selection without a live game or artwork dependency, with only original The Gathering on Standard and the fixed three decks currently offered, visibly in development. New uses a distinct unused save; Continue remembers the last successfully admitted path; Open validates an explicitly selected file. Unsupported files remain untouched and do not block a separate New attempt. Save and return preserves the pending decision before leaving, and failure keeps the game active. Artwork admission precedes new-attempt creation. Standalone experiment records remain untouched and unsupported; this decision does not expand Gathering's gameplay coverage or establish native acceptance.
+[ADR 0005](../adr/0005-retire-experiments-and-select-scenarios.md) establishes selection without a live game or artwork dependency, with only original The Gathering on Standard and the fixed three decks currently offered. New uses a distinct unused save; Continue remembers the last successfully admitted path; Open validates an explicitly selected file. Unsupported files remain untouched and do not block a separate New attempt. Save and return preserves the pending decision before leaving, and failure keeps the game active. Artwork admission precedes new-attempt creation. Standalone experiment records remain untouched and unsupported; this decision does not expand Gathering's gameplay coverage or establish native acceptance.
 
 ## Campaign and deck preparation
 

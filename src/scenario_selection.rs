@@ -347,7 +347,7 @@ fn render(mut commands: Commands, state: Res<Selection>, panels: Query<Entity, W
             TextColor(Color::srgb(0.86, 0.69, 0.37)),
         ));
         p.spawn((
-            Text::new("The Gathering / In development"),
+            Text::new("The Gathering"),
             TextFont::from_font_size(26.),
         ));
         p.spawn((
@@ -549,7 +549,7 @@ mod tests {
                 world
                     .query::<&Text>()
                     .iter(world)
-                    .any(|text| text.0.starts_with("The Gathering"))
+                    .any(|text| text.0 == "The Gathering")
             );
             crate::tabletop_layout::font_checks::assert_supported(world);
         }
