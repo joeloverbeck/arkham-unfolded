@@ -29,7 +29,8 @@ pub struct Args {
 /// `skipped`.
 pub fn run(args: Args) -> Result<u8> {
     let requests = requests(&args.requests)?;
-    let stream = connect(&args.socket)?;
+    let stream =
+        connect(&args.socket)?.map_err(|error| anyhow!(not_listening(&args.socket, &error)))?;
     // Wake regularly so an interrupt is honoured during a long request.
     stream.set_read_timeout(Some(Duration::from_millis(200)))?;
     let (answered, failed) = thread::scope(|scope| {
@@ -70,26 +71,29 @@ fn requests(given: &[String]) -> Result<Vec<String>> {
     Ok(requests)
 }
 
-fn connect(socket: &Path) -> Result<UnixStream> {
-    UnixStream::connect(socket).map_err(|error| match error.kind() {
-        ErrorKind::NotFound | ErrorKind::ConnectionRefused => {
-            anyhow!(not_listening(socket, &error))
+/// The connection, or, inside, the error that shows no seat listens on `socket`:
+/// a missing socket, or one a crashed or quit seat left with nothing answering.
+fn connect(socket: &Path) -> Result<std::io::Result<UnixStream>> {
+    match UnixStream::connect(socket) {
+        Err(error)
+            if !matches!(
+                error.kind(),
+                ErrorKind::NotFound | ErrorKind::ConnectionRefused
+            ) =>
+        {
+            bail!(
+                "cannot reach the agent seat on {}: {error}",
+                socket.display()
+            )
         }
-        _ => unreachable_seat(socket, &error),
-    })
+        reached => Ok(reached),
+    }
 }
 
 fn not_listening(socket: &Path, error: &impl std::fmt::Display) -> String {
     format!(
         "No agent seat is listening on {} ({error}). A seat must be started first: start one with arkham-tabletop --experiment gathering --agent-seat --socket {} --save PATH.",
         socket.display(),
-        socket.display()
-    )
-}
-
-fn unreachable_seat(socket: &Path, error: &std::io::Error) -> anyhow::Error {
-    anyhow!(
-        "cannot reach the agent seat on {}: {error}",
         socket.display()
     )
 }
@@ -115,7 +119,7 @@ fn print_responses(stream: &UnixStream) -> Result<(usize, bool)> {
     let mut line = Vec::new();
     loop {
         line.clear();
-        if !read_line(&mut reader, &mut line)? {
+        if !read_line(&mut reader, &mut line, None)? {
             return Ok((answered, failed));
         }
         stdout.write_all(&line)?;
@@ -131,15 +135,22 @@ fn print_responses(stream: &UnixStream) -> Result<(usize, bool)> {
     }
 }
 
-/// One line, waiting out read timeouts; a last line cut short is returned as it
-/// arrived. False at the end of the connection.
-fn read_line(reader: &mut impl BufRead, line: &mut Vec<u8>) -> Result<bool> {
+/// One line, waiting out read timeouts, until `until` if given; a last line cut short
+/// is returned as it arrived. False at the end of the connection.
+fn read_line(
+    reader: &mut impl BufRead,
+    line: &mut Vec<u8>,
+    until: Option<Instant>,
+) -> Result<bool> {
     loop {
         match reader.read_until(b'\n', line) {
             // Bytes read before a timeout stay in `line`.
             Ok(_) => return Ok(!line.is_empty()),
             Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                process::check_interrupt()?
+                process::check_interrupt()?;
+                if until.is_some_and(|until| Instant::now() >= until) {
+                    bail!("it did not answer in time; it may have stopped running frames");
+                }
             }
             Err(error) => return Err(error).context("cannot read the seat's response"),
         }
@@ -152,16 +163,18 @@ It sends only observe and settle, one connection each, settling again every half
 second while the table is settled, so the seat's own decisions stay with its
 driver. It returns once the table waits on the seat alone: it shows no Take over,
 so no partner-played investigator is awaited, or a reading, dialog or menu is
-open over it, which holds every partner's choice until the seat closes it.
---choices counts the revisions the table advanced while it ran: with no other
-command acting on the seat, each is a partner's choice, or a choice of the
-seat's that was held until partners passed. It prints one line whenever the
-revision, the stage or the awaited investigators change, and a last line naming
-why it returned.
+open over it (docs/agents/partner-instructions.md#decide says when the table
+applies a partner's choice). --choices counts the revisions the table advanced
+while it ran: with no other command acting on the seat, each is a partner's
+choice, or a choice of the seat's held for partners' passes. It prints one line
+whenever the revision, the stage or the awaited investigators change and, except
+on exit 2, a last line naming why it returned.
 
 Exit codes: 0 the table waits on the seat, or --revision or --choices was
-reached; 3 the timeout passed; 4 the seat has gone; 2 the command is malformed,
-or the seat could not be reached or answered something else.
+reached; 3 the timeout passed; 4 no seat listens on the socket, from the start
+or once it went away; 2 the command is malformed, the socket cannot be reached
+for another reason, the seat did not answer a request within 10 seconds after
+the timeout, or it answered something other than an observation or a settle.
 
 Hosting an agent partner: README.md#hosting-an-agent-partner";
 
@@ -171,11 +184,11 @@ const GONE: u8 = 4;
 /// The pause between settles while the table is settled: a partner's choice waits
 /// at most this long for the settle that applies it.
 const INTERVAL: Duration = Duration::from_millis(500);
-/// About five seconds of table time per settle, so a settle under way when the
-/// timeout passes ends soon after.
-const STEPS: u32 = 300;
+/// Two seconds of table time per settle, so a settle under way when the timeout
+/// passes ends well within [`GRACE`].
+const STEPS: u32 = 120;
 /// How long past the timeout an answer is still awaited from a seat that stopped.
-const GRACE: Duration = Duration::from_secs(30);
+const GRACE: Duration = Duration::from_secs(10);
 
 #[derive(ClapArgs)]
 pub struct WaitArgs {
@@ -250,13 +263,6 @@ pub fn wait(args: WaitArgs) -> Result<u8> {
                 stopped.stopped = "gone";
                 break GONE;
             }
-            Exchange::Late => {
-                eprintln!(
-                    "arkham-tools: the agent seat on {} did not answer a settle in time; it may have stopped.",
-                    args.socket.display()
-                );
-                break TIMED_OUT;
-            }
         };
         request = json!({"op": "settle", "steps": STEPS});
         let revision = answer["observation"]["revision"]
@@ -305,24 +311,14 @@ enum Exchange {
     Answer(Value),
     /// No seat answers on the socket any more, for this reason.
     Gone(String),
-    /// No answer arrived in time.
-    Late,
 }
 
 /// One request on a connection of its own, so the seat serves other commands
 /// between this command's requests.
 fn exchange(socket: &Path, request: &Value, until: Instant) -> Result<Exchange> {
-    let stream = match UnixStream::connect(socket) {
+    let stream = match connect(socket)? {
         Ok(stream) => stream,
-        Err(error)
-            if matches!(
-                error.kind(),
-                ErrorKind::NotFound | ErrorKind::ConnectionRefused
-            ) =>
-        {
-            return Ok(Exchange::Gone(error.to_string()));
-        }
-        Err(error) => return Err(unreachable_seat(socket, &error)),
+        Err(error) => return Ok(Exchange::Gone(error.to_string())),
     };
     // Wake regularly so an interrupt is honoured during a long settle.
     stream.set_read_timeout(Some(Duration::from_millis(200)))?;
@@ -333,27 +329,22 @@ fn exchange(socket: &Path, request: &Value, until: Instant) -> Result<Exchange> 
         return Ok(Exchange::Gone("it closed the connection".into()));
     }
     let _ = stream.shutdown(Shutdown::Write);
-    let mut reader = BufReader::new(&stream);
     let mut line = Vec::new();
-    loop {
-        match reader.read_until(b'\n', &mut line) {
-            Ok(_) if line.is_empty() => {
-                return Ok(Exchange::Gone(
-                    "it closed the connection without answering".into(),
-                ));
-            }
-            Ok(_) => break,
-            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                process::check_interrupt()?;
-                if Instant::now() >= until {
-                    return Ok(Exchange::Late);
-                }
-            }
-            Err(error) if error.kind() == ErrorKind::ConnectionReset => {
-                return Ok(Exchange::Gone(error.to_string()));
-            }
-            Err(error) => return Err(error).context("cannot read the seat's answer"),
+    let answered = match read_line(&mut BufReader::new(&stream), &mut line, Some(until)) {
+        // A seat that ends with this request unread resets the connection.
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == ErrorKind::ConnectionReset) =>
+        {
+            return Ok(Exchange::Gone(error.root_cause().to_string()));
         }
+        answered => answered.with_context(|| format!("the agent seat on {}", socket.display()))?,
+    };
+    if !answered {
+        return Ok(Exchange::Gone(
+            "it closed the connection without answering".into(),
+        ));
     }
     let answer: Value = serde_json::from_slice(&line).with_context(|| {
         format!(

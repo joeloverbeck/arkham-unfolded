@@ -214,13 +214,13 @@ A seat that receives no request for 30 minutes ends itself as `quit` does: the a
 
 #### Hosting an agent partner
 
-A held seat hosts [agent partners](#play-with-agent-partners) as the window does. Enable them through the menu: `Tab` to **Menu**, then **Agent partners**, an investigator's `you play` row and **Enable agent partners**, pressing `Enter` naming each in `focused`. The line to paste is in the seat log, after `Agent partners are enabled.`; give it to the partner's session. Because the seat runs frames only inside its own requests, run this between the seat's own decisions:
+A held seat hosts [agent partners](#play-with-agent-partners) as the window does. Enable them through the menu: `Tab` to **Menu**, then **Agent partners**, an investigator's `you play` row and **Enable agent partners**, pressing `Enter` naming each in `focused`, then close the menu with `Escape`: while it is open, the command below returns at once. The line to paste is in the seat log, after `Agent partners are enabled.`; give it to the partner's session. Because the seat runs frames only inside its own requests, run this between the seat's own decisions:
 
 ```sh
 scripts/tools seat-wait /absolute/path/to/seat.sock
 ```
 
-It answers nothing. It settles the table at least every half second, prints a line whenever the revision, the stage or the awaited investigators change, and returns once the table waits on the seat alone: no **Take over** is shown, or a reading, dialog or menu is open over the table, which holds every partner's choice until it closes. In a shared decision, such as committing cards to a test, set the seat's part before running it. `--revision N` and `--choices N` also return at a revision or after that many applied choices, and `--timeout SECONDS` (default 240, at most 590) bounds the wait. It exits 0 on one of these conditions, 3 at the timeout and 4 when the seat has gone; `scripts/tools seat-wait --help` has the rest. A seat run checks the partner protocol and the table's logic; it is not native acceptance.
+It answers nothing. It settles the table at least every half second, prints a line whenever the revision, the stage or the awaited investigators change, and returns once the table waits on the seat alone: no **Take over** is shown, or a reading, dialog or menu is open over the table (the [partner instructions](docs/agents/partner-instructions.md#decide) say when the table applies a partner's choice). In a shared decision, such as committing cards to a test, set the seat's part before running it. `--revision N` and `--choices N` also return at a revision or after that many applied choices, and `--timeout SECONDS` (default 240, at most 590) bounds the wait. It exits 0 on one of these conditions, 3 at the timeout and 4 when no seat listens on the socket, from the start or once it has gone; `scripts/tools seat-wait --help` has the rest. A seat run checks the partner protocol and the table's logic; it is not native acceptance.
 
 ### Start fresh after an incompatible save
 

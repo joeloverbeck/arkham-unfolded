@@ -135,8 +135,9 @@ fn no_listening_seat_names_the_path_and_says_to_start_one() {
 }
 
 /// A stand-in seat for `seat-wait` (#218), which opens one connection per request:
-/// each connection's one request line is answered with the next canned line, and an
-/// empty one closes the connection unanswered. After the last, the seat keeps
+/// each connection's one request line is answered with the next canned line. An
+/// empty one closes the connection unanswered, and [`HOLD`] keeps it open without
+/// ever answering, as a seat that stopped would. After the last, the seat keeps
 /// answering it, or goes away as a quitting seat does: it stops listening and its
 /// socket file is removed.
 struct Hosting {
@@ -151,6 +152,8 @@ enum Then {
     Vanish,
 }
 
+const HOLD: &str = "hold the connection unanswered";
+
 fn host(socket: &Path, answers: Vec<String>, then: Then) -> Hosting {
     use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
     let listener = UnixListener::bind(socket).unwrap();
@@ -159,6 +162,7 @@ fn host(socket: &Path, answers: Vec<String>, then: Then) -> Hosting {
     let path = socket.to_owned();
     let answering = thread::spawn(move || {
         let mut received = Vec::new();
+        let mut held = Vec::new();
         let mut index = 0;
         loop {
             if then == Then::Vanish && index == answers.len() {
@@ -175,7 +179,9 @@ fn host(socket: &Path, answers: Vec<String>, then: Then) -> Hosting {
             received.push(serde_json::from_str(&request).unwrap());
             let answer = &answers[index.min(answers.len() - 1)];
             index += 1;
-            if !answer.is_empty() {
+            if answer == HOLD {
+                held.push(stream);
+            } else if !answer.is_empty() {
                 let _ = (&stream).write_all(format!("{answer}\n").as_bytes());
             }
         }
@@ -228,7 +234,9 @@ fn answer(
 }
 
 /// The portrait rail and decision display while Jacqueline's partner decides, as a
-/// seat-hosted run of #202 showed them.
+/// seat-hosted run of #202 showed them. The table's side of these label shapes is
+/// pinned by `a_hosted_partner_is_shown_to_seat_wait_by_take_over_and_its_cue` in
+/// `src/gathering_tabletop/seat/tests.rs`.
 const JACQUELINE_THINKING: &[&str] = &[
     "Focus Tony Morgan",
     "Focus Patrice Hathaway",
@@ -280,7 +288,7 @@ fn seat_wait_keeps_the_table_settling_until_the_decision_is_the_seats_own() {
     let received = seat.received();
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     let observe = serde_json::json!({"op": "observe"});
-    let settle = serde_json::json!({"op": "settle", "steps": 300});
+    let settle = serde_json::json!({"op": "settle", "steps": 120});
     assert_eq!(
         received,
         [
@@ -510,4 +518,34 @@ fn seat_wait_fails_with_exit_2_on_an_answer_that_is_neither_an_observation_nor_a
     assert!(output.stdout.is_empty());
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(error.contains(refused), "{error}");
+}
+
+#[test]
+fn seat_wait_fails_with_exit_2_when_the_seat_stops_answering_as_partner_wait_does() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("seat.sock");
+    let seat = host(
+        &socket,
+        vec![
+            answer("observed", (9, "playing"), true, None, JACQUELINE_THINKING),
+            HOLD.to_owned(),
+        ],
+        Then::Repeat,
+    );
+    let began = std::time::Instant::now();
+    let output = seat_wait(&socket, &["--timeout", "1"]);
+    let took = began.elapsed();
+    seat.received();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(took >= std::time::Duration::from_secs(1), "{took:?}");
+    // What was seen before it stopped answering is printed; no reason line follows.
+    assert_eq!(
+        lines(&output),
+        [
+            serde_json::json!({"revision": 9, "stage": "playing", "awaiting": ["Jacqueline Fine (thinking)"]})
+        ]
+    );
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("did not answer in time"), "{error}");
+    assert!(error.contains(socket.to_str().unwrap()), "{error}");
 }
