@@ -19,8 +19,8 @@
 //! assignment:
 //! - each player is offered exactly the listed options its investigators own,
 //!   its pass when it holds an option in another player's decision, and Undo
-//!   only when it controls every investigator of the decision Undo reverts; a
-//!   partner's view shows the same options;
+//!   only when it controls every investigator of the decision Undo reverts; each
+//!   partner that acts in a step sees the same options in its view;
 //! - the table waits on someone, on no player without an option there, and on
 //!   exactly the players with an option there, except that an act's clue payment
 //!   waits on its contributors only once one proposes a part, and a commitment
@@ -33,7 +33,9 @@
 //!   active investigator, the revealer or the drawer;
 //! - when the list holds another player's option and no pass of its own, the
 //!   deciding player's choice is held, not applied, until each such player has
-//!   passed, and then it alone is applied; a participant's option used instead
+//!   passed, and then it alone is applied (an act's clue payment counts as no
+//!   one's option here, and a commitment awaiting the tester's own part is not
+//!   held); a participant's option used instead
 //!   applies at once and releases the held choice unapplied;
 //! - a shared decision that spans players completes only with the last
 //!   participating player's readiness.
@@ -372,7 +374,8 @@ struct Step {
     after: Listed,
 }
 
-/// The rules session as the table. Substituted infrastructure, in three ways:
+/// The rules session as the table, repeating the tests' `Rules` table so it can
+/// install the reference result below. Substituted infrastructure, in three ways:
 /// - A commit of the step's intent installs the reference play-through's own
 ///   result of that `choose` from the same position, with Undo's owner already
 ///   derived, since deriving it replays the session from its start once per
@@ -436,8 +439,8 @@ enum Outcome {
 }
 
 /// One assignment's table, through one seeded play-through. It repeats the
-/// request plumbing of the tests' `Sitting` rather than making that generic over
-/// its table, which would change the attribution the other tests read.
+/// request plumbing of the tests' `Sitting`; making `Sitting` generic over its
+/// table could serve both, and was left for a later change.
 struct Play {
     host: Host<u32>,
     table: Lockstep,
@@ -1103,7 +1106,7 @@ fn play_through(seed: u64, decisions: usize) -> Tally {
 }
 
 /// #218 item 1: across seeded play of The Gathering and every assignment of the
-/// investigators to the human and one or two partners, no choice skips another
+/// investigators to the human and one, two or three partners, no choice skips another
 /// player's opportunity, and no player is waited on, offered or allowed an option
 /// that is not theirs.
 #[test]
