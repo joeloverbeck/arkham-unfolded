@@ -3,9 +3,11 @@
 This document consolidates the accepted presentation requirements for supported
 Gathering play. [ADR 0002](adr/0002-persistent-table-areas.md) records the spatial
 decision and its rationale; the [play contract](foundation/play-contract.md)
-owns the broader player, continuity and artwork boundaries. [Issue #89](https://github.com/joeloverbeck/arkham-unfolded/issues/89)
-owns active work and acceptance. Requirements here do not claim implementation,
-native verification, full-scenario completion or support for unselected content.
+owns the broader player, continuity and artwork boundaries. GitHub issues own
+active work and acceptance; [issue #89](https://github.com/joeloverbeck/arkham-unfolded/issues/89)
+closed on 2026-11-14 with Joel's acceptance of complete Gathering play, which
+released some presentation checks unverified. Requirements here do not claim
+implementation, native verification or support for unselected content.
 
 The [original decision record](https://github.com/joeloverbeck/arkham-unfolded/blob/6d47ae988088a28e1ea08090ce63466e1a40a5dc/docs/adr/0002-persistent-table-areas.md)
 preserves the interviews, superseded choices and dated evidence. Replay,
