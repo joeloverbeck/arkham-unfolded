@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Triage
 
-Before memory lookup, startup-document reads or tool discovery, read the repository's [tracker procedure](../../../docs/agents/issue-tracker.md) from client selection through bounded context reads. It owns repository-scoped searches and the shared reading budget.
+Before memory lookup, startup-document reads or tool discovery, follow the repository's [tracker entry procedure](../../../docs/agents/issue-tracker.md). It owns client selection, bounded reads and when to load or reuse operation-specific guidance.
 
 Move issues on the project issue tracker through a small state machine of triage roles.
 
@@ -71,7 +71,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 1. **Gather context.** Read the full issue or PR (body, comments, labels, author, dates; for a PR, the diff too). Parse any prior triage notes so you don't re-ask resolved questions. Explore the codebase using the project's domain glossary, respecting ADRs in the area. Run two checks against the codebase: (a) **redundancy**: search for an existing implementation of the requested behavior by domain concept (not just the request's wording), and report where you looked. If found, it's an already-implemented `wontfix` (step 5). (b) **prior rejection**: read `.out-of-scope/*.md` and surface any that resembles this request.
 
-2. **Recommend.** Tell the maintainer your category and state recommendation with reasoning, plus a brief codebase summary relevant to the request (including whether it's already implemented). Wait for direction.
+2. **Recommend.** Propose the category and intended outcome state alongside the bounded scope and exact tracker changes, with reasoning and a brief codebase summary (including whether it's already implemented). Distinguish that outcome from the current labels. Reserve `needs-triage` for a substantive evaluation or scope decision that remains unresolved; awaiting acceptance of this recommendation is not itself such a gap. Wait for direction unless existing authorization already covers these changes. Once accepted, complete verification and the repository's feasibility checks, then apply the outcome without asking for the same acceptance again. If those checks reveal a material gap, state the changed evidence and recommended outcome before the affected mutation.
 
 3. **Verify the claim.** Before any grilling, check that the claim holds up. For a bug, reproduce it from the reporter's steps. For a PR, confirm the diff does what it claims: check it out, run the relevant tests or commands. For an issue that asks to document current behavior or cites code to explain it, trace each condition the issue cites to where its value is set and confirm the path the issue describes can reach it. Report what happened: confirmed (with code path), failed, or insufficient detail (a strong `needs-info` signal). A confirmed verification makes a much stronger agent brief.
 

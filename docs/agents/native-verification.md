@@ -8,6 +8,14 @@ For slow startup, rendering or camera movement, begin with the [native-performan
 
 ### Prepare a compact native handoff
 
+During implementation planning, identify the exact visible state needed for each
+native check and the shortest repeatable route to it. For a state-specific check,
+reuse or extend the existing review-save builders to open directly at that state,
+with only the actions under review left for the owner. Record the estimated owner
+time. If a checkpoint cannot reach the state, establish a bounded alternative and
+record its setup cost before handoff; playing until a chance encounter occurs is
+an unresolved preparation gap.
+
 Prepare the route's saves and their production-startup UI checks before freezing
 the candidate for final code review. Include completed check-record paths in the
 review packet, including the real-asset check when the route depends on supplied
@@ -65,6 +73,7 @@ Prepared saves: input identity/revision; production-startup check/result;
 Authority: accepted journey, total allowance and stop conditions.
 Capabilities: helper revision; supported actions needed by this route and limits.
 Human route, when the owner operates the game:
+  estimated total time; prepared starting state and startup-check result
   numbered action -> expected visible result; exact copyable picker paths;
   agreed capture pauses; effective app close deadline
   one report after closing: passed / failed / not tested for each item

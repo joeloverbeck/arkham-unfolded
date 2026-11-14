@@ -38,6 +38,19 @@ fn runs_args() -> Vec<String> {
     ]
 }
 
+fn jobs_args(attempt: u64) -> Vec<String> {
+    vec![
+        "api".into(),
+        "--hostname".into(),
+        "github.com".into(),
+        format!(
+            "repos/joeloverbeck/arkham-unfolded/actions/runs/{RUN}/attempts/{attempt}/jobs?per_page=100"
+        ),
+        "--paginate".into(),
+        "--slurp".into(),
+    ]
+}
+
 // Scripts only the external gh process, as the merge-reviewed tests do. Every unexpected
 // invocation fails, and the journal shows how often the command polled.
 struct Github {
@@ -53,8 +66,20 @@ impl Github {
     }
 
     fn poll(&mut self, response: impl ToString, status: u8) {
+        self.response(runs_args(), response, status);
+    }
+
+    fn jobs(&mut self, attempt: u64, jobs: &[Value]) {
+        self.response(
+            jobs_args(attempt),
+            json!([{"total_count":jobs.len(),"jobs":jobs}]),
+            0,
+        );
+    }
+
+    fn response(&mut self, args: Vec<String>, response: impl ToString, status: u8) {
         for (suffix, content) in [
-            ("args", runs_args().join("\n")),
+            ("args", args.join("\n")),
             ("stdout", response.to_string()),
             ("status", status.to_string()),
         ] {
@@ -107,18 +132,179 @@ fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+fn job(step: &str) -> Value {
+    // The job identity and fields follow the real #213 run's API response.
+    json!({"id":132529203201_u64,"run_id":RUN,"run_attempt":1,"head_sha":HEAD,
+        "name":"Rust checks","status":"in_progress",
+        "steps":[{"number":11,"name":step,"status":"in_progress"}]})
+}
+
 #[test]
-fn a_run_that_appears_after_the_first_poll_is_followed_to_success_for_that_head() {
+fn progress_reports_changed_steps_once_with_elapsed_time_and_run_identity() {
     let mut github = Github::new();
-    github.poll(page(&[]), 0);
-    github.poll(page(&[run("queued", None)]), 0);
-    github.poll(page(&[run("in_progress", None)]), 0);
+    for step in ["Clippy", "Clippy", "Application tests"] {
+        github.poll(page(&[run("in_progress", None)]), 0);
+        github.jobs(1, &[job(step)]);
+    }
     github.poll(page(&[run("completed", Some("success"))]), 0);
 
     let output = github.watch(60, 60);
 
     assert_eq!(output.status.code(), Some(0), "{output:?}");
-    assert_eq!(github.calls(), 4);
+    let printed = stdout(&output);
+    assert_eq!(
+        printed.matches("Rust checks: Clippy").count(),
+        1,
+        "{printed}"
+    );
+    assert_eq!(
+        printed.matches("Rust checks: Application tests").count(),
+        1,
+        "{printed}"
+    );
+    for line in printed.lines().filter(|line| line.contains("Rust checks:")) {
+        assert!(
+            line.contains("elapsed ") && line.contains(&format!("run {RUN} attempt 1")),
+            "{line}"
+        );
+    }
+    assert_eq!(github.calls(), 7);
+}
+
+#[test]
+fn reruns_report_the_same_step_again_under_the_new_attempt() {
+    let mut github = Github::new();
+    for attempt in [1, 2] {
+        let mut running = run("in_progress", None);
+        running["run_attempt"] = json!(attempt);
+        let mut current = job("Application tests");
+        current["run_attempt"] = json!(attempt);
+        github.poll(page(&[running]), 0);
+        github.jobs(attempt, &[current]);
+    }
+    let mut finished = run("completed", Some("success"));
+    finished["run_attempt"] = json!(2);
+    github.poll(page(&[finished]), 0);
+
+    let output = github.watch(60, 60);
+
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let printed = stdout(&output);
+    for attempt in [1, 2] {
+        assert!(
+            printed.contains(&format!(
+                "run {RUN} attempt {attempt}: Rust checks: Application tests"
+            )),
+            "{printed}"
+        );
+    }
+    assert_eq!(github.calls(), 5);
+}
+
+#[test]
+fn parallel_jobs_are_stable_across_page_order_and_never_supply_the_run_conclusion() {
+    let mut github = Github::new();
+    let first = job("Application tests");
+    let mut second = job("Renderer tests");
+    second["id"] = json!(132529203202_u64);
+    second["name"] = json!("Renderer");
+    for jobs in [
+        vec![first.clone(), second.clone()],
+        vec![second.clone(), first.clone()],
+    ] {
+        github.poll(page(&[run("in_progress", None)]), 0);
+        github.response(
+            jobs_args(1),
+            json!([
+                {"total_count":2,"jobs":[jobs[0]]},
+                {"total_count":2,"jobs":[jobs[1]]}
+            ]),
+            0,
+        );
+    }
+    github.poll(page(&[run("in_progress", None)]), 0);
+    let mut completed = first;
+    completed["status"] = json!("completed");
+    second["status"] = json!("completed");
+    github.jobs(1, &[completed, second]);
+    github.poll(page(&[run("completed", Some("failure"))]), 0);
+
+    let output = github.watch(60, 60);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let printed = stdout(&output);
+    assert_eq!(
+        printed
+            .matches("Rust checks: Application tests; Renderer: Renderer tests")
+            .count(),
+        1,
+        "{printed}"
+    );
+    assert!(
+        printed.contains("jobs completed; waiting for run conclusion"),
+        "{printed}"
+    );
+    assert!(
+        printed
+            .lines()
+            .last()
+            .unwrap()
+            .contains("conclusion failure"),
+        "{printed}"
+    );
+    assert_eq!(github.calls(), 7);
+}
+
+#[test]
+fn untrusted_jobs_stop_without_printing_their_progress_or_claiming_a_conclusion() {
+    let current = job("Application tests");
+    let mut responses = vec![
+        (json!([{"total_count":2,"jobs":[current.clone()]}]), 0),
+        (
+            json!([{"total_count":2,"jobs":[current.clone(),current.clone()]}]),
+            0,
+        ),
+        (json!([]), 0),
+        (json!("not a jobs response"), 0),
+        (json!([]), 1),
+    ];
+    for (field, wrong) in [
+        ("head_sha", json!(OTHER)),
+        ("run_id", json!(RUN + 1)),
+        ("run_attempt", json!(2)),
+    ] {
+        let mut mismatched = current.clone();
+        mismatched[field] = wrong;
+        responses.push((json!([{"total_count":1,"jobs":[mismatched]}]), 0));
+    }
+    for (response, status) in responses {
+        let mut github = Github::new();
+        github.poll(page(&[run("in_progress", None)]), 0);
+        github.response(jobs_args(1), response, status);
+
+        let output = github.watch(60, 60);
+
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(!stdout(&output).contains("Application tests"), "{output:?}");
+        assert!(!stdout(&output).contains("conclusion"), "{output:?}");
+        assert_eq!(github.calls(), 2);
+    }
+}
+
+#[test]
+fn a_run_that_appears_after_the_first_poll_is_followed_to_success_for_that_head() {
+    let mut github = Github::new();
+    github.poll(page(&[]), 0);
+    github.poll(page(&[run("queued", None)]), 0);
+    github.jobs(1, &[]);
+    github.poll(page(&[run("in_progress", None)]), 0);
+    github.jobs(1, &[job("Application tests")]);
+    github.poll(page(&[run("completed", Some("success"))]), 0);
+
+    let output = github.watch(60, 60);
+
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(github.calls(), 6);
     let printed = stdout(&output);
     let last = printed.lines().last().unwrap();
     assert!(
@@ -177,6 +363,7 @@ fn the_newest_run_of_the_head_decides_its_result() {
     older["event"] = json!("push");
     let mut github = Github::new();
     github.poll(page(&[run("in_progress", None), older.clone()]), 0);
+    github.jobs(1, &[job("Application tests")]);
     github.poll(page(&[run("completed", Some("success")), older]), 0);
 
     let output = github.watch(60, 60);
@@ -199,14 +386,24 @@ fn no_run_or_no_conclusion_within_the_time_limits_fails_without_a_conclusion() {
         let mut github = Github::new();
         // The second poll falls at the time limit; there is no third.
         github.poll(&response, 0);
+        if timeout == 1 {
+            github.jobs(1, &[]);
+        }
         github.poll(&response, 0);
+        if timeout == 1 {
+            github.jobs(1, &[]);
+        }
 
         let output = github.watch(appear, timeout);
 
         assert_eq!(output.status.code(), Some(2), "{expected}: {output:?}");
         assert!(stderr(&output).contains(expected), "{output:?}");
         assert!(!stdout(&output).contains("conclusion"), "{output:?}");
-        assert!((1..=2).contains(&github.calls()), "{expected}");
+        let calls_per_poll = if timeout == 1 { 2 } else { 1 };
+        assert!(
+            (calls_per_poll..=2 * calls_per_poll).contains(&github.calls()),
+            "{expected}"
+        );
     }
 }
 

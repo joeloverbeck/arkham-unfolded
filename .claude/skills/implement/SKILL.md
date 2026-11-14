@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 Implement the work described by the user in the spec or tickets.
 
-Before ticket lookup, startup-document reads or tool discovery, read the repository's [tracker procedure](../../../docs/agents/issue-tracker.md) from client selection through bounded context reads. If the user passes a ticket reference, fetch it and state its title before starting. If the reference is ambiguous, ask.
+Before ticket lookup, startup-document reads or tool discovery, follow the repository's [tracker entry procedure](../../../docs/agents/issue-tracker.md), including its rules for loading or reusing operation-specific guidance. If the user passes a ticket reference, fetch it and state its title before starting. If the reference is ambiguous, ask.
 
 Before editing, record the entry commit (`git rev-parse HEAD`), working-tree status (`git status --short --untracked-files=all`) and entry time (`date -u +%FT%TZ`). Preserve any pre-existing edits to paths the task will touch so they remain distinguishable from this task's changes. Take every later statement about consumed effort, and every time-based stop, from the time elapsed since that record.
 
@@ -14,7 +14,7 @@ Choose a task branch before editing: reuse an existing topic branch when its com
 
 After selecting the branch, record its current commit (`git rev-parse HEAD`) as the review fixed point before making changes.
 
-For tabletop UI work, establish the [inherited presentation baseline](../../../docs/agents/native-verification.md#visual-and-wording-review) before coding, including when adding a scenario or mode. Carry its affected sections, implementation paths and authorized differences into the review brief.
+For tabletop UI work, establish the [inherited presentation baseline](../../../docs/agents/native-verification.md#visual-and-wording-review) and plan the [native verification route](../../../docs/agents/native-verification.md#prepare-a-compact-native-handoff) before coding, including when adding a scenario or mode. Carry the baseline's affected sections, implementation paths and authorized differences into the review brief. Before freezing the review candidate, complete the route's checkpoint preparation and startup checks; include the runnable route, estimated owner time and completed records in the review packet.
 
 For a measurement launch on the owner's display, follow the [owner-run measurement launch](../diagnosing-bugs/native-performance.md#owner-run-measurement-launch) from the instrument's design onward. When the result is an evidence record alone, its checks, build and publication stand in for the full gate and the pull request. When the issue's pull request keeps the comparison build, the full gate and the pull request follow on the outcome's commit.
 

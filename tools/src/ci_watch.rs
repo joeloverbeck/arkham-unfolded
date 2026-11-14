@@ -46,6 +46,30 @@ struct Run {
     html_url: String,
 }
 
+#[derive(Deserialize)]
+struct JobsPage {
+    total_count: usize,
+    jobs: Vec<Job>,
+}
+
+#[derive(Deserialize)]
+struct Job {
+    id: u64,
+    run_id: u64,
+    run_attempt: u64,
+    head_sha: String,
+    name: String,
+    status: String,
+    steps: Vec<Step>,
+}
+
+#[derive(Deserialize)]
+struct Step {
+    number: u64,
+    name: String,
+    status: String,
+}
+
 pub fn run(args: Args) -> Result<u8> {
     let start = Instant::now();
     let appear_by =
@@ -54,6 +78,7 @@ pub fn run(args: Args) -> Result<u8> {
     println!("waiting for the Check run of {}", args.head);
     // The run, attempt and status last printed; a rerun keeps its run and starts a new attempt.
     let mut shown: Option<(u64, u64, String)> = None;
+    let mut shown_progress = None;
     loop {
         let (newest, count) = newest_run(&args.head)?;
         match newest {
@@ -78,6 +103,18 @@ pub fn run(args: Args) -> Result<u8> {
                         run.head_sha, run.html_url
                     );
                     return Ok(if conclusion == "success" { 0 } else { 1 });
+                }
+                let progress = current_jobs(&run)?;
+                let observation = (run.id, run.run_attempt, progress);
+                if shown_progress.as_ref() != Some(&observation) {
+                    println!(
+                        "elapsed {}s; run {} attempt {}: {}",
+                        start.elapsed().as_secs(),
+                        run.id,
+                        run.run_attempt,
+                        observation.2
+                    );
+                    shown_progress = Some(observation);
                 }
             }
             None => ensure!(
@@ -108,6 +145,67 @@ pub fn run(args: Args) -> Result<u8> {
         }
         process::pause((deadline - now).min(Duration::from_secs(args.interval_seconds)))?;
     }
+}
+
+/// Progress is advisory: only the workflow run's conclusion can finish the watch.
+/// Bind jobs to an explicit attempt so a rerun cannot mix old and current steps.
+fn current_jobs(run: &Run) -> Result<String> {
+    let pages: Vec<JobsPage> = json(&[
+        "api",
+        "--hostname",
+        "github.com",
+        &format!(
+            "{API_REPO}/actions/runs/{}/attempts/{}/jobs?per_page=100",
+            run.id, run.run_attempt
+        ),
+        "--paginate",
+        "--slurp",
+    ])?;
+    let count: usize = pages.iter().map(|page| page.jobs.len()).sum();
+    ensure!(
+        !pages.is_empty() && pages.iter().all(|page| page.total_count == count),
+        "Incomplete or changing workflow-jobs response"
+    );
+    let mut jobs: Vec<Job> = pages.into_iter().flat_map(|page| page.jobs).collect();
+    jobs.sort_by_key(|job| job.id);
+    let mut ids = HashSet::new();
+    for job in &jobs {
+        ensure!(
+            ids.insert(job.id),
+            "Duplicate job IDs in workflow-jobs response"
+        );
+        ensure!(
+            job.run_id == run.id
+                && job.run_attempt == run.run_attempt
+                && job.head_sha == run.head_sha,
+            "GitHub listed job {} for another head, run or attempt",
+            job.id
+        );
+    }
+    if jobs.is_empty() {
+        return Ok("waiting for jobs".into());
+    }
+    let mut active = Vec::new();
+    for mut job in jobs.into_iter().filter(|job| job.status != "completed") {
+        job.steps.sort_by_key(|step| step.number);
+        let steps: Vec<_> = job
+            .steps
+            .iter()
+            .filter(|step| step.status == "in_progress")
+            .map(|step| step.name.as_str())
+            .collect();
+        let phase = if steps.is_empty() {
+            job.status
+        } else {
+            steps.join(", ")
+        };
+        active.push(format!("{}: {phase}", job.name));
+    }
+    Ok(if active.is_empty() {
+        "jobs completed; waiting for run conclusion".into()
+    } else {
+        active.join("; ")
+    })
 }
 
 /// The newest `Check` run of `head` and how many there are, once GitHub's answer is complete
