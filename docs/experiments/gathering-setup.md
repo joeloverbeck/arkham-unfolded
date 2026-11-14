@@ -1,5 +1,7 @@
 # Gathering candidate
 
+**Status, 2026-11-14:** Joel accepted complete Gathering play on his own playtests, and [#89](https://github.com/joeloverbeck/arkham-unfolded/issues/89) is closed as completed. Its [closing record](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6868075979) states that acceptance's evidence limits and the checks it released unverified. The dated records below describe their own time, including statements that #89 remained open.
+
 **Current entry, 2026-11-07:** ordinary launch opens [scenario selection](../../README.md#launch-and-resume-the-gathering). Select The Gathering for **New attempt**, **Continue** or **Open saved attempt**. **Menu → Save and return to scenario selection** saves before leaving and keeps the game active on failure. The explicit `--experiment gathering --save PATH` commands below remain diagnostic paths. [ADR 0005](../adr/0005-retire-experiments-and-select-scenarios.md) retires the three earlier standalone experiments; this does not establish the full native playthrough or owner acceptance under #89.
 
 The [tabletop presentation contract](../tabletop-presentation.md) owns current
