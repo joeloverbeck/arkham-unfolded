@@ -1,5 +1,6 @@
 mod check;
 mod ci;
+mod ci_watch;
 mod desktop;
 mod github;
 mod handoff;
@@ -44,6 +45,11 @@ enum Command {
     CheckPublicHandoff(handoff::Check),
     /// Verify exact PR revisions and required checks, then perform one authorized merge.
     MergeReviewed(merge::MergeArgs),
+    /// Follow the newest Check run of one exact head until it completes, then print its
+    /// conclusion and head. Exit 0 only when it succeeded, 1 when it completed otherwise,
+    /// and 2 when no run appeared or completed in time or GitHub's answer was not trusted.
+    #[command(after_help = "Watching CI: docs/agents/issue-tracker.md#conventions")]
+    CiWatch(ci_watch::Args),
     /// Post or replace public issue and PR text from a file, proved by exact readback.
     Publish {
         #[command(subcommand)]
@@ -120,6 +126,7 @@ fn main() -> ExitCode {
         Command::ResourceSummary(args) => check::resources::summary::run(args),
         Command::CheckPublicHandoff(args) => handoff::run(args).map(|_| 0),
         Command::MergeReviewed(args) => merge::run(args),
+        Command::CiWatch(args) => ci_watch::run(args),
         Command::Publish { command } => publish::run(command),
         Command::ReadContext(args) => write_context_page(reader::page(args)),
         Command::ReadContextBatch(args) => write_context_page(reader::batch(args)),
