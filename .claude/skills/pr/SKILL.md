@@ -9,6 +9,8 @@ metadata:
     url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"
 ---
 
+Before collecting the issue, diff, checks or publication instructions, follow [bounded reads](../../../docs/agents/bounded-reads.md) for source selection and one shared reading budget.
+
 Use this template for writing the PR body:
 
 ```markdown

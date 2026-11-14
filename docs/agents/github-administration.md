@@ -4,6 +4,8 @@ Use the applicable sections of this reference when monitoring CI, merging an acc
 
 ## Accepted publication and contribution policy
 
+Before gathering publication context, follow [bounded reads](bounded-reads.md) for repository-scoped history searches and one shared budget across the selected instructions, issue and review evidence.
+
 The repository stays public and accepts external PRs. All external contributors require approval before fork workflows run. Repository auto-merge stays disabled. Opening a PR grants neither permission to execute its code nor acceptance of its claims.
 
 Publish accepted changes through a PR to `main`. Main requires an up-to-date `Rust checks` result from GitHub Actions, applies protection to administrators, and blocks force pushes and deletion. Zero approving reviews are required so the solo owner can merge their own PRs. The required check runs [scripts/check](../../scripts/check); changing its name or provider requires reconciling the live protection before publication.

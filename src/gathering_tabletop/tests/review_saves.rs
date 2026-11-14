@@ -713,11 +713,11 @@ fn expanded_map_review_requires_a_clear_screen_after_the_story_transition() {
 
     let path = obscured.world().resource::<Table>().save_path.clone();
     let saved = std::fs::read(&path).unwrap();
-    let continue_button = button_with_label(&mut obscured, "Continue").unwrap();
-    obscured.world_mut().trigger(Activate {
-        entity: continue_button,
-    });
-    obscured.update();
+    reach_live_choice(
+        &mut obscured,
+        &[ReadingStop::Story(story::StoryCard::ActOne)],
+        "turn:end",
+    );
     assert!(button_with_label(&mut obscured, "Continue").is_none());
     obscured
         .world_mut()
