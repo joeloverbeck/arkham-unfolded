@@ -2,8 +2,8 @@
 //! rules session's ownership of each listed option is the oracle; the partner
 //! protocol and the human's controls, as in the tests above, are what is checked.
 //! Each seeded play-through of The Gathering picks among the listed options at
-//! random, and every assignment of the three investigators to the human and one
-//! or two partners takes each choice through the players it belongs to.
+//! random, and every assignment of the three investigators to the human and one,
+//! two or three partners takes each choice through the players it belongs to.
 //!
 //! Expectations come from the play contract's "Shared decisions" (Joel's strict
 //! windows, F1 and S1 of #202: whenever the pending decision lists an option of a
@@ -18,12 +18,29 @@
 //! human's Jacqueline Fine reaction. At every pending decision, for every
 //! assignment:
 //! - each player is offered exactly the listed options its investigators own,
-//!   with its pass when it holds an option in another player's decision, and
-//!   cannot submit another player's option;
-//! - the table waits on exactly the players with an option there;
+//!   its pass when it holds an option in another player's decision, and Undo
+//!   only when it controls every investigator of the decision Undo reverts; a
+//!   partner's view shows the same options;
+//! - the table waits on someone, on no player without an option there, and on
+//!   exactly the players with an option there, except that an act's clue payment
+//!   waits on its contributors only once one proposes a part, and a commitment
+//!   whose Confirm waits for the tester's own part (Watch This!'s wager) is
+//!   checked only for waiting on no one without an option; each shared decision
+//!   names only players with an option in it;
+//! - a decision listing another investigator's option and no pass of its own is
+//!   the player window before an action, a chaos-token reveal or an encounter
+//!   card's revelation, and its decider is, independently of ownership, the
+//!   active investigator, the revealer or the drawer;
 //! - when the list holds another player's option and no pass of its own, the
 //!   deciding player's choice is held, not applied, until each such player has
-//!   passed, and then it alone is applied.
+//!   passed, and then it alone is applied; a participant's option used instead
+//!   applies at once and releases the held choice unapplied;
+//! - a shared decision that spans players completes only with the last
+//!   participating player's readiness.
+//!
+//! At about one decision in six for each assignment, one player who does not own
+//! the step's option submits it: a partner's request is refused, and the human's
+//! controls do not allow it.
 
 use super::*;
 use crate::gathering::{GroupCluePayment, OwnedOption, PREDICTION_MARGIN};
@@ -33,30 +50,37 @@ use std::rc::Rc;
 /// play picked at random among the listed options. Of seeds 0 to 399 under this
 /// random play, these three reach each kind of list that holds a choice, the
 /// player window before an action, a chaos-token reveal and an encounter card's
-/// revelation, within [`DECISIONS`] decisions.
+/// revelation, within [`DECISIONS`] decisions. They are brittle: a change to the
+/// rules or to this test's picks moves the random play, and the test's guard that
+/// each kind held a choice can then fail with no defect. Choose seeds again from a
+/// scan of the reference play-through when it does.
 const SEEDS: [u64; 3] = [126, 235, 102];
 /// How many decisions each play-through takes at most. Each assignment takes
-/// every one, so 3 seeds give 270 decisions checked at 13 assignments each.
+/// every one, so 3 seeds give 270 decisions checked at 14 assignments each.
 const DECISIONS: usize = 90;
 
 /// Every investigator in [`Investigator::ALL`] order: `None` for the human,
 /// `Some(k)` for partner `k`.
 type Assignment = [Option<usize>; 3];
 
-/// Every assignment of the investigators to the human and one or two partners,
-/// up to the partners' names: seven with one partner, six with two.
+/// Every assignment of the investigators to the human and partners, at least one,
+/// each partner holding at least one investigator, up to the partners' names: seven
+/// with one partner, six with two, and one with three, each joined by naming its
+/// investigator.
 fn assignments() -> Vec<Assignment> {
     let mut all = Vec::new();
-    for code in 0..27_usize {
+    for code in 0..64_usize {
         let assignment: Assignment =
-            [code % 3, code / 3 % 3, code / 9].map(|player| player.checked_sub(1));
-        let first = |partner| assignment.iter().position(|held| *held == Some(partner));
-        let canonical = match (first(0), first(1)) {
-            (Some(_), None) => true,
-            (Some(zero), Some(one)) => zero < one,
-            _ => false,
-        };
-        if canonical {
+            [code % 4, code / 4 % 4, code / 16].map(|player| player.checked_sub(1));
+        // Partners are named in the order they first hold an investigator.
+        let mut named = 0;
+        let canonical = assignment.iter().flatten().all(|partner| {
+            if *partner == named {
+                named += 1;
+            }
+            *partner < named
+        });
+        if canonical && named > 0 {
             all.push(assignment);
         }
     }
@@ -141,10 +165,18 @@ struct Listed {
     /// options, a group choice, a window or payment that lists its own pass, or
     /// a commitment.
     decider: Option<Investigator>,
+    /// Which list the decider's decision is, when it has a decider.
+    list: Option<&'static str>,
     /// A commitment window whose Confirm waits for the tester's own part, such as
     /// Watch This!'s wager (03233): every option is a player's part of it.
     unconfirmed: bool,
 }
+
+/// The lists that give other investigators options beside the decider's and list
+/// no pass of their own (the play contract's "Shared decisions").
+const TURN: &str = "the player window before an action";
+const REVEAL: &str = "a chaos-token reveal";
+const REVELATION: &str = "a drawn encounter card's revelation";
 
 impl Listed {
     fn of(session: &Session) -> Self {
@@ -179,11 +211,44 @@ impl Listed {
         } else {
             None
         };
+        let list = decider.map(|decider| {
+            let (list, independent) = Self::opportunity(session, &owned);
+            assert_eq!(
+                decider, independent,
+                "{list}: the decider ownership names, and the one the table shows: {owned:?}"
+            );
+            list
+        });
         Self {
             revision: session.revision(),
             owned,
             decider,
+            list,
             unconfirmed,
+        }
+    }
+
+    /// Which list an opportunity list is, and its decider as the observation shows
+    /// it, independently of ownership: the drawer resolves a drawn encounter card
+    /// (RR p.24 1.4), the revealer reveals its chaos tokens, and the active
+    /// investigator takes the turn's actions (RR p.24 2.2.1).
+    fn opportunity(session: &Session, owned: &[OwnedOption]) -> (&'static str, Investigator) {
+        let lists = |prefix: &str| owned.iter().any(|option| option.id.starts_with(prefix));
+        let play = session.observe().play.expect("Scenario play");
+        if lists("revelation:")
+            && let Some(revelation) = &play.pending_revelation
+        {
+            (REVELATION, revelation.drawn_by)
+        } else if lists("test:reveal")
+            && let Some(tokens) = &play.tokens
+        {
+            (REVEAL, tokens.revealer)
+        } else if lists("turn:end")
+            && let Some(actor) = play.actor
+        {
+            (TURN, actor)
+        } else {
+            panic!("An opportunity list of no known kind: {owned:?}")
         }
     }
 
@@ -282,24 +347,6 @@ impl Listed {
         }
         Some(players)
     }
-
-    /// Which kind of list the decider's decision is, for the tally.
-    fn list(&self, turn: bool) -> &'static str {
-        let lists = |prefix| {
-            self.owned
-                .iter()
-                .any(|option| option.id.starts_with(prefix))
-        };
-        if turn {
-            "the player window before an action"
-        } else if lists("tokens:") {
-            "a chaos-token reveal"
-        } else if lists("revelation:") {
-            "a drawn encounter card's revelation"
-        } else {
-            "another list"
-        }
-    }
 }
 
 fn name(player: &Controller) -> String {
@@ -320,19 +367,27 @@ struct Step {
     /// The option taken, its placeholder named, and its owner.
     intent: String,
     owner: OptionOwner,
-    /// Whether the decision is the player window before an action of a turn.
-    turn: bool,
     /// The session once the intent alone is applied, and its decision.
     applied: Rc<Session>,
     after: Listed,
 }
 
-/// The rules session as the table, always settled. Substituted infrastructure: a
-/// commit of the step's intent installs the reference play-through's own result of
-/// that `choose` from the same position, with Undo's owner already derived, since
-/// deriving it replays the session from its start once per revision and would
-/// otherwise be repeated at every assignment. Any other commit is the session's
-/// own `choose`, and the step's final equality with the reference catches it.
+/// The rules session as the table. Substituted infrastructure, in three ways:
+/// - A commit of the step's intent installs the reference play-through's own
+///   result of that `choose` from the same position, with Undo's owner already
+///   derived, since deriving it replays the session from its start once per
+///   revision and would otherwise be repeated at every assignment. Any other
+///   commit is the session's own `choose`, and the step's final equality with the
+///   reference catches it.
+/// - It is always presented and settled, even straight after a commit. The
+///   table's own sitting (`gathering_tabletop::partners`) clears both on every
+///   commit until it has presented the consequences, so a partner's choice waits
+///   there. Always settled is the worst case for applying a choice early, which is
+///   what this test looks for.
+/// - [`Play`] polls the host after every submission, where the table polls only
+///   while [`Host::due`] says it has work. So the test cannot see a `due` that
+///   wrongly answers false, which at the table would stall a held choice or a
+///   shared decision rather than apply it early.
 struct Lockstep {
     session: Session,
     foreseen: Option<(u64, String, Rc<Session>)>,
@@ -380,7 +435,9 @@ enum Outcome {
     Refused,
 }
 
-/// One assignment's table, through one seeded play-through.
+/// One assignment's table, through one seeded play-through. It repeats the
+/// request plumbing of the tests' `Sitting` rather than making that generic over
+/// its table, which would change the attribution the other tests read.
 struct Play {
     host: Host<u32>,
     table: Lockstep,
@@ -416,7 +473,7 @@ impl Play {
             next: 0,
             answers: BTreeMap::new(),
         };
-        for partner in 0..2 {
+        for partner in 0..Investigator::ALL.len() {
             let theirs: Vec<&str> = Investigator::ALL
                 .into_iter()
                 .filter(|who| assignment[who.index()] == Some(partner))
@@ -901,7 +958,10 @@ impl Play {
                 self.at()
             );
         }
-        *tally.held.entry(listed.list(step.turn)).or_default() += 1;
+        *tally
+            .held
+            .entry(listed.list.expect("A list with a decider"))
+            .or_default() += 1;
     }
 
     /// The decider's player chooses first, and `participant` uses the intent, its
@@ -951,7 +1011,7 @@ impl Play {
 
 fn assignment_code(assignment: Assignment) -> u64 {
     assignment.iter().fold(0, |code, held| {
-        code * 3 + held.map_or(0, |partner| partner as u64 + 1)
+        code * 4 + held.map_or(0, |partner| partner as u64 + 1)
     })
 }
 
@@ -994,7 +1054,6 @@ fn pick(session: &Session, before: Listed, dice: &mut Dice) -> Option<Step> {
         before,
         intent,
         owner,
-        turn: session.turn_window().is_some(),
         applied: Rc::new(applied),
         after,
     })
@@ -1031,11 +1090,8 @@ fn play_through(seed: u64, decisions: usize) -> Tally {
             break;
         };
         tally.decisions += 1;
-        if step.before.decider.is_some() {
-            *tally
-                .opportunities
-                .entry(step.before.list(step.turn))
-                .or_default() += 1;
+        if let Some(list) = step.before.list {
+            *tally.opportunities.entry(list).or_default() += 1;
         }
         for play in &mut plays {
             play.take(&step, &mut tally);
@@ -1052,7 +1108,7 @@ fn play_through(seed: u64, decisions: usize) -> Tally {
 /// that is not theirs.
 #[test]
 fn seeded_co_play_never_skips_another_players_opportunity() {
-    assert_eq!(assignments().len(), 13);
+    assert_eq!(assignments().len(), 14);
     let tallies: Vec<Tally> = std::thread::scope(|scope| {
         let runs: Vec<_> = SEEDS
             .map(|seed| scope.spawn(move || play_through(seed, DECISIONS)))
@@ -1071,11 +1127,7 @@ fn seeded_co_play_never_skips_another_players_opportunity() {
         tally.add(run);
     }
     println!("{tally:#?}");
-    for list in [
-        "the player window before an action",
-        "a chaos-token reveal",
-        "a drawn encounter card's revelation",
-    ] {
+    for list in [TURN, REVEAL, REVELATION] {
         assert!(
             tally.held.get(list).is_some_and(|held| *held > 0),
             "{list}: {tally:?}"
