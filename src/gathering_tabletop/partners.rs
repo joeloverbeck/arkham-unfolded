@@ -20,7 +20,8 @@
 use super::*;
 use crate::gathering::CardView;
 use crate::partners::{
-    Control, Controller, DEFAULT_WAIT, Host, HumanChoice, LONGEST_WAIT, SharedKind, SharedState,
+    Control, Controller, DEFAULT_WAIT, Host, HumanChoice, INSTRUCTIONS, LONGEST_WAIT, SharedKind,
+    SharedState,
 };
 use serde_json::{Value, json};
 use std::{
@@ -425,7 +426,7 @@ pub(super) fn line(socket: &Path) -> String {
             format!(" --socket {}", socket.display())
         };
     format!(
-        "Play at the running Arkham Unfolded table as an agent partner: in the arkham-unfolded repository, read docs/agents/partner-instructions.md, then join with `scripts/tools partner{option} join`."
+        "Play at the running Arkham Unfolded table as an agent partner: in the arkham-unfolded repository, read {INSTRUCTIONS}, then join with `scripts/tools partner{option} join`."
     )
 }
 

@@ -53,6 +53,15 @@ pub const LONGEST_WAIT: Duration = Duration::from_secs(590);
 /// How many of the latest messages heard since joining a complete view gives back,
 /// for a partner whose answer was lost to a cut-off command.
 pub const RECOVERED_TALK: usize = 20;
+/// The partner instructions in this repository, the one statement of the
+/// protocol's rules (#211, #218): the pasted line points to them, and every hint
+/// in a view names the section of them that holds its rules.
+pub const INSTRUCTIONS: &str = "docs/agents/partner-instructions.md";
+
+/// The end of a hint: the section of the instructions that holds its rules.
+fn rules_in(section: &str) -> String {
+    format!("See {section} in {INSTRUCTIONS}.")
+}
 
 /// The player who controls an investigator.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1384,16 +1393,19 @@ impl<R> Host<R> {
             return None;
         }
         let names = waiting.join(" and ");
-        let (before, other) = if action {
-            ("before_action_of", "a fast play")
+        let have = if waiting.len() == 1 { "has" } else { "have" };
+        let before = if action {
+            "before_action_of"
         } else {
-            ("before_decision_of", "their option")
+            "before_decision_of"
         };
         let mut passes = json!({
             before: decider.name(),
             "waiting_for": waiting,
+            // The next step in brief; the partner instructions state the rules.
             "how": format!(
-                "Your next choice, other than Undo or a part of a shared decision, is held, and is applied only once {names} has passed here: choose answers held at once, and wait answers chosen once it is applied. A later choose replaces a held choice. If another player uses {other} instead of passing, the held choice is released, not applied: wait answers released, and you decide again."
+                "Your next choice, other than Undo or your part of a shared decision, is held until {names} {have} passed here: choose answers held. {}",
+                rules_in("Held choices")
             ),
         });
         if let Some(hold) = self

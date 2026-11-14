@@ -525,36 +525,29 @@ impl Sharing {
                 value["reopenings_left"] = json!(mine.reopenings_left);
             }
         }
-        match state.kind {
-            SharedKind::Commitment => {
-                value["how"] = json!(
-                    "Choose your cards' commit options to toggle them, then mark yourself ready (op ready, or choose ready_with). Any change clears the other players' readiness."
-                );
-            }
-            SharedKind::Window => {
-                value["how"] = json!(
-                    "Use an option, or pass (op ready, or choose ready_with). The window closes once every player with an option has passed in succession; an action restarts it."
-                );
-            }
+        // The next step in brief; the partner instructions state the rules (#218).
+        let next = match state.kind {
+            SharedKind::Commitment => "Choose your cards' commit options to toggle them, then mark yourself ready with ready or ready_with.".to_owned(),
+            SharedKind::Window => "Use an option, or pass with ready or ready_with.".to_owned(),
             SharedKind::Before {
                 decider,
                 action: true,
             } => {
                 value["before_action_of"] = json!(decider.name());
-                value["how"] = json!(format!(
-                    "This player window comes before {0}'s next action. Use a fast option, or pass (op ready, or choose ready_with). {0}'s player's next choice waits until every player with an option has passed; a fast play restarts the passes.",
+                format!(
+                    "This player window comes before {}'s next action: use a fast option, or pass with ready or ready_with.",
                     decider.name()
-                ));
+                )
             }
             SharedKind::Before {
                 decider,
                 action: false,
             } => {
                 value["before_decision_of"] = json!(decider.name());
-                value["how"] = json!(format!(
-                    "You hold an option in {0}'s decision, such as a reaction to it, which you may use before it goes ahead. Use it, or pass (op ready, or choose ready_with). {0}'s player's choice waits until every player with an option here has passed; using one moves the decision on, and the passes start again.",
+                format!(
+                    "You hold an option in {}'s decision: use it before the decision goes ahead, or pass with ready or ready_with.",
                     decider.name()
-                ));
+                )
             }
             SharedKind::Payment { at_round_end } => {
                 if let Some(payment) = &observation.group_clue_payment {
@@ -577,13 +570,14 @@ impl Sharing {
                             .collect(),
                     );
                 }
-                value["how"] = json!(if at_round_end {
-                    "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigators' clues (the others' as pending) to set your part and be ready, or choose round-end:decline-act to contribute none. It pays once every player is ready on exactly the requirement, and declines once every player is ready on no clues."
+                if at_round_end {
+                    "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigators' clues (the others' as pending) to set your part and be ready, or round-end:decline-act to contribute none.".to_owned()
                 } else {
-                    "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigators' clues (the others' as pending) to set your part and be ready. It pays once every player is ready on exactly the requirement."
-                });
+                    "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigators' clues (the others' as pending) to set your part and be ready.".to_owned()
+                }
             }
-        }
+        };
+        value["how"] = json!(format!("{next} {}", super::rules_in("Shared decisions")));
         value
     }
 }
