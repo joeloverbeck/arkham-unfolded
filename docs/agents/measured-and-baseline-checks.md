@@ -56,6 +56,14 @@ scripts/tools worktree add --from REVISION [--branch NAME] DIR
 
 It creates `DIR` outside the owner's checkout, puts the checkout at `DIR/worktree`, and writes `DIR/.cargo/config.toml`, which Cargo reads when it runs inside the checkout. That file sets `[build] target-dir` to the owner's `target` and gives every workspace package one value below 250 that no Cargo configuration of another registered worktree uses. Checkouts that are not registered worktrees of this clone are invisible to that choice.
 
+Its own value gives each checkout incremental caches of its own in the owner's target, and they outlive `worktree remove`. Before creating anything, `add` prints the free disk on the target's filesystem and the size of each incremental directory there, such as `debug/incremental`. Below 40 GiB free it refuses, naming the caches' total size; `--min-free-gib N` sets another floor, and 0 never refuses. The owner reclaims the caches with:
+
+```sh
+scripts/tools target-prune [--older-than 7d] [--delete]
+```
+
+It lists the crate cache directories in `target/*/incremental` and `target/*/*/incremental` not modified for at least the given hours or days (default `7d`, at least `1h`), and removes them only with `--delete`, keeping any modified since it listed them. It removes nothing else. A symbolic link in place of an incremental directory or a cache is refused and never followed; a refused link or a failed removal makes it exit 1. Removing a cache costs only a slower next rebuild of that crate.
+
 A harness whose session stays in the owner's checkout can refuse an edit to a file in `DIR/worktree` that it has not read there. Read each file with the harness's own file-read tool before editing it, and again after a formatter or another command rewrites it; a shell read such as `sed` or `cat` does not count. Send a check only once the edits it depends on have succeeded: a check sent beside a refused edit passes on unchanged code.
 
 Once the work is merged, remove such worktrees with:

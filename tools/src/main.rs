@@ -15,6 +15,7 @@ mod reader;
 mod renderer;
 mod review;
 mod seat;
+mod target;
 mod tracked;
 mod worktree;
 
@@ -89,6 +90,12 @@ enum Command {
         #[command(subcommand)]
         command: worktree::Command,
     },
+    /// Owner-run: list the owner's target's incremental caches unused for a given time, and
+    /// remove them with --delete. Exit 1 when a symbolic link was refused or a removal failed.
+    #[command(
+        after_help = "Shared target: docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts"
+    )]
+    TargetPrune(target::Args),
     /// Owner-run bounded perf capture of an already running, exact executable.
     ProfileNative(profile::Args),
 }
@@ -126,6 +133,7 @@ fn main() -> ExitCode {
         Command::Native { command } => native::run(command),
         Command::ProfileNative(args) => profile::capture(args),
         Command::Seat(args) => seat::run(args),
+        Command::TargetPrune(args) => target::run(args),
         Command::Partner(args) => partner::run(args),
         Command::Worktree { command } => worktree::run(command),
     };
