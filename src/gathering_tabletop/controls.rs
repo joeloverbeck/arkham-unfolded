@@ -725,7 +725,17 @@ pub(super) fn global_choices(view: &Observation) -> Vec<Choice> {
     };
     view.choices
         .iter()
-        .filter(|choice| route(view, &choice.id) == Route::Global || round_end_payment(choice))
+        .filter(|choice| {
+            // Keep prevention on its physical source too, but expose it beside
+            // the consequence it can prevent. Legality and ownership have
+            // already filtered this observation's choices.
+            route(view, &choice.id) == Route::Global
+                || round_end_payment(choice)
+                || choice.id.starts_with("deny:")
+                || choice.id.starts_with("idol:")
+                || choice.id.starts_with("agenda-discard:deny:")
+                || choice.id == "agenda-discard:resolve"
+        })
         .map(|choice| display_choice(view, choice))
         .collect()
 }
@@ -909,6 +919,37 @@ fn result_decline(choice: &Choice) -> bool {
 // observations. Their existing "(copy N)" annotations are unnecessary on screen.
 fn display_choice(view: &Observation, choice: &Choice) -> Choice {
     let mut shown = choice.clone();
+    if let Some(harm) = view
+        .play
+        .as_ref()
+        .and_then(|play| play.pending.harm.as_ref())
+    {
+        if choice.id == "harm:confirm" {
+            shown.label = if harm.damage == 0 && harm.horror == 0 {
+                "Continue".into()
+            } else {
+                format!(
+                    "Apply {}{}",
+                    play::harm_amounts(harm.damage, harm.horror),
+                    if harm.damage > 0 && harm.horror > 0 {
+                        " simultaneously"
+                    } else {
+                        ""
+                    },
+                )
+            };
+            return shown;
+        }
+        if choice.id.starts_with("deny:") {
+            let amount = if choice.id.ends_with(":damage") {
+                play::harm_amounts(harm.damage, 0)
+            } else {
+                play::harm_amounts(0, harm.horror)
+            };
+            shown.label = format!("Play Deny Existence — ignore {amount}");
+            return shown;
+        }
+    }
     if choice.id == "test-card:pass" {
         shown.label = "Skip remaining reactions".into();
         return shown;

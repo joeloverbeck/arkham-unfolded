@@ -185,6 +185,7 @@ mod counters_and_enemies;
 mod doom;
 mod draws;
 mod encounter;
+mod harm_prevention;
 mod location_markers;
 mod map_motion;
 mod navigation;
@@ -1990,11 +1991,16 @@ fn activate_choice(app: &mut App, id: &str) {
     let view = app.world().resource::<Table>().view();
     let choice = view.choices.iter().find(|choice| choice.id == id).unwrap();
     let source = choice_source(app, id);
-    let displayed = source.as_ref().and_then(|source| {
-        controls::source_choices(&view, source)
-            .into_iter()
-            .find(|choice| choice.id == id)
-    });
+    let displayed = controls::global_choices(&view)
+        .into_iter()
+        .find(|choice| choice.id == id)
+        .or_else(|| {
+            source.as_ref().and_then(|source| {
+                controls::source_choices(&view, source)
+                    .into_iter()
+                    .find(|choice| choice.id == id)
+            })
+        });
     let label = ui::choice_label(displayed.as_ref().unwrap_or(choice)).to_owned();
     if choice_button(app, &label).is_none() {
         if let Some(source) = source {
