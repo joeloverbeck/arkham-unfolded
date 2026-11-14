@@ -178,6 +178,8 @@ ARKHAM_GATHERING_TEST_ASSETS=/absolute/path/to/prepared-collection \
   the_real_table_is_held_between_tool_commands_until_quit -- --ignored --exact
 ```
 
+`ARKHAM_GATHERING_TEST_ASSETS` names the folder that holds the collection's `manifest.json`. **Import artwork** installs it as the `collection` folder of an installation, `${XDG_DATA_HOME:-$HOME/.local/share}/arkham-unfolded/artwork/installation-*/collection`, and records that path as `asset_root` in `${XDG_CONFIG_HOME:-$HOME/.config}/arkham-unfolded/gathering.toml`, as **Choose asset folder** records its folder. Name `collection` itself: the `installation-*` folder above it is refused with a `manifest.json` error. Take the path `asset_root` records, since more than one installation can be present, such as the previous one, kept until a new import is admitted.
+
 #### Held session
 
 With `--socket` the seat holds one session on a local socket across separate shell commands. Use it for play and for long checks, where the table's state must last between commands; batch form suits a short confirmation that fits in one command. Start it once, keeping its response in a file and reading it with the same bounded view as batch form:
