@@ -144,6 +144,7 @@ fn render_observation(view: Observation) -> App {
                     epoch: 0,
                     story: &story,
                     consequences: &consequences,
+                    others_pending: &[],
                 };
                 play::render(&mut commands, &mut meshes, &mut materials, &context);
             },

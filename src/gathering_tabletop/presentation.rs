@@ -14,6 +14,20 @@ pub(super) struct Presentation {
     results: results::Reading,
     encounter: encounter::Reading,
     announcement: Option<phase_banner::Announcement>,
+    /// Who controls each investigator. With partners, the human's controls offer
+    /// only the options the human may submit (#205).
+    control: crate::partners::Control,
+    /// The human's options, kept until the revision or the control changes.
+    offer: std::sync::Mutex<Option<Offer>>,
+}
+
+/// The options the partner library gives the human at one revision, under one
+/// control.
+#[derive(Clone)]
+struct Offer {
+    revision: u64,
+    control: crate::partners::Control,
+    choices: Vec<crate::Choice>,
 }
 
 /// One coherent scene input, including the transfers acknowledged by this render.
@@ -45,15 +59,58 @@ impl Presentation {
             results: results::Reading::for_session(session),
             encounter: encounter::Reading::for_session(session),
             announcement: None,
+            control: crate::partners::Control::default(),
+            offer: std::sync::Mutex::new(None),
         }
     }
 
     pub(super) fn view(&self, session: &Session) -> Observation {
-        self.draws
+        let mut view = self
+            .draws
             .view()
             .or_else(|| self.map.view())
             .cloned()
-            .unwrap_or_else(|| self.base_view(session))
+            .unwrap_or_else(|| self.base_view(session));
+        // Only the session's own observation lists choices: every staged view
+        // clears them. With partners, the table offers the human's alone.
+        if !self.control.solo() && !view.choices.is_empty() {
+            view.choices = self.human_choices(session);
+        }
+        view
+    }
+
+    pub(super) fn control(&self) -> &crate::partners::Control {
+        &self.control
+    }
+
+    /// Returns whether the control changed.
+    pub(super) fn set_control(&mut self, control: crate::partners::Control) -> bool {
+        if self.control == control {
+            return false;
+        }
+        self.control = control;
+        true
+    }
+
+    /// The pending decision's options the human may submit, as the partner library
+    /// computes them (#205, #207): every listed option without partners.
+    pub(super) fn human_choices(&self, session: &Session) -> Vec<crate::Choice> {
+        let revision = session.revision();
+        let mut offer = self.offer.lock().expect("The human's options");
+        match offer.as_ref() {
+            Some(kept) if kept.revision == revision && kept.control == self.control => {
+                kept.choices.clone()
+            }
+            _ => {
+                let choices = self.control.human_choices(session);
+                *offer = Some(Offer {
+                    revision,
+                    control: self.control.clone(),
+                    choices: choices.clone(),
+                });
+                choices
+            }
+        }
     }
 
     fn base_view(&self, session: &Session) -> Observation {
@@ -82,6 +139,11 @@ impl Presentation {
 
     pub(super) fn result(&self) -> Option<&TestResult> {
         self.results.current()
+    }
+
+    /// How many results the table has acknowledged, which tells results apart.
+    pub(super) fn results_acknowledged(&self) -> usize {
+        self.results.acknowledged()
     }
 
     pub(super) fn story(&self) -> Option<story::StoryCard> {
@@ -144,7 +206,9 @@ impl Presentation {
     /// and draw state only when the whole loaded Session is unchanged.
     pub(super) fn reopen(&mut self, previous: &Session, loaded: &Session) {
         if loaded != previous {
+            let control = std::mem::take(&mut self.control);
             *self = Self::new(loaded);
+            self.control = control;
         }
     }
 
@@ -182,7 +246,7 @@ impl Presentation {
                     self.moments.get(self.index).map(|moment| moment.sequence),
                 );
             }
-            self.results.synchronize(&view);
+            self.results.synchronize(&view, session);
         }
         let story = if let Some(moment) = self.moments.get(self.index) {
             story::Faces::from_codes(moment.revealed_story.iter().map(String::as_str))

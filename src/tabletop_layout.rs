@@ -35,7 +35,7 @@ pub(crate) const TEST_CENTER: Vec3 = Vec3::new(0.0, 0.0, 8.0);
 pub(crate) const MAT_TOP: f32 = -0.06;
 /// Area focus views retain component captions; Overview suppresses this detail.
 pub(crate) const DETAIL_LABEL_DISTANCE: f32 = 40.0;
-const TEST_SIZE: Vec2 = Vec2::new(14.0, 10.0);
+pub(crate) const TEST_SIZE: Vec2 = Vec2::new(14.0, 10.0);
 const INVESTIGATOR_SIZE: Vec2 = Vec2::new(18.0, 15.0);
 const INVESTIGATOR_SPACING: f32 = 18.6;
 const THREAT_REGION_SIZE: Vec2 = Vec2::new(9.9, 3.4);

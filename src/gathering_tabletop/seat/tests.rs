@@ -1767,3 +1767,101 @@ fn a_blind_enter_at_round_end_commits_nothing_and_a_named_chooser_row_pays() {
     );
     assert_eq!(settled["observation"], saved(&seat.path));
 }
+
+/// Review fix A2 (#202: "The agent seat, the headless driver and their protocols
+/// are unchanged"): without partners, `shows_latest` compares the table's view
+/// with the driver's observation exactly. A map beat shows the table with no
+/// controls; when everything else it shows is already the latest, here the next
+/// turn's group choice after Patrice's move from the Cellar into the Hallway, the
+/// table still does not show the latest observation until the beat has played.
+///
+/// A live move presents through the rules session's own moments, whose captions
+/// differ from the observation, so this test gives the production transition the
+/// position Patrice left as its starting view.
+#[test]
+fn without_partners_a_beat_with_cleared_choices_does_not_show_the_latest() {
+    let mut session =
+        Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringArrival);
+    let violin = session
+        .observe()
+        .choices
+        .into_iter()
+        .map(|choice| choice.id)
+        .find(|id| id.starts_with("violin:"))
+        .expect("Patrice may use her Violin");
+    // Her third action, back into the Hallway, ends her turn.
+    for id in [
+        violin.as_str(),
+        "action:ordinary:move:01114",
+        "action:ordinary:resource",
+        "action:ordinary:move:01112",
+    ] {
+        let revision = session.revision();
+        session.choose(revision, id).unwrap();
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("move.json");
+    continuity::save_session(&path, &session).unwrap();
+    let mut app = host_with_table(Table::new(session, path), false);
+    super::super::tests::finish_presentation(&mut app);
+    let latest = app.world().resource::<Table>().session.observe();
+    let next: Vec<&str> = latest
+        .choices
+        .iter()
+        .map(|choice| choice.id.as_str())
+        .collect();
+    assert!(next.contains(&"turn:tony"), "{next:?}");
+    assert_eq!(
+        Gathering.observe(app.world_mut()).table["shows_latest"],
+        true
+    );
+
+    let mut before = latest.clone();
+    before.play.as_mut().unwrap().players[crate::gathering::Investigator::Patrice.index()]
+        .location = "01114".into();
+    {
+        let mut table = app.world_mut().resource_mut::<Table>();
+        let table = &mut *table;
+        table.presentation.committed(
+            &table.session,
+            &before,
+            "action:ordinary:move:01112",
+            Vec::new(),
+            false,
+        );
+        table.dirty = true;
+    }
+    app.update();
+    let mut settling = 0;
+    for _ in 0..400 {
+        let table = app.world().resource::<Table>();
+        if !table.presentation.map().active() {
+            break;
+        }
+        let shown = table.view();
+        assert!(shown.choices.is_empty(), "A map beat has no controls");
+        let mut without_choices = latest.clone();
+        without_choices.choices.clear();
+        if shown == without_choices {
+            settling += 1;
+        }
+        assert_eq!(
+            Gathering.observe(app.world_mut()).table["shows_latest"],
+            false,
+            "A map beat is not the latest observation"
+        );
+        app.world_mut()
+            .resource_mut::<PresentationTime>()
+            .advance_by(Duration::from_millis(50));
+        app.update();
+    }
+    assert!(
+        settling > 0,
+        "The move settled in a beat with cleared choices"
+    );
+    super::super::tests::finish_presentation(&mut app);
+    assert_eq!(
+        Gathering.observe(app.world_mut()).table["shows_latest"],
+        true
+    );
+}

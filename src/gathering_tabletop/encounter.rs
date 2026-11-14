@@ -120,12 +120,36 @@ impl Reading {
         .then_some(view)
     }
 
-    pub(super) fn accepts(&self, session: &Session, revision: u64, id: &str) -> bool {
-        self.decision(session).is_some_and(|view| {
-            view.revision == revision
-                && id != "undo"
-                && view.choices.iter().any(|choice| choice.id == id)
-        })
+    /// Whether the reading takes the human's choice of `id` at `revision`: one of
+    /// the options the partner library gives the human, with his pass before a
+    /// partner's decision among them (F1), other than Undo.
+    pub(super) fn accepts(table: &Table, revision: u64, id: &str) -> bool {
+        let session = &table.session;
+        table
+            .presentation
+            .encounter()
+            .decision(session)
+            .is_some_and(|view| {
+                view.revision == revision
+                    && id != "undo"
+                    && table
+                        .presentation
+                        .human_choices(session)
+                        .iter()
+                        .any(|choice| choice.id == id)
+            })
+    }
+
+    /// The responses the human may choose while reading, from the options the
+    /// partner library gives the human: with agent partners, only those of
+    /// investigators the human controls (#205). Resolving is the reading's Continue.
+    pub(super) fn responses(table: &Table) -> Vec<crate::Choice> {
+        table
+            .presentation
+            .human_choices(&table.session)
+            .into_iter()
+            .filter(|choice| !matches!(choice.id.as_str(), "revelation:resolve" | "undo"))
+            .collect()
     }
 
     pub(super) fn input(&mut self, input: Input) {
@@ -134,6 +158,13 @@ impl Reading {
             Input::Rules => self.rules = !self.rules,
         }
     }
+}
+
+/// The words an encounter reading shows, which set its reading delay: the card's
+/// title and its effective text.
+pub(super) fn text(card: &CardView) -> String {
+    let rules = crate::gathering::inspection::scenario_card(&card.code, false).unwrap_or_default();
+    format!("{}\n{rules}", card.title)
 }
 
 pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, size: Vec2) {
@@ -145,12 +176,7 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
     let decision = reading.decision(&table.session);
     let responses = decision
         .as_ref()
-        .map(|view| {
-            view.choices
-                .iter()
-                .filter(|choice| !matches!(choice.id.as_str(), "revelation:resolve" | "undo"))
-                .collect::<Vec<_>>()
-        })
+        .map(|_| Reading::responses(table))
         .unwrap_or_default();
     let title = crate::gathering::inspection::encounter_card_type(&card.code).map_or_else(
         || card.title.clone(),
@@ -211,7 +237,7 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
             ));
             footer.spawn((
                 art.text(
-                    if decision.is_some() {
+                    if decision.is_some() && table.human_may("revelation:resolve") {
                         "Continue to resolve this encounter, or choose a response first."
                     } else {
                         "Read the card, then continue."
@@ -234,6 +260,7 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
             if !table.notice.is_empty() {
                 footer.spawn(art.text(&table.notice, 14., PAPER));
             }
+            pace::progress(footer, art, table);
             footer
                 .spawn(Node {
                     display: Display::Grid,
@@ -243,20 +270,22 @@ pub(super) fn render(commands: &mut Commands, table: &Table, art: &art::Art, siz
                     ..default()
                 })
                 .with_children(|row| {
+                    // A card a partner's investigator drew is the partner's to
+                    // resolve: Continue only closes the reading for the human.
+                    let resolves = decision
+                        .as_ref()
+                        .filter(|_| table.human_may("revelation:resolve"));
                     let continue_button = ui::button(
                         art,
                         row,
                         "Continue",
-                        decision.as_ref().map_or(
-                            Action::Encounter(table.epoch, Input::Continue),
-                            |view| {
-                                Action::EncounterChoice(
-                                    table.epoch,
-                                    view.revision,
-                                    "revelation:resolve".into(),
-                                )
-                            },
-                        ),
+                        resolves.map_or(Action::Encounter(table.epoch, Input::Continue), |view| {
+                            Action::EncounterChoice(
+                                table.epoch,
+                                view.revision,
+                                "revelation:resolve".into(),
+                            )
+                        }),
                     );
                     row.commands().entity(continue_button).insert(AutoFocus);
                     ui::button(

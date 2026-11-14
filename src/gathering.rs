@@ -32,13 +32,17 @@ mod live;
 mod moments;
 mod option_labels;
 pub use option_labels::counted;
+mod ownership;
 mod peter;
+pub use ownership::{OptionOwner, OwnedOption};
 mod phases;
 pub use moments::{DeckStep, DrawBatch, DrawCue, DrawSource, PresentationMoment};
 pub use peter::PeterFixture;
 mod player_cards;
 mod presentation;
-pub use presentation::{DiscardView, HarmAllocation, HarmView, HeldDrawView, PendingView};
+pub use presentation::{
+    DiscardView, HarmAllocation, HarmView, HeldDrawView, PendingView, TestAction, TestTarget,
+};
 mod slots;
 mod tokens;
 pub use scenario::{Resolution, ResolutionRecord};
@@ -104,6 +108,11 @@ fn shuffle<T>(state: &mut u64, items: &mut [T]) {
 /// that the corresponding gameplay ability has been implemented.
 pub fn card_rules(code: &str) -> Option<&'static str> {
     cards::definition(code).map(|card| card.effective_text)
+}
+
+/// The printed title of a selected player or scenario card.
+pub fn card_title(code: &str) -> Option<&'static str> {
+    content::title(code)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,12 +186,7 @@ impl InvestigatorView {
     }
 
     fn definition(&self) -> &'static cards::CardDefinition {
-        let code = match self.investigator {
-            Investigator::Tony => "06003",
-            Investigator::Patrice => "06005",
-            Investigator::Jacqueline => "60401",
-        };
-        cards::definition(code).expect("Selected investigator definition")
+        cards::definition(self.investigator.card_code()).expect("Selected investigator definition")
     }
 }
 
@@ -241,6 +245,8 @@ pub struct Observation {
     pub history: Vec<String>,
     pub source: PreparationSources,
     pub lead: Option<Investigator>,
+    /// Display focus only: whose decision the table names and frames. Who may
+    /// answer each option is [`Session::ownership`].
     pub decision_owner: Option<Investigator>,
     pub investigators: Vec<InvestigatorView>,
     pub scenario: Option<ScenarioSetup>,
@@ -264,6 +270,15 @@ impl Observation {
             std::borrow::Cow::Borrowed,
         )
     }
+}
+
+/// A peril encounter as [`Session::peril`] reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Peril {
+    /// An encounter card with the Peril keyword awaits its revelation.
+    Resolving,
+    /// The latest decision drew one and resolved its revelation.
+    Resolved,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -292,20 +307,78 @@ pub struct Session {
     // never appears here, so restoring a position cannot recursively replay it.
     active_decisions: Vec<usize>,
     undo_floor: usize,
+    // Whose decision Undo would revert: derived when asked, never saved.
+    #[serde(skip)]
+    undo_owner: ownership::UndoOwner,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     verification_fixture: Option<HostileFixture>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     runtime: Option<runtime::Game>,
 }
 
-/// Table tests only: place an investigator's clues and location where a witness
-/// needs them. No decision is recorded, so Undo cannot reproduce the placement.
-#[cfg(all(test, feature = "tabletop"))]
+/// Tests outside the rules session only (the table, agent partners): place an
+/// investigator's clues and location, or a selected card in a hand or in play,
+/// where a witness needs them. No decision is recorded, so Undo cannot
+/// reproduce the placement.
+#[cfg(test)]
 impl Session {
     pub(crate) fn place_for_test(&mut self, who: Investigator, clues: u8, location: &str) {
         let player = &mut self.runtime.as_mut().expect("Scenario play").players[who.index()];
         player.clues = clues;
         player.location = location.into();
+    }
+
+    /// A card with this code in `to`'s hand: one already there, else the first
+    /// from a deck, else from another hand. Returns its identity.
+    pub(crate) fn hand_for_test(&mut self, to: Investigator, code: &str) -> u16 {
+        let game = self.runtime.as_mut().expect("Scenario play");
+        if let Some(card) = game.players[to.index()]
+            .hand
+            .iter()
+            .find(|card| card.code == code)
+        {
+            return card.id;
+        }
+        let take = |cards: &mut Vec<CardView>| {
+            let at = cards.iter().position(|card| card.code == code)?;
+            Some(cards.remove(at))
+        };
+        let card = game
+            .players
+            .iter_mut()
+            .find_map(|player| take(&mut player.deck))
+            .or_else(|| {
+                game.players
+                    .iter_mut()
+                    .find_map(|player| take(&mut player.hand))
+            })
+            .unwrap_or_else(|| panic!("{code} is in a selected deck"));
+        let id = card.id;
+        game.players[to.index()].hand.push(card);
+        id
+    }
+
+    /// A card with this code ready in play under `to`'s control.
+    pub(crate) fn asset_for_test(&mut self, to: Investigator, code: &str) -> u16 {
+        let id = self.hand_for_test(to, code);
+        let player = &mut self.runtime.as_mut().expect("Scenario play").players[to.index()];
+        let at = player.hand.iter().position(|card| card.id == id).unwrap();
+        let card = player.hand.remove(at);
+        player.assets.push(runtime::AssetState {
+            card,
+            ready: true,
+            uses: 0,
+            damage: 0,
+            horror: 0,
+        });
+        id
+    }
+
+    /// Move every card in `who`'s hand to the bottom of their deck.
+    pub(crate) fn empty_hand_for_test(&mut self, who: Investigator) {
+        let player = &mut self.runtime.as_mut().expect("Scenario play").players[who.index()];
+        let hand = std::mem::take(&mut player.hand);
+        player.deck.extend(hand);
     }
 }
 
@@ -433,7 +506,7 @@ impl Session {
                 deck_projection_sha256: digest, taboo_id: 10, decks: sources },
             lead: None, mulligan_index: 0, investigators, decks,
             excluded_weaknesses: vec![vec![], vec![], vec![]], encounter_deck: vec![],
-            scenario: None, decisions: vec![], live: Default::default(), transition: Default::default(), baseline: Default::default(), active_decisions: vec![], undo_floor: 0, verification_fixture: None, runtime: None,
+            scenario: None, decisions: vec![], live: Default::default(), transition: Default::default(), baseline: Default::default(), active_decisions: vec![], undo_floor: 0, undo_owner: Default::default(), verification_fixture: None, runtime: None,
             history: vec!["Fresh campaign preparation: choose the lead investigator. The retained starting lists use the three owner-selected basic weaknesses; no previous campaign history is imported. Rules and taboo 10 are pinned to the #89 research, not claimed to be the latest available release.".into()],
         };
         Ok(session)
@@ -553,6 +626,131 @@ impl Session {
         }
     }
 
+    /// Who may answer each listed option of the pending decision, in listed
+    /// order. Undo is left out: it reverts the previous decision rather than
+    /// answering this one. Derived from the session each time; never saved.
+    pub fn ownership(&self) -> Vec<OwnedOption> {
+        let choices: Vec<_> = self
+            .observe()
+            .choices
+            .into_iter()
+            .filter(|choice| choice.id != "undo")
+            .collect();
+        let owners = match self.stage {
+            Stage::ChooseLead => vec![OptionOwner::Table; choices.len()],
+            Stage::Mulligan => {
+                vec![
+                    OptionOwner::Investigator(self.decision_owner().expect("Mulligan owner"));
+                    choices.len()
+                ]
+            }
+            Stage::GameplayUnavailable => vec![],
+            Stage::Playing => {
+                ownership::owners(self.runtime.as_ref().expect("Runtime stage"), &choices)
+            }
+        };
+        choices
+            .into_iter()
+            .zip(owners)
+            .map(|(choice, owner)| OwnedOption {
+                id: choice.id,
+                owner,
+            })
+            .collect()
+    }
+
+    /// The owner of an option the pending decision accepts: a listed option,
+    /// or a number or allocation named in place of a listed option's
+    /// placeholder, which belongs to the owner of that listed option.
+    pub fn option_owner(&self, id: &str) -> Option<OptionOwner> {
+        let owned = self.ownership();
+        if let Some(option) = owned.iter().find(|option| option.id == id) {
+            return Some(option.owner.clone());
+        }
+        self.runtime.as_ref()?.direct_choice(id)?;
+        owned
+            .into_iter()
+            .find(|option| {
+                [GROUP_CLUE_CONTRIBUTIONS, PREDICTION_MARGIN]
+                    .iter()
+                    .filter_map(|placeholder| option.id.strip_suffix(placeholder))
+                    .any(|template| id.starts_with(template))
+            })
+            .map(|option| option.owner)
+    }
+
+    /// The active investigator, while the pending decision is the player window
+    /// before one of their actions (RR p.22, p.24 2.2.1): the other investigators'
+    /// listed options are [fast] plays in that window. Derived, never saved.
+    pub fn turn_window(&self) -> Option<Investigator> {
+        match self.stage {
+            Stage::Playing => ownership::turn_window(self.runtime.as_ref()?),
+            _ => None,
+        }
+    }
+
+    /// The investigator whose decision is pending, while its list can offer other
+    /// investigators' options beside its own and lists no pass: the player window
+    /// before an action of a turn, a drawn encounter card's revelation (A Test of
+    /// Will) and a chaos-token reveal (Jacqueline Fine's reaction). Every other
+    /// list is one investigator's, a group choice, or a window or shared decision
+    /// that lists its own pass. Derived, never saved.
+    pub fn opportunity_window(&self) -> Option<Investigator> {
+        match self.stage {
+            Stage::Playing => ownership::opportunity_window(self.runtime.as_ref()?),
+            _ => None,
+        }
+    }
+
+    /// The owner of the decision Undo would revert, as the rules session named
+    /// it when that decision was made. It is derived by replaying to the
+    /// position before that decision, once per revision, and never saved.
+    /// `None` while Undo is not offered, or if that replay fails.
+    pub fn undo_owner(&self) -> Option<OptionOwner> {
+        if self.active_decisions.len() <= self.undo_floor {
+            return None;
+        }
+        self.undo_owner.at(self.revision, || {
+            let latest = self.decisions.get(*self.active_decisions.last()?)?;
+            let mut previous = self.clone();
+            previous.restore_previous_position().ok()?;
+            previous.option_owner(latest)
+        })
+    }
+
+    /// The revision a choice must name, as [`Self::observe`] reports it.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// A peril encounter, while its investigator cannot confer with the other
+    /// players (RR p.16): an encounter card with the Peril keyword awaiting its
+    /// revelation, or one the latest decision drew and resolved. Watcher from Another
+    /// Dimension's revelation usually resolves within the decision that draws it;
+    /// that decision reports it until the next one, and the table decides how long it
+    /// shows the encounter. Derived each time and never saved; after loading, only a
+    /// pending revelation is reported, as the latest transition is not kept.
+    pub fn peril(&self) -> Option<Peril> {
+        let pending = self.runtime.as_ref().is_some_and(|game| {
+            game.frames.iter().any(|frame| {
+                matches!(frame, runtime::Frame::Revelation(revelation)
+                    if cards::peril(&revelation.card.code))
+            })
+        });
+        let drawn = self.transition.steps.iter().any(|moment| {
+            moment
+                .play
+                .pending_revelation
+                .as_ref()
+                .is_some_and(|revelation| cards::peril(&revelation.card.code))
+        });
+        if pending {
+            Some(Peril::Resolving)
+        } else {
+            drawn.then_some(Peril::Resolved)
+        }
+    }
+
     /// Only the latest live transition, never historical steps; empty after loading.
     pub fn presentation_after(&self, revision: u64) -> &[PresentationMoment] {
         if revision < self.revision {
@@ -575,6 +773,36 @@ impl Session {
     #[cfg(feature = "tabletop")]
     pub(crate) fn live_state(&self) -> &live::LiveState {
         &self.live
+    }
+
+    /// The skill test the latest decision completed, as it stood before that
+    /// decision: what it attempted and on what (#210). The attempt's record keeps a
+    /// completed test's result, not its target, so this replays the active
+    /// decisions to that position; it is never saved. `None` unless `index` names
+    /// the first test the latest decision completed.
+    ///
+    /// That position always holds the test (review fix I5): a test begun by one
+    /// decision stops for its chaos-token reveal, `test:reveal`, which is a genuine
+    /// decision that single-option resolution never performs (`single_option`), and
+    /// a test completes only after its reveal (`Game::finish_test`). So the decision
+    /// that completes a test never also begins it. Were that to change, this would
+    /// give `None`, and the result would keep its record's own naming, the action
+    /// alone.
+    #[cfg(feature = "tabletop")]
+    pub(crate) fn completed_test_view(&self, index: usize) -> Option<TestView> {
+        if index != self.live.completed_before {
+            return None;
+        }
+        let (_, earlier) = self.active_decisions.split_last()?;
+        let mut previous = Self::from_origin(self.seed, self.verification_fixture).ok()?;
+        for &at in earlier {
+            let decision = self
+                .decisions
+                .get(at)
+                .filter(|decision| decision.as_str() != "undo")?;
+            previous.choose(previous.revision, decision).ok()?;
+        }
+        previous.observe().play?.test
     }
 
     #[cfg(feature = "tabletop")]

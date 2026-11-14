@@ -480,6 +480,7 @@ fn global(id: &str) -> bool {
             | "lucky:decline"
             | "window:pass"
             | "phase-window:pass"
+            | crate::partners::PASS_BEFORE
             | "success:pass"
             | "after-test:pass"
             | "test-card:pass"
@@ -497,7 +498,7 @@ fn global(id: &str) -> bool {
             | "resolution:burn"
             | "resolution:refuse"
             | "round-end:finish"
-            | "round-end:decline-act"
+            | crate::gathering::GroupCluePayment::DECLINE
             | "enemy:attacks"
             | "enemy:attacks-complete"
             | "enemy:next-investigator"
@@ -743,6 +744,12 @@ pub(super) fn window_opportunities(view: &Observation) -> Vec<(Source, String)> 
     {
         return vec![];
     }
+    opportunities(view)
+}
+
+/// The cards and abilities the view's choices use, each once, named by its
+/// holder: what a player may use in a window.
+pub(super) fn opportunities(view: &Observation) -> Vec<(Source, String)> {
     let mut result = Vec::new();
     for choice in &view.choices {
         let Route::Sources(mut sources) = route(view, &choice.id) else {

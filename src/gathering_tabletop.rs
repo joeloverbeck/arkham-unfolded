@@ -31,6 +31,8 @@ mod encounter;
 mod map_motion;
 mod markers;
 mod motion;
+mod pace;
+mod partners;
 mod pendulum;
 mod phase_banner;
 mod play;
@@ -46,6 +48,7 @@ mod shuffle;
 mod sideboard;
 mod slots;
 mod story;
+mod talk;
 mod trays;
 mod ui;
 mod violin;
@@ -89,6 +92,7 @@ enum Action {
     Focus(Area),
     Resolve,
     Follow,
+    Partners(partners::Input),
 }
 
 impl Action {
@@ -139,6 +143,14 @@ struct Table {
     prediction: Option<pendulum::Picker>,
     violin: Option<violin::Picker>,
     clue_payment: Option<clue_payment::Chooser>,
+    /// Agent partners as the table shows them (#205).
+    partners: partners::Shown,
+    /// Counts restarts in this window, so partner sessions end with their attempt.
+    attempt: u64,
+    /// The clock of a reading that continues on its own (#210).
+    pace: pace::Pace,
+    /// Table talk and partners' action lines (#209): this sitting's, never saved.
+    talk: talk::Talk,
 }
 
 impl Table {
@@ -195,11 +207,51 @@ impl Table {
             prediction: None,
             violin: None,
             clue_payment: None,
+            partners: partners::Shown::default(),
+            attempt: 0,
+            pace: pace::Pace::default(),
+            talk: talk::Talk::default(),
         }
     }
 
     fn view(&self) -> Observation {
         self.presentation.view(&self.session)
+    }
+
+    /// Save a decision, then present it: the one commit path for the human's
+    /// clicks and agent partners' choices. The camera is the caller's to move.
+    fn commit(&mut self, revision: u64, id: &str) -> Result<(), String> {
+        self.token_options = None;
+        let before = self.view();
+        let draws =
+            continuity::commit_choice_with_draws(&self.save_path, &mut self.session, revision, id)
+                .map_err(|error| error.to_string())?;
+        self.violin = None;
+        self.clue_payment = None;
+        let shuffled = self.reduced_motion
+            && draws.iter().any(|cue| {
+                cue.batch
+                    .steps
+                    .iter()
+                    .any(|step| matches!(step, crate::gathering::DeckStep::Shuffle { .. }))
+            });
+        self.presentation
+            .committed(&self.session, &before, id, draws, self.reduced_motion);
+        self.context.reset();
+        self.epoch += 1;
+        self.notice = if shuffled {
+            "Decks shuffled. Reduced motion is on.".into()
+        } else {
+            String::new()
+        };
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Whether the human may submit `id`: with agent partners, only options of
+    /// the investigators the human controls (#205).
+    fn human_may(&self, id: &str) -> bool {
+        self.presentation.control().human_may(&self.session, id)
     }
 
     fn is_presenting(&self) -> bool {
@@ -266,6 +318,9 @@ struct CardRender<'a> {
     epoch: u64,
     story: &'a story::Faces,
     consequences: &'a consequences::State,
+    /// Cards other players' investigators have pending in a shared commitment,
+    /// shown in the Test area beside the confirmed commitments.
+    others_pending: &'a [(Investigator, crate::gathering::CardView)],
 }
 
 impl CardRender<'_> {
@@ -733,6 +788,7 @@ fn return_selection_command(
 fn install(app: &mut App) {
     capture::install(app);
     controls::install(app);
+    talk::install(app);
     app.init_resource::<Actions>()
         .init_resource::<Navigation>()
         .init_resource::<consequences::State>()
@@ -751,14 +807,26 @@ fn install(app: &mut App) {
                     remember_attempt,
                 )
                     .chain(),
-                (pendulum::keyboard, clue_payment::keyboard, handle_actions).chain(),
+                (
+                    pendulum::keyboard,
+                    clue_payment::keyboard,
+                    handle_actions,
+                    partners::serve,
+                )
+                    .chain(),
                 (consequences::advance, doom::advance).chain(),
                 reveal::sync,
                 crate::tabletop_reveal::render,
                 advance_presentation,
                 keyboard_panel_scroll,
                 camera_controls,
-                (render, phase_banner::render, encounter::animate).chain(),
+                (
+                    render,
+                    phase_banner::render,
+                    encounter::animate,
+                    pace::advance,
+                )
+                    .chain(),
                 (
                     controls::render,
                     violin::render,
@@ -860,6 +928,7 @@ fn handle_actions(
     mut exit: MessageWriter<AppExit>,
     navigation: Res<Navigation>,
     seated: Option<Res<crate::agent_seat::SeatedAgent>>,
+    mut partnered: Option<ResMut<partners::Partners>>,
 ) {
     if table.leaving {
         actions.0.clear();
@@ -927,6 +996,20 @@ fn handle_actions(
             Action::ContextInspect(..) => continue,
             action => action,
         };
+        // With agent partners, a control left from an earlier state cannot answer
+        // for an investigator a partner plays.
+        if let Some(id) = action.choice()
+            && !table.human_may(id)
+        {
+            table.notice = if id == "undo" {
+                "Undo reverts only your own latest decision, and the latest is not yours."
+            } else {
+                "That decision belongs to an investigator a partner plays. Take over to answer it."
+            }
+            .into();
+            table.dirty = true;
+            continue;
+        }
         // The same dispatch boundary as Party: a dialog captures actions that
         // were already queued before its barrier appeared on screen.
         let reading = table.presentation.story().is_some();
@@ -934,11 +1017,7 @@ fn handle_actions(
             && table.presentation.result().is_none()
             && table.result_opportunities();
         let encounter_choice = if let Action::EncounterChoice(epoch, revision, id) = &action {
-            *epoch == table.epoch
-                && table
-                    .presentation
-                    .encounter()
-                    .accepts(&table.session, *revision, id)
+            *epoch == table.epoch && encounter::Reading::accepts(&table, *revision, id)
         } else {
             false
         };
@@ -1073,46 +1152,52 @@ fn handle_actions(
                     clue_payment::open(&mut table, epoch, revision);
                     continue;
                 }
-                table.token_options = None;
-                let path = table.save_path.clone();
-                let before = table.view();
-                table.notice = match continuity::commit_choice_with_draws(
-                    &path,
-                    &mut table.session,
-                    revision,
-                    &id,
-                ) {
-                    Ok(draws) => {
-                        let table = &mut *table;
-                        table.violin = None;
-                        table.clue_payment = None;
-                        let shuffled = table.reduced_motion
-                            && draws.iter().any(|cue| {
-                                cue.batch.steps.iter().any(|step| {
-                                    matches!(step, crate::gathering::DeckStep::Shuffle { .. })
-                                })
-                            });
-                        table.presentation.committed(
-                            &table.session,
-                            &before,
-                            &id,
-                            draws,
-                            table.reduced_motion,
-                        );
-                        table.context.reset();
-                        table.epoch += 1;
-                        orbit.update_follow_target(Some(play::framing(&table.view())));
+                // With partners, the human's Confirm, pass or clue part in a shared
+                // decision is his readiness: the partner host completes it.
+                if let Some(partnered) = partnered.as_mut() {
+                    match partnered.human(&table.session, revision, &id) {
+                        Ok(crate::partners::HumanChoice::Commit) => {}
+                        Ok(crate::partners::HumanChoice::Ready) => {
+                            if table.clue_payment.take().is_some() {
+                                table.epoch += 1;
+                            }
+                            // His pass or his held choice in an encounter reading
+                            // ends his reading, as a committed one does, so the
+                            // decision display shows what it waits for and the
+                            // held choice can apply once the table settles (F1).
+                            if encounter_choice {
+                                table
+                                    .presentation
+                                    .encounter_input(encounter::Input::Continue);
+                                table.epoch += 1;
+                            }
+                            table.notice.clear();
+                            table.dirty = true;
+                            continue;
+                        }
+                        Err(reason) => {
+                            table.notice = reason;
+                            table.dirty = true;
+                            continue;
+                        }
+                    }
+                }
+                match table.commit(revision, &id) {
+                    Ok(()) => {
+                        orbit.update_follow_target(play::follow(
+                            &table.view(),
+                            table.presentation.control(),
+                        ));
                         if reveal_focus {
                             orbit.focus(play::framing(&table.view()));
                         }
-                        if shuffled {
-                            "Decks shuffled. Reduced motion is on.".into()
-                        } else {
-                            String::new()
-                        }
                     }
-                    Err(error) => format!("Decision not committed: {error}"),
-                };
+                    Err(error) => table.notice = format!("Decision not committed: {error}"),
+                }
+                table.dirty = true;
+            }
+            Action::Partners(input) => {
+                table.partners.inputs.push(input);
                 table.dirty = true;
             }
             Action::Choose(..) | Action::ResultChoice(..) | Action::EncounterChoice(..) => {}
@@ -1169,7 +1254,10 @@ fn handle_actions(
                 table.context.dismiss();
                 let following = !orbit.is_following();
                 orbit.set_following(following);
-                orbit.update_follow_target(Some(play::framing(&table.view())));
+                orbit.update_follow_target(play::follow(
+                    &table.view(),
+                    table.presentation.control(),
+                ));
                 table.dirty = true;
             }
             Action::Close => {
@@ -1286,6 +1374,11 @@ fn handle_actions(
                         let mut next = Table::new(session, table.save_path.clone());
                         next.epoch = table.epoch.wrapping_add(1);
                         next.reduced_motion = table.reduced_motion;
+                        next.attempt = table.attempt + 1;
+                        next.presentation
+                            .set_control(table.presentation.control().clone());
+                        // Table talk belongs to the sitting, not the attempt.
+                        next.talk = std::mem::take(&mut table.talk);
                         next.notice = format!(
                             "Started a new Gathering attempt. Previous attempt archived at {}",
                             archive.display()
@@ -1354,7 +1447,9 @@ struct CardSpec<'a> {
 
 impl<'a> CardSpec<'a> {
     fn new(at: Vec3, title: &'a str, inspect_code: &'a str) -> Self {
-        let landscape = matches!(inspect_code, "06003" | "06005" | "60401");
+        let landscape = Investigator::ALL
+            .iter()
+            .any(|who| who.card_code() == inspect_code);
         Self {
             title,
             inspect_code,
@@ -1608,12 +1703,14 @@ fn render(
     table.last_rendered = Some(view.clone());
     let reduced_motion = table.reduced_motion;
     table.trays.prepare(&view, reduced_motion);
+    let others_pending = table.partners.others_pending(&view);
     let context = CardRender {
         art: &art,
         view: &view,
         epoch: table.epoch,
         story: &story,
         consequences: &consequences,
+        others_pending: &others_pending,
     };
     scene::render(&mut commands, &mut meshes, &mut materials, &context);
     surfaces.0.render(
@@ -1730,7 +1827,7 @@ fn advance_presentation(
         table.dirty = true;
     }
     if progress == presentation::Progress::Moment {
-        orbit.update_follow_target(Some(play::framing(&table.view())));
+        orbit.update_follow_target(play::follow(&table.view(), table.presentation.control()));
     }
 }
 
@@ -1951,8 +2048,59 @@ fn contextual_feedback(
 /// What must finish before the table takes a decision; empty when it is settled.
 /// `Redraw` cannot answer this: the availability cue requests redraws for as long as
 /// a choice is offered. A dialog or menu waiting for the player is settled, even when
-/// it holds a presentation or motion in place behind it.
+/// it holds a presentation or motion in place behind it. The seat reports each
+/// reason by its [label](Unsettled::label).
 fn unsettled(world: &mut World) -> Vec<&'static str> {
+    let mut pending = table_unsettled(world);
+    pending.extend(partners::unsettled(world));
+    pending.into_iter().map(Unsettled::label).collect()
+}
+
+/// One reason the table is not settled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Unsettled {
+    GraphicsAdmission,
+    InitialSave,
+    Leaving,
+    SceneRebuild,
+    QueuedInput,
+    Announcement,
+    Presentation,
+    Consequences,
+    Trays,
+    SealedTokens,
+    CardMotion,
+    CameraMotion,
+    /// A partner's reading continues on its own (#210); it waits for no one.
+    ReadingDelay,
+    /// Partner work the table can do now (#205).
+    PartnerRequest,
+}
+
+impl Unsettled {
+    /// How the seat names it.
+    fn label(self) -> &'static str {
+        match self {
+            Self::GraphicsAdmission => "graphics admission",
+            Self::InitialSave => "initial save",
+            Self::Leaving => "leaving the table",
+            Self::SceneRebuild => "scene rebuild",
+            Self::QueuedInput => "queued input",
+            Self::Announcement => "announcement",
+            Self::Presentation => "presentation",
+            Self::Consequences => "consequences",
+            Self::Trays => "trays",
+            Self::SealedTokens => "sealed tokens",
+            Self::CardMotion => "card motion",
+            Self::CameraMotion => "camera motion",
+            Self::ReadingDelay => "reading delay",
+            Self::PartnerRequest => "partner request",
+        }
+    }
+}
+
+/// What the table itself must finish, without partner requests.
+fn table_unsettled(world: &mut World) -> Vec<Unsettled> {
     let moving = world
         .query_filtered::<(), With<motion::CardMotion>>()
         .iter(world)
@@ -1964,41 +2112,44 @@ fn unsettled(world: &mut World) -> Vec<&'static str> {
     let held = table.motion_blocked();
     let mut pending = Vec::new();
     if !health.allows_play() || health.just_became_ready() {
-        pending.push("graphics admission");
+        pending.push(Unsettled::GraphicsAdmission);
     }
     if table.initial_save_pending {
-        pending.push("initial save");
+        pending.push(Unsettled::InitialSave);
     }
     if table.leaving {
-        pending.push("leaving the table");
+        pending.push(Unsettled::Leaving);
     }
     if table.dirty || table.last_rendered.is_none() {
-        pending.push("scene rebuild");
+        pending.push(Unsettled::SceneRebuild);
     }
     if !world.resource::<Actions>().0.is_empty() {
-        pending.push("queued input");
+        pending.push(Unsettled::QueuedInput);
     }
     if table.presentation.announcement().is_some() {
         // Every action is dropped while a phase announcement shows, even behind a menu.
-        pending.push("announcement");
+        pending.push(Unsettled::Announcement);
     }
     if table.presentation.active() && !table.presentation_blocked() {
-        pending.push("presentation");
+        pending.push(Unsettled::Presentation);
     }
     if consequences.active() && !held {
-        pending.push("consequences");
+        pending.push(Unsettled::Consequences);
     }
     if table.trays.active() && !held {
-        pending.push("trays");
+        pending.push(Unsettled::Trays);
     }
     if table.sealed.active() && !held {
-        pending.push("sealed tokens");
+        pending.push(Unsettled::SealedTokens);
     }
     if moving && !held {
-        pending.push("card motion");
+        pending.push(Unsettled::CardMotion);
     }
     if world.resource::<Orbit>().is_moving() {
-        pending.push("camera motion");
+        pending.push(Unsettled::CameraMotion);
+    }
+    if table.pace.counting() {
+        pending.push(Unsettled::ReadingDelay);
     }
     pending
 }

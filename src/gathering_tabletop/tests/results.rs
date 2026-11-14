@@ -765,7 +765,7 @@ fn result_and_optional_effect_controls_stay_visible_when_details_scroll() {
     }
 }
 
-fn quick_thinking_until(stop: &str) -> Session {
+pub(in crate::gathering_tabletop) fn quick_thinking_until(stop: &str) -> Session {
     let mut session =
         Session::with_hostile_fixture(HostileFixture::Tony(TonyEffectFixture::QuickThinking));
     let play = session.observe().play.unwrap();
@@ -820,34 +820,23 @@ fn quick_thinking_until(stop: &str) -> Session {
     panic!("Quick Thinking was never offered")
 }
 
-#[test]
-fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("live.json");
-    let session = quick_thinking_until("test:reveal");
-    continuity::save_session(&path, &session).unwrap();
-    let mut app = host_with_table(Table::new(session, path), false);
-    activate_choice(&mut app, "test:reveal");
-    // Play the genuine cancellation/outcome decisions until ST6 fixes the result.
+/// Play the genuine cancellation and outcome decisions after a reveal until ST6
+/// fixes the result and the table shows it.
+pub(in crate::gathering_tabletop) fn reach_result(app: &mut App) {
+    let shown = |app: &App| {
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_some()
+    };
     for _ in 0..40 {
-        if app
-            .world()
-            .resource::<Table>()
-            .presentation
-            .result()
-            .is_some()
-        {
-            break;
+        if shown(app) {
+            return;
         }
-        finish_presentation(&mut app);
-        if app
-            .world()
-            .resource::<Table>()
-            .presentation
-            .result()
-            .is_some()
-        {
-            break;
+        finish_presentation(app);
+        if shown(app) {
+            return;
         }
         let view = app.world().resource::<Table>().view();
         let id = ["lucky:decline", "success:pass"]
@@ -859,6 +848,122 @@ fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
         app.world_mut().resource_mut::<Actions>().0.push(action);
         app.update();
     }
+}
+
+/// #210, tests name their action and target, in the example Joel chose: a basic
+/// Fight names its enemy in the decision display throughout the test, and in its
+/// result, instead of only the skill.
+#[test]
+fn a_basic_fight_names_its_enemy_during_the_test_and_in_its_result() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("named.json");
+    let session = quick_thinking_until("test:reveal");
+    continuity::save_session(&path, &session).unwrap();
+    let mut app = host_with_table(Table::new(session, path), false);
+    let shown = rendered_text(&mut app);
+    assert!(shown.contains("Tony Morgan fights Ghoul Minion"), "{shown}");
+    activate_choice(&mut app, "test:reveal");
+    reach_result(&mut app);
+    let shown = rendered_text(&mut app);
+    let result =
+        crate::tabletop_support::readable_text("Tony Morgan · Fight · Ghoul Minion".into());
+    assert!(shown.contains(&result), "{shown}");
+    assert!(!shown.contains("Combat test"), "{shown}");
+}
+
+/// Review fix D4 (#210: a result names the test's action and target). Reopening
+/// an attempt whose latest decision completed Tony's Fight shows its result again
+/// from the attempt's record, which names only the action; the target comes from
+/// the rules session, without changing the save.
+#[test]
+fn a_reopened_attempts_last_result_still_names_its_target() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("reopened.json");
+    continuity::save_session(&path, &quick_thinking_session()).unwrap();
+    let saved = std::fs::read(&path).unwrap();
+    let session = continuity::load_session(&path).unwrap();
+    let mut app = host_with_table(Table::new(session, path.clone()), false);
+    finish_presentation(&mut app);
+    assert!(
+        app.world()
+            .resource::<Table>()
+            .presentation
+            .result()
+            .is_some(),
+        "The reopened attempt shows its last result"
+    );
+    let shown = rendered_text(&mut app);
+    let result =
+        crate::tabletop_support::readable_text("Tony Morgan · Fight · Ghoul Minion".into());
+    assert!(shown.contains(&result), "{shown}");
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        saved,
+        "The save is unchanged"
+    );
+}
+
+/// #210, tests name their action and target: an investigation, an evasion and a
+/// treachery's test each say what they attempt in the decision display.
+#[test]
+fn investigate_evade_and_treachery_tests_name_what_they_attempt() {
+    use crate::gathering::{CryptChillFixture, SearchFixture};
+    let choose = |session: &mut Session, id: &str| {
+        let revision = session.revision();
+        session.choose(revision, id).unwrap();
+    };
+    let mut investigation = Session::with_seed(89);
+    for id in [
+        "lead:tony",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "confirm-mulligan",
+        "turn:patrice",
+        "action:ordinary:investigate",
+    ] {
+        choose(&mut investigation, id);
+    }
+    let mut evasion =
+        Session::with_hostile_fixture(HostileFixture::Search(SearchFixture::GetOverHereFrozen));
+    let rats = evasion
+        .observe()
+        .play
+        .unwrap()
+        .scenario
+        .enemies
+        .iter()
+        .find(|enemy| enemy.card.code == "01159")
+        .unwrap()
+        .card
+        .id;
+    choose(&mut evasion, &format!("action:ordinary:evade:{rats}"));
+    let mut treachery =
+        Session::with_hostile_fixture(HostileFixture::CryptChill(CryptChillFixture::Assets));
+    choose(&mut treachery, "revelation:resolve");
+    for (session, named) in [
+        (investigation, "Patrice Hathaway investigates Study"),
+        (evasion, "Tony Morgan evades Swarm of Rats"),
+        (treachery, "Tony Morgan tests Willpower for Crypt Chill"),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("named.json");
+        continuity::save_session(&path, &session).unwrap();
+        let mut app = host_with_table(Table::new(session, path), false);
+        finish_presentation(&mut app);
+        let shown = rendered_text(&mut app);
+        assert!(shown.contains(named), "{named}: {shown}");
+    }
+}
+
+#[test]
+fn live_result_blocks_queued_choices_and_duplicate_acknowledgments() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("live.json");
+    let session = quick_thinking_until("test:reveal");
+    continuity::save_session(&path, &session).unwrap();
+    let mut app = host_with_table(Table::new(session, path), false);
+    activate_choice(&mut app, "test:reveal");
+    reach_result(&mut app);
     let table = app.world().resource::<Table>();
     assert!(table.presentation.result().is_some());
     let epoch = table.epoch;

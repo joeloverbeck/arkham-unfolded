@@ -203,3 +203,7 @@ _Avoid_: Chat log, narration, instruction
 **Speech box**:
 The transient display of one table-talk message beside its speaker's investigator portrait.
 _Avoid_: Banner, dialog, tooltip
+
+**Action line**:
+The transient record of an agent partner's committed decision, its choice label, shown in the speech-box place beside the acting investigator's portrait. It is styled as a record, not speech.
+_Avoid_: Speech box, toast, log entry

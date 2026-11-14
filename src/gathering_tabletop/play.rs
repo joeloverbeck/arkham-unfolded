@@ -30,14 +30,6 @@ pub(super) fn location_text(original: &str) -> String {
     text
 }
 
-fn investigator_code(investigator: Investigator) -> &'static str {
-    match investigator {
-        Investigator::Tony => "06003",
-        Investigator::Patrice => "06005",
-        Investigator::Jacqueline => "60401",
-    }
-}
-
 fn pile_text(title: &str, cards: &[CardView]) -> String {
     let mut lines = vec![format!("{title} · {} cards", cards.len())];
     for card in cards {
@@ -52,34 +44,12 @@ fn pile_text(title: &str, cards: &[CardView]) -> String {
 }
 
 /// Only faces and piles represented by this player-safe observation are inspectable.
+/// A card's own text is the Bevy-free table inspection, which agent partners share
+/// with a narrower sight.
 pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
     let play = view.play.as_ref()?;
     if code == "total-doom" {
         return Some(doom::inspection(play));
-    }
-    if let Some(player) = play
-        .players
-        .iter()
-        .find(|player| investigator_code(player.investigator) == code)
-    {
-        let slots = player
-            .slot_usage()
-            .iter()
-            .map(|slot| slot.details())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let masks = player.masks_controlled();
-        let mask_limit = if masks == 0 {
-            String::new()
-        } else {
-            format!(
-                "\n\nMask limit: {masks}/1\nYou cannot play or take control of another Mask while you control one. This is a control limit, not an equipment slot; it does not allow slot-style replacement."
-            )
-        };
-        return Some(format!(
-            "{}\n\nAsset slots\n{slots}\nCounts show occupied slot units. Slotless assets do not use these limits.{mask_limit}",
-            crate::gathering::inspection::card(code)?
-        ));
     }
     if code == "chaos-bag" {
         let mut counts = std::collections::BTreeMap::new();
@@ -201,110 +171,7 @@ pub(super) fn inspect(view: &Observation, code: &str) -> Option<String> {
             play.encounter_deck_count
         ));
     }
-    if let Some(room) = play
-        .scenario
-        .locations
-        .iter()
-        .find(|room| room.code == code)
-    {
-        return crate::gathering::inspection::scenario_card(code, room.revealed);
-    }
-    let agenda = format!("{:05}", 1104 + usize::from(play.agenda));
-    let act = format!("{:05}", 1107 + usize::from(play.act));
-    let scenario_visible = code == "01104"
-        || code == agenda
-        || code == act
-        || (code == "01117" && play.scenario.lita_in_play)
-        || play
-            .scenario
-            .locations
-            .iter()
-            .any(|room| room.fog.as_ref().is_some_and(|card| card.code == code))
-        || play
-            .scenario
-            .enemies
-            .iter()
-            .any(|enemy| enemy.card.code == code)
-        || play
-            .encounter_discard
-            .iter()
-            .chain(&play.scenario.victory)
-            .chain(&play.scenario.removed)
-            .any(|card| card.code == code)
-        || play.searched_encounter.iter().any(|card| card.code == code)
-        || play
-            .pending_revelation
-            .as_ref()
-            .is_some_and(|pending| pending.card.code == code);
-    let player_visible = play
-        .pending
-        .resolving_cards
-        .iter()
-        .any(|card| card.code == code)
-        || play.pending.discard.as_ref().is_some_and(|discard| {
-            discard
-                .remaining
-                .iter()
-                .chain(&discard.ordered)
-                .any(|card| card.code == code)
-        })
-        || play.searched_player.iter().any(|card| card.code == code)
-        || play
-            .backpacks
-            .iter()
-            .flat_map(|attached| &attached.cards)
-            .any(|card| card.code == code)
-        || play
-            .premonition
-            .as_ref()
-            .is_some_and(|sealed| sealed.card.code == code)
-        || play.players.iter().any(|player| {
-            code == investigator_code(player.investigator)
-                || player
-                    .hand
-                    .iter()
-                    .chain(&player.discard)
-                    .chain(&player.threats)
-                    .chain(&player.removed)
-                    .any(|card| card.code == code)
-                || player.assets.iter().any(|asset| asset.card.code == code)
-        })
-        || play.test.as_ref().is_some_and(|test| {
-            test.source_card
-                .as_ref()
-                .is_some_and(|card| card.code == code)
-                || test.committed.iter().any(|entry| entry.card.code == code)
-        });
-    (scenario_visible || player_visible)
-        .then(|| {
-            crate::gathering::inspection::card(code)
-                .or_else(|| crate::gathering::inspection::scenario_card(code, true))
-        })
-        .flatten()
-        .map(|mut text| {
-            for player in &play.players {
-                for asset in &player.assets {
-                    if asset.card.code == code
-                        && matches!(
-                            asset.use_kind(),
-                            Some(
-                                crate::gathering::UseKind::Supply | crate::gathering::UseKind::Key
-                            )
-                        )
-                    {
-                        text.push_str(&format!(
-                            "\n\n{} — {}: {}",
-                            player.investigator.name(),
-                            card_counters::use_counter(asset.use_kind())
-                                .expect("Named use counter")
-                                .name(),
-                            asset.uses
-                        ));
-                    }
-                }
-            }
-            text
-        })
+    crate::gathering::inspection::table_card(view, code, crate::gathering::inspection::Sight::Table)
 }
 
 /// An inspection target retains the physical enemy identity privately so two
@@ -353,6 +220,51 @@ pub(super) fn focus(view: &Observation) -> Area {
         .map_or(Area::Scenario, |owner| Area::Investigator(owner.index()))
 }
 
+/// What Follow frames for `view`, or `None` to leave the camera where it is. With
+/// agent partners, Follow frames only the human's own investigators' decisions and
+/// the tests they take part in, and the scenario's end (#210).
+pub(super) fn follow(
+    view: &Observation,
+    control: &crate::partners::Control,
+) -> Option<(Vec3, f32)> {
+    followed(view, control).then(|| framing(view))
+}
+
+fn followed(view: &Observation, control: &crate::partners::Control) -> bool {
+    use crate::partners::Controller;
+    if control.solo() {
+        return true;
+    }
+    let humans = |who: Investigator| control.controller(who) == Controller::Human;
+    if let Some(play) = &view.play {
+        if play.scenario.outcome.is_some() {
+            return true;
+        }
+        if let Some(test) = &play.test {
+            return humans(test.tester)
+                || test.committed.iter().any(|card| humans(card.owner))
+                || test
+                    .commitment
+                    .iter()
+                    .any(|card| card.selected && humans(card.owner));
+        }
+    }
+    match view.decision_owner {
+        Some(owner) => humans(owner),
+        // A group choice is the human's when the human's controls offer it, since
+        // the table's view keeps only the human's options; Undo decides nothing.
+        // A presentation moment names no decision, only whose turn it is.
+        None => {
+            view.choices.iter().any(|choice| choice.id != "undo")
+                || view
+                    .play
+                    .as_ref()
+                    .and_then(|play| play.actor)
+                    .is_some_and(humans)
+        }
+    }
+}
+
 pub(super) fn framing(view: &Observation) -> (Vec3, f32) {
     view.play
         .as_ref()
@@ -363,13 +275,23 @@ pub(super) fn framing(view: &Observation) -> (Vec3, f32) {
         .map_or_else(|| sideboard::focus(focus(view)), |tray| tray.focus())
 }
 
-pub(super) fn status(view: &Observation) -> Option<String> {
+/// The status line. `awaited` names the investigators the table waits on when an
+/// agent partner's is among them; otherwise the decision's own investigator.
+pub(super) fn status(view: &Observation, awaited: &[Investigator]) -> Option<String> {
     let play = view.play.as_ref()?;
     let phase = phase_banner::name(play.phase);
     let actor = play.actor.map_or("No active turn", Investigator::name);
-    let owner = view
-        .decision_owner
-        .map_or("No pending player decision", Investigator::name);
+    let owner = if awaited.is_empty() {
+        view.decision_owner
+            .map_or("No pending player decision", Investigator::name)
+            .to_owned()
+    } else {
+        awaited
+            .iter()
+            .map(|who| who.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     let mut lines = vec![format!(
         "Round {} · {phase} · Turn: {actor} · Decision: {owner}",
         play.round
@@ -534,7 +456,7 @@ impl Painter<'_, '_, '_> {
             self.materials,
             self.context
                 .art
-                .image(&format!("standee/{}", investigator_code(who)))
+                .image(&format!("standee/{}", who.card_code()))
                 .as_ref(),
             position,
             layout::investigator_class(index),
@@ -567,7 +489,7 @@ impl Painter<'_, '_, '_> {
                 source: Source::Investigator(who),
                 at: position,
                 title: who.name().into(),
-                inspect_code: investigator_code(who).into(),
+                inspect_code: who.card_code().into(),
             },
         );
     }
@@ -625,7 +547,7 @@ impl Painter<'_, '_, '_> {
             }
             self.commands.entity(label).insert(ScenePiece);
             let inspect_code = match &source {
-                Source::Investigator(who) => investigator_code(*who).into(),
+                Source::Investigator(who) => who.card_code().into(),
                 Source::Location(code) => code.clone(),
                 _ => String::new(),
             };
@@ -1261,6 +1183,20 @@ pub(super) fn render(
                         committed.owner.name()
                     ),
                     &committed.card.code,
+                )
+            });
+        }
+        // Another player's pending cards in a shared commitment: still in their
+        // hand, shown here as pending, not as commitments (agent partners, #208).
+        let pending = paint.context.others_pending;
+        for (slot, (owner, card)) in pending.iter().enumerate() {
+            paint.card(CardSpec {
+                source: Some(Source::Card(card.id)),
+                physical_id: None,
+                ..CardSpec::new(
+                    layout::test_commitment(test_count + pending.len(), test_count + slot),
+                    &format!("{}\n{}: pending, not confirmed", card.title, owner.name()),
+                    &card.code,
                 )
             });
         }

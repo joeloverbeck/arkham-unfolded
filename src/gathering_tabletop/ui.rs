@@ -7,13 +7,74 @@ pub(super) fn portraits(
     art: &art::Art,
     images: &Assets<Image>,
 ) -> [Option<(Handle<Image>, Vec2)>; 3] {
-    ["06003", "06005", "60401"].map(|code| {
+    Investigator::ALL.map(|who| {
+        let code = who.card_code();
         art.image(&format!("standee/{code}")).and_then(|handle| {
             images
                 .get(&handle)
                 .map(|image| (handle.clone(), image.size_f32()))
         })
     })
+}
+
+/// What the decision display says of partners: each partner the table waits on,
+/// with Take over, readiness in shared decisions, and the passes before a
+/// decision that lists another player's options (F1): what the human may use
+/// before another player's decision, or his own choice waiting for the others,
+/// or why it was released. His options there, and his pass, are the ones the
+/// partner library gives the view.
+fn partner_lines(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, view: &Observation) {
+    for (who, _) in &table.partners.deciding {
+        let who = *who;
+        let Some(cue) = table.partners.cue(who) else {
+            continue;
+        };
+        p.spawn(art.text(cue, 16., PARTNER));
+        if let Some(uses) = table.partners.uses(who) {
+            p.spawn(art.text(uses, 15., OPPORTUNITY));
+        }
+        screen::controls(p, |row| {
+            control(
+                art,
+                row,
+                &format!("Take over {}", who.name()),
+                Action::Partners(partners::Input::TakeOver(who)),
+            );
+        });
+    }
+    for line in table.partners.readiness_lines() {
+        p.spawn(art.text(line, 15., PARTNER));
+    }
+    if let Some(before) = table.partners.human_window()
+        && !table.is_presenting()
+        && !table.modal()
+    {
+        let uses: Vec<String> = controls::opportunities(view)
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect();
+        let what = if uses.is_empty() {
+            "your options".to_owned()
+        } else {
+            uses.join(", ")
+        };
+        p.spawn(art.text(
+            format!("You may use {what} before {before}"),
+            15.,
+            OPPORTUNITY,
+        ));
+    }
+    if let Some(held) = &table.partners.held {
+        p.spawn(art.text(
+            format!("{held}: waits for the other players to pass"),
+            15.,
+            PARTNER,
+        ));
+    }
+    // His held choice was released without being applied; the notice says why.
+    if let Some(released) = &table.partners.released {
+        p.spawn(art.text(released, 15., PARTNER));
+    }
 }
 
 fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, view: &Observation) {
@@ -65,6 +126,17 @@ fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
             },
         ));
     }
+    // A partner's reveal can list Jacqueline's reaction for the human, or the
+    // human's can wait for a partner's (F1).
+    if table.partners.enabled {
+        p.spawn(Node {
+            flex_shrink: 0.,
+            flex_direction: FlexDirection::Column,
+            row_gap: px(4),
+            ..default()
+        })
+        .with_children(|lines| partner_lines(lines, art, table, view));
+    }
     p.spawn((
         Node {
             min_height: px(0),
@@ -88,12 +160,14 @@ fn token_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
             for choice in &view.choices {
                 if matches!(
                     choice.id.as_str(),
-                    "tokens:confirm" | "test:reveal" | "undo"
+                    "tokens:confirm" | "test:reveal" | "undo" | crate::partners::PASS_BEFORE
                 ) {
                     control(
                         art,
                         row,
-                        choice_label(choice),
+                        &table
+                            .partners
+                            .readiness_label(&choice.id, choice_label(choice)),
                         Action::Choose(table.epoch, view.revision, choice.id.clone()),
                     );
                 }
@@ -329,7 +403,7 @@ fn test_summary(play: &crate::gathering::PlayObservation) -> Option<String> {
         result: (test.resolved).then_some(test.would_succeed).flatten(),
     }
     .label_with_pending(preview);
-    let mut label = format!("{} · {summary}", test.tester.name());
+    let mut label = format!("{} · {summary}", results::attempt(test));
     if test.modifiers.other != 0 {
         label.push_str(&format!(
             "\nOther bonuses {:+} are included in the value.",
@@ -436,11 +510,16 @@ fn wager_guidance(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, v
             control(
                 art,
                 row,
-                choice_label(&choice),
+                &table
+                    .partners
+                    .readiness_label(&choice.id, choice_label(&choice)),
                 Action::Choose(table.epoch, view.revision, choice.id.clone()),
             );
         }
     });
+    for line in table.partners.readiness_lines() {
+        p.spawn(art.text(line, 13., PARTNER));
+    }
     if let Some(summary) = selected_commitments(view) {
         p.spawn(art.text(summary, 12., MUTED));
     }
@@ -491,7 +570,8 @@ pub(super) fn render(
     context: &CardRender,
     reveal_open: bool,
 ) {
-    screen::header(commands, Panel, |p| {
+    // The turn indicator: speech boxes keep clear of it.
+    screen::header(commands, (Panel, talk::Avoid), |p| {
         p.spawn(art.text(
             if view.play.is_some() {
                 "The Gathering · Standard"
@@ -515,18 +595,44 @@ pub(super) fn render(
                 .play
                 .as_ref()
                 .is_some_and(|play| play.scenario.outcome.is_none() && play.actor == Some(who));
+            let mut marks = Vec::new();
+            if table.partners.partner_plays(who) {
+                marks.push("PARTNER".to_owned());
+            }
+            if let Some(state) = table.partners.deciding(who) {
+                marks.push(match state {
+                    partners::Deciding::Thinking => "THINKING".to_owned(),
+                    partners::Deciding::Silent(minutes) => format!("SILENT {minutes} MIN"),
+                    partners::Deciding::Unclaimed => "AWAITING PARTNER".to_owned(),
+                });
+            }
             let entity = screen::portrait(
                 p,
                 art.symbol_font(),
                 who.name(),
                 portraits[index].as_ref(),
                 current_turn,
+                &marks,
             );
-            p.commands().entity(entity).observe(
-                move |_: On<Activate>, mut queue: ResMut<Actions>| {
+            p.commands()
+                .entity(entity)
+                .insert(talk::Portrait(who))
+                .observe(move |_: On<Activate>, mut queue: ResMut<Actions>| {
                     queue.0.push(Action::Focus(Area::Investigator(who.index())));
-                },
-            );
+                });
+            // The portrait's marks take no input: Take over is a control of its
+            // own, directly under the portrait of the partner deciding (#202).
+            if table.partners.deciding(who).is_some() {
+                let take_over = button(
+                    art,
+                    p,
+                    "Take over",
+                    Action::Partners(partners::Input::TakeOver(who)),
+                );
+                p.commands()
+                    .entity(take_over)
+                    .insert(AccessibleLabel::new(format!("Take over {}", who.name())));
+            }
         }
         for (name, area) in [
             ("Scenario", Area::Scenario),
@@ -552,6 +658,14 @@ pub(super) fn render(
         {
             button(art, p, "Resolve", Action::Resolve);
         }
+        if table.partners.enabled {
+            button(
+                art,
+                p,
+                talk::SPEAK,
+                Action::Partners(partners::Input::Speak),
+            );
+        }
         p.spawn(art.text("WASD: pan\nRight drag: orbit\nWheel: zoom\nHome: overview\n\nFocus does not select who acts.", 11., MUTED));
     });
     let token_decision = !table.is_presenting()
@@ -574,6 +688,7 @@ pub(super) fn render(
             TabGroup::new(1),
             ScrollPosition::default(),
             ScrollablePanel { inspection: false },
+            talk::Avoid,
         ),
         size,
         |p| {
@@ -607,19 +722,16 @@ pub(super) fn render(
             {
                 p.spawn(art.text(play::location_text(&view.prompt), 18., PAPER));
             }
-            if let Some(status) = play::status(view) {
+            if let Some(status) = play::status(view, &table.partners.awaited) {
                 p.spawn(art.text(status, 15., GOLD));
             }
             if let Some(summary) = view.play.as_ref().and_then(test_summary) {
                 p.spawn(art.text(summary, 15., GOLD));
             }
+            partner_lines(p, art, table, view);
             if !table.is_presenting() {
                 for (_, label) in controls::window_opportunities(view) {
-                    p.spawn(art.text(
-                        format!("Available now: {label}"),
-                        15.,
-                        Color::srgb(0.78, 0.65, 0.95),
-                    ));
+                    p.spawn(art.text(format!("Available now: {label}"), 15., OPPORTUNITY));
                 }
             }
             screen::controls(p, |row| {
@@ -628,13 +740,20 @@ pub(super) fn render(
                         let entity = control(
                             art,
                             row,
-                            choice_label(&choice),
+                            &table
+                                .partners
+                                .readiness_label(&choice.id, choice_label(&choice)),
                             Action::Choose(table.epoch, view.revision, choice.id.clone()),
                         );
+                        // While a partner decides, Enter must not undo the human's
+                        // own latest decision under it.
+                        let undo_under_partner =
+                            choice.id == "undo" && !table.partners.deciding.is_empty();
                         if index == 0
                             && !table.menu_open
                             && !table.context.is_open()
                             && !reveal_open
+                            && !undo_under_partner
                         {
                             row.commands().entity(entity).insert(AutoFocus);
                         }
@@ -702,6 +821,27 @@ pub(super) fn render(
             button(
                 art,
                 p,
+                if table.partners.menu_open {
+                    "Hide agent partners"
+                } else {
+                    "Agent partners"
+                },
+                Action::Partners(partners::Input::Menu),
+            );
+            if table.partners.menu_open {
+                partners_menu(p, art, table);
+            }
+            if table.partners.enabled || !table.talk.log.is_empty() {
+                button(
+                    art,
+                    p,
+                    "Table talk",
+                    Action::Inspect("Table talk".into(), talk::LOG.into()),
+                );
+            }
+            button(
+                art,
+                p,
                 if orbit.is_following() {
                     "Camera following: on"
                 } else {
@@ -736,6 +876,51 @@ pub(super) fn render(
         inspection(commands, table, view, art, size, context);
     }
 }
+
+/// Shown under the Agent partners button of the menu (#205).
+fn partners_menu(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table) {
+    let shown = &table.partners;
+    p.spawn(art.text(
+        "Hand investigators to agent partners for this session. The save does not record it.",
+        12.,
+        MUTED,
+    ));
+    for who in Investigator::ALL {
+        let label = match (shown.selected[who.index()], shown.joined[who.index()]) {
+            (false, _) => format!("{}: you play", who.name()),
+            (true, false) => format!("{}: a partner plays", who.name()),
+            (true, true) => format!("{}: a partner plays · joined", who.name()),
+        };
+        button(art, p, &label, Action::Partners(partners::Input::Hand(who)));
+    }
+    button(
+        art,
+        p,
+        if shown.enabled {
+            "Turn agent partners off"
+        } else {
+            "Enable agent partners"
+        },
+        Action::Partners(partners::Input::Enable(!shown.enabled)),
+    );
+    if let Some(problem) = &shown.problem {
+        p.spawn(art.text(problem, 12., GOLD));
+    }
+    if let Some(line) = &shown.line {
+        p.spawn(art.text(
+            "Paste into an agent's terminal (the game's terminal shows it too):",
+            12.,
+            MUTED,
+        ));
+        p.spawn(art.text(line, 13., PAPER));
+    }
+}
+
+/// Agent partners' cue in the decision display.
+const PARTNER: Color = Color::srgb(0.55, 0.82, 0.86);
+
+/// What a player may use in an open window, in the decision display.
+const OPPORTUNITY: Color = Color::srgb(0.78, 0.65, 0.95);
 
 fn restart_confirmation(commands: &mut Commands, table: &Table, art: &art::Art, size: Vec2) {
     let barrier = screen::inspection(
@@ -887,6 +1072,18 @@ fn inspection(
                     }
                     return;
                 }
+                if code == talk::LOG {
+                    for entry in table.talk.entries() {
+                        body.spawn((
+                            art.text(entry, 18., PAPER),
+                            Node {
+                                width: percent(100),
+                                ..default()
+                            },
+                        ));
+                    }
+                    return;
+                }
                 if let Some(image) = context.image(code) {
                     inspection_image(body, image, code, width);
                 }
@@ -954,9 +1151,12 @@ fn inspection(
                         results::details(body, art, report);
                     }
                 }
-                for line in &view.history {
+                for (index, line) in view.history.iter().enumerate() {
+                    let line = table
+                        .partners
+                        .history_line(index, controls::display_history(view, line));
                     body.spawn((
-                        art.text(controls::display_history(view, line), 18., PAPER),
+                        art.text(line, 18., PAPER),
                         Node {
                             width: percent(100),
                             ..default()
@@ -977,10 +1177,12 @@ fn inspection_image(
     code: &str,
     width: f32,
 ) {
-    let landscape = matches!(
-        code,
-        "06003" | "06005" | "60401" | "01105" | "01106" | "01107" | "01108" | "01109" | "01110"
-    );
+    // Investigator cards, agendas and acts are printed landscape.
+    let landscape = Investigator::ALL.iter().any(|who| who.card_code() == code)
+        || matches!(
+            code,
+            "01105" | "01106" | "01107" | "01108" | "01109" | "01110"
+        );
     screen::card_image(parent, image, landscape, width);
 }
 

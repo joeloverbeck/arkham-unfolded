@@ -48,6 +48,21 @@ pub enum UseKind {
     Key,
 }
 
+impl UseKind {
+    /// The name of these counters on a card, as Inspect and the table say it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ammo => "Ammo",
+            Self::Charge => "Charges",
+            Self::Supply => "Supplies",
+            Self::Resource => "Resources",
+            Self::Offering => "Offerings",
+            Self::Bounty => "Bounties",
+            Self::Key => "Keys",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct EnemyValues {
     pub combat: u8,
@@ -79,6 +94,9 @@ pub(super) struct CardDefinition {
     pub health: Option<u8>,
     pub sanity: Option<u8>,
     pub enemy: Option<EnemyValues>,
+    /// The printed Peril keyword: while the card's drawing resolves, its
+    /// investigator cannot confer with the other players (RR p.16).
+    pub peril: bool,
     pub effective_text: &'static str,
 }
 
@@ -86,6 +104,11 @@ impl CardDefinition {
     pub fn has_trait(&self, name: &str) -> bool {
         self.traits.contains(&name)
     }
+}
+
+/// Whether the card with `code` carries the printed Peril keyword.
+pub(super) fn peril(code: &str) -> bool {
+    definition(code).is_some_and(|card| card.peril)
 }
 
 // Each invocation supplies the printed fields; struct updates name the extra
@@ -111,6 +134,7 @@ macro_rules! card {
             health: None,
             sanity: None,
             enemy: None,
+            peril: false,
             effective_text: $text,
         }
     };
@@ -649,6 +673,7 @@ const CARDS: &[CardDefinition] = &[
             attack_horror: 0,
             health_per_investigator: false,
         }),
+        peril: true,
         ..card!(
             "06017",
             "Watcher from Another Dimension",

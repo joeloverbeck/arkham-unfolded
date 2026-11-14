@@ -5,7 +5,7 @@
 //! scenario rules; the runtime owns player decisions and interrupted tests.
 
 use super::runtime::{Frame, Game, HostileFixture, PendingRevelation, Phase};
-use super::{CardView, Investigator, cards, content};
+use super::{CardView, GroupCluePayment, Investigator, cards, content};
 use crate::{Choice, RuleError, TokenFace};
 use serde::{Deserialize, Serialize};
 
@@ -487,13 +487,13 @@ pub(super) fn choices(game: &Game, decision: &ScenarioDecision) -> Vec<Choice> {
                 // The Objective's optional payment is impossible, so declining
                 // is the step's one legal outcome, not an offered decision.
                 return vec![choice(
-                    "round-end:decline-act",
+                    GroupCluePayment::DECLINE,
                     "The Barrier does not advance: the investigators in the Hallway cannot pay its clues",
                 )];
             };
             vec![
                 choice(
-                    "round-end:decline-act",
+                    GroupCluePayment::DECLINE,
                     "Do not advance The Barrier at this round end",
                 ),
                 payment,
@@ -1727,6 +1727,7 @@ pub(super) fn lita_definition() -> &'static cards::CardDefinition {
         health: Some(3),
         sanity: Some(3),
         enemy: None,
+        peril: false,
         effective_text: "While you control Lita Chantler, she gains:\n\"Each investigator at your location gets +1 [combat].\n[reaction] When an investigator at your location successfully attacks a [[Monster]] enemy: That investigator deals +1 damage.\"",
     };
     &LITA

@@ -445,6 +445,13 @@ pub struct TestView {
     pub resolved: bool,
     /// The location named by an investigation operation.
     pub investigation_location: Option<String>,
+    /// What the test attempts (#210). This and `target` are not serialized, so the
+    /// headless driver's observation is unchanged; a deserialized view names neither.
+    #[serde(skip)]
+    pub operation: Option<super::TestAction>,
+    /// What the test acts on, or the card that calls for it.
+    #[serde(skip)]
+    pub target: Option<super::TestTarget>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -561,7 +568,7 @@ impl Game {
             .enumerate()
             .map(|(index, player)| {
                 let definition =
-                    cards::definition(["06003", "06005", "60401"][index]).expect("Investigator");
+                    cards::definition(player.investigator.card_code()).expect("Investigator");
                 PlayerState {
                     investigator: player.investigator,
                     location: "01111".into(),
@@ -620,7 +627,7 @@ impl Game {
             .iter()
             .enumerate()
             .map(|(index, investigator)| {
-                let definition = cards::definition(["06003", "06005", "60401"][index])
+                let definition = cards::definition(investigator.investigator.card_code())
                     .expect("Selected investigator");
                 PlayerState {
                     investigator: investigator.investigator,
@@ -1091,6 +1098,8 @@ impl Game {
                         TestOperation::Investigate { location, .. } => Some(location.clone()),
                         _ => None,
                     },
+                    operation: Some(super::presentation::test_action(test)),
+                    target: super::presentation::test_target(self, test),
                 }
             }),
             completed_tests: self.completed_tests.clone(),

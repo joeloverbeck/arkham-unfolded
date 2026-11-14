@@ -387,10 +387,22 @@ advancement at their proper timings. Optional effects such as Quick Thinking
 appear directly in the test flow with explicit use/decline; Continue never
 silently declines them. A generic administrative finish prompt is unnecessary.
 
-Every completed test, including encounter tests, has an untimed result modal and
-explicit centered Continue. Show prominent outcome/margin, one total-versus-
-difficulty comparison, quieter investigator/source context and aligned contribution
-rows. Full meaningful detail is visible by default: base skill, each card and owner,
+Every test names what it attempts. Throughout the test, the decision display
+names the investigator, the action and its target, such as **Tony Morgan fights
+Ghoul Minion** or **Patrice Hathaway investigates Study**. A test a card calls for
+names its skill and that card, such as **Tony Morgan tests Willpower for Crypt
+Chill**. A weapon, spell or event that makes the test follows as **with .45
+Automatic**.
+
+Every completed test, including encounter tests, has a result modal and explicit
+centered Continue. It is untimed, except for an agent partner's own result
+([Agent partners](#agent-partners-and-table-talk)). Show prominent outcome/margin,
+one total-versus-difficulty comparison, and quieter context naming the
+investigator, action and target, such as **Tony Morgan · Fight · Ghoul Minion** or
+**Tony Morgan · Willpower test · Crypt Chill**, then any card that made the test.
+A result read from the attempt's saved record, as after reopening, keeps that
+record's shorter name, such as **Fight** or **Crypt Chill**: the save does not keep
+the target. Show aligned contribution rows. Full meaningful detail is visible by default: base skill, each card and owner,
 abilities/paid bonuses, each revealed token, final total, difficulty and margin.
 Keep zero-valued tokens and separate canceled/ignored states; omit empty groups
 and duplicate outcome text. Show unknown chaos as pending, not zero. Show special
@@ -414,14 +426,16 @@ responses. A test already underway does not make a nested search/revelation
 test content: preserve the parent test while it resolves separately. A revelation
 that starts a test uses Test without duplicating its physical source.
 
-After each actual encounter-deck draw arrives, pause for an untimed reading
-overlay: dim the table, center a large upright intact card, label it **Encounter
+After each actual encounter-deck draw arrives, pause for a reading overlay. It is
+untimed, except for a draw by an agent partner's investigator
+([Agent partners](#agent-partners-and-table-talk)). Dim the table, center a large upright intact card, label it **Encounter
 card**, name its actual drawer, and show its title and printed type. When that
 encounter still awaits resolution, show its actual legal responses (such as Ward
 of Protection or A Test of Will) on this screen. Explain that **Continue** resolves
 the encounter unless a response is chosen first. Continue commits the existing
 resolution choice directly, so a mandatory test starts without another Resolve
-click in the investigator's drawer. Bind choices to the live revision and this
+click in the investigator's drawer. For a draw by a partner's investigator,
+Continue only closes the reading, and the partner resolves the card. Bind choices to the live revision and this
 physical encounter; retain the screen and display the error if saving fails.
 Already committed encounters need only reading acknowledgment. Preserve the
 existing tray/Test resolution afterward, including each enemy's own Spawn and
@@ -444,8 +458,8 @@ feedback removes the local Pause/Resume buttons; global Reduced motion still use
 a still surround. Pause decoration when unfocused and resume without catching up.
 Keep responses, Continue and **Read rules** outside the scrolling body, with button
 labels contained and focus outlines separated. Read rules provides readable
-effective text at small viewports. There is no countdown, flashing, camera movement
-or audio cue.
+effective text at small viewports. There is no flashing, camera movement or audio
+cue, and no countdown except a partner's reading delay.
 
 Give Hornet's nine visible candidates a 3-by-3 arrangement with its event alongside,
 and Backpack's six-card search its explicit completion. Display all cards the
@@ -812,41 +826,73 @@ mark. While a partner is deciding, its portrait and the compact decision display
 say so by investigator name and offer **Take over**. A stalled or disconnected
 partner stays shown as such until it returns or is taken over.
 
-A partner's decisions never move the camera. Follow frames only decisions of the
-human's own investigators and tests they take part in. The human may inspect,
-browse and use menus while a partner thinks. A partner's consequences wait until
-a blocking dialog closes, so none passes unseen.
+A partner's decisions never move the camera. Follow frames only the human's own
+investigators' decisions, the tests they test or commit to, play on their turns,
+and the scenario's end. The human may inspect, browse and use menus while a
+partner thinks. The partner learns of its decision meanwhile, but its choice
+waits until Inspect, the history, the menu or a card's menu closes. Its
+consequences therefore never start behind a dialog.
 
-A partner's own test results, and the encounter cards it draws, are shown as
-usual. They then continue on their own after a reading delay proportional to
-their text, with visible progress. Hovering or clicking holds the reading, and
-Enter continues it at once. Story readings, the scenario's end and readings that
-affect the human's investigators still wait for the human's Continue.
+A partner's own test results, and the encounter cards its investigators draw, are
+shown as usual. They then continue on their own after a reading delay
+proportional to their text, with a countdown and a progress bar. The pointer over
+the reading holds it, a click on it holds it until Continue, and Enter continues
+it at once. Reduced motion removes the bar, not the delay. The partner learns of
+its decision for an encounter card while the card is read, and its choice waits
+until the reading has continued. Some readings still wait for the human's
+Continue: story readings, anything at the scenario's end, and a result or
+encounter reading that names one of the human's investigators. A result names an
+investigator as its tester or through a committed card or bonus; an encounter
+reading does so by offering that investigator a response.
 
 In a shared decision, the other players' pending cards appear in the Test area,
 distinct from confirmed commitments. Each participating player's readiness is
 shown by investigator name. Confirm is the human's readiness; while it waits, it
 names whose readiness is outstanding. When another player's change clears the
 human's readiness, the cleared control shows it. Group clue payments show the
-same readiness beside each contribution.
+same readiness beside each contribution. Whenever another player's decision lists
+an option of the human's, such as a fast option in the player window before that
+investigator's action, A Test of Will against that investigator's revelation, or
+Jacqueline Fine's reaction to that investigator's chaos-token reveal, the decision
+display (or the token display, or the encounter reading) names what the human may
+use before that decision and offers Pass, naming what it comes before; the other
+player's choice waits for it. In the human's own decision, while another player
+holds an option there, his next choice, whether an action, a fast play of his own,
+ending the turn or a reveal, waits, named, until every such player has passed;
+Undo and his part of a shared decision are not held. When another player uses an
+option first, his waiting choice is not applied: the decision display says so, and
+he chooses again.
 
-**Speech boxes.** Each table-talk message appears in a speech box to the right of
-its speaker's portrait on the navigation rail, pointing at the portrait and
-floating over the scene. It never takes focus or input and never blocks camera
-control. It never covers the current decision, the turn indicator, the test
-display, an open menu or a reading. It stays readable for a delay proportional to
-its length, then fades; reduced motion removes the fade, not the delay. Hovering a
-portrait shows its latest message again. Further messages from the same speaker
-queue behind the visible one. Rebuilding the table's panels does not dismiss a
-speech box. A player who plays several investigators speaks beside the first of
-them in player order.
+**Speech boxes and action lines.** Each table-talk message appears in a speech box
+to the right of its speaker's portrait on the navigation rail, pointing at the
+portrait and floating over the scene. When a partner commits a decision, its choice
+label, such as `Fight Ghoul Minion`, appears in the same place beside the acting
+investigator's portrait as an action line: a square, edged plate with no tail and
+no quotation marks, a record rather than speech. The human's own decisions get no
+line. Neither takes focus or input, and neither blocks camera control. Neither
+covers the current decision, the turn indicator, the test display (the on-screen
+panel that shows a test and its reveal, not the Test area on the table), an open
+menu or a reading. Each keeps one width, and where the camera is over the table
+never narrows or hides one; one that would cover any of them is hidden, and its
+reading time waits until it shows again. Each stays readable for a delay proportional to
+its length, then fades; reduced motion removes the fade, not the delay. Further
+messages from the same speaker queue behind the visible one. An action line shows
+at once, stacked with that speaker's message, so table talk never delays it; the
+three newest lines show together. Hovering or focusing a portrait shows its latest
+message again and its investigator's action lines for the round; **Action history**
+remains the complete record. Rebuilding the table's panels dismisses neither. A
+player who plays several investigators speaks beside the first of them in player
+order. Both name investigators only.
 
-The human opens a message box from a button by the rail or with a key, types one
-message and sends it with Enter; Escape closes it without sending. While open, it
-holds keyboard input, so WASD and table keys type instead. A sent message appears
-as the human's speech box. During a peril encounter the message box is
-unavailable and says why. **Menu → Table talk** lists the session's messages with
-speaker and round; the list is not saved with the attempt.
+The human opens a message box from **Speak** on the rail or with T, types one
+message and sends it with Enter; Escape closes it without sending and keeps the
+draft. While open, it holds keyboard input, so WASD and table keys type instead; a
+dialog, the menu or a phase announcement closes it. A sent message appears as the
+human's speech box. During a peril encounter the message box is unavailable and
+says why. A peril card that resolves within the decision that draws it, such as
+Watcher from Another Dimension, keeps talk closed until the table has presented
+that decision. **Menu → Table talk** lists the session's messages with speaker and
+round; the list is not saved with the attempt.
 
 ## Text, symbols and diagnostics
 
