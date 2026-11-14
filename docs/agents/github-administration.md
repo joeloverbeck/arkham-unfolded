@@ -12,14 +12,15 @@ Issue closure is separate from merging: close an issue only after its acceptance
 
 ## Monitor required checks
 
-Keep the run and job IDs for the exact PR head. Start one watcher for the selected run:
+Keep the run and job IDs for the exact PR head. Start one watcher for that head, which finds its run and follows it:
 
 ```sh
-gh run watch <run-id> --repo joeloverbeck/arkham-unfolded \
-  --compact --exit-status --interval 30
+scripts/tools ci-watch --head <head-sha>
 ```
 
-Let the watcher run in a tool session, retrieving bounded output while keeping the user informed. Await its terminal result; `--exit-status` makes a failed run return nonzero. If watch mode is unavailable, or its output leaves the current phase unclear, use the compact job-status query:
+[The tracker workflow](issue-tracker.md#conventions) gives its time limits and exit codes; it prints the run ID it follows. For a run already identified, `gh run watch <run-id> --repo joeloverbeck/arkham-unfolded --compact --exit-status --interval 30` follows it alone.
+
+Let the watcher run in a tool session, retrieving bounded output while keeping the user informed. Await its terminal result: `ci-watch` exits 0 only when the head's run succeeded, and `--exit-status` makes a failed run return nonzero from `gh run watch`. If watch mode is unavailable, or its output leaves the current phase unclear, use the compact job-status query:
 
 ```sh
 gh api repos/joeloverbeck/arkham-unfolded/actions/jobs/<job-id> \

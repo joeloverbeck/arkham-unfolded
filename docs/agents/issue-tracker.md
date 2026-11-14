@@ -22,17 +22,29 @@ When preparing a publication artifact, require a completed exit code of `0` from
 Public text goes through `scripts/tools publish`: `issue` for a new issue's title and body, `comment` (with `--close` for an authorized closure), `edit-comment --id <comment-id>` for the current handoff, and `pr-body --pr <number>`. Each runs the [public handoff preflight](native-verification.md#public-handoff-preflight) on the exact text before contacting GitHub, sends the file's bytes as the request body, and reads the stored text back. A mismatch stops the command before any further write, such as a closure. With raw `gh api`, `-f body=@FILE` sends the literal text `@FILE`; only `-F` and `--input` read files.
 
 For an authorized PR, identify the workflow run for the accepted head once, then
-keep one watcher:
+keep one watcher. One command does both:
 
 ```sh
-gh run watch RUN_ID --repo joeloverbeck/arkham-unfolded --compact --exit-status --interval 30
+scripts/tools ci-watch --head ACCEPTED_HEAD_SHA
 ```
+
+It waits up to 10 minutes for a `Check` run of that exact head to appear, then
+follows the newest such run, polling every 30 seconds, for up to an hour in all;
+`--appear-timeout-seconds`, `--interval-seconds` and `--timeout-seconds` change
+these. It prints each new run, attempt or status, and finally the conclusion and
+the run's head. It exits 0 only when that run succeeded, 1 when it completed
+otherwise, 2 when no run appeared or completed in time or GitHub's answer failed
+or could not be trusted, such as a run listed for another head, and 130 when
+interrupted. For a run already identified,
+`gh run watch RUN_ID --repo joeloverbeck/arkham-unfolded --compact --exit-status --interval 30`
+follows it alone.
 
 If the tool returns a running session, wait on that same session for up to
 45 seconds per call, within the required progress-update interval. Use the wait
 itself instead of alternating short polls with separate sleeps. Use its output
 for intermediate status; a second watcher or repeated `gh run view` calls add no evidence while
-it remains connected. After it exits, read the terminal run status and `headSha`
+it remains connected. After it exits, read the terminal conclusion and head (`ci-watch`
+prints both; after `gh run watch`, read the run's status and `headSha`)
 and verify the expected revision before the guarded merge with
 [`scripts/tools merge-reviewed`](github-administration.md#merge-an-accepted-pr). If the connection is
 lost, inspect the run once before reconnecting; losing the watcher does not

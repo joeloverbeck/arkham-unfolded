@@ -32,6 +32,11 @@ pub struct AddArgs {
     /// Create this branch at `--from`. Without it, the checkout is detached.
     #[arg(long)]
     branch: Option<String>,
+    /// Refuse when less than this many GiB are free on the target's filesystem. With 0 it
+    /// never refuses for lack of space, but an error reading the free disk or the caches
+    /// still stops it.
+    #[arg(long, default_value_t = 40)]
+    min_free_gib: u64,
 }
 
 #[derive(Args)]
@@ -60,7 +65,15 @@ pub fn run(command: Command) -> Result<u8> {
     }
 }
 
+/// The owner's Cargo target, which every checkout made by `add` builds into.
+pub fn owner_target() -> Result<PathBuf> {
+    Ok(Repository::here()?.owner.join("target"))
+}
+
 fn add(repository: &Repository, args: AddArgs) -> Result<u8> {
+    let target = repository.owner.join("target");
+    // Before anything is created: each checkout's builds add caches of their own.
+    crate::target::require_free(&target, args.min_free_gib)?;
     let dir = resolve_new(&args.dir)?;
     ensure!(
         !dir.starts_with(fs::canonicalize(&repository.owner)?),
@@ -77,7 +90,6 @@ fn add(repository: &Repository, args: AddArgs) -> Result<u8> {
         fs::create_dir_all(parent)?;
     }
     fs::create_dir(&dir).with_context(|| format!("create {}", dir.display()))?;
-    let target = repository.owner.join("target");
     let checkout = dir.join(CHECKOUT);
     let created = fs::create_dir(dir.join(".cargo"))
         .map_err(anyhow::Error::from)

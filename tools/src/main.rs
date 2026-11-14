@@ -1,5 +1,6 @@
 mod check;
 mod ci;
+mod ci_watch;
 mod desktop;
 mod github;
 mod handoff;
@@ -15,6 +16,7 @@ mod reader;
 mod renderer;
 mod review;
 mod seat;
+mod target;
 mod tracked;
 mod worktree;
 
@@ -43,6 +45,11 @@ enum Command {
     CheckPublicHandoff(handoff::Check),
     /// Verify exact PR revisions and required checks, then perform one authorized merge.
     MergeReviewed(merge::MergeArgs),
+    /// Follow the newest Check run of one exact head until it completes, then print its
+    /// conclusion and head. Exit 0 only when it succeeded, 1 when it completed otherwise,
+    /// and 2 when no run appeared or completed in time or GitHub's answer was not trusted.
+    #[command(after_help = "Watching CI: docs/agents/issue-tracker.md#conventions")]
+    CiWatch(ci_watch::Args),
     /// Post or replace public issue and PR text from a file, proved by exact readback.
     Publish {
         #[command(subcommand)]
@@ -94,6 +101,15 @@ enum Command {
         #[command(subcommand)]
         command: worktree::Command,
     },
+    /// Owner-run: list the owner's target's incremental caches unused for a given time, and
+    /// remove them with --delete. Exit 1 when a symbolic link was refused or a cache could not
+    /// be checked or fully removed, and 2 when the owner's target, free disk or caches could not
+    /// be read. With --delete, an interrupt before the last cache's removal begins stops it
+    /// before the next cache with exit 130.
+    #[command(
+        after_help = "Shared target: docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts"
+    )]
+    TargetPrune(target::Args),
     /// Owner-run bounded perf capture of an already running, exact executable.
     ProfileNative(profile::Args),
 }
@@ -118,6 +134,7 @@ fn main() -> ExitCode {
         Command::ResourceSummary(args) => check::resources::summary::run(args),
         Command::CheckPublicHandoff(args) => handoff::run(args).map(|_| 0),
         Command::MergeReviewed(args) => merge::run(args),
+        Command::CiWatch(args) => ci_watch::run(args),
         Command::Publish { command } => publish::run(command),
         Command::ReadContext(args) => write_context_page(reader::page(args)),
         Command::ReadContextBatch(args) => write_context_page(reader::batch(args)),
@@ -132,6 +149,7 @@ fn main() -> ExitCode {
         Command::ProfileNative(args) => profile::capture(args),
         Command::Seat(args) => seat::run(args),
         Command::SeatWait(args) => seat::wait(args),
+        Command::TargetPrune(args) => target::run(args),
         Command::Partner(args) => partner::run(args),
         Command::Worktree { command } => worktree::run(command),
     };
