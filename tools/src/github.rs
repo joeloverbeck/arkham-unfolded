@@ -15,6 +15,15 @@ pub const REPO: &str = "github.com/joeloverbeck/arkham-unfolded";
 /// The repository's REST path prefix for `gh api`.
 pub const API_REPO: &str = "repos/joeloverbeck/arkham-unfolded";
 
+/// A full 40-character commit SHA, in lower case, as GitHub reports it.
+pub fn commit_sha(value: &str) -> Result<String, String> {
+    if value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(value.to_ascii_lowercase())
+    } else {
+        Err("expected a full 40-character commit SHA".into())
+    }
+}
+
 pub fn json<T: DeserializeOwned>(args: &[&str]) -> Result<T> {
     serde_json::from_slice(&gh(args)?).context("Invalid or incomplete GitHub JSON response")
 }

@@ -1,6 +1,6 @@
 //! One authorized protected-main merge; every prerequisite must succeed first.
 
-use crate::github::{REPO, gh, json};
+use crate::github::{REPO, commit_sha, gh, json};
 use anyhow::{Context, Result, ensure};
 use clap::Args;
 use serde::Deserialize;
@@ -17,14 +17,6 @@ pub struct MergeArgs {
     /// Exact reviewed main tip (full 40-character commit SHA).
     #[arg(long, value_parser = commit_sha)]
     base: String,
-}
-
-fn commit_sha(value: &str) -> Result<String, String> {
-    if value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        Ok(value.to_ascii_lowercase())
-    } else {
-        Err("expected a full 40-character commit SHA".into())
-    }
 }
 
 #[derive(Deserialize)]
