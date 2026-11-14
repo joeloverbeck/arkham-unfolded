@@ -12,6 +12,8 @@ use super::*;
 use crate::gathering::Investigator::{Jacqueline, Patrice, Tony};
 use std::collections::BTreeMap;
 
+mod opportunities;
+
 /// The rules session as a table, settled whenever the test says so; it records
 /// whom each commit was attributed to.
 struct Rules {
