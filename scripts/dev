@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+
+# A call nested in this checkout's protected command already has its scope and lock.
+if [[ "${ARKHAM_DEV_CHECKOUT-}" == "$PWD" ]]; then exec -- "$@"; fi
+export ARKHAM_DEV_CHECKOUT="$PWD"
 
 # FD 3 carries child stdout across flock's diagnostic redirection, then closes.
 # Both shells exec immediately; systemd and flock still own limits and locking.
