@@ -8,6 +8,12 @@ For slow startup, rendering or camera movement, begin with the [native-performan
 
 ### Prepare a compact native handoff
 
+**Owner-operated review:** the handoff reply itself carries the exact copyable
+launch command, working directory, numbered actions and expected visible results,
+estimated time and stop conditions. Link the retained private checklist as the
+record. This applies when the owner runs the application; it does not require a
+desktop-control grant for the agent.
+
 During implementation planning, identify the exact visible state needed for each
 native check and the shortest repeatable route to it. For a state-specific check,
 reuse or extend the existing review-save builders to open directly at that state,
@@ -39,6 +45,15 @@ with it. The real-asset test is optional for source-only checks and requires a
 complete external collection; CI remains independent of private artwork. Carry
 forward successful records when later changes do not invalidate their evidence.
 
+For final rendered verification, finish the required repository checks first,
+then build the normal launch executable with `scripts/dev`, record its hash and
+exercise the prepared route against those bytes. Tests can replace Cargo's
+normal executable even when source is unchanged. Before the owner handoff,
+compare the executable with the recorded hash; if later checks or builds replaced
+it, restore and verify identical bytes or repeat the affected rendered check.
+Earlier exploratory captures remain useful diagnostics. Documentation or test-only
+changes do not themselves require a new rendered run.
+
 For fixture builders that read commands, use `record-check --stdin-file PATH`;
 the default is null stdin, including when the caller supplies a pipe or heredoc.
 The helper retains the exact input and its hash. Add `--expect-file PATH` for each
@@ -58,7 +73,7 @@ and the expected setup screen; update README's launch/recovery instructions in
 the same handoff. Keep the existing save bytes intact. Prepared diagnostic checkpoints have a separate purpose and
 do not establish that the ordinary launch command works.
 
-Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. Keep the following runnable checklist in private local evidence and link it directly to the owner in the conversation. When the owner operates the run, the reply itself also carries the exact copyable launch command and numbered route; the checklist remains the record. The issue's [current handoff](issue-tracker.md#current-handoff) contains the compact public status below. Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from the private checklist and this procedure without reconstructing the implementation transcript.
+Finish source reading, tool discovery, builds, headless checks and route planning before starting a short desktop-control interval. Run `scripts/tools native session --help` to check supported operations and limits without opening a desktop session; confirm that the intended route fits them. Retain the runnable checklist below in private local evidence. The issue's [current handoff](issue-tracker.md#current-handoff) contains the compact public status below. Complete any needed context transfer before starting the clock; the receiving context should be able to execute the route from the private checklist and this procedure without reconstructing the implementation transcript.
 
 ```text
 Private checklist — do not upload:
@@ -108,6 +123,13 @@ Private evidence: retained locally; runnable checklist supplied directly to owne
 Keep host paths, runnable commands containing them, save/artwork locations and raw environment records in the private checklist. Repository-relative source paths and public issue/PR links remain useful public evidence. Before posting a public handoff or PR body, run `scripts/tools check-public-handoff BODY_FILE` and review the intended disclosure; [`scripts/tools publish`](issue-tracker.md#conventions) repeats the check on the exact text it sends. The command reads at most 1 MiB, reports line numbers without echoing contents, and refuses these literal forms: `/home/`, `/Users/`, `~/`, `file://`, `/tmp/`, `/run/user/`, and `local/verification/`. It never edits or publishes. Passing establishes only absence of those forms; encoded paths, other mount points, credentials and prose meaning still require review. A refusal calls for keeping the detail private, not disguising the same disclosure.
 
 ### Capture preparation
+
+For a Gathering tabletop test that must reach a live decision, use
+[`tests::live_controls::reach_live_choice`](../../src/gathering_tabletop/tests/live_controls.rs)
+with the expected reading sequence and choice ID. It activates the declared
+reading controls and requires an unobstructed direct choice; unexpected dialogs
+fail setup. Keep reading-barrier tests at their barrier rather than clearing it.
+
 Before scheduling a capture from a prepared save, load it through the production startup path in the headless UI host and check the expected visible controls and blocking dialogs, alongside the game state. Where the prepared artwork and a graphics adapter are available, an [agent seat](../../README.md#agent-seat) `observe` of a copy of the save, after `settle` reports the table settled, serves as this check: `table.modal`, `table.controls` and the `available` flag of each `table.components` entry report the dialogs, controls and availability cues. A save containing expanded locations may reopen on an Act story panel; location membership alone does not establish capture readiness. Preserve that reading barrier and prepare an ordinary later decision when the route requires an unobscured map. Record the result in the handoff above. Gathering's `gathering_tabletop::tests::review_saves` checks the seed-89 initial, Hard Knocks and expanded-map inputs, including the obstructing story transition; its retained result is in the [current verification status](../experiments/gathering-setup.md#presentation-correction-verification). These checks do not establish GPU rendering or native readability.
 
 When the owner supplies physical input, present the complete human route, expected results, capture pauses and stopping conditions before starting the timer or opening the game. Once the agreed interval begins, announce the absolute close deadline and let the owner follow that route without switching back to chat for routine instructions or intermediate answers. Request one combined report after the window closes, including anything untested. Interrupt during the run only for a planned capture pause, a failure, a stop condition or a necessary deadline reminder. The existing allowance and cleanup reserve still apply; delivering instructions late does not extend them.

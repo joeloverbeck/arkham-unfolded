@@ -7,20 +7,6 @@ fn choose(session: &mut Session, id: &str) {
     session.choose(session.revision(), id).unwrap();
 }
 
-fn reach_live_controls(app: &mut App) {
-    for _ in 0..8 {
-        settle_automatic_resolution(app);
-        if !app.world().resource::<Table>().modal() {
-            return;
-        }
-        let entity = button_with_label(app, "Continue")
-            .expect("A prepared consequence may reopen an ordinary reading stop");
-        app.world_mut().trigger(Activate { entity });
-        app.update();
-    }
-    panic!("Reading stops did not reach the live decision");
-}
-
 fn direct_button(app: &mut App, id: &str) -> Entity {
     assert!(!app.world().resource::<Table>().context.is_open());
     let world = app.world_mut();
@@ -53,7 +39,7 @@ fn deny_is_directly_playable_beside_apply_and_keeps_the_other_attack_aspect() {
         Table::new(session, directory.path().join("deny.json")),
         false,
     );
-    reach_live_controls(&mut app);
+    reach_live_choice(&mut app, &[], "harm:confirm");
     direct_button(&mut app, "harm:confirm");
     let card = before.play.as_ref().unwrap().players[2]
         .hand
@@ -111,7 +97,7 @@ fn idol_is_direct_and_keeps_its_hand_cost_and_aspect_selection() {
         Table::new(session, directory.path().join("idol.json")),
         false,
     );
-    reach_live_controls(&mut app);
+    reach_live_choice(&mut app, &[], "harm:confirm");
     direct_button(&mut app, "harm:confirm");
     let entity = direct_button(&mut app, &idol);
     app.world_mut().trigger(Activate { entity });
@@ -176,7 +162,7 @@ fn agenda_discard_exposes_deny_and_proceed_before_any_random_discard() {
         Table::new(session, directory.path().join("agenda.json")),
         false,
     );
-    reach_live_controls(&mut app);
+    reach_live_choice(&mut app, &[], "agenda-discard:resolve");
     direct_button(&mut app, "agenda-discard:resolve");
     let entity = direct_button(&mut app, &deny);
     assert_eq!(
@@ -219,7 +205,7 @@ fn player_card_horror_never_offers_deny_or_an_empty_prevention_pause() {
         Table::new(session, directory.path().join("player-horror.json")),
         false,
     );
-    reach_live_controls(&mut app);
+    reach_live_choice(&mut app, &[], "undo");
     let view = app.world().resource::<Table>().session.observe();
     assert!(view.play.as_ref().unwrap().pending.harm.is_none());
     assert_eq!(
@@ -270,7 +256,7 @@ fn prevention_controls_belong_to_the_human_only_when_they_control_the_investigat
         app.insert_resource(partners::PartnerSocket(
             directory.path().join("partners.sock"),
         ));
-        reach_live_controls(&mut app);
+        reach_live_choice(&mut app, &[], "harm:confirm");
         press(&mut app, "Menu");
         press(&mut app, "Agent partners");
         for who in &assigned {
@@ -348,7 +334,7 @@ fn harm_labels_only_name_the_present_types_and_apply_the_displayed_amounts() {
             Table::new(session, directory.path().join("labels.json")),
             false,
         );
-        reach_live_controls(&mut app);
+        reach_live_choice(&mut app, &[], "harm:confirm");
         let shown = rendered_text(&mut app);
         assert!(
             shown.contains(&format!("Pending {amounts} on Jacqueline Fine")),

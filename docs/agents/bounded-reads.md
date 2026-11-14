@@ -1,6 +1,6 @@
 # Bounded reads
 
-Use these helpers when your harness truncates tool output, and to search Codex memory. They print verbatim, line-numbered excerpts under one byte budget and refuse rather than silently shorten. Claude Code's Read (with offset and limit) and Grep tools already return such excerpts.
+Use this procedure before searching memory or session history, or composing a read of several documents or excerpts. Select the files and ranges first, then use one shared output budget; for multiple excerpts, start with [Batch](#batch). These helpers print verbatim, line-numbered excerpts and refuse rather than silently shorten. Claude Code's Read (with offset and limit) and Grep tools already return such excerpts; their combined output still needs one budget.
 
 ## Codex memory
 

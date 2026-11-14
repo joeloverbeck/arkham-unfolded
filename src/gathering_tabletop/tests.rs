@@ -186,6 +186,8 @@ mod doom;
 mod draws;
 mod encounter;
 mod harm_prevention;
+mod live_controls;
+use live_controls::{ReadingStop, reach_live_choice};
 mod location_markers;
 mod map_motion;
 mod navigation;

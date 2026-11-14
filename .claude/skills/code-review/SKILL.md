@@ -14,6 +14,8 @@ The issue tracker should have been provided to you. If not, tell the user to run
 
 ## Process
 
+Before gathering standards, specifications or historical context, follow [bounded reads](../../../docs/agents/bounded-reads.md). Use the same shared-budget procedure in each reviewer's brief.
+
 ### 1. Pin the fixed point and candidate
 
 Resolve the supplied fixed point (commit, branch, tag or merge-base) to an immutable commit. For an implementation handoff, use its recorded starting commit. Ask only when neither the request nor the handoff establishes a fixed point.

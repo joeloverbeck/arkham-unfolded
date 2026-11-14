@@ -7,9 +7,9 @@ description: Diagnosis loop for hard bugs and performance regressions. Use when 
 
 A discipline for hard bugs. Classify the report first; unexplained failures follow the diagnosis phases below.
 
-When exploring the codebase, read `GLOSSARY.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
+Start with [bounded reads](../../../docs/agents/bounded-reads.md) before gathering repository context, memory or session history. It owns source selection and the shared reading budget. For check failures, use the [log-reading procedure](../../../docs/agents/issue-tracker.md#bounded-context-reads).
 
-For logs, source excerpts and saved issue bodies, follow the [bounded-reading procedure](../../../docs/agents/issue-tracker.md#bounded-context-reads).
+When exploring the codebase, read `GLOSSARY.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
 Apply the repository's implementation-language contract to every project-owned harness, including temporary ones. Write executable diagnostic logic in Rust. Existing external tools may be invoked directly; shell wrappers remain invocation-only.
 
