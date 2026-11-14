@@ -11,7 +11,7 @@ use bevy::{
 use std::{collections::BTreeMap, path::PathBuf, process::ExitCode};
 
 // Import the real geometry and renderer implementations without widening library APIs.
-#[allow(dead_code)]
+#[allow(dead_code, unused_imports)]
 #[rustfmt::skip]
 #[path = "../src/tabletop_camera.rs"]
 mod tabletop_camera;
