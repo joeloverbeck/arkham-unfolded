@@ -780,27 +780,19 @@ fn room_opens_the_whole_public_enemy_group_once() {
         })
         .collect::<Vec<_>>();
     assert!(
-        labels.iter().any(
-            |label| label.starts_with("Inspect Swarm of Rats · 1 of 2\n")
-                && label.contains("Damage ")
-                && label.contains("Doom ")
-                && label.contains("Bounties ")
-        ),
-        "{labels:?}"
-    );
-    assert!(
-        labels.iter().any(
-            |label| label.starts_with("Inspect Swarm of Rats · 2 of 2\n")
-                && label.contains("Damage ")
-                && label.contains("Doom ")
-                && label.contains("Bounties ")
-        ),
+        labels
+            .iter()
+            .any(|label| label == "Inspect Swarm of Rats · 1 of 2"),
         "{labels:?}"
     );
     assert!(
         labels
             .iter()
-            .any(|label| label.starts_with("Inspect Ghoul Priest\n")),
+            .any(|label| label == "Inspect Swarm of Rats · 2 of 2"),
+        "{labels:?}"
+    );
+    assert!(
+        labels.iter().any(|label| label == "Inspect Ghoul Priest"),
         "{labels:?}"
     );
     let choices = source_choices(&view, &source);
@@ -889,85 +881,67 @@ fn a_single_enemy_inspect_button_omits_the_repeated_public_state() {
 fn enemy_inspection_keeps_each_public_physical_state_without_showing_its_id() {
     let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringHunters);
     let view = session.observe();
-    let expected = view
-        .play
-        .as_ref()
-        .unwrap()
-        .scenario
-        .enemies
-        .iter()
-        .find(|enemy| enemy.engaged.is_none() && enemy.location == "01112")
-        .unwrap()
-        .clone();
-    let directory = tempfile::tempdir().unwrap();
-    let mut app = super::super::tests::host(directory.path().join("enemy-inspection.json"));
-    app.insert_resource(Table::new(
-        session.clone(),
-        directory.path().join("enemy-inspection.json"),
-    ));
-    let image = app
-        .world_mut()
-        .resource_mut::<Assets<Image>>()
-        .add(Image::default());
-    let role: &'static str = Box::leak(format!("card-{}", expected.card.code).into_boxed_str());
-    app.insert_resource(art::Art::with_images_for_test([(role, image.clone())]));
-    app.update();
-    super::super::tests::click_source(&mut app, Source::Location("01112".into()));
-    let key = format!("enemy:{}", expected.card.id);
-    let table = app.world().resource::<Table>();
-    let generation = table.context.generation();
-    let epoch = table.epoch;
-    let revision = table.view().revision;
-    let selection = table.context.selected.as_ref().unwrap();
-    let targets = inspections(&table.view(), selection);
-    let target = targets.iter().find(|target| target.code == key).unwrap();
-    assert!(
-        target
-            .details
-            .as_ref()
-            .unwrap()
-            .contains(&format!("Damage {}", expected.damage))
-    );
-    app.world_mut()
-        .resource_mut::<Actions>()
-        .0
-        .push(Action::ContextInspect(
-            generation,
-            epoch,
-            revision,
-            expected.card.title.clone(),
-            key.clone(),
+    let enemies = &view.play.as_ref().unwrap().scenario.enemies;
+    assert_eq!(enemies.len(), 3);
+    for (expected, (label, readiness)) in enemies.iter().zip([
+        ("Inspect Ghoul Priest", "Ready"),
+        ("Inspect Swarm of Rats · 1 of 2", "Ready"),
+        ("Inspect Swarm of Rats · 2 of 2", "Exhausted"),
+    ]) {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = super::super::tests::host(directory.path().join("enemy-inspection.json"));
+        app.insert_resource(Table::new(
+            session.clone(),
+            directory.path().join("enemy-inspection.json"),
         ));
-    app.update();
-    assert_eq!(
-        app.world()
-            .resource::<Table>()
-            .inspection
-            .as_ref()
-            .unwrap()
-            .1,
-        key
-    );
-    let world = app.world_mut();
-    assert!(
-        world
-            .query::<&ImageNode>()
-            .iter(world)
-            .any(|node| node.image == image)
-    );
-    let text = super::super::tests::rendered_text(&mut app);
-    for detail in [
-        format!("Damage {}", expected.damage),
-        format!("Doom {}", expected.doom),
-        format!("Bounties {}", expected.bounties),
-    ] {
-        assert!(text.contains(&detail), "{text}");
+        let image = app
+            .world_mut()
+            .resource_mut::<Assets<Image>>()
+            .add(Image::default());
+        let role: &'static str = Box::leak(format!("card-{}", expected.card.code).into_boxed_str());
+        app.insert_resource(art::Art::with_images_for_test([(role, image.clone())]));
+        app.update();
+        super::super::tests::click_source(&mut app, Source::Location("01112".into()));
+        let key = format!("enemy:{}", expected.card.id);
+        let entity = super::super::tests::choice_button(&mut app, label).unwrap();
+        app.world_mut().trigger(Activate { entity });
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<Table>()
+                .inspection
+                .as_ref()
+                .unwrap()
+                .1,
+            key
+        );
+        let world = app.world_mut();
+        assert!(
+            world
+                .query::<&ImageNode>()
+                .iter(world)
+                .any(|node| node.image == image)
+        );
+        let text = super::super::tests::rendered_text(&mut app);
+        assert!(
+            text.lines()
+                .any(|line| line.starts_with(readiness) && line.contains("Damage")),
+            "{text}"
+        );
+        assert!(text.contains("Unengaged  /  Hallway"), "{text}");
+        for detail in [
+            format!("Damage {}", expected.damage),
+            format!("Doom {}", expected.doom),
+            format!("Bounties {}", expected.bounties),
+        ] {
+            assert!(text.contains(&detail), "{text}");
+        }
+        assert!(!text.contains(&key));
+        assert_eq!(
+            app.world().resource::<Table>().session.clone(),
+            session.clone()
+        );
     }
-    assert!(!text.contains(&key));
-    assert_eq!(
-        app.world().resource::<Table>().session.clone(),
-        session.clone()
-    );
 }
 
 #[test]

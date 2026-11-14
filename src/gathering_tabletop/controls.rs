@@ -128,7 +128,6 @@ impl Context {
 struct Inspection {
     title: String,
     code: String,
-    details: Option<String>,
 }
 
 /// Public pile members supply inspection faces; no deck contents or private
@@ -145,7 +144,6 @@ fn inspections(view: &Observation, selection: &Selection) -> Vec<Inspection> {
                 .map(|card| Inspection {
                     title: card.title.into(),
                     code: card.code.into(),
-                    details: None,
                 })
                 .collect();
         }
@@ -154,7 +152,6 @@ fn inspections(view: &Observation, selection: &Selection) -> Vec<Inspection> {
         return vec![Inspection {
             title: "The Gathering · Standard reference".into(),
             code: "01104".into(),
-            details: None,
         }];
     }
     let mut cards: Vec<&crate::gathering::CardView> = vec![];
@@ -222,15 +219,13 @@ fn inspections(view: &Observation, selection: &Selection) -> Vec<Inspection> {
         .filter(|card| identities.insert(card.id))
         .map(|card| {
             let key = format!("enemy:{}", card.id);
-            let details = play::enemy_inspection(view, &key).map(|(_, details)| details);
             Inspection {
                 title: card.title.clone(),
-                code: if details.is_some() {
+                code: if play::enemy_inspection(view, &key).is_some() {
                     key
                 } else {
                     card.code.clone()
                 },
-                details,
             }
         })
         .collect::<Vec<_>>();
@@ -240,7 +235,6 @@ fn inspections(view: &Observation, selection: &Selection) -> Vec<Inspection> {
             Inspection {
                 title: selection.title.clone(),
                 code: selection.inspect_code.clone(),
-                details: None,
             },
         );
     }
@@ -1194,14 +1188,6 @@ pub(super) fn render(
                 } else {
                     format!("Inspect {}", target.title)
                 }
-            };
-            let label = if targets.len() > 1 {
-                target
-                    .details
-                    .as_ref()
-                    .map_or(label.clone(), |details| format!("{label}\n{details}"))
-            } else {
-                label
             };
             content.push(Item::Action(
                 label,

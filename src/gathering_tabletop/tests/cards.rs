@@ -26,6 +26,39 @@ pub(super) fn at_public_moment(
     app
 }
 
+#[test]
+fn study_with_one_quarry_has_a_concise_named_inspection_row() {
+    let session = Session::with_hostile_fixture(crate::gathering::HostileFixture::Tony(
+        crate::gathering::TonyEffectFixture::WatchSuccess,
+    ));
+    let mut play = session.observe().play.unwrap();
+    // The base witness is after Act 1. Restore Study only in this displayed
+    // observation; this is a menu witness, not a playable rules fixture.
+    let mut study = play.scenario.locations[0].clone();
+    study.code = "01111".into();
+    play.scenario.locations.push(study);
+    play.scenario.enemies.truncate(1);
+    let enemy = &mut play.scenario.enemies[0];
+    enemy.card.code = "06012".into();
+    enemy.card.title = "Tony's Quarry".into();
+    enemy.location = "01111".into();
+    enemy.engaged = None;
+    enemy.exhausted = false;
+    enemy.damage = 0;
+    enemy.doom = 1;
+    enemy.bounties = 1;
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = at_public_moment(
+        session,
+        play,
+        directory.path().join("quarry-menu.json"),
+        true,
+    );
+    click_source(&mut app, controls::Source::Location("01111".into()));
+    assert!(choice_button(&mut app, "Inspect Study").is_some());
+    assert!(choice_button(&mut app, "Inspect Tony's Quarry").is_some());
+}
+
 fn by_source(app: &mut App, source: controls::Source) -> Entity {
     let world = app.world_mut();
     world
