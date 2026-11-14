@@ -1,14 +1,9 @@
 //! Physical totals and action allowances. Callers supply state and own lifetimes.
 use crate::tabletop_layout::{self as layout, InvestigatorClass};
 use bevy::{asset::RenderAssetUsages, prelude::*, render::render_resource::PrimitiveTopology};
-
-pub(crate) struct CounterPlugin;
-
-impl Plugin for CounterPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(PostUpdate, position_labels);
-    }
-}
+pub(crate) use unfolded_tabletop::count_label::CountLabelPlugin as CounterPlugin;
+#[cfg(test)]
+pub(crate) use unfolded_tabletop::count_label::Label as CounterLabel;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CounterKind {
@@ -76,12 +71,6 @@ pub(crate) struct CounterVisual {
     pub scale: f32,
 }
 
-#[derive(Component)]
-pub(crate) struct CounterLabel {
-    token: Entity,
-    offset: Vec3,
-}
-
 /// Empty assets retain their use counter; other zero totals have no token.
 pub(crate) fn spawn_count(
     commands: &mut Commands,
@@ -127,7 +116,6 @@ fn spawn_count_inner(
         kind: visual.kind,
         amount: visual.amount,
     };
-    let caption = counter.amount.to_string();
     let accessible = format!("{} {}", counter.kind.name(), counter.amount);
     let token = spawn_body(
         commands,
@@ -139,10 +127,10 @@ fn spawn_count_inner(
         visual.scale,
     );
     commands.entity(token).insert(counter);
-    let label = spawn_label(
+    let label = unfolded_tabletop::count_label::spawn(
         commands,
         token,
-        caption,
+        u32::from(visual.amount),
         Vec3::new(
             0.0,
             0.04,
@@ -151,9 +139,13 @@ fn spawn_count_inner(
                 _ => 0.336,
             },
         ),
-        None,
     );
     commands.entity(label).insert((
+        TextFont {
+            font_size: FontSize::Px(11.0),
+            ..default()
+        },
+        TextColor(Color::srgb(0.94, 0.92, 0.84)),
         AccessibleLabel::new(accessible),
         Node {
             position_type: PositionType::Absolute,
@@ -537,66 +529,6 @@ fn spawn_allowance_marker(
     root.id()
 }
 
-fn spawn_label(
-    commands: &mut Commands,
-    token: Entity,
-    text: String,
-    offset: Vec3,
-    width: Option<f32>,
-) -> Entity {
-    commands
-        .spawn((
-            Text::new(text),
-            TextFont {
-                font_size: FontSize::Px(11.0),
-                ..default()
-            },
-            TextColor(Color::srgb(0.94, 0.92, 0.84)),
-            TextLayout::justify(Justify::Center),
-            Node {
-                position_type: PositionType::Absolute,
-                width: width.map_or(Val::Auto, px),
-                ..default()
-            },
-            CounterLabel { token, offset },
-            Pickable::IGNORE,
-        ))
-        .id()
-}
-
-fn position_labels(
-    mut commands: Commands,
-    camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    transforms: Query<&Transform>,
-    mut labels: Query<(
-        Entity,
-        &CounterLabel,
-        &ComputedNode,
-        &mut Node,
-        &mut Visibility,
-    )>,
-) {
-    let Ok((camera, camera_at)) = camera.single() else {
-        return;
-    };
-    for (entity, label, computed, mut node, mut visibility) in &mut labels {
-        let Ok(at) = transforms.get(label.token) else {
-            commands.entity(entity).despawn();
-            continue;
-        };
-        if let Ok(point) =
-            camera.world_to_viewport(camera_at, at.translation + label.offset * at.scale)
-        {
-            let width = computed.size().x * computed.inverse_scale_factor;
-            node.left = px(point.x - width / 2.0);
-            node.top = px(point.y);
-            *visibility = Visibility::Visible;
-        } else {
-            *visibility = Visibility::Hidden;
-        }
-    }
-}
-
 pub(crate) fn clue_transfer_position(start: Vec3, destination: Vec3, fraction: f32) -> Vec3 {
     let fraction = fraction.clamp(0.0, 1.0);
     let eased = fraction * fraction * (3.0 - 2.0 * fraction);
@@ -672,13 +604,14 @@ mod tests {
 
     #[test]
     fn totals_hide_zero_and_keep_numeric_captions_with_accessible_names() {
-        let mut world = World::new();
+        let mut app = App::new();
+        let world = app.world_mut();
         let mut queue = CommandQueue::default();
         let mut meshes = Assets::<Mesh>::default();
         let mut materials = Assets::<StandardMaterial>::default();
         let mut images = Assets::<Image>::default();
         let image = images.add(Image::default());
-        let mut commands = Commands::new(&mut queue, &world);
+        let mut commands = Commands::new(&mut queue, world);
         assert!(
             spawn_count(
                 &mut commands,
@@ -720,7 +653,7 @@ mod tests {
             },
         )
         .unwrap();
-        queue.apply(&mut world);
+        queue.apply(world);
         assert_eq!(world.get::<Text>(resource_label).unwrap().0, "5");
         assert_eq!(world.get::<Text>(clue_label).unwrap().0, "2");
         assert_eq!(
@@ -732,8 +665,84 @@ mod tests {
             CounterKind::Resource
         );
         assert_eq!(world.get::<Counter>(clue).unwrap().amount, 2);
-        assert_eq!(world.query::<&Counter>().iter(&world).count(), 2);
+        assert_eq!(world.query::<&Counter>().iter(world).count(), 2);
         assert_eq!(world.get::<CounterLabel>(clue_label).unwrap().token, clue);
+        assert_eq!(
+            world.get::<CounterLabel>(resource_label).unwrap().offset,
+            Vec3::new(0., 0.04, 0.403)
+        );
+        assert_eq!(
+            world.get::<TextFont>(resource_label).unwrap().font_size,
+            FontSize::Px(11.)
+        );
+        assert_eq!(
+            world.get::<TextColor>(resource_label).unwrap().0,
+            Color::srgb(0.94, 0.92, 0.84)
+        );
+
+        // Exercise the installed shared plugin on the actual Arkham token and
+        // caption, including its inherited scale and consumer styling.
+        use bevy::camera::{CameraProjection, ComputedCameraValues, RenderTargetInfo};
+        app.add_plugins(CounterPlugin);
+        let camera = app
+            .world_mut()
+            .spawn((
+                Camera3d::default(),
+                Camera {
+                    computed: ComputedCameraValues {
+                        clip_from_view: PerspectiveProjection {
+                            fov: std::f32::consts::FRAC_PI_2,
+                            aspect_ratio: 2.,
+                            ..default()
+                        }
+                        .get_clip_from_view(),
+                        target_info: Some(RenderTargetInfo {
+                            physical_size: UVec2::new(1000, 500),
+                            scale_factor: 1.,
+                        }),
+                        ..default()
+                    },
+                    ..default()
+                },
+                GlobalTransform::IDENTITY,
+            ))
+            .id();
+        app.world_mut()
+            .get_mut::<Transform>(resource)
+            .unwrap()
+            .translation = Vec3::new(0., 0., -10.);
+        app.world_mut()
+            .entity_mut(resource_label)
+            .insert(ComputedNode {
+                size: Vec2::new(40., 14.),
+                inverse_scale_factor: 1.,
+                ..default()
+            });
+        app.update();
+        assert_eq!(
+            app.world().get::<Node>(resource_label).unwrap().left,
+            px(480.)
+        );
+        app.world_mut()
+            .entity_mut(camera)
+            .insert(GlobalTransform::from_translation(Vec3::X));
+        app.update();
+        assert!(
+            matches!(app.world().get::<Node>(resource_label).unwrap().left, Val::Px(x) if x < 480.)
+        );
+        app.world_mut()
+            .get_mut::<Transform>(resource)
+            .unwrap()
+            .translation
+            .z = 10.;
+        app.update();
+        assert_eq!(
+            *app.world().get::<Visibility>(resource_label).unwrap(),
+            Visibility::Hidden
+        );
+        app.world_mut().despawn(resource);
+        app.update();
+        assert!(app.world().get_entity(resource_label).is_err());
     }
 
     #[test]
