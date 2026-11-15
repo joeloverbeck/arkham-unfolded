@@ -37,7 +37,7 @@ use crate::{
     tabletop_pacing::PresentationTime,
     tabletop_support::asset_settings::Collection,
 };
-use bevy::{camera::primitives::Aabb, ui::CalculatedClip};
+use bevy::camera::primitives::Aabb;
 use serde_json::json;
 use std::time::Duration;
 
@@ -649,26 +649,14 @@ fn controls(world: &mut World) -> Vec<Control> {
     let mut shown: Vec<Control> = buttons
         .into_iter()
         .filter_map(|entity| {
-            let node = world.get::<ComputedNode>(entity)?;
-            let transform = world.get::<UiGlobalTransform>(entity)?;
-            if node.is_empty()
-                || !world
-                    .get::<InheritedVisibility>(entity)
-                    .is_some_and(|visibility| visibility.get())
-            {
-                return None;
-            }
-            let position = transform.translation * node.inverse_scale_factor;
-            let clipped = world
-                .get::<CalculatedClip>(entity)
-                .is_some_and(|clip| !clip.contains_point(transform.translation));
+            let target = unfolded_tabletop::seat::ui_target(world, entity, viewport)?;
             Some(Control {
                 choice: world
                     .get::<ChoiceControl>(entity)
                     .map(|choice| choice.0.clone()),
                 label: control_label(world, entity),
-                position,
-                on_screen: !clipped && within(viewport, position),
+                position: target.position,
+                on_screen: target.on_screen,
                 focused: focus == Some(entity),
                 menu: has_ancestor::<controls::Menu>(world, entity),
             })
