@@ -53,5 +53,5 @@ jobs:
         run: scripts/check-clippy
       - name: Application tests
         run: scripts/check-app
-      - name: Renderer upload policy tests
+      - name: Renderer patch pin
         run: scripts/check-renderer

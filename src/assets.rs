@@ -876,6 +876,8 @@ mod tests {
         bytes
     }
 
+    // Holds Arkham's mapping of `Transform::PngCrop` onto the shared crop; the
+    // crop's bounds and refusals are held in unfolded-tabletop's `tests/assets.rs`.
     #[test]
     fn atlas_crop_preserves_selected_pixels_and_alpha_without_resizing() {
         let bytes = transform(
@@ -899,50 +901,6 @@ mod tests {
             &[
                 6, 20, 30, 0, 7, 40, 50, 128, 10, 60, 70, 255, 11, 80, 90, 255
             ]
-        );
-    }
-
-    #[test]
-    fn atlas_crop_refuses_invalid_bounds_dimensions_and_invalid_images() {
-        for (source_width, source_height, x, y, width, height) in [
-            (4, 3, 0, 0, 0, 1),
-            (4, 3, 0, 0, 1, 0),
-            (4, 3, 3, 0, 2, 1),
-            (4, 3, 0, 2, 1, 2),
-            (4, 3, u32::MAX, 0, 2, 1),
-            (4, 3, 0, u32::MAX, 1, 2),
-            (3, 3, 0, 0, 2, 2),
-            (5, 3, 0, 0, 2, 2),
-            (2048, 3, 0, 0, 2, 2),
-        ] {
-            assert!(
-                transform(
-                    png_fixture(),
-                    &Transform::PngCrop {
-                        source_width,
-                        source_height,
-                        x,
-                        y,
-                        width,
-                        height,
-                    }
-                )
-                .is_err()
-            );
-        }
-        assert!(
-            transform(
-                b"not a png".to_vec(),
-                &Transform::PngCrop {
-                    source_width: 4,
-                    source_height: 3,
-                    x: 1,
-                    y: 1,
-                    width: 2,
-                    height: 2,
-                }
-            )
-            .is_err()
         );
     }
 

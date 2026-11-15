@@ -69,7 +69,7 @@ enum Command {
     ReviewVerify(review::VerifyArgs),
     /// Reject generated files in Git's index, including force-added paths.
     CheckTrackedFiles,
-    /// Test the Vulkan staging workaround from the exact pinned shared producer.
+    /// Verify that the Vulkan staging workaround resolves to the pinned shared producer.
     CheckRenderer,
     /// Select the repository's pinned Rust override for the CI cache key.
     PrepareCiToolchain,

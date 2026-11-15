@@ -4965,7 +4965,7 @@ dependencies = [
 [[package]]
 name = "unfolded-dev-tools"
 version = "0.1.0"
-source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=6891bbe683dd2670200b47a76a62f964c4a569e2#6891bbe683dd2670200b47a76a62f964c4a569e2"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=7889fe7226fd046daaf748630da9d4984405f99b#7889fe7226fd046daaf748630da9d4984405f99b"
 dependencies = [
  "anyhow",
  "clap",
@@ -4980,7 +4980,7 @@ dependencies = [
 [[package]]
 name = "unfolded-tabletop"
 version = "0.1.0"
-source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=0d9a2264f3fd670132e9886417e27a621e62929b#0d9a2264f3fd670132e9886417e27a621e62929b"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=7889fe7226fd046daaf748630da9d4984405f99b#7889fe7226fd046daaf748630da9d4984405f99b"
 dependencies = [
  "anyhow",
  "bevy",
@@ -5299,7 +5299,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "30.0.1"
-source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=0d9a2264f3fd670132e9886417e27a621e62929b#0d9a2264f3fd670132e9886417e27a621e62929b"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=7889fe7226fd046daaf748630da9d4984405f99b#7889fe7226fd046daaf748630da9d4984405f99b"
 dependencies = [
  "android_system_properties",
  "arrayvec",
