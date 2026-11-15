@@ -93,6 +93,7 @@ In batch form the seat reads one JSON request per line on standard input and wri
 | `{"op":"observe"}` | Return the current observation without advancing the table. |
 | `{"op":"activate","revision":N,"component":"NAME"}` | Move the pointer onto the named component, then press and release. |
 | `{"op":"activate","revision":N,"choice":"ID"}` | The same for the one shown control offering that choice. |
+| `{"op":"scroll","revision":N,"choice":"ID","y":-4}` | Wheel down over that visible choice; `component` can name a visible component instead. |
 | `{"op":"key","revision":N,"key":"Escape"}` | Press and release one key: `Escape`, `Enter`, `Space`, `Tab`, `Home`, `End`, `PageUp`, `PageDown`, the four `Arrow` keys, `KeyW`, `KeyA`, `KeyS`, `KeyD`, `Minus` or `Equal`. |
 | `{"op":"key","revision":N,"key":"Enter","focused":"NAME"}` | The same for `Enter` or `Space`, which can commit a choice or dismiss a reading: it presses only when the focused control is the one named. |
 | `{"op":"settle","steps":N}` | Step the table until it settles or `steps` is reached (default 1,800, at most 7,200). An `unsettled` response names what remains; ask again to continue. |
@@ -110,7 +111,9 @@ Selecting a component and choosing from its menu are two activations, as for a p
 
 `{"op":"key","revision":12,"key":"Enter"}` is refused, as is the first request above when no reading is up and focus is on another control.
 
-**Stop after a refusal.** Standard input is one connection. After the first `refused` response on it, including one for a malformed line, or the first `missed` activation, the seat stops acting: every later `activate` and `key` is answered with status `skipped`, `ok: false`, nothing pressed, and an `error` naming the refused or missed request and its reason. A miss presses nothing, or cancels its press before release, but it shows the table was not as the agent assumed, so it stops the connection as a refusal does. `observe`, `settle` and `capture` are still served, and `quit` still ends the session. In this batch, sent when no reading was up, the Enter is refused, so the activation planned after it is skipped instead of acting on a table the agent did not expect:
+**Wheel input.** `scroll` requires the current revision and exactly one visible named target. It checks actual picking before sending ordinary wheel input, retaining the table's modal and camera-capture policy. `y` and optional `x` (default zero) are wheel lines: each must be finite and between -32 and 32, with at least one nonzero axis. Negative `y` scrolls down. A `scrolled` response reports input delivery, position and delta; inspect the resulting table or capture to verify movement. Offscreen or covered targets are refused or missed, as with activation.
+
+**Stop after a refusal.** Standard input is one connection. After the first `refused` response on it, including one for a malformed line, or the first `missed` target, the seat stops acting: every later `activate`, `key` and `scroll` is answered with status `skipped`, `ok: false`, no input sent, and an `error` naming the refused or missed request and its reason. A miss presses nothing, or cancels its press before release, but it shows the table was not as the agent assumed, so it stops the connection as a refusal does. `observe`, `settle` and `capture` are still served, and `quit` still ends the session. In this batch, sent when no reading was up, the Enter is refused, so the activation planned after it is skipped instead of acting on a table the agent did not expect:
 
 ```text
 {"op":"key","revision":12,"key":"Enter","focused":"Continue"}   refused: focus is on another control
