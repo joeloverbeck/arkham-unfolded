@@ -1,4 +1,4 @@
-mod check;
+use unfolded_dev_tools::check;
 mod ci;
 mod ci_watch;
 mod desktop;
@@ -12,7 +12,7 @@ mod portal;
 use arkham_tools::process;
 mod profile;
 mod publish;
-mod reader;
+use unfolded_dev_tools::reader;
 mod renderer;
 mod review;
 mod seat;

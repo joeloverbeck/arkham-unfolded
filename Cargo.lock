@@ -231,6 +231,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "toml",
+ "unfolded-dev-tools",
  "unfolded-tabletop",
  "x11rb",
  "zbus",
@@ -4959,6 +4960,21 @@ dependencies = [
  "memoffset",
  "tempfile",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "unfolded-dev-tools"
+version = "0.1.0"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=6891bbe683dd2670200b47a76a62f964c4a569e2#6891bbe683dd2670200b47a76a62f964c4a569e2"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ctrlc",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]

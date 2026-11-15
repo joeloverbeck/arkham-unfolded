@@ -330,3 +330,14 @@ The offerings counter uses [“Chalice drops” by Lorc](https://game-icons.net/
 The public [Haskell implementation](https://github.com/halogenandtoast/ArkhamHorror) is a secondary implementation reference. Official game sources and independently established expectations determine intended rules behavior.
 
 Original project code is available under the [MIT license](LICENSE). This does not grant rights to the game's artwork, card text, rules publications, or other third-party material. The copied repository constitution remains separately identified governing text.
+
+### Shared development mechanisms
+
+The existing bounded readers, recorded checks/resource summaries and process/file
+support now come from the immutable `unfolded-dev-tools` dependency in
+`tools/Cargo.toml`. [Issue #249](https://github.com/joeloverbeck/arkham-unfolded/issues/249)
+coordinates [shared #27](https://github.com/joeloverbeck/unfolded-tabletop/issues/27)
+and Netrunner #37. CLI names and behavior remain here; GitHub publication and
+native permission policy remain Arkham-owned. Existing command integration tests
+exercise the migrated paths. The shared crate is separate from the game runtime;
+rollback restores the former implementation and tool dependency pin together.
