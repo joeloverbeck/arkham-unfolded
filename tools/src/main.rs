@@ -101,11 +101,13 @@ enum Command {
         #[command(subcommand)]
         command: worktree::Command,
     },
-    /// Owner-run: list the owner's target's incremental caches unused for a given time, and
-    /// remove them with --delete. Exit 1 when a symbolic link was refused or a cache could not
-    /// be checked or fully removed, and 2 when the owner's target, free disk or caches could not
-    /// be read. With --delete, an interrupt before the last cache's removal begins stops it
-    /// before the next cache with exit 130.
+    /// Owner-run: list the owner's target's incremental caches, and the builds of this
+    /// repository's packages that a newer build of the same target supersedes, unused for a
+    /// given time, and remove them with --delete. Exit 1 when a symbolic link was refused, a
+    /// profile directory could not be locked, or a cache or build could not be checked or fully
+    /// removed, and 2 when the owner's target, free disk, packages, caches or builds could not
+    /// be read. With --delete, an interrupt before the last removal begins stops it before the
+    /// next with exit 130.
     #[command(
         after_help = "Shared target: docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts"
     )]
