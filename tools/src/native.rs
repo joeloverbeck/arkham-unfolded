@@ -427,20 +427,7 @@ fn build(args: Build) -> Result<u8> {
     Ok(0)
 }
 
-pub fn digest(path: &Path) -> Result<String> {
-    let mut file = File::open(path).with_context(|| format!("Cannot read {}", path.display()))?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0; 65536];
-    loop {
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        hasher.update(&buffer[..count]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
+pub use unfolded_dev_tools::digest;
 /// Resolve the existing ancestors too, so symlinks cannot disguise checkout output.
 pub fn resolve(path: &Path) -> Result<PathBuf> {
     let absolute = std::path::absolute(path)?;
