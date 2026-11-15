@@ -46,7 +46,7 @@ Joel selected [agent partners](../adr/0007-agent-partners-join-the-running-table
 
 ## Code shared with the sibling games
 
-Arkham consumes `unfolded-tabletop`, the public library that holds mechanisms first written here, at one immutable revision pinned in `Cargo.toml` and `Cargo.lock`. Rules, cards, saves and presentation policy stay in this repository, in adapters over the shared code, and shared code imports no game's domain. A change to a shared mechanism reaches Arkham only through a new pin, with Arkham's own checks and acceptance.
+Arkham consumes `unfolded-tabletop`, the public repository that holds mechanisms first written here, at one immutable revision pinned in `Cargo.toml` and `Cargo.lock`. Its library, driver and asset build take only that repository's packages that cannot depend on Bevy; the `tabletop` feature adds its `unfolded-tabletop` package. Rules, cards, saves and presentation policy stay in this repository, in adapters over the shared code, and shared code imports no game's domain. A change to a shared mechanism reaches Arkham only through a new pin, with Arkham's own checks and acceptance.
 
 `EVID-6` asks for three materially different real cases and a holdout before cross-product adoption. Sharing with fewer rests on two scoped waivers under `ADOPT-2`. Neither edits the constitution, and neither establishes general library fitness or acceptance of an untested migration.
 

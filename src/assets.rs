@@ -343,7 +343,7 @@ pub enum PrepareResult {
     AlreadyPresent,
 }
 
-pub use unfolded_tabletop::assets::AssetError;
+pub use unfolded_assets::AssetError;
 
 /// Prepare a fresh directory, or reuse an identical complete directory without writing it.
 /// Changed, incomplete or unknown destinations are refused. Source files are never written.
@@ -481,7 +481,7 @@ fn prepare_selection_with_inputs(
         )));
     }
 
-    unfolded_tabletop::assets::publish_directory(stage.path(), &output)?;
+    unfolded_assets::publish_directory(stage.path(), &output)?;
     Ok(PrepareResult::Created)
 }
 
@@ -495,9 +495,9 @@ fn transform(bytes: Vec<u8>, transform: &Transform) -> Result<Vec<u8>, AssetErro
             y,
             width,
             height,
-        } => unfolded_tabletop::assets::crop_png(
+        } => unfolded_assets::crop_png(
             &bytes,
-            unfolded_tabletop::assets::PngCrop {
+            unfolded_assets::PngCrop {
                 source_width,
                 source_height,
                 x,
@@ -545,13 +545,11 @@ fn slice(bytes: &[u8], offset: usize, length: usize) -> Result<&[u8], AssetError
         })
 }
 
-use unfolded_tabletop::assets::{
-    read_bounded, read_verified, regular_file, relative_path, verify_bytes,
-};
+use unfolded_assets::{read_bounded, read_verified, regular_file, relative_path, verify_bytes};
 
 // Resolve existing ancestors before creating anything, including an output with
 // new parent directories. This prevents accidentally preparing inside the archive.
-use unfolded_tabletop::assets::resolve_output;
+use unfolded_assets::resolve_output;
 
 // Reusing an existing directory is stricter than rendering it: preparation must
 // refuse unknown files/directories rather than silently bless or remove them.
