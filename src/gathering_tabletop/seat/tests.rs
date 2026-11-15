@@ -15,8 +15,7 @@ use std::{
 
 const LEAD_TONY: &str = "lead:tony";
 
-#[path = "../../../tests/support/gathering_olive_review.rs"]
-mod olive_scroll_review;
+use super::super::tests::review_saves::olive_review as olive_scroll_review;
 
 struct Sitting {
     app: App,
@@ -1586,7 +1585,8 @@ fn real_seat_wheel_scrolls_existing_options_without_changing_game_or_camera() {
     let mut seated = open(&options).unwrap();
     scroll_existing_options(&mut seated.seat, &mut seated.app, &save);
     if let Some(keep) = std::env::var_os("ARKHAM_SEAT_CAPTURE_DIR") {
-        let picture = PathBuf::from(keep).join("wheel-options.png");
+        let keep = PathBuf::from(keep);
+        let picture = keep.join("wheel-options.png");
         let response = tell(
             &mut seated.seat,
             &mut seated.app,
@@ -1594,6 +1594,7 @@ fn real_seat_wheel_scrolls_existing_options_without_changing_game_or_camera() {
         );
         assert_eq!(response["status"], "captured", "{response}");
         assert!(not_blank(&picture));
+        std::fs::copy(&save, keep.join("wheel-input.json")).unwrap();
     }
 }
 
