@@ -1,8 +1,6 @@
 //! Names and doom readouts are ink on their mats, independent of camera projection.
 use super::*;
-use bevy::{
-    camera::RenderTarget, mesh::VertexAttributeValues, render::render_resource::TextureFormat,
-};
+use unfolded_tabletop::printed::{Atlas, Settings};
 
 const NAMES: [&str; 14] = [
     "Scenario",
@@ -27,7 +25,7 @@ const ROW: u32 = 64;
 pub(super) struct PrintedLabel;
 
 #[derive(Default)]
-pub(super) struct Surfaces(Option<Handle<Image>>);
+pub(super) struct Surfaces(Atlas);
 
 impl Surfaces {
     pub(super) fn render(
@@ -40,72 +38,29 @@ impl Surfaces {
         ui_scale: f32,
     ) {
         let doom = doom::readout(context);
-        let image = self
-            .0
-            .get_or_insert_with(|| {
-                images.add(Image::new_target_texture(
-                    WIDTH,
-                    ROW * NAMES.len() as u32,
-                    TextureFormat::Bgra8UnormSrgb,
-                    None,
-                ))
+        let rows = NAMES
+            .map(|name| {
+                let (text, size, color) = match name {
+                    "Total doom" => (doom.as_deref().unwrap_or(""), 42., PAPER),
+                    _ => (name, 40., MUTED),
+                };
+                context.art.text(text, size / ui_scale, color)
             })
-            .clone();
-        let camera = commands
-            .spawn((
-                ScenePiece,
-                Camera2d,
-                Camera {
-                    order: -20,
-                    clear_color: ClearColorConfig::Custom(Color::NONE),
-                    ..default()
-                },
-                RenderTarget::Image(image.clone().into()),
-            ))
-            .id();
-        commands
-            .spawn((
-                ScenePiece,
-                UiTargetCamera(camera),
-                Node {
-                    width: percent(100),
-                    height: percent(100),
-                    flex_direction: FlexDirection::Column,
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ))
-            .with_children(|root| {
-                for name in NAMES {
-                    let (text, size, color) = match name {
-                        "Total doom" => (doom.as_deref().unwrap_or(""), 42., PAPER),
-                        _ => (name, 40., MUTED),
-                    };
-                    root.spawn((
-                        Node {
-                            width: px(WIDTH as f32 / ui_scale),
-                            height: px(ROW as f32 / ui_scale),
-                            flex_shrink: 0.,
-                            align_items: AlignItems::Center,
-                            justify_content: JustifyContent::Center,
-                            ..default()
-                        },
-                        Pickable::IGNORE,
-                    ))
-                    .with_children(|row| {
-                        row.spawn((
-                            context.art.text(text, size / ui_scale, color),
-                            Pickable::IGNORE,
-                        ));
-                    });
-                }
-            });
-        let material = materials.add(StandardMaterial {
-            base_color_texture: Some(image),
-            alpha_mode: AlphaMode::Blend,
-            unlit: true,
-            ..default()
-        });
+            .into();
+        let printed = self.0.render(
+            commands,
+            materials,
+            images,
+            Settings {
+                width: WIDTH,
+                row_height: ROW,
+                camera_order: -20,
+                ui_scale,
+            },
+            rows,
+        );
+        commands.entity(printed.camera).insert(ScenePiece);
+        commands.entity(printed.root).insert(ScenePiece);
         let mut labels = vec![
             (
                 "Scenario",
@@ -134,29 +89,19 @@ impl Surfaces {
                 .iter()
                 .position(|entry| *entry == name)
                 .expect("known mat name");
-            let mut mesh = Plane3d::default()
-                .mesh()
-                .size(height * WIDTH as f32 / ROW as f32, height)
-                .build();
-            if let Some(VertexAttributeValues::Float32x2(uvs)) =
-                mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
-            {
-                for uv in uvs {
-                    uv[1] = (row as f32 + uv[1]) / NAMES.len() as f32;
-                }
-            }
             at.y = 0.071;
-            let entity = commands
-                .spawn((
-                    ScenePiece,
-                    PrintedLabel,
-                    Name::new(format!("Printed area label: {name}")),
-                    Mesh3d(meshes.add(mesh)),
-                    MeshMaterial3d(material.clone()),
-                    Transform::from_translation(at),
-                    Pickable::IGNORE,
-                ))
-                .id();
+            let entity = printed.spawn(
+                commands,
+                meshes,
+                row,
+                height,
+                Transform::from_translation(at),
+            );
+            commands.entity(entity).insert((
+                ScenePiece,
+                PrintedLabel,
+                Name::new(format!("Printed area label: {name}")),
+            ));
             if name == "Total doom" {
                 commands
                     .entity(entity)
