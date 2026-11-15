@@ -7,7 +7,7 @@ publish = false
 default-run = "arkham-tools"
 
 [dependencies]
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "82f78a627d4e5d00ddad6f59f0d3e0802456720a" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "14a5990759538e51c851aee1b13ce8cca3858e30" }
 anyhow = "1"
 async-io = "2"
 clap = { version = "4", features = ["derive"] }

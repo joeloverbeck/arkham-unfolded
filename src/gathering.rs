@@ -80,8 +80,8 @@ use crate::{Choice, RuleError, TokenFace};
 pub use investigator::Investigator;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, io::Read};
-use unfolded_tabletop::random::SeededRandom;
+use std::collections::BTreeMap;
+use unfolded_tabletop::random::{SeededRandom, fresh_seed};
 
 pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-runtime-v4";
 const DECK_PROJECTION: &str = include_str!("../docs/research/issue-1-decks.json");
@@ -420,11 +420,9 @@ fn standard_bag() -> Vec<TokenFace> {
 
 impl Session {
     pub fn new() -> Result<Self, RuleError> {
-        let mut seed = [0; 8];
-        std::fs::File::open("/dev/urandom")
-            .and_then(|mut file| file.read_exact(&mut seed))
+        let seed = fresh_seed()
             .map_err(|error| RuleError(format!("Could not obtain setup randomness: {error}")))?;
-        Self::from_seed(u64::from_le_bytes(seed))
+        Self::from_seed(seed)
     }
 
     /// Privileged reproducible test input; never exposed by a player client.
