@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
-use unfolded_tabletop::seat_client;
+use unfolded_seat_client as seat_client;
 
 #[derive(ClapArgs)]
 pub struct Args {

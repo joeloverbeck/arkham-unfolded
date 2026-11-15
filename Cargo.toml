@@ -11,13 +11,19 @@ resolver = "3"
 
 [features]
 default = []
-# The agent seat comes from the shared library's `seat` feature, which implies its
-# `render` and brings what the held session needs to start its own session and to wait
-# for requests until its idle end.
+# The table package comes only with the table. Its `seat` feature implies its `render`
+# and brings what the held session needs to start its own session and to wait for
+# requests until its idle end.
 tabletop = ["dep:bevy", "unfolded-tabletop/seat"]
 
 [dependencies]
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "7889fe7226fd046daaf748630da9d4984405f99b" }
+# Shared packages, all at one revision of one repository, the same as the `wgpu-hal`
+# patch below and `tools`' pins. The library, driver and asset build take only the
+# packages that cannot depend on Bevy; `unfolded-tabletop` holds what draws.
+unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "138e050cc35c7807cddba0122d93b5a35774f285" }
+unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "138e050cc35c7807cddba0122d93b5a35774f285" }
+unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "138e050cc35c7807cddba0122d93b5a35774f285" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "138e050cc35c7807cddba0122d93b5a35774f285", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -71,4 +77,4 @@ debug = "full"
 debug = "full"
 
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "7889fe7226fd046daaf748630da9d4984405f99b" }
+wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "138e050cc35c7807cddba0122d93b5a35774f285" }

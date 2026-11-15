@@ -81,7 +81,7 @@ pub use investigator::Investigator;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use unfolded_tabletop::random::{SeededRandom, fresh_seed};
+use unfolded_random::{SeededRandom, fresh_seed};
 
 pub const SOURCE_REVISION: &str = "c35be2c:issue-89-gathering-runtime-v4";
 const DECK_PROJECTION: &str = include_str!("../docs/research/issue-1-decks.json");
