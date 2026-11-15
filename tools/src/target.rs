@@ -1,8 +1,11 @@
 //! The owner's Cargo target, which every checkout `worktree add` makes builds into: free
 //! disk on its filesystem, its incremental caches, and `target-prune`, which removes those
-//! caches once unused. Each checkout's own `codegen-units` value gives it caches of its own
-//! that outlive the checkout: docs/agents/measured-and-baseline-checks.md, "One target for
-//! several checkouts".
+//! caches and superseded builds of the repository's own packages once unused. Each
+//! checkout's own `codegen-units` value gives it caches and builds of its own that outlive
+//! the checkout: docs/agents/measured-and-baseline-checks.md, "One target for several
+//! checkouts".
+
+mod outputs;
 
 use crate::process;
 use anyhow::{Context, Result, bail, ensure};
@@ -24,10 +27,11 @@ const INCREMENTAL: &str = "incremental";
 
 #[derive(ClapArgs)]
 pub struct Args {
-    /// List the caches unused for at least this long, in hours or days such as 12h or 7d.
+    /// List the caches and superseded builds unused for at least this long, in hours or days
+    /// such as 12h or 7d.
     #[arg(long, default_value = "7d", value_parser = age)]
     older_than: Age,
-    /// Remove the listed caches. Without it, nothing is removed.
+    /// Remove what is listed. Without it, nothing is removed.
     #[arg(long)]
     delete: bool,
 }
@@ -202,10 +206,12 @@ pub fn require_free(target: &Path, floor_gib: u64) -> Result<()> {
 pub fn run(args: Args) -> Result<u8> {
     let target = crate::worktree::owner_target()?;
     let caches = Caches::scan(&target)?;
+    let outputs = outputs::Outputs::scan(&target, &crate::worktree::packages()?)?;
     println!(
-        "target {}: incremental caches {}; free disk {}",
+        "target {}: incremental caches {}; builds of this repository's packages {}; free disk {}",
         target.display(),
         size(caches.bytes()),
+        size(outputs.bytes()),
         size(free_bytes(&target)?)
     );
     let threshold = args.older_than.duration();
@@ -213,12 +219,21 @@ pub fn run(args: Args) -> Result<u8> {
         .caches()
         .filter(|cache| cache.unused_for >= threshold)
         .collect();
-    for cache in &unused {
+    let superseded = outputs.unused(threshold);
+    let listing = unused
+        .iter()
+        .map(|cache| (cache.bytes, cache.unused_for, &cache.name))
+        .chain(
+            superseded
+                .iter()
+                .map(|output| (output.bytes, output.unused_for, &output.name)),
+        );
+    for (bytes, unused_for, name) in listing {
         println!(
             "{:>10}  unused {:>4}  {}",
-            size(cache.bytes),
-            since(cache.unused_for),
-            cache.name.display()
+            size(bytes),
+            since(unused_for),
+            name.display()
         );
     }
     let mut failed = false;
@@ -229,19 +244,27 @@ pub fn run(args: Args) -> Result<u8> {
         );
         failed = true;
     }
-    let listed: u64 = unused.iter().map(|cache| cache.bytes).sum();
+    for link in &outputs.links {
+        eprintln!(
+            "arkham-tools: refused {}: a symbolic link where a build or its directory would be",
+            link.display()
+        );
+        failed = true;
+    }
     if !args.delete {
         println!(
-            "{} caches, {}, unused for {} or more; nothing removed: run again with --delete to \
-             remove them",
+            "{} caches, {}, and {} superseded builds, {}, unused for {} or more; nothing \
+             removed: run again with --delete to remove them",
             unused.len(),
-            size(listed),
+            size(unused.iter().map(|cache| cache.bytes).sum()),
+            superseded.len(),
+            size(superseded.iter().map(|output| output.bytes).sum()),
             args.older_than
         );
         return Ok(u8::from(failed));
     }
-    // Bytes freed include those of a cache only partly removed.
-    let (mut count, mut freed) = (0, 0);
+    // Bytes freed include those of a cache or build only partly removed.
+    let (mut count, mut builds, mut freed) = (0, 0, 0);
     for cache in unused {
         if process::interrupted() {
             bail!(
@@ -249,45 +272,101 @@ pub fn run(args: Args) -> Result<u8> {
                 size(freed)
             );
         }
-        let name = cache.name.display();
-        match remove(cache, threshold) {
-            Ok(Outcome::Removed) => {
-                println!("removed {name}");
-                count += 1;
-                freed += cache.bytes;
-            }
-            Ok(Outcome::Gone) => println!("already gone {name}"),
-            Ok(Outcome::Used) => println!("kept {name}: used since it was listed"),
-            Ok(Outcome::Locked) => println!("kept {name}: a rustc session holds its lock"),
-            Ok(Outcome::Failed { left, error }) => {
-                match left {
-                    Ok(left) => {
-                        eprintln!(
-                            "arkham-tools: removal of {name} failed, {} of {} left: {error}",
-                            size(left),
-                            size(cache.bytes)
-                        );
-                        freed += cache.bytes.saturating_sub(left);
-                    }
-                    Err(unmeasured) => eprintln!(
-                        "arkham-tools: removal of {name} failed: {error}; what is left could \
-                         not be measured: {unmeasured:#}"
-                    ),
+        let (removed, bytes, failure) = report(&cache.name, cache.bytes, remove(cache, threshold));
+        count += usize::from(removed);
+        freed += bytes;
+        failed |= failure;
+    }
+    for group in superseded.chunk_by(|left, right| left.profile == right.profile) {
+        // Held while this directory's builds are removed, so no build there starts meanwhile.
+        let _lock = match outputs::lock(&group[0].profile) {
+            Ok(Some(lock)) => lock,
+            Ok(None) => {
+                for output in group {
+                    println!(
+                        "kept {}: a Cargo build holds the lock on its directory",
+                        output.name.display()
+                    );
                 }
-                failed = true;
+                continue;
             }
             Err(error) => {
-                eprintln!("arkham-tools: kept {name}: {error:#}");
+                for output in group {
+                    eprintln!("arkham-tools: kept {}: {error:#}", output.name.display());
+                }
                 failed = true;
+                continue;
             }
+        };
+        for output in group {
+            if process::interrupted() {
+                bail!(
+                    "interrupted after removing {count} caches and {builds} builds, {}; the rest \
+                     are kept",
+                    size(freed)
+                );
+            }
+            let (removed, bytes, failure) = report(
+                &output.name,
+                output.bytes,
+                outputs::remove(output, threshold),
+            );
+            builds += usize::from(removed);
+            freed += bytes;
+            failed |= failure;
         }
     }
     println!(
-        "removed {count} caches; freed {}; free disk now {}",
+        "removed {count} caches and {builds} builds; freed {}; free disk now {}",
         size(freed),
         size(free_bytes(&target)?)
     );
     Ok(u8::from(failed))
+}
+
+/// Prints what became of one removal of `bytes` under `name`. Returns whether it was
+/// removed, the bytes freed, including those of a partial removal, and whether it failed.
+fn report(name: &Path, bytes: u64, result: Result<Outcome>) -> (bool, u64, bool) {
+    let name = name.display();
+    match result {
+        Ok(Outcome::Removed) => {
+            println!("removed {name}");
+            (true, bytes, false)
+        }
+        Ok(Outcome::Gone) => {
+            println!("already gone {name}");
+            (false, 0, false)
+        }
+        Ok(Outcome::Used) => {
+            println!("kept {name}: used since it was listed");
+            (false, 0, false)
+        }
+        Ok(Outcome::Locked) => {
+            println!("kept {name}: a rustc session holds its lock");
+            (false, 0, false)
+        }
+        Ok(Outcome::Failed { left, error }) => match left {
+            Ok(left) => {
+                eprintln!(
+                    "arkham-tools: removal of {name} failed, {} of {} left: {error}",
+                    size(left),
+                    size(bytes)
+                );
+                (false, bytes.saturating_sub(left), true)
+            }
+            Err(unmeasured) => {
+                eprintln!(
+                    "arkham-tools: removal of {name} failed: {error}; what is left could not \
+                     be measured: {unmeasured:#}"
+                );
+                (false, 0, true)
+            }
+        },
+        Err(error) => {
+            eprintln!("arkham-tools: kept {name}: {error:#}");
+            (false, 0, true)
+        }
+    }
 }
 
 enum Outcome {

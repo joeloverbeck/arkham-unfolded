@@ -70,6 +70,11 @@ pub fn owner_target() -> Result<PathBuf> {
     Ok(Repository::here()?.owner.join("target"))
 }
 
+/// The workspace's package names in the current checkout's committed `Cargo.toml` files.
+pub fn packages() -> Result<Vec<String>> {
+    Repository::here()?.packages("HEAD")
+}
+
 fn add(repository: &Repository, args: AddArgs) -> Result<u8> {
     let target = repository.owner.join("target");
     // Before anything is created: each checkout's builds add caches of their own.

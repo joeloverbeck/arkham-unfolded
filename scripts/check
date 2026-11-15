@@ -4,6 +4,9 @@ set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 exec scripts/dev bash -euc '
+# Remove superseded builds and incremental caches unused for a day from the shared target.
+# Only an interrupt (exit 130) stops the check; other failures are reported, then it goes on.
+scripts/tools target-prune --older-than 1d --delete || [[ $? -ne 130 ]]
 scripts/check-format
 scripts/check-index
 scripts/check-tools

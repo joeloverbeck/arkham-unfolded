@@ -2,7 +2,8 @@
 //! builds into the owner's target with a `codegen-units` value no other registered
 //! worktree uses, and removal takes only merged, clean checkouts and what `add` wrote.
 //! With them, the shared target's free-disk floor and `target-prune`, which removes only
-//! unused directories inside its `incremental` directories.
+//! unused directories inside its `incremental` directories and unused, superseded builds of
+//! the repository's own packages.
 
 use std::{
     fs,
@@ -674,4 +675,375 @@ fn target_prune_reports_a_failed_removal_whose_remainder_cannot_be_measured_as_f
     );
     assert!(!error.contains("kept"), "{error}");
     assert!(session.join("query-cache.bin").exists());
+}
+
+/// One build of a target of `package` as Cargo leaves it in the profile directory `profile`
+/// of `target`: its fingerprint directory, and `files` in that profile directory with `hash`
+/// in place of `{}`, each of `bytes`, all last written `hours` ago. Returns the files and
+/// then the fingerprint directory.
+fn build(
+    target: &Path,
+    profile: &str,
+    package: &str,
+    hash: &str,
+    files: &[&str],
+    bytes: usize,
+    hours: u64,
+) -> Vec<PathBuf> {
+    let profile = target.join(profile);
+    let written = SystemTime::now() - Duration::from_secs(hours * 3600);
+    let mut paths: Vec<_> = files
+        .iter()
+        .map(|file| {
+            let path = profile.join(file.replace("{}", hash));
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, vec![7; bytes]).unwrap();
+            fs::File::open(&path)
+                .unwrap()
+                .set_modified(written)
+                .unwrap();
+            path
+        })
+        .collect();
+    let fingerprint = profile.join(format!(".fingerprint/{package}-{hash}"));
+    fs::create_dir_all(&fingerprint).unwrap();
+    let timestamp = fingerprint.join("invoked.timestamp");
+    fs::write(&timestamp, "").unwrap();
+    fs::File::open(&timestamp)
+        .unwrap()
+        .set_modified(written)
+        .unwrap();
+    fs::File::open(&fingerprint)
+        .unwrap()
+        .set_modified(written)
+        .unwrap();
+    paths.push(fingerprint);
+    paths
+}
+
+const SUITE: [&str; 2] = ["deps/suite-{}", "deps/suite-{}.d"];
+
+#[test]
+fn target_prune_lists_superseded_builds_of_own_packages_and_removes_them_only_with_delete() {
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    let target = owner.join("target");
+    let library = [
+        "deps/demo-{}.d",
+        "deps/libdemo-{}.rlib",
+        "deps/libdemo-{}.rmeta",
+    ];
+    let tool = ["deps/member_tool-{}", "deps/member_tool-{}.d"];
+    let example = ["examples/sample-{}", "examples/sample-{}.d"];
+    let third_party = ["deps/serde-{}.d", "deps/libserde-{}.rlib"];
+    let mib = 1 << 20;
+    let superseded = [
+        build(
+            &target,
+            "debug",
+            "demo",
+            "a000000000000001",
+            &SUITE,
+            mib,
+            240,
+        ),
+        build(
+            &target,
+            "debug",
+            "demo",
+            "b000000000000001",
+            &library,
+            mib,
+            240,
+        ),
+        build(
+            &target,
+            "debug",
+            "demo-member",
+            "c000000000000001",
+            &tool,
+            mib,
+            240,
+        ),
+        build(
+            &target,
+            "debug",
+            "demo",
+            "d000000000000001",
+            &example,
+            mib,
+            240,
+        ),
+        build(
+            &target,
+            "agent-tools/debug",
+            "demo",
+            "e000000000000001",
+            &SUITE,
+            mib,
+            240,
+        ),
+    ];
+    let recent = build(
+        &target,
+        "debug",
+        "demo",
+        "a000000000000002",
+        &SUITE,
+        mib,
+        24,
+    );
+    let kept = [
+        // The newest build of each target in each profile directory.
+        build(&target, "debug", "demo", "a000000000000003", &SUITE, mib, 1),
+        build(
+            &target,
+            "debug",
+            "demo",
+            "b000000000000002",
+            &library,
+            mib,
+            2,
+        ),
+        build(
+            &target,
+            "debug",
+            "demo-member",
+            "c000000000000002",
+            &tool,
+            mib,
+            3,
+        ),
+        build(
+            &target,
+            "debug",
+            "demo",
+            "d000000000000002",
+            &example,
+            mib,
+            1,
+        ),
+        build(
+            &target,
+            "agent-tools/debug",
+            "demo",
+            "e000000000000002",
+            &SUITE,
+            mib,
+            1,
+        ),
+        // The library's unit-test executable is a target of its own, newest though old.
+        build(
+            &target,
+            "debug",
+            "demo",
+            "b000000000000003",
+            &["deps/demo-{}", "deps/demo-{}.d"],
+            mib,
+            240,
+        ),
+        // A dependency's builds are not the repository's.
+        build(
+            &target,
+            "debug",
+            "serde",
+            "f000000000000001",
+            &third_party,
+            mib,
+            240,
+        ),
+        build(
+            &target,
+            "debug",
+            "serde",
+            "f000000000000002",
+            &third_party,
+            mib,
+            1,
+        ),
+    ];
+    // Cargo's unhashed copy of the newest build.
+    let copy = target.join("debug/suite");
+    fs::write(&copy, "").unwrap();
+
+    let listed = succeeds(prune(&owner, &[]));
+
+    for shown in [
+        "debug/deps/suite-a000000000000001",
+        "debug/deps/demo-b000000000000001",
+        "debug/deps/member_tool-c000000000000001",
+        "debug/examples/sample-d000000000000001",
+        "agent-tools/debug/deps/suite-e000000000000001",
+        "5 superseded builds",
+        "--delete",
+    ] {
+        assert!(listed.contains(shown), "{shown}: {listed}");
+    }
+    for hidden in [
+        "a000000000000002",
+        "a000000000000003",
+        "b000000000000002",
+        "b000000000000003",
+        "serde",
+    ] {
+        assert!(!listed.contains(hidden), "{hidden}: {listed}");
+    }
+    let all = || superseded.iter().chain(&kept).chain([&recent]).flatten();
+    assert!(all().all(|path| path.exists()));
+
+    let removed = succeeds(prune(&owner, &["--delete"]));
+
+    assert!(
+        removed.contains("removed 0 caches and 5 builds"),
+        "{removed}"
+    );
+    assert!(superseded.iter().flatten().all(|path| !path.exists()));
+    assert!(
+        kept.iter()
+            .chain([&recent])
+            .flatten()
+            .all(|path| path.exists())
+    );
+    assert!(copy.exists());
+
+    succeeds(prune(&owner, &["--older-than", "12h", "--delete"]));
+
+    assert!(recent.iter().all(|path| !path.exists()));
+    assert!(kept.iter().flatten().all(|path| path.exists()));
+}
+
+#[test]
+fn target_prune_keeps_the_builds_of_a_profile_directory_whose_cargo_build_lock_is_held() {
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    let target = owner.join("target");
+    let held = build(&target, "debug", "demo", "a000000000000001", &SUITE, 1, 240);
+    build(&target, "debug", "demo", "a000000000000002", &SUITE, 1, 1);
+    let free = build(
+        &target,
+        "release",
+        "demo",
+        "a000000000000001",
+        &SUITE,
+        1,
+        240,
+    );
+    build(&target, "release", "demo", "a000000000000002", &SUITE, 1, 1);
+    // As a Cargo build into `debug` holds it.
+    let lock = fs::File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(target.join("debug/.cargo-build-lock"))
+        .unwrap();
+    lock.lock().unwrap();
+
+    let printed = succeeds(prune(&owner, &["--delete"]));
+
+    assert!(
+        printed.contains(
+            "kept debug/deps/suite-a000000000000001: a Cargo build holds the lock on its directory"
+        ),
+        "{printed}"
+    );
+    assert!(held.iter().all(|path| path.exists()));
+    assert!(free.iter().all(|path| !path.exists()));
+    drop(lock);
+
+    succeeds(prune(&owner, &["--delete"]));
+
+    assert!(held.iter().all(|path| !path.exists()));
+}
+
+#[test]
+fn target_prune_refuses_links_among_builds_and_follows_none() {
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    let target = owner.join("target");
+    let outside = directory.path().join("outside");
+    let outer = build(
+        &outside,
+        "debug",
+        "demo",
+        "a000000000000009",
+        &SUITE,
+        1,
+        240,
+    );
+    let superseded = build(&target, "debug", "demo", "a000000000000001", &SUITE, 1, 240);
+    build(&target, "debug", "demo", "a000000000000002", &SUITE, 1, 1);
+    // An own build's file, a fingerprint directory, and a profile's `deps` and
+    // `.fingerprint` directories, each a link out of the target.
+    let fingerprint = target.join("debug/.fingerprint/demo-a000000000000008");
+    fs::create_dir_all(&fingerprint).unwrap();
+    let file = target.join("debug/deps/suite-a000000000000008");
+    symlink(&outer[0], &file).unwrap();
+    let linked_fingerprint = target.join("debug/.fingerprint/demo-a000000000000009");
+    symlink(
+        outside.join("debug/.fingerprint/demo-a000000000000009"),
+        &linked_fingerprint,
+    )
+    .unwrap();
+    build(&target, "release", "demo", "a000000000000001", &[], 1, 1);
+    let deps = target.join("release/deps");
+    symlink(outside.join("debug/deps"), &deps).unwrap();
+    fs::create_dir_all(target.join("profile")).unwrap();
+    let fingerprints = target.join("profile/.fingerprint");
+    symlink(outside.join("debug/.fingerprint"), &fingerprints).unwrap();
+
+    let output = prune(&owner, &["--older-than", "1h", "--delete"]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let error = String::from_utf8_lossy(&output.stderr);
+    for refused in [&file, &linked_fingerprint, &deps, &fingerprints] {
+        let refused = refused.strip_prefix(&target).unwrap().to_str().unwrap();
+        assert!(error.contains(refused), "{refused}: {error}");
+    }
+    assert!(superseded.iter().all(|path| !path.exists()));
+    assert!(outer.iter().all(|path| path.exists()));
+    for link in [&file, &linked_fingerprint, &deps, &fingerprints] {
+        assert!(fs::symlink_metadata(link).unwrap().is_symlink(), "{link:?}");
+    }
+}
+
+#[test]
+fn target_prune_interrupted_before_a_build_removal_removes_nothing_more_and_exits_130() {
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    let target = owner.join("target");
+    // Enough superseded builds, with names long enough, that their listing overfills a pipe.
+    let fillers: Vec<_> = (0..2000)
+        .map(|n| {
+            let hash = format!("{n:016x}");
+            build(
+                &target,
+                "debug",
+                "demo",
+                &hash,
+                &["deps/filler-named-at-length-to-overfill-a-pipe-{}"],
+                1,
+                240,
+            )
+        })
+        .collect();
+    build(
+        &target,
+        "debug",
+        "demo",
+        "ffffffffffffffff",
+        &["deps/filler-named-at-length-to-overfill-a-pipe-{}"],
+        1,
+        1,
+    );
+
+    let (code, _, error) = prune_held(&owner, &["--delete"], |pid| {
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGINT) }, 0);
+        // The handler records the interrupt on a thread of its own.
+        thread::sleep(Duration::from_millis(500));
+    });
+
+    assert_eq!(code, Some(130), "{error}");
+    assert!(error.contains("interrupted"), "{error}");
+    assert!(fillers.iter().flatten().all(|path| path.exists()));
 }
