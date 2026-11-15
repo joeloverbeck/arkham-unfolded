@@ -13,9 +13,9 @@ use std::{
     net::Shutdown,
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
-    thread,
     time::{Duration, Instant},
 };
+use unfolded_tabletop::seat_client;
 
 #[derive(ClapArgs)]
 pub struct Args {
@@ -28,15 +28,17 @@ pub struct Args {
 /// Exit 0 only when every request was answered and no answer is `refused`, `missed` or
 /// `skipped`.
 pub fn run(args: Args) -> Result<u8> {
-    let requests = requests(&args.requests)?;
+    let requests = seat_client::requests(&args.requests, &mut std::io::stdin().lock())?;
     let stream =
         connect(&args.socket)?.map_err(|error| anyhow!(not_listening(&args.socket, &error)))?;
     // Wake regularly so an interrupt is honoured during a long request.
     stream.set_read_timeout(Some(Duration::from_millis(200)))?;
-    let (answered, failed) = thread::scope(|scope| {
-        scope.spawn(|| send(&stream, &requests));
-        print_responses(&stream)
-    })?;
+    let (answered, failed) = seat_client::exchange(
+        &stream,
+        &requests,
+        &mut std::io::stdout().lock(),
+        process::check_interrupt,
+    )?;
     if answered < requests.len() {
         eprintln!(
             "arkham-tools: the seat answered {answered} of {} requests; its session ended before the rest.",
@@ -47,34 +49,10 @@ pub fn run(args: Args) -> Result<u8> {
     Ok(u8::from(failed))
 }
 
-fn requests(given: &[String]) -> Result<Vec<String>> {
-    let lines: Vec<String> = if given.is_empty() {
-        std::io::stdin()
-            .lock()
-            .lines()
-            .collect::<std::io::Result<_>>()
-            .context("cannot read requests from standard input")?
-    } else {
-        given
-            .iter()
-            .flat_map(|request| request.lines().map(str::to_owned))
-            .collect()
-    };
-    // The seat answers every nonblank line and ignores blank ones.
-    let requests: Vec<String> = lines
-        .into_iter()
-        .filter(|line| !line.trim().is_empty())
-        .collect();
-    if requests.is_empty() {
-        bail!("no requests: give them as arguments or as standard-input lines");
-    }
-    Ok(requests)
-}
-
 /// The connection, or, inside, the error that shows no seat listens on `socket`:
 /// a missing socket, or one a crashed or quit seat left with nothing answering.
 fn connect(socket: &Path) -> Result<std::io::Result<UnixStream>> {
-    match UnixStream::connect(socket) {
+    match seat_client::connect(socket) {
         Err(error)
             if !matches!(
                 error.kind(),
@@ -98,43 +76,6 @@ fn not_listening(socket: &Path, error: &impl std::fmt::Display) -> String {
     )
 }
 
-/// Every request, then the end of this connection's input. A seat whose session ends
-/// early stops reading, so a failed write only means fewer answers.
-fn send(stream: &UnixStream, requests: &[String]) {
-    let mut writer = stream;
-    for request in requests {
-        if writer.write_all(format!("{request}\n").as_bytes()).is_err() {
-            return;
-        }
-    }
-    let _ = stream.shutdown(Shutdown::Write);
-}
-
-/// Print each response line unchanged until the seat closes the connection. Returns
-/// how many arrived and whether any was refused, missed, skipped or unreadable.
-fn print_responses(stream: &UnixStream) -> Result<(usize, bool)> {
-    let mut reader = BufReader::new(stream);
-    let mut stdout = std::io::stdout().lock();
-    let (mut answered, mut failed) = (0, false);
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        if !read_line(&mut reader, &mut line, None)? {
-            return Ok((answered, failed));
-        }
-        stdout.write_all(&line)?;
-        stdout.flush()?;
-        answered += 1;
-        let status = serde_json::from_slice::<serde_json::Value>(&line)
-            .ok()
-            .and_then(|response| response["status"].as_str().map(str::to_owned));
-        failed |= matches!(
-            status.as_deref(),
-            None | Some("refused" | "missed" | "skipped")
-        );
-    }
-}
-
 /// One line, waiting out read timeouts, until `until` if given; a last line cut short
 /// is returned as it arrived. False at the end of the connection.
 fn read_line(
@@ -142,19 +83,13 @@ fn read_line(
     line: &mut Vec<u8>,
     until: Option<Instant>,
 ) -> Result<bool> {
-    loop {
-        match reader.read_until(b'\n', line) {
-            // Bytes read before a timeout stay in `line`.
-            Ok(_) => return Ok(!line.is_empty()),
-            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                process::check_interrupt()?;
-                if until.is_some_and(|until| Instant::now() >= until) {
-                    bail!("it did not answer in time; it may have stopped running frames");
-                }
-            }
-            Err(error) => return Err(error).context("cannot read the seat's response"),
+    seat_client::read_line(reader, line, || {
+        process::check_interrupt()?;
+        if until.is_some_and(|until| Instant::now() >= until) {
+            bail!("it did not answer in time; it may have stopped running frames");
         }
-    }
+        Ok(())
+    })
 }
 
 /// What `scripts/tools seat-wait --help` shows after the options.

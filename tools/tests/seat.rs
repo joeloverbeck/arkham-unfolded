@@ -134,6 +134,77 @@ fn no_listening_seat_names_the_path_and_says_to_start_one() {
     }
 }
 
+#[test]
+fn final_response_without_newline_and_invalid_status_keep_the_cli_contract() {
+    for (response, code) in [
+        (OBSERVED, 0),
+        ("{}", 1),
+        ("{\"status\":7}", 1),
+        ("not JSON", 1),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("seat.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let answering = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            // Reading to EOF requires the client's write half-close.
+            let requests: Vec<_> = BufReader::new(&stream).lines().collect();
+            assert_eq!(requests.len(), 1);
+            (&stream).write_all(response.as_bytes()).unwrap();
+        });
+        let output = seat(&socket, &[OBSERVE], None);
+        answering.join().unwrap();
+        assert_eq!(output.status.code(), Some(code), "{output:?}");
+        assert_eq!(output.stdout, response.as_bytes());
+    }
+}
+
+#[test]
+fn seat_and_seat_wait_keep_consumer_interrupt_exit_130_while_waiting_for_a_line() {
+    for command in ["seat", "seat-wait"] {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("seat.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let mut args = Command::new(env!("CARGO_BIN_EXE_arkham-tools"));
+        args.arg(command).arg(&socket);
+        if command == "seat" {
+            args.arg(OBSERVE);
+        }
+        let mut child = args
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let (stream, _) = listener.accept().unwrap();
+        let mut request = String::new();
+        BufReader::new(&stream).read_line(&mut request).unwrap();
+        // The handler is installed before connecting, so this is deterministic.
+        assert!(
+            Command::new("kill")
+                .args(["-INT", &child.id().to_string()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                panic!("{command} failed to honor interruption");
+            }
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(130), "{output:?}");
+        assert!(output.stdout.is_empty());
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("interrupted")
+        );
+    }
+}
+
 /// A stand-in seat for `seat-wait` (#218), which opens one connection per request:
 /// each connection's one request line is answered with the next canned line. An
 /// empty one closes the connection unanswered, and [`HOLD`] keeps it open without
