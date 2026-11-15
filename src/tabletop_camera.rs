@@ -6,8 +6,6 @@ use crate::tabletop_layout::{self as layout, Area};
 pub(crate) use unfolded_tabletop::camera::{Capture, FrameInput, wheel_steps};
 
 #[cfg(test)]
-use bevy::input::mouse::AccumulatedMouseScroll;
-#[cfg(test)]
 pub(crate) use unfolded_tabletop::camera::{CameraStep, Pose};
 
 pub(crate) fn parse_initial_view(value: &str) -> Result<Area, String> {

@@ -1,4 +1,6 @@
-//! Keep the existing renderer regression gate attached to Cargo's pinned source.
+//! Verify that Cargo resolves the renderer to the shared Git-pinned patch: a root
+//! `[patch.crates-io]` does not propagate, so only this application can prove it.
+//! unfolded-tabletop's own `scripts/check` runs the patch's regression tests.
 use anyhow::{Context, ensure};
 use serde_json::Value;
 use std::{path::PathBuf, process::Command};
@@ -45,25 +47,8 @@ pub fn run() -> anyhow::Result<u8> {
         String::from_utf8_lossy(&output.stderr)
     );
     let path = manifest(&serde_json::from_slice(&output.stdout)?)?;
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .unwrap_or(std::env::current_dir()?.join("target").into_os_string());
-    let status = Command::new("cargo")
-        .args(["test", "--locked", "--manifest-path"])
-        .arg(path)
-        .args([
-            "--lib",
-            "--no-default-features",
-            "--features",
-            "vulkan",
-            "vulkan::upload_memory::tests",
-        ])
-        .env("CARGO_TARGET_DIR", target)
-        .status()
-        .context("Run pinned renderer regression tests")?;
-    Ok(status
-        .code()
-        .and_then(|code| u8::try_from(code).ok())
-        .unwrap_or(1))
+    println!("Renderer patch: {}", path.display());
+    Ok(0)
 }
 
 #[cfg(test)]
