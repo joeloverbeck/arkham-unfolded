@@ -7,7 +7,7 @@ pub(super) mod draw_review;
 pub(super) mod resolution_review;
 
 #[path = "../../../tests/support/gathering_olive_review.rs"]
-pub(super) mod olive_review;
+pub(in crate::gathering_tabletop) mod olive_review;
 
 #[test]
 fn olive_review_saves_open_through_normal_startup_and_preserve_the_pending_choice() {

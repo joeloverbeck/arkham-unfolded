@@ -15,6 +15,8 @@ use std::{
 
 const LEAD_TONY: &str = "lead:tony";
 
+use super::super::tests::review_saves::olive_review as olive_scroll_review;
+
 struct Sitting {
     app: App,
     seat: Seat<Gathering>,
@@ -1439,6 +1441,161 @@ fn a_held_session_waits_thirty_minutes_for_a_request_unless_started_with_another
 
 fn tell(seat: &mut Seat<Gathering>, app: &mut App, request: Value) -> Value {
     seat.respond(app, &request.to_string()).0
+}
+
+/// Open an existing overflow through guarded keyboard input, then wheel through
+/// the shared protocol. Assertions inspect consequences; they never set offsets.
+fn scroll_existing_options(seat: &mut Seat<Gathering>, app: &mut App, save: &Path) {
+    let mut response = tell(seat, app, json!({"op":"observe"}));
+    let observation = response["observation"].clone();
+    let revision = observation["revision"].clone();
+    let original = std::fs::read(save).unwrap();
+    let disclosure = "▸ Use Jacqueline · show";
+    for _ in 0..40 {
+        if focused(&response).as_deref() == Some(disclosure) {
+            break;
+        }
+        response = tell(
+            seat,
+            app,
+            json!({"op":"key", "key":"Tab", "revision":revision}),
+        );
+        assert_eq!(response["status"], "pressed", "{response}");
+    }
+    assert_eq!(focused(&response).as_deref(), Some(disclosure));
+    response = tell(
+        seat,
+        app,
+        json!({"op":"key", "key":"Enter", "revision":revision, "focused":disclosure}),
+    );
+    assert_eq!(response["status"], "pressed", "{response}");
+    assert_eq!(tell(seat, app, json!({"op":"settle"}))["status"], "settled");
+    // At the smaller viewport the explanatory text can precede every option.
+    // End is the production panel-scroll key; Tab changes focus only.
+    response = tell(
+        seat,
+        app,
+        json!({"op":"key", "key":"End", "revision":revision}),
+    );
+    assert_eq!(response["status"], "pressed", "{response}");
+    let target = controls(app.world_mut())
+        .into_iter()
+        .find(|control| {
+            control.on_screen
+                && control
+                    .choice
+                    .as_ref()
+                    .is_some_and(|choice| choice.starts_with("tokens:jacqueline"))
+        })
+        .and_then(|control| control.choice)
+        .unwrap_or_else(|| panic!("visible Jacqueline option after End: {}", response["table"]));
+    let world = app.world_mut();
+    let panel = world
+        .query_filtered::<Entity, With<ScrollablePanel>>()
+        .iter(world)
+        .find(|entity| {
+            world
+                .get::<ComputedNode>(*entity)
+                .is_some_and(|node| node.content_size().y > node.size().y + 1.)
+        })
+        .expect("existing token options overflow");
+    let before = world.get::<ScrollPosition>(panel).unwrap().y;
+    let camera = world
+        .query_filtered::<&Transform, With<MainCamera>>()
+        .single(world)
+        .unwrap()
+        .to_owned();
+    let y = if before > 0. { 4. } else { -4. };
+    response = tell(
+        seat,
+        app,
+        json!({"op":"scroll", "revision":revision, "choice":target, "y":y}),
+    );
+    assert_eq!(response["status"], "scrolled", "{response}");
+    let after = app.world().get::<ScrollPosition>(panel).unwrap().y;
+    assert!(
+        if y > 0. {
+            after < before
+        } else {
+            after > before
+        },
+        "wheel {y} must move real options from {before}; got {after}"
+    );
+    assert_eq!(response["observation"], observation);
+    assert_eq!(std::fs::read(save).unwrap(), original);
+    let world = app.world_mut();
+    assert_eq!(
+        *world
+            .query_filtered::<&Transform, With<MainCamera>>()
+            .single(world)
+            .unwrap(),
+        camera
+    );
+    eprintln!(
+        "Shared wheel moved options from {before} to {after}; revision {revision}, save and camera unchanged"
+    );
+}
+
+#[test]
+fn shared_wheel_scrolls_existing_options_through_real_ui_picking() {
+    let (_, session) = olive_scroll_review::checkpoints().remove(1);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("wheel.json");
+    continuity::save_session(&path, &session).unwrap();
+    let mut sitting = sit_at(
+        host_with_table(Table::new(session, path.clone()), true),
+        path.clone(),
+        directory,
+    );
+    crate::tabletop_layout::heading_checks::viewport::<MainCamera>(
+        &mut sitting.app,
+        Vec2::new(1280., 720.),
+        1.,
+    );
+    for _ in 0..5 {
+        sitting.app.update();
+    }
+    scroll_existing_options(&mut sitting.seat, &mut sitting.app, &path);
+}
+
+#[test]
+#[ignore = "requires ARKHAM_GATHERING_TEST_ASSETS and a graphics adapter"]
+fn real_seat_wheel_scrolls_existing_options_without_changing_game_or_camera() {
+    let root = std::env::var("ARKHAM_GATHERING_TEST_ASSETS").expect("set prepared collection");
+    let directory = tempfile::tempdir().unwrap();
+    let save = directory.path().join("wheel.json");
+    let (_, session) = olive_scroll_review::checkpoints().remove(1);
+    continuity::save_session(&save, &session).unwrap();
+    let options = parse(
+        directory.path(),
+        &[
+            "--experiment",
+            "gathering",
+            "--agent-seat",
+            "--save",
+            save.to_str().unwrap(),
+            "--art-root",
+            &root,
+            "--initial-view",
+            "test",
+        ],
+    )
+    .unwrap()
+    .unwrap();
+    let mut seated = open(&options).unwrap();
+    scroll_existing_options(&mut seated.seat, &mut seated.app, &save);
+    if let Some(keep) = std::env::var_os("ARKHAM_SEAT_CAPTURE_DIR") {
+        let keep = PathBuf::from(keep);
+        let picture = keep.join("wheel-options.png");
+        let response = tell(
+            &mut seated.seat,
+            &mut seated.app,
+            json!({"op":"capture", "path":picture}),
+        );
+        assert_eq!(response["status"], "captured", "{response}");
+        assert!(not_blank(&picture));
+        std::fs::copy(&save, keep.join("wheel-input.json")).unwrap();
+    }
 }
 
 fn not_blank(path: &std::path::Path) -> bool {

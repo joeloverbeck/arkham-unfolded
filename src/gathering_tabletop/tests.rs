@@ -194,7 +194,7 @@ mod navigation;
 mod pendulum;
 mod restart;
 pub(super) mod results;
-mod review_saves;
+pub(super) mod review_saves;
 mod round_flow;
 mod selection;
 mod slots;
