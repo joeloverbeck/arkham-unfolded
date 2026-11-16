@@ -5,6 +5,7 @@
 
 use crate::{TokenFace, TokenStatus, tabletop_support::readable_text};
 use bevy::prelude::*;
+use unfolded_tabletop::label_anchor::LabelAnchor;
 
 pub(crate) struct TokenVisual {
     pub face: TokenFace,
@@ -15,11 +16,9 @@ pub(crate) struct TokenVisual {
     pub label_offset: Vec3,
 }
 
+/// A token's caption, kept over a fixed point by `label_anchor`.
 #[derive(Component)]
-pub(crate) struct TokenLabel(Vec3);
-
-#[derive(Component)]
-pub(crate) struct Follow(pub Entity, pub Vec3);
+pub(crate) struct TokenLabel;
 
 /// The settled tabletop return path; adapters own custody, admission and lifetime.
 #[derive(Component)]
@@ -146,41 +145,19 @@ pub(crate) fn spawn(
             Node {
                 position_type: PositionType::Absolute,
                 width: px(84),
+                // The caption sits 16 pixels above its point.
+                margin: UiRect::top(px(-16)),
                 padding: UiRect::axes(px(6), px(4)),
                 border_radius: BorderRadius::all(px(4)),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.025, 0.045, 0.055, 0.90)),
             Pickable::IGNORE,
-            TokenLabel(visual.transform.translation + visual.label_offset),
+            TokenLabel,
+            LabelAnchor::point(visual.transform.translation + visual.label_offset),
         ))
         .id();
     (disk, label)
-}
-
-pub(crate) fn position_labels(
-    camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
-    mut labels: Query<(&mut TokenLabel, Option<&Follow>, &mut Node, &mut Visibility)>,
-    tokens: Query<&Transform>,
-) {
-    for (mut anchor, follow, mut node, mut visibility) in &mut labels {
-        if let Some(follow) = follow
-            && let Ok(at) = tokens.get(follow.0)
-        {
-            anchor.0 = at.translation + follow.1;
-        }
-        if let Ok(point) = camera.0.world_to_viewport(camera.1, anchor.0) {
-            let width = match node.width {
-                Val::Px(width) => width,
-                _ => 84.,
-            };
-            node.left = px(point.x - width / 2.);
-            node.top = px(point.y - 16.0);
-            *visibility = Visibility::Visible;
-        } else {
-            *visibility = Visibility::Hidden;
-        }
-    }
 }
 
 /// Prepared-art role for each supported physical chaos-token face.
@@ -299,8 +276,8 @@ mod tests {
         assert_eq!(world.get::<Text>(label).unwrap().0, "-2\nRevealed");
         assert!(world.get::<BackgroundColor>(label).is_some());
         assert_eq!(
-            world.get::<TokenLabel>(label).unwrap().0,
-            Vec3::new(2.0, 0.15, 2.0)
+            *world.get::<LabelAnchor>(label).unwrap(),
+            LabelAnchor::point(Vec3::new(2.0, 0.15, 2.0))
         );
     }
 }

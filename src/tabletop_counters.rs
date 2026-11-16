@@ -1,9 +1,11 @@
 //! Physical totals and action allowances. Callers supply state and own lifetimes.
 use crate::tabletop_layout::{self as layout, InvestigatorClass};
 use bevy::{asset::RenderAssetUsages, prelude::*, render::render_resource::PrimitiveTopology};
-pub(crate) use unfolded_tabletop::count_label::CountLabelPlugin as CounterPlugin;
-#[cfg(test)]
-pub(crate) use unfolded_tabletop::count_label::Label as CounterLabel;
+use unfolded_tabletop::label_anchor::LabelAnchor;
+
+/// A counter's count, kept over its token by `label_anchor`.
+#[derive(Component)]
+pub(crate) struct CounterLabel;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CounterKind {
@@ -127,20 +129,20 @@ fn spawn_count_inner(
         visual.scale,
     );
     commands.entity(token).insert(counter);
-    let label = unfolded_tabletop::count_label::spawn(
-        commands,
-        token,
-        u32::from(visual.amount),
-        Vec3::new(
-            0.0,
-            0.04,
-            match visual.kind {
-                CounterKind::Resource | CounterKind::Supply => 0.403,
-                _ => 0.336,
-            },
-        ),
+    let offset = Vec3::new(
+        0.0,
+        0.04,
+        match visual.kind {
+            CounterKind::Resource | CounterKind::Supply => 0.403,
+            _ => 0.336,
+        },
     );
-    commands.entity(label).insert((
+    let label = commands.spawn((
+        CounterLabel,
+        LabelAnchor::entity(token, offset),
+        Text::new(visual.amount.to_string()),
+        TextLayout::justify(Justify::Center),
+        Pickable::IGNORE,
         TextFont {
             font_size: FontSize::Px(11.0),
             ..default()
@@ -155,7 +157,7 @@ fn spawn_count_inner(
         },
         BackgroundColor(Color::srgb(0.015, 0.02, 0.02)),
     ));
-    Some((token, label))
+    Some((token, label.id()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -541,6 +543,7 @@ mod tests {
     use bevy::{
         camera::primitives::MeshAabb, ecs::world::CommandQueue, mesh::VertexAttributeValues,
     };
+    use unfolded_tabletop::label_anchor::Anchor;
 
     #[test]
     fn clue_face_preserves_rgb_with_zero_alpha_while_resources_keep_their_cutout() {
@@ -666,10 +669,19 @@ mod tests {
         );
         assert_eq!(world.get::<Counter>(clue).unwrap().amount, 2);
         assert_eq!(world.query::<&Counter>().iter(world).count(), 2);
-        assert_eq!(world.get::<CounterLabel>(clue_label).unwrap().token, clue);
         assert_eq!(
-            world.get::<CounterLabel>(resource_label).unwrap().offset,
-            Vec3::new(0., 0.04, 0.403)
+            world.get::<LabelAnchor>(clue_label).unwrap().to,
+            Anchor::Entity {
+                entity: clue,
+                offset: Vec3::new(0., 0.04, 0.336)
+            }
+        );
+        assert_eq!(
+            world.get::<LabelAnchor>(resource_label).unwrap().to,
+            Anchor::Entity {
+                entity: resource,
+                offset: Vec3::new(0., 0.04, 0.403)
+            }
         );
         assert_eq!(
             world.get::<TextFont>(resource_label).unwrap().font_size,
@@ -683,7 +695,7 @@ mod tests {
         // Exercise the installed shared plugin on the actual Arkham token and
         // caption, including its inherited scale and consumer styling.
         use bevy::camera::{CameraProjection, ComputedCameraValues, RenderTargetInfo};
-        app.add_plugins(CounterPlugin);
+        app.add_plugins(unfolded_tabletop::label_anchor::LabelAnchorPlugin);
         let camera = app
             .world_mut()
             .spawn((
