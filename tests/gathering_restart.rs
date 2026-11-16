@@ -57,13 +57,16 @@ fn restart_refuses_stale_missing_and_nonfresh_inputs_without_replacing_progress(
     );
     assert!(!missing.exists());
     assert_eq!(load_session(&path).unwrap(), current);
-    assert!(!std::fs::read_dir(directory.path()).unwrap().any(|entry| {
-        entry
+    assert!(
+        unfolded_record_replacement::archives(&path)
             .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .contains(".archived-")
-    }));
+            .is_empty()
+    );
+    assert!(
+        unfolded_record_replacement::archives(&missing)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -77,7 +80,7 @@ fn restart_refuses_a_busy_save_and_invalid_recovery_without_losing_the_current_a
     let lock = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(directory.path().join("gathering.json.lock"))
+        .open(unfolded_record_replacement::lock_path(&path))
         .unwrap();
     lock.try_lock().unwrap();
     assert!(

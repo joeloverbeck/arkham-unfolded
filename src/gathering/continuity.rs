@@ -31,7 +31,7 @@ pub fn load_session(path: impl AsRef<Path>) -> Result<Session, ContinuityError> 
     saved_state::load(path)
 }
 pub fn previous_path(path: impl AsRef<Path>) -> PathBuf {
-    crate::record_replacement::previous_path(path.as_ref())
+    unfolded_record_replacement::previous_path(path.as_ref())
 }
 /// A save failure preserves every live choice, card and unrevealed random outcome.
 pub fn commit_choice(

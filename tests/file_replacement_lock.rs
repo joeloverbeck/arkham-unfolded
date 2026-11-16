@@ -16,7 +16,7 @@ fn production_drivers_hold_the_same_sidecar_through_both_installations() {
             use arkham_unfolded_experiment::$experiment::{Session, continuity::*};
             let directory = tempfile::tempdir().unwrap();
             let path = directory.path().join("session.json");
-            let lock_path = directory.path().join("session.json.lock");
+            let lock_path = unfolded_record_replacement::lock_path(&path);
             let mut game = Session::new().unwrap();
             save_session(&path, &game).unwrap();
             let original = fs::read(&path).unwrap();

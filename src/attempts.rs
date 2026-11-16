@@ -1,13 +1,10 @@
 //! The remembered attempt is a convenience reference, never game state.
-use crate::{
-    asset_config::AssetConfig,
-    record_replacement::{self, Replacement},
-    saved_state::Error,
-};
+use crate::{asset_config::AssetConfig, saved_state::Error};
 use std::{
     io::Read,
     path::{Path, PathBuf},
 };
+use unfolded_record_replacement::{self as record_replacement, Replacement};
 
 pub(crate) fn reference_path() -> Result<PathBuf, String> {
     Ok(AssetConfig::load_gathering()?
@@ -196,7 +193,7 @@ mod tests {
             std::fs::write(&newer_owner, "newer owner attempt").unwrap();
             let newer = serde_json::to_vec(&newer_owner).unwrap();
             std::fs::write(&reference, &newer).unwrap();
-            let prior = reference.with_extension("json.previous");
+            let prior = record_replacement::previous_path(&reference);
             std::fs::write(&prior, serde_json::to_vec(&save).unwrap()).unwrap();
             let next = directory.join("next.json");
             std::fs::write(&next, "second disposable").unwrap();

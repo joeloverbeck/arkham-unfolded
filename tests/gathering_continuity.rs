@@ -108,8 +108,6 @@ fn stale_and_divergent_setup_decisions_cannot_replace_saved_progress() {
 
 #[test]
 fn same_total_encounter_substitution_is_refused_even_with_a_matching_checksum() {
-    use sha2::{Digest, Sha256};
-
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("setup.json");
     let mut game = Session::with_seed(89);
@@ -122,26 +120,13 @@ fn same_total_encounter_substitution_is_refused_even_with_a_matching_checksum() 
         game.choose(game.observe().revision, id).unwrap();
     }
     save_session(&path, &game).unwrap();
-    let mut envelope: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    let deck = envelope["payload"]["encounter_deck"]
-        .as_array_mut()
-        .unwrap();
-    assert_eq!(deck.len(), 26);
-    // The original inventory has three Ancient Evils and three Rats. Replacing
-    // one Evil with a fourth Rat preserves the total but violates that inventory.
-    *deck.iter_mut().find(|card| **card == "01166").unwrap() = serde_json::json!("01159");
-    let checked = serde_json::to_vec(&(
-        &envelope["format_version"],
-        &envelope["kind"],
-        &envelope["source_revision"],
-        &envelope["app_version"],
-        &envelope["payload"],
-    ))
-    .unwrap();
-    envelope["checksum"] = serde_json::json!(format!("{:x}", Sha256::digest(checked)));
-    let altered = serde_json::to_vec_pretty(&envelope).unwrap();
-    std::fs::write(&path, &altered).unwrap();
+    let altered = reseal(&path, |payload| {
+        let deck = payload["encounter_deck"].as_array_mut().unwrap();
+        assert_eq!(deck.len(), 26);
+        // The original inventory has three Ancient Evils and three Rats. Replacing
+        // one Evil with a fourth Rat preserves the total but violates that inventory.
+        *deck.iter_mut().find(|card| **card == "01166").unwrap() = serde_json::json!("01159");
+    });
     let error = load_session(&path).unwrap_err().to_string();
     assert!(!error.to_lowercase().contains("checksum"), "{error}");
     assert!(save_session(&path, &game).is_err());
@@ -151,20 +136,10 @@ fn same_total_encounter_substitution_is_refused_even_with_a_matching_checksum() 
 /// Rewrite one saved payload and reseal it, as an earlier development build
 /// would have written it. The checksum is intact, so only replay can refuse it.
 fn reseal(path: &std::path::Path, edit: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
-    use sha2::{Digest, Sha256};
-    let mut envelope: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-    edit(&mut envelope["payload"]);
-    let checked = serde_json::to_vec(&(
-        &envelope["format_version"],
-        &envelope["kind"],
-        &envelope["source_revision"],
-        &envelope["app_version"],
-        &envelope["payload"],
-    ))
-    .unwrap();
-    envelope["checksum"] = serde_json::json!(format!("{:x}", Sha256::digest(checked)));
-    let bytes = serde_json::to_vec_pretty(&envelope).unwrap();
+    use unfolded_record_replacement::save;
+    let (identity, mut payload) = save::unseal(&std::fs::read(path).unwrap()).unwrap();
+    edit(&mut payload);
+    let bytes = save::seal(&identity, &payload);
     std::fs::write(path, &bytes).unwrap();
     bytes
 }
