@@ -158,11 +158,6 @@ pub(crate) fn admission_blocker(world: &World) -> String {
     )
 }
 
-/// A capture taken while a pipeline is still compiling can omit what it draws.
-pub(crate) fn pipelines_ready(world: &World) -> bool {
-    !world.resource::<ImageProgress>().pipelines_pending()
-}
-
 /// Seat admission as the seat asks for it: admitted, still checking, or refused with
 /// the reason.
 pub(crate) fn admission(world: &World) -> crate::agent_seat::Admission {
@@ -222,9 +217,7 @@ fn acknowledge_image(
 mod tests {
     use super::super::tests::{Fixture, app_with_artwork};
     use super::*;
-    use crate::agent_seat::{Admission, Focus, Game, Hit, Name, Observed, SeatKey};
-    use serde_json::Value;
-    use unfolded_tabletop::seat::{Seat, Unadmitted};
+    use unfolded_tabletop::seat::{Seat, Unadmitted, Unshown};
 
     fn seated() -> App {
         let mut app = app_with_artwork();
@@ -248,55 +241,6 @@ mod tests {
         app.world().resource::<RenderHealth>()
     }
 
-    /// A table that shows nothing and answers the seat only what admission needs.
-    struct Unshown;
-
-    impl Game for Unshown {
-        fn observe(&self, _: &mut World) -> Observed {
-            Observed {
-                observation: Value::Null,
-                table: Value::Null,
-            }
-        }
-
-        fn revision(&self, _: &mut World) -> u64 {
-            0
-        }
-
-        fn resolve(&self, _: &mut World, _: &Name) -> Result<Vec<Vec2>, String> {
-            Err("Nothing is shown.".into())
-        }
-
-        fn identify(&self, _: &mut World, _: Entity) -> Hit {
-            Hit {
-                name: None,
-                description: Value::Null,
-            }
-        }
-
-        fn focus(&self, _: &mut World) -> Focus {
-            Focus::Nothing
-        }
-
-        fn unsettled(&self, _: &mut World) -> Vec<String> {
-            Vec::new()
-        }
-
-        fn advance(&self, _: &mut World, _: Duration) {}
-
-        fn admission(&self, world: &World) -> Admission {
-            admission(world)
-        }
-
-        fn pipelines_ready(&self, world: &World) -> bool {
-            pipelines_ready(world)
-        }
-
-        fn keys(&self) -> &[SeatKey] {
-            &[]
-        }
-    }
-
     #[test]
     fn an_admission_still_checking_at_its_limit_is_unfinished_and_worded_with_what_blocks_it() {
         let mut app = seated();
@@ -305,7 +249,7 @@ mod tests {
             .id()
             .untyped()]));
         let camera = app.world_mut().spawn_empty().id();
-        let mut seat = Seat::new(Unshown, &mut app, camera, None);
+        let mut seat = Seat::new(Unshown(admission), &mut app, camera, None);
 
         let unadmitted = seat.admit(&mut app, Duration::ZERO).unwrap_err();
         let refused = crate::agent_seat::unfinished(app.world(), Duration::ZERO);

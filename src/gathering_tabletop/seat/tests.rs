@@ -896,8 +896,22 @@ fn nothing_hidden_appears_in_what_the_seat_reports() {
             .keys()
             .map(String::as_str)
             .collect::<BTreeSet<_>>(),
-        BTreeSet::from(["mode", "observation", "ok", "status", "steps", "table"])
+        BTreeSet::from([
+            "mode",
+            "observation",
+            "ok",
+            "pending",
+            "revision",
+            "settled",
+            "status",
+            "steps",
+            "table"
+        ])
     );
+    // What the shared seat adds beside them is what the table already shows.
+    assert_eq!(dealt["pending"], dealt["table"]["pending"]);
+    assert_eq!(dealt["settled"], dealt["table"]["settled"]);
+    assert_eq!(dealt["revision"], dealt["observation"]["revision"]);
 }
 
 #[test]
