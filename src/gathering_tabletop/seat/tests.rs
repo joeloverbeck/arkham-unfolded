@@ -12,6 +12,7 @@ use std::{
     os::unix::net::UnixStream,
     path::Path,
 };
+use unfolded_tabletop::seat::Seat;
 
 const LEAD_TONY: &str = "lead:tony";
 
@@ -1037,7 +1038,7 @@ impl Sitting {
     /// thread. A client that fails before quitting gets a last connection that quits,
     /// so the session always ends.
     fn hold<T: Send>(&mut self, socket: &Path, client: impl FnOnce(&Path) -> T + Send) -> T {
-        self.hold_idle(socket, crate::agent_seat::socket::IDLE, client)
+        self.hold_idle(socket, crate::agent_seat::start::IDLE, client)
     }
 
     /// [`Sitting::hold`], ending the session after `idle` without a request.

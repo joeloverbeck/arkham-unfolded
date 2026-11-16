@@ -222,8 +222,9 @@ fn acknowledge_image(
 mod tests {
     use super::super::tests::{Fixture, app_with_artwork};
     use super::*;
-    use crate::agent_seat::{Admission, Focus, Game, Hit, Name, Observed, Seat, SeatKey};
+    use crate::agent_seat::{Admission, Focus, Game, Hit, Name, Observed, SeatKey};
     use serde_json::Value;
+    use unfolded_tabletop::seat::{Seat, Unadmitted};
 
     fn seated() -> App {
         let mut app = app_with_artwork();
@@ -297,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn an_admission_still_checking_at_its_limit_is_refused_with_what_blocks_it() {
+    fn an_admission_still_checking_at_its_limit_is_unfinished_and_worded_with_what_blocks_it() {
         let mut app = seated();
         // An asset the loader never resolves keeps the required set pending.
         app.insert_resource(HealthAssets::new([Handle::<Image>::default()
@@ -306,8 +307,10 @@ mod tests {
         let camera = app.world_mut().spawn_empty().id();
         let mut seat = Seat::new(Unshown, &mut app, camera, None);
 
-        let refused = crate::agent_seat::admit(&mut seat, &mut app, Duration::ZERO).unwrap_err();
+        let unadmitted = seat.admit(&mut app, Duration::ZERO).unwrap_err();
+        let refused = crate::agent_seat::unfinished(app.world(), Duration::ZERO);
 
+        assert_eq!(unadmitted, Unadmitted::Unfinished);
         assert!(health(&app).is_checking());
         assert_eq!(
             refused,
