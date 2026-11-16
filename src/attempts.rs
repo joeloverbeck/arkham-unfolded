@@ -41,11 +41,10 @@ pub(crate) fn remember(reference: &Path, save: &Path) -> Result<(), String> {
     verification_path(save)?;
     let save = std::fs::canonicalize(save).map_err(|e| e.to_string())?;
     let bytes = serde_json::to_vec(&save).map_err(|e| e.to_string())?;
-    record_replacement::replace(
+    record_replacement::replace::<Error>(
         reference,
         &bytes,
         65536,
-        Error,
         |previous| {
             admit_verification_reference(reference, previous).map_err(Error)?;
             Ok(if previous == Some(bytes.as_slice()) {

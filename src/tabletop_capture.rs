@@ -53,7 +53,7 @@ fn writer(path: PathBuf, elapsed: Duration) -> impl FnMut(&Image) -> Result<(), 
     move |image| {
         let span = info_span!("Screenshot write", write_started_seconds = (elapsed + requested.elapsed()).as_secs_f64(), path = %path.display());
         let _entered = span.enter();
-        let result = write_image(image.clone(), &path);
+        let result = write_image(image.clone(), &path).map_err(|error| error.to_string());
         match &result {
             Ok(()) => info!("Screenshot saved to {}", path.display()),
             Err(error) => error!("Cannot save screenshot: {error}"),

@@ -1275,9 +1275,14 @@ fn a_path_that_is_not_a_socket_is_refused_and_left_unchanged() {
         let error = crate::agent_seat::socket::Listener::claim(path)
             .err()
             .unwrap_or_else(|| panic!("{} was claimed", path.display()));
-        assert!(error.contains(path.to_str().unwrap()), "{error}");
-        assert!(error.contains("not a socket"), "{error}");
-        assert!(error.contains("left unchanged"), "{error}");
+        assert_eq!(error.path(), path.as_path());
+        assert!(
+            matches!(
+                error.cause(),
+                crate::agent_seat::socket::Unclaimable::NotSocket
+            ),
+            "{error}"
+        );
     }
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "an agent's notes");
     assert!(folder.is_dir());
@@ -1337,10 +1342,16 @@ fn seats_starting_together_on_one_leftover_socket_leave_exactly_one_listening() 
             .collect()
     });
     let (listening, refused): (Vec<_>, Vec<_>) = claims.into_iter().partition(Result::is_ok);
-    let refused: Vec<String> = refused.into_iter().filter_map(Result::err).collect();
+    let refused: Vec<_> = refused.into_iter().filter_map(Result::err).collect();
     assert_eq!(listening.len(), 1, "{refused:?}");
     for error in &refused {
-        assert!(error.contains("already answers"), "{error}");
+        assert!(
+            matches!(
+                error.cause(),
+                crate::agent_seat::socket::Unclaimable::Answered
+            ),
+            "{error}"
+        );
     }
     assert!(UnixStream::connect(&socket).is_ok(), "the one seat answers");
     drop(listening);
@@ -1369,8 +1380,14 @@ fn a_second_seat_on_a_live_seats_path_is_refused_and_the_live_seat_is_untouched(
         (moved, before, refused, after, held)
     });
     let error = refused.expect("the second seat was refused");
-    assert!(error.contains(socket.to_str().unwrap()), "{error}");
-    assert!(error.contains("already answers"), "{error}");
+    assert_eq!(error.path(), socket);
+    assert!(
+        matches!(
+            error.cause(),
+            crate::agent_seat::socket::Unclaimable::Answered
+        ),
+        "{error}"
+    );
     assert_eq!(before, after, "the live seat's socket stays in place");
     assert_eq!(moved["status"], "pressed", "{moved}");
     assert_eq!(held["status"], "observed", "{held}");

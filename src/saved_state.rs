@@ -4,8 +4,8 @@
 //! baseline, the unchanged shortcut and validation of the previous record. This
 //! file keeps what identifies a compatible save, the session's validity check,
 //! when a write is exclusive (a new attempt) or archives the current record
-//! (restart), the size limit and the wording of Arkham's refusals. Busy, too
-//! large and file-system failures keep the shared module's words.
+//! (restart), the size limit and the wording of Arkham's refusals, busy and too
+//! large included. File-system failures keep the operating system's words.
 use crate::{APP_VERSION, RuleError};
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
@@ -62,6 +62,25 @@ impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Self(error.to_string())
     }
+}
+/// The shared record's refusals, in Arkham's words where Arkham has its own.
+impl From<unfolded_record_replacement::Error> for Error {
+    fn from(error: unfolded_record_replacement::Error) -> Self {
+        use unfolded_record_replacement::Error as Record;
+        Self(match error {
+            Record::TooLarge => TOO_LARGE.into(),
+            Record::Busy(cause) => busy(&cause),
+            other => other.to_string(),
+        })
+    }
+}
+
+/// Arkham's words for a record over its limit.
+const TOO_LARGE: &str = "This file exceeds the bounded experiment's record limit.";
+
+/// Arkham's words for a record another writer holds.
+fn busy(cause: &std::io::Error) -> String {
+    format!("The save is busy: {cause}")
 }
 
 struct Saved<T>(PhantomData<T>);
@@ -145,6 +164,8 @@ fn refusal(error: save::Error, action: Action) -> Error {
                 .into()
         }
         save::Error::NotRegularFile => "The record destination is not a regular file.".into(),
+        save::Error::TooLarge => TOO_LARGE.into(),
+        save::Error::Busy(cause) => busy(&cause),
         other => other.to_string(),
     })
 }

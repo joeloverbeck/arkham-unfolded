@@ -97,7 +97,7 @@ pub(crate) fn unfinished(world: &World, limit: Duration) -> String {
 /// The held session's listener, which the agent partners' host also claims its path
 /// through.
 pub(crate) mod socket {
-    pub(crate) use unfolded_tabletop::seat::socket::Listener;
+    pub(crate) use unfolded_tabletop::seat::socket::{Listener, Unclaimable};
 }
 
 /// Native plugins without a window event loop: no operating-system window is ever

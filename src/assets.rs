@@ -343,7 +343,36 @@ pub enum PrepareResult {
     AlreadyPresent,
 }
 
-pub use unfolded_assets::AssetError;
+/// Arkham's asset refusal as one sentence. The shared reads refuse with
+/// `unfolded_assets::Error`, whose default text this keeps unchanged.
+#[derive(Debug)]
+pub struct AssetError(pub String);
+
+impl std::fmt::Display for AssetError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl std::error::Error for AssetError {}
+
+impl From<unfolded_assets::Error> for AssetError {
+    fn from(error: unfolded_assets::Error) -> Self {
+        Self(error.to_string())
+    }
+}
+
+impl From<std::io::Error> for AssetError {
+    fn from(error: std::io::Error) -> Self {
+        Self(error.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AssetError {
+    fn from(error: serde_json::Error) -> Self {
+        Self(error.to_string())
+    }
+}
 
 /// Prepare a fresh directory, or reuse an identical complete directory without writing it.
 /// Changed, incomplete or unknown destinations are refused. Source files are never written.
@@ -505,7 +534,8 @@ fn transform(bytes: Vec<u8>, transform: &Transform) -> Result<Vec<u8>, AssetErro
                 width,
                 height,
             },
-        ),
+        )
+        .map_err(AssetError::from),
         Transform::UnityFont {
             block_offset,
             block_length,
