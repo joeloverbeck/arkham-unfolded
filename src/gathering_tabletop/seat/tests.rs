@@ -405,7 +405,7 @@ fn a_key_the_table_does_not_read_is_refused_with_the_eighteen_it_does() {
     assert_eq!(unknown["status"], "refused");
     assert_eq!(
         unknown["error"],
-        "Unknown key \"F13\". Known keys: Escape, Enter, Space, Tab, Home, End, PageUp, PageDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, KeyW, KeyA, KeyS, KeyD, Minus, Equal."
+        "Unknown key \"F13\". Known keys: Escape, Enter, Space, Tab, End, PageUp, PageDown, KeyW, KeyA, KeyS, KeyD, Equal, Minus, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Home."
     );
 }
 

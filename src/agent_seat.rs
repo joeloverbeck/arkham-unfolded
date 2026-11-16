@@ -25,22 +25,31 @@ use bevy::{
     app::PluginGroupBuilder, asset::AssetPlugin, input::keyboard::Key, prelude::*,
     winit::WinitPlugin,
 };
-use std::time::Duration;
+use std::{sync::LazyLock, time::Duration};
 use unfolded_tabletop::capture;
 pub(crate) use unfolded_tabletop::seat::{
     Admission, Focus, Game, Hit, Logical, Name, Observed, SeatKey, SeatedAgent, refuse,
     start::{self, Start},
 };
 
-/// Keys the table reads, which are the keys the seat may press: the protocol name (its
-/// `KeyCode` name), the physical key, the logical key a keyboard would send with it,
-/// and whether it can commit.
+/// Keys the table reads, which are the keys the seat may press, Arkham's own and then
+/// the table camera's: the protocol name (its `KeyCode` name), the physical key, the
+/// logical key a keyboard would send with it, and whether it can commit.
 ///
 /// Enter and Space can commit a choice or dismiss a reading, so a request for one names
 /// the control it expects to press. A focused Bevy button activates on Enter or Space,
 /// and the table's own keyboard handling may confirm with Enter. Every other key moves
 /// focus, the camera, a scroll position or a stepper, or closes without deciding.
-pub(crate) static KEYS: [SeatKey; 18] = [
+pub(crate) static KEYS: LazyLock<Vec<SeatKey>> = LazyLock::new(|| {
+    OWN_KEYS
+        .iter()
+        .chain(&unfolded_tabletop::camera::SEAT_KEYS)
+        .cloned()
+        .collect()
+});
+
+/// Arkham's own keys. Home also scrolls a panel to its top, and is the camera's.
+static OWN_KEYS: [SeatKey; 7] = [
     key(
         "Escape",
         KeyCode::Escape,
@@ -50,7 +59,6 @@ pub(crate) static KEYS: [SeatKey; 18] = [
     key("Enter", KeyCode::Enter, Logical::Named(Key::Enter), true),
     key("Space", KeyCode::Space, Logical::Named(Key::Space), true),
     key("Tab", KeyCode::Tab, Logical::Named(Key::Tab), false),
-    key("Home", KeyCode::Home, Logical::Named(Key::Home), false),
     key("End", KeyCode::End, Logical::Named(Key::End), false),
     key(
         "PageUp",
@@ -64,36 +72,6 @@ pub(crate) static KEYS: [SeatKey; 18] = [
         Logical::Named(Key::PageDown),
         false,
     ),
-    key(
-        "ArrowUp",
-        KeyCode::ArrowUp,
-        Logical::Named(Key::ArrowUp),
-        false,
-    ),
-    key(
-        "ArrowDown",
-        KeyCode::ArrowDown,
-        Logical::Named(Key::ArrowDown),
-        false,
-    ),
-    key(
-        "ArrowLeft",
-        KeyCode::ArrowLeft,
-        Logical::Named(Key::ArrowLeft),
-        false,
-    ),
-    key(
-        "ArrowRight",
-        KeyCode::ArrowRight,
-        Logical::Named(Key::ArrowRight),
-        false,
-    ),
-    key("KeyW", KeyCode::KeyW, Logical::Typed("w"), false),
-    key("KeyA", KeyCode::KeyA, Logical::Typed("a"), false),
-    key("KeyS", KeyCode::KeyS, Logical::Typed("s"), false),
-    key("KeyD", KeyCode::KeyD, Logical::Typed("d"), false),
-    key("Minus", KeyCode::Minus, Logical::Typed("-"), false),
-    key("Equal", KeyCode::Equal, Logical::Typed("="), false),
 ];
 
 const fn key(name: &'static str, code: KeyCode, logical: Logical, commits: bool) -> SeatKey {

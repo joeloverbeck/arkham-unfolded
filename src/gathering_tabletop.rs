@@ -3,7 +3,7 @@
 use crate::{
     asset_config::AssetConfig,
     gathering::{Investigator, Observation, PresentationMoment, Session, continuity},
-    tabletop_camera::{Capture, FrameInput, Orbit, parse_initial_view},
+    tabletop_camera::{Orbit, parse_initial_view},
     tabletop_feedback::{self as feedback, CardFeedback, FeedbackSettings},
     tabletop_health::{RenderHealth, TabletopHealthPlugin},
     tabletop_layout::{self as layout, Area},
@@ -12,12 +12,13 @@ use crate::{
     tabletop_support::asset_settings::AssetSettings,
 };
 use bevy::{
-    input::mouse::{AccumulatedMouseScroll, MouseScrollUnit},
+    input::mouse::MouseScrollUnit,
     input_focus::{AutoFocus, InputFocus, tab_navigation::TabGroup},
     prelude::*,
     ui_widgets::{Activate, Button},
 };
 use std::path::PathBuf;
+use unfolded_tabletop::camera;
 
 mod art;
 mod capture;
@@ -603,7 +604,7 @@ impl Options {
     }
 
     fn configure_diagnostics(&self, app: &mut App) -> Result<(), String> {
-        let mut orbit = Orbit::new().with_home(sideboard::focus(Area::Overview));
+        let mut orbit = Orbit::new(sideboard::focus(Area::Overview));
         match self.initial_view {
             Some(InitialView::Area(area)) => orbit.focus(sideboard::focus(area)),
             Some(InitialView::Resolve) => {
@@ -796,6 +797,15 @@ fn install(app: &mut App) {
         .add_plugins(feedback::FeedbackPlugin)
         .add_plugins(unfolded_tabletop::label_anchor::LabelAnchorPlugin)
         .add_plugins(crate::tabletop_reveal::RevealPlugin)
+        .add_plugins(camera::TableCameraPlugin::<
+            crate::tabletop_pacing::Presentation,
+        >::default())
+        .configure_sets(
+            Update,
+            camera::TableCameraSystems
+                .after(camera_facts)
+                .before(camera_reactions),
+        )
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -819,7 +829,8 @@ fn install(app: &mut App) {
                 crate::tabletop_reveal::render,
                 advance_presentation,
                 keyboard_panel_scroll,
-                camera_controls,
+                camera_facts,
+                camera_reactions,
                 (
                     render,
                     phase_banner::render,
@@ -1422,6 +1433,7 @@ fn setup(
         Msaa::Off,
         Transform::default(),
         MainCamera,
+        camera::TableCamera,
     ));
 }
 
@@ -1830,59 +1842,41 @@ fn advance_presentation(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn camera_controls(
-    keys: Res<ButtonInput<KeyCode>>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    scroll: Res<AccumulatedMouseScroll>,
-    window: Single<&Window>,
-    mut table: ResMut<Table>,
-    time: Res<PresentationTime>,
-    mut orbit: ResMut<Orbit>,
-    mut camera: Single<&mut Transform, With<MainCamera>>,
-    focus: Option<Res<InputFocus>>,
-    focusable: Query<(), With<Button>>,
-    hover: Option<Res<bevy::picking::hover::HoverMap>>,
-    ui_nodes: Query<(), With<Node>>,
+/// Arkham's facts for the shared table camera, before it moves: a modal, an
+/// announcement, the menu or busy settings block it; the shortcut and a context that
+/// captures the keyboard take its view keys; an open context or the shortcut takes the
+/// wheel.
+fn camera_facts(
+    table: Res<Table>,
     settings: Option<Res<AssetSettings>>,
+    shortcut: Res<crate::tabletop_reveal::Shortcut>,
+    mut facts: ResMut<camera::TableFacts>,
+) {
+    *facts = camera::TableFacts {
+        blocks_camera: table.modal()
+            || table.presentation.announcement().is_some()
+            || table.menu_open
+            || settings.as_ref().is_some_and(|settings| settings.is_busy()),
+        takes_view_keys: shortcut.is_open() || table.context.captures_keyboard(),
+        takes_wheel: table.context.is_open() || shortcut.is_open(),
+        scene: camera::Scene::WholeWindow,
+    };
+}
+
+/// What Arkham does after the camera moved: manual navigation dismisses an open
+/// context or shortcut, and the end of following redraws the table.
+fn camera_reactions(
+    navigation: Res<camera::Navigation>,
+    mut table: ResMut<Table>,
     mut shortcut: ResMut<crate::tabletop_reveal::Shortcut>,
 ) {
-    let blocked = table.modal()
-        || table.presentation.announcement().is_some()
-        || table.menu_open
-        || settings.as_ref().is_some_and(|settings| settings.is_busy());
-    let over_ui = hover
-        .as_ref()
-        .and_then(|hover| hover.get(&bevy::picking::pointer::PointerId::Mouse))
-        .is_some_and(|hits| hits.keys().any(|entity| ui_nodes.contains(*entity)));
-    let step = orbit.step(FrameInput {
-        keys: &keys,
-        buttons: &buttons,
-        window: &window,
-        scroll_y: crate::tabletop_camera::wheel_steps(&scroll),
-        dt: time.delta_secs(),
-        capture: Capture {
-            pointer_blocked: blocked,
-            over_ui,
-            keyboard: blocked
-                || shortcut.is_open()
-                || table.context.captures_keyboard()
-                || focus
-                    .as_ref()
-                    .and_then(|f| f.get())
-                    .is_some_and(|entity| focusable.contains(entity)),
-            pan: Some(blocked),
-            wheel: blocked || table.context.is_open() || shortcut.is_open() || over_ui,
-        },
-    });
-    **camera = step.transform;
-    if step.manual_navigation && table.context.is_open() {
+    if navigation.manual && table.context.is_open() {
         table.context.dismiss();
     }
-    if step.manual_navigation && shortcut.is_open() {
+    if navigation.manual && shortcut.is_open() {
         shortcut.dismiss();
     }
-    if step.stopped_following {
+    if navigation.stopped_following {
         table.dirty = true;
     }
 }

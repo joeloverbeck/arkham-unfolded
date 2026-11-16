@@ -51,7 +51,7 @@ impl Inputs {
 fn gathering_preserves_startup_home_focus_and_camera_transform() {
     let target = Vec3::new(0.0, 0.0, 7.0);
     let distance = 72.0;
-    let mut orbit = Orbit::new();
+    let mut orbit = overview();
     let home = orbit.pose();
     assert_eq!(
         home,
@@ -81,7 +81,7 @@ fn gathering_preserves_startup_home_focus_and_camera_transform() {
 
 #[test]
 fn diagnostic_initial_views_apply_once_without_replacing_home_or_live_following() {
-    let normal = Orbit::new().pose();
+    let normal = overview().pose();
     for view in [
         Area::Overview,
         Area::Scenario,
@@ -91,7 +91,7 @@ fn diagnostic_initial_views_apply_once_without_replacing_home_or_live_following(
         Area::Investigator(2),
     ] {
         let (target, distance) = layout::focus(view);
-        let mut orbit = Orbit::new();
+        let mut orbit = overview();
         orbit.focus(layout::focus(view));
         let mut input = Inputs::default();
         let first_frame = input.step(&mut orbit);
@@ -110,7 +110,7 @@ fn diagnostic_initial_views_apply_once_without_replacing_home_or_live_following(
 
         orbit.set_following(true);
         let follow_target = Vec3::new(3.0, 0.0, 7.0);
-        orbit.update_follow_target(Some((follow_target, 15.0)));
+        orbit.update_follow_target(Some((follow_target, 15.0).into()));
         input.dt = 1.0;
         input.step(&mut orbit);
         assert_eq!(orbit.pose().target, follow_target);

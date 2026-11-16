@@ -226,8 +226,8 @@ pub(super) fn focus(view: &Observation) -> Area {
 pub(super) fn follow(
     view: &Observation,
     control: &crate::partners::Control,
-) -> Option<(Vec3, f32)> {
-    followed(view, control).then(|| framing(view))
+) -> Option<crate::tabletop_camera::Framing> {
+    followed(view, control).then(|| framing(view).into())
 }
 
 fn followed(view: &Observation, control: &crate::partners::Control) -> bool {
