@@ -7,15 +7,16 @@
 use crate::process;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::{
-    io::{BufRead, BufReader, ErrorKind, Write},
-    net::Shutdown,
-    os::unix::net::UnixStream,
+    io::Write,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
-use unfolded_seat_client as seat_client;
+use unfolded_seat_client::{
+    self as seat_client, Connection, Outcome, Reply, RequestError, Unreached,
+};
+use unfolded_seat_protocol::{Request, Status};
 
 #[derive(ClapArgs)]
 pub struct Args {
@@ -29,42 +30,36 @@ pub struct Args {
 /// `skipped`.
 pub fn run(args: Args) -> Result<u8> {
     let requests = seat_client::requests(&args.requests, &mut std::io::stdin().lock())?;
-    let stream =
+    let connection =
         connect(&args.socket)?.map_err(|error| anyhow!(not_listening(&args.socket, &error)))?;
-    // Wake regularly so an interrupt is honoured during a long request.
-    stream.set_read_timeout(Some(Duration::from_millis(200)))?;
-    let (answered, failed) = seat_client::exchange(
-        &stream,
+    // An interrupt is honoured during a long request.
+    match connection.send(
         &requests,
         &mut std::io::stdout().lock(),
         process::check_interrupt,
-    )?;
-    if answered < requests.len() {
-        eprintln!(
-            "arkham-tools: the seat answered {answered} of {} requests; its session ended before the rest.",
-            requests.len()
-        );
-        return Ok(1);
+    )? {
+        Outcome::Answered => Ok(0),
+        Outcome::Failed => Ok(1),
+        Outcome::Short { answered } => {
+            eprintln!(
+                "arkham-tools: the seat answered {answered} of {} requests; its session ended before the rest.",
+                requests.len()
+            );
+            Ok(1)
+        }
     }
-    Ok(u8::from(failed))
 }
 
 /// The connection, or, inside, the error that shows no seat listens on `socket`:
 /// a missing socket, or one a crashed or quit seat left with nothing answering.
-fn connect(socket: &Path) -> Result<std::io::Result<UnixStream>> {
-    match seat_client::connect(socket) {
-        Err(error)
-            if !matches!(
-                error.kind(),
-                ErrorKind::NotFound | ErrorKind::ConnectionRefused
-            ) =>
-        {
-            bail!(
-                "cannot reach the agent seat on {}: {error}",
-                socket.display()
-            )
-        }
-        reached => Ok(reached),
+fn connect(socket: &Path) -> Result<std::io::Result<Connection>> {
+    match Connection::open(socket) {
+        Ok(connection) => Ok(Ok(connection)),
+        Err(Unreached::NotListening(error)) => Ok(Err(error)),
+        Err(Unreached::Failed(error)) => bail!(
+            "cannot reach the agent seat on {}: {error}",
+            socket.display()
+        ),
     }
 }
 
@@ -74,22 +69,6 @@ fn not_listening(socket: &Path, error: &impl std::fmt::Display) -> String {
         socket.display(),
         socket.display()
     )
-}
-
-/// One line, waiting out read timeouts, until `until` if given; a last line cut short
-/// is returned as it arrived. False at the end of the connection.
-fn read_line(
-    reader: &mut impl BufRead,
-    line: &mut Vec<u8>,
-    until: Option<Instant>,
-) -> Result<bool> {
-    seat_client::read_line(reader, line, || {
-        process::check_interrupt()?;
-        if until.is_some_and(|until| Instant::now() >= until) {
-            bail!("it did not answer in time; it may have stopped running frames");
-        }
-        Ok(())
-    })
 }
 
 /// What `scripts/tools seat-wait --help` shows after the options.
@@ -176,7 +155,7 @@ pub fn wait(args: WaitArgs) -> Result<u8> {
     let mut stdout = std::io::stdout().lock();
     // The first request only reads the table, so a choice applied by the first
     // settle counts.
-    let mut request = json!({"op": "observe"});
+    let mut request = Request::Observe {};
     let mut start = None;
     let mut stopped = Stopped {
         stopped: "timeout",
@@ -201,7 +180,7 @@ pub fn wait(args: WaitArgs) -> Result<u8> {
                 break GONE;
             }
         };
-        request = json!({"op": "settle", "steps": STEPS});
+        request = Request::Settle { steps: Some(STEPS) };
         let revision = answer["observation"]["revision"]
             .as_u64()
             .context("the seat's answer carries no observation revision")?;
@@ -252,52 +231,35 @@ enum Exchange {
 
 /// One request on a connection of its own, so the seat serves other commands
 /// between this command's requests.
-fn exchange(socket: &Path, request: &Value, until: Instant) -> Result<Exchange> {
-    let stream = match connect(socket)? {
-        Ok(stream) => stream,
+fn exchange(socket: &Path, request: &Request, until: Instant) -> Result<Exchange> {
+    let connection = match connect(socket)? {
+        Ok(connection) => connection,
         Err(error) => return Ok(Exchange::Gone(error.to_string())),
     };
-    // Wake regularly so an interrupt is honoured during a long settle.
-    stream.set_read_timeout(Some(Duration::from_millis(200)))?;
-    if (&stream)
-        .write_all(format!("{request}\n").as_bytes())
-        .is_err()
-    {
-        return Ok(Exchange::Gone("it closed the connection".into()));
-    }
-    let _ = stream.shutdown(Shutdown::Write);
-    let mut line = Vec::new();
-    let answered = match read_line(&mut BufReader::new(&stream), &mut line, Some(until)) {
+    // An interrupt is honoured during a long settle.
+    let reply = connection.request(request, || {
+        process::check_interrupt()?;
+        if Instant::now() >= until {
+            bail!("it did not answer in time; it may have stopped running frames");
+        }
+        Ok(())
+    });
+    match reply {
+        Ok(Reply::Answer(answer)) => match answer.status {
+            Status::Observed | Status::Settled | Status::Unsettled => {
+                Ok(Exchange::Answer(answer.response))
+            }
+            _ => bail!("the seat answered {request} with: {}", answer.line),
+        },
         // A seat that ends with this request unread resets the connection.
-        Err(error)
-            if error
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|error| error.kind() == ErrorKind::ConnectionReset) =>
-        {
-            return Ok(Exchange::Gone(error.root_cause().to_string()));
+        Ok(Reply::Ended(ended)) => Ok(Exchange::Gone(ended.to_string())),
+        Err(error @ (RequestError::NotJson { .. } | RequestError::Unrecognised { .. })) => {
+            Err(error.into())
         }
-        answered => answered.with_context(|| format!("the agent seat on {}", socket.display()))?,
-    };
-    if !answered {
-        return Ok(Exchange::Gone(
-            "it closed the connection without answering".into(),
-        ));
-    }
-    let answer: Value = serde_json::from_slice(&line).with_context(|| {
-        format!(
-            "the seat's answer is not JSON: {}",
-            String::from_utf8_lossy(&line).trim_end()
-        )
-    })?;
-    match answer["status"].as_str() {
-        Some("observed" | "settled" | "unsettled") => Ok(Exchange::Answer(answer)),
-        Some(status @ ("bye" | "exited")) => {
-            Ok(Exchange::Gone(format!("its session ended with {status}")))
+        Err(error) => {
+            Err(anyhow::Error::new(error)
+                .context(format!("the agent seat on {}", socket.display())))
         }
-        _ => bail!(
-            "the seat answered {request} with: {}",
-            String::from_utf8_lossy(&line).trim_end()
-        ),
     }
 }
 
