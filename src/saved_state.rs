@@ -183,6 +183,15 @@ pub(crate) fn restart<T: Snapshot>(
     expected: &T,
     fresh: &T,
 ) -> Result<PathBuf, Error> {
+    // `expected` must be the session its baseline saw, not a later one.
+    let baseline = expected.baseline().get();
+    if baseline != save::Baseline::default()
+        && !baseline
+            .holds(&Saved::<T>::FORMAT, expected)
+            .map_err(|error| words(error, Action::Restart))?
+    {
+        return Err(words(save::Error::Stale, Action::Restart));
+    }
     write(
         path.as_ref(),
         expected,
