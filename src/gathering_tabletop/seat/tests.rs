@@ -405,7 +405,65 @@ fn a_key_the_table_does_not_read_is_refused_with_the_eighteen_it_does() {
     assert_eq!(unknown["status"], "refused");
     assert_eq!(
         unknown["error"],
-        "Unknown key \"F13\". Known keys: Escape, Enter, Space, Tab, Home, End, PageUp, PageDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, KeyW, KeyA, KeyS, KeyD, Minus, Equal."
+        "Unknown key \"F13\". Known keys: Escape, Enter, Space, Tab, End, PageUp, PageDown, KeyW, KeyA, KeyS, KeyD, Equal, Minus, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Home."
+    );
+}
+
+/// The camera's keys reach the shared table camera through the seat, timed by Arkham's
+/// presentation clock. A focused button and an open menu take the view keys; WASD still
+/// pans, and that manual navigation dismisses the menu.
+#[test]
+fn camera_keys_move_the_table_camera_unless_a_button_or_menu_takes_them() {
+    let mut seat = sit();
+    let pose = |seat: &Sitting| {
+        seat.app
+            .world()
+            .resource::<crate::tabletop_camera::Orbit>()
+            .pose()
+    };
+    let key = |seat: &mut Sitting, key: &str| {
+        let pressed = seat.ask(json!({"op": "key", "key": key, "revision": 0}));
+        assert_eq!(pressed["status"], "pressed", "{pressed}");
+        pressed
+    };
+    let home = pose(&seat);
+    let start = seat.ask(json!({"op": "observe"}));
+    assert_eq!(focused(&start).as_deref(), Some("Overview"), "{start}");
+    key(&mut seat, "ArrowLeft");
+    assert_eq!(pose(&seat), home, "the focused button takes the view keys");
+    key(&mut seat, "KeyW");
+    assert_ne!(pose(&seat).target, home.target, "WASD still pans");
+
+    seat.app
+        .world_mut()
+        .resource_mut::<bevy::input_focus::InputFocus>()
+        .clear();
+    key(&mut seat, "ArrowLeft");
+    let turned = pose(&seat);
+    assert!(turned.yaw > home.yaw, "{turned:?}");
+    let world = seat.app.world_mut();
+    let camera = *world
+        .query_filtered::<&Transform, With<MainCamera>>()
+        .single(world)
+        .unwrap();
+    assert_eq!(camera, turned.transform());
+    key(&mut seat, "Home");
+    assert_eq!(pose(&seat), home);
+
+    seat.open_menu(Investigator::Patrice);
+    let menu = seat.ask(json!({"op": "observe"}));
+    assert!(!rows(&menu).is_empty(), "{menu}");
+    key(&mut seat, "ArrowLeft");
+    assert_eq!(
+        pose(&seat),
+        home,
+        "the open menu and its focused row take the view keys"
+    );
+    let panned = key(&mut seat, "KeyW");
+    assert_ne!(pose(&seat).target, home.target);
+    assert!(
+        rows(&panned).is_empty(),
+        "manual navigation dismisses the menu: {panned}"
     );
 }
 

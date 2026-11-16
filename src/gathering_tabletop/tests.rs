@@ -505,7 +505,7 @@ fn unstarted_host(table: Table, raw_window_events: bool) -> App {
         .init_resource::<art::Art>()
         .insert_resource(table)
         .insert_resource(RenderHealth::ready_for_test())
-        .insert_resource(Orbit::new().with_home(sideboard::focus(Area::Overview)));
+        .insert_resource(Orbit::new(sideboard::focus(Area::Overview)));
     app.world_mut().spawn((
         Window {
             resolution: (1600, 1000).into(),
@@ -646,9 +646,7 @@ fn gathering_diagnostic_framing_retains_normal_startup_and_rejects_incomplete_op
         .unwrap();
     assert_eq!(
         app.world().resource::<Orbit>().pose(),
-        Orbit::new()
-            .with_home(sideboard::focus(Area::Overview))
-            .pose()
+        Orbit::new(sideboard::focus(Area::Overview)).pose()
     );
     for (name, area) in [
         ("overview", Area::Overview),

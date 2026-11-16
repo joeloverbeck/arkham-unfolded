@@ -24,8 +24,9 @@ mod tabletop_layout;
 #[path = "../src/tabletop_standees.rs"]
 mod tabletop_standees;
 
-use tabletop_camera::{FrameInput, Orbit, parse_initial_view};
+use tabletop_camera::{Orbit, parse_initial_view};
 use tabletop_layout::{self as layout, Area};
+use unfolded_tabletop::camera::FrameInput;
 
 const ASSETS: [(&str, &str); 4] = [
     ("06010", "Bounty Contracts"),
@@ -172,7 +173,7 @@ fn main() -> ExitCode {
             art.0.insert(role, server.load(path.to_owned()));
         }
     }
-    let mut orbit = Orbit::new();
+    let mut orbit = Orbit::new(layout::focus(Area::Overview));
     orbit.focus(layout::focus(initial));
     app.insert_resource(ClearColor(Color::srgb(0.025, 0.045, 0.055)))
         .insert_resource(art)

@@ -2,11 +2,13 @@
 
 use bevy::prelude::*;
 
-use crate::tabletop_layout::{self as layout, Area};
-pub(crate) use unfolded_tabletop::camera::{Capture, FrameInput, wheel_steps};
+use crate::tabletop_layout::Area;
+pub(crate) use unfolded_tabletop::camera::{Framing, Orbit};
 
 #[cfg(test)]
-pub(crate) use unfolded_tabletop::camera::{CameraStep, Pose};
+use crate::tabletop_layout as layout;
+#[cfg(test)]
+pub(crate) use unfolded_tabletop::camera::{CameraStep, Capture, FrameInput, Pose};
 
 pub(crate) fn parse_initial_view(value: &str) -> Result<Area, String> {
     match value {
@@ -22,19 +24,10 @@ pub(crate) fn parse_initial_view(value: &str) -> Result<Area, String> {
     }
 }
 
-#[derive(Resource, Deref, DerefMut)]
-pub(crate) struct Orbit(unfolded_tabletop::camera::Orbit);
-
-impl Orbit {
-    pub(crate) fn new() -> Self {
-        Self(unfolded_tabletop::camera::Orbit::new(layout::focus(
-            Area::Overview,
-        )))
-    }
-
-    pub(crate) fn with_home(self, framing: (Vec3, f32)) -> Self {
-        Self(self.0.with_home(framing))
-    }
+/// Arkham's camera at its overview, which is also its home.
+#[cfg(test)]
+pub(crate) fn overview() -> Orbit {
+    Orbit::new(layout::focus(Area::Overview))
 }
 
 #[cfg(test)]

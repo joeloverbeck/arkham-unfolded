@@ -117,7 +117,7 @@ fn real_collection_loads_every_verified_image_font_and_pouch() {
         .insert_resource(RenderHealth::ready_for_test())
         .init_resource::<PresentationTime>()
         .init_resource::<Redraw>()
-        .insert_resource(Orbit::new().with_home((crate::tabletop_layout::test_bag(), 6.0)));
+        .insert_resource(Orbit::new((crate::tabletop_layout::test_bag(), 6.0)));
         super::super::install(&mut app);
         app.world_mut().spawn((
             Window {
@@ -338,7 +338,7 @@ fn render_pouch(
         "first material upload must use the prepared texture levels"
     );
     let (at, distance) = crate::tabletop_layout::focus(crate::tabletop_layout::Area::Test);
-    app.insert_resource(Orbit::new().with_home((at, distance)));
+    app.insert_resource(Orbit::new((at, distance)));
     app.world_mut().entity_mut(camera).insert(
         Transform::from_translation(at + Vec3::new(0.0, 1.0_f32.sin(), 1.0_f32.cos()) * distance)
             .looking_at(at, Vec3::Y),
@@ -385,7 +385,7 @@ fn render_pouch(
         "a real reveal choice must light the imported pouch"
     );
     capture(app, &image, &output.join("test-area-available.png"));
-    app.insert_resource(Orbit::new().with_home((crate::tabletop_layout::test_bag(), 6.0)));
+    app.insert_resource(Orbit::new((crate::tabletop_layout::test_bag(), 6.0)));
     for _ in 0..8 {
         app.update();
     }
