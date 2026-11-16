@@ -1416,3 +1416,27 @@ fn the_humans_reveal_is_shown_waiting_for_a_partners_jacqueline() {
 }
 
 mod pacing;
+
+#[test]
+fn a_path_something_already_answers_on_is_refused_in_arkhams_own_words() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("partners.sock");
+    let _answering = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let (outbox, _inbox) = mpsc::channel();
+    let refused = Transport::open(&socket, outbox, Arc::new(AtomicUsize::new(0)), None)
+        .err()
+        .expect("something already answers there");
+    assert_eq!(
+        refused,
+        format!(
+            "Cannot listen on {}: something already answers there and was left untouched; turn agent partners off in that game, or quit the agent seat using that path",
+            socket.display()
+        )
+    );
+    assert!(
+        fs::symlink_metadata(&socket)
+            .unwrap()
+            .file_type()
+            .is_socket()
+    );
+}

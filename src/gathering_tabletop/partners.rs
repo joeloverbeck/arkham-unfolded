@@ -848,12 +848,16 @@ impl Transport {
         queued: Arc<AtomicUsize>,
         waker: Option<PartnerWaker>,
     ) -> Result<Self, String> {
-        let claimed = crate::agent_seat::socket::Listener::claim(path).map_err(|error| {
-            error.replace(
-                "an agent seat already answers there and was left untouched; quit that seat or choose another path",
-                "something already answers there and was left untouched; turn agent partners off in that game, or quit the agent seat using that path",
-            )
-        })?;
+        let claimed =
+            crate::agent_seat::socket::Listener::claim(path).map_err(|refused| {
+                match refused.cause() {
+                    crate::agent_seat::socket::Unclaimable::Answered => format!(
+                        "Cannot listen on {}: something already answers there and was left untouched; turn agent partners off in that game, or quit the agent seat using that path",
+                        refused.path().display()
+                    ),
+                    _ => refused.to_string(),
+                }
+            })?;
         claimed
             .unix_listener()
             .set_nonblocking(true)
