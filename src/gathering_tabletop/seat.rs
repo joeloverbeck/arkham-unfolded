@@ -8,7 +8,8 @@
 //!
 //! The seat is the same table as native play: the same `install`, rules session,
 //! continuity and save path, and artwork verification. Every difference from native
-//! startup (`run_window`) is assembled in [`run`] and [`table`], and is exactly:
+//! startup (`run_window`) is assembled in [`run`] and [`table`], or done by the shared
+//! start they hand the table to ([`agent_seat::START`]), and is exactly:
 //!
 //! 1. No window event loop: the seat steps updates itself.
 //! 2. A logical primary window with no operating-system window behind it.

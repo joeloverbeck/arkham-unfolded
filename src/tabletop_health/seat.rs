@@ -298,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn an_admission_still_checking_at_its_limit_is_refused_with_what_blocks_it() {
+    fn an_admission_still_checking_at_its_limit_is_unfinished_and_worded_with_what_blocks_it() {
         let mut app = seated();
         // An asset the loader never resolves keeps the required set pending.
         app.insert_resource(HealthAssets::new([Handle::<Image>::default()
