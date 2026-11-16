@@ -152,7 +152,7 @@ fn normal_installation_preserves_concurrent_continue_and_refuses_symlink_snapsho
                     "preserved-concurrent-history"
                 );
                 assert_eq!(
-                    fs::read(reference.with_extension("json.previous")).unwrap(),
+                    fs::read(unfolded_record_replacement::previous_path(&reference)).unwrap(),
                     b"\"/owner/newer-attempt.json\""
                 );
                 assert_eq!(

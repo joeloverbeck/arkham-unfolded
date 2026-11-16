@@ -71,7 +71,7 @@ macro_rules! current_save_contract {
                 mode::continuity::save_session(&path, &session).unwrap();
                 mode::continuity::commit_choice(&path, &mut session, 0, $choice).unwrap();
                 let current: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-                assert_eq!(current["format_version"], 3);
+                assert_eq!(current["identity"]["format"], "3");
                 for retired in ["moments", "presentation_moments", "transition", "baseline"] {
                     assert!(current["payload"].get(retired).is_none(), "Retired or transient field: {retired}");
                 }
@@ -79,7 +79,7 @@ macro_rules! current_save_contract {
                 let previous = std::fs::read(mode::continuity::previous_path(&path)).unwrap();
                 for version in [1, 2] {
                     let mut obsolete = current.clone();
-                    obsolete["format_version"] = version.into();
+                    obsolete["identity"]["format"] = version.to_string().into();
                     // The format refusal precedes payload decoding and checksumming.
                     obsolete["payload"] = serde_json::json!({"moments": ["obsolete observation"]});
                     let bytes = serde_json::to_vec(&obsolete).unwrap();

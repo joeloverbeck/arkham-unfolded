@@ -54,16 +54,7 @@ fn menu_restart_preserves_the_old_attempt_and_reopens_the_new_setup() {
     assert!(app.world().resource::<FeedbackSettings>().reduced_motion);
     assert_eq!(view.source, old.observe().source);
     assert!(!new.same_run(&old));
-    let archives: Vec<_> = std::fs::read_dir(directory.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with("restart.json.archived-")
-        })
-        .collect();
+    let archives = unfolded_record_replacement::archives(&path).unwrap();
     assert_eq!(archives.len(), 1);
     assert_eq!(std::fs::read(&archives[0]).unwrap(), old_bytes);
     let recovered = continuity::load_session(&archives[0]).unwrap();
@@ -108,13 +99,11 @@ fn restart_confirmation_captures_input_and_cancel_or_escape_preserves_the_attemp
         keyboard(&mut app, KeyCode::KeyW, Key::Character("w".into()), false);
         assert_eq!(app.world().resource::<Table>().session, old);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
-        assert!(!std::fs::read_dir(directory.path()).unwrap().any(|entry| {
-            entry
+        assert!(
+            unfolded_record_replacement::archives(&path)
                 .unwrap()
-                .file_name()
-                .to_string_lossy()
-                .contains(".archived-")
-        }));
+                .is_empty()
+        );
     }
 }
 
@@ -196,16 +185,7 @@ fn restart_rejects_old_confirmations_and_choices_and_commits_only_once() {
     assert_eq!(fresh, app.world().resource::<Table>().session);
     assert!(fresh.is_fresh());
     assert!(!fresh.same_run(&old));
-    let archives: Vec<_> = std::fs::read_dir(directory.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .contains(".archived-")
-        })
-        .collect();
+    let archives = unfolded_record_replacement::archives(&path).unwrap();
     assert_eq!(archives.len(), 1);
     assert_eq!(std::fs::read(&archives[0]).unwrap(), bytes);
 }

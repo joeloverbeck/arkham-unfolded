@@ -12,7 +12,7 @@ pub(super) fn prepare(directory: &Path) -> Result<Value> {
     fs::create_dir_all(reference.parent().unwrap())?;
     let _lock = lock(&reference)?;
     let before = read(&reference)?;
-    let previous = read(&reference.with_extension("json.previous"))?;
+    let previous = read(&unfolded_record_replacement::previous_path(&reference))?;
     let attempts = directory.join("attempts");
     fs::create_dir(&attempts)?;
     fs::write(
@@ -26,7 +26,7 @@ pub(super) fn prepare(directory: &Path) -> Result<Value> {
 }
 
 fn lock(reference: &Path) -> Result<File> {
-    let path = reference.with_extension("json.lock");
+    let path = unfolded_record_replacement::lock_path(reference);
     if let Ok(metadata) = fs::symlink_metadata(&path) {
         ensure!(metadata.is_file(), "Continue lock is not a regular file");
     }
@@ -98,7 +98,7 @@ pub(super) fn restore(record: &mut Value) -> Result<()> {
         .as_deref()
         .is_some_and(|bytes| owned(bytes, &attempts))
     {
-        let previous_path = reference.with_extension("json.previous");
+        let previous_path = unfolded_record_replacement::previous_path(&reference);
         let previous = read(&previous_path)?;
         // A foreign predecessor means the prelaunch snapshot is stale. Preserve
         // both current and previous records for inspection; do not label an old

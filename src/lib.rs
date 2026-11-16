@@ -10,7 +10,6 @@ pub mod gathering;
 #[cfg(feature = "tabletop")]
 pub mod gathering_tabletop;
 pub mod partners;
-mod record_replacement;
 mod saved_state;
 #[cfg(feature = "tabletop")]
 pub mod scenario_selection;

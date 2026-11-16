@@ -31,7 +31,7 @@ fn inspection_reports_one_observation_without_writes_or_player_actions() {
     let mut session = Session::with_seed(89);
     session.choose(0, "lead:tony").unwrap();
     continuity::save_session(&path, &session).unwrap();
-    std::fs::remove_file(directory.path().join("pending.json.lock")).unwrap();
+    std::fs::remove_file(unfolded_record_replacement::lock_path(&path)).unwrap();
     // Leave a recovery copy as well: inspection must preserve every sibling.
     std::fs::copy(&path, continuity::previous_path(&path)).unwrap();
     let before = directory_state(directory.path());
@@ -77,7 +77,7 @@ fn inspection_refuses_missing_invalid_and_privileged_saves_without_writes() {
                 continuity::save_session(&path, &Session::with_seed(89)).unwrap();
                 let mut record: Value =
                     serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-                record["format_version"] = json!(0);
+                record["identity"]["format"] = json!("0");
                 std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
             }
             "fixture" => continuity::save_session(
@@ -292,7 +292,12 @@ fn fresh_player_process_recovers_previous_record_after_corrupt_active_file() {
     // player driver, preserving the corrupt active file for its owner.
     let recovered = run(
         directory.path(),
-        &["--save", "attempt.json.previous"],
+        &[
+            "--save",
+            unfolded_record_replacement::previous_path(std::path::Path::new("attempt.json"))
+                .to_str()
+                .unwrap(),
+        ],
         &[
             json!({"op":"reopen"}),
             json!({"op":"choose", "revision":1, "id":"confirm-mulligan"}),
@@ -521,7 +526,7 @@ fn ordinary_player_pays_trapped_once_from_the_observed_group_clue_payment() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("ordinary.json");
     continuity::save_session(&path, &expected).unwrap();
-    std::fs::remove_file(directory.path().join("ordinary.json.lock")).ok();
+    std::fs::remove_file(unfolded_record_replacement::lock_path(&path)).ok();
 
     // The driver decides from the observation's holdings, not from labels.
     let observed = run(directory.path(), &["--save", "ordinary.json"], &[]);

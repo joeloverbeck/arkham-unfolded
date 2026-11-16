@@ -1,24 +1,30 @@
-//! Current-state files. A loaded baseline, not a history tape, owns write freshness.
-use crate::{
-    APP_VERSION, RuleError,
-    record_replacement::{self, Replacement},
-};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use sha2::{Digest, Sha256};
+//! Current-state files: Arkham's adapter onto the shared save record.
+//!
+//! `unfolded_record_replacement::save` owns the envelope, its checksum, the write
+//! baseline, the unchanged shortcut and validation of the previous record. This
+//! file keeps what identifies a compatible save, the session's validity check,
+//! when a write is exclusive (a new attempt) or archives the current record
+//! (restart), the size limit and the wording of Arkham's refusals. Busy, too
+//! large and file-system failures keep the shared module's words.
+use crate::{APP_VERSION, RuleError};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{
     fmt,
+    marker::PhantomData,
     path::{Path, PathBuf},
     sync::Mutex,
 };
+use unfolded_record_replacement::save::{self, Format, Identity, Write};
 
-const FORMAT_VERSION: u32 = 3;
+const FORMAT_VERSION: &str = "3";
 const MAX_BYTES: u64 = 8 * 1024 * 1024;
 
+/// The shared baseline, behind a lock so a save through `&Session` can update it.
 #[derive(Debug, Default)]
-pub(crate) struct Baseline(Mutex<Option<[u8; 32]>>);
+pub(crate) struct Baseline(Mutex<save::Baseline>);
 impl Clone for Baseline {
     fn clone(&self) -> Self {
-        Self(Mutex::new(*self.0.lock().expect("Save baseline lock")))
+        Self(Mutex::new(self.get()))
     }
 }
 // File custody is not rules state and must not affect state equality.
@@ -29,11 +35,11 @@ impl PartialEq for Baseline {
 }
 impl Eq for Baseline {}
 impl Baseline {
-    fn matches(&self, bytes: &[u8]) -> bool {
-        *self.0.lock().expect("Save baseline lock") == Some(Sha256::digest(bytes).into())
+    fn get(&self) -> save::Baseline {
+        self.0.lock().expect("Save baseline lock").clone()
     }
-    fn remember(&self, bytes: &[u8]) {
-        *self.0.lock().expect("Save baseline lock") = Some(Sha256::digest(bytes).into());
+    fn set(&self, baseline: save::Baseline) {
+        *self.0.lock().expect("Save baseline lock") = baseline;
     }
 }
 
@@ -57,156 +63,151 @@ impl From<std::io::Error> for Error {
         Self(error.to_string())
     }
 }
-impl From<serde_json::Error> for Error {
-    fn from(error: serde_json::Error) -> Self {
-        Self(format!("Invalid save: {error}"))
+
+struct Saved<T>(PhantomData<T>);
+impl<T: Snapshot> Saved<T> {
+    const FORMAT: Self = Self(PhantomData);
+    fn current() -> Identity {
+        [
+            ("format", FORMAT_VERSION),
+            ("kind", T::KIND),
+            ("source", T::SOURCE),
+            ("application", APP_VERSION),
+        ]
+        .into_iter()
+        .collect()
+    }
+}
+impl<T: Snapshot> Format for Saved<T> {
+    type Payload = T;
+    const LIMIT: u64 = MAX_BYTES;
+    fn identity(&self, _: &T) -> Identity {
+        Self::current()
+    }
+    fn accepts(&self, identity: &Identity) -> bool {
+        *identity == Self::current()
+    }
+    // An intact record admits only when this build reproduces it exactly.
+    fn validate(&self, session: &T) -> Result<(), String> {
+        session.validate().map_err(|error| error.to_string())
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Envelope {
-    format_version: u32,
-    kind: String,
-    source_revision: String,
-    app_version: String,
-    payload: serde_json::Value,
-    checksum: String,
+/// What the player was doing when a save was refused, for its wording.
+#[derive(Clone, Copy)]
+enum Action {
+    Continue,
+    Restart,
 }
-impl Envelope {
-    fn checksum(&self) -> Result<String, Error> {
-        Ok(format!(
-            "{:x}",
-            Sha256::digest(serde_json::to_vec(&(
-                self.format_version,
-                &self.kind,
-                &self.source_revision,
-                &self.app_version,
-                &self.payload,
-            ))?)
-        ))
-    }
-}
-fn encode<T: Snapshot>(session: &T) -> Result<Vec<u8>, Error> {
-    session.validate().map_err(|e| Error(e.to_string()))?;
-    let mut envelope = Envelope {
-        format_version: FORMAT_VERSION,
-        kind: T::KIND.into(),
-        source_revision: T::SOURCE.into(),
-        app_version: APP_VERSION.into(),
-        payload: serde_json::to_value(session)?,
-        checksum: String::new(),
+
+fn refusal(error: save::Error, action: Action) -> Error {
+    let again = match action {
+        Action::Restart => "restarting",
+        Action::Continue => "continuing",
     };
-    envelope.checksum = envelope.checksum()?;
-    Ok(serde_json::to_vec(&envelope)?)
+    Error(match error {
+        save::Error::Unsupported(identity) => {
+            let recorded = identity.map_or_else(
+                || "an earlier save format".to_owned(),
+                |identity| {
+                    let value = |name| identity.get(name).unwrap_or("none");
+                    format!(
+                        "format {}, kind {}, source {}, application {}",
+                        value("format"),
+                        value("kind"),
+                        value("source"),
+                        value("application")
+                    )
+                },
+            );
+            format!(
+                "Unsupported save ({recorded}). Records in that format are unsupported by this build, and development builds promise no save compatibility. Start a New attempt at a different save path. The original file was left unchanged."
+            )
+        }
+        save::Error::Malformed(detail) => format!("Invalid save: {detail}"),
+        save::Error::Checksum => {
+            "Save checksum mismatch. The original file was left unchanged.".into()
+        }
+        save::Error::Unreproducible(detail) => format!(
+            "This build cannot reproduce the game recorded in this save ({detail}). Development builds promise no save compatibility: select New attempt to begin again. The original file was left unchanged."
+        ),
+        save::Error::Invalid(detail) => detail,
+        save::Error::Stale => {
+            format!("A different or later decision is already saved. Reopen it before {again}.")
+        }
+        save::Error::Missing => format!("The saved attempt is missing. Save it before {again}."),
+        save::Error::Occupied => {
+            "The new attempt path is already occupied. No existing attempt was opened or replaced."
+                .into()
+        }
+        save::Error::Orphaned => {
+            "A previous attempt is kept at this path without its active save. Start the New attempt at a different save path. No record was changed."
+                .into()
+        }
+        save::Error::NotRegularFile => "The record destination is not a regular file.".into(),
+        other => other.to_string(),
+    })
 }
-fn decode<T: Snapshot>(bytes: &[u8]) -> Result<T, Error> {
-    let envelope: Envelope = serde_json::from_slice(bytes)?;
-    if envelope.format_version != FORMAT_VERSION
-        || envelope.kind != T::KIND
-        || envelope.source_revision != T::SOURCE
-        || envelope.app_version != APP_VERSION
-    {
-        return Err(Error(format!(
-            "Unsupported save (format {}, kind {}, source {}, application {}). Records in that format are unsupported by this build, and development builds promise no save compatibility. Start a New attempt at a different save path. The original file was left unchanged.",
-            envelope.format_version, envelope.kind, envelope.source_revision, envelope.app_version
-        )));
-    }
-    if envelope.checksum != envelope.checksum()? {
-        return Err(Error(
-            "Save checksum mismatch. The original file was left unchanged.".into(),
-        ));
-    }
-    // An intact record admits only when this build reproduces it exactly.
-    let session = serde_json::from_value::<T>(envelope.payload)
-        .map_err(|error| error.to_string())
-        .and_then(|session| session.validate().map(|()| session).map_err(|e| e.0))
-        .map_err(|detail| {
-            Error(format!(
-                "This build cannot reproduce the game recorded in this save ({detail}). Development builds promise no save compatibility: select New attempt to begin again. The original file was left unchanged."
-            ))
-        })?;
-    session.baseline().remember(bytes);
+
+pub(crate) fn load<T: Snapshot>(path: impl AsRef<Path>) -> Result<T, Error> {
+    let (session, baseline) = save::load(&Saved::<T>::FORMAT, path.as_ref())
+        .map_err(|error| refusal(error, Action::Continue))?
+        // The words the operating system gives a missing file, as before.
+        .ok_or_else(|| Error::from(std::io::Error::from_raw_os_error(2)))?;
+    session.baseline().set(baseline);
     Ok(session)
 }
-pub(crate) fn load<T: Snapshot>(path: impl AsRef<Path>) -> Result<T, Error> {
-    decode(&record_replacement::read(path.as_ref(), MAX_BYTES, Error)?)
-}
 pub(crate) fn save<T: Snapshot>(path: impl AsRef<Path>, session: &T) -> Result<(), Error> {
-    save_with_policy(path.as_ref(), session, false)
+    write(
+        path.as_ref(),
+        session,
+        session,
+        Write::Save,
+        Action::Continue,
+    )
+    .map(|_| ())
 }
 
 #[cfg(feature = "tabletop")]
 pub(crate) fn create<T: Snapshot>(path: &Path, session: &T) -> Result<(), Error> {
-    save_with_policy(path, session, true)
+    write(path, session, session, Write::Create, Action::Continue).map(|_| ())
 }
 
-fn save_with_policy<T: Snapshot>(path: &Path, session: &T, exclusive: bool) -> Result<(), Error> {
-    let bytes = encode(session)?;
-    let mut saved_bytes = bytes.clone();
-    record_replacement::replace(
-        path,
-        &bytes,
-        MAX_BYTES,
-        Error,
-        |existing| {
-            let Some(existing) = existing else {
-                return Ok(if exclusive {
-                    Replacement::Create
-                } else {
-                    Replacement::Replace
-                });
-            };
-            if exclusive {
-                return Err(Error("The new attempt path is already occupied. No existing attempt was opened or replaced.".into()));
-            }
-            let committed: T = decode(existing)?;
-            if serde_json::to_value(&committed)? == serde_json::to_value(session)? {
-                saved_bytes = existing.to_vec();
-                return Ok(Replacement::Unchanged);
-            }
-            if !session.baseline().matches(existing) {
-                return Err(Error(
-                    "A different or later decision is already saved. Reopen it before continuing."
-                        .into(),
-                ));
-            }
-            Ok(Replacement::Replace)
-        },
-        |previous| load::<T>(previous).map(|_| ()),
-    )?;
-    session.baseline().remember(&saved_bytes);
-    Ok(())
+/// Write `session` under `owner`'s baseline, which then becomes `session`'s.
+fn write<T: Snapshot>(
+    path: &Path,
+    owner: &T,
+    session: &T,
+    mode: Write,
+    action: Action,
+) -> Result<Option<PathBuf>, Error> {
+    let mut baseline = owner.baseline().get();
+    let archived = save::write(&Saved::<T>::FORMAT, path, &mut baseline, session, mode)
+        .map_err(|error| refusal(error, action))?;
+    session.baseline().set(baseline);
+    Ok(archived)
 }
+
 pub(crate) fn restart<T: Snapshot>(
     path: impl AsRef<Path>,
     expected: &T,
     fresh: &T,
 ) -> Result<PathBuf, Error> {
-    let bytes = encode(fresh)?;
-    let archive = record_replacement::replace(
+    // `expected` must be the session its baseline saw, not a later one.
+    let baseline = expected.baseline().get();
+    if baseline != save::Baseline::default()
+        && !baseline
+            .holds(&Saved::<T>::FORMAT, expected)
+            .map_err(|error| refusal(error, Action::Restart))?
+    {
+        return Err(refusal(save::Error::Stale, Action::Restart));
+    }
+    write(
         path.as_ref(),
-        &bytes,
-        MAX_BYTES,
-        Error,
-        |existing| {
-            let existing = existing.ok_or_else(|| {
-                Error("The saved attempt is missing. Save it before restarting.".into())
-            })?;
-            let committed: T = decode(existing)?;
-            if !expected.baseline().matches(existing)
-                || serde_json::to_value(&committed)? != serde_json::to_value(expected)?
-            {
-                return Err(Error(
-                    "A different or later decision is already saved. Reopen it before restarting."
-                        .into(),
-                ));
-            }
-            Ok(Replacement::Archive)
-        },
-        |previous| load::<T>(previous).map(|_| ()),
+        expected,
+        fresh,
+        Write::Archive,
+        Action::Restart,
     )?
-    .ok_or_else(|| Error("Restart did not retain the previous attempt.".into()))?;
-    fresh.baseline().remember(&bytes);
-    Ok(archive)
+    .ok_or_else(|| Error("Restart did not retain the previous attempt.".into()))
 }

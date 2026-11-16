@@ -1041,7 +1041,7 @@ native reproduction:
   comparison, not proof that it already satisfies the newly accepted policy.
 - Gathering has no restart action. A new save filename creates a fresh setup.
   Party already preserves the old attempt through an explicit restart, using
-  the shared [record replacement](../../src/record_replacement.rs) operation.
+  the shared record replacement operation (now through [`saved_state`](../../src/saved_state.rs)).
 
 The accepted decisions are:
 

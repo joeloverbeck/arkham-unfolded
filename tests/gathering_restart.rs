@@ -57,13 +57,16 @@ fn restart_refuses_stale_missing_and_nonfresh_inputs_without_replacing_progress(
     );
     assert!(!missing.exists());
     assert_eq!(load_session(&path).unwrap(), current);
-    assert!(!std::fs::read_dir(directory.path()).unwrap().any(|entry| {
-        entry
+    assert!(
+        unfolded_record_replacement::archives(&path)
             .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .contains(".archived-")
-    }));
+            .is_empty()
+    );
+    assert!(
+        unfolded_record_replacement::archives(&missing)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -77,7 +80,7 @@ fn restart_refuses_a_busy_save_and_invalid_recovery_without_losing_the_current_a
     let lock = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(directory.path().join("gathering.json.lock"))
+        .open(unfolded_record_replacement::lock_path(&path))
         .unwrap();
     lock.try_lock().unwrap();
     assert!(
@@ -97,4 +100,31 @@ fn restart_refuses_a_busy_save_and_invalid_recovery_without_losing_the_current_a
         std::fs::read(previous_path(&path)).unwrap(),
         b"invalid prior recovery"
     );
+}
+
+#[test]
+fn restart_refuses_a_session_that_moved_on_from_its_saved_record() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("gathering.json");
+    let mut saved = Session::with_seed(89);
+    commit_choice(&path, &mut saved, 0, "lead:tony").unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    // The same baseline, but an unsaved decision on top of it.
+    let mut unsaved = saved.clone();
+    let revision = unsaved.observe().revision;
+    let choice = unsaved.observe().choices[0].id.clone();
+    unsaved.choose(revision, &choice).unwrap();
+    assert_eq!(
+        restart_session(&path, &unsaved, &Session::with_seed(90))
+            .unwrap_err()
+            .to_string(),
+        "A different or later decision is already saved. Reopen it before restarting."
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    assert!(
+        unfolded_record_replacement::archives(&path)
+            .unwrap()
+            .is_empty()
+    );
+    restart_session(&path, &saved, &Session::with_seed(90)).unwrap();
 }

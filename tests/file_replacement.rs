@@ -1,28 +1,12 @@
 //! Characterization at Gathering's public continuity boundaries (#62).
 
-use std::{fs, path::Path};
+use std::{fs, os::unix::fs::FileTypeExt, path::Path};
 
 fn archives(path: &Path) -> Vec<std::path::PathBuf> {
-    let prefix = format!("{}.archived-", path.file_name().unwrap().to_string_lossy());
-    let mut paths: Vec<_> = fs::read_dir(path.parent().unwrap())
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with(&prefix)
-        })
-        .collect();
-    paths.sort();
-    paths
+    unfolded_record_replacement::archives(path).unwrap()
 }
 
-fn lock_path(path: &Path) -> std::path::PathBuf {
-    let mut name = path.as_os_str().to_os_string();
-    name.push(".lock");
-    name.into()
-}
+use unfolded_record_replacement::lock_path;
 
 fn assert_unlocked(path: &Path) {
     fs::File::open(lock_path(path)).unwrap().try_lock().unwrap();
@@ -102,12 +86,20 @@ macro_rules! continuity_cases {
             }
 
             #[test]
-            fn damaged_recovery_blocks_replacement_but_is_ignored_for_a_fresh_path() {
+            fn damaged_recovery_blocks_replacement_and_a_fresh_save_beside_it() {
                 let directory = tempfile::tempdir().unwrap();
                 let path = directory.path().join("session.json");
                 fs::write(previous_path(&path), b"damaged recovery").unwrap();
                 let mut game = Session::new().unwrap();
+                assert_eq!(
+                    save_session(&path, &game).unwrap_err().to_string(),
+                    "A previous attempt is kept at this path without its active save. Start the New attempt at a different save path. No record was changed."
+                );
+                assert!(!path.exists());
+                assert_eq!(fs::read(previous_path(&path)).unwrap(), b"damaged recovery");
+                fs::remove_file(previous_path(&path)).unwrap();
                 save_session(&path, &game).unwrap();
+                fs::write(previous_path(&path), b"damaged recovery").unwrap();
                 assert_eq!(load_session(&path).unwrap(), game);
                 let original = fs::read(&path).unwrap();
                 let before = game.clone();
@@ -224,41 +216,48 @@ macro_rules! continuity_cases {
 
             #[test]
             fn incompatible_active_envelopes_are_refused_before_recovery_or_replacement() {
-                use sha2::{Digest, Sha256};
+                use unfolded_record_replacement::save;
                 let directory = tempfile::tempdir().unwrap();
                 let path = directory.path().join("session.json");
                 let game = Session::new().unwrap();
                 save_session(&path, &game).unwrap();
-                let original: serde_json::Value =
-                    serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                let (identity, payload) = save::unseal(&fs::read(&path).unwrap()).unwrap();
                 fs::write(previous_path(&path), b"damaged recovery").unwrap();
-                for (field, value) in [
-                    ("format_version", serde_json::json!(999)),
-                    ("kind", serde_json::json!("other-session")),
-                    ("source_revision", serde_json::json!("other-source")),
-                    ("app_version", serde_json::json!("other-version")),
-                ] {
-                    let mut invalid = original.clone();
-                    invalid[field] = value;
-                    let checksum = Sha256::digest(
-                        serde_json::to_vec(&serde_json::json!([
-                            invalid["format_version"],
-                            invalid["kind"],
-                            invalid["source_revision"],
-                            invalid["app_version"],
-                            invalid["payload"]
-                        ]))
-                        .unwrap(),
-                    );
-                    invalid["checksum"] = serde_json::json!(format!("{checksum:x}"));
-                    let bytes = serde_json::to_vec(&invalid).unwrap();
+                let mut records = Vec::new();
+                for field in ["format", "kind", "source", "application"] {
+                    let changed: save::Identity = ["format", "kind", "source", "application"]
+                        .into_iter()
+                        .map(|name| {
+                            let value = identity.get(name).unwrap();
+                            (name, if name == field { format!("other-{value}") } else { value.to_owned() })
+                        })
+                        .collect();
+                    records.push(save::seal(&changed, &payload));
+                }
+                // The shape this game wrote before the shared save record.
+                records.push(
+                    serde_json::to_vec(&serde_json::json!({
+                        "format_version": 3, "kind": identity.get("kind"),
+                        "source_revision": identity.get("source"),
+                        "app_version": identity.get("application"),
+                        "payload": payload, "checksum": "0",
+                    }))
+                    .unwrap(),
+                );
+                for bytes in records {
                     fs::write(&path, &bytes).unwrap();
-                    assert!(
-                        save_session(&path, &game)
-                            .unwrap_err()
-                            .to_string()
-                            .starts_with("Unsupported save")
-                    );
+                    for error in [
+                        load_session(&path).unwrap_err(),
+                        save_session(&path, &game).unwrap_err(),
+                    ] {
+                        let error = error.to_string();
+                        assert!(
+                            error.starts_with("Unsupported save (format ")
+                                || error.starts_with("Unsupported save (an earlier save format)"),
+                            "{error}"
+                        );
+                        assert!(error.ends_with("The original file was left unchanged."), "{error}");
+                    }
                     assert_eq!(fs::read(&path).unwrap(), bytes);
                     assert_eq!(fs::read(previous_path(&path)).unwrap(), b"damaged recovery");
                     assert_unlocked(&path);
@@ -317,16 +316,14 @@ macro_rules! continuity_cases {
 
             #[cfg(unix)]
             #[test]
-            fn recovery_install_failure_cleans_staging_and_retains_only_a_restart_archive() {
-                use std::{
-                    io::Write,
-                    os::unix::fs::OpenOptionsExt,
-                    time::{Duration, Instant},
-                };
+            fn a_previous_record_that_is_not_a_regular_file_blocks_replacement() {
+                // Installation failing after recovery validation is held upstream,
+                // at `unfolded_record_replacement::replace` (#30): the shared save
+                // record refuses a non-regular `.previous` before it would read it.
                 for restart in [false, true] {
                     let directory = tempfile::tempdir().unwrap();
                     let path = directory.path().join("session.json");
-                    let game = Session::new().unwrap();
+                    let mut game = Session::new().unwrap();
                     save_session(&path, &game).unwrap();
                     let original = fs::read(&path).unwrap();
                     let previous = previous_path(&path);
@@ -336,76 +333,24 @@ macro_rules! continuity_cases {
                         rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
                     )
                     .unwrap();
-                    let child_path = path.clone();
                     let before = game.clone();
-                    let worker = std::thread::spawn(move || {
-                        let mut live = game;
-                        let result = if restart {
-                            restart_session(&child_path, &live, &Session::new().unwrap())
-                                .map(|_| ())
-                        } else {
-                            commit_choice(&child_path, &mut live, 0, $choice)
-                        };
-                        (result, live)
-                    });
-                    // Opening a nonblocking FIFO writer succeeds only once the
-                    // production reader is inside recovery validation. No sleeps
-                    // or fake filesystem decide when to inject the persist error.
-                    let deadline = Instant::now() + Duration::from_secs(10);
-                    let mut writer = loop {
-                        match fs::OpenOptions::new()
-                            .write(true)
-                            .custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32)
-                            .open(&previous)
-                        {
-                            Ok(writer) => break writer,
-                            Err(error)
-                                if error.raw_os_error()
-                                    == Some(rustix::io::Errno::NXIO.raw_os_error()) =>
-                            {
-                                assert!(
-                                    !worker.is_finished(),
-                                    "writer returned before reading recovery"
-                                );
-                                assert!(
-                                    Instant::now() < deadline,
-                                    "recovery reader did not arrive"
-                                );
-                                std::thread::sleep(Duration::from_millis(1));
-                            }
-                            Err(error) => panic!("open recovery FIFO: {error}"),
-                        }
+                    let result = if restart {
+                        restart_session(&path, &game, &Session::new().unwrap()).map(|_| ())
+                    } else {
+                        commit_choice(&path, &mut game, 0, $choice)
                     };
-                    assert!(
-                        fs::File::open(lock_path(&path))
-                            .unwrap()
-                            .try_lock()
-                            .is_err()
+                    assert_eq!(
+                        result.unwrap_err().to_string(),
+                        "The record destination is not a regular file."
                     );
-                    // The already-open reader gets valid bytes; installation
-                    // subsequently encounters a real directory at .previous.
-                    fs::remove_file(&previous).unwrap();
-                    fs::create_dir(&previous).unwrap();
-                    fs::write(previous.join("owned"), b"keep").unwrap();
-                    // Switch the writer back to blocking for records larger than
-                    // pipe capacity; the production reader drains it concurrently.
-                    rustix::fs::fcntl_setfl(&writer, rustix::fs::OFlags::empty()).unwrap();
-                    writer.write_all(&original).unwrap();
-                    drop(writer);
-                    let (result, live) = worker.join().unwrap();
-                    assert!(result.is_err());
-                    assert_eq!(live, before);
+                    assert_eq!(game, before);
                     assert_eq!(fs::read(&path).unwrap(), original);
-                    assert_eq!(fs::read(previous.join("owned")).unwrap(), b"keep");
-                    let retained = archives(&path);
-                    assert_eq!(retained.len(), usize::from(restart));
-                    if restart {
-                        assert_eq!(fs::read(&retained[0]).unwrap(), original);
-                    }
+                    assert!(fs::symlink_metadata(&previous).unwrap().file_type().is_fifo());
+                    assert!(archives(&path).is_empty());
                     assert_unlocked(&path);
                     assert_no_staging_files(directory.path());
-                    fs::remove_dir_all(&previous).unwrap();
-                    save_session(&path, &live).unwrap();
+                    fs::remove_file(&previous).unwrap();
+                    commit_choice(&path, &mut game, 0, $choice).unwrap();
                 }
             }
         }
