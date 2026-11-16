@@ -794,7 +794,7 @@ fn install(app: &mut App) {
         .init_resource::<consequences::State>()
         .init_resource::<art::Art>()
         .add_plugins(feedback::FeedbackPlugin)
-        .add_plugins(crate::tabletop_counters::CounterPlugin)
+        .add_plugins(unfolded_tabletop::label_anchor::LabelAnchorPlugin)
         .add_plugins(crate::tabletop_reveal::RevealPlugin)
         .add_systems(Startup, setup)
         .add_systems(
@@ -842,7 +842,6 @@ fn install(app: &mut App) {
                 card_counters::follow,
                 trays::animate,
                 world_labels,
-                crate::tabletop_tokens::position_labels,
             )
                 .chain(),
         )

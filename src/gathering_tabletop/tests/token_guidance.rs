@@ -613,7 +613,7 @@ fn chaos_art_supplies_identity_and_disks_keep_accessible_names() {
     finish_presentation(&mut app);
     let world = app.world_mut();
     let captions: Vec<_> = world
-        .query::<(&Text, &crate::tabletop_tokens::Follow)>()
+        .query::<(&Text, &crate::tabletop_tokens::TokenLabel)>()
         .iter(world)
         .map(|(text, _)| text.0.clone())
         .collect();
