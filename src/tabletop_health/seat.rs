@@ -222,8 +222,9 @@ fn acknowledge_image(
 mod tests {
     use super::super::tests::{Fixture, app_with_artwork};
     use super::*;
-    use crate::agent_seat::{Admission, Focus, Game, Hit, Name, Observed, Seat, SeatKey};
+    use crate::agent_seat::{Admission, Focus, Game, Hit, Name, Observed, SeatKey};
     use serde_json::Value;
+    use unfolded_tabletop::seat::{Seat, Unadmitted};
 
     fn seated() -> App {
         let mut app = app_with_artwork();
@@ -306,8 +307,10 @@ mod tests {
         let camera = app.world_mut().spawn_empty().id();
         let mut seat = Seat::new(Unshown, &mut app, camera, None);
 
-        let refused = crate::agent_seat::admit(&mut seat, &mut app, Duration::ZERO).unwrap_err();
+        let unadmitted = seat.admit(&mut app, Duration::ZERO).unwrap_err();
+        let refused = crate::agent_seat::unfinished(app.world(), Duration::ZERO);
 
+        assert_eq!(unadmitted, Unadmitted::Unfinished);
         assert!(health(&app).is_checking());
         assert_eq!(
             refused,

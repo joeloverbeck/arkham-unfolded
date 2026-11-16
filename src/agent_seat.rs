@@ -1,9 +1,9 @@
 //! Agent seat (#153): Arkham's side of the game-neutral half. An agent sits at the real
 //! table through one JSON request per line and one JSON response per line, with no
 //! window: on standard input and output in batch form, or held across shell commands on
-//! a local socket ([`socket`], #175). The protocol loop both forms share, its guards,
-//! fixed-step stepping, pointer and key synthesis, capture and the held session come
-//! from `unfolded-tabletop`'s `seat`. It reaches the game only through [`Game`], which
+//! a local socket (#175). The protocol loop both forms share, its guards, fixed-step
+//! stepping, pointer and key synthesis, capture, the held session and the order in which
+//! a seat starts come from `unfolded-tabletop`'s `seat`. It reaches the game only through [`Game`], which
 //! `gathering_tabletop::seat` implements: produce an observation and its revision,
 //! resolve a name to a screen position (and a hit back to a name), say what has
 //! keyboard focus, report whether the table is settled, advance the presentation clock,
@@ -12,8 +12,8 @@
 //!
 //! What stays here is Arkham's: the plugins of its windowless host, the two pacing
 //! resources its table reads, the keys the table reads and the two of them that can
-//! commit, what the seat says when admission runs out of time, the name that marks a
-//! launched seat, and how long a held session idles unless told otherwise.
+//! commit, what the seat says when admission runs out of time and the name that marks a
+//! launched seat ([`START`]).
 
 use crate::{
     tabletop_health,
@@ -26,8 +26,8 @@ use bevy::{
 use std::time::Duration;
 use unfolded_tabletop::capture;
 pub(crate) use unfolded_tabletop::seat::{
-    Admission, Focus, Game, Hit, Logical, Name, Observed, Seat, SeatKey, SeatedAgent, Unadmitted,
-    refuse,
+    Admission, Focus, Game, Hit, Logical, Name, Observed, SeatKey, SeatedAgent, refuse,
+    start::{self, Start},
 };
 
 /// Keys the table reads, which are the keys the seat may press: the protocol name (its
@@ -103,51 +103,24 @@ const fn key(name: &'static str, code: KeyCode, logical: Logical, commits: bool)
     }
 }
 
-/// Admit the table within `limit`, then settle it. An admission still checking at the
-/// limit is refused with what blocks it.
-pub(crate) fn admit<G: Game>(
-    seat: &mut Seat<G>,
-    app: &mut App,
-    limit: Duration,
-) -> Result<(), String> {
-    seat.admit(app, limit)
-        .map_err(|unadmitted| match unadmitted {
-            Unadmitted::Refused(reason) => reason,
-            Unadmitted::Unfinished => format!(
-                "The seat could not admit play within {} seconds. No game decision was made; saves are unchanged.\n{}",
-                limit.as_secs(),
-                tabletop_health::admission_blocker(app.world())
-            ),
-        })
+/// Arkham's seat start: the variable that marks a launched Arkham seat and Arkham's words
+/// for an admission that ran out of time, with the shared limits. The order of the steps
+/// and every refusal before `ready` are the shared start's.
+pub(crate) const START: Start = Start::new("ARKHAM_AGENT_SEAT_DETACHED", unfinished);
+
+/// What the seat says of an admission still checking at its limit: what blocks it.
+pub(crate) fn unfinished(world: &World, limit: Duration) -> String {
+    format!(
+        "The seat could not admit play within {} seconds. No game decision was made; saves are unchanged.\n{}",
+        limit.as_secs(),
+        tabletop_health::admission_blocker(world)
+    )
 }
 
-/// The held session (#175), under Arkham's own names: the shared listener, launcher
-/// and announcement, with the variable that marks a launched Arkham seat and Arkham's
-/// idle period.
+/// The held session's listener, which the agent partners' host also claims its path
+/// through.
 pub(crate) mod socket {
-    use std::{path::Path, time::Duration};
-    use unfolded_tabletop::seat::socket as shared;
-    pub(crate) use unfolded_tabletop::seat::socket::{Listener, announce};
-
-    /// Set on the process the launcher starts, which serves instead of launching.
-    const DETACHED: &str = "ARKHAM_AGENT_SEAT_DETACHED";
-    /// A held session without any request for this long ends itself.
-    pub(crate) const IDLE: Duration = Duration::from_secs(30 * 60);
-
-    /// Whether this process is the seat a launcher started.
-    pub(crate) fn detached() -> bool {
-        shared::detached(DETACHED)
-    }
-
-    /// Start the seat held on `socket` and wait for its admission.
-    pub(crate) fn launch(socket: &Path) -> Result<(), String> {
-        shared::launch(socket, DETACHED)
-    }
-
-    /// Become the seat a launcher started, and take the listener it handed over.
-    pub(crate) fn detach(socket: &Path) -> Result<Listener, String> {
-        shared::detach(socket, DETACHED)
-    }
+    pub(crate) use unfolded_tabletop::seat::socket::Listener;
 }
 
 /// Native plugins without a window event loop: no operating-system window is ever

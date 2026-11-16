@@ -8,7 +8,7 @@
 //!
 //! The seat is the same table as native play: the same `install`, rules session,
 //! continuity and save path, and artwork verification. Every difference from native
-//! startup (`run_window`) is assembled in [`run`] and [`open`], and is exactly:
+//! startup (`run_window`) is assembled in [`run`] and [`table`], and is exactly:
 //!
 //! 1. No window event loop: the seat steps updates itself.
 //! 2. A logical primary window with no operating-system window behind it.
@@ -25,14 +25,13 @@
 //! 9. Sitting marks the table with [`agent_seat::SeatedAgent`], so a Credits link
 //!    reports its address instead of reaching the desktop's opener.
 //! 10. With `--socket`, the launching command claims the socket and starts the seat as
-//!     a detached process of its own ([`agent_seat::socket`]), which performs this same
-//!     admission and then serves the socket instead of standard input.
+//!     a detached process of its own, which performs this same admission and then
+//!     serves the socket instead of standard input. The shared start
+//!     ([`agent_seat::START`]) owns that order and every refusal before `ready`.
 
 use super::*;
 use crate::{
-    agent_seat::{
-        self, Admission, Focus, Game, Hit, Name, Observed, Seat, SeatKey, refuse, socket,
-    },
+    agent_seat::{self, Admission, Focus, Game, Hit, Name, Observed, SeatKey, refuse, start},
     tabletop_health::{self, SeatAdmissionPlugin},
     tabletop_pacing::PresentationTime,
     tabletop_support::asset_settings::Collection,
@@ -43,15 +42,10 @@ use std::time::Duration;
 
 /// The native window's default resolution.
 const SIZE: UVec2 = UVec2::new(1600, 1000);
-/// Asynchronous artwork loading runs in wall-clock time.
-const ADMISSION_LIMIT: Duration = Duration::from_secs(120);
 
 /// An admitted table with an agent seated at it. The artwork lease outlives the app.
-pub(super) struct Seated {
-    pub(super) app: App,
-    pub(super) seat: Seat<Gathering>,
-    _artwork: crate::assets::package::ArtworkUse,
-}
+#[cfg(test)]
+pub(super) type Seated = start::Seated<Gathering, crate::assets::package::ArtworkUse>;
 
 pub(super) fn run(launch: Result<Option<Options>, String>) -> Result<(), String> {
     let options = match launch.and_then(|options| match options {
@@ -63,25 +57,14 @@ pub(super) fn run(launch: Result<Option<Options>, String>) -> Result<(), String>
         Ok(None) => return Ok(()),
         Err(error) => return refuse(error),
     };
-    let Some(path) = &options.socket else {
-        let mut seated = open(&options).or_else(refuse)?;
-        let Seated { app, seat, .. } = &mut seated;
-        return seat.serve(app, std::io::stdin().lock(), std::io::stdout().lock());
-    };
-    if !socket::detached() {
-        // The launching command: it returns once the seat it starts is admitted.
-        return socket::launch(path).or_else(refuse);
-    }
-    let listener = socket::detach(path).or_else(refuse)?;
-    let mut seated = open(&options).or_else(refuse)?;
-    let Seated { app, seat, .. } = &mut seated;
-    socket::announce(&seat.ready(app))?;
-    listener.serve(seat, app, idle(&options))
+    agent_seat::START
+        .idle(idle(&options))
+        .run(options.socket.as_deref(), || table(&options))
 }
 
 /// How long a held session waits for a request before it ends as `quit` does.
 fn idle(options: &Options) -> Duration {
-    options.idle_minutes.map_or(socket::IDLE, |minutes| {
+    options.idle_minutes.map_or(start::IDLE, |minutes| {
         Duration::from_secs(u64::from(minutes) * 60)
     })
 }
@@ -113,7 +96,18 @@ fn artwork(
     Ok((art::Prepared::new(root)?, collection, lease))
 }
 
+/// The admitted table with an agent seated at it in this process, as a seat start
+/// admits it.
+#[cfg(test)]
 pub(super) fn open(options: &Options) -> Result<Seated, String> {
+    agent_seat::START.admit(table(options)?)
+}
+
+/// The Gathering table without a window, with the seat's surface installed, holding
+/// its artwork lease.
+fn table(
+    options: &Options,
+) -> Result<start::Table<Gathering, crate::assets::package::ArtworkUse>, String> {
     let (prepared, collection, artwork) = artwork(options).map_err(|reason| {
         format!(
             "{} cannot start play.\nArtwork folder: {}\n\n{reason}\n\nThe agent seat has no artwork recovery: import or choose artwork in the native application. No game decision was made; saves are unchanged.",
@@ -138,13 +132,7 @@ pub(super) fn open(options: &Options) -> Result<Seated, String> {
     agent_seat::install::<MainCamera>(&mut app, SIZE);
     install(&mut app);
     crate::tabletop_startup::require_artwork(&mut app, &collection);
-    let mut seat = Seat::open(Gathering, &mut app)?;
-    agent_seat::admit(&mut seat, &mut app, ADMISSION_LIMIT)?;
-    Ok(Seated {
-        app,
-        seat,
-        _artwork: artwork,
-    })
+    Ok(start::Table::new(app, Gathering).keeping(artwork))
 }
 
 pub(super) struct Gathering;
