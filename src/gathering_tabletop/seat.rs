@@ -337,10 +337,6 @@ impl Game for Gathering {
         &agent_seat::KEYS
     }
 
-    fn pipelines_ready(&self, world: &World) -> bool {
-        tabletop_health::pipelines_ready(world)
-    }
-
     /// The focused control or menu row exactly as `controls` and `menu.rows` report
     /// it; any other focused entity is described as a pointer hit would be.
     fn focus(&self, world: &mut World) -> Focus {

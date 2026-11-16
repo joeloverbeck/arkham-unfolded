@@ -7,8 +7,10 @@
 //! `gathering_tabletop::seat` implements: produce an observation and its revision,
 //! resolve a name to a screen position (and a hit back to a name), say what has
 //! keyboard focus, report whether the table is settled, advance the presentation clock,
-//! say whether the table is admitted and its render pipelines are ready, and name the
-//! keys the seat may press.
+//! say whether the table is admitted, and name the keys the seat may press. Focus, the
+//! clock and the keys are Arkham's own here, where the shared seat would otherwise
+//! answer them itself. The seat decides itself whether the render pipelines are ready
+//! before a capture.
 //!
 //! What stays here is Arkham's: the plugins of its windowless host, the two pacing
 //! resources its table reads, the keys the table reads and the two of them that can
