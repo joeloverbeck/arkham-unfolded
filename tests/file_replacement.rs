@@ -251,7 +251,11 @@ macro_rules! continuity_cases {
                         save_session(&path, &game).unwrap_err(),
                     ] {
                         let error = error.to_string();
-                        assert!(error.starts_with("Unsupported save ("), "{error}");
+                        assert!(
+                            error.starts_with("Unsupported save (format ")
+                                || error.starts_with("Unsupported save (an earlier save format)"),
+                            "{error}"
+                        );
                         assert!(error.ends_with("The original file was left unchanged."), "{error}");
                     }
                     assert_eq!(fs::read(&path).unwrap(), bytes);

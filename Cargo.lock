@@ -232,8 +232,9 @@ dependencies = [
  "tempfile",
  "toml",
  "unfolded-dev-tools",
+ "unfolded-record-replacement",
  "unfolded-seat-client",
- "unfolded-seat-protocol 0.1.0 (git+https://github.com/joeloverbeck/unfolded-tabletop?rev=3121c60b39744f8cd92e46ce3d634d7674897ebb)",
+ "unfolded-seat-protocol",
  "x11rb",
  "zbus",
 ]
@@ -4980,11 +4981,12 @@ dependencies = [
 [[package]]
 name = "unfolded-dev-tools"
 version = "0.1.0"
-source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=3121c60b39744f8cd92e46ce3d634d7674897ebb#3121c60b39744f8cd92e46ce3d634d7674897ebb"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=9ab6f1ebc3c4162a09681d5d215f26c04cd93cd8#9ab6f1ebc3c4162a09681d5d215f26c04cd93cd8"
 dependencies = [
  "anyhow",
  "clap",
  "ctrlc",
+ "image",
  "libc",
  "serde",
  "serde_json",
@@ -5011,20 +5013,11 @@ dependencies = [
 [[package]]
 name = "unfolded-seat-client"
 version = "0.1.0"
-source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=3121c60b39744f8cd92e46ce3d634d7674897ebb#3121c60b39744f8cd92e46ce3d634d7674897ebb"
+source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=9ab6f1ebc3c4162a09681d5d215f26c04cd93cd8#9ab6f1ebc3c4162a09681d5d215f26c04cd93cd8"
 dependencies = [
  "anyhow",
  "serde_json",
- "unfolded-seat-protocol 0.1.0 (git+https://github.com/joeloverbeck/unfolded-tabletop?rev=3121c60b39744f8cd92e46ce3d634d7674897ebb)",
-]
-
-[[package]]
-name = "unfolded-seat-protocol"
-version = "0.1.0"
-source = "git+https://github.com/joeloverbeck/unfolded-tabletop?rev=3121c60b39744f8cd92e46ce3d634d7674897ebb#3121c60b39744f8cd92e46ce3d634d7674897ebb"
-dependencies = [
- "serde",
- "serde_json",
+ "unfolded-seat-protocol",
 ]
 
 [[package]]
@@ -5046,7 +5039,7 @@ dependencies = [
  "rustix 1.1.6",
  "serde_json",
  "tempfile",
- "unfolded-seat-protocol 0.1.0 (git+https://github.com/joeloverbeck/unfolded-tabletop?rev=9ab6f1ebc3c4162a09681d5d215f26c04cd93cd8)",
+ "unfolded-seat-protocol",
 ]
 
 [[package]]

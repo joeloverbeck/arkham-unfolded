@@ -4,7 +4,8 @@
 //! baseline, the unchanged shortcut and validation of the previous record. This
 //! file keeps what identifies a compatible save, the session's validity check,
 //! when a write is exclusive (a new attempt) or archives the current record
-//! (restart), the size limit and the wording of every refusal.
+//! (restart), the size limit and the wording of Arkham's refusals. Busy, too
+//! large and file-system failures keep the shared module's words.
 use crate::{APP_VERSION, RuleError};
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
@@ -83,10 +84,10 @@ impl<T: Snapshot> Format for Saved<T> {
     fn identity(&self, _: &T) -> Identity {
         Self::current()
     }
-    // An intact record admits only when this build reproduces it exactly.
     fn accepts(&self, identity: &Identity) -> bool {
         *identity == Self::current()
     }
+    // An intact record admits only when this build reproduces it exactly.
     fn validate(&self, session: &T) -> Result<(), String> {
         session.validate().map_err(|error| error.to_string())
     }
@@ -95,21 +96,29 @@ impl<T: Snapshot> Format for Saved<T> {
 /// What the player was doing when a save was refused, for its wording.
 #[derive(Clone, Copy)]
 enum Action {
-    Load,
     Continue,
     Restart,
 }
 
-fn words(error: save::Error, action: Action) -> Error {
+fn refusal(error: save::Error, action: Action) -> Error {
     let again = match action {
         Action::Restart => "restarting",
-        Action::Load | Action::Continue => "continuing",
+        Action::Continue => "continuing",
     };
     Error(match error {
         save::Error::Unsupported(identity) => {
             let recorded = identity.map_or_else(
                 || "an earlier save format".to_owned(),
-                |identity| identity.to_string(),
+                |identity| {
+                    let value = |name| identity.get(name).unwrap_or("none");
+                    format!(
+                        "format {}, kind {}, source {}, application {}",
+                        value("format"),
+                        value("kind"),
+                        value("source"),
+                        value("application")
+                    )
+                },
             );
             format!(
                 "Unsupported save ({recorded}). Records in that format are unsupported by this build, and development builds promise no save compatibility. Start a New attempt at a different save path. The original file was left unchanged."
@@ -142,8 +151,9 @@ fn words(error: save::Error, action: Action) -> Error {
 
 pub(crate) fn load<T: Snapshot>(path: impl AsRef<Path>) -> Result<T, Error> {
     let (session, baseline) = save::load(&Saved::<T>::FORMAT, path.as_ref())
-        .map_err(|error| words(error, Action::Load))?
-        .ok_or_else(|| Error::from(std::io::Error::from(std::io::ErrorKind::NotFound)))?;
+        .map_err(|error| refusal(error, Action::Continue))?
+        // The words the operating system gives a missing file, as before.
+        .ok_or_else(|| Error::from(std::io::Error::from_raw_os_error(2)))?;
     session.baseline().set(baseline);
     Ok(session)
 }
@@ -173,7 +183,7 @@ fn write<T: Snapshot>(
 ) -> Result<Option<PathBuf>, Error> {
     let mut baseline = owner.baseline().get();
     let archived = save::write(&Saved::<T>::FORMAT, path, &mut baseline, session, mode)
-        .map_err(|error| words(error, action))?;
+        .map_err(|error| refusal(error, action))?;
     session.baseline().set(baseline);
     Ok(archived)
 }
@@ -188,9 +198,9 @@ pub(crate) fn restart<T: Snapshot>(
     if baseline != save::Baseline::default()
         && !baseline
             .holds(&Saved::<T>::FORMAT, expected)
-            .map_err(|error| words(error, Action::Restart))?
+            .map_err(|error| refusal(error, Action::Restart))?
     {
-        return Err(words(save::Error::Stale, Action::Restart));
+        return Err(refusal(save::Error::Stale, Action::Restart));
     }
     write(
         path.as_ref(),
