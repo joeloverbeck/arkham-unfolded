@@ -232,3 +232,31 @@ pub(crate) fn restart<T: Snapshot>(
     )?
     .ok_or_else(|| Error("Restart did not retain the previous attempt.".into()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Error;
+    use unfolded_record_replacement::Error as Record;
+
+    /// The remembered attempt's record refuses through this conversion: Arkham's
+    /// own words, which the shared defaults no longer give.
+    #[test]
+    fn the_shared_records_busy_and_over_limit_refusals_are_in_arkhams_words() {
+        assert_eq!(
+            Error::from(Record::TooLarge).to_string(),
+            "This file exceeds the bounded experiment's record limit."
+        );
+        let held = std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "lock acquisition failed because the operation would block",
+        );
+        assert_eq!(
+            Error::from(Record::Busy(held)).to_string(),
+            "The save is busy: lock acquisition failed because the operation would block"
+        );
+        assert_eq!(
+            Error::from(Record::NotRegularFile).to_string(),
+            "The record destination is not a regular file."
+        );
+    }
+}
