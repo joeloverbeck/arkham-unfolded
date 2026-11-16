@@ -2,20 +2,14 @@ use super::*;
 
 fn loader_app(prepared: &Prepared) -> App {
     let mut app = App::new();
-    app.add_plugins(
+    app.add_plugins(unfolded_tabletop::capture::windowless(
         DefaultPlugins
             .set(prepared.asset_plugin())
-            .set(WindowPlugin {
-                primary_window: None,
-                exit_condition: bevy::window::ExitCondition::DontExit,
-                ..default()
-            })
             .set(bevy::render::RenderPlugin {
                 synchronous_pipeline_compilation: true,
                 ..default()
-            })
-            .disable::<bevy::winit::WinitPlugin>(),
-    )
+            }),
+    ))
     .add_plugins(crate::tabletop_chaos_pouch::ChaosPouchPlugin);
     app
 }
@@ -440,27 +434,21 @@ fn bag_halo(app: &mut App) -> (f32, Visibility) {
     )
 }
 
+/// The shared capture of `target`, read back from the file it wrote. Pipelines are
+/// compiled before their frame here, so nothing but the render pipelines is waited for.
 fn capture(app: &mut App, target: &Handle<Image>, path: &std::path::Path) -> image::RgbImage {
-    use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
-    let result = std::sync::Arc::new(std::sync::Mutex::new(None));
-    let slot = result.clone();
-    app.world_mut()
-        .spawn(Screenshot::image(target.clone()))
-        .observe(move |event: On<ScreenshotCaptured>| {
-            *slot.lock().unwrap() = Some(event.image.clone());
-        });
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        app.update();
-        if let Some(image) = result.lock().unwrap().take() {
-            let image = image.try_into_dynamic().unwrap().to_rgb8();
-            image.save(path).unwrap();
-            return image;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "GPU capture timed out"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    let captured = unfolded_tabletop::capture::when_ready(
+        app,
+        target.clone(),
+        path,
+        deadline,
+        |_| true,
+        |app| {
+            app.update();
+            app.should_exit().is_none()
+        },
+    );
+    assert_eq!(captured, Ok(()), "GPU capture");
+    image::open(path).unwrap().to_rgb8()
 }
