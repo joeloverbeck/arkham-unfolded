@@ -21,10 +21,7 @@ use crate::{
     tabletop_health,
     tabletop_pacing::{PresentationTime, Redraw},
 };
-use bevy::{
-    app::PluginGroupBuilder, asset::AssetPlugin, input::keyboard::Key, prelude::*,
-    winit::WinitPlugin,
-};
+use bevy::{app::PluginGroupBuilder, asset::AssetPlugin, input::keyboard::Key, prelude::*};
 use std::{sync::LazyLock, time::Duration};
 use unfolded_tabletop::capture;
 pub(crate) use unfolded_tabletop::seat::{
@@ -104,13 +101,10 @@ pub(crate) mod socket {
 }
 
 /// Native plugins without a window event loop: no operating-system window is ever
-/// created and the caller steps updates itself. The window settings are the shared
-/// ones; Arkham enabled Bevy's event loop, so Arkham leaves it out.
+/// created and the caller steps updates itself. The configuration is the shared one;
+/// Arkham keeps pipelined rendering.
 pub(crate) fn windowless(asset: AssetPlugin) -> PluginGroupBuilder {
-    DefaultPlugins
-        .set(asset)
-        .set(capture::no_window())
-        .disable::<WinitPlugin>()
+    capture::windowless(DefaultPlugins.set(asset))
 }
 
 /// Give the table the shared windowless surface: a logical primary window with
@@ -127,6 +121,7 @@ pub(crate) fn install<C: Component>(app: &mut App, size: UVec2) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::winit::WinitPlugin;
     use bevy::{
         camera::RenderTarget, render::render_resource::TextureFormat, window::PrimaryWindow,
     };
