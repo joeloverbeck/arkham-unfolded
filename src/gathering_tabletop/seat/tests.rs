@@ -26,8 +26,11 @@ struct Sitting {
 }
 
 impl Sitting {
+    /// The response to `request`; a table that has exited fails the test here.
     fn ask(&mut self, request: Value) -> Value {
-        self.seat.respond(&mut self.app, &request.to_string()).0
+        self.seat
+            .respond(&mut self.app, &request.to_string())
+            .unwrap_or_else(|exited| panic!("{request}: {exited}"))
     }
 
     /// Mesh picking is absent here, so a synthetic intersection opens the menu.
@@ -1039,8 +1042,7 @@ fn the_protocol_refuses_what_it_cannot_do_and_ends_cleanly() {
         (r#"{"op":"observe","extra":1}"#, "unknown field"),
         (r#"{"op":"activate","choice":"lead:tony"}"#, "revision"),
     ] {
-        let (response, proceed) = seat.seat.respond(&mut seat.app, request);
-        assert!(proceed);
+        let response = seat.seat.respond(&mut seat.app, request).unwrap();
         assert_eq!(response["status"], "refused", "{request}");
         assert!(
             response["error"].as_str().unwrap().contains(expected),
@@ -1529,8 +1531,10 @@ fn a_held_session_waits_thirty_minutes_for_a_request_unless_started_with_another
     );
 }
 
+/// The response to `request`; a table that has exited fails the test here.
 fn tell(seat: &mut Seat<Gathering>, app: &mut App, request: Value) -> Value {
-    seat.respond(app, &request.to_string()).0
+    seat.respond(app, &request.to_string())
+        .unwrap_or_else(|exited| panic!("{request}: {exited}"))
 }
 
 /// Open an existing overflow through guarded keyboard input, then wheel through
@@ -1840,9 +1844,8 @@ fn the_real_table_is_admitted_and_played_without_a_window() {
         }
     }
 
-    let (bye, proceed) = seat.respond(&mut app, r#"{"op":"quit"}"#);
+    let bye = seat.respond(&mut app, r#"{"op":"quit"}"#).unwrap();
     assert_eq!(bye["status"], "bye");
-    assert!(!proceed);
     drop(app);
     // The attempt stays resumable through the ordinary driver's reader.
     assert_eq!(saved(&save)["revision"], 1);
@@ -1867,7 +1870,15 @@ fn the_real_table_is_admitted_and_played_without_a_window() {
     app.world_mut()
         .resource_mut::<Assets<Image>>()
         .remove(study.id());
-    let (ended, proceed) = seat.respond(&mut app, r#"{"op":"key","key":"Home","revision":1}"#);
+    let exited = seat
+        .respond(&mut app, r#"{"op":"key","key":"Home","revision":1}"#)
+        .unwrap_err();
+    assert!(exited.is_error());
+    assert!(
+        exited.to_string().contains("became unavailable"),
+        "{exited}"
+    );
+    let ended = exited.response();
     assert_eq!(ended["status"], "exited", "{ended}");
     assert_eq!(ended["ok"], false);
     assert!(
@@ -1878,7 +1889,6 @@ fn the_real_table_is_admitted_and_played_without_a_window() {
         "{}",
         ended["error"]
     );
-    assert!(!proceed);
     assert_eq!(std::fs::read(&save).unwrap(), before);
 }
 
