@@ -74,7 +74,7 @@ fn assert_mesh_clears(points: &[Vec2], obstacles: &[Rect]) {
     let mesh = link_mesh(points, connection(), LINK_HALF_WIDTH, LINK_HEIGHT);
     let positions = vertices(&mesh);
     assert!(positions.iter().flatten().all(|value| value.is_finite()));
-    for triangle in positions.chunks_exact(3) {
+    for triangle in positions.as_chunks::<3>().0 {
         let flat = triangle
             .iter()
             .map(|point| Vec2::new(point[0], point[2]))

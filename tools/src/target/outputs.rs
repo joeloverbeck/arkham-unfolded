@@ -3,6 +3,9 @@
 //! fingerprint directory `.fingerprint/<package>-<hash>` also carries, and it never removes
 //! the files of an earlier identity. A new `unfolded-tabletop` revision, or a checkout's own
 //! `codegen-units` value, gives every target of the repository a new identity.
+//!
+//! This is the layout Cargo 1.97 writes. Cargo 1.100 puts each build in
+//! `build/<package>/<hash>/`, which this does not read, so it finds none there (#277).
 
 use super::{Outcome, present, subdirectories, usage};
 use anyhow::{Context, Result, ensure};
