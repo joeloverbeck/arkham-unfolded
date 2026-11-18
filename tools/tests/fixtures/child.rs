@@ -48,7 +48,7 @@ fn main() -> ExitCode {
                 "show-fail" => return ExitCode::from(1),
                 "empty" => {},
                 "stable" => println!("stable-x86_64-unknown-linux-gnu (default)"),
-                _ => println!("1.97.1-x86_64-unknown-linux-gnu (overridden by rust-toolchain.toml)"),
+                _ => println!("1.100.0-x86_64-unknown-linux-gnu (overridden by rust-toolchain.toml)"),
             }
         }
         return ExitCode::from(if (mode == "default-fail" && args.first().is_some_and(|arg| arg == "default")) || (mode == "uninstall-fail" && args.first().is_some_and(|arg| arg == "toolchain")) { 1 } else { 0 });

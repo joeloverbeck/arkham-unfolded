@@ -183,7 +183,7 @@ pub(super) fn link_triangles(app: &mut App) -> Vec<[Vec2; 3]> {
         else {
             panic!("links expose positions");
         };
-        for triangle in points.chunks_exact(3) {
+        for triangle in points.as_chunks::<3>().0 {
             triangles
                 .push([0, 1, 2].map(|index| Vec2::new(triangle[index][0], triangle[index][2])));
         }
@@ -670,7 +670,7 @@ fn screen_link_triangles(app: &mut App) -> Vec<[Vec2; 3]> {
         else {
             panic!("links expose positions");
         };
-        for triangle in points.chunks_exact(3) {
+        for triangle in points.as_chunks::<3>().0 {
             let screen = [0, 1, 2].map(|index| {
                 project(
                     app,

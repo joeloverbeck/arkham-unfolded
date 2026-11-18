@@ -51,7 +51,7 @@ fn ci_selects_the_active_override_before_removing_unused_stable() {
         );
         assert_eq!(
             fs::read_to_string(&trace).unwrap(),
-            "show active-toolchain\ndefault 1.97.1-x86_64-unknown-linux-gnu\ntoolchain uninstall stable\n"
+            "show active-toolchain\ndefault 1.100.0-x86_64-unknown-linux-gnu\ntoolchain uninstall stable\n"
         );
         for mode in ["show-fail", "empty", "stable", "default-fail"] {
             fs::write(&trace, "").unwrap();

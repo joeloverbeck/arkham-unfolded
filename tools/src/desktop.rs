@@ -211,8 +211,10 @@ impl ClientImage<'_> {
         );
         let rgb: Vec<u8> = self
             .data
-            .chunks_exact(4)
-            .flat_map(|pixel| [pixel[2], pixel[1], pixel[0]])
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|&[blue, green, red, _]| [red, green, blue])
             .collect();
         let mut encoder = png::Encoder::new(
             native::new_file(path)?,
