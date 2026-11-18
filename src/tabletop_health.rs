@@ -959,7 +959,9 @@ mod tests {
         (app, window)
     }
 
-    /// The instant a test's frames count from, for Bevy's `Time<Real>`.
+    /// The instant a test's frames count from, for Bevy's `Time<Real>`. Only gaps
+    /// between frames match `HealthClock`'s: the first `update_at` inserts it, so a
+    /// test that builds its app another way gets it too.
     #[derive(Resource, Clone, Copy)]
     struct TestStart(Instant);
 
