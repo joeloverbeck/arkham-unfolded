@@ -24,6 +24,7 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+use unfolded_tabletop::window_size::WindowSizeLogPlugin;
 
 mod seat;
 pub(crate) use seat::{SeatAdmissionPlugin, admission, admission_blocker};
@@ -278,7 +279,8 @@ impl Plugin for TabletopHealthPlugin {
                 )
                     .chain(),
             )
-            .add_systems(Update, (update_checking_overlay, log_window_size))
+            .add_systems(Update, update_checking_overlay)
+            .add_plugins(WindowSizeLogPlugin)
             .add_systems(Last, keep_checking_active.in_set(RequestRedraw))
             .add_systems(Last, refresh_watchdog.after(SelectCadence));
         let progress = app.world().resource::<GpuProgress>().clone();
@@ -556,71 +558,6 @@ fn keep_checking_active(
     }
 }
 
-/// How long a new window size must hold before it is logged.
-const WINDOW_SIZE_SETTLE: Duration = Duration::from_millis(500);
-
-/// The image the renderer fills. A desktop that scales the window can make it far
-/// larger than the display (#157), so the windowed table logs each size that holds
-/// for [`WINDOW_SIZE_SETTLE`].
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct WindowSize {
-    width: u32,
-    height: u32,
-    scale_factor: f32,
-}
-
-#[derive(Default)]
-struct WindowSizeLog {
-    logged: Option<WindowSize>,
-    /// A size not yet logged, and the [`HealthClock`] time it was first seen.
-    pending: Option<(WindowSize, Duration)>,
-}
-
-impl WindowSizeLog {
-    /// Returns a size to log once it differs from the last logged one and has held
-    /// for [`WINDOW_SIZE_SETTLE`], so a drag logs where it ends, not every step.
-    fn observe(&mut self, size: WindowSize, now: Duration) -> Option<WindowSize> {
-        if self.logged == Some(size) {
-            self.pending = None;
-            return None;
-        }
-        match self.pending {
-            Some((pending, since)) if pending == size => {
-                (now.saturating_sub(since) >= WINDOW_SIZE_SETTLE).then(|| {
-                    self.logged = Some(size);
-                    self.pending = None;
-                    size
-                })
-            }
-            _ => {
-                self.pending = Some((size, now));
-                None
-            }
-        }
-    }
-}
-
-fn log_window_size(
-    windows: Query<&Window>,
-    clock: Res<HealthClock>,
-    mut log: Local<WindowSizeLog>,
-) {
-    let Some(window) = windows.iter().next() else {
-        return;
-    };
-    let size = WindowSize {
-        width: window.physical_width(),
-        height: window.physical_height(),
-        scale_factor: window.scale_factor(),
-    };
-    if let Some(size) = log.observe(size, clock.now()) {
-        info!(
-            "Window: {}×{} physical pixels at scale factor {}",
-            size.width, size.height, size.scale_factor
-        );
-    }
-}
-
 #[derive(Component)]
 struct CheckingOverlay;
 #[derive(Component)]
@@ -845,35 +782,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_window_size_is_logged_once_after_it_settles() {
-        let size = |width| WindowSize {
-            width,
-            height: 2000,
-            scale_factor: 2.0,
-        };
-        let at = Duration::from_millis;
-        let mut log = WindowSizeLog::default();
-
-        // The opening size holds for half a second before it is logged, once.
-        assert_eq!(log.observe(size(3200), at(0)), None);
-        assert_eq!(log.observe(size(3200), at(499)), None);
-        assert_eq!(log.observe(size(3200), at(500)), Some(size(3200)));
-        assert_eq!(log.observe(size(3200), at(5_000)), None);
-
-        // A drag passes through sizes; only the one it ends on is logged.
-        assert_eq!(log.observe(size(4000), at(6_000)), None);
-        assert_eq!(log.observe(size(5000), at(6_400)), None);
-        assert_eq!(log.observe(size(6010), at(6_800)), None);
-        assert_eq!(log.observe(size(6010), at(7_299)), None);
-        assert_eq!(log.observe(size(6010), at(7_300)), Some(size(6010)));
-
-        // Returning to the logged size before a new one settles logs nothing.
-        assert_eq!(log.observe(size(3200), at(8_000)), None);
-        assert_eq!(log.observe(size(6010), at(8_100)), None);
-        assert_eq!(log.observe(size(6010), at(9_000)), None);
-    }
-
-    #[test]
     fn registered_health_diagnostics_explain_waiting_without_repeating_stable_frames() {
         use bevy::log::tracing_subscriber;
 
@@ -1044,12 +952,26 @@ mod tests {
         app.add_plugins(TabletopHealthPlugin);
         app.world_mut().run_schedule(Startup);
         app.insert_resource(WinitSettings::continuous());
-        let window = app.world_mut().spawn(Window::default()).id();
+        let window = app
+            .world_mut()
+            .spawn((Window::default(), bevy::window::PrimaryWindow))
+            .id();
         (app, window)
     }
 
+    /// The instant a test's frames count from, for Bevy's `Time<Real>`. Only gaps
+    /// between frames match `HealthClock`'s: the first `update_at` inserts it, so a
+    /// test that builds its app another way gets it too.
+    #[derive(Resource, Clone, Copy)]
+    struct TestStart(Instant);
+
     fn update_at(app: &mut App, now: Duration, gpu_completed: bool) {
         app.world_mut().resource_mut::<HealthClock>().injected = Some(now);
+        // The shared window-size log times its hold by `Time<Real>`.
+        let start = *app
+            .world_mut()
+            .get_resource_or_insert_with(|| TestStart(Instant::now()));
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualInstant(start.0 + now));
         if gpu_completed {
             app.world().resource::<GpuProgress>().callback()();
         }
