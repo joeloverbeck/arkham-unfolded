@@ -39,6 +39,14 @@ headings fail explicitly; narrow the line range to select a repeated heading.
 `--context N` adds neighboring lines clipped to the selected scope and merges
 overlapping excerpts. For different ranges per file, use `read-context-batch`.
 
+A mandatory reading names constitution rules. List a namespace's headings with `--find '### WORK-'`, then read each named rule whole: select its heading exactly, find the heading itself, and give enough context to reach the section's end:
+
+```sh
+scripts/tools search-context docs/principles/principles-for-repos.md \
+  --heading '### WORK-3 — Repository allocation tripwire' --find '### WORK-3' \
+  --context 100 --max-bytes 12000
+```
+
 The complete search output defaults to 6,000 bytes, adjustable with `--max-bytes` (512–12,000). Whole source lines and their original numbers are preserved; `...` marks omitted gaps. `MATCHES` counts matching lines in the whole selected scope. `NO MATCHES` with `END` is a completed empty result. An oversized next line is refused without silently shortening or skipping it.
 
 For a search `NEXT`, repeat the same ordered paths and query/scope options and
