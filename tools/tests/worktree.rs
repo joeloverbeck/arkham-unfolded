@@ -677,191 +677,158 @@ fn target_prune_reports_a_failed_removal_whose_remainder_cannot_be_measured_as_f
     assert!(session.join("query-cache.bin").exists());
 }
 
-/// One build of a target of `package` as Cargo leaves it in the profile directory `profile`
-/// of `target`: its fingerprint directory, and `files` in that profile directory with `hash`
-/// in place of `{}`, each of `bytes`, all last written `hours` ago. Returns the files and
-/// then the fingerprint directory.
-fn build(
-    target: &Path,
-    profile: &str,
-    package: &str,
-    hash: &str,
-    files: &[&str],
-    bytes: usize,
-    hours: u64,
-) -> Vec<PathBuf> {
-    let profile = target.join(profile);
+/// What one build builds, as Cargo 1.100 records it: `unit` of `package` in the profile
+/// directory `profile`, with `features`, writing `files` into its `out` directory with the
+/// build's hash in place of `{}`.
+#[derive(Clone, Copy)]
+struct Unit<'a> {
+    profile: &'a str,
+    package: &'a str,
+    unit: &'a str,
+    features: &'a str,
+    files: &'a [&'a str],
+}
+
+impl<'a> Unit<'a> {
+    const fn new(package: &'a str, unit: &'a str, files: &'a [&'a str]) -> Self {
+        Self {
+            profile: "debug",
+            package,
+            unit,
+            features: "[]",
+            files,
+        }
+    }
+
+    const fn profile(self, profile: &'a str) -> Self {
+        Self { profile, ..self }
+    }
+
+    const fn features(self, features: &'a str) -> Self {
+        Self { features, ..self }
+    }
+}
+
+const SUITE: Unit = Unit::new(
+    "demo",
+    "test-integration-test-suite",
+    &["suite-{}", "suite-{}.d"],
+);
+
+/// One build of `unit` as Cargo 1.100 leaves it in `target`: the directory
+/// `<profile>/build/<package>/<hash>` with its fingerprint and its files, each of `bytes`,
+/// everything last modified `hours` ago. Returns that directory.
+fn build(target: &Path, unit: Unit, hash: &str, bytes: usize, hours: u64) -> PathBuf {
+    let directory = target
+        .join(unit.profile)
+        .join("build")
+        .join(unit.package)
+        .join(hash);
+    let fingerprint = directory.join("fingerprint");
+    let out = directory.join("out");
+    fs::create_dir_all(&fingerprint).unwrap();
+    fs::create_dir_all(&out).unwrap();
+    let name = unit.unit;
+    fs::write(fingerprint.join(name), "0123456789abcdef").unwrap();
+    let record = serde_json::json!({ "rustc": 1, "features": unit.features, "profile": 2 });
+    fs::write(fingerprint.join(format!("{name}.json")), record.to_string()).unwrap();
+    fs::write(fingerprint.join(format!("dep-{name}")), "").unwrap();
+    fs::write(fingerprint.join("invoked.timestamp"), "").unwrap();
+    for file in unit.files {
+        fs::write(out.join(file.replace("{}", hash)), vec![7; bytes]).unwrap();
+    }
+    age(&directory, hours);
+    directory
+}
+
+/// Sets `dir` and everything in it to last modified `hours` ago.
+fn age(dir: &Path, hours: u64) {
     let written = SystemTime::now() - Duration::from_secs(hours * 3600);
-    let mut paths: Vec<_> = files
-        .iter()
-        .map(|file| {
-            let path = profile.join(file.replace("{}", hash));
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, vec![7; bytes]).unwrap();
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            age(&path, hours);
+        } else {
             fs::File::open(&path)
                 .unwrap()
                 .set_modified(written)
                 .unwrap();
-            path
-        })
-        .collect();
-    let fingerprint = profile.join(format!(".fingerprint/{package}-{hash}"));
-    fs::create_dir_all(&fingerprint).unwrap();
-    let timestamp = fingerprint.join("invoked.timestamp");
-    fs::write(&timestamp, "").unwrap();
-    fs::File::open(&timestamp)
-        .unwrap()
-        .set_modified(written)
-        .unwrap();
-    fs::File::open(&fingerprint)
-        .unwrap()
-        .set_modified(written)
-        .unwrap();
-    paths.push(fingerprint);
-    paths
+        }
+    }
+    fs::File::open(dir).unwrap().set_modified(written).unwrap();
 }
-
-const SUITE: [&str; 2] = ["deps/suite-{}", "deps/suite-{}.d"];
 
 #[test]
 fn target_prune_lists_superseded_builds_of_own_packages_and_removes_them_only_with_delete() {
     let directory = tempfile::tempdir().unwrap();
     let owner = repository(directory.path());
     let target = owner.join("target");
-    let library = [
-        "deps/demo-{}.d",
-        "deps/libdemo-{}.rlib",
-        "deps/libdemo-{}.rmeta",
-    ];
-    let tool = ["deps/member_tool-{}", "deps/member_tool-{}.d"];
-    let example = ["examples/sample-{}", "examples/sample-{}.d"];
-    let third_party = ["deps/serde-{}.d", "deps/libserde-{}.rlib"];
+    let library = Unit::new(
+        "demo",
+        "lib-demo",
+        &["demo-{}.d", "libdemo-{}.rlib", "libdemo-{}.rmeta"],
+    );
+    let tool = Unit::new(
+        "demo-member",
+        "bin-member_tool",
+        &["member_tool", "member_tool.d"],
+    );
+    let example = Unit::new("demo", "example-sample", &["sample", "sample.d"]);
+    let agent_tools_suite = SUITE.profile("agent-tools/debug");
+    let checked = Unit::new("demo", "bin-demo", &["demo-{}.d", "libdemo-{}.rmeta"]);
+    let built = Unit::new("demo", "bin-demo", &["demo", "demo.d"]);
+    let script = Unit::new(
+        "demo",
+        "build-script-build-script-build",
+        &["build_script_build", "build_script_build.d"],
+    );
+    let third_party = Unit::new("serde", "lib-serde", &["serde-{}.d", "libserde-{}.rlib"]);
     let mib = 1 << 20;
     let superseded = [
-        build(
-            &target,
-            "debug",
-            "demo",
-            "a000000000000001",
-            &SUITE,
-            mib,
-            240,
-        ),
-        build(
-            &target,
-            "debug",
-            "demo",
-            "b000000000000001",
-            &library,
-            mib,
-            240,
-        ),
-        build(
-            &target,
-            "debug",
-            "demo-member",
-            "c000000000000001",
-            &tool,
-            mib,
-            240,
-        ),
-        build(
-            &target,
-            "debug",
-            "demo",
-            "d000000000000001",
-            &example,
-            mib,
-            240,
-        ),
-        build(
-            &target,
-            "agent-tools/debug",
-            "demo",
-            "e000000000000001",
-            &SUITE,
-            mib,
-            240,
-        ),
+        build(&target, SUITE, "a000000000000001", mib, 240),
+        build(&target, library, "b000000000000001", mib, 240),
+        build(&target, tool, "c000000000000001", mib, 240),
+        build(&target, example, "d000000000000001", mib, 240),
+        build(&target, agent_tools_suite, "e000000000000001", mib, 240),
     ];
-    let recent = build(
-        &target,
-        "debug",
-        "demo",
-        "a000000000000002",
-        &SUITE,
-        mib,
-        24,
-    );
+    let recent = build(&target, SUITE, "a000000000000002", mib, 24);
     let kept = [
         // The newest build of each target in each profile directory.
-        build(&target, "debug", "demo", "a000000000000003", &SUITE, mib, 1),
-        build(
-            &target,
-            "debug",
-            "demo",
-            "b000000000000002",
-            &library,
-            mib,
-            2,
-        ),
-        build(
-            &target,
-            "debug",
-            "demo-member",
-            "c000000000000002",
-            &tool,
-            mib,
-            3,
-        ),
-        build(
-            &target,
-            "debug",
-            "demo",
-            "d000000000000002",
-            &example,
-            mib,
-            1,
-        ),
-        build(
-            &target,
-            "agent-tools/debug",
-            "demo",
-            "e000000000000002",
-            &SUITE,
-            mib,
-            1,
-        ),
+        build(&target, SUITE, "a000000000000003", mib, 1),
+        build(&target, library, "b000000000000002", mib, 2),
+        build(&target, tool, "c000000000000002", mib, 3),
+        build(&target, example, "d000000000000002", mib, 1),
+        build(&target, agent_tools_suite, "e000000000000002", mib, 1),
         // The library's unit-test executable is a target of its own, newest though old.
         build(
             &target,
-            "debug",
-            "demo",
+            Unit::new("demo", "test-lib-demo", &["demo-{}", "demo-{}.d"]),
             "b000000000000003",
-            &["deps/demo-{}", "deps/demo-{}.d"],
             mib,
             240,
         ),
+        // So is the library with other features.
+        build(
+            &target,
+            library.features("[\"tabletop\"]"),
+            "b000000000000004",
+            mib,
+            240,
+        ),
+        // And a check of a binary beside a newer full build of it.
+        build(&target, checked, "f000000000000001", mib, 240),
+        build(&target, built, "f000000000000002", mib, 1),
+        // A build script's compilations, which nothing supersedes.
+        build(&target, script, "f000000000000003", mib, 240),
+        build(&target, script, "f000000000000004", mib, 1),
         // A dependency's builds are not the repository's.
-        build(
-            &target,
-            "debug",
-            "serde",
-            "f000000000000001",
-            &third_party,
-            mib,
-            240,
-        ),
-        build(
-            &target,
-            "debug",
-            "serde",
-            "f000000000000002",
-            &third_party,
-            mib,
-            1,
-        ),
+        build(&target, third_party, "f000000000000005", mib, 240),
+        build(&target, third_party, "f000000000000006", mib, 1),
     ];
+    // A build with nothing built in it yet.
+    let empty = target.join("debug/build/demo/f000000000000007");
+    fs::create_dir_all(empty.join("out")).unwrap();
+    age(&empty, 240);
     // Cargo's unhashed copy of the newest build.
     let copy = target.join("debug/suite");
     fs::write(&copy, "").unwrap();
@@ -869,11 +836,11 @@ fn target_prune_lists_superseded_builds_of_own_packages_and_removes_them_only_wi
     let listed = succeeds(prune(&owner, &[]));
 
     for shown in [
-        "debug/deps/suite-a000000000000001",
-        "debug/deps/demo-b000000000000001",
-        "debug/deps/member_tool-c000000000000001",
-        "debug/examples/sample-d000000000000001",
-        "agent-tools/debug/deps/suite-e000000000000001",
+        "debug/build/demo/a000000000000001",
+        "debug/build/demo/b000000000000001",
+        "debug/build/demo-member/c000000000000001",
+        "debug/build/demo/d000000000000001",
+        "agent-tools/debug/build/demo/e000000000000001",
         "5 superseded builds",
         "--delete",
     ] {
@@ -884,11 +851,13 @@ fn target_prune_lists_superseded_builds_of_own_packages_and_removes_them_only_wi
         "a000000000000003",
         "b000000000000002",
         "b000000000000003",
+        "b000000000000004",
+        "f00000000000000",
         "serde",
     ] {
         assert!(!listed.contains(hidden), "{hidden}: {listed}");
     }
-    let all = || superseded.iter().chain(&kept).chain([&recent]).flatten();
+    let all = || superseded.iter().chain(&kept).chain([&recent, &empty]);
     assert!(all().all(|path| path.exists()));
 
     let removed = succeeds(prune(&owner, &["--delete"]));
@@ -897,19 +866,95 @@ fn target_prune_lists_superseded_builds_of_own_packages_and_removes_them_only_wi
         removed.contains("removed 0 caches and 5 builds"),
         "{removed}"
     );
-    assert!(superseded.iter().flatten().all(|path| !path.exists()));
+    assert!(superseded.iter().all(|path| !path.exists()));
     assert!(
         kept.iter()
-            .chain([&recent])
-            .flatten()
+            .chain([&recent, &empty])
             .all(|path| path.exists())
     );
     assert!(copy.exists());
 
     succeeds(prune(&owner, &["--older-than", "12h", "--delete"]));
 
-    assert!(recent.iter().all(|path| !path.exists()));
-    assert!(kept.iter().flatten().all(|path| path.exists()));
+    assert!(!recent.exists());
+    assert!(kept.iter().chain([&empty]).all(|path| path.exists()));
+}
+
+/// Cargo calls its build layout unstable: the pinned Cargo builds a package's library under
+/// two identities, and `target-prune` finds the older build and removes only it.
+#[test]
+fn target_prune_removes_only_the_superseded_one_of_two_builds_the_pinned_cargo_made() {
+    let directory = tempfile::tempdir().unwrap();
+    let owner = repository(directory.path());
+    let target = owner.join("target");
+    for source in ["src/lib.rs", "member/src/lib.rs"] {
+        fs::create_dir_all(owner.join(source).parent().unwrap()).unwrap();
+        fs::write(owner.join(source), "pub fn answer() -> u8 {\n    42\n}\n").unwrap();
+    }
+    fs::copy(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../rust-toolchain.toml"),
+        owner.join("rust-toolchain.toml"),
+    )
+    .unwrap();
+    // Each `codegen-units` value is an identity, as in a checkout `worktree add` made.
+    let cargo = |codegen_units: u32| {
+        let output = Command::new(env!("CARGO"))
+            .args(["build", "--offline", "--verbose", "-p", "demo", "--lib"])
+            .arg("--target-dir")
+            .arg(&target)
+            .arg("--config")
+            .arg(format!("profile.dev.codegen-units={codegen_units}"))
+            .env_remove("CARGO_TARGET_DIR")
+            .env_remove("CARGO_BUILD_TARGET_DIR")
+            .env_remove("CARGO_BUILD_BUILD_DIR")
+            .env_remove("RUSTC_WRAPPER")
+            .env_remove("RUSTC_WORKSPACE_WRAPPER")
+            .current_dir(&owner)
+            .output()
+            .unwrap();
+        let printed = String::from_utf8_lossy(&output.stderr).into_owned();
+        assert!(output.status.success(), "{printed}");
+        printed
+    };
+    let builds = target.join("debug/build/demo");
+    let hashes = || {
+        let mut found: Vec<_> = fs::read_dir(&builds)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        found.sort();
+        found
+    };
+
+    cargo(3);
+    let first = hashes();
+    assert_eq!(first.len(), 1, "{first:?}");
+    let older = builds.join(&first[0]);
+    age(&older, 240);
+    cargo(5);
+    let newer: Vec<_> = hashes()
+        .into_iter()
+        .filter(|hash| *hash != first[0])
+        .collect();
+    assert_eq!(newer.len(), 1, "{newer:?}");
+    let newer = builds.join(&newer[0]);
+
+    let listed = succeeds(prune(&owner, &["--older-than", "1h"]));
+
+    assert!(
+        listed.contains(&format!("debug/build/demo/{}", first[0])),
+        "{listed}"
+    );
+    assert!(listed.contains("1 superseded builds"), "{listed}");
+
+    let removed = succeeds(prune(&owner, &["--older-than", "1h", "--delete"]));
+
+    assert!(removed.contains("and 1 builds"), "{removed}");
+    assert!(!older.exists());
+    assert!(newer.exists());
+    // Cargo still has what it needs of the build that stayed.
+    let again = cargo(5);
+    assert!(again.contains("Fresh demo"), "{again}");
 }
 
 #[test]
@@ -917,18 +962,11 @@ fn target_prune_keeps_the_builds_of_a_profile_directory_whose_cargo_build_lock_i
     let directory = tempfile::tempdir().unwrap();
     let owner = repository(directory.path());
     let target = owner.join("target");
-    let held = build(&target, "debug", "demo", "a000000000000001", &SUITE, 1, 240);
-    build(&target, "debug", "demo", "a000000000000002", &SUITE, 1, 1);
-    let free = build(
-        &target,
-        "release",
-        "demo",
-        "a000000000000001",
-        &SUITE,
-        1,
-        240,
-    );
-    build(&target, "release", "demo", "a000000000000002", &SUITE, 1, 1);
+    let held = build(&target, SUITE, "a000000000000001", 1, 240);
+    build(&target, SUITE, "a000000000000002", 1, 1);
+    let release = SUITE.profile("release");
+    let free = build(&target, release, "a000000000000001", 1, 240);
+    build(&target, release, "a000000000000002", 1, 1);
     // As a Cargo build into `debug` holds it.
     let lock = fs::File::options()
         .read(true)
@@ -943,17 +981,17 @@ fn target_prune_keeps_the_builds_of_a_profile_directory_whose_cargo_build_lock_i
 
     assert!(
         printed.contains(
-            "kept debug/deps/suite-a000000000000001: a Cargo build holds the lock on its directory"
+            "kept debug/build/demo/a000000000000001: a Cargo build holds the lock on its directory"
         ),
         "{printed}"
     );
-    assert!(held.iter().all(|path| path.exists()));
-    assert!(free.iter().all(|path| !path.exists()));
+    assert!(held.exists());
+    assert!(!free.exists());
     drop(lock);
 
     succeeds(prune(&owner, &["--delete"]));
 
-    assert!(held.iter().all(|path| !path.exists()));
+    assert!(!held.exists());
 }
 
 #[test]
@@ -962,47 +1000,37 @@ fn target_prune_refuses_links_among_builds_and_follows_none() {
     let owner = repository(directory.path());
     let target = owner.join("target");
     let outside = directory.path().join("outside");
-    let outer = build(
-        &outside,
-        "debug",
-        "demo",
-        "a000000000000009",
-        &SUITE,
-        1,
-        240,
-    );
-    let superseded = build(&target, "debug", "demo", "a000000000000001", &SUITE, 1, 240);
-    build(&target, "debug", "demo", "a000000000000002", &SUITE, 1, 1);
-    // An own build's file, a fingerprint directory, and a profile's `deps` and
-    // `.fingerprint` directories, each a link out of the target.
-    let fingerprint = target.join("debug/.fingerprint/demo-a000000000000008");
-    fs::create_dir_all(&fingerprint).unwrap();
-    let file = target.join("debug/deps/suite-a000000000000008");
-    symlink(&outer[0], &file).unwrap();
-    let linked_fingerprint = target.join("debug/.fingerprint/demo-a000000000000009");
-    symlink(
-        outside.join("debug/.fingerprint/demo-a000000000000009"),
-        &linked_fingerprint,
-    )
-    .unwrap();
-    build(&target, "release", "demo", "a000000000000001", &[], 1, 1);
-    let deps = target.join("release/deps");
-    symlink(outside.join("debug/deps"), &deps).unwrap();
+    let outer = build(&outside, SUITE, "a000000000000009", 1, 240);
+    let outer_file = outer.join("out/suite-a000000000000009");
+    let superseded = build(&target, SUITE, "a000000000000001", 1, 240);
+    build(&target, SUITE, "a000000000000002", 1, 1);
+    // A file in an own build, an own build, a package's directory and a profile's `build`
+    // directory, each a link out of the target.
+    let holder = build(&target, SUITE, "a000000000000008", 1, 240);
+    let file = holder.join("out/suite-a000000000000008");
+    fs::remove_file(&file).unwrap();
+    symlink(&outer_file, &file).unwrap();
+    let linked_build = target.join("debug/build/demo/a000000000000009");
+    symlink(&outer, &linked_build).unwrap();
+    fs::create_dir_all(target.join("release/build")).unwrap();
+    let package = target.join("release/build/demo");
+    symlink(outside.join("debug/build/demo"), &package).unwrap();
     fs::create_dir_all(target.join("profile")).unwrap();
-    let fingerprints = target.join("profile/.fingerprint");
-    symlink(outside.join("debug/.fingerprint"), &fingerprints).unwrap();
+    let builds = target.join("profile/build");
+    symlink(outside.join("debug/build"), &builds).unwrap();
 
     let output = prune(&owner, &["--older-than", "1h", "--delete"]);
 
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     let error = String::from_utf8_lossy(&output.stderr);
-    for refused in [&file, &linked_fingerprint, &deps, &fingerprints] {
+    for refused in [&file, &linked_build, &package, &builds] {
         let refused = refused.strip_prefix(&target).unwrap().to_str().unwrap();
         assert!(error.contains(refused), "{refused}: {error}");
     }
-    assert!(superseded.iter().all(|path| !path.exists()));
-    assert!(outer.iter().all(|path| path.exists()));
-    for link in [&file, &linked_fingerprint, &deps, &fingerprints] {
+    assert!(!superseded.exists());
+    assert!(holder.join("fingerprint").exists());
+    assert!(outer_file.exists() && outer.join("fingerprint").exists());
+    for link in [&file, &linked_build, &package, &builds] {
         assert!(fs::symlink_metadata(link).unwrap().is_symlink(), "{link:?}");
     }
 }
@@ -1012,30 +1040,11 @@ fn target_prune_interrupted_before_a_build_removal_removes_nothing_more_and_exit
     let directory = tempfile::tempdir().unwrap();
     let owner = repository(directory.path());
     let target = owner.join("target");
-    // Enough superseded builds, with names long enough, that their listing overfills a pipe.
+    // Enough superseded builds that their listing overfills a pipe.
     let fillers: Vec<_> = (0..2000)
-        .map(|n| {
-            let hash = format!("{n:016x}");
-            build(
-                &target,
-                "debug",
-                "demo",
-                &hash,
-                &["deps/filler-named-at-length-to-overfill-a-pipe-{}"],
-                1,
-                240,
-            )
-        })
+        .map(|n| build(&target, SUITE, &format!("{n:016x}"), 1, 240))
         .collect();
-    build(
-        &target,
-        "debug",
-        "demo",
-        "ffffffffffffffff",
-        &["deps/filler-named-at-length-to-overfill-a-pipe-{}"],
-        1,
-        1,
-    );
+    build(&target, SUITE, "ffffffffffffffff", 1, 1);
 
     let (code, _, error) = prune_held(&owner, &["--delete"], |pid| {
         assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGINT) }, 0);
@@ -1045,5 +1054,5 @@ fn target_prune_interrupted_before_a_build_removal_removes_nothing_more_and_exit
 
     assert_eq!(code, Some(130), "{error}");
     assert!(error.contains("interrupted"), "{error}");
-    assert!(fillers.iter().flatten().all(|path| path.exists()));
+    assert!(fillers.iter().all(|path| path.exists()));
 }
