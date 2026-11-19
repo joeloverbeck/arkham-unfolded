@@ -22,6 +22,15 @@ time. If a checkpoint cannot reach the state, establish a bounded alternative an
 record its setup cost before handoff; playing until a chance encounter occurs is
 an unresolved preparation gap.
 
+Review saves are ordinary decision sequences from a seed. Native startup refuses
+privileged fixtures so that an edited, possibly unreachable position never stands
+in for real play, a personal save or rules evidence. When no existing builder or
+short decision prefix reaches the state, make at most one bounded scripted
+attempt, then bring the owner the choice: an observation in their own play, a
+narrower route, or dropping the native item. A search for a state deep in a
+scenario, past an act advance or behind particular encounter draws, is a new tool
+with its own appetite, not route preparation.
+
 Prepare the route's saves and their production-startup UI checks before freezing
 the candidate for final code review. Include completed check-record paths in the
 review packet, including the real-asset check when the route depends on supplied
@@ -67,7 +76,9 @@ Before returning an implementation for owner play, check the owner's normal
 launch command, including its working directory, settings and resolved save
 path. Development builds promise no save compatibility: a save loads only when
 the current build reproduces its recorded game exactly, and is otherwise refused
-unchanged so that a New attempt can begin. When a change can refuse the owner's
+unchanged so that a New attempt can begin. Check an existing attempt read-only
+with `arkham-driver --inspect PATH` ([direct diagnostic launch](../../README.md#direct-diagnostic-launch)),
+which names any refusal without creating lock or recovery files. When a change can refuse the owner's
 existing save, provide a tested fresh-start command with an unused `--save` path
 and the expected setup screen; update README's launch/recovery instructions in
 the same handoff. Keep the existing save bytes intact. Prepared diagnostic checkpoints have a separate purpose and

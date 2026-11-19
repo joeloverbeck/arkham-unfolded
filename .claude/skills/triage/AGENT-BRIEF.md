@@ -32,6 +32,8 @@ The agent needs to know when it's done. Every agent brief must have concrete, te
 - **Good:** "Running `gh issue list --label needs-triage` returns issues that have been through initial classification"
 - **Bad:** "Triage should work correctly"
 
+When a criterion asks for a native check, name how its state is reached: an existing review-save builder, a short ordinary decision prefix, or the owner's own play. Native startup refuses fixture saves, so a state deep in a scenario with no such route is an owner observation; say so in the brief instead of promising a prepared route.
+
 When a decision-only measurement chooses between named outcomes, give each outcome a number for every measure that decides it, set against the variation already seen between runs at one setting. Which measures decide, and how large a change is worth acting on, is the maintainer's judgement: ask them while triaging, before the brief is posted.
 
 - **Good:** "Lower MSAA when panning power falls by at least 25 W or GPU utilisation by at least 10 points; two launches at 4× differed by up to 13 W"
