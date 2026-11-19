@@ -1,39 +1,63 @@
-//! Build outputs of the repository's own packages in the owner's target. Cargo gives every
-//! file of one build of a target the same hash of that build's identity, which its
-//! fingerprint directory `.fingerprint/<package>-<hash>` also carries, and it never removes
-//! the files of an earlier identity. A new `unfolded-tabletop` revision, or a checkout's own
-//! `codegen-units` value, gives every target of the repository a new identity.
+//! Build outputs of the repository's own packages in the owner's target, in the layout Cargo
+//! 1.100 writes. Each build of a target is one directory `<profile>/build/<package>/<hash>`,
+//! named with a hash of the build's identity. Its `fingerprint` directory names the unit it
+//! builds, such as `bin-arkham-driver` or `test-lib-arkham_tools`, and its `out` directory
+//! holds what it built. Cargo never removes the directory of an earlier identity. A new
+//! `unfolded-tabletop` revision, or a checkout's own `codegen-units` value, gives every
+//! target of the repository a new identity.
 //!
-//! This is the layout Cargo 1.97 writes. Cargo 1.100 puts each build in
-//! `build/<package>/<hash>/`, which this does not read, so it finds none there (#277).
+//! Cargo calls this layout unstable. A test runs the pinned Cargo to catch a change in it.
 
-use super::{Outcome, present, subdirectories, usage};
-use anyhow::{Context, Result, ensure};
+use super::{Outcome, present, subdirectories};
+use anyhow::{Context, Result, bail, ensure};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fs::{self, File, TryLockError},
-    io,
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
 
-/// Where Cargo records each build of a profile, one directory per build.
-const FINGERPRINTS: &str = ".fingerprint";
-/// Where Cargo writes a profile's hashed files: libraries, executables and their dependency
-/// lists.
-const DIRECTORIES: [&str; 2] = ["deps", "examples"];
-/// The lock Cargo 1.97 holds on a profile directory while it builds there.
+/// Where Cargo keeps a profile's builds, one directory per package.
+const BUILDS: &str = "build";
+/// Where a build records the unit it builds.
+const FINGERPRINT: &str = "fingerprint";
+/// Where a build puts what it built.
+const OUT: &str = "out";
+/// The lock Cargo 1.100 holds on a profile directory while it builds or checks there; a build
+/// that starts while another process holds it waits for "file lock on build directory".
 const BUILD_LOCK: &str = ".cargo-build-lock";
+
+/// What one build builds. The newest build of each in a profile directory is kept.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Target {
+    package: String,
+    /// The unit its fingerprint names, such as `bin-arkham-driver`.
+    unit: String,
+    /// The features the fingerprint records, so that a build without the `tabletop` feature
+    /// and one with it are each kept.
+    features: String,
+    kind: Kind,
+}
+
+/// The two kinds of build Cargo makes of one unit, each kept in its newest build.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Kind {
+    /// As `cargo check` and Clippy make: metadata and dependency lists, and no library or
+    /// executable.
+    Check,
+    /// A library or executable.
+    Full,
+}
 
 /// One build of one of the repository's targets.
 pub(super) struct Output {
     /// The profile directory, such as `<target>/debug`.
     pub(super) profile: PathBuf,
-    /// Relative to the target, such as `debug/deps/gathering_driver-0123456789abcdef`.
+    /// Relative to the target, such as `debug/build/arkham-tools/0123456789abcdef`.
     pub(super) name: PathBuf,
-    files: Vec<PathBuf>,
-    fingerprint: PathBuf,
+    path: PathBuf,
+    target: Target,
     /// Bytes its removal frees: those of its files that have no other hard link.
     pub(super) bytes: u64,
     pub(super) unused_for: Duration,
@@ -41,9 +65,9 @@ pub(super) struct Output {
     superseded: bool,
 }
 
-/// The repository's build outputs in the target. A symbolic link where a fingerprint
-/// directory, an output directory or an output's file would be is listed in `links`, never
-/// followed or removed.
+/// The repository's build outputs in the target. A symbolic link where a profile's `build`
+/// directory, a package's directory or a build would be, or anywhere inside a build, is listed
+/// in `links`, never followed or removed.
 pub(super) struct Outputs {
     outputs: Vec<Output>,
     pub(super) links: Vec<PathBuf>,
@@ -67,20 +91,17 @@ impl Outputs {
                 found.profile(&root, &profile, packages, now)?;
             }
         }
-        // The newest build of each target in each profile directory is the one kept.
-        let mut newest: HashMap<(&Path, (String, bool)), Duration> = HashMap::new();
+        let mut newest: HashMap<(&Path, &Target), Duration> = HashMap::new();
         for output in &found.outputs {
             let unused_for = newest
-                .entry((&output.profile, target_of(&output.files)))
+                .entry((&output.profile, &output.target))
                 .or_insert(output.unused_for);
             *unused_for = (*unused_for).min(output.unused_for);
         }
         let superseded: Vec<bool> = found
             .outputs
             .iter()
-            .map(|output| {
-                output.unused_for > newest[&(output.profile.as_path(), target_of(&output.files))]
-            })
+            .map(|output| output.unused_for > newest[&(output.profile.as_path(), &output.target)])
             .collect();
         for (output, superseded) in found.outputs.iter_mut().zip(superseded) {
             output.superseded = superseded;
@@ -98,73 +119,70 @@ impl Outputs {
         packages: &[String],
         now: SystemTime,
     ) -> Result<()> {
-        let Some(fingerprints) = self.directory(profile.join(FINGERPRINTS))? else {
+        let Some(builds) = self.directory(profile.join(BUILDS))? else {
             return Ok(());
         };
-        let mut own = HashMap::new();
-        for entry in read(&fingerprints)? {
-            let entry = entry?;
-            let name = entry.file_name();
-            let Some((package, hash)) = name.to_str().and_then(|name| name.rsplit_once('-')) else {
+        for package in packages {
+            let Some(directory) = self.directory(builds.join(package))? else {
                 continue;
             };
-            if !is_hash(hash) || !packages.iter().any(|own| own == package) {
-                continue;
-            }
-            let kind = entry.file_type()?;
-            if kind.is_symlink() {
-                self.links.push(entry.path());
-            } else if kind.is_dir() {
-                own.insert(hash.to_owned(), entry.path());
-            }
-        }
-        if own.is_empty() {
-            return Ok(());
-        }
-        let mut files: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
-        for directory in DIRECTORIES {
-            let Some(directory) = self.directory(profile.join(directory))? else {
+            let Some(entries) = present(fs::read_dir(&directory))? else {
                 continue;
             };
-            for entry in read(&directory)? {
+            for entry in entries {
                 let entry = entry?;
-                let name = entry.file_name();
-                let Some(hash) = name.to_str().and_then(hash_of) else {
-                    continue;
-                };
-                if !own.contains_key(hash) {
+                if !entry.file_name().to_str().is_some_and(is_hash) {
                     continue;
                 }
                 let kind = entry.file_type()?;
                 if kind.is_symlink() {
                     self.links.push(entry.path());
-                } else if kind.is_file() {
-                    files.entry(hash.to_owned()).or_default().push(entry.path());
+                } else if kind.is_dir() {
+                    self.record(root, profile, package, entry.path(), now)?;
                 }
             }
         }
-        // A build with no file in these directories, such as a build script's, is left.
-        for (hash, mut paths) in files {
-            paths.sort();
-            let fingerprint = own[&hash].clone();
-            // A build in progress elsewhere can remove files while they are read.
-            let Some((bytes, newest)) = measure(&paths, &fingerprint)? else {
-                continue;
-            };
-            let named = paths
-                .iter()
-                .find(|path| path.extension().is_some_and(|extension| extension == "d"))
-                .map_or_else(|| paths[0].clone(), |path| path.with_extension(""));
-            self.outputs.push(Output {
-                profile: profile.to_path_buf(),
-                name: named.strip_prefix(root)?.to_path_buf(),
-                files: paths,
-                fingerprint,
-                bytes,
-                unused_for: now.duration_since(newest).unwrap_or_default(),
-                superseded: false,
-            });
+        Ok(())
+    }
+
+    /// Records the build in `path` unless it holds a link, names no unit it could supersede,
+    /// such as a build script's, records no features, or has built nothing yet.
+    fn record(
+        &mut self,
+        root: &Path,
+        profile: &Path,
+        package: &str,
+        path: PathBuf,
+        now: SystemTime,
+    ) -> Result<()> {
+        // A build in progress elsewhere can remove a build while it is read.
+        let Some(contents) = walk(&path)? else {
+            return Ok(());
+        };
+        if !contents.links.is_empty() {
+            self.links.extend(contents.links);
+            return Ok(());
         }
+        let Some((unit, features)) = unit(&path.join(FINGERPRINT))? else {
+            return Ok(());
+        };
+        let Some(kind) = kind_of(&path.join(OUT))? else {
+            return Ok(());
+        };
+        self.outputs.push(Output {
+            profile: profile.to_path_buf(),
+            name: path.strip_prefix(root)?.to_path_buf(),
+            path,
+            target: Target {
+                package: package.to_owned(),
+                unit,
+                features,
+                kind,
+            },
+            bytes: contents.bytes,
+            unused_for: now.duration_since(contents.newest).unwrap_or_default(),
+            superseded: false,
+        });
         Ok(())
     }
 
@@ -216,124 +234,143 @@ pub(super) fn lock(profile: &Path) -> Result<Option<File>> {
     }
 }
 
-/// Removes an output's files and then its fingerprint directory, unless they are gone or one
-/// was modified since the scan. Its files are checked again and none is followed: a path
-/// that is no longer a regular file is refused. Cargo rebuilds an output whose files or
-/// fingerprint are missing.
+/// Removes a build's directory, unless it is gone or something in it was modified since the
+/// scan. It is checked again first: a build that is no longer a real directory, or now holds a
+/// symbolic link, is refused, and `remove_dir_all` follows no link. Cargo rebuilds a build
+/// whose directory is missing.
 pub(super) fn remove(output: &Output, threshold: Duration) -> Result<Outcome> {
-    let mut found = Vec::new();
-    let mut newest = None;
-    for path in &output.files {
-        let Some(metadata) = present(fs::symlink_metadata(path))? else {
-            continue;
-        };
-        ensure!(
-            metadata.is_file(),
-            "{} is no longer a regular file",
-            path.display()
-        );
-        newest = newest.max(Some(metadata.modified()?));
-        found.push(path);
-    }
-    let Some(newest) = newest else {
+    let Some(metadata) = present(fs::symlink_metadata(&output.path))? else {
         return Ok(Outcome::Gone);
     };
-    let unused_for = SystemTime::now().duration_since(newest).unwrap_or_default();
+    ensure!(metadata.is_dir(), "it is no longer a directory");
+    let Some(contents) = walk(&output.path)? else {
+        return Ok(Outcome::Gone);
+    };
+    if let Some(link) = contents.links.first() {
+        bail!("{} is a symbolic link", link.display());
+    }
+    let unused_for = SystemTime::now()
+        .duration_since(contents.newest)
+        .unwrap_or_default();
     if unused_for < threshold {
         return Ok(Outcome::Used);
     }
-    for path in found {
-        if let Err(error) = fs::remove_file(path)
-            && error.kind() != io::ErrorKind::NotFound
-        {
-            return Ok(failed(output, error));
-        }
-    }
-    // `remove_dir_all` follows no link, including one now in the directory's place.
-    if let Err(error) = fs::remove_dir_all(&output.fingerprint)
-        && error.kind() != io::ErrorKind::NotFound
-    {
-        return Ok(failed(output, error));
-    }
-    Ok(Outcome::Removed)
+    let removal = fs::remove_dir_all(&output.path);
+    Ok(match removal {
+        Ok(()) => Outcome::Removed,
+        Err(error) => match present(fs::symlink_metadata(&output.path)) {
+            // Whatever stopped it, nothing of the build is left.
+            Ok(None) => Outcome::Removed,
+            Ok(Some(_)) => Outcome::Failed {
+                left: walk(&output.path).map(|left| left.map_or(0, |left| left.bytes)),
+                error,
+            },
+            Err(unchecked) => Outcome::Failed {
+                left: Err(unchecked),
+                error,
+            },
+        },
+    })
 }
 
-fn failed(output: &Output, error: io::Error) -> Outcome {
-    Outcome::Failed {
-        left: measure(&output.files, &output.fingerprint)
-            .map(|measured| measured.map_or(0, |(bytes, _)| bytes)),
-        error,
-    }
+/// What a walk through one build's directory found.
+struct Contents {
+    /// Bytes of its files that have no other hard link.
+    bytes: u64,
+    /// When the directory or anything in it was last modified.
+    newest: SystemTime,
+    /// Symbolic links in it, none followed.
+    links: Vec<PathBuf>,
 }
 
-/// The bytes of an output's files without another hard link and of its fingerprint
-/// directory, with the time the newest of them was modified, or `None` when its files are
-/// gone. Files removed meanwhile are left out.
-fn measure(files: &[PathBuf], fingerprint: &Path) -> Result<Option<(u64, SystemTime)>> {
-    let mut bytes = 0;
-    let mut newest = None;
-    for path in files {
-        let Some(metadata) = present(fs::symlink_metadata(path))? else {
-            continue;
-        };
-        newest = newest.max(Some(metadata.modified()?));
-        if metadata.nlink() == 1 {
-            bytes += metadata.len();
-        }
-    }
-    let Some(mut newest) = newest else {
+/// Walks `dir`, or `None` when it is gone. Entries removed meanwhile are left out.
+fn walk(dir: &Path) -> Result<Option<Contents>> {
+    let Some(metadata) = present(fs::symlink_metadata(dir))? else {
         return Ok(None);
     };
-    if let Some(metadata) = present(fs::symlink_metadata(fingerprint))?
-        && metadata.is_dir()
-    {
-        newest = newest.max(metadata.modified()?);
-        for entry in read(fingerprint)? {
-            let Some(metadata) = present(entry?.metadata())? else {
+    let mut contents = Contents {
+        bytes: 0,
+        newest: metadata.modified()?,
+        links: Vec::new(),
+    };
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Some(entries) = present(fs::read_dir(&dir))? else {
+            continue;
+        };
+        for entry in entries {
+            let entry = entry?;
+            // Reads the entry itself, not what a link names.
+            let Some(metadata) = present(entry.metadata())? else {
                 continue;
             };
-            newest = newest.max(metadata.modified()?);
+            contents.newest = contents.newest.max(metadata.modified()?);
+            if metadata.is_symlink() {
+                contents.links.push(entry.path());
+            } else if metadata.is_dir() {
+                pending.push(entry.path());
+            } else if metadata.nlink() == 1 {
+                contents.bytes += metadata.len();
+            }
         }
-        bytes += usage(fingerprint, &mut HashSet::new())?;
     }
-    Ok(Some((bytes, newest)))
+    contents.links.sort();
+    Ok(Some(contents))
 }
 
-fn read(directory: &Path) -> Result<fs::ReadDir> {
-    fs::read_dir(directory).with_context(|| format!("read {}", directory.display()))
-}
-
-/// The target an output builds, by its crate name, and whether it is the library: one
-/// `<crate>-<hash>.d` file names it, beside `lib<crate>-<hash>.rlib` for a library.
-fn target_of(files: &[PathBuf]) -> (String, bool) {
-    let names: Vec<_> = files
-        .iter()
-        .filter_map(|path| path.file_name()?.to_str())
-        .collect();
-    let library = names.iter().any(|name| {
-        [".rlib", ".rmeta", ".so"]
-            .iter()
-            .any(|extension| name.ends_with(extension))
-    });
-    let (name, listed) = names.iter().find(|name| name.ends_with(".d")).map_or(
-        (names.first().copied().unwrap_or_default(), false),
-        |name| (*name, true),
-    );
-    let stem = name.rsplit_once('-').map_or(name, |(stem, _)| stem);
-    let stem = if library && !listed {
-        stem.strip_prefix("lib").unwrap_or(stem)
-    } else {
-        stem
+/// The unit a build's fingerprint directory names by its one `<unit>.json` file, with the
+/// features that file records. `None` for a build script's compilation or run, which no
+/// build supersedes, or when there is no such file or it holds no features, as while a
+/// build writes it.
+fn unit(fingerprint: &Path) -> Result<Option<(String, String)>> {
+    let Some(entries) = present(fs::read_dir(fingerprint))? else {
+        return Ok(None);
     };
-    (stem.to_owned(), library)
+    let mut units = HashSet::new();
+    for entry in entries {
+        let name = entry?.file_name();
+        if let Some(unit) = name.to_str().and_then(|name| name.strip_suffix(".json")) {
+            units.insert(unit.to_owned());
+        }
+    }
+    if units.len() != 1 {
+        return Ok(None);
+    }
+    let unit = units.into_iter().next().unwrap_or_default();
+    if unit.starts_with("build-script-") || unit.starts_with("run-build-script-") {
+        return Ok(None);
+    }
+    let Some(record) = present(fs::read(fingerprint.join(format!("{unit}.json"))))? else {
+        return Ok(None);
+    };
+    let features = serde_json::from_slice::<serde_json::Value>(&record)
+        .ok()
+        .and_then(|record| Some(record.get("features")?.as_str()?.to_owned()));
+    Ok(features.map(|features| (unit, features)))
 }
 
-/// The Cargo hash in a file name `<crate>-<hash>`, with an optional extension and, for a
-/// library, `lib` before the crate name.
-fn hash_of(name: &str) -> Option<&str> {
-    let (_, rest) = name.rsplit_once('-')?;
-    let hash = rest.split_once('.').map_or(rest, |(hash, _)| hash);
-    is_hash(hash).then_some(hash)
+/// The kind of build whose `out` directory this is: a check when it holds only metadata and
+/// dependency lists, or `None` when it holds no file.
+fn kind_of(out: &Path) -> Result<Option<Kind>> {
+    let Some(entries) = present(fs::read_dir(out))? else {
+        return Ok(None);
+    };
+    let mut kind = None;
+    for entry in entries {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let metadata = name
+            .to_str()
+            .is_some_and(|name| name.ends_with(".rmeta") || name.ends_with(".d"));
+        kind = match (kind, metadata) {
+            (Some(Kind::Full), _) | (_, false) => Some(Kind::Full),
+            _ => Some(Kind::Check),
+        };
+    }
+    Ok(kind)
 }
 
 /// Cargo's hashes are 16 lowercase hexadecimal digits.
