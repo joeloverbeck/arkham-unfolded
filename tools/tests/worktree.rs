@@ -899,7 +899,9 @@ fn target_prune_removes_only_the_superseded_one_of_two_builds_the_pinned_cargo_m
     // Each `codegen-units` value is an identity, as in a checkout `worktree add` made.
     let cargo = |codegen_units: u32| {
         let output = Command::new(env!("CARGO"))
-            .args(["build", "--offline", "--verbose", "-p", "demo", "--lib"])
+            // Uncoloured, as CI's `CARGO_TERM_COLOR=always` would colour Cargo's status words.
+            .args(["build", "--offline", "--verbose", "--color", "never"])
+            .args(["-p", "demo", "--lib"])
             .arg("--target-dir")
             .arg(&target)
             .arg("--config")
