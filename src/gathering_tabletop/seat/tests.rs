@@ -1024,12 +1024,12 @@ fn an_attached_card_has_its_own_marker_and_heading_names() {
     let distinct: BTreeSet<&str> = names.iter().copied().collect();
     assert_eq!(names.len(), distinct.len(), "{names:?}");
     assert_eq!(
-        component(&response, "location:01114/attachments")["label"],
-        "Attachment Cellar"
+        component(&response, "location:01114/cards")["label"],
+        "Cards at locations Cellar"
     );
     assert_eq!(
-        component(&response, "location:01114/attachment-sideboard")["label"],
-        "Attached to CELLAR · 1"
+        component(&response, "location:01114/cards-sideboard")["label"],
+        "Cards at CELLAR · 1"
     );
 }
 
@@ -1144,7 +1144,7 @@ impl Sitting {
 #[test]
 fn a_held_session_keeps_a_dialog_opened_through_one_connection_until_quit_removes_its_socket() {
     // This position has Obscuring Fog attached to the Cellar; the Scenario view frames
-    // the attachment sideboard's heading, a piece the no-GPU host's UI picking reaches.
+    // the Cards at locations heading, a piece the no-GPU host's UI picking reaches.
     // Its only card is inspected at once.
     let mut seat = sit_at_fixture(crate::gathering::HostileFixture::Search(
         crate::gathering::SearchFixture::TonyEvents,
@@ -1153,7 +1153,7 @@ fn a_held_session_keeps_a_dialog_opened_through_one_connection_until_quit_remove
     seat.enter("Scenario");
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("seat.sock");
-    let heading = "location:01114/attachment-sideboard";
+    let heading = "location:01114/cards-sideboard";
 
     let (activated, opened, held, bye) = seat.hold(&socket, |socket| {
         let mut first = Connection::open(socket);

@@ -76,7 +76,7 @@ fn act_two_when_precedes_round_end_doom_and_doom_alone_does_not_advance() {
     let advanced = session.observe().play.unwrap();
     assert_eq!(advanced.act, 3);
     assert_eq!(advanced.agenda_doom, 8);
-    assert!(advanced.scenario.lita_in_play);
+    assert!(advanced.scenario.lita_at_parlor.is_some());
     assert!(
         advanced
             .scenario
@@ -126,7 +126,7 @@ fn declining_act_two_retains_clues_and_counts_only_the_existing_ghoul() {
         9
     );
     assert!(!after.scenario.priest_spawned);
-    assert!(!after.scenario.lita_in_play);
+    assert!(!after.lita_in_play());
     assert!(after.scenario.outcome.is_none());
 }
 
@@ -796,6 +796,8 @@ fn successful_lita_parley_resolves_the_actual_ally_slot_before_test_cleanup() {
         let keep_lita = true;
         let mut session = Session::with_hostile_fixture(HostileFixture::GatheringLitaParley);
         let before = session.observe().play.unwrap();
+        // The card waiting at the Parlor is the card Parley brings under control.
+        let lita = before.scenario.lita_at_parlor.clone().unwrap();
         let patrice = &before.players[Investigator::Patrice.index()];
         let peter = patrice
             .assets
@@ -832,10 +834,7 @@ fn successful_lita_parley_resolves_the_actual_ally_slot_before_test_cleanup() {
         assert_eq!(finished.bag_count, 16);
         let patrice = &finished.players[Investigator::Patrice.index()];
         assert_eq!(
-            patrice
-                .assets
-                .iter()
-                .any(|asset| asset.card.code == "01117"),
+            patrice.assets.iter().any(|asset| asset.card == lita),
             keep_lita
         );
         assert_eq!(
@@ -855,7 +854,8 @@ fn successful_lita_parley_resolves_the_actual_ally_slot_before_test_cleanup() {
                 .any(|card| card.code == "01117"),
             !keep_lita
         );
-        assert_eq!(finished.scenario.lita_in_play, keep_lita);
+        assert_eq!(finished.lita_in_play(), keep_lita);
+        assert!(finished.scenario.lita_at_parlor.is_none());
         session.validate().unwrap();
     }
 }

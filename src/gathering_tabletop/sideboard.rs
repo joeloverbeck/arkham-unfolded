@@ -42,8 +42,9 @@ pub(super) struct Sideboard {
     pub surface: Color,
     pub rim: Color,
     pub marker: MarkerKind,
-    /// A location's group, in stable display order.
-    content: fn(&PlayObservation, &str) -> Vec<u16>,
+    /// A location's group, in stable display order. Each member keeps the
+    /// source its own card offers for actions and Inspect.
+    content: fn(&PlayObservation, &str) -> Vec<controls::Source>,
     /// What a group count counts, in accessible names and seat pieces.
     pub members: &'static str,
     /// The seat's piece name for this board's headings.
@@ -66,40 +67,49 @@ pub(super) const ENEMIES: Sideboard = Sideboard {
     heading_context: None,
 };
 
-/// Cards attached to locations, mirroring the enemy sideboard right of Map.
-pub(super) const ATTACHMENTS: Sideboard = Sideboard {
-    name: "Attachments at locations",
+/// Other cards at locations, mirroring the enemy sideboard right of Map: story
+/// characters no investigator controls and cards attached to a location. A
+/// location's standee slots may all be occupied, so none of these takes map space.
+pub(super) const LOCATION_CARDS: Sideboard = Sideboard {
+    name: "Cards at locations",
     center: Vec3::new(-ENEMIES.center.x, 0., ENEMIES.center.z),
     size: ENEMIES.size,
     surface: Color::srgb(0x2B as f32 / 255., 0x33 as f32 / 255., 0x18 as f32 / 255.),
     rim: Color::srgb(0x8E as f32 / 255., 0x9A as f32 / 255., 0x4A as f32 / 255.),
-    marker: MarkerKind::Attachment,
-    content: attached,
-    members: "attachments",
-    heading_piece: "attachment-sideboard",
-    heading_context: Some("Attached to"),
+    marker: MarkerKind::LocationCards,
+    content: at_location,
+    members: "cards",
+    heading_piece: "cards-sideboard",
+    heading_context: Some("Cards at"),
 };
 
 /// Both boards, in heading Tab order.
-pub(super) const BOARDS: [&Sideboard; 2] = [&ENEMIES, &ATTACHMENTS];
+pub(super) const BOARDS: [&Sideboard; 2] = [&ENEMIES, &LOCATION_CARDS];
 
-fn resident(play: &PlayObservation, room: &str) -> Vec<u16> {
+/// Where the rules put Lita Chantler while no investigator controls her.
+pub(super) const PARLOR: &str = "01115";
+
+fn resident(play: &PlayObservation, room: &str) -> Vec<controls::Source> {
     play.scenario
         .enemies
         .iter()
         .filter(|enemy| enemy.engaged.is_none() && enemy.location == room)
-        .map(|enemy| enemy.card.id)
+        .map(|enemy| controls::Source::Card(enemy.card.id))
         .collect()
 }
 
-fn attached(play: &PlayObservation, room: &str) -> Vec<u16> {
-    play.scenario
+/// A story character at the location first, then its attachment.
+fn at_location(play: &PlayObservation, room: &str) -> Vec<controls::Source> {
+    let character = (room == PARLOR && play.scenario.lita_at_parlor.is_some())
+        .then_some(controls::Source::Lita);
+    let attached = play
+        .scenario
         .locations
         .iter()
         .filter(|location| location.code == room)
         .filter_map(|location| location.fog.as_ref())
-        .map(|card| card.id)
-        .collect()
+        .map(|card| controls::Source::Card(card.id));
+    character.into_iter().chain(attached).collect()
 }
 
 /// A group's heading row and the positions of its cards, in group order.
@@ -111,7 +121,7 @@ pub(super) struct GroupLayout {
 impl Sideboard {
     /// Nonempty groups in location order. A location in the Victory display
     /// has left the map, so nothing links to it.
-    fn groups(&self, play: &PlayObservation) -> Vec<(&'static str, Vec<u16>)> {
+    fn groups(&self, play: &PlayObservation) -> Vec<(&'static str, Vec<controls::Source>)> {
         LOCATIONS
             .into_iter()
             .filter(|room| !play.scenario.location_in_victory_display(room))
@@ -166,24 +176,24 @@ impl Sideboard {
     }
 
     /// Where a card of this board lies; the board's center when it has none.
-    pub(super) fn position(&self, play: &PlayObservation, id: u16) -> Vec3 {
+    pub(super) fn position(&self, play: &PlayObservation, member: &controls::Source) -> Vec3 {
         let groups = self.groups(play);
         let counts: Vec<_> = groups.iter().map(|(_, cards)| cards.len()).collect();
         groups
             .iter()
             .zip(self.layout(&counts))
             .find_map(|((_, cards), group)| {
-                let slot = cards.iter().position(|card| *card == id)?;
+                let slot = cards.iter().position(|card| card == member)?;
                 Some(group.cards[slot])
             })
             .unwrap_or(self.center)
     }
 
     /// The location whose group on this board shows the card.
-    fn room_of(&self, play: &PlayObservation, id: u16) -> Option<&'static str> {
+    fn room_of(&self, play: &PlayObservation, member: &controls::Source) -> Option<&'static str> {
         self.groups(play)
             .into_iter()
-            .find_map(|(room, cards)| cards.contains(&id).then_some(room))
+            .find_map(|(room, cards)| cards.contains(member).then_some(room))
     }
 
     /// The thick table body, inset top and rim shared by every sideboard.
@@ -441,7 +451,7 @@ pub(super) fn label_card(commands: &mut Commands, card: Entity, title: String, o
 pub(super) fn focus(area: Area) -> (Vec3, f32) {
     let (mut at, distance) = layout::focus(area);
     if matches!(area, Area::Scenario | Area::Overview) {
-        at.x = (ENEMIES.center.x + ATTACHMENTS.center.x) / 2.;
+        at.x = (ENEMIES.center.x + LOCATION_CARDS.center.x) / 2.;
     }
     (at, distance)
 }
@@ -518,11 +528,11 @@ pub(super) fn highlight(
                     }
                     match &targets.get(entity).ok()?.source {
                         controls::Source::Location(room) => Some((room.clone(), None)),
-                        controls::Source::Card(id) => {
+                        source @ (controls::Source::Card(_) | controls::Source::Lita) => {
                             let play = view.play.as_ref()?;
                             BOARDS.into_iter().find_map(|board| {
                                 board
-                                    .room_of(play, *id)
+                                    .room_of(play, source)
                                     .map(|room| (room.to_owned(), Some(board.marker)))
                             })
                         }

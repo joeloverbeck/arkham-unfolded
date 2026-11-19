@@ -594,7 +594,7 @@ pub(super) fn exists(view: &Observation, source: &Source) -> bool {
             .play
             .as_ref()
             .is_some_and(|p| p.backpacks.iter().any(|b| b.asset == *id)),
-        Source::Lita => view.play.as_ref().is_some_and(|p| p.scenario.lita_in_play),
+        Source::Lita => view.play.as_ref().is_some_and(|p| p.lita_in_play()),
     }
 }
 

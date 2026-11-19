@@ -541,16 +541,16 @@ fn sideboard_headings_are_reached_by_tab_between_decisions_and_the_menu() {
         !headings.is_empty() && headings.iter().all(|label| label.contains(" · ")),
         "The sideboards offer their location headings: {headings:?}"
     );
-    // Enemy headings come first, then the attachment sideboard's.
-    let attached = headings
+    // Enemy headings come first, then the Cards at locations board's.
+    let cards = headings
         .iter()
-        .position(|label| label.starts_with("Attached to "))
-        .expect("the attachment sideboard offers its heading");
+        .position(|label| label.starts_with("Cards at "))
+        .expect("the Cards at locations board offers its heading");
     assert!(
-        attached > 0
-            && headings[attached..]
+        cards > 0
+            && headings[cards..]
                 .iter()
-                .all(|label| label.starts_with("Attached to ")),
+                .all(|label| label.starts_with("Cards at ")),
         "{headings:?}"
     );
     app.world_mut().resource_mut::<InputFocus>().clear();

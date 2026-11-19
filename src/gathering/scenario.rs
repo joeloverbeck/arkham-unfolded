@@ -143,7 +143,12 @@ pub struct ScenarioState {
     pub enemies: Vec<EnemyState>,
     pub victory: Vec<CardView>,
     pub removed: Vec<CardView>,
-    pub lita_in_play: bool,
+    /// Lita Chantler's card while she is in play at the Parlor with no
+    /// controller. The Barrier puts her there; a successful Parley moves this
+    /// same card into the investigator's assets. A save made before this field
+    /// existed reads it as empty.
+    #[serde(default)]
+    pub lita_at_parlor: Option<CardView>,
     pub priest_spawned: bool,
     pub outcome: Option<ResolutionRecord>,
 }
@@ -218,7 +223,7 @@ impl ScenarioState {
             enemies: vec![],
             victory: vec![],
             removed: vec![],
-            lita_in_play: false,
+            lita_at_parlor: None,
             priest_spawned: false,
             outcome: None,
         }
@@ -1196,10 +1201,15 @@ pub(super) fn advance_act_two(game: &mut Game) -> Result<u16, RuleError> {
         ));
     }
     game.scenario.reveal(PARLOR);
-    game.scenario.lita_in_play = true;
     game.scenario.priest_spawned = true;
     // The fixed investigator cards occupy IDs below 300, encounter copies
     // occupy 300..326, and the two set-aside characters use 400 and 401.
+    game.scenario.lita_at_parlor = Some(CardView {
+        id: 401,
+        code: "01117".into(),
+        title: "Lita Chantler".into(),
+        weakness: false,
+    });
     let card = CardView {
         id: 400,
         code: "01116".into(),
@@ -1697,6 +1707,17 @@ pub(super) fn discard_investigated_fog(game: &mut Game, location: &str) {
     }
 }
 
+/// Lita is in play while her card waits at the Parlor or sits among an
+/// investigator's assets, including a defeated investigator's until elimination
+/// removes her from the game.
+pub(super) fn lita_in_play(game: &Game) -> bool {
+    game.scenario.lita_at_parlor.is_some()
+        || game
+            .players
+            .iter()
+            .any(|player| player.assets.iter().any(|asset| asset.card.code == "01117"))
+}
+
 pub(super) fn lita_controller(game: &Game) -> Option<Investigator> {
     game.players
         .iter()
@@ -1741,7 +1762,6 @@ pub(super) fn remove_lita(game: &mut Game, card: CardView) {
         card.code, "01117",
         "Only the temporary Gathering story asset"
     );
-    game.scenario.lita_in_play = false;
     game.scenario.removed.push(card);
 }
 
@@ -1753,25 +1773,20 @@ pub(super) fn take_control_of_lita(
     investigator: Investigator,
 ) -> Result<(), RuleError> {
     let player = &game.players[investigator.index()];
-    if !game.scenario.lita_in_play
-        || lita_controller(game).is_some()
-        || player.location != PARLOR
-        || player.defeated
-        || player.resigned
-    {
+    if player.location != PARLOR || player.defeated || player.resigned {
         return Err(RuleError(
             "Lita cannot be taken under this investigator's control.".into(),
         ));
     }
+    let Some(card) = game.scenario.lita_at_parlor.take() else {
+        return Err(RuleError(
+            "Lita cannot be taken under this investigator's control.".into(),
+        ));
+    };
     game.players[investigator.index()]
         .assets
         .push(super::runtime::AssetState {
-            card: CardView {
-                id: 401,
-                code: "01117".into(),
-                title: "Lita Chantler".into(),
-                weakness: false,
-            },
+            card,
             ready: true,
             uses: 0,
             damage: 0,

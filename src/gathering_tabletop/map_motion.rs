@@ -206,7 +206,7 @@ impl Playback {
             let Some(route) = map.connection_route(&old.location, &enemy.location) else {
                 continue;
             };
-            // The group marker stands beside any attachment marker shown with it.
+            // The group marker stands beside any cards-at-locations marker shown with it.
             let marker = |play, room: &str| {
                 sideboard::marker_at(play, &map, room, markers::MarkerKind::EnemyPresence)
             };

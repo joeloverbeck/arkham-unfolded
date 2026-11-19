@@ -49,14 +49,14 @@ pub(super) fn location_color(code: &str) -> Color {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum MarkerKind {
     EnemyPresence,
-    Attachment,
+    LocationCards,
 }
 
 impl MarkerKind {
     fn name(self) -> &'static str {
         match self {
             Self::EnemyPresence => "Enemy presence",
-            Self::Attachment => "Attachment",
+            Self::LocationCards => "Cards at locations",
         }
     }
 
@@ -65,7 +65,7 @@ impl MarkerKind {
     fn sides(self) -> u32 {
         match self {
             Self::EnemyPresence => 48,
-            Self::Attachment => 6,
+            Self::LocationCards => 6,
         }
     }
 
@@ -73,7 +73,7 @@ impl MarkerKind {
     fn side(self) -> f32 {
         match self {
             Self::EnemyPresence => -1.,
-            Self::Attachment => 1.,
+            Self::LocationCards => 1.,
         }
     }
 
@@ -82,7 +82,7 @@ impl MarkerKind {
     fn reach(self, radius: f32) -> f32 {
         match self {
             Self::EnemyPresence => radius,
-            Self::Attachment => radius * std::f32::consts::FRAC_PI_6.cos(),
+            Self::LocationCards => radius * std::f32::consts::FRAC_PI_6.cos(),
         }
     }
 }
@@ -213,29 +213,38 @@ pub(super) fn spawn_token(
                 ),
             ]);
         }
-        MarkerKind::Attachment => {
-            // Two links along the rising diagonal, the upper one over the lower.
-            let axis = Vec2::new(1., -1.).normalize();
-            for (index, center) in [-1., 1.].into_iter().enumerate() {
-                let center = axis * center * radius * 0.20;
-                let lift = top + index as f32 * 0.004;
-                layers.extend([
-                    (
-                        "Chain link",
-                        meshes.add(convex(&stadium(center, axis, radius * 0.16, radius * 0.19))),
-                        flat(INK, materials),
-                        Vec3::Y * lift,
-                        false,
-                    ),
-                    (
-                        "Link opening",
-                        meshes.add(convex(&stadium(center, axis, radius * 0.16, radius * 0.09))),
-                        flat(IVORY, materials),
-                        Vec3::Y * (lift + 0.002),
-                        false,
-                    ),
-                ]);
-            }
+        MarkerKind::LocationCards => {
+            // Two upright cards, the front one lower right and edged in ivory
+            // over the one behind. Neutral: a character, an attachment or both.
+            let (half_width, half_length) = (radius * 0.20, radius * 0.28);
+            let offset = Vec2::new(radius * 0.09, radius * 0.07);
+            layers.extend([
+                (
+                    "Back card",
+                    meshes.add(convex(&rectangle(-offset, half_width, half_length))),
+                    flat(INK, materials),
+                    Vec3::Y * top,
+                    false,
+                ),
+                (
+                    "Front card edge",
+                    meshes.add(convex(&rectangle(
+                        offset,
+                        half_width + radius * 0.06,
+                        half_length + radius * 0.06,
+                    ))),
+                    flat(IVORY, materials),
+                    Vec3::Y * (top + 0.002),
+                    false,
+                ),
+                (
+                    "Front card",
+                    meshes.add(convex(&rectangle(offset, half_width, half_length))),
+                    flat(INK, materials),
+                    Vec3::Y * (top + 0.004),
+                    false,
+                ),
+            ]);
         }
     }
     let name = format!("{} {}", kind.name(), play::location_name(room));
@@ -317,21 +326,11 @@ fn lens(half_width: f32, half_height: f32) -> Vec<Vec2> {
     points
 }
 
-/// A link's outline: two half circles joined along `axis` around `center`.
-fn stadium(center: Vec2, axis: Vec2, half_length: f32, radius: f32) -> Vec<Vec2> {
-    let across = axis.perp();
-    let mut points = Vec::new();
-    for end in [1., -1.] {
-        for step in 0..=12 {
-            let angle = std::f32::consts::PI * step as f32 / 12.;
-            points.push(
-                center
-                    + axis * end * (half_length + radius * angle.sin())
-                    + across * end * radius * angle.cos(),
-            );
-        }
-    }
-    points
+/// An upright card's outline around `center`, its length along the table's depth.
+fn rectangle(center: Vec2, half_width: f32, half_length: f32) -> Vec<Vec2> {
+    [(-1., -1.), (1., -1.), (1., 1.), (-1., 1.)]
+        .map(|(x, y)| center + Vec2::new(x * half_width, y * half_length))
+        .to_vec()
 }
 
 fn ellipse(half_width: f32, half_height: f32) -> Vec<Vec2> {

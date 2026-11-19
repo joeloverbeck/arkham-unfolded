@@ -56,13 +56,13 @@ _Avoid_: Threat area, enemy deck, off-map zone, monster sideboard
 A tabletop marker linking a location to its group on the enemy sideboard. Its count represents that group's cards, not every enemy sharing the location with investigators.
 _Avoid_: Enemy token, total enemies at the location, monster token
 
-**Attachment sideboard**:
-The tabletop display of cards attached to locations, grouped by their location. It is a presentation arrangement, not a rules-defined game zone; the cards remain attached to their locations.
-_Avoid_: Location modifiers, enemy sideboard
+**Cards at locations**:
+The tabletop display, beside the map, of cards at locations other than enemies, grouped by their location: story characters at a location that no investigator controls, and cards attached to locations. It is a presentation arrangement, not a rules-defined game zone; each card keeps its own relationship to its location.
+_Avoid_: Attachment sideboard, location modifiers, enemy sideboard
 
-**Attachment marker**:
-A tabletop marker linking a location to its group on the attachment sideboard. Its count represents that group's cards.
-_Avoid_: Location token, enemy-presence marker
+**Cards-at-locations marker**:
+A tabletop marker linking a location to its group on the Cards at locations board. Its count represents that group's cards.
+_Avoid_: Attachment marker, location token, enemy-presence marker
 
 **Location color**:
 The stable presentation color identifying a location on its markers and sideboard headings. It is not a printed card property and carries no rules meaning.
