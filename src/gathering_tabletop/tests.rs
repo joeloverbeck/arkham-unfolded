@@ -178,7 +178,6 @@ fn registered_table_saves_its_initial_decision_only_after_admission() {
     assert_eq!(std::fs::read(save).unwrap(), before);
 }
 
-mod attachment_sideboard;
 mod cards;
 mod clue_payment;
 mod counters_and_enemies;
@@ -187,6 +186,7 @@ mod draws;
 mod encounter;
 mod harm_prevention;
 mod live_controls;
+mod location_cards;
 use live_controls::{ReadingStop, reach_live_choice};
 mod location_markers;
 mod map_motion;

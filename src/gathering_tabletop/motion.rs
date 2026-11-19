@@ -117,9 +117,10 @@ impl Origins {
                 .iter()
                 .filter_map(|room| room.fog.as_ref())
             {
-                result
-                    .positions
-                    .insert(card.id, sideboard::ATTACHMENTS.position(play, card.id));
+                result.positions.insert(
+                    card.id,
+                    sideboard::LOCATION_CARDS.position(play, &controls::Source::Card(card.id)),
+                );
             }
             if let Some(tray) = trays::Layout::for_play(play) {
                 result.positions.extend(tray.positions());

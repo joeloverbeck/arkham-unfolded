@@ -1061,21 +1061,34 @@ pub(super) fn render(
         for (index, player) in occupants {
             paint.standee(at, player.investigator.index(), index, player.investigator);
         }
-        // An attachment waits on the attachment sideboard, not above its location.
+        // Cards at the location wait on the Cards at locations board, not
+        // above it: an attachment stays attached and keeps that relationship.
         if let Some(fog) = &room.fog {
             let title = format!("{}\nAttached to {}", fog.title, location_name(&room.code));
+            let source = Source::Card(fog.id);
+            let at = sideboard::LOCATION_CARDS.position(play, &source);
             let card = paint.card(CardSpec {
-                source: Some(Source::Card(fog.id)),
+                source: Some(source),
                 physical_id: Some(fog.id),
                 caption: Some(Caption::Text(&fog.title)),
-                ..CardSpec::new(
-                    sideboard::ATTACHMENTS.position(play, fog.id),
-                    &title,
-                    &fog.code,
-                )
+                ..CardSpec::new(at, &title, &fog.code)
             });
             sideboard::label_card(paint.commands, card, title, true);
         }
+    }
+    // Uncontrolled Lita is at the Parlor until an investigator takes control.
+    if sideboard::lita_at_parlor(play) {
+        let title = format!("Lita Chantler\nAt {}", location_name(sideboard::PARLOR));
+        let card = paint.card(CardSpec {
+            source: Some(Source::Lita),
+            caption: Some(Caption::Text("Lita Chantler")),
+            ..CardSpec::new(
+                sideboard::LOCATION_CARDS.position(play, &Source::Lita),
+                &title,
+                sideboard::LITA,
+            )
+        });
+        sideboard::label_card(paint.commands, card, title, true);
     }
     for (slot, enemy) in play.scenario.enemies.iter().enumerate() {
         if play.scenario.location_in_victory_display(&enemy.location) {
@@ -1154,21 +1167,6 @@ pub(super) fn render(
                 );
             }
         }
-    }
-    if play.scenario.lita_in_play
-        && !play
-            .players
-            .iter()
-            .any(|player| player.assets.iter().any(|asset| asset.card.code == "01117"))
-    {
-        paint.card(CardSpec {
-            source: Some(Source::Lita),
-            ..CardSpec::new(
-                layout::SCENARIO_MAP_CENTER + Vec3::new(3., 0., 4.),
-                "Lita Chantler · Parlor",
-                "01117",
-            )
-        });
     }
     // Test contains only the current skill test. Other public resolutions have
     // an investigator-owned tray, including while a parent test is suspended.
@@ -1438,7 +1436,7 @@ pub(super) fn enemy_position(play: &PlayObservation, slot: usize) -> Vec3 {
             play.players[owner.index()].threats.len() + prior,
         );
     }
-    sideboard::ENEMIES.position(play, enemy.card.id)
+    sideboard::ENEMIES.position(play, &Source::Card(enemy.card.id))
 }
 
 pub(super) fn test_resolving_cards(play: &PlayObservation) -> Vec<&crate::gathering::CardView> {

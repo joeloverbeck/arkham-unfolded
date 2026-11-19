@@ -553,8 +553,8 @@ const SHOWN: [(&str, &str, &str, &str); 6] = [
     (ATTIC, "Attic", "Enemy presence", "enemies: 1"),
     (CELLAR, "Cellar", "Enemy presence", "enemies: 1"),
     (PARLOR, "Parlor", "Enemy presence", "enemies: 1"),
-    (HALLWAY, "Hallway", "Attachment", "attachments: 1"),
-    (ATTIC, "Attic", "Attachment", "attachments: 1"),
+    (HALLWAY, "Hallway", "Cards at locations", "cards: 1"),
+    (ATTIC, "Attic", "Cards at locations", "cards: 1"),
 ];
 
 /// The count's measured cover of the card's top edge, in logical pixels, plus
@@ -785,7 +785,7 @@ fn attic_markers_leave_the_map_caption_and_its_top_edge_uncovered() {
             let mut pieces = Vec::new();
             for (marker, count) in [
                 ("Enemy presence Attic", "Attic enemies: 1"),
-                ("Attachment Attic", "Attic attachments: 1"),
+                ("Cards at locations Attic", "Attic cards: 1"),
             ] {
                 let (map, _) = tokens(&mut app, marker);
                 let token = &map[0];

@@ -30,9 +30,9 @@ between Scenario and the investigator row. Keep the gaps around Test equal.
 Overview supports orientation. Focused views support readable play; simultaneous
 readability of every card in Overview is not the aim. Do not shrink cards to fit
 more investigator areas. A permanent map inset or split view is not selected.
-Scenario and Overview framing include the enemy and attachment sideboards, with
-the target re-centred between them at each view's unchanged distance, so cards do
-not shrink. Frame each view within the usable viewport, accounting for headings
+Scenario and Overview framing include the enemy sideboard and the Cards at
+locations board, with the target re-centred between them at each view's unchanged
+distance, so cards do not shrink. Frame each view within the usable viewport, accounting for headings
 and bottom controls; retain pan, zoom and Inspect for details. Finite layout examples are not gameplay limits.
 
 A persistent side strip uses investigator portraits to focus their areas, with
@@ -54,7 +54,7 @@ dismisses a transient action list without making a choice or losing commitments.
 Tab/Shift+Tab move menu focus, Enter/Space activate and Escape dismisses. Those
 operations must not also move the camera; arrow-key menu navigation is not
 selected. The Menu button has its own place in the Tab order, after the
-navigation rail, decision panel and sideboard headings (enemy, then attachment),
+navigation rail, decision panel and sideboard headings (enemies, then Cards at locations),
 so Shift+Tab from the first
 portrait reaches it. Every modal dialog contains a control that takes focus when
 it opens. Inspect, History, Menu, story-reading panels, confirmation dialogs and
@@ -635,21 +635,41 @@ threat areas. If Massive content becomes supported, its single location-resident
 card belongs on the sideboard ready or exhausted; only a ready Massive enemy is
 considered engaged with everyone there. This convention adds no content support.
 
-Cards attached to locations, currently Obscuring Fog, wait on an attachment
-sideboard right of Map rather than above their location. It is a presentation
-arrangement: the cards remain attached. It mirrors the enemy sideboard's footprint,
-three columns, exposed rows, full-size cards, thick body and inset top, in an olive
-surface (#2B3318) with a lichen rim (#8E9A4A); both boards share one layout that
-differs only by side, palette, marker and content. Each location with attachments
-shows an attachment marker right of any enemy-presence marker: a hexagonal token
-with flat edges toward the card, a dark outline, a location-color ring, an ivory
-face and an ink chain-link emblem, with the count in a dark pill beneath. Its
-heading repeats the token followed by **LOCATION NAME · count**. A marker, heading
-or card highlights only its own group; the location card highlights all of its
-groups.
+Other cards at a location wait on the **Cards at locations** board right of Map
+rather than on Map: story characters at a location that no investigator controls,
+currently Lita Chantler at the Parlor, and cards attached to locations, currently
+Obscuring Fog. A location reserves its four standee slots for investigators, and
+three investigators can occupy both of the Parlor's sides, so these cards take no
+map space. Uncontrolled Lita joins the Parlor's group as soon as she enters play,
+for any number of investigators there, including none. It is a presentation
+arrangement: Lita is at the Parlor and Fog remains attached, and sharing a heading
+changes neither relationship. Each card's caption shows its title, and its
+accessible name keeps the relationship (**At Parlor**, **Attached to Parlor**). A
+story character precedes the location's attachments in its group. The board
+mirrors the enemy sideboard's footprint, three columns, exposed rows, full-size
+cards, thick body and inset top, in an olive surface (#2B3318) with a lichen rim
+(#8E9A4A); both boards share one layout that differs only by side, palette, marker
+and content. Each location with
+cards there shows a cards-at-locations marker right of any enemy-presence marker: a
+hexagonal token with flat edges toward the card, a dark outline, a location-color
+ring, an ivory face and a neutral ink emblem of two stacked cards parted by an
+ivory edge, with the group's total count in a dark pill beneath. Its heading
+repeats the token followed by **LOCATION NAME · count**, and its accessible name
+reads **Cards at LOCATION NAME · count**. A marker, heading or card highlights only
+its own group; the location card highlights all of its groups.
+
+Lita's card offers **Parley** when the rules offer it to the acting investigator,
+and Inspect. A failed Parley leaves her in the group. On success she becomes an
+asset of that investigator, after the ordinary Ally-slot resolution, and leaves the
+Parlor's group; the group's marker, heading and count follow at the same displayed
+moment, and they disappear with the group's last card. Uncontrolled Lita has no
+public card identity, so unlike the transfers below her board card does not travel:
+it leaves the board as her asset appears, at the same displayed moment. Later story
+characters at a location follow this convention; it adds no content support.
 
 Card transfers, including attaching and discarding, preserve identity/counters and
-synchronize positions, markers and counts to the same displayed moment. Each face
+synchronize positions, markers and counts to the same displayed moment; uncontrolled
+Lita's change of place is the exception described above. Each face
 offers its own actions/Inspect;
 hover or keyboard focus highlights matching marker/heading without camera travel.
 Markers/headings retain aggregate group access. A moving enemy uses a temporary
