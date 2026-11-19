@@ -659,17 +659,15 @@ reads **Cards at LOCATION NAME · count**. A marker, heading or card highlights 
 its own group; the location card highlights all of its groups.
 
 Lita's card offers **Parley** when the rules offer it to the acting investigator,
-and Inspect. A failed Parley leaves her in the group. On success she becomes an
-asset of that investigator, after the ordinary Ally-slot resolution, and leaves the
-Parlor's group; the group's marker, heading and count follow at the same displayed
-moment, and they disappear with the group's last card. Uncontrolled Lita has no
-public card identity, so unlike the transfers below her board card does not travel:
-it leaves the board as her asset appears, at the same displayed moment. Later story
-characters at a location follow this convention; it adds no content support.
+and Inspect. A failed Parley leaves her in the group. On success her own card
+slides from the board into that investigator's Assets, after the ordinary
+Ally-slot resolution, and leaves the Parlor's group; the group's marker, heading
+and count follow at the same displayed moment, and they disappear with the group's
+last card. Later story characters at a location follow this convention; it adds no
+content support.
 
 Card transfers, including attaching and discarding, preserve identity/counters and
-synchronize positions, markers and counts to the same displayed moment; uncontrolled
-Lita's change of place is the exception described above. Each face
+synchronize positions, markers and counts to the same displayed moment. Each face
 offers its own actions/Inspect;
 hover or keyboard focus highlights matching marker/heading without camera travel.
 Markers/headings retain aggregate group access. A moving enemy uses a temporary

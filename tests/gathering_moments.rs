@@ -242,7 +242,7 @@ fn original_act_advancement_and_ending_are_recorded_when_their_story_state_chang
         .iter()
         .find(|moment| moment.play.act == 3)
         .expect("The paid original Act2 reverse has its own presentation state");
-    assert!(advanced.play.scenario.lita_in_play);
+    assert!(advanced.play.scenario.lita_at_parlor.is_some());
     assert!(
         advanced
             .play

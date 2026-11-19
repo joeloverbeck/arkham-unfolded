@@ -505,6 +505,18 @@ pub struct PlayObservation {
     pub premonition: Option<super::tokens::SealedPremonition>,
 }
 
+impl PlayObservation {
+    /// Lita is in play while her card waits at the Parlor or sits among an
+    /// investigator's assets, as the rules state's `lita_in_play` decides.
+    pub fn lita_in_play(&self) -> bool {
+        self.scenario.lita_at_parlor.is_some()
+            || self
+                .players
+                .iter()
+                .any(|player| player.assets.iter().any(|asset| asset.card.code == "01117"))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct Game {
     #[serde(skip)]
@@ -2095,7 +2107,7 @@ impl Game {
             || self.agenda != prior.agenda
             || self.scenario.outcome.is_some()
             || prior.scenario.outcome.is_some()
-            || self.scenario.lita_in_play != prior.scenario.lita_in_play
+            || super::scenario::lita_in_play(self) != super::scenario::lita_in_play(prior)
             || self.scenario.priest_spawned != prior.scenario.priest_spawned
             || self.scenario.locations.iter().any(|location| {
                 location.revealed
@@ -2327,10 +2339,7 @@ impl Game {
         actions.extend(super::player_cards::asset_action_choices(self, actor));
         actions.extend(super::encounter_search::action_choices(self, actor));
         actions.extend(super::spells::action_choices(self, actor));
-        if self.scenario.lita_in_play
-            && super::scenario::lita_controller(self).is_none()
-            && player.location == "01115"
-        {
+        if self.scenario.lita_at_parlor.is_some() && player.location == "01115" {
             actions.push(choice(
                 "parley:lita",
                 "Parley with Lita Chantler; test intellect (4) to take control",

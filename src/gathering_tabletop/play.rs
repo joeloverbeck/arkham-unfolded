@@ -1077,15 +1077,17 @@ pub(super) fn render(
         }
     }
     // Uncontrolled Lita is at the Parlor until an investigator takes control.
-    if sideboard::lita_at_parlor(play) {
-        let title = format!("Lita Chantler\nAt {}", location_name(sideboard::PARLOR));
+    // Her card keeps its identity, so Parley carries it to the controller's Assets.
+    if let Some(lita) = &play.scenario.lita_at_parlor {
+        let title = format!("{}\nAt {}", lita.title, location_name(sideboard::PARLOR));
         let card = paint.card(CardSpec {
             source: Some(Source::Lita),
-            caption: Some(Caption::Text("Lita Chantler")),
+            physical_id: Some(lita.id),
+            caption: Some(Caption::Text(&lita.title)),
             ..CardSpec::new(
                 sideboard::LOCATION_CARDS.position(play, &Source::Lita),
                 &title,
-                sideboard::LITA,
+                &lita.code,
             )
         });
         sideboard::label_card(paint.commands, card, title, true);

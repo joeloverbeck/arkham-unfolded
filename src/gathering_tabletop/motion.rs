@@ -122,6 +122,12 @@ impl Origins {
                     sideboard::LOCATION_CARDS.position(play, &controls::Source::Card(card.id)),
                 );
             }
+            if let Some(lita) = &play.scenario.lita_at_parlor {
+                result.positions.insert(
+                    lita.id,
+                    sideboard::LOCATION_CARDS.position(play, &controls::Source::Lita),
+                );
+            }
             if let Some(tray) = trays::Layout::for_play(play) {
                 result.positions.extend(tray.positions());
             }

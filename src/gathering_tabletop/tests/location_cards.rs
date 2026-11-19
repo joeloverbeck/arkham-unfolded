@@ -6,6 +6,9 @@ use crate::gathering::{HostileFixture, SelectedWitness};
 use crate::tabletop_pieces as pieces;
 use bevy::camera::primitives::MeshAabb;
 
+/// Lita Chantler's card code, on her board card and her asset.
+const LITA: &str = "01117";
+
 const HALLWAY: &str = "01112";
 const ATTIC: &str = "01113";
 const PARLOR: &str = "01115";
@@ -532,8 +535,10 @@ fn scenario_and_overview_frame_both_sideboards_without_moving_the_camera_back() 
 fn parlor_moment(lita: bool, fog: bool, crowd: bool) -> crate::gathering::PlayObservation {
     let session = Session::with_hostile_fixture(HostileFixture::GatheringLitaParley);
     let mut play = session.observe().play.unwrap();
-    assert!(play.scenario.lita_in_play);
-    play.scenario.lita_in_play = lita;
+    assert!(play.scenario.lita_at_parlor.is_some());
+    if !lita {
+        play.scenario.lita_at_parlor = None;
+    }
     for location in &mut play.scenario.locations {
         location.fog = (fog && location.code == PARLOR).then(|| crate::gathering::CardView {
             id: 62100,
@@ -707,12 +712,9 @@ fn lita_lights_her_parlor_group_without_moving_the_camera() {
 fn taking_control_of_lita_leaves_the_fog_alone_under_the_parlor() {
     let before = parlor_moment(true, true, true);
     let mut after = before.clone();
-    let lita = crate::gathering::CardView {
-        id: 401,
-        code: sideboard::LITA.into(),
-        title: "Lita Chantler".into(),
-        weakness: false,
-    };
+    // Parley moves her own card, as the rules do.
+    let lita = after.scenario.lita_at_parlor.take().unwrap();
+    let id = lita.id;
     let patrice = &mut after.players[Investigator::Patrice.index()];
     let mut asset = patrice.assets[0].clone();
     asset.card = lita;
@@ -734,14 +736,16 @@ fn taking_control_of_lita_leaves_the_fog_alone_under_the_parlor() {
     let shown = world
         .query::<&motion::PhysicalCard>()
         .iter(world)
-        .filter(|card| card.0 == 401)
+        .filter(|card| card.0 == id)
         .count();
     assert_eq!(shown, 1, "Lita appears once, among Patrice's assets");
 }
 
 /// Settle, checking every frame that Lita's board card, the Parlor heading,
-/// marker and count, and her asset follow the same displayed moment.
-fn settle_checking_lita(app: &mut App) {
+/// marker and count, and her asset follow the same displayed moment. Returns
+/// where her one physical card stood at each frame.
+fn settle_checking_lita(app: &mut App) -> Vec<Vec3> {
+    let mut trail = Vec::new();
     settle_checking(app, |app| {
         let displayed = app
             .world()
@@ -750,12 +754,12 @@ fn settle_checking_lita(app: &mut App) {
             .as_ref()
             .and_then(|view| view.play.clone())
             .unwrap();
-        let at_parlor = sideboard::lita_at_parlor(&displayed);
+        let at_parlor = displayed.scenario.lita_at_parlor.is_some();
         let controlled = displayed
             .players
             .iter()
             .flat_map(|player| &player.assets)
-            .filter(|asset| asset.card.code == sideboard::LITA)
+            .filter(|asset| asset.card.code == LITA)
             .count();
         assert_eq!(
             (
@@ -766,19 +770,43 @@ fn settle_checking_lita(app: &mut App) {
             "Lita's card and the Parlor group follow the displayed moment"
         );
         assert_eq!(controlled, usize::from(!at_parlor), "Lita is shown once");
+        let id = displayed
+            .scenario
+            .lita_at_parlor
+            .iter()
+            .chain(
+                displayed
+                    .players
+                    .iter()
+                    .flat_map(|player| player.assets.iter().map(|asset| &asset.card)),
+            )
+            .find(|card| card.code == LITA)
+            .map(|card| card.id);
+        let world = app.world_mut();
+        let shown: Vec<_> = world
+            .query::<(&motion::PhysicalCard, &Transform)>()
+            .iter(world)
+            .filter(|(card, _)| Some(card.0) == id)
+            .map(|(_, at)| at.translation)
+            .collect();
+        assert!(shown.len() <= 1, "one physical Lita card");
+        trail.extend(shown);
     });
+    trail
 }
 
 /// Answer the current Parley test through its visible controls: commit the
-/// given card, pass windows, reveal and decline Lucky!.
-fn finish_parley(app: &mut App, mut commit: Option<u16>) {
+/// given card, pass windows, reveal and decline Lucky!. Returns Lita's card
+/// positions frame by frame.
+fn finish_parley(app: &mut App, mut commit: Option<u16>) -> Vec<Vec3> {
     let mut started = false;
+    let mut trail = Vec::new();
     for _ in 0..12 {
-        settle_checking_lita(app);
+        trail.extend(settle_checking_lita(app));
         let view = app.world().resource::<Table>().view();
         let testing = view.play.as_ref().is_some_and(|play| play.test.is_some());
         if started && !testing {
-            return;
+            return trail;
         }
         started |= testing;
         let has = |id: &str| view.choices.iter().any(|choice| choice.id == id);
@@ -796,7 +824,7 @@ fn finish_parley(app: &mut App, mut commit: Option<u16>) {
         {
             id.to_owned()
         } else {
-            return;
+            return trail;
         };
         activate_choice(app, &next);
     }
@@ -813,7 +841,7 @@ fn parley_row(app: &mut App) -> Option<Entity> {
 }
 
 #[test]
-fn lita_offers_parley_from_her_board_card_and_moves_to_assets_once_on_success() {
+fn lita_offers_parley_from_her_board_card_and_slides_to_assets_once_on_success() {
     let session = Session::with_hostile_fixture(HostileFixture::GatheringLitaParley);
     let patrice = session.observe().play.unwrap().players[Investigator::Patrice.index()].clone();
     let rise = patrice
@@ -886,7 +914,7 @@ fn lita_offers_parley_from_her_board_card_and_moves_to_assets_once_on_success() 
         .play
         .unwrap();
     assert!(
-        sideboard::lita_at_parlor(&play),
+        play.scenario.lita_at_parlor.is_some(),
         "a failed Parley keeps her at the Parlor"
     );
     assert!(parlor_group(&mut app).is_some());
@@ -901,8 +929,21 @@ fn lita_offers_parley_from_her_board_card_and_moves_to_assets_once_on_success() 
     let row = parley_row(&mut app).unwrap();
     app.world_mut().trigger(Activate { entity: row });
     app.update();
-    finish_parley(&mut app, Some(rise));
-    settle_checking_lita(&mut app);
+    let mut trail = finish_parley(&mut app, Some(rise));
+    trail.extend(settle_checking_lita(&mut app));
+    // Her one card slides from the board to the Assets row, not a cut.
+    let (start, end) = (trail[0], *trail.last().unwrap());
+    let board = sideboard::LOCATION_CARDS.center.x - sideboard::LOCATION_CARDS.size.x / 2.;
+    assert!(
+        start.x > board && end.x < board,
+        "from the board to Assets: {start} -> {end}"
+    );
+    assert!(
+        trail
+            .iter()
+            .any(|at| at.distance(start) > 1. && at.distance(end) > 1.),
+        "the card passes between them: {trail:?}"
+    );
     let play = app
         .world()
         .resource::<Table>()
@@ -911,11 +952,7 @@ fn lita_offers_parley_from_her_board_card_and_moves_to_assets_once_on_success() 
         .play
         .unwrap();
     let assets = &play.players[Investigator::Patrice.index()].assets;
-    assert!(
-        assets
-            .iter()
-            .any(|asset| asset.card.code == sideboard::LITA)
-    );
+    assert!(assets.iter().any(|asset| asset.card.code == LITA));
     assert!(
         !assets.iter().any(|asset| asset.card.id == peter),
         "the ordinary Ally-slot resolution makes room"

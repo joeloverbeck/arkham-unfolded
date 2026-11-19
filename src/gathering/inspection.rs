@@ -95,7 +95,7 @@ pub fn table_card(observation: &Observation, code: &str, sight: Sight<'_>) -> Op
     let scenario_visible = code == "01104"
         || code == agenda
         || code == act
-        || (code == "01117" && play.scenario.lita_in_play)
+        || (code == "01117" && play.lita_in_play())
         || play
             .scenario
             .locations

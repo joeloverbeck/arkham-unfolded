@@ -86,9 +86,8 @@ pub(super) const LOCATION_CARDS: Sideboard = Sideboard {
 /// Both boards, in heading Tab order.
 pub(super) const BOARDS: [&Sideboard; 2] = [&ENEMIES, &LOCATION_CARDS];
 
+/// Where the rules put Lita Chantler while no investigator controls her.
 pub(super) const PARLOR: &str = "01115";
-/// The Gathering story asset that enters play at the Parlor.
-pub(super) const LITA: &str = "01117";
 
 fn resident(play: &PlayObservation, room: &str) -> Vec<controls::Source> {
     play.scenario
@@ -99,19 +98,10 @@ fn resident(play: &PlayObservation, room: &str) -> Vec<controls::Source> {
         .collect()
 }
 
-/// Uncontrolled Lita stays where she entered play; once an investigator takes
-/// control she is that investigator's asset instead.
-pub(super) fn lita_at_parlor(play: &PlayObservation) -> bool {
-    play.scenario.lita_in_play
-        && !play
-            .players
-            .iter()
-            .any(|player| player.assets.iter().any(|asset| asset.card.code == LITA))
-}
-
 /// A story character at the location first, then its attachment.
 fn at_location(play: &PlayObservation, room: &str) -> Vec<controls::Source> {
-    let character = (room == PARLOR && lita_at_parlor(play)).then_some(controls::Source::Lita);
+    let character = (room == PARLOR && play.scenario.lita_at_parlor.is_some())
+        .then_some(controls::Source::Lita);
     let attached = play
         .scenario
         .locations
