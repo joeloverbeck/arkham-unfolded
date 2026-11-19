@@ -10,6 +10,6 @@ Map each canonical skill role to the same GitHub label:
 | `ready-for-human` | `ready-for-human` | Requires human implementation |
 | `wontfix` | `wontfix` | Will not be actioned |
 
-Apply `ready-for-agent` only when the bounded work satisfies `WORK-1` and `OPS-1` in `docs/principles/principles-for-repos.md`, and the `WORK-3` count in [#89's current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060) permits another item; unattended work also requires `AGENT-4`. A label does not supply missing approval or evidence.
+Apply `ready-for-agent` only when the bounded work satisfies `WORK-1` and `OPS-1` in `docs/principles/principles-for-repos.md`, and the `WORK-3` count in [#89's current handoff](https://github.com/joeloverbeck/arkham-unfolded/issues/89#issuecomment-6577345060) permits another item; unattended work also requires `AGENT-4`. A label does not supply missing approval or evidence. An item Joel explicitly selects outside that count, as Joel did for the stewardship in #276 and #277, can be labelled while the count stands at its limit; it does not reset the count, and its own issue records the selection.
 
 Edit the GitHub label column if the repository later adopts different label names.
