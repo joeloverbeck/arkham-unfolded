@@ -10,6 +10,8 @@ When a change adds an exception to a maintained contract's rule, report what mak
 
 Documentation that states how the code behaves keeps each condition the path it documents can reach. Check each such claim against the lines it cites or that implement it, and report a dropped guard or exception with both locations. Report a condition that path cannot reach, such as a guard on a state it never enters, as unreachable, citing each place its value is set; the text leaves it out. When the change adds an exception, check that it also qualifies the general statement it excepts, and report an unqualified one with both locations.
 
+When a change reads a format itself instead of through its real consumer's parser, as a check reading Cargo manifests without Cargo does, test it on inputs that consumer accepts: other spellings, quoting, escapes and line layouts. Report each input the reader neither reads as the consumer does nor refuses, with what the reader did.
+
 For tabletop presentation, controls or rules-text changes, apply the [visual and wording review](docs/agents/native-verification.md#visual-and-wording-review) to the affected player journey, including existing cards and panels it exposes. Report observed defects separately from layout preferences and identify any unverified interaction. The guide owns these judgment criteria; automated checks own mechanical requirements.
 
 For a diagnostic build made for an owner launch, check its instrument against every item of the [launch contract](.claude/skills/diagnosing-bugs/native-performance.md#owner-run-measurement-launch) in that procedure's first step, so it cannot spend the launch unrecorded. Report each item the instrument breaks, citing the item.
