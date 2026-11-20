@@ -36,7 +36,7 @@ the candidate for final code review. Include completed check-record paths in the
 review packet, including the real-asset check when the route depends on supplied
 artwork or fonts. This keeps fixture corrections inside the reviewed candidate.
 For Gathering draws, use the [draw checkpoints and timed route](../experiments/gathering-setup.md#card-draw-review-preparation), whose builder is shared with the production-startup checks.
-For Gathering, replace the collection path below with the folder that holds the collection's `manifest.json`, which [README](../../README.md#agent-seat) locates beside its real-table checks: for imported artwork, the `collection` folder of an installation, not the `installation-*` folder above it. Use fresh output directories:
+For Gathering, replace the collection path below with the folder that holds the collection's `manifest.json`, which the [agent seat guide](agent-seat.md) locates beside its real-table checks: for imported artwork, the `collection` folder of an installation, not the `installation-*` folder above it. Use fresh output directories:
 
 ```sh
 scripts/tools record-check --output-dir /tmp/gathering-review-startup -- \
@@ -77,10 +77,10 @@ launch command, including its working directory, settings and resolved save
 path. Development builds promise no save compatibility: a save loads only when
 the current build reproduces its recorded game exactly, and is otherwise refused
 unchanged so that a New attempt can begin. Check an existing attempt read-only
-with `arkham-driver --inspect PATH` ([direct diagnostic launch](../../README.md#direct-diagnostic-launch)),
+with `arkham-driver --inspect PATH` ([direct diagnostic launch](../playing.md#direct-diagnostic-launch)),
 which names any refusal without creating lock or recovery files. When a change can refuse the owner's
 existing save, provide a tested fresh-start command with an unused `--save` path
-and the expected setup screen; update README's launch/recovery instructions in
+and the expected setup screen; update the [playing guide](../playing.md)'s launch/recovery instructions in
 the same handoff. Keep the existing save bytes intact. Prepared diagnostic checkpoints have a separate purpose and
 do not establish that the ordinary launch command works.
 
@@ -91,7 +91,7 @@ Private checklist — do not upload:
 Owning issue: URL; candidate commit and executable/hash; completed check records.
 Retention: final evidence directory; selected records and original-path mapping.
 Normal launch: owner command/cwd; resolved save; fresh or resume; startup result;
-  tested replacement command and README recovery when compatibility changed.
+  tested replacement command and playing-guide recovery when compatibility changed.
 Run: exact launch/resume command; isolated save/settings/art paths; run manifest.
 Artwork, when required by the claim: resolved launch root and completeness-check result.
 Prepared saves: input identity/revision; production-startup check/result;
@@ -141,7 +141,7 @@ with the expected reading sequence and choice ID. It activates the declared
 reading controls and requires an unobstructed direct choice; unexpected dialogs
 fail setup. Keep reading-barrier tests at their barrier rather than clearing it.
 
-Before scheduling a capture from a prepared save, load it through the production startup path in the headless UI host and check the expected visible controls and blocking dialogs, alongside the game state. Where the prepared artwork and a graphics adapter are available, an [agent seat](../../README.md#agent-seat) `observe` of a copy of the save, after `settle` reports the table settled, serves as this check: `table.modal`, `table.controls` and the `available` flag of each `table.components` entry report the dialogs, controls and availability cues. A save containing expanded locations may reopen on an Act story panel; location membership alone does not establish capture readiness. Preserve that reading barrier and prepare an ordinary later decision when the route requires an unobscured map. Record the result in the handoff above. Gathering's `gathering_tabletop::tests::review_saves` checks the seed-89 initial, Hard Knocks and expanded-map inputs, including the obstructing story transition; its retained result is in the [current verification status](../experiments/gathering-setup.md#presentation-correction-verification). These checks do not establish GPU rendering or native readability.
+Before scheduling a capture from a prepared save, load it through the production startup path in the headless UI host and check the expected visible controls and blocking dialogs, alongside the game state. Where the prepared artwork and a graphics adapter are available, an [agent seat](agent-seat.md) `observe` of a copy of the save, after `settle` reports the table settled, serves as this check: `table.modal`, `table.controls` and the `available` flag of each `table.components` entry report the dialogs, controls and availability cues. A save containing expanded locations may reopen on an Act story panel; location membership alone does not establish capture readiness. Preserve that reading barrier and prepare an ordinary later decision when the route requires an unobscured map. Record the result in the handoff above. Gathering's `gathering_tabletop::tests::review_saves` checks the seed-89 initial, Hard Knocks and expanded-map inputs, including the obstructing story transition; its retained result is in the [current verification status](../experiments/gathering-setup.md#presentation-correction-verification). These checks do not establish GPU rendering or native readability.
 
 When the owner supplies physical input, present the complete human route, expected results, capture pauses and stopping conditions before starting the timer or opening the game. Once the agreed interval begins, announce the absolute close deadline and let the owner follow that route without switching back to chat for routine instructions or intermediate answers. Request one combined report after the window closes, including anything untested. Interrupt during the run only for a planned capture pause, a failure, a stop condition or a necessary deadline reminder. The existing allowance and cleanup reserve still apply; delivering instructions late does not extend them.
 

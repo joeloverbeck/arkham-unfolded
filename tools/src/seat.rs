@@ -92,7 +92,7 @@ the timeout, reading its answer failed other than by a reset connection (which
 counts as the seat having gone), or it answered something other than an
 observation or a settle; 130 the command was interrupted.
 
-Hosting an agent partner: README.md#hosting-an-agent-partner";
+Hosting an agent partner: docs/agents/agent-seat.md#hosting-an-agent-partner";
 
 const MET: u8 = 0;
 const TIMED_OUT: u8 = 3;

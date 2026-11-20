@@ -20,7 +20,7 @@ The task is to decide whether Patrice commits Promise of Power, decide when Jacq
 
 ## Build and run
 
-The local launch below uses the complete 15-file collection prepared for #124; use your own complete folder elsewhere or prepare one below. This is the earlier Jacqueline mode; the [README](../../README.md#launch-and-play-the-tony-turn) leads with the new Tony turn. Requires Rust/Cargo 1.97.1 or later and a working Ubuntu X11/XWayland graphics session with Vulkan support. The lockfile pins the experiment's dependencies, including Bevy 0.20.0. First dependency acquisition/build requires network access and can take several minutes; the resulting application and saving run offline.
+The local launch below uses the complete 15-file collection prepared for #124; use your own complete folder elsewhere or prepare one below. This is the earlier Jacqueline mode; the [README](https://github.com/joeloverbeck/arkham-unfolded/blob/8c4e619e20f9a55dd2cbd3144ab21c26325d8af6/README.md#launch-and-play-the-tony-turn) leads with the new Tony turn. Requires Rust/Cargo 1.97.1 or later and a working Ubuntu X11/XWayland graphics session with Vulkan support. The lockfile pins the experiment's dependencies, including Bevy 0.20.0. First dependency acquisition/build requires network access and can take several minutes; the resulting application and saving run offline.
 
 Open Terminal (`Ctrl` + `Alt` + `T`), then run the following. Replace the checkout directory if yours is elsewhere. Keep the terminal open while the native window is running.
 

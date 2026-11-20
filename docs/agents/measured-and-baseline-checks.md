@@ -1,6 +1,6 @@
 # Measured and baseline checks
 
-These procedures extend the [local builds and checks](../../README.md#local-builds-and-checks) when a task needs resource evidence, a comparison with a baseline revision, or one Cargo target shared by several checkouts. The launcher, lock and recorder rules there still apply.
+These procedures extend the [local builds and checks](local-builds-and-checks.md) when a task needs resource evidence, a comparison with a baseline revision, or one Cargo target shared by several checkouts. The launcher, lock and recorder rules there still apply.
 
 ## Resource measurements
 

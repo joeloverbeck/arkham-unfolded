@@ -95,7 +95,7 @@ pub fn driver_choice(
     let mut child = Tracee(Some(command.spawn().expect(
         "start the test's own driver child with ptrace enabled; if child tracing is denied, \
              rerun the unchanged check in an authorized environment that permits it \
-             (see README.md, Current use and external inputs)",
+             (see docs/agents/local-builds-and-checks.md)",
     )));
     let pid = child.0.as_ref().unwrap().id() as c_int;
     let deadline = Instant::now() + Duration::from_secs(20);

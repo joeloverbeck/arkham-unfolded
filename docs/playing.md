@@ -1,0 +1,70 @@
+# Playing Arkham Unfolded
+
+This guide holds the detail of launching, saving and recovering play, and of playing with agent partners. [README](../README.md) gives the short launch path and the current status.
+
+## Launch and resume The Gathering
+
+From this checkout:
+
+```sh
+scripts/dev cargo build --locked --features tabletop --bin arkham-tabletop &&
+target/debug/arkham-tabletop
+```
+
+The first build can take several minutes. Ordinary launch opens **Scenario selection** without loading a game or requiring prepared artwork. Select **The Gathering** to choose:
+
+- **New attempt:** allocates a distinct unused save path. It creates the attempt only after complete artwork and rendering admission, preserving existing saves.
+- **Continue:** opens the exact most recently successfully admitted attempt, remembered across application launches. With no remembered attempt, the screen explains this and keeps New/Open available.
+- **Open saved attempt:** choose an existing file with the native file picker. Cancellation keeps the previous Continue reference. Missing, corrupt, incompatible or wrong-scenario records are refused unchanged.
+
+New saves live under `${XDG_DATA_HOME:-$HOME/.local/share}/arkham-unfolded/attempts/`. The remembered path is separate from game state, beside `gathering.toml` in the user's configuration directory. **Menu → Save and return to scenario selection** saves the pending decision before leaving; a failed save keeps the game active with its recovery controls.
+
+**Import artwork once before play.** Obtain the complete `arkham-unfolded-gathering-v7` runtime ZIP, select **Import artwork** on scenario selection, and choose the ZIP. The app verifies and installs it in persistent per-user data and remembers it for later offline launches. No manual extraction or installation-folder selection is needed. A public download host is not selected; local packaging does not grant redistribution rights.
+
+**Complete artwork is required for 3D play.** Gathering verifies all 148 required files, loads its images, symbol font and 3D pouch, then checks rendering before enabling decisions. Missing or damaged artwork offers **Import artwork**, **Choose asset folder**, **Retry** and **Quit**, with the diagnosis repeated in the terminal. Import then Retry to recheck admission. Startup refusal preserves existing saves and creates no new attempt. Headless checks remain independent of artwork. [ADR 0004](adr/0004-require-artwork-for-3d-play.md) records that contract.
+
+Imported collections live under `~/.local/share/arkham-unfolded/artwork/` (or the corresponding XDG data location). Updates run outside play; the previous managed copy remains until replacement loading and rendering succeed. Failed imports retain existing artwork and saves. Cancel leaves the selected ZIP untouched. An interrupted import is disclosed on scenario selection; import the ZIP again to recover. Unknown remnants are retained for inspection. The existing `gathering.toml` format and explicitly selected external folders remain supported; `--art-root PATH` is a temporary override. See [artwork preparation and selection](experiments/gathering-setup.md#artwork-preparation-and-selection) for local packaging and recovery.
+
+Keep the window visible and focused during **Checking graphics...**. New play begins at **The Gathering · Standard · Setup**. Click an investigator card to choose the lead, then select mulligan cards and confirm each hand. Decisions autosave to the attempt's path. Card and pile menus provide Inspect and available actions; the portrait rail moves the camera independently of the current investigator. Tab/Shift+Tab and Enter/Space navigate buttons; hold WASD to pan outside blocking dialogs.
+
+**Menu → Restart The Gathering... → Restart** archives a valid predecessor beside its save and starts fresh shuffles at that same path. Cancel or Escape preserves the current attempt. Restart is separate from New's distinct save and cannot repair an unreadable record. Manual Save, Reopen saved attempt, History and artwork settings remain available. See [restart and recovery](experiments/gathering-setup.md#restart-and-recover-an-attempt).
+
+## Play with agent partners
+
+Agent partners are Claude Code or Codex sessions that play some investigators while you play the others, under [#202](https://github.com/joeloverbeck/arkham-unfolded/issues/202) and [ADR 0007](adr/0007-agent-partners-join-the-running-table.md). Playing all three investigators yourself remains the default; nothing changes until you enable partners. The [play contract](foundation/play-contract.md#agent-partners) sets what a partner may do and see, and the [presentation contract](tabletop-presentation.md#agent-partners-and-table-talk) how the table shows it.
+
+1. Open **Menu → Agent partners**. Each investigator shows `you play` or `a partner plays`; select it to switch. Choose any investigators, before or during play, then select **Enable agent partners**.
+2. The menu shows a one-line instruction, and the game's terminal prints it too. Paste it into a Claude Code or Codex session started in this checkout. The line names no investigator. The agent follows the [partner instructions](agents/partner-instructions.md) and joins with `scripts/tools partner join`, taking every investigator handed to partners that no partner plays yet; its first run builds the tool, which can take a few minutes. To split investigators between sessions, ask a session to join only some, such as `scripts/tools partner join patrice`, before the next one joins.
+3. Play as usual. A partner-played portrait carries **PARTNER**, and **THINKING**, **SILENT N MIN** or **AWAITING PARTNER** while the table waits on it; the decision display says the same by name. Your controls offer only your own investigators' options. A partner's choice is applied once the table settles, appears beside its investigator's portrait as an action line, and is attributed to that investigator in the action history. It never moves the camera, and Follow frames only your own investigators' decisions and tests. A partner's own test results and the encounter cards it draws continue on their own after a reading delay: the pointer over the reading holds it, a click holds it until Continue, and Enter continues it at once. Story readings, the scenario's end, and results or encounters that involve your investigators still wait for your Continue.
+
+**Take over.** While the table waits on a partner's investigator, **Take over** under its portrait, or **Take over NAME** in the decision display, returns that investigator to you at once, even in the middle of its decision. At any time, switch an investigator back to `you play` in **Menu → Agent partners**. **Turn agent partners off** returns every investigator and ends every partner session. A stalled or disconnected partner's decision waits, marked, until it returns or you take over; nothing is decided for you.
+
+**Who decides.** Choose the lead at setup by clicking an investigator card, as usual; a partner-played investigator can lead, and the lead investigator's player then decides group choices, such as who takes the next turn. In commitments to a skill test, group clue payments and windows for fast cards, each player sets only their own investigators' part: other players' pending cards appear in the Test area, readiness is shown by investigator name, and Confirm is your readiness. When a partner's decision lists an option of yours, such as a fast card before its investigator's action, the decision display (or the token display, or the encounter reading) names what you may use and offers **Pass**. When a partner holds an option in your decision, your choice there can wait for its pass, and the decision display then says that it waits for the other players to pass. When a partner uses its option instead, your waiting choice is not applied, the decision display says so, and you choose again. If you hand the investigator it was for to partners while it waits, it is not applied either, and the decision display says so. The [partner instructions](agents/partner-instructions.md#group-choices) state these rules in full, as a partner plays by them: group choices, shared decisions, and which choices wait for other players' passes.
+
+**Table talk.** **Speak · T** on the portrait rail, or the T key, opens the message box: type one message of up to 280 characters, send it with Enter, or close it with Escape and keep the draft. Every player hears every message. A partner's message appears in a speech box beside its investigator's portrait, and **Menu → Table talk** lists the session's messages with speaker and round. No one may speak while a peril encounter resolves. Partners' messages are limited at each decision; the [partner instructions](agents/partner-instructions.md#table-talk) give the limits, which count your messages as any player's, though yours are never refused. Table talk never makes a decision.
+
+**Limits.** A partner sees public information and only its own investigators' hidden information; you still see everything, partners' hands included. A partner that plays both other investigators can still deduce which one is yours. Partners cannot save, restart, change settings or leave the table, and their play is the model's own: the table guarantees only that their choices are legal and current. An investigator handed to partners holds its fast cards and abilities even while no partner has joined for it or its partner is silent: in your decision, your choice then waits on that seat's pass until a partner passes or you take it over. That investigator's portrait carries **AWAITING PARTNER** or **SILENT N MIN**, and the decision display names it with "waiting for a partner to join" or "no word from its partner for N min". The attempt saves decisions only, never the partner assignment, readiness or table talk. Leaving the table or turning partners off ends every partner session, and restarting the attempt tells partners to join again; after resuming an attempt, enable partners again and paste the line again. The partner socket, `$ARKHAM_PARTNER_SOCKET` or else `arkham-unfolded-partners.sock` in `$XDG_RUNTIME_DIR` (or the temporary directory), exists only while partners are enabled and is accessible only to your user.
+
+**Evidence limits.** Native evidence comes only from the owner's own co-play sessions; the owner's first, a smoke session with Claude Code partners, ran on 2026-11-13, and the acceptance sessions are recorded on #202. The agent seat hosts the partner socket too, so an agent can run a partner against the real table without a window. Such seat-hosted runs check the protocol and the table's logic; they are not native acceptance. Because the seat runs frames only inside its own requests, its agent keeps the table running with `scripts/tools seat-wait` while a partner plays (see [Hosting an agent partner](agents/agent-seat.md#hosting-an-agent-partner)). The owner reported native Codex play on 2026-11-14, with separate partner terminals playing Tony and Patrice, starting from README and the partner instructions alone. No take-overs, stalls, refused choices or explanations outside table talk were reported. The owner remained lead; native testing of an agent as lead is deferred by his decision. See #202 for the acceptance record.
+
+## Direct diagnostic launch
+
+An explicit Gathering launch remains available for a known checkpoint:
+
+```sh
+target/debug/arkham-tabletop --experiment gathering --save /absolute/path/to/attempt.json
+```
+
+Here an existing compatible file resumes; an unused path starts setup. Omitting `--save` on this direct command selects `local/gathering/setup.session.json`. Ordinary launch without `--experiment gathering` opens selection instead. The headless driver also retains Gathering's player choices, persistence and diagnostics; use `scripts/dev cargo run --locked --bin arkham-driver -- --help` for its interface.
+
+To inspect an ordinary Gathering save without changing it:
+
+```sh
+scripts/dev cargo run --locked --bin arkham-driver -- --inspect /absolute/path/to/attempt.json
+```
+
+Inspection validates the save, prints one JSON response containing the player-visible observation, and exits without reading commands, autosaving, or creating lock/recovery files. Missing, incompatible, invalid and privileged verification saves are refused. `--inspect` cannot be combined with `--load` or `--save`; the driver's live mode still saves on startup and accepts JSON-line player commands.
+
+## Start fresh after an incompatible save
+
+Until Joel accepts a save-compatibility commitment, development builds promise none. A save loads only when the current build reproduces its recorded game exactly; otherwise it is refused unchanged with a message stating that development builds promise no save compatibility. Select **New attempt** to begin again and keep the refused file. No migration, alias or legacy path is kept for records from earlier builds, so a build that changes a decision step can refuse saves made before it. Replay-era format-1 records are refused by their format before any replay. See the [save policy](foundation/play-contract.md#saveload-and-offline-use) and [replay retirement](adr/0003-retire-replay.md).
