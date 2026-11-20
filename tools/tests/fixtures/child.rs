@@ -59,6 +59,14 @@ fn main() -> ExitCode {
         writeln!(file, "{}", args.iter().map(|arg| arg.to_string_lossy()).collect::<Vec<_>>().join(" ")).unwrap();
         let count = fs::read_to_string(trace).unwrap().lines().count();
         if env::var("ARKHAM_FIXTURE_FAIL_CHECK").ok().and_then(|value| value.parse::<usize>().ok()) == Some(count) { return ExitCode::from(42); }
+        if name == "rustc" {
+            // Stand in for the compiled entry point, so its run is traced as the next command.
+            let directory = std::path::Path::new(&args[args.iter().position(|arg| arg == "--out-dir").unwrap() + 1]);
+            let source = args.iter().find(|arg| arg.to_string_lossy().ends_with(".rs")).unwrap();
+            let program = directory.join(std::path::Path::new(source).file_stem().unwrap());
+            fs::create_dir_all(directory).unwrap();
+            if !program.exists() { std::os::unix::fs::symlink(env::current_exe().unwrap(), program).unwrap(); }
+        }
         if args.iter().any(|arg| arg == "check-tracked-files") {
             return ExitCode::from(Command::new(env::var_os("ARKHAM_FIXTURE_TOOLS").unwrap()).arg("check-tracked-files").status().unwrap().code().unwrap_or(1) as u8);
         }

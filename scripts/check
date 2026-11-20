@@ -8,6 +8,7 @@ exec scripts/dev bash -euc '
 # Only an interrupt (exit 130) stops the check; other failures are reported, then it goes on.
 scripts/tools target-prune --older-than 1d --delete || [[ $? -ne 130 ]]
 scripts/check-format
+scripts/check-shared-pins
 scripts/check-index
 scripts/check-tools
 scripts/check-bevy-free
