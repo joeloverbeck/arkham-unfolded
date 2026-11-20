@@ -38,6 +38,7 @@ fn copy_gate(root: &Path) {
         "check-tools",
         "check-bevy-free",
         "check-format",
+        "check-shared-pins",
         "check-clippy",
         "check-app",
         "check-renderer",
@@ -156,6 +157,7 @@ fn actual_repository_gate_stops_at_a_forbidden_index_before_later_checks() {
     fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("cargo")).unwrap();
     std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("systemd-run")).unwrap();
+    std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("rustc")).unwrap();
     let result = Command::new("bash")
         .arg(root.join("scripts/check"))
         .env(
@@ -182,6 +184,8 @@ fn actual_repository_gate_stops_at_a_forbidden_index_before_later_checks() {
             .collect::<Vec<_>>(),
         [
             "fmt --all -- --check",
+            "--edition=2024 --deny warnings tools/src/bin/check-shared-pins.rs --out-dir target/shared-pins",
+            "Cargo.toml tools/Cargo.toml",
             "run --quiet --locked -p arkham-tools -- check-tracked-files",
         ]
     );
@@ -197,6 +201,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
     fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("cargo")).unwrap();
     std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("systemd-run")).unwrap();
+    std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("rustc")).unwrap();
     let path = std::env::join_paths(
         std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
     )
@@ -220,6 +225,8 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
     };
     let expected = [
         "fmt --all -- --check",
+        "--edition=2024 --deny warnings tools/src/bin/check-shared-pins.rs --out-dir target/shared-pins",
+        "Cargo.toml tools/Cargo.toml",
         "run --quiet --locked -p arkham-tools -- check-tracked-files",
         "test --locked -p arkham-tools",
         "check --locked -p arkham-unfolded-experiment --no-default-features --lib --bin arkham-driver --bin arkham-assets",
@@ -246,6 +253,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
         phases,
         [
             "format",
+            "shared-pins",
             "index",
             "tools",
             "bevy-free",

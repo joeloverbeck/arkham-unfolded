@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+# Compiled without Cargo, so it also runs when the lockfile no longer matches the manifests.
+rustc --edition=2024 --deny warnings tools/src/bin/check-shared-pins.rs --out-dir target/shared-pins
+exec target/shared-pins/check-shared-pins Cargo.toml tools/Cargo.toml

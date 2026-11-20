@@ -18,8 +18,9 @@ tabletop = ["dep:bevy", "unfolded-tabletop/seat"]
 
 [dependencies]
 # Shared packages, all at one revision of one repository, the same as the `wgpu-hal`
-# patch below and `tools`' pins. The library, driver and asset build take only the
-# packages that cannot depend on Bevy; `unfolded-tabletop` holds what draws.
+# patch below and `tools`' pins, as `scripts/check-shared-pins` checks. The library,
+# driver and asset build take only the packages that cannot depend on Bevy;
+# `unfolded-tabletop` holds what draws.
 unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "0510364f82874159eeca9db4325eb176f0a1252c" }
 unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "0510364f82874159eeca9db4325eb176f0a1252c" }
 unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "0510364f82874159eeca9db4325eb176f0a1252c" }
