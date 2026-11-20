@@ -82,7 +82,7 @@ enum Command {
         command: native::Command,
     },
     /// Send requests to a held agent seat over its socket and print each response unchanged.
-    #[command(after_help = "Agent seat: README.md#held-session")]
+    #[command(after_help = "Agent seat: docs/agents/agent-seat.md#held-session")]
     Seat(seat::Args),
     /// Keep a held agent seat's table running while the agent partners it hosts play,
     /// until the table waits on the seat, a revision or a count of applied choices is

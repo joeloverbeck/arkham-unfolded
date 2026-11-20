@@ -16,9 +16,18 @@ Use the document that owns the result, including during design interviews:
 | --- | --- |
 | Resolved domain term | `GLOSSARY.md`, as a definition without implementation detail. |
 | Architectural decision and essential rationale | `docs/adr/`, after applying the [ADR eligibility tests](../../.claude/skills/domain-modeling/ADR-FORMAT.md#when-to-create-or-amend-an-adr) to new records and additions alike. |
+| What the project is, what works today, the short launch path, the document map and attribution | `README.md`, the public front page. |
+| How to launch, save, recover and play, including with agent partners | The [playing guide](../playing.md). |
+| How an agent builds, checks, verifies or sits at the table | The owning guide in this directory, such as [local builds and checks](local-builds-and-checks.md), [native verification](native-verification.md) or the [agent seat](agent-seat.md). |
 | Current detailed product behavior | Its maintained contract; [tabletop presentation](../tabletop-presentation.md) owns the detailed tabletop conventions. |
 | Source investigation and historical observations | Existing research/evidence notes, with source revisions and limits. |
 | Scope, activation, allowances, implementation plans, verification, acceptance and publication | The owning GitHub issue/PR and its linked evidence, following the [tracker procedure](issue-tracker.md#current-handoff). |
+
+`README.md` is read by visitors to the public repository. A change that adds a
+command, an option, a limit, a procedure or evidence updates the owning document
+above; README changes only when its status line, its short launch path or its
+document map would otherwise be wrong, and then by a sentence or a link.
+Acceptance dates, issue history and evidence limits stay in the tracker.
 
 ADRs explain lasting choices; implementation diaries and work status stay in the
 tracker. Link supporting contracts and evidence instead of copying them into the

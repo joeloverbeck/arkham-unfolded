@@ -1126,7 +1126,7 @@ at `/tmp/arkham-build-policy-check-v2/`, followed by the normal build at
 The executable used for the native check below has SHA256
 `0daf617a8976ca6eeba6329c75bb85cee7ef8dcca53202fab0d8fddcb516af2c`.
 The resource changes preserve the reviewed gameplay source and use the
-[documented build limits](../../README.md#current-use-and-external-inputs).
+[documented build limits](../agents/local-builds-and-checks.md).
 
 On 2026-11-03, Joel authorized a five-minute native interval from 16:00:51 to
 16:05:51 UTC. The isolated Gathering window passed graphics admission with all

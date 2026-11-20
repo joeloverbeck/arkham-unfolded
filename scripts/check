@@ -8,7 +8,7 @@ exec scripts/dev bash -euc '
 # Only an interrupt (exit 130) stops the check; other failures are reported, then it goes on.
 scripts/tools target-prune --older-than 1d --delete || [[ $? -ne 130 ]]
 # tools/tests/index.rs pins these phases against the CI workflow steps, in order;
-# the README section on local builds and checks names each one.
+# docs/agents/local-builds-and-checks.md names each one.
 scripts/check-format
 scripts/check-shared-pins
 scripts/check-index

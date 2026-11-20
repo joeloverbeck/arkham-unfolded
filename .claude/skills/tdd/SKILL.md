@@ -42,6 +42,6 @@ For a behavior-preserving refactor, establish passing characterization tests at 
 
 ## Running checks
 
-For single-agent work as well as shared checkouts, finish edits and formatting before starting a check. Run one protected build or check at a time and keep its source inputs unchanged until it terminates; use the wait for read-only investigation. Inspect the terminal result before editing or starting another check. Follow the [repository launchers and retained-result procedure](../../../README.md#local-builds-and-checks), including source fingerprinting and recovery when a tool session loses the exit status.
+For single-agent work as well as shared checkouts, finish edits and formatting before starting a check. Run one protected build or check at a time and keep its source inputs unchanged until it terminates; use the wait for read-only investigation. Inspect the terminal result before editing or starting another check. Follow the [repository launchers and retained-result procedure](../../../docs/agents/local-builds-and-checks.md), including source fingerprinting and recovery when a tool session loses the exit status.
 
 When workers share a checkout, each reports the changed paths, focused check commands and results, and **files stable**. Keep those files stable until the coordinator finishes integration checks. The coordinator starts the full repository check after every contributing worker has handed off; earlier checks are provisional. If edits resume, report that immediately and repeat affected checks after a new stable handoff.

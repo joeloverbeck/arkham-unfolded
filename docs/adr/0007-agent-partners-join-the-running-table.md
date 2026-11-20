@@ -10,7 +10,7 @@ are enabled, the window opens a private local socket. A partner reads a view
 scoped to its own investigators and submits choices by identity at the current
 revision, through the same save-then-present path as the human's clicks. A
 choice is applied only once the table has settled. Partners never drive the
-pointer, camera, menus or keyboard focus. The [agent seat](../../README.md#agent-seat)
+pointer, camera, menus or keyboard focus. The [agent seat](../agents/agent-seat.md)
 remains a separate windowless process for testing the table.
 
 The seat could not be reused for this. It owns its process, camera and pointer
