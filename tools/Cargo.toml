@@ -7,10 +7,10 @@ publish = false
 default-run = "arkham-tools"
 
 [dependencies]
-unfolded-dev-tools = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "52ca1612ecb6942356baf464de966769af347db4" }
-unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "52ca1612ecb6942356baf464de966769af347db4" }
-unfolded-seat-client = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "52ca1612ecb6942356baf464de966769af347db4" }
-unfolded-seat-protocol = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "52ca1612ecb6942356baf464de966769af347db4" }
+unfolded-dev-tools = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a47ea138f30f156d2d362506e5111e3ebb196c3a" }
+unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a47ea138f30f156d2d362506e5111e3ebb196c3a" }
+unfolded-seat-client = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a47ea138f30f156d2d362506e5111e3ebb196c3a" }
+unfolded-seat-protocol = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a47ea138f30f156d2d362506e5111e3ebb196c3a" }
 anyhow = "1"
 async-io = "2"
 clap = { version = "4", features = ["derive"] }
