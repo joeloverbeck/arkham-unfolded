@@ -3,7 +3,7 @@
 
 use crate::tabletop_layout::InvestigatorClass;
 use bevy::prelude::*;
-use std::f32::consts::PI;
+use unfolded_tabletop::slab::{self, Slab};
 
 const BASE_RADIUS_UNSCALED: f32 = 0.52;
 
@@ -59,12 +59,6 @@ pub(crate) fn spawn(
             let center = BOTTOM + HEIGHT / 2.0;
             let edge = materials.add(Color::srgb(0.11, 0.12, 0.12));
             standee.spawn((
-                Mesh3d(meshes.add(Cuboid::new(WIDTH + 0.025, HEIGHT + 0.025, 0.03))),
-                MeshMaterial3d(edge),
-                Transform::from_xyz(0.0, center, 0.0),
-                Pickable::IGNORE,
-            ));
-            standee.spawn((
                 Mesh3d(meshes.add(Cuboid::new(0.82, 0.12, 0.17))),
                 MeshMaterial3d(base),
                 Transform::from_xyz(0.0, 0.16, 0.0),
@@ -77,19 +71,20 @@ pub(crate) fn spawn(
                 unlit: true,
                 ..default()
             });
-            // Separate outward-facing planes retain each face's normal UV order.
-            // A single double-sided plane would mirror the portrait from behind.
-            // The archive's grayscale back is deliberately not a rear texture:
-            // camera direction must not suggest a change of investigator state.
-            for (depth, yaw) in [(0.016, 0.0), (-0.016, PI)] {
-                standee.spawn((
-                    Mesh3d(face.clone()),
-                    MeshMaterial3d(portrait.clone()),
-                    Transform::from_xyz(0.0, center, depth)
-                        .with_rotation(Quat::from_rotation_y(yaw)),
-                    Pickable::IGNORE,
-                ));
-            }
+            // Use the same portrait on both sides so that turning the camera
+            // cannot suggest a change of investigator state.
+            slab::spawn(
+                standee,
+                Slab {
+                    body: meshes.add(Cuboid::new(WIDTH + 0.025, HEIGHT + 0.025, 0.03)),
+                    face,
+                    body_material: edge,
+                    face_material: portrait,
+                    center: Vec3::new(0.0, center, 0.0),
+                    face_offset: 0.016,
+                    pickable: Pickable::IGNORE,
+                },
+            );
         })
         .id()
 }
