@@ -3,6 +3,7 @@
 use super::*;
 use crate::tabletop_gathering_map::GatheringMap;
 use std::{collections::VecDeque, f32::consts::PI};
+use unfolded_tabletop::card_motion::{CardMove, Lift, Turn};
 
 const SIZE: Vec2 = Vec2::new(1.35, 1.89);
 /// Starting values for Joel's native tuning of an investigator's move along a
@@ -627,11 +628,13 @@ pub(super) fn animate(
         for (entity, card, mut pose) in &mut cards {
             if let Some(travel) = beat.cards.iter().find(|travel| travel.id == card.0) {
                 // The card lands as the beat's pieces arrive.
-                let t = smooth(
-                    (playback.elapsed - (playback.travel_duration() - motion::CARD_DURATION))
-                        / motion::CARD_DURATION,
-                );
-                pose.translation = travel.start.lerp(travel.end, t);
+                pose.translation = CardMove::new(
+                    Transform::from_translation(travel.start),
+                    Transform::from_translation(travel.end),
+                    motion::CARD_DURATION,
+                )
+                .pose(playback.elapsed - (playback.travel_duration() - motion::CARD_DURATION))
+                .translation;
                 commands.entity(entity).remove::<motion::CardMotion>();
             }
         }
@@ -661,9 +664,14 @@ pub(super) fn animate(
                         "Unrevealed location face",
                     );
                 }
-                let t = smooth(playback.elapsed / FLIP);
-                transform.translation = reveal.at + Vec3::Y * (0.86 * (PI * t).sin());
-                transform.rotation = Quat::from_rotation_z(-PI * (1. - t));
+                // It rises and turns face up about its length where it lies.
+                let at = Transform::from_translation(reveal.at);
+                let pose = CardMove::new(at, at, FLIP)
+                    .lifted(Lift::arc(0.86))
+                    .turned(Turn::over(Vec3::Z))
+                    .pose(playback.elapsed);
+                transform.translation = pose.translation;
+                transform.rotation = pose.rotation;
             }
             Surface::Clue(code) | Surface::Glint(code)
                 if playback.stage() == Some(Stage::Clues) =>

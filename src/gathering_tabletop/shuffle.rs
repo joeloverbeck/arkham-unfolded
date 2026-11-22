@@ -1,6 +1,7 @@
 //! Anonymous, face-down deck choreography driven by the presentation clock.
 use super::*;
 use crate::gathering::DrawSource;
+use unfolded_tabletop::card_motion::{CardMove, Lift};
 
 pub(super) const DURATION: f32 = 1.3;
 
@@ -100,28 +101,39 @@ impl Piece {
                     DrawSource::Investigator(who) => layout::investigator_discard(who.index()),
                     DrawSource::Encounter => layout::ENCOUNTER_DISCARD,
                 };
-                let t = smooth(elapsed / draws::DURATION);
                 (
-                    start.lerp(deck + Vec3::Y * (base as f32 * 0.0065), t)
-                        + Vec3::Y * (0.55 * (std::f32::consts::PI * t).sin()),
+                    carried(
+                        start,
+                        deck + Vec3::Y * (base as f32 * 0.0065),
+                        0.55,
+                        elapsed,
+                    ),
                     0.,
                 )
             }
             Operation::Take {
                 remaining, held, ..
             } => {
-                let t = smooth(elapsed / draws::DURATION);
                 let start = deck + Vec3::Y * ((remaining + 1) as f32 * 0.0065);
                 let end = deck + Vec3::new(0., held.saturating_sub(1) as f32 * 0.0065, 2.4);
-                (
-                    start.lerp(end, t) + Vec3::Y * (0.65 * (std::f32::consts::PI * t).sin()),
-                    0.,
-                )
+                (carried(start, end, 0.65, elapsed), 0.)
             }
         };
         Transform::from_translation(at + Vec3::Y * surface)
             .with_rotation(Quat::from_rotation_y(yaw))
     }
+}
+
+/// A packet lifted from one pile to another over a draw's duration.
+fn carried(start: Vec3, end: Vec3, height: f32, elapsed: f32) -> Vec3 {
+    CardMove::new(
+        Transform::from_translation(start),
+        Transform::from_translation(end),
+        draws::DURATION,
+    )
+    .lifted(Lift::arc(height))
+    .pose(elapsed)
+    .translation
 }
 
 pub(super) fn spawn(
