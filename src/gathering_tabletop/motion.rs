@@ -2,6 +2,7 @@
 
 use super::*;
 use std::collections::BTreeMap;
+use unfolded_tabletop::card_motion::{CardMove, Departure, Lift, Turn};
 
 pub(super) const CARD_DURATION: f32 = 0.35;
 
@@ -10,12 +11,9 @@ pub(super) struct PhysicalCard(pub u16);
 
 #[derive(Component, Clone, Copy)]
 pub(super) struct CardMotion {
-    start: Vec3,
-    end: Vec3,
+    path: CardMove,
     elapsed: f32,
     transfer: Option<draws::Transfer>,
-    rotation: Quat,
-    scale: Vec3,
 }
 
 #[derive(Component)]
@@ -171,49 +169,58 @@ impl Origins {
 }
 
 impl CardMotion {
-    fn duration(&self) -> f32 {
-        if self.transfer.is_some() {
-            draws::DURATION
-        } else {
-            CARD_DURATION
+    /// A plain move slides flat to `end`. A draw or return first slides clear
+    /// of its pile, rises to a height that grows with the distance and sways by
+    /// a fixed amount, and turns face up or face down on the way, unless its
+    /// transfer keeps the card face up.
+    fn new(start: Vec3, end: Transform, transfer: Option<draws::Transfer>) -> Self {
+        let mut path = CardMove::new(
+            start,
+            end,
+            if transfer.is_some() {
+                draws::DURATION
+            } else {
+                CARD_DURATION
+            },
+        );
+        if let Some(transfer) = transfer {
+            path = path
+                .lifted(Lift {
+                    height: (0.45 + start.distance(end.translation) * 0.035).min(1.2),
+                    yaw: 0.10,
+                    roll: 0.07,
+                })
+                .departing(Departure {
+                    offset: Vec3::X * 0.22,
+                    share: 0.12,
+                });
+            // Cards lie in XZ. Turn around the long axis so both faces keep their top edge.
+            let turn = |from, to| Turn {
+                axis: Vec3::Z,
+                from,
+                to,
+                begins: 0.2,
+                lasts: 0.58,
+            };
+            match transfer.turn {
+                draws::Turn::Up => path = path.turned(turn(-std::f32::consts::PI, 0.)),
+                draws::Turn::Down => path = path.turned(turn(0., std::f32::consts::PI)),
+                draws::Turn::FaceUp => {}
+            }
+        }
+        Self {
+            path,
+            elapsed: 0.,
+            transfer,
         }
     }
 
+    fn duration(&self) -> f32 {
+        self.path.duration
+    }
+
     fn transform(&self) -> Transform {
-        let t = (self.elapsed / self.duration()).clamp(0., 1.);
-        let smooth = |v: f32| {
-            let v = v.clamp(0., 1.);
-            v * v * (3. - 2. * v)
-        };
-        let Some(transfer) = self.transfer else {
-            return Transform::from_translation(self.start.lerp(self.end, smooth(t)))
-                .with_rotation(self.rotation)
-                .with_scale(self.scale);
-        };
-        let extracted = self.start + Vec3::X * 0.22;
-        let carry = smooth((t - 0.12) / 0.88);
-        let lift = (std::f32::consts::PI * smooth(t)).sin();
-        let height = (0.45 + self.start.distance(self.end) * 0.035).min(1.2);
-        let at = self
-            .start
-            .lerp(extracted, smooth(t / 0.12))
-            .lerp(self.end, carry)
-            + Vec3::Y * height * lift;
-        let flip = smooth((t - 0.2) / 0.58);
-        // Cards lie in XZ. Turn around the long axis so both faces keep their top edge.
-        let angle = match transfer.turn {
-            draws::Turn::Up => -std::f32::consts::PI * (1. - flip),
-            draws::Turn::Down => std::f32::consts::PI * flip,
-            draws::Turn::FaceUp => 0.,
-        };
-        Transform::from_translation(at)
-            .with_rotation(
-                Quat::from_rotation_y(0.10 * lift)
-                    * Quat::from_rotation_z(0.07 * lift)
-                    * Quat::from_rotation_z(angle)
-                    * self.rotation,
-            )
-            .with_scale(self.scale)
+        self.path.pose(self.elapsed)
     }
 }
 
@@ -290,8 +297,8 @@ pub(super) fn animate(
     for (entity, card, mut transform, motion) in &mut cards {
         if table.reduced_motion {
             if let Some(motion) = motion {
-                transform.translation = motion.end;
-                transform.rotation = motion.rotation;
+                transform.translation = motion.path.to.translation;
+                transform.rotation = motion.path.to.rotation;
                 commands.entity(entity).remove::<CardMotion>();
             }
             continue;
@@ -305,14 +312,13 @@ pub(super) fn animate(
                 commands.entity(entity).remove::<CardMotion>();
             }
         } else if card.is_added() {
-            let end = transform.translation;
-            let rotation = transform.rotation;
-            let scale = transform.scale;
+            let rest = *transform;
+            let end = rest.translation;
             let motion = table
                 .motion_origins
                 .continuing
                 .get(&card.0)
-                .filter(|motion| motion.end.abs_diff_eq(end, 0.001))
+                .filter(|motion| motion.path.to.translation.abs_diff_eq(end, 0.001))
                 .copied()
                 .or_else(|| {
                     let transfer = table.motion_origins.transfers.get(&card.0).copied();
@@ -321,14 +327,7 @@ pub(super) fn animate(
                         .or_else(|| table.motion_origins.positions.get(&card.0).copied());
                     start
                         .filter(|start| !start.abs_diff_eq(end, 0.001))
-                        .map(|start| CardMotion {
-                            start,
-                            end,
-                            elapsed: 0.,
-                            transfer,
-                            rotation,
-                            scale,
-                        })
+                        .map(|start| CardMotion::new(start, rest, transfer))
                 });
             if let Some(motion) = motion {
                 *transform = motion.transform();
@@ -344,7 +343,7 @@ pub(super) fn animate(
                 }
                 commands.entity(entity).insert(motion);
             } else if let Some(source) = table.presentation.returning(card.0) {
-                transform.rotation = Quat::from_rotation_z(std::f32::consts::PI) * rotation;
+                transform.rotation = Quat::from_rotation_z(std::f32::consts::PI) * rest.rotation;
                 attach_back(
                     &mut commands,
                     &mut meshes,
