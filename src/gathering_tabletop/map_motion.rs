@@ -629,7 +629,7 @@ pub(super) fn animate(
             if let Some(travel) = beat.cards.iter().find(|travel| travel.id == card.0) {
                 // The card lands as the beat's pieces arrive.
                 pose.translation = CardMove::new(
-                    Transform::from_translation(travel.start),
+                    travel.start,
                     Transform::from_translation(travel.end),
                     motion::CARD_DURATION,
                 )
@@ -665,8 +665,7 @@ pub(super) fn animate(
                     );
                 }
                 // It rises and turns face up about its length where it lies.
-                let at = Transform::from_translation(reveal.at);
-                let pose = CardMove::new(at, at, FLIP)
+                let pose = CardMove::new(reveal.at, Transform::from_translation(reveal.at), FLIP)
                     .lifted(Lift::arc(0.86))
                     .turned(Turn::over(Vec3::Z))
                     .pose(playback.elapsed);

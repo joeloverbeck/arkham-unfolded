@@ -126,14 +126,10 @@ impl Piece {
 
 /// A packet lifted from one pile to another over a draw's duration.
 fn carried(start: Vec3, end: Vec3, height: f32, elapsed: f32) -> Vec3 {
-    CardMove::new(
-        Transform::from_translation(start),
-        Transform::from_translation(end),
-        draws::DURATION,
-    )
-    .lifted(Lift::arc(height))
-    .pose(elapsed)
-    .translation
+    CardMove::new(start, Transform::from_translation(end), draws::DURATION)
+        .lifted(Lift::arc(height))
+        .pose(elapsed)
+        .translation
 }
 
 pub(super) fn spawn(

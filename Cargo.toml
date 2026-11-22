@@ -21,10 +21,10 @@ tabletop = ["dep:bevy", "unfolded-tabletop/seat"]
 # patch below and `tools`' pins, as `scripts/check-shared-pins` checks. The library,
 # driver and asset build take only the packages that cannot depend on Bevy;
 # `unfolded-tabletop` holds what draws.
-unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a47ea138f30f156d2d362506e5111e3ebb196c3a" }
-unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a47ea138f30f156d2d362506e5111e3ebb196c3a" }
-unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a47ea138f30f156d2d362506e5111e3ebb196c3a" }
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a47ea138f30f156d2d362506e5111e3ebb196c3a", optional = true }
+unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "09d6f40c9ccf5099cff7e1486cef1b4ad211f077" }
+unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "09d6f40c9ccf5099cff7e1486cef1b4ad211f077" }
+unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "09d6f40c9ccf5099cff7e1486cef1b4ad211f077" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "09d6f40c9ccf5099cff7e1486cef1b4ad211f077", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -78,4 +78,4 @@ debug = "full"
 debug = "full"
 
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a47ea138f30f156d2d362506e5111e3ebb196c3a" }
+wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "09d6f40c9ccf5099cff7e1486cef1b4ad211f077" }

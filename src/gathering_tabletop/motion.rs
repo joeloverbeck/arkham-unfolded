@@ -169,23 +169,14 @@ impl Origins {
 }
 
 impl CardMotion {
-    /// A plain move slides flat; a draw or return clears its pile, rises with a
-    /// sway that grows with the distance, and turns over on the way.
-    fn new(
-        start: Vec3,
-        end: Vec3,
-        rotation: Quat,
-        scale: Vec3,
-        transfer: Option<draws::Transfer>,
-    ) -> Self {
-        let pose = |at| {
-            Transform::from_translation(at)
-                .with_rotation(rotation)
-                .with_scale(scale)
-        };
+    /// A plain move slides flat to `end`. A draw or return first slides clear
+    /// of its pile, rises to a height that grows with the distance and sways by
+    /// a fixed amount, and turns face up or face down on the way, unless its
+    /// transfer keeps the card face up.
+    fn new(start: Vec3, end: Transform, transfer: Option<draws::Transfer>) -> Self {
         let mut path = CardMove::new(
-            pose(start),
-            pose(end),
+            start,
+            end,
             if transfer.is_some() {
                 draws::DURATION
             } else {
@@ -195,7 +186,7 @@ impl CardMotion {
         if let Some(transfer) = transfer {
             path = path
                 .lifted(Lift {
-                    height: (0.45 + start.distance(end) * 0.035).min(1.2),
+                    height: (0.45 + start.distance(end.translation) * 0.035).min(1.2),
                     yaw: 0.10,
                     roll: 0.07,
                 })
@@ -321,9 +312,8 @@ pub(super) fn animate(
                 commands.entity(entity).remove::<CardMotion>();
             }
         } else if card.is_added() {
-            let end = transform.translation;
-            let rotation = transform.rotation;
-            let scale = transform.scale;
+            let rest = *transform;
+            let end = rest.translation;
             let motion = table
                 .motion_origins
                 .continuing
@@ -337,7 +327,7 @@ pub(super) fn animate(
                         .or_else(|| table.motion_origins.positions.get(&card.0).copied());
                     start
                         .filter(|start| !start.abs_diff_eq(end, 0.001))
-                        .map(|start| CardMotion::new(start, end, rotation, scale, transfer))
+                        .map(|start| CardMotion::new(start, rest, transfer))
                 });
             if let Some(motion) = motion {
                 *transform = motion.transform();
