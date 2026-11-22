@@ -343,7 +343,7 @@ pub(super) fn animate(
                 }
                 commands.entity(entity).insert(motion);
             } else if let Some(source) = table.presentation.returning(card.0) {
-                transform.rotation = Quat::from_rotation_z(std::f32::consts::PI) * rotation;
+                transform.rotation = Quat::from_rotation_z(std::f32::consts::PI) * rest.rotation;
                 attach_back(
                     &mut commands,
                     &mut meshes,
