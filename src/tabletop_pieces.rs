@@ -172,14 +172,16 @@ pub(crate) fn deck(
     count: usize,
     at: Vec3,
 ) -> Deck {
-    let height = count.max(1) as f32 * CARD_THICKNESS;
+    // An empty deck still shows one card's thickness.
+    let cards = count.max(1);
+    let height = cards as f32 * CARD_THICKNESS;
     let body = commands
         .spawn((
             Mesh3d(meshes.add(card_shape::pile(
                 CARD_WIDTH,
                 CARD_LENGTH,
                 CARD_THICKNESS,
-                count,
+                cards,
             ))),
             MeshMaterial3d(materials.add(PAPER)),
             Transform::from_translation(at + Vec3::Y * height / 2.),
