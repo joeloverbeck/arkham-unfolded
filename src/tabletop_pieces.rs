@@ -9,6 +9,8 @@ pub(crate) mod card_shape;
 
 pub(crate) const CARD_WIDTH: f32 = 1.35;
 pub(crate) const CARD_LENGTH: f32 = 1.89;
+/// One card's share of a deck's height; the deck's side shows a seam between each two.
+const CARD_THICKNESS: f32 = 0.0065;
 const PAPER: Color = Color::srgb(0.91, 0.89, 0.81);
 
 #[derive(Component)]
@@ -170,10 +172,17 @@ pub(crate) fn deck(
     count: usize,
     at: Vec3,
 ) -> Deck {
-    let height = count.max(1) as f32 * 0.0065;
+    // An empty deck still shows one card's thickness.
+    let cards = count.max(1);
+    let height = cards as f32 * CARD_THICKNESS;
     let body = commands
         .spawn((
-            Mesh3d(meshes.add(card_shape::body(CARD_WIDTH, height, CARD_LENGTH))),
+            Mesh3d(meshes.add(card_shape::pile(
+                CARD_WIDTH,
+                CARD_LENGTH,
+                CARD_THICKNESS,
+                cards,
+            ))),
             MeshMaterial3d(materials.add(PAPER)),
             Transform::from_translation(at + Vec3::Y * height / 2.),
             Pickable::IGNORE,
@@ -335,6 +344,19 @@ mod tests {
             assert!((body.half_extents.y * 2. - height).abs() < 0.0001);
             assert!((body.half_extents.x * 2. - 1.35).abs() < 0.0001);
             assert!((body.half_extents.z * 2. - 1.89).abs() < 0.0001);
+            // The side shows each card's edge: a deck of two or more has
+            // seams whose faces turn up toward the light; one card has none.
+            let Some(bevy::mesh::VertexAttributeValues::Float32x3(normals)) = meshes
+                .get(&world.get::<Mesh3d>(pieces.body).unwrap().0)
+                .unwrap()
+                .attribute(Mesh::ATTRIBUTE_NORMAL)
+            else {
+                panic!("deck normals")
+            };
+            let seams = normals
+                .iter()
+                .any(|normal| normal[1] > 0.1 && normal[1] < 0.99);
+            assert_eq!(seams, count >= 2, "{count} cards");
             assert_eq!(
                 world.get::<Transform>(pieces.top).unwrap().translation.y,
                 height + 0.002
