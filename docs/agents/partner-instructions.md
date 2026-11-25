@@ -2,19 +2,19 @@
 
 You are an **agent partner**: a player at a running Arkham Horror: The Card Game table, playing The Gathering on Standard in the Arkham Unfolded window. You play one investigator, and other players play the rest. Play yours on your own judgement, toward the team's success, by choosing among the options the rules list for it.
 
-You act only through `scripts/tools partner`, run from the root of this repository; these instructions are all you need. The table tells you what your investigator's player would know: public information, your investigator's hand, and the full text of every card you can see, your investigator's own included. Other players' hands and every deck's order stay hidden, as at a real table, so learn the game only from your answers, never from the attempt's save file or another program. Playing is not project work: you change no tracked file, open no issue and run no checks.
+You act only through one program, `arkham-partner`; these instructions are all you need. Run it by exactly that name, alone, with no pipe, redirection, `cd`, substitution or second command beside it: in the partner folder, where your session runs and these instructions are its `AGENTS.md`, only that form needs no approval. The table tells you what your investigator's player would know: public information, your investigator's hand, and the full text of every card you can see, your investigator's own included. Other players' hands and every deck's order stay hidden, as at a real table, so learn the game only from your answers, never from the attempt's save file or another program. Playing is not project work: you change no file but your [notes](#notes), open no issue and run no checks.
 
 ## Join
 
-If the line you were given names `--socket PATH`, put it on every partner command, right after `partner`, as in `scripts/tools partner --socket PATH wait PARTNER`.
+If the line you were given names `--socket PATH`, put it on every command, right after the program, as in `arkham-partner --socket PATH wait PARTNER`.
 
 ```sh
-scripts/tools partner join INVESTIGATOR
+arkham-partner join INVESTIGATOR
 ```
 
 Name one investigator, `tony`, `patrice` or `jacqueline`, as in `join patrice` for Patrice Hathaway: the one you were asked to play. If you were not told which, run `join` with no name: it is refused, and the refusal names every investigator open to partners. Join one of those.
 
-The first run in a checkout builds the tool, which can take a few minutes. The answer's status is `joined`:
+The answer's status is `joined`:
 
 - `partner` is your **identity**. Every later command names it where these instructions write `PARTNER`. It ends when you leave or the table ends your session, and it is never reused.
 - `investigator` is the one investigator you play, until your session ends. Every answer that carries it says the same one.
@@ -26,9 +26,9 @@ Then start your [notes](#notes) and begin [waiting](#wait).
 
 ## Notes
 
-A long session gets your context compacted. Views report only changes, and table talk reaches you once, so keep notes in a file that survives compaction: `local/partners/PARTNER.md` in this repository, a folder Git ignores. Keep them short:
+A long session gets your context compacted. Views report only changes, and table talk reaches you once, so keep notes in a file that survives compaction: `notes/PARTNER.md` in the partner folder, written with your tool's file editing. Keep them short:
 
-- first, your identity, the `--socket` option if your line had one, the investigator you play, and that you follow `docs/agents/partner-instructions.md`;
+- first, your identity, the `--socket` option if your line had one, and the investigator you play;
 - the team's plan, your investigator's plan, and what you agreed or offered at the table;
 - table talk that still matters.
 
@@ -43,7 +43,7 @@ Only `leave`, or the table ending your session, ends your identity. A cut-off co
 Keep exactly one `wait` running at a time. When it answers, act on its status, then wait again.
 
 ```sh
-scripts/tools partner wait PARTNER
+arkham-partner wait PARTNER
 ```
 
 It answers with the first thing that concerns you, however long that takes: it waits without a time limit unless you ask for one with `--timeout SECONDS`, and answers `nothing_yet` once that period ends. A newer wait of yours ends the older one, which answers `replaced`.
@@ -67,18 +67,31 @@ Each decision is told to you once, by an answer whose view has `decision.yours` 
 A plain `wait` answers `decision` at once while a decision you have not been told of is pending. To hear the table before you decide, say what you are weighing if it helps, then listen:
 
 ```sh
-scripts/tools partner wait PARTNER --listen
+arkham-partner wait PARTNER --listen
 ```
 
-A listening wait does not answer the decision of yours that was pending as it began. It answers another player's message, a group choice opening, a change to a shared decision, what became of a choice that waited, a later decision of yours or the end of your session, or `nothing_yet` once the period you asked for ends: always give one, such as `--timeout 60`, since other players may say nothing, and after a minute the table marks you silent. An accepted choice or readiness of yours ends it. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
+A listening wait does not answer the decision of yours that was pending as it began. It answers another player's message, a group choice opening, a change to a shared decision, what became of a choice that waited, a later decision of yours or the end of your session, or `nothing_yet` once the period you asked for ends: always give one, such as `--timeout 60`, since other players may say nothing, and after a minute the table marks you silent while your decision waits. An accepted choice or readiness of yours ends it. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
+
+### How your tool waits
+
+A wait, and `choose` or `ready` with `--wait`, returns only when the table needs you. That can take more than an hour, and nothing else needs you meanwhile: do not poll, look in or report progress.
 
 ### Waiting in Claude Code
 
-Run `wait`, and `choose` or `ready` with `--wait`, with the Bash tool's `run_in_background` option and without a time limit, then end your turn. Claude Code re-invokes you when the command exits, and you read its output then; waiting this way spends no tokens. Run every other command in the foreground.
+Run `wait`, and `choose` or `ready` with `--wait`, with the Bash tool's `run_in_background` option and without a timeout, then end your turn. Claude Code re-invokes you when the command exits. The notification names its output file: read that file when the notification does not show the output. Run every other command in the foreground.
 
 ### Waiting in Codex
 
-Run `wait --timeout 240` in the foreground, which ends inside Codex's polling window (`background_terminal_max_timeout`, five minutes by default). When it answers `nothing_yet`, run it again at once; each poll costs a model turn. If Codex ends a command before it answers, follow [Cut-off commands](#cut-off-commands).
+Run every command that does not wait as you usually do. How to run `wait`, and `choose` or `ready` with `--wait`, exactly. This replaces your usual limit of 60 seconds for a blocking wait and your usual progress updates: I ask for one blocking wait of up to two hours, I need no communication from you while it runs, and I can interrupt it by typing. This session's background_terminal_max_timeout is 7200000 ms, so the long poll is allowed. Every extra check costs me money. Make each of them this one exec call, with the command in place of COMMAND:
+
+// @exec: {"yield_time_ms": 7200000}
+let r = await tools.exec_command({cmd:"COMMAND",yield_time_ms:30000});
+while (r.session_id !== undefined) r = await tools.write_stdin({session_id:r.session_id,chars:"",yield_time_ms:7200000});
+text(r);
+
+If that cell yields anyway, wait on it with yield_time_ms 7200000.
+
+When your turn was interrupted, go on as [Cut-off commands](#cut-off-commands) says: the wait it left running is not read, and your next one takes its place.
 
 ## Decide
 
@@ -90,7 +103,7 @@ Run `wait --timeout 240` in the foreground, which ends inside Codex's polling wi
 - At the view's top level, `test`, `encounter_card`, `harm` and `resolving` say what the decision is about: the skill test and the cards committed to it, an encounter card whose revelation is still to resolve, with `drawn_by` naming the investigator who drew it, the damage and horror to assign, and the cards being resolved. When `view.shared` lists a decision, see [Shared decisions](#shared-decisions).
 
 ```sh
-scripts/tools partner choose PARTNER REVISION ID
+arkham-partner choose PARTNER REVISION ID
 ```
 
 Give the view's `revision` and one option's `id` exactly as listed. An `id` that ends in a placeholder names a value in its place: `<margin>` takes a whole number, for Crystal Pendulum's prediction, and `<contributions>` takes a clue allocation (see [Shared decisions](#shared-decisions)).
@@ -107,7 +120,7 @@ Any answer with your view, other than a wait's, may also carry `released`: an ea
 To choose and then wait in one command:
 
 ```sh
-scripts/tools partner choose PARTNER REVISION ID --wait
+arkham-partner choose PARTNER REVISION ID --wait
 ```
 
 A refusal, or a decision of yours that comes next at once (`chosen`, with `decision.yours` true), is answered immediately. Otherwise it is your wait, without a time limit or with `--timeout SECONDS`, and answers as `wait` does, with `choice` saying how your choice stands: its `id` and `label` as you named it, and its `status`, which is `chosen`, `settling`, `held` or `released`. `ready PARTNER REVISION --wait` does the same, and readiness is `ready`, `cleared` once another player's change has cleared it, or `over` once its shared decision is. A plain `choose` or `ready` of yours that is accepted while it waits takes the place of the first in `choice`. `unknown`, with `nothing_yet`, means that the table ran no frame to answer and may not have read your choice: run `observe PARTNER --full`.
@@ -115,7 +128,7 @@ A refusal, or a decision of yours that comes next at once (`chosen`, with `decis
 To read a card again, with its current counters:
 
 ```sh
-scripts/tools partner inspect PARTNER CODE
+arkham-partner inspect PARTNER CODE
 ```
 
 It answers `inspected` with the card's full text as the table's Inspect shows it, including what `cards` leaves out: an investigator's slots and a card's supplies or keys now. Give the `code` your view names, for any card you can see: in your investigator's hand, in play, being resolved or in a public pile. A card you cannot see is refused.
@@ -153,7 +166,7 @@ In a commitment, choose your cards' commit options to toggle them; `test.others_
 Mark yourself ready with this command, or by choosing `ready_with`; either answers `ready`:
 
 ```sh
-scripts/tools partner ready PARTNER REVISION
+arkham-partner ready PARTNER REVISION
 ```
 
 Readiness rests on the state your last view showed. When anything changed since, it is refused: observe and decide again. Any change to a part clears the other players' readiness and wakes them with `shared`. The decision completes once every participating player is ready on the same parts. A window closes once every player with an option has passed in succession; an action in it starts the passes again. After you have been ready in a commitment or a payment, you may change your part three times; after that you can only mark yourself ready.
@@ -163,7 +176,7 @@ Readiness rests on the state your last view showed. When anything changed since,
 Every player hears every message. Talk never makes a decision and is not saved with the attempt.
 
 ```sh
-scripts/tools partner say PARTNER MESSAGE
+arkham-partner say PARTNER MESSAGE
 ```
 
 This says one message of up to 280 characters as your investigator and answers `said`. Quote the message for the shell; its words are joined with spaces. Other players' messages said since you joined reach you once, in `view.table_talk` of your next answer that carries a view, each with its `speaker` (that player's investigators), `text` and `round`. Only a later complete view, such as `observe PARTNER --full` gives, repeats them, and only the latest 20 heard since you joined, so note what still matters.
@@ -188,7 +201,7 @@ So two partners answering each other share one exchange: settle it in a few mess
 ## Leave
 
 ```sh
-scripts/tools partner leave PARTNER
+arkham-partner leave PARTNER
 ```
 
 This answers `left` and ends your session; your investigator's decisions wait for another partner, or for the table to take it over. Leave when the scenario has ended (the view's `outcome` is set) or when you are asked to stop.
@@ -203,7 +216,7 @@ Every answer carries `view` from `join` on, except `inspected`, `nothing_yet`, `
 - **`table_talk`:** other players' messages since your previous answer that carried a view; in a later complete view, the latest 20 heard since you joined.
 
 ```sh
-scripts/tools partner observe PARTNER
+arkham-partner observe PARTNER
 ```
 
 This answers `observed` with your current view and its changes since your last. `observe PARTNER --full` gives the complete view, every visible card's text and the latest 20 messages heard since you joined again, for after compaction or a cut-off command.

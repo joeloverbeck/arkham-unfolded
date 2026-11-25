@@ -20,6 +20,7 @@ use std::{
     },
     thread::{self, JoinHandle},
 };
+use unfolded_agent_players::client;
 
 struct Partnered {
     app: App,
@@ -187,24 +188,19 @@ fn the_socket_lives_only_while_partners_are_enabled_and_serves_several_partners_
     );
 }
 
-/// Ticket #211, the pasted line's final form: it points to the partner instructions
-/// in this repository and gives the join command with the table's socket, and it
+/// Ticket #211 with Cuba Libre #202, the pasted line: it points to the instructions in
+/// the partner folder, outside the checkout, and gives the table's socket, and it
 /// names no investigator and no human player (play contract, Agent partners).
 #[test]
-fn the_pasted_line_points_to_the_partner_instructions_and_names_no_player() {
-    let instructions = "docs/agents/partner-instructions.md";
+fn the_pasted_line_points_to_the_partner_folder_and_names_no_player() {
     let line = line(Path::new("/run/partners-elsewhere.sock"));
-    assert!(line.contains(instructions), "{line}");
     assert!(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(instructions)
-            .is_file(),
-        "The line points to a document in the repository"
+        line.contains("/arkham-unfolded/partner: follow the instructions in its AGENTS.md"),
+        "{line}"
     );
+    assert!(!line.contains(env!("CARGO_MANIFEST_DIR")), "{line}");
     assert!(
-        line.contains(
-            "`scripts/tools partner --socket /run/partners-elsewhere.sock join INVESTIGATOR`"
-        ),
+        line.contains("with `--socket /run/partners-elsewhere.sock` on every command"),
         "{line}"
     );
     // #295: one line pasted per investigator.
@@ -1833,8 +1829,7 @@ fn taking_an_investigator_back_cancels_its_choice_that_waits_for_the_table() {
 }
 
 /// Cuba Libre #201, correction 23: a partner that listens, without a period, before its
-/// own decision is shown thinking for a minute and then silent, until its choice; one
-/// whose wait can tell the decision is not.
+/// own decision is shown thinking for a minute and then silent, until its choice.
 #[test]
 fn a_partner_that_listens_before_its_decision_is_marked_silent() {
     let mut partnered = partnered(&[Patrice]);
@@ -1870,7 +1865,7 @@ fn a_partner_that_listens_before_its_decision_is_marked_silent() {
     let shown = rendered_text(app);
     assert!(shown.contains("SILENT 2 MIN"), "{shown}");
     assert!(!listening.is_finished(), "Its wait goes on");
-    // A wait that is to tell her decision: the same table, and not silent while it waits.
+    // Her choice ends the wait, and the silence.
     press(app, "Close menu");
     let revision = revision(app);
     let chosen = exchange(
@@ -1884,4 +1879,161 @@ fn a_partner_that_listens_before_its_decision_is_marked_silent() {
     pump(app, || listening.is_finished());
     assert_eq!(listening.join().unwrap()[0]["status"], "replaced");
     assert!(!rendered_text(app).contains("SILENT"));
+}
+
+/// A stand-in for a Codex session that waits as the partner instructions say: one command
+/// at a time, through the partners' own client and over the socket, each held until the
+/// table answers it. Codex calls its model when a command ends and at no other time, so
+/// each answer is one wake. Woken with its decision, it makes the next of its choices
+/// and waits in that same command; woken by its session's end, it ends its turn.
+struct Codex {
+    wakes: Arc<Mutex<Vec<Value>>>,
+    turn: JoinHandle<()>,
+}
+
+impl Codex {
+    /// A session whose `choices` are each the first option listed that begins so.
+    fn waiting(socket: &Path, partner: &str, choices: &[&'static str]) -> Self {
+        let wakes = Arc::new(Mutex::new(Vec::new()));
+        let (socket, partner) = (socket.to_owned(), partner.to_owned());
+        let (told, choices) = (wakes.clone(), choices.to_vec());
+        let turn = thread::spawn(move || {
+            let mut choices = choices.into_iter();
+            let mut command = json!({"op": "wait", "partner": partner});
+            loop {
+                let answer = client::request(&socket, &command.to_string(), || Ok::<_, ()>(()));
+                let Ok(answer) = answer else { return };
+                let mut line = Vec::new();
+                answer.write_to(&mut line).unwrap();
+                let answer: Value = serde_json::from_slice(&line).unwrap();
+                told.lock().unwrap().push(answer.clone());
+                if ["closed", "refused"].contains(&answer["status"].as_str().unwrap()) {
+                    return;
+                }
+                let decision = &answer["view"]["decision"];
+                command = if decision["yours"] == true {
+                    let Some(choice) = choices.next() else {
+                        return;
+                    };
+                    let id = decision["options"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter_map(|option| option["id"].as_str())
+                        .find(|id| id.starts_with(choice))
+                        .unwrap_or_else(|| panic!("No {choice}: {decision}"));
+                    json!({
+                        "op": "choose", "partner": partner, "id": id, "wait": true,
+                        "revision": answer["view"]["revision"],
+                    })
+                } else {
+                    json!({"op": "wait", "partner": partner})
+                };
+            }
+        });
+        Self { wakes, turn }
+    }
+
+    /// Each wake so far: its status, and whether its view has the session's decision.
+    fn woken(&self) -> Vec<(String, bool)> {
+        let wakes = self.wakes.lock().unwrap();
+        wakes
+            .iter()
+            .map(|wake| {
+                (
+                    wake["status"].as_str().unwrap().to_owned(),
+                    wake["view"]["decision"]["yours"] == true,
+                )
+            })
+            .collect()
+    }
+
+    /// Run frames until it has been woken `count` times.
+    fn pump(&self, app: &mut App, count: usize) {
+        pump(app, || self.wakes.lock().unwrap().len() >= count);
+    }
+
+    /// Run frames for a while, in which nothing wakes it.
+    fn rests(&self, app: &mut App) {
+        let before = self.woken();
+        for _ in 0..40 {
+            app.update();
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(self.woken(), before);
+        assert!(!self.turn.is_finished(), "It waits");
+    }
+}
+
+/// Cuba Libre #202: one wake for each event, none while nothing needs the session, and
+/// none for a decision that the answer to its own choice already told it.
+#[test]
+fn a_codex_session_is_woken_once_for_each_event_and_by_nothing_else() {
+    let mut partnered = partnered(&[Patrice]);
+    let partner = join(&mut partnered, Patrice);
+    let app = &mut partnered.app;
+    let codex = Codex::waiting(
+        &partnered.socket,
+        &partner,
+        &["mulligan:", "confirm-mulligan"],
+    );
+    codex.rests(app);
+    choose(app, "confirm-mulligan"); // Jacqueline
+    finish_presentation(app);
+    codex.rests(app);
+    assert_eq!(codex.woken(), [], "Others' decisions are not its own");
+
+    choose(app, "confirm-mulligan"); // Tony
+    finish_presentation(app);
+    // Her mulligan; her choice in it, whose answer tells the decision it leaves her; and,
+    // once she has confirmed, the group choice that opens: one wake each.
+    codex.pump(app, 3);
+    let woken = [
+        ("decision".to_owned(), true),
+        ("chosen".to_owned(), true),
+        ("group_choice".to_owned(), false),
+    ];
+    assert_eq!(codex.woken(), woken);
+    codex.rests(app);
+    assert_eq!(codex.woken(), woken, "And none again");
+
+    press(app, "Turn agent partners off");
+    codex.pump(app, 4);
+    assert_eq!(codex.woken()[3], ("closed".to_owned(), false));
+}
+
+/// Cuba Libre #202, the end conditions: the session leaves, loses its seat, or the table
+/// closes. Its wait ends with one wake, and nothing of it goes on waiting.
+#[test]
+fn a_codex_sessions_wait_ends_when_it_leaves_loses_its_seat_or_the_table_closes() {
+    type End = fn(&mut App, &Path, &str);
+    let ends: [(&str, End); 3] = [
+        ("you left", |app, socket, partner| {
+            let left = exchange(app, socket, &[json!({"op": "leave", "partner": partner})]);
+            assert_eq!(left[0]["status"], "left", "{}", left[0]);
+        }),
+        ("took Patrice Hathaway over", |app, _, _| {
+            press(app, "Patrice Hathaway: a partner plays");
+        }),
+        ("closed", |app, _, _| {
+            app.world_mut()
+                .resource_mut::<Actions>()
+                .0
+                .push(Action::ReturnToSelection);
+        }),
+    ];
+    for (why, end) in ends {
+        let mut partnered = partnered(&[Patrice]);
+        let partner = join(&mut partnered, Patrice);
+        let app = &mut partnered.app;
+        let codex = Codex::waiting(&partnered.socket, &partner, &[]);
+        codex.rests(app);
+        end(app, &partnered.socket, &partner);
+        pump(app, || codex.turn.is_finished());
+        assert_eq!(codex.woken(), [("closed".to_owned(), false)], "{why}");
+        let reason = codex.wakes.lock().unwrap()[0]["reason"].clone();
+        assert!(reason.as_str().unwrap().contains(why), "{why}: {reason}");
+        let held = app.world().resource::<Partners>().host.hung_up(|_| true);
+        assert!(!held, "{why}: the table holds no wait");
+    }
 }

@@ -1,14 +1,15 @@
-//! `partner`: one agent partner request to the running Arkham table (#205, ADR 0007).
+//! `arkham-partner`, the one program an agent partner's session may run (Cuba Libre #202):
+//! one request to the running Arkham table (#205, ADR 0007).
 //! The shared client (`unfolded_agent_players::client`, ADR 0008) carries the request
 //! over one connection to the table's partner socket, and its answer is printed exactly
 //! as the table wrote it. The protocol and the view belong to the game
 //! (`src/partners.rs`); this command only spells requests, words failures and maps
-//! answers to exit codes. Deleting this file, `tools/tests/partner.rs` and the line in `main.rs` that
-//! names it removes the command.
+//! answers to exit codes. Deleting this file, `bin/arkham-partner.rs`, `partner_folder.rs`,
+//! `tools/tests/partner.rs` and the lines in `main.rs` that name the second removes it.
 
 use crate::process;
 use anyhow::{Error, Result, anyhow, bail};
-use clap::{Args as ClapArgs, Subcommand};
+use clap::{Args as ClapArgs, Parser, Subcommand};
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
@@ -16,32 +17,36 @@ use std::{
 };
 use unfolded_agent_players::client::{self, Unanswered};
 
-/// What `scripts/tools partner --help` gives a fresh agent session: the pointer to
+/// What `arkham-partner --help` gives a fresh agent session: the pointer to
 /// the partner instructions and the commands. The instructions alone state the
 /// protocol's rules, so this guide does not restate them (#211, #218).
-pub const GUIDE: &str = "\
+const GUIDE: &str = "\
 You are an agent partner: a player at a running Arkham Horror: The Card Game table
-in the Arkham Unfolded window. Before you join, read
-docs/agents/partner-instructions.md in this repository, and read it again after
-your context is compacted. It states the rules of every command: what each
-answer and status means, which choices wait for other players, waiting in
-Claude Code and in Codex, shared decisions, table talk and its limits, conduct,
-the notes to keep and the exit codes.
+in the Arkham Unfolded window. Before you join, read the partner instructions,
+AGENTS.md in the partner folder, and read them again after your context is
+compacted. They state the rules of every command: what each answer and status
+means, which choices wait for other players, waiting in Claude Code and in
+Codex, shared decisions, table talk and its limits, conduct, the notes to keep
+and the exit codes.
 
-  scripts/tools partner join INVESTIGATOR         keep the answer's \"partner\"
-  scripts/tools partner wait PARTNER              until something needs you
-  scripts/tools partner wait PARTNER --timeout SECONDS
-  scripts/tools partner wait PARTNER --listen     hear the table first
-  scripts/tools partner observe PARTNER
-  scripts/tools partner observe PARTNER --full    the complete view and recent talk
-  scripts/tools partner inspect PARTNER CODE
-  scripts/tools partner choose PARTNER REVISION ID
-  scripts/tools partner choose PARTNER REVISION ID --wait    and then wait
-  scripts/tools partner ready PARTNER REVISION [--wait]
-  scripts/tools partner say PARTNER MESSAGE
-  scripts/tools partner leave PARTNER";
+  arkham-partner join INVESTIGATOR         keep the answer's \"partner\"
+  arkham-partner wait PARTNER              until something needs you
+  arkham-partner wait PARTNER --timeout SECONDS
+  arkham-partner wait PARTNER --listen     hear the table first
+  arkham-partner observe PARTNER
+  arkham-partner observe PARTNER --full    the complete view and recent talk
+  arkham-partner inspect PARTNER CODE
+  arkham-partner choose PARTNER REVISION ID
+  arkham-partner choose PARTNER REVISION ID --wait    and then wait
+  arkham-partner ready PARTNER REVISION [--wait]
+  arkham-partner say PARTNER MESSAGE
+  arkham-partner leave PARTNER";
 
-#[derive(ClapArgs)]
+/// Play one investigator at the running Arkham table as an agent partner: join, wait,
+/// observe, inspect a card, choose, mark ready, speak or leave. The game must have agent
+/// partners enabled (Menu, Agent partners).
+#[derive(Parser)]
+#[command(name = "arkham-partner", after_help = GUIDE)]
 pub struct Args {
     /// The table's partner socket, when the pasted line names one. Default:
     /// $ARKHAM_PARTNER_SOCKET, else arkham-unfolded-partners.sock in $XDG_RUNTIME_DIR,

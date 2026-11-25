@@ -20,7 +20,7 @@
 use super::*;
 use crate::gathering::CardView;
 use crate::partners::{
-    Control, Controller, Host, HumanChoice, INSTRUCTIONS, SharedKind, SharedState, nothing_yet,
+    Control, Controller, Host, HumanChoice, SharedKind, SharedState, nothing_yet,
 };
 use serde_json::{Value, json};
 use std::{
@@ -382,8 +382,8 @@ impl Drop for Partners {
 }
 
 /// The default socket: `$ARKHAM_PARTNER_SOCKET`, else `arkham-unfolded-partners.sock`
-/// in `$XDG_RUNTIME_DIR` (or the temporary directory). The tools' `partner` command
-/// finds the same path.
+/// in `$XDG_RUNTIME_DIR` (or the temporary directory). `arkham-partner` finds
+/// the same path.
 pub(super) fn default_socket() -> PathBuf {
     if let Some(path) = std::env::var_os("ARKHAM_PARTNER_SOCKET") {
         return PathBuf::from(path);
@@ -393,18 +393,31 @@ pub(super) fn default_socket() -> PathBuf {
         .join("arkham-unfolded-partners.sock")
 }
 
+/// The folder partners' sessions run in, which `scripts/tools partner-folder` writes
+/// (its `data` is the same directory): `arkham-unfolded/partner` in `$XDG_DATA_HOME`, or
+/// in `~/.local/share` (Cuba Libre #202).
+fn folder() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
+        .unwrap_or_default()
+        .join("arkham-unfolded/partner")
+}
+
 /// The line the human pastes into an agent's terminal, once per investigator (#295).
-/// It points to the partner instructions and names no investigator and no human
+/// It points to the partner folder's instructions and names no investigator and no human
 /// player (#211).
 pub(super) fn line(socket: &Path) -> String {
     let option =
         if socket == default_socket() && std::env::var_os("ARKHAM_PARTNER_SOCKET").is_none() {
             String::new()
         } else {
-            format!(" --socket {}", socket.display())
+            format!(", with `--socket {}` on every command", socket.display())
         };
     format!(
-        "Play one investigator at the running Arkham Unfolded table, one session per investigator: in the arkham-unfolded repository, read {INSTRUCTIONS}, then join with `scripts/tools partner{option} join INVESTIGATOR`."
+        "Play one investigator at the running Arkham Unfolded table, one session per investigator, from a session started in {}: follow the instructions in its AGENTS.md, and join{option}.",
+        folder().display()
     )
 }
 

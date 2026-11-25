@@ -7,7 +7,7 @@ mod handoff;
 mod interaction;
 mod merge;
 mod native;
-mod partner;
+mod partner_folder;
 mod portal;
 use arkham_tools::process;
 mod profile;
@@ -89,10 +89,10 @@ enum Command {
     /// reached, or the timeout passes.
     #[command(after_help = seat::WAIT_HELP)]
     SeatWait(seat::WaitArgs),
-    /// Play investigators at the running Arkham table as an agent partner: join, wait,
-    /// observe, inspect, choose, ready, say and leave.
-    #[command(after_help = partner::GUIDE)]
-    Partner(partner::Args),
+    /// Install the agent partners' client program and write the folder their sessions run
+    /// in: the partner instructions and, for Claude Code and Codex, the permission for that
+    /// one program. Run it again after the checkout changes.
+    PartnerFolder(partner_folder::Args),
     /// Add or remove checkouts that build into the owner's Cargo target.
     #[command(
         after_help = "Shared target: docs/agents/measured-and-baseline-checks.md#one-target-for-several-checkouts"
@@ -152,7 +152,7 @@ fn main() -> ExitCode {
         Command::Seat(args) => seat::run(args),
         Command::SeatWait(args) => seat::wait(args),
         Command::TargetPrune(args) => target::run(args),
-        Command::Partner(args) => partner::run(args),
+        Command::PartnerFolder(args) => partner_folder::run(args),
         Command::Worktree { command } => worktree::run(command),
     };
     match result {

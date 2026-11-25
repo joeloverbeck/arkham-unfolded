@@ -4,7 +4,8 @@
 //! player-scoped view, and the partner protocol, one JSON request and one JSON answer
 //! per line. The table hosts the transport and the presentation
 //! (`gathering_tabletop::partners`). Deleting this module, that one, the tools'
-//! `partner` command and the integration points that name them removes partners.
+//! `arkham-partner` and `partner-folder`, and the integration points that name them
+//! removes partners.
 //!
 //! A partner joins, which claims the one investigator it names, of those the human
 //! handed to partners: one session plays one investigator (#295, [ADR 0009]). It
@@ -59,14 +60,12 @@ use unfolded_agent_players::seats::{
 /// How many of the latest messages heard since joining a complete view gives back,
 /// for a partner whose answer was lost to a cut-off command.
 pub const RECOVERED_TALK: usize = 20;
-/// The partner instructions in this repository, the one statement of the
-/// protocol's rules (#211, #218): the pasted line points to them, and every hint
-/// in a view names the section of them that holds its rules.
-pub const INSTRUCTIONS: &str = "docs/agents/partner-instructions.md";
 
-/// The end of a hint: the section of the instructions that holds its rules.
+/// The end of a hint: the section that holds its rules of the partner instructions
+/// (`docs/agents/partner-instructions.md`), the one statement of the protocol's rules
+/// (#211, #218), which each partner's folder holds.
 fn rules_in(section: &str) -> String {
-    format!("See {section} in {INSTRUCTIONS}.")
+    format!("See {section} in the partner instructions.")
 }
 
 /// The player who controls an investigator.
