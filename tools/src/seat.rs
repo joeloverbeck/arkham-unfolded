@@ -1,11 +1,12 @@
 //! `seat`: one command's requests to a held agent seat (#175). The requests cross one
 //! connection to the seat's local socket, and every response line is printed exactly as
 //! the seat wrote it. `seat-wait` keeps a held seat's table running while the agent
-//! partners it hosts play (#218). These commands belong to the agent seat's removal
+//! partners it hosts play (#218); the shared client settles it, and this command says
+//! when it stops. These commands belong to the agent seat's removal
 //! set, listed in `src/gathering_tabletop/seat.rs`.
 
 use crate::process;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Error, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use serde_json::Value;
 use std::{
@@ -14,9 +15,9 @@ use std::{
     time::{Duration, Instant},
 };
 use unfolded_seat_client::{
-    self as seat_client, Connection, Outcome, Reply, RequestError, Unreached,
+    self as seat_client, Connection, Outcome, RequestError, Unreached,
+    hosting::{self, Kept, Next, Unkept},
 };
-use unfolded_seat_protocol::{Request, Status};
 
 #[derive(ClapArgs)]
 pub struct Args {
@@ -30,8 +31,10 @@ pub struct Args {
 /// `skipped`.
 pub fn run(args: Args) -> Result<u8> {
     let requests = seat_client::requests(&args.requests, &mut std::io::stdin().lock())?;
-    let connection =
-        connect(&args.socket)?.map_err(|error| anyhow!(not_listening(&args.socket, &error)))?;
+    let connection = Connection::open(&args.socket).map_err(|unreached| match unreached {
+        Unreached::NotListening(error) => anyhow!(not_listening(&args.socket, &error)),
+        Unreached::Failed(error) => cannot_reach(&args.socket, &error),
+    })?;
     // An interrupt is honoured during a long request.
     match connection.send(
         &requests,
@@ -50,17 +53,11 @@ pub fn run(args: Args) -> Result<u8> {
     }
 }
 
-/// The connection, or, inside, the error that shows no seat listens on `socket`:
-/// a missing socket, or one a crashed or quit seat left with nothing answering.
-fn connect(socket: &Path) -> Result<std::io::Result<Connection>> {
-    match Connection::open(socket) {
-        Ok(connection) => Ok(Ok(connection)),
-        Err(Unreached::NotListening(error)) => Ok(Err(error)),
-        Err(Unreached::Failed(error)) => bail!(
-            "cannot reach the agent seat on {}: {error}",
-            socket.display()
-        ),
-    }
+fn cannot_reach(socket: &Path, error: &impl std::fmt::Display) -> Error {
+    anyhow!(
+        "cannot reach the agent seat on {}: {error}",
+        socket.display()
+    )
 }
 
 fn not_listening(socket: &Path, error: &impl std::fmt::Display) -> String {
@@ -97,12 +94,6 @@ Hosting an agent partner: docs/agents/agent-seat.md#hosting-an-agent-partner";
 const MET: u8 = 0;
 const TIMED_OUT: u8 = 3;
 const GONE: u8 = 4;
-/// The pause between settles while the table is settled: a partner's choice waits
-/// at most this long for the settle that applies it.
-const INTERVAL: Duration = Duration::from_millis(500);
-/// Two seconds of table time per settle, so a settle under way when the timeout
-/// passes ends well within [`GRACE`].
-const STEPS: u32 = 120;
 /// How long past the timeout an answer is still awaited from a seat that stopped.
 const GRACE: Duration = Duration::from_secs(10);
 
@@ -152,10 +143,8 @@ struct Stopped {
 /// the seat goes away.
 pub fn wait(args: WaitArgs) -> Result<u8> {
     let deadline = Instant::now() + Duration::from_secs(args.timeout);
+    let until = deadline + GRACE;
     let mut stdout = std::io::stdout().lock();
-    // The first request only reads the table, so a choice applied by the first
-    // settle counts.
-    let mut request = Request::Observe {};
     let mut start = None;
     let mut stopped = Stopped {
         stopped: "timeout",
@@ -164,39 +153,38 @@ pub fn wait(args: WaitArgs) -> Result<u8> {
         open: None,
     };
     let mut shown = None;
-    let code = loop {
-        let answer = match exchange(&args.socket, &request, deadline + GRACE)? {
-            Exchange::Answer(answer) => answer,
-            Exchange::Gone(why) => {
-                if start.is_none() {
-                    eprintln!("arkham-tools: {}", not_listening(&args.socket, &why));
-                } else {
-                    eprintln!(
-                        "arkham-tools: the agent seat on {} has gone ({why}); start it again to resume the attempt.",
-                        args.socket.display()
-                    );
-                }
-                stopped.stopped = "gone";
-                break GONE;
+    let kept = hosting::keep_running(
+        &args.socket,
+        deadline,
+        || {
+            // An interrupt is honoured during a long settle.
+            process::check_interrupt()?;
+            if Instant::now() >= until {
+                bail!("it did not answer in time; it may have stopped running frames");
             }
-        };
-        request = Request::Settle { steps: Some(STEPS) };
-        let revision = answer["observation"]["revision"]
-            .as_u64()
-            .context("the seat's answer carries no observation revision")?;
-        stopped.revision = Some(revision);
-        stopped.choices = revision.saturating_sub(*start.get_or_insert(revision));
-        if answer["table"]["settled"] == true {
+            Ok(())
+        },
+        |answer| {
+            let revision = answer["observation"]["revision"]
+                .as_u64()
+                .context("the seat's answer carries no observation revision")?;
+            stopped.revision = Some(revision);
+            // Counted from the first answer, which only observes, so a choice applied
+            // by the first settle counts.
+            stopped.choices = revision.saturating_sub(*start.get_or_insert(revision));
+            if answer["table"]["settled"] != true {
+                return Ok(Next::Go);
+            }
             let state = State {
                 revision,
                 stage: answer["observation"]["stage"].clone(),
-                awaiting: awaiting(&answer),
+                awaiting: awaiting(answer),
             };
             if shown.as_ref() != Some(&state) {
                 writeln!(stdout, "{}", serde_json::to_string(&state)?)?;
                 stdout.flush()?;
             }
-            let open = open(&answer);
+            let open = open(answer);
             let reached = if state.awaiting.is_empty() || open.is_some() {
                 Some("seat")
             } else if args.revision.is_some_and(|wanted| revision >= wanted) {
@@ -207,15 +195,28 @@ pub fn wait(args: WaitArgs) -> Result<u8> {
                 None
             };
             shown = Some(state);
-            if let Some(reached) = reached {
-                stopped.stopped = reached;
-                stopped.open = open;
-                break MET;
-            }
-            process::pause(INTERVAL.min(deadline.saturating_duration_since(Instant::now())))?;
+            Ok(reached.map_or(Next::Rest, |reached| Next::Stop((reached, open))))
+        },
+    )
+    .map_err(|unkept| worded(unkept, &args.socket))?;
+    let code = match kept {
+        Kept::Stopped((reached, open)) => {
+            stopped.stopped = reached;
+            stopped.open = open;
+            MET
         }
-        if Instant::now() >= deadline {
-            break TIMED_OUT;
+        Kept::TimedOut => TIMED_OUT,
+        Kept::Gone(why) => {
+            if start.is_none() {
+                eprintln!("arkham-tools: {}", not_listening(&args.socket, &why));
+            } else {
+                eprintln!(
+                    "arkham-tools: the agent seat on {} has gone ({why}); start it again to resume the attempt.",
+                    args.socket.display()
+                );
+            }
+            stopped.stopped = "gone";
+            GONE
         }
     };
     writeln!(stdout, "{}", serde_json::to_string(&stopped)?)?;
@@ -223,43 +224,18 @@ pub fn wait(args: WaitArgs) -> Result<u8> {
     Ok(code)
 }
 
-enum Exchange {
-    Answer(Value),
-    /// No seat answers on the socket any more, for this reason.
-    Gone(String),
-}
-
-/// One request on a connection of its own, so the seat serves other commands
-/// between this command's requests.
-fn exchange(socket: &Path, request: &Request, until: Instant) -> Result<Exchange> {
-    let connection = match connect(socket)? {
-        Ok(connection) => connection,
-        Err(error) => return Ok(Exchange::Gone(error.to_string())),
-    };
-    // An interrupt is honoured during a long settle.
-    let reply = connection.request(request, || {
-        process::check_interrupt()?;
-        if Instant::now() >= until {
-            bail!("it did not answer in time; it may have stopped running frames");
+/// Why the table could not be kept running, in this command's words.
+fn worded(unkept: Unkept<Error>, socket: &Path) -> Error {
+    match unkept {
+        Unkept::Stopped(error) => error,
+        Unkept::Unreached(error) => cannot_reach(socket, &error),
+        Unkept::Unasked(
+            error @ (RequestError::NotJson { .. } | RequestError::Unrecognised { .. }),
+        ) => error.into(),
+        Unkept::Unasked(error) => {
+            Error::new(error).context(format!("the agent seat on {}", socket.display()))
         }
-        Ok(())
-    });
-    match reply {
-        Ok(Reply::Answer(answer)) => match answer.status {
-            Status::Observed | Status::Settled | Status::Unsettled => {
-                Ok(Exchange::Answer(answer.response))
-            }
-            _ => bail!("the seat answered {request} with: {}", answer.line),
-        },
-        // A seat that ends with this request unread resets the connection.
-        Ok(Reply::Ended(ended)) => Ok(Exchange::Gone(ended.to_string())),
-        Err(error @ (RequestError::NotJson { .. } | RequestError::Unrecognised { .. })) => {
-            Err(error.into())
-        }
-        Err(error) => {
-            Err(anyhow::Error::new(error)
-                .context(format!("the agent seat on {}", socket.display())))
-        }
+        other => anyhow!("{other}"),
     }
 }
 

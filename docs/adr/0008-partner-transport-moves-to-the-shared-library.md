@@ -19,13 +19,15 @@ ends without #203 using them, the mechanism moves back to Arkham. The rest of
 ADR 0007 stands.
 
 The first move, [Cuba Libre #199](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/199),
-takes the socket's serving and the client's exchange, and changes nothing a
-partner can send, read or exit with.
+takes the socket's serving, the client's exchange and the loop of `seat-wait`,
+which a seat needs to host players without a window. It changes nothing a partner
+or a seat's driver can send, read or exit with.
 
 | Shared | Arkham's |
 | --- | --- |
 | `unfolded_tabletop::agent_transport`: the claimed socket, one thread for each connection, requests taken by a frame and answered on any later one, the wake of the frame loop, the close | Where the socket is, when it opens and closes, what a refusal to open it says, a wait's period and the answers the transport gives in the partner protocol's words (`src/gathering_tabletop/partners.rs`) |
 | `unfolded_agent_players::client`: one request, one answer, an interrupt or deadline checked while it waits | The commands, the requests they spell, the wording of failures and the exit codes (`tools/src/partner.rs`) |
+| `unfolded_seat_client::hosting`: settling a held seat's table again and again while the partners it hosts play | When `seat-wait` stops, the lines it prints, the wording of failures and the exit codes (`tools/src/seat.rs`) |
 
 Decision ownership, routing, hidden information, shared decisions, talk and the
 partner's view stay in Arkham's Bevy-free library.
