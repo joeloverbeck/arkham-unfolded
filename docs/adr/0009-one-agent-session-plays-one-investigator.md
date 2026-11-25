@@ -19,7 +19,7 @@ one investigator's, and no answer needs a list. A join that names none or severa
 refused rather than given one of those open: the table never chooses for a session.
 The refusal names the investigators open, or says there is nothing to play when none
 is. A session taken back is told so and ends, rather than staying at the table with no
-investigator, where other players' talk would keep waking it.
+investigator, where the human's talk would keep waking it.
 
 The cost is one terminal session, with its own context and quota, for each
 investigator handed over. The rule binds a session only by the identity its join

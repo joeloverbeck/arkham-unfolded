@@ -291,8 +291,9 @@ fn a_partner_playing_the_lead_chooses_who_takes_the_next_turn_and_every_partner_
 /// Review fix E1 (stories 28-29: the lead's player decides who takes the next turn
 /// "after hearing the table"). A plain wait answers the arbiter's own pending
 /// decision at once, so it cannot listen. A listening wait is held while that
-/// decision waits, and answers only another event (here another player's
-/// message) or its timeout; the decision is still the arbiter's afterwards.
+/// decision waits, and answers only another event (here the human's message, whose
+/// answer brings another partner's, which ends no wait of its own: #296) or its
+/// timeout; the decision is still the arbiter's afterwards.
 #[test]
 fn a_listening_wait_lets_the_lead_hear_the_table_before_its_group_choice() {
     let mut sitting = Sitting::new(Session::with_seed(89), &[Patrice, Jacqueline]);
@@ -321,13 +322,24 @@ fn a_listening_wait_lets_the_lead_hear_the_table_before_its_group_choice() {
     let said = sitting.ask(json!({"op": "say", "partner": other, "text": "I can take the Attic."}));
     assert_eq!(said["status"], "said", "{said}");
     sitting.poll();
-    let heard = sitting.take(listening).expect("Another player spoke");
+    assert!(sitting.take(listening).is_none(), "A partner spoke");
+    assert!(
+        !sitting
+            .host
+            .due(&sitting.rules.session, true, true, sitting.now),
+        "Nothing is due for a partner's message"
+    );
+    sitting
+        .host
+        .human_says("And I the Cellar.", &sitting.rules)
+        .unwrap();
+    sitting.poll();
+    let heard = sitting.take(listening).expect("The human spoke");
     assert_eq!(heard["status"], "table_talk", "{heard}");
     assert_eq!(heard["view"]["decision"]["yours"], true);
-    assert_eq!(
-        heard["view"]["table_talk"][0]["text"],
-        "I can take the Attic."
-    );
+    let talk = &heard["view"]["table_talk"];
+    assert_eq!(talk[0]["text"], "I can take the Attic.");
+    assert_eq!(talk[1]["text"], "And I the Cellar.");
 
     let quiet =
         sitting.send(&json!({"op": "wait", "partner": lead, "listen": true, "timeout_seconds": 1}));

@@ -864,4 +864,4 @@ impl Protocol for PartnerProtocol {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

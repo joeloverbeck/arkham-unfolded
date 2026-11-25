@@ -9,8 +9,8 @@
 //! A partner joins, which claims the one investigator it names, of those the human
 //! handed to partners: one session plays one investigator (#295, [ADR 0009]). It
 //! waits until that investigator has a decision pending once the table has presented
-//! it (a reading or the human's dialog may still be open, #210), or listens to the
-//! table without being answered its own decision; observes its view,
+//! it (a reading or the human's dialog may still be open, #210) or something else ends
+//! its wait, or listens, a wait which that decision does not end; observes its view,
 //! complete once and then as changes (#206); inspects any card it can see; chooses
 //! an option by identity at the current revision; and leaves. Its session ends when
 //! it leaves, the human takes its investigator back or turns partners off, the table
@@ -27,7 +27,8 @@
 //! its own investigator's and no pass, such as before each action of a turn, the
 //! deciding investigator's player's choice waits until every other player with an
 //! option there has passed (F1, S1). Every player may speak, and every other
-//! player hears each message (#209, `talk`).
+//! player hears each message (#209, `talk`); the human's ends a partner's wait, and a
+//! partner's does not (#296).
 //!
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
 //! [ADR 0009]: ../../docs/adr/0009-one-agent-session-plays-one-investigator.md
@@ -56,8 +57,10 @@ use unfolded_agent_players::seats::{
     Submitted, Told, Waiting,
 };
 
-/// How many of the latest messages heard since joining a complete view gives back,
-/// for a partner whose answer was lost to a cut-off command.
+/// How many of the latest messages heard since joining a complete view gives back at least,
+/// for a partner whose answer was lost to a cut-off command. It has every message that no
+/// answer has brought, however many, and those only waits have brought since the partner
+/// was last answered, with a view, something other than a wait.
 pub const RECOVERED_TALK: usize = 20;
 /// The partner instructions in this repository, the one statement of the
 /// protocol's rules (#211, #218): the pasted line points to them, and every hint
@@ -308,7 +311,7 @@ impl Then {
 
 /// What a held wait is for.
 enum Purpose {
-    /// The first thing that concerns its partner.
+    /// The first thing that ends a wait.
     Anything,
     /// The same, but for its partner's own decision that was pending as it began.
     Listening,
@@ -324,6 +327,7 @@ enum News {
     HeldApplied,
     GroupChoice,
     Shared,
+    /// The human spoke.
     TableTalk,
 }
 
@@ -337,8 +341,12 @@ struct Partner {
     told_group: Option<u64>,
     /// The shared decisions this partner's last view showed, and their state then.
     seen: Vec<(shared::Key, shared::Stamp)>,
-    /// The table talk this partner has been told: messages before this index.
+    /// Messages before this index have come in an answer to this partner, read or not.
     told_talk: usize,
+    /// Messages before this index had come as it was last answered, with a view, something
+    /// other than a wait. Those from here to `told_talk` came only in answers to waits, which
+    /// nobody may have read.
+    read_talk: usize,
     /// The table talk said before this partner sat down: messages before this index.
     joined_talk: usize,
     /// A choice of its that other players' options held was applied, and no wait has
@@ -369,15 +377,16 @@ enum Request {
         partner: String,
         #[serde(default)]
         timeout_seconds: Option<u64>,
-        /// Hear the table while a decision of this partner's waits: answer anything else,
-        /// a later decision of its own included, or the period's end (stories 28-29).
+        /// Wait before a decision of this partner's that is pending: all that ends a wait
+        /// ends this one, a later decision of its own included, except that decision
+        /// (stories 28-29).
         #[serde(default)]
         listen: bool,
     },
     Observe {
         partner: String,
-        /// The complete view, every visible card's text and the latest table talk
-        /// heard since joining, again.
+        /// The complete view, with every visible card's text and the latest table talk
+        /// since joining ([`RECOVERED_TALK`]), heard before or not.
         #[serde(default)]
         full: bool,
     },
@@ -389,7 +398,7 @@ enum Request {
         partner: String,
         revision: u64,
         id: String,
-        /// Then wait, on the same answer, for the first thing that concerns the partner.
+        /// Then wait, on the same answer, for the first thing that ends a wait.
         #[serde(default)]
         wait: bool,
         /// The period of that wait.
@@ -400,7 +409,7 @@ enum Request {
     Ready {
         partner: String,
         revision: u64,
-        /// Then wait, on the same answer, for the first thing that concerns the partner.
+        /// Then wait, on the same answer, for the first thing that ends a wait.
         #[serde(default)]
         wait: bool,
         /// The period of that wait.
@@ -755,10 +764,7 @@ impl<R> Host<R> {
                     Ok(()) => self.answer(&id, "said", None, table, false, now),
                     Err(reason) => self.answer(&id, "refused", Some(reason), table, false, now),
                 };
-                // Every other partner's wait hears it now.
-                let mut answers = vec![(reply, answer)];
-                answers.extend(self.poll(table, now));
-                answers
+                vec![(reply, answer)]
             }
             Request::Leave { .. } => {
                 let left = self.seats.leave(&id);
@@ -1064,7 +1070,7 @@ impl<R> Host<R> {
     /// waited for the table, then answer every wait whose moment has come: its partner's
     /// choice was released, or it hears a group choice open, has news of a shared decision
     /// or has a decision it has not been told of, once the table has presented it, has
-    /// table talk to hear, or the period it asked for ran out.
+    /// a message of the human's to hear, or the period it asked for ran out.
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
         self.advance(table);
         self.answer_waits(table, now)
@@ -1165,8 +1171,9 @@ impl<R> Host<R> {
     /// for the other players' passes was applied and, at a table that has presented its
     /// decision, `moment`, a group choice it has not been told of, news of a shared
     /// decision it takes part in that changed since its last view, and a decision of its
-    /// own; then other players' talk, whose answers the table's own events carry as well.
-    /// A choice released comes before them all.
+    /// own; and last, whether or not the table has presented it, a message of the human's.
+    /// Whichever it answers, its view has what every other player said meanwhile. A choice
+    /// released comes before them all.
     fn events(&self, partner: &Partner, moment: Option<&Moment>) -> Vec<Event<News>> {
         let mut events: Vec<_> = self
             .news(partner, moment)
@@ -1201,7 +1208,7 @@ impl<R> Host<R> {
                 news.push(News::Shared);
             }
         }
-        if self.talk.unheard(partner.told_talk, &partner.id) {
+        if self.talk.wakes(partner.told_talk) {
             news.push(News::TableTalk);
         }
         news
@@ -1266,6 +1273,7 @@ impl<R> Host<R> {
             seen: Vec::new(),
             // A player hears what is said from when it sits down.
             told_talk: self.talk.said().len(),
+            read_talk: self.talk.said().len(),
             joined_talk: self.talk.said().len(),
             held_applied: false,
             purpose: Purpose::Anything,
@@ -1572,7 +1580,7 @@ impl<R> Host<R> {
 
     /// An answer to a request of a known partner's other than a wait, with its
     /// investigator, its view and the choices of its released that no such answer has told
-    /// it of.
+    /// it of. It knows the table talk it has been told, then.
     fn answer(
         &mut self,
         id: &str,
@@ -1585,6 +1593,9 @@ impl<R> Host<R> {
         self.seats.heard(id, now);
         let released: Vec<String> = self.seats.read(id).iter().map(unapplied).collect();
         let mut answer = self.view_answer(id, status, error, table, full);
+        if let Some(partner) = self.partner_mut(id) {
+            partner.read_talk = partner.told_talk;
+        }
         if !released.is_empty() {
             answer["released"] = json!(released.join(" "));
         }
@@ -1641,11 +1652,13 @@ impl<R> Host<R> {
             &shared,
         );
         // Table talk is outside the board: each message from another player once,
-        // with the first answer after it that carries a view. A complete view gives
-        // back the latest heard since joining, which a lost answer may have carried.
+        // with the first answer after it that carries a view. A complete view has each
+        // that no answer, or only a wait's, has brought, and gives back the latest since
+        // joining, which a lost answer may have carried.
         let talk = if full {
+            let unread = self.talk.since(partner.read_talk, id).len();
             let mut talk = self.talk.since(partner.joined_talk, id);
-            talk.drain(..talk.len().saturating_sub(RECOVERED_TALK));
+            talk.drain(..talk.len().saturating_sub(unread.max(RECOVERED_TALK)));
             talk
         } else {
             self.talk.since(partner.told_talk, id)

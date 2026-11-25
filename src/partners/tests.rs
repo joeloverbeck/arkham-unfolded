@@ -1206,6 +1206,59 @@ fn the_readiness_of_a_wait_is_said_as_it_stands() {
     assert_eq!(over["choice"], json!({"status": "over"}), "{over}");
 }
 
+/// #296: a partner's message comes with the next event that ends a wait, and leaves each
+/// as it was: a change to a shared decision, and what became of a held choice.
+#[test]
+fn a_partners_message_comes_with_shared_news_and_a_held_choices_outcome() {
+    /// Another partner says `text`, and Tony's wait stays held.
+    fn says(sitting: &mut Sitting, partner: &str, text: &str, waiting: u32) {
+        let said = sitting.ask(json!({"op": "say", "partner": partner, "text": text}));
+        assert_eq!(said["status"], "said", "{said}");
+        sitting.poll();
+        assert!(sitting.take(waiting).is_none(), "A partner said {text}");
+    }
+    let heard = |answer: &Value| answer["view"]["table_talk"][0]["text"].clone();
+
+    let (session, _, card) = tonys_commitment_window();
+    let mut sitting = Sitting::new(session, &[Tony, Patrice]);
+    let tonys = sitting.join("tony");
+    let patrices = sitting.join("patrice");
+    assert_eq!(sitting.ready(&tonys)["status"], "ready");
+    let waiting = sitting.wait(&tonys);
+    let text = "I can help with that test.";
+    says(&mut sitting, &patrices, text, waiting);
+    let committed = sitting.choose(&patrices, &format!("commit:{card}"));
+    assert_eq!(committed["status"], "chosen", "{committed}");
+    sitting.poll();
+    let woken = sitting.take(waiting).expect("Her change woke him");
+    assert_eq!(woken["status"], "shared", "{woken}");
+    assert_eq!(heard(&woken), text);
+
+    for (id, status) in [(PASS_BEFORE, "chosen"), ("violin:", "released")] {
+        let mut session = turn(Tony);
+        session.asset_for_test(Patrice, "06016");
+        // Patrice, whose pass his choice waits for, is the human's.
+        let mut sitting = Sitting::new(session, &[Tony, Jacqueline]);
+        let tonys = sitting.join("tony");
+        let jacquelines = sitting.join("jacqueline");
+        let held = sitting.choose(&tonys, "action:ordinary:resource");
+        assert_eq!(held["status"], "held", "{held}");
+        let waiting = sitting.wait(&tonys);
+        let text = "One moment.";
+        says(&mut sitting, &jacquelines, text, waiting);
+        let id = sitting
+            .offered()
+            .into_iter()
+            .chain([PASS_BEFORE.to_owned()])
+            .find(|option| option.starts_with(id))
+            .unwrap_or_else(|| panic!("{id}"));
+        sitting.human(&id);
+        let told = sitting.take(waiting).expect("What became of his choice");
+        assert_eq!(told["status"], status, "{told}");
+        assert_eq!(heard(&told), text);
+    }
+}
+
 /// Cuba Libre #201, correction 20: readiness is a submission, and an accepted one ends its
 /// session's listening wait.
 #[test]
