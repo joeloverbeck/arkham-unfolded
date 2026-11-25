@@ -813,3 +813,77 @@ fn fixed_point_keeps_committed_changes_and_excluded_base_context() {
     assert_eq!(manifest(&output)["head"], head.trim());
     assert_eq!(manifest(&output)["base"], base);
 }
+
+/// #217 retrospective: a reviewer ran the repository's launcher inside a candidate,
+/// which built there, so the snapshot no longer matched its manifest.
+#[test]
+fn a_build_started_in_a_snapshot_stops_and_leaves_it_verifiable() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::create_dir(root.join("src")).unwrap();
+    fs::write(root.join("src/lib.rs"), "").unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"probe\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+    )
+    .unwrap();
+    let output = directory.path().join("review");
+    assert!(
+        snapshot(
+            &root,
+            &base,
+            &output,
+            &["Cargo.toml", "src/lib.rs", "selected.txt"],
+            None
+        )
+        .status
+        .success()
+    );
+    let built = Command::new(env!("CARGO"))
+        .args(["check", "--offline"])
+        .current_dir(output.join("candidate"))
+        .env_remove("RUSTC")
+        .env_remove("CARGO_BUILD_RUSTC")
+        .env_remove("CARGO_TARGET_DIR")
+        .env_remove("CARGO_BUILD_TARGET_DIR")
+        .output()
+        .unwrap();
+    assert!(!built.status.success());
+    let said = String::from_utf8_lossy(&built.stderr);
+    assert!(
+        said.contains("review-snapshot-is-not-for-building"),
+        "{said}"
+    );
+    assert!(!output.join("candidate/target").exists(), "{said}");
+    assert!(
+        summary(&output, &manifest_digest(&output), &[])
+            .status
+            .success()
+    );
+}
+
+/// #217 retrospective: the refusal names what differs, so a stray file is found.
+#[test]
+fn a_changed_candidate_is_refused_with_the_paths_that_differ() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("repo");
+    let base = repository(&root);
+    fs::write(root.join("selected.txt"), "reviewed\n").unwrap();
+    let output = directory.path().join("review");
+    assert!(
+        snapshot(&root, &base, &output, &["selected.txt"], None)
+            .status
+            .success()
+    );
+    let hash = manifest_digest(&output);
+    fs::create_dir(output.join("candidate/target")).unwrap();
+    for name in 0..9 {
+        fs::write(output.join(format!("candidate/target/{name}")), "stray\n").unwrap();
+    }
+    let refused = summary(&output, &hash, &[]);
+    assert!(!refused.status.success());
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(said.contains("added target/0"), "{said}");
+    assert!(said.contains("and 4 more"), "{said}");
+}
