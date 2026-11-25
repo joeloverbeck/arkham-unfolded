@@ -1,21 +1,20 @@
 //! `partner`: one agent partner request to the running Arkham table (#205, ADR 0007).
-//! The request crosses one connection to the table's partner socket and its answer is
-//! printed exactly as the table wrote it. The protocol and the view belong to the game
-//! (`src/partners.rs`); this command only spells requests and maps answers to exit
-//! codes. Deleting this file, `tools/tests/partner.rs` and the line in `main.rs` that
+//! The shared client (`unfolded_agent_players::client`, ADR 0008) carries the request
+//! over one connection to the table's partner socket, and its answer is printed exactly
+//! as the table wrote it. The protocol and the view belong to the game
+//! (`src/partners.rs`); this command only spells requests, words failures and maps
+//! answers to exit codes. Deleting this file, `tools/tests/partner.rs` and the line in `main.rs` that
 //! names it removes the command.
 
 use crate::process;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Error, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::{
-    io::{BufRead, BufReader, ErrorKind, Write},
-    net::Shutdown,
-    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
+use unfolded_agent_players::client::{self, Unanswered};
 
 /// What `scripts/tools partner --help` gives a fresh agent session: the pointer to
 /// the partner instructions and the commands. The instructions alone state the
@@ -158,33 +157,44 @@ pub fn run(args: Args) -> Result<u8> {
             None,
         ),
     };
-    let stream = connect(&socket)?;
-    // Wake regularly so an interrupt is honoured during a long wait.
-    stream.set_read_timeout(Some(Duration::from_millis(200)))?;
-    (&stream)
-        .write_all(format!("{request}\n").as_bytes())
-        .context("cannot send the request to the table")?;
-    let _ = stream.shutdown(Shutdown::Write);
     let deadline = answer_within.map(|within| Instant::now() + within);
-    let mut line = Vec::new();
-    read_line(&mut BufReader::new(&stream), &mut line, deadline)?;
-    if line.is_empty() {
-        bail!("the table closed the connection without answering");
-    }
-    let mut stdout = std::io::stdout().lock();
-    stdout.write_all(&line)?;
-    if !line.ends_with(b"\n") {
-        stdout.write_all(b"\n")?;
-    }
-    stdout.flush()?;
-    let status = serde_json::from_slice::<Value>(&line)
-        .ok()
-        .and_then(|answer| answer["status"].as_str().map(str::to_owned));
-    Ok(match status.as_deref() {
+    let answer = client::request(&socket, &request.to_string(), || {
+        // An interrupt is honoured during a long wait.
+        process::check_interrupt()?;
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            bail!("the table did not answer the wait in time; it may have stopped running frames");
+        }
+        Ok(())
+    })
+    .map_err(|unanswered| worded(unanswered, &socket))?;
+    answer.write_to(&mut std::io::stdout().lock())?;
+    Ok(match answer.status().as_deref() {
         Some("refused") | None => 1,
         Some("nothing_yet") => 3,
         Some(_) => 0,
     })
+}
+
+/// Why the table gave no answer, in this command's words.
+fn worded(unanswered: Unanswered<Error>, socket: &Path) -> Error {
+    match unanswered {
+        Unanswered::NotListening(error) => anyhow!(
+            "No Arkham table hosts agent partners on {} ({error}). Partners are enabled in the game (Menu, Agent partners); use the --socket the pasted line names, if any.",
+            socket.display()
+        ),
+        Unanswered::Unreached(error) => {
+            anyhow!("cannot reach the table on {}: {error}", socket.display())
+        }
+        Unanswered::Unsent(error) => {
+            Error::new(error).context("cannot send the request to the table")
+        }
+        Unanswered::Stopped(error) => error,
+        Unanswered::Unreadable(error) => {
+            Error::new(error).context("cannot read the table's answer")
+        }
+        Unanswered::Closed => anyhow!("the table closed the connection without answering"),
+        other => anyhow!("{other}"),
+    }
 }
 
 /// The socket the game opens unless told otherwise; the game's
@@ -196,37 +206,4 @@ fn default_socket() -> PathBuf {
     std::env::var_os("XDG_RUNTIME_DIR")
         .map_or_else(std::env::temp_dir, PathBuf::from)
         .join("arkham-unfolded-partners.sock")
-}
-
-fn connect(socket: &Path) -> Result<UnixStream> {
-    UnixStream::connect(socket).map_err(|error| match error.kind() {
-        ErrorKind::NotFound | ErrorKind::ConnectionRefused => anyhow!(
-            "No Arkham table hosts agent partners on {} ({error}). Partners are enabled in the game (Menu, Agent partners); use the --socket the pasted line names, if any.",
-            socket.display()
-        ),
-        _ => anyhow!("cannot reach the table on {}: {error}", socket.display()),
-    })
-}
-
-/// One line, waiting out read timeouts until `deadline`; empty at the end of the
-/// connection.
-fn read_line(
-    reader: &mut impl BufRead,
-    line: &mut Vec<u8>,
-    deadline: Option<Instant>,
-) -> Result<()> {
-    loop {
-        match reader.read_until(b'\n', line) {
-            Ok(_) => return Ok(()),
-            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                process::check_interrupt()?;
-                if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-                    bail!(
-                        "the table did not answer the wait in time; it may have stopped running frames"
-                    );
-                }
-            }
-            Err(error) => return Err(error).context("cannot read the table's answer"),
-        }
-    }
 }

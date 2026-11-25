@@ -6,7 +6,20 @@
 use super::super::tests::{button_with_label, finish_presentation, host, rendered_text};
 use super::*;
 use crate::gathering::Investigator::{Jacqueline, Patrice, Tony};
-use std::{fs, os::unix::fs::FileTypeExt, os::unix::fs::PermissionsExt};
+use std::{
+    fs,
+    io::{BufRead, BufReader, Write},
+    net::Shutdown,
+    os::unix::{
+        fs::{FileTypeExt, PermissionsExt},
+        net::UnixStream,
+    },
+    sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread::{self, JoinHandle},
+};
 
 struct Partnered {
     app: App,
@@ -1481,8 +1494,7 @@ fn a_path_something_already_answers_on_is_refused_in_arkhams_own_words() {
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("partners.sock");
     let _answering = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-    let (outbox, _inbox) = mpsc::channel();
-    let refused = Transport::open(&socket, outbox, Arc::new(AtomicUsize::new(0)), None)
+    let refused = open(&socket, None)
         .err()
         .expect("something already answers there");
     assert_eq!(
@@ -1497,5 +1509,36 @@ fn a_path_something_already_answers_on_is_refused_in_arkhams_own_words() {
             .unwrap()
             .file_type()
             .is_socket()
+    );
+}
+
+/// #205: a seat that runs no frames still answers a wait, with nothing yet, five seconds
+/// past its period (240 seconds unless it asks, at most 590); it answers nothing else.
+#[test]
+fn a_wait_the_table_never_answers_is_answered_five_seconds_past_its_period() {
+    for (request, seconds) in [
+        (json!({"op": "wait", "partner": "a1b2"}), 245),
+        (
+            json!({"op": "wait", "partner": "a1b2", "timeout_seconds": 30, "listen": true}),
+            35,
+        ),
+        (
+            json!({"op": "wait", "partner": "a1b2", "timeout_seconds": 9_000}),
+            595,
+        ),
+    ] {
+        let (within, answer) = PartnerProtocol.unanswered(&request.to_string()).unwrap();
+        assert_eq!(within, Duration::from_secs(seconds), "{request}");
+        assert_eq!(
+            answer,
+            r#"{"mode":"partner","ok":true,"partner":"a1b2","status":"nothing_yet"}"#
+        );
+    }
+    for request in [r#"{"op":"choose","partner":"a1b2"}"#, "{}", "not json"] {
+        assert!(PartnerProtocol.unanswered(request).is_none(), "{request}");
+    }
+    assert_eq!(
+        PartnerProtocol.closed(),
+        r#"{"mode":"partner","ok":true,"reason":"The table closed.","status":"closed"}"#
     );
 }
