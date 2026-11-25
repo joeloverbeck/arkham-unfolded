@@ -1872,3 +1872,38 @@ fn taking_over_the_only_other_player_with_a_fast_option_applies_the_held_choice(
         Some(&("action:ordinary:resource".to_owned(), Tony))
     );
 }
+
+/// Cuba Libre #201, correction 23: a wait held for news that then went untold, since
+/// another answer showed it, cannot tell a decision already told.
+#[test]
+fn a_partner_whose_wait_was_for_news_it_then_saw_is_silent() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    session.place_for_test(Tony, 4, "01111");
+    session.place_for_test(Patrice, 2, "01111");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join("patrice");
+    assert_eq!(sitting.human("act:pay:4:0:0"), HumanChoice::Ready);
+    // Other news whose view shows the decision tells it as well.
+    let told = sitting.wait(&partner);
+    let told = sitting.take(told).expect("He proposed");
+    assert_eq!(told["status"], "shared", "{told}");
+    assert_eq!(told["view"]["decision"]["yours"], true, "{told}");
+    sitting.ask(json!({"op": "observe", "partner": partner}));
+    let refused = sitting.wait(&partner);
+    assert_eq!(sitting.take(refused).unwrap()["status"], "refused");
+    // He proposes another part while the table presents, so her wait is held for the news.
+    sitting.rules.settled = false;
+    assert_eq!(sitting.human("act:pay:3:0:0"), HumanChoice::Ready);
+    let waiting = sitting.wait(&partner);
+    assert!(sitting.take(waiting).is_none());
+    sitting.ask(json!({"op": "observe", "partner": partner}));
+    sitting.rules.settled = true;
+    sitting.poll();
+    assert!(sitting.take(waiting).is_none(), "The news is gone");
+    sitting.now += Duration::from_secs(150);
+    let silence = sitting
+        .host
+        .silence(Patrice, Some(sitting.revision()), sitting.now);
+    assert_eq!(silence, Some(Duration::from_secs(150)));
+}

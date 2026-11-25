@@ -287,13 +287,31 @@ impl Standing {
     }
 }
 
+/// What a submission does once it is accepted.
+#[derive(Clone, Copy)]
+enum Then {
+    /// It is answered.
+    Answer,
+    /// It waits, for this many seconds or without a period.
+    Wait(Option<u64>),
+}
+
+impl Then {
+    fn of(wait: bool, seconds: Option<u64>) -> Self {
+        if wait {
+            Self::Wait(seconds)
+        } else {
+            Self::Answer
+        }
+    }
+}
+
 /// What a held wait is for.
 enum Purpose {
     /// The first thing that concerns its partner.
     Anything,
-    /// The same, but for its partner's own decision that was pending as it began, at this
-    /// revision.
-    Listening { before: Option<u64> },
+    /// The same, but for its partner's own decision that was pending as it began.
+    Listening,
     /// What follows its partner's submission, the latest of them, of whose standing its
     /// answer tells.
     Following(Submission),
@@ -505,8 +523,8 @@ impl<R> Host<R> {
     ) -> Vec<Answer<R>> {
         let mut answers = Vec::new();
         for ended in ended {
-            self.partners.retain(|partner| partner.id != ended.session);
-            self.drop_hold(&Controller::Partner(ended.session));
+            self.partners.retain(|partner| partner.id != ended.identity);
+            self.drop_hold(&Controller::Partner(ended.identity));
             answers.extend(ended.wait.map(|reply| (reply, closed(reason))));
         }
         answers
@@ -533,10 +551,17 @@ impl<R> Host<R> {
         }
     }
 
-    /// How long since the partner holding `who` was last heard from; zero while it waits
-    /// or its choice waits for the table. `None` when no partner holds `who`.
-    pub fn silence(&self, who: Investigator, now: Instant) -> Option<Duration> {
-        self.seats.silence(&who, now)
+    /// How long since the partner holding `who` was last heard from; zero while its choice
+    /// waits for the table, and while it waits, unless its wait cannot tell it the decision
+    /// that the table waits for it to make, at the revision `decision`. `None` when no
+    /// partner holds `who`.
+    pub fn silence(
+        &self,
+        who: Investigator,
+        decision: Option<u64>,
+        now: Instant,
+    ) -> Option<Duration> {
+        self.seats.silence(&who, decision, now)
     }
 
     /// The sitting's table talk, oldest first: kept while the table is open, and
@@ -753,11 +778,13 @@ impl<R> Host<R> {
                 let moment = self.moment(table.session());
                 let decision = self.own_decision(&moment, &id);
                 let partner = self.partner(&id).expect("A known partner");
-                // Other news ends it at once, and a listening wait is for that.
-                let pending = if listen || !self.news(partner, Some(&moment)).is_empty() {
-                    Pending::Other
-                } else {
-                    decision.map_or(Pending::Nothing, Pending::Decision)
+                let news = !self.news(partner, Some(&moment)).is_empty();
+                let pending = match decision {
+                    Some(revision) if listen => Pending::Before(revision),
+                    // Other news ends it at once.
+                    _ if news => Pending::Other,
+                    Some(revision) => Pending::Decision(revision),
+                    None => Pending::Nothing,
                 };
                 let period = timeout_seconds.map(Duration::from_secs);
                 match self.seats.wait(&id, reply, period, pending, now) {
@@ -774,7 +801,7 @@ impl<R> Host<R> {
                     Waiting::Held { replaced } => {
                         let partner = self.partner_mut(&id).expect("A known partner");
                         partner.purpose = if listen {
-                            Purpose::Listening { before: decision }
+                            Purpose::Listening
                         } else {
                             Purpose::Anything
                         };
@@ -798,7 +825,7 @@ impl<R> Host<R> {
                 self.submitted(
                     (&id, reply),
                     submission,
-                    wait.then_some(timeout_seconds),
+                    Then::of(wait, timeout_seconds),
                     answers,
                     table,
                     now,
@@ -830,7 +857,7 @@ impl<R> Host<R> {
                 self.submitted(
                     (&id, reply),
                     submission,
-                    wait.then_some(timeout_seconds),
+                    Then::of(wait, timeout_seconds),
                     answers,
                     table,
                     now,
@@ -840,7 +867,7 @@ impl<R> Host<R> {
     }
 
     /// Answer a submission of the session `id` at once with how it stands, or, when it
-    /// asked to wait too, for `then` seconds or without a period, and its own next
+    /// asked to wait too, for a period or without one, and its own next
     /// decision is not there to tell, hold its wait. An accepted one ends the session's
     /// listening wait, which was for what came before it. Then whatever else its
     /// submission let be answered, after `answers`.
@@ -848,7 +875,7 @@ impl<R> Host<R> {
         &mut self,
         (id, mut reply): (&str, R),
         submission: Result<Submission, String>,
-        then: Option<Option<u64>>,
+        then: Then,
         mut answers: Vec<Answer<R>>,
         table: &impl Table,
         now: Instant,
@@ -868,7 +895,7 @@ impl<R> Host<R> {
                     Purpose::Following(_) => partner.purpose = Purpose::Following(submission),
                     _ => accepted = Some(submission),
                 }
-                if matches!(partner.purpose, Purpose::Listening { .. }) {
+                if matches!(partner.purpose, Purpose::Listening) {
                     partner.purpose = Purpose::Anything;
                     let older = self.seats.end_wait(id);
                     answers.extend(older.map(|older| (older, replaced_wait(id, BY_CHOICE))));
@@ -877,7 +904,7 @@ impl<R> Host<R> {
             }
         };
         if error.is_none()
-            && let Some(seconds) = then
+            && let Then::Wait(seconds) = then
         {
             let period = seconds.map(Duration::from_secs);
             let pending = decision.map_or(Pending::Nothing, Pending::Decision);
@@ -993,7 +1020,7 @@ impl<R> Host<R> {
             } else {
                 Standing::Released
             };
-            self.stands(&settled.session, &Standing::Settling, now);
+            self.stands(&settled.identity, &Standing::Settling, now);
         }
     }
 
@@ -1138,8 +1165,8 @@ impl<R> Host<R> {
     /// for the other players' passes was applied and, at a table that has presented its
     /// decision, `moment`, a group choice it has not been told of, news of a shared
     /// decision it takes part in that changed since its last view, and a decision of its
-    /// own, unless it listens before that one; then other players' talk, whose answers the
-    /// table's own events carry as well. A choice released comes before them all.
+    /// own; then other players' talk, whose answers the table's own events carry as well.
+    /// A choice released comes before them all.
     fn events(&self, partner: &Partner, moment: Option<&Moment>) -> Vec<Event<News>> {
         let mut events: Vec<_> = self
             .news(partner, moment)
@@ -1148,8 +1175,6 @@ impl<R> Host<R> {
             .collect();
         if let Some(moment) = moment
             && moment.awaits(&Controller::Partner(partner.id.clone()))
-            && !matches!(partner.purpose, Purpose::Listening { before }
-                if before == Some(moment.observation.revision))
         {
             let talk = events
                 .iter()

@@ -378,7 +378,7 @@ fn take_over_returns_the_decision_to_the_human_and_ends_the_partners_session() {
         app.update();
         let host = &app.world().resource::<Partners>().host;
         // Zero once its wait is held.
-        if host.silence(Patrice, Instant::now()) == Some(Duration::ZERO) {
+        if host.silence(Patrice, None, Instant::now()) == Some(Duration::ZERO) {
             break;
         }
         thread::sleep(Duration::from_millis(2));
@@ -1605,7 +1605,7 @@ fn a_wait_whose_client_was_killed_ends_and_its_decision_reaches_the_next_wait() 
         let partners = app.world().resource::<Partners>();
         partners
             .host
-            .silence(Patrice, Instant::now() + Duration::from_secs(3600))
+            .silence(Patrice, None, Instant::now() + Duration::from_secs(3600))
             == Some(Duration::ZERO)
     };
     for _ in 0..1_000 {
@@ -1830,4 +1830,58 @@ fn taking_an_investigator_back_cancels_its_choice_that_waits_for_the_table() {
     assert_eq!(fs::read(&partnered.save).unwrap(), saved);
     let control = app.world().resource::<Partners>().host.control();
     assert_eq!(control.controller(Patrice), Controller::Human);
+}
+
+/// Cuba Libre #201, correction 23: a partner that listens, without a period, before its
+/// own decision is shown thinking for a minute and then silent, until its choice; one
+/// whose wait can tell the decision is not.
+#[test]
+fn a_partner_that_listens_before_its_decision_is_marked_silent() {
+    let mut partnered = partnered(&[Patrice]);
+    let ahead = Arc::new(Mutex::new(Duration::ZERO));
+    let clock = ahead.clone();
+    partnered
+        .app
+        .insert_resource(PartnerClock(Arc::new(move || {
+            Instant::now() + *clock.lock().unwrap()
+        })));
+    let partner = join(&mut partnered, Patrice);
+    let app = &mut partnered.app;
+    choose(app, "confirm-mulligan"); // Jacqueline
+    finish_presentation(app);
+    choose(app, "confirm-mulligan"); // Tony
+    finish_presentation(app);
+    let listening = connect(
+        &partnered.socket,
+        &[json!({"op": "wait", "partner": partner, "listen": true})],
+    );
+    for _ in 0..20 {
+        app.update();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!listening.is_finished());
+    let shown = rendered_text(app);
+    assert!(
+        shown.contains("Patrice Hathaway: partner thinking"),
+        "{shown}"
+    );
+    *ahead.lock().unwrap() = Duration::from_secs(150);
+    app.update();
+    let shown = rendered_text(app);
+    assert!(shown.contains("SILENT 2 MIN"), "{shown}");
+    assert!(!listening.is_finished(), "Its wait goes on");
+    // A wait that is to tell her decision: the same table, and not silent while it waits.
+    press(app, "Close menu");
+    let revision = revision(app);
+    let chosen = exchange(
+        app,
+        &partnered.socket,
+        &[
+            json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}),
+        ],
+    );
+    assert_eq!(chosen[0]["status"], "chosen", "{}", chosen[0]);
+    pump(app, || listening.is_finished());
+    assert_eq!(listening.join().unwrap()[0]["status"], "replaced");
+    assert!(!rendered_text(app).contains("SILENT"));
 }

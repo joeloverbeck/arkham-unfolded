@@ -647,7 +647,10 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
                     Controller::Human => return None,
                     Controller::Unclaimed => Deciding::Unclaimed,
                     Controller::Partner(_) => {
-                        let silence = partners.host.silence(who, now).unwrap_or_default();
+                        let silence = partners
+                            .host
+                            .silence(who, Some(revision), now)
+                            .unwrap_or_default();
                         match silence.as_secs() / 60 {
                             0 => Deciding::Thinking,
                             minutes => Deciding::Silent(minutes),

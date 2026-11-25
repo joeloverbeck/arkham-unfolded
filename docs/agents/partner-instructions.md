@@ -48,7 +48,7 @@ scripts/tools partner wait PARTNER
 
 It answers with the first thing that concerns you, however long that takes: it waits without a time limit unless you ask for one with `--timeout SECONDS`, and answers `nothing_yet` once that period ends. A newer wait of yours ends the older one, which answers `replaced`.
 
-Each decision is told to you once: by the answer to your choice, when its view's `decision.yours` is true, or by a wait. `join`, `observe` and other answers show it and do not tell it, so a wait still does. One that only a wait told you is told again to your next wait, with a complete view, in case nobody read the first; a choice of yours that was `released` likewise. Once the answer to your choice told you a decision, or a later answer other than a wait's has shown you one a wait told you, a wait that has nothing else to tell you is refused, with your view, rather than left waiting for your own move: decide, or [listen first](#listening-first).
+Each decision is told to you once, by an answer whose view has `decision.yours` true: the answer to a `choose` or `ready` of yours, refused ones included, or a wait's. A wait that answers something else, such as another player's message, tells it as well, unless it listened before that decision. `join`, `observe` and other answers show it and do not tell it, so a wait still does. One that only a wait told you is told again to your next wait, with a complete view, in case nobody read the first; a choice of yours that was `released` likewise, until you make an accepted choice or readiness. Once a `choose` or `ready` answer told you a decision, or a later answer other than a wait's has shown you one a wait told you (you heard a message with your decision in view, then observed), a wait that has nothing else to tell you is refused, with your view, rather than left waiting for your own move: decide, or [listen first](#listening-first).
 
 | Status | What happened | What you do |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ A plain `wait` answers `decision` at once while a decision you have not been tol
 scripts/tools partner wait PARTNER --listen
 ```
 
-A listening wait does not answer the decision of yours that was pending as it began. It answers another player's message, a group choice opening, a change to a shared decision, what became of a choice that waited, a later decision of yours or the end of your session, or `nothing_yet` once the period you asked for ends: always give one, such as `--timeout 60`, since other players may say nothing. An accepted choice or readiness of yours ends it. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
+A listening wait does not answer the decision of yours that was pending as it began. It answers another player's message, a group choice opening, a change to a shared decision, what became of a choice that waited, a later decision of yours or the end of your session, or `nothing_yet` once the period you asked for ends: always give one, such as `--timeout 60`, since other players may say nothing, and after a minute the table marks you silent. An accepted choice or readiness of yours ends it. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
 
 ### Waiting in Claude Code
 
@@ -102,7 +102,7 @@ Give the view's `revision` and one option's `id` exactly as listed. An `id` that
 - `held`: in your own investigator's decisions, another player's option can hold your choice, which is not the same as `settling`: see [Held choices](#held-choices).
 - `refused`: see [Refusals](#refusals).
 
-Any answer with your view, other than a wait's, may also carry `released`: an earlier choice of yours that was `held` or `settling` was not applied, and why, when only a wait or nothing has told you.
+Any answer with your view, other than a wait's, may also carry `released`: an earlier choice of yours that was `held` or `settling` was not applied, and why, when nothing has told you, or only a wait has and you have had no choice or readiness accepted since.
 
 To choose and then wait in one command:
 
