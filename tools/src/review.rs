@@ -305,6 +305,32 @@ fn read_tree(root: &Path, directory: &Path, tree: &mut Tree) -> Result<()> {
     Ok(())
 }
 
+/// The first few changes, and how many more there are.
+fn listed(changes: &[Change]) -> String {
+    const SHOWN: usize = 5;
+    let mut shown: Vec<_> = changes
+        .iter()
+        .take(SHOWN)
+        .map(|change| format!("{} {}", change.kind, change.path))
+        .collect();
+    if changes.len() > SHOWN {
+        shown.push(format!("and {} more", changes.len() - SHOWN));
+    }
+    shown.join(", ")
+}
+
+/// Names a compiler that does not exist, so that Cargo started in a snapshot's trees
+/// stops before it builds there and changes what is reviewed.
+fn refuse_builds(snapshot: &Path) -> Result<()> {
+    let directory = snapshot.join(".cargo");
+    fs::create_dir(&directory)?;
+    fs::write(
+        directory.join("config.toml"),
+        "# Run Cargo and scripts/tools from the checkout instead.\n[build]\nrustc = \"review-snapshot-is-not-for-building\"\n",
+    )?;
+    Ok(())
+}
+
 fn previous_snapshot(path: &Path) -> Result<(Manifest, String)> {
     let bytes = fs::read(path.join("manifest.json"))?;
     let manifest: Manifest = serde_json::from_slice(&bytes)?;
@@ -316,9 +342,11 @@ fn previous_snapshot(path: &Path) -> Result<(Manifest, String)> {
     );
     let mut tree = Tree::new();
     read_tree(&root, &root, &mut tree)?;
+    let differing = changes(&manifest.files, &inventory(&tree));
     ensure!(
-        inventory(&tree) == manifest.files,
-        "candidate files do not match the manifest"
+        differing.is_empty(),
+        "candidate files do not match the manifest: {}",
+        listed(&differing)
     );
     ensure!(
         digest(&fs::read(path.join("changes.patch"))?) == manifest.patch_sha256,
@@ -617,6 +645,7 @@ pub fn run(args: Args) -> Result<u8> {
     }
     let bytes = serde_json::to_vec_pretty(&manifest)?;
     fs::write(staging.path().join("manifest.json"), &bytes)?;
+    refuse_builds(staging.path())?;
     publish(staging.path(), &output)?;
     println!(
         "Snapshot: {}\nManifest SHA256: {}\n{} changed files",
