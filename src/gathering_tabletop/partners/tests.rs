@@ -1950,7 +1950,15 @@ impl Codex {
 
     /// Run frames until it has been woken `count` times.
     fn pump(&self, app: &mut App, count: usize) {
-        pump(app, || self.wakes.lock().unwrap().len() >= count);
+        for _ in 0..1_000 {
+            if self.woken().len() >= count {
+                return;
+            }
+            app.update();
+            finish_presentation(app);
+            thread::sleep(Duration::from_millis(2));
+        }
+        panic!("Woken {:?}\n{}", self.woken(), rendered_text(app));
     }
 
     /// Run frames for a while, in which nothing wakes it.
@@ -1965,8 +1973,7 @@ impl Codex {
     }
 }
 
-/// Cuba Libre #202: one wake for each event, none while nothing needs the session, and
-/// none for a decision that the answer to its own choice already told it.
+/// Cuba Libre #202: one wake for each event, and none while nothing needs the session.
 #[test]
 fn a_codex_session_is_woken_once_for_each_event_and_by_nothing_else() {
     let mut partnered = partnered(&[Patrice]);
@@ -1985,21 +1992,66 @@ fn a_codex_session_is_woken_once_for_each_event_and_by_nothing_else() {
 
     choose(app, "confirm-mulligan"); // Tony
     finish_presentation(app);
-    // Her mulligan; her choice in it, whose answer tells the decision it leaves her; and,
-    // once she has confirmed, the group choice that opens: one wake each.
+    // Her mulligan. Her choice in it waits while the menu is open, which wakes nobody.
+    codex.pump(app, 1);
+    codex.rests(app);
+    press(app, "Close menu");
+    // The decision her choice leaves her; and, once she has confirmed, the group choice
+    // that opens: one wake each.
     codex.pump(app, 3);
     let woken = [
         ("decision".to_owned(), true),
-        ("chosen".to_owned(), true),
+        ("decision".to_owned(), true),
         ("group_choice".to_owned(), false),
     ];
     assert_eq!(codex.woken(), woken);
     codex.rests(app);
     assert_eq!(codex.woken(), woken, "And none again");
 
+    press(app, "Menu");
     press(app, "Turn agent partners off");
     codex.pump(app, 4);
     assert_eq!(codex.woken()[3], ("closed".to_owned(), false));
+}
+
+/// Cuba Libre #202: a decision that the answer to its own choice told a Codex session wakes
+/// it no more. A wait it starts all the same is answered at once, with nothing to tell.
+#[test]
+fn a_codex_session_is_not_woken_for_what_its_answer_told() {
+    let mut partnered = partnered(&[Patrice]);
+    let partner = join(&mut partnered, Patrice);
+    let app = &mut partnered.app;
+    choose(app, "confirm-mulligan"); // Jacqueline
+    finish_presentation(app);
+    choose(app, "confirm-mulligan"); // Tony
+    finish_presentation(app);
+    press(app, "Close menu");
+    let codex = Codex::waiting(&partnered.socket, &partner, &[]);
+    codex.pump(app, 1);
+    let decision = codex.wakes.lock().unwrap()[0]["view"].clone();
+    let mulligan = decision["decision"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|option| option["id"].as_str().unwrap().starts_with("mulligan:"))
+        .unwrap();
+    let chosen = exchange(
+        app,
+        &partnered.socket,
+        &[json!({
+            "op": "choose", "partner": partner, "id": mulligan["id"],
+            "revision": decision["revision"],
+        })],
+    );
+    assert_eq!(chosen[0]["status"], "chosen", "{}", chosen[0]);
+    assert_eq!(
+        chosen[0]["view"]["decision"]["yours"], true,
+        "{}",
+        chosen[0]
+    );
+    let again = Codex::waiting(&partnered.socket, &partner, &[]);
+    again.pump(app, 1);
+    assert_eq!(again.woken(), [("refused".to_owned(), true)]);
 }
 
 /// Cuba Libre #202, the end conditions: the session leaves, loses its seat, or the table
@@ -2008,12 +2060,12 @@ fn a_codex_session_is_woken_once_for_each_event_and_by_nothing_else() {
 fn a_codex_sessions_wait_ends_when_it_leaves_loses_its_seat_or_the_table_closes() {
     type End = fn(&mut App, &Path, &str);
     let ends: [(&str, End); 3] = [
-        ("you left", |app, socket, partner| {
+        ("You left the table", |app, socket, partner| {
             let left = exchange(app, socket, &[json!({"op": "leave", "partner": partner})]);
             assert_eq!(left[0]["status"], "left", "{}", left[0]);
         }),
         ("took Patrice Hathaway over", |app, _, _| {
-            press(app, "Patrice Hathaway: a partner plays");
+            press(app, "Patrice Hathaway: a partner plays  /  joined");
         }),
         ("closed", |app, _, _| {
             app.world_mut()
