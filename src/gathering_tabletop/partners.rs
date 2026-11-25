@@ -847,7 +847,15 @@ impl Protocol for PartnerProtocol {
         let partner = request["partner"].as_str()?;
         waits.then(|| {
             let within = period.saturating_add(Duration::from_secs(5));
-            (within, nothing_yet(partner).to_string())
+            let mut answer = nothing_yet(partner);
+            // The table may never have read the choice, so nothing is known of it here.
+            if request["wait"] == true {
+                answer["choice"] = json!({"status": "unknown"});
+                if request["op"] == "choose" {
+                    answer["choice"]["id"] = request["id"].clone();
+                }
+            }
+            (within, answer.to_string())
         })
     }
 }

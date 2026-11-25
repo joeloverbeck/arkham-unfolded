@@ -16,7 +16,8 @@
 //! it leaves, the human takes its investigator back or turns partners off, the table
 //! closes or the attempt restarts. A choice is
 //! applied only once the table settles, with nothing of the human's open over it,
-//! through the table's own commit path; its answer does not wait for that. Who holds
+//! through the table's own commit path; its answer does not wait for that unless the
+//! partner asks to wait too. Who holds
 //! each investigator, the held choices and the waits are `unfolded_agent_players::seats`,
 //! which no game owns ([ADR 0010]); what follows here is Arkham's. A group
 //! choice is its arbiter's player's, and every partner's wait hears it open (#207).
@@ -51,8 +52,8 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 use unfolded_agent_players::seats::{
-    ClaimRefused, Ended, Event, Game, Holder, Joining, Refusal, Released, Seats, Submitted, Told,
-    Waiting,
+    ClaimRefused, Ended, Event, Game, Holder, Joining, Pending, Refusal, Released, Seats,
+    Submitted, Told, Waiting,
 };
 
 /// How many of the latest messages heard since joining a complete view gives back,
@@ -187,11 +188,15 @@ pub struct Host<R> {
     human_released: Option<(u64, String)>,
 }
 
-/// A partner's choice, with its label at its revision, to name it once the decision has
+/// A player's choice, with its label at its revision, to name it once the decision has
 /// moved on.
+#[derive(Clone)]
 struct Chosen {
     id: String,
     label: String,
+    /// It waits, or waited, for other players' passes, which the protocol calls held, and
+    /// not for the table.
+    for_passes: bool,
 }
 
 impl Chosen {
@@ -199,6 +204,7 @@ impl Chosen {
         Self {
             id: id.to_owned(),
             label: label(observation, id),
+            for_passes: false,
         }
     }
 }
@@ -219,9 +225,7 @@ fn label(observation: &crate::gathering::Observation, id: &str) -> String {
 struct Hold {
     player: Controller,
     revision: u64,
-    id: String,
-    /// Its label at that revision, to name it once the decision has moved on.
-    label: String,
+    choice: Chosen,
 }
 
 impl Hold {
@@ -229,24 +233,77 @@ impl Hold {
         Self {
             player,
             revision: observation.revision,
-            id: id.to_owned(),
-            label: label(observation, id),
+            choice: Chosen {
+                for_passes: true,
+                ..Chosen::new(observation, id)
+            },
         }
     }
 }
 
-/// A wait's answer when a choice that `choose` answered `held` or `settling` for was not
-/// applied.
-const RELEASED: &str = "released";
-/// The answer to a choice that waits for the table to settle, and not for another player,
-/// as `held` does.
-const SETTLING: &str = "settling";
+/// How an accepted submission stands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Standing {
+    /// Its choice was applied.
+    Applied,
+    /// Its choice waits for the table to settle, and not for another player, as a held
+    /// one does.
+    Settling,
+    /// Its choice is held for the other players' passes.
+    Held,
+    /// Its choice waited, either way, and was not applied.
+    Released,
+    /// It is a readiness in this shared decision.
+    Ready(shared::Key),
+}
+
+/// A submission of a partner's that was accepted.
+struct Submission {
+    /// The choice it named, if it named one: its id, and its label at its revision.
+    named: Option<(String, String)>,
+    standing: Standing,
+}
+
+impl Submission {
+    fn of(choice: &Chosen, standing: Standing) -> Self {
+        Self {
+            named: Some((choice.id.clone(), choice.label.clone())),
+            standing,
+        }
+    }
+}
+
+impl Standing {
+    /// Its word in the protocol, as an answer's status and where a wait that followed the
+    /// submission says how it stands.
+    fn word(&self) -> &'static str {
+        match self {
+            Self::Applied => "chosen",
+            Self::Settling => "settling",
+            Self::Held => "held",
+            Self::Released => "released",
+            Self::Ready(_) => "ready",
+        }
+    }
+}
+
+/// What a held wait is for.
+enum Purpose {
+    /// The first thing that concerns its partner.
+    Anything,
+    /// The same, but for its partner's own decision that was pending as it began, at this
+    /// revision.
+    Listening { before: Option<u64> },
+    /// What follows its partner's submission, the latest of them, of whose standing its
+    /// answer tells.
+    Following(Submission),
+}
 
 /// Something other than its own decision that ends a partner's wait.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum News {
-    /// What became of a choice held for the other players' passes.
-    Outcome,
+    /// Its choice held for the other players' passes was applied.
+    HeldApplied,
     GroupChoice,
     Shared,
     TableTalk,
@@ -266,13 +323,11 @@ struct Partner {
     told_talk: usize,
     /// The table talk said before this partner sat down: messages before this index.
     joined_talk: usize,
-    /// What became of the choice `choose` answered `held` for, until a wait tells
-    /// it: `chosen` once applied, or `released` and why.
-    outcome: Option<(&'static str, Option<String>)>,
-    /// Its held wait listens: it never answers its partner's own decision.
-    listens: bool,
-    /// The submission its held wait came with, as it stands now.
-    submitted: Option<&'static str>,
+    /// A choice of its that other players' options held was applied, and no wait has
+    /// told it.
+    held_applied: bool,
+    /// What its held wait is for, while one is held.
+    purpose: Purpose,
 }
 
 #[derive(Deserialize)]
@@ -296,8 +351,8 @@ enum Request {
         partner: String,
         #[serde(default)]
         timeout_seconds: Option<u64>,
-        /// Hear the table while a decision of this partner's waits: answer only
-        /// another event, or the period's end (stories 28-29).
+        /// Hear the table while a decision of this partner's waits: answer anything else,
+        /// a later decision of its own included, or the period's end (stories 28-29).
         #[serde(default)]
         listen: bool,
     },
@@ -426,7 +481,7 @@ impl<R> Host<R> {
             .hold
             .as_ref()
             .filter(|hold| hold.player == me)
-            .map(|hold| format!(" Your held choice, {}, was not applied.", hold.label));
+            .map(|hold| format!(" Your held choice, {}, was not applied.", hold.choice.label));
         let settling = self
             .seats
             .held(&id)
@@ -469,11 +524,11 @@ impl<R> Host<R> {
     }
 
     /// End each held wait whose client has died, so that it tells nobody anything and its
-    /// investigator is no longer shown as thinking. The partner's session goes on.
+    /// investigator's silence counts from now. The partner's session goes on.
     pub fn end_hung_up(&mut self, hung_up: impl Fn(&R) -> bool, now: Instant) {
         for id in self.seats.end_hung_up(hung_up, now) {
             if let Some(partner) = self.partner_mut(&id) {
-                partner.submitted = None;
+                partner.purpose = Purpose::Anything;
             }
         }
     }
@@ -601,7 +656,7 @@ impl<R> Host<R> {
         self.hold
             .as_ref()
             .filter(|hold| hold.player == Controller::Human && hold.revision == session.revision())
-            .map(|hold| hold.id.as_str())
+            .map(|hold| hold.choice.id.as_str())
     }
 
     /// Answer one request line now, or hold it. Answers to held requests come from
@@ -696,14 +751,16 @@ impl<R> Host<R> {
             } => {
                 self.advance(table);
                 let moment = self.moment(table.session());
+                let decision = self.own_decision(&moment, &id);
                 let partner = self.partner(&id).expect("A known partner");
-                // Other news ends it at once, and a listening wait is for that alone.
-                let news = !self.news(partner, Some(&moment)).is_empty();
-                let decision = (!listen && !news)
-                    .then(|| self.own_decision(&moment, &id))
-                    .flatten();
+                // Other news ends it at once, and a listening wait is for that.
+                let pending = if listen || !self.news(partner, Some(&moment)).is_empty() {
+                    Pending::Other
+                } else {
+                    decision.map_or(Pending::Nothing, Pending::Decision)
+                };
                 let period = timeout_seconds.map(Duration::from_secs);
-                match self.seats.wait(&id, reply, period, decision, now) {
+                match self.seats.wait(&id, reply, period, pending, now) {
                     Waiting::Refused(reply) => {
                         let reason = format!(
                             "You have been told of your decision, and it still waits for you: decide it, or listen. {}",
@@ -716,10 +773,13 @@ impl<R> Host<R> {
                     }
                     Waiting::Held { replaced } => {
                         let partner = self.partner_mut(&id).expect("A known partner");
-                        partner.listens = listen;
-                        partner.submitted = None;
+                        partner.purpose = if listen {
+                            Purpose::Listening { before: decision }
+                        } else {
+                            Purpose::Anything
+                        };
                         let mut answers: Vec<_> = replaced
-                            .map(|older| (older, replaced_wait(&id)))
+                            .map(|older| (older, replaced_wait(&id, BY_WAIT)))
                             .into_iter()
                             .collect();
                         answers.extend(self.poll(table, now));
@@ -733,11 +793,11 @@ impl<R> Host<R> {
                 timeout_seconds,
                 ..
             } => {
-                let status = self.ready(&id, revision, None, table);
+                let submission = self.ready(&id, revision, None, table);
                 let answers = self.poll(table, now);
                 self.submitted(
                     (&id, reply),
-                    status,
+                    submission,
                     wait.then_some(timeout_seconds),
                     answers,
                     table,
@@ -756,7 +816,7 @@ impl<R> Host<R> {
                     .routing
                     .shared_of(&choice)
                     .is_some();
-                let status = if shared {
+                let submission = if shared {
                     self.ready(&id, revision, Some(&choice), table)
                 } else {
                     self.choose(&id, revision, &choice, table)
@@ -769,7 +829,7 @@ impl<R> Host<R> {
                 };
                 self.submitted(
                     (&id, reply),
-                    status,
+                    submission,
                     wait.then_some(timeout_seconds),
                     answers,
                     table,
@@ -779,14 +839,15 @@ impl<R> Host<R> {
         }
     }
 
-    /// Answer a submission of the session `id` with its `status` at once, or, when it
+    /// Answer a submission of the session `id` at once with how it stands, or, when it
     /// asked to wait too, for `then` seconds or without a period, and its own next
-    /// decision is not there to tell, hold its wait. Then whatever else its submission
-    /// let be answered, after `answers`.
+    /// decision is not there to tell, hold its wait. An accepted one ends the session's
+    /// listening wait, which was for what came before it. Then whatever else its
+    /// submission let be answered, after `answers`.
     fn submitted(
         &mut self,
         (id, mut reply): (&str, R),
-        status: Result<&'static str, String>,
+        submission: Result<Submission, String>,
         then: Option<Option<u64>>,
         mut answers: Vec<Answer<R>>,
         table: &impl Table,
@@ -797,24 +858,42 @@ impl<R> Host<R> {
         if let Some(revision) = decision {
             self.seats.told_in_answer(id, revision);
         }
-        if let (Ok(status), Some(seconds)) = (&status, then) {
+        let mut accepted = None;
+        let (status, error) = match submission {
+            Err(reason) => ("refused", Some(reason)),
+            Ok(submission) => {
+                let status = submission.standing.word();
+                let partner = self.partner_mut(id).expect("A known partner");
+                match partner.purpose {
+                    Purpose::Following(_) => partner.purpose = Purpose::Following(submission),
+                    _ => accepted = Some(submission),
+                }
+                if matches!(partner.purpose, Purpose::Listening { .. }) {
+                    partner.purpose = Purpose::Anything;
+                    let older = self.seats.end_wait(id);
+                    answers.extend(older.map(|older| (older, replaced_wait(id, BY_CHOICE))));
+                }
+                (status, None)
+            }
+        };
+        if error.is_none()
+            && let Some(seconds) = then
+        {
             let period = seconds.map(Duration::from_secs);
-            match self.seats.wait(id, reply, period, decision, now) {
+            let pending = decision.map_or(Pending::Nothing, Pending::Decision);
+            match self.seats.wait(id, reply, period, pending, now) {
                 Waiting::Held { replaced } => {
-                    let partner = self.partner_mut(id).expect("A known partner");
-                    partner.listens = false;
-                    partner.submitted = Some(status);
-                    answers.extend(replaced.map(|older| (older, replaced_wait(id))));
+                    if let Some(submission) = accepted {
+                        let partner = self.partner_mut(id).expect("A known partner");
+                        partner.purpose = Purpose::Following(submission);
+                    }
+                    answers.extend(replaced.map(|older| (older, replaced_wait(id, BY_WAIT))));
                     answers.extend(self.answer_waits(table, now));
                     return answers;
                 }
                 Waiting::Refused(told) => reply = told,
             }
         }
-        let (status, error) = match status {
-            Ok(status) => (status, None),
-            Err(reason) => ("refused", Some(reason)),
-        };
         let answer = self.answer(id, status, error, table, false, now);
         answers.insert(0, (reply, answer));
         answers.extend(self.answer_waits(table, now));
@@ -829,34 +908,39 @@ impl<R> Host<R> {
         revision: u64,
         choice: &str,
         table: &mut impl Table,
-    ) -> Result<&'static str, String> {
+    ) -> Result<Submission, String> {
         let me = Controller::Partner(id.to_owned());
         self.rules(table).check(&me, revision, choice)?;
         self.advance(table);
-        // A new choice supersedes news of an earlier held one.
-        let superseded = self.partner_mut(id).and_then(|known| known.outcome.take());
+        // A new choice supersedes the news that an earlier held one was applied.
+        let superseded = self
+            .partner_mut(id)
+            .is_some_and(|known| std::mem::take(&mut known.held_applied));
         let moment = self.moment(table.session());
         // The deciding investigator's player's choice waits for the other players with
         // an option there to pass: it is held, replacing one held before.
         if self.window_holds(&moment, id, revision, choice) {
             let _ = self.seats.withdraw(id);
             self.seats.decided(id);
-            self.hold = Some(Hold::new(me, &moment.observation, choice));
-            return Ok("held");
+            let hold = Hold::new(me, &moment.observation, choice);
+            let submission = Submission::of(&hold.choice, Standing::Held);
+            self.hold = Some(hold);
+            return Ok(submission);
         }
         let chosen = Chosen::new(&moment.observation, choice);
+        let accepted = |standing| Ok(Submission::of(&chosen, standing));
         let mut rules = Rules {
             control: self.control(),
             sharing: &mut self.sharing,
             hold: &mut self.hold,
             table,
         };
-        match self.seats.submit(id, revision, chosen, &mut rules) {
-            Submitted::Applied => Ok("chosen"),
-            Submitted::Held => Ok(SETTLING),
+        match self.seats.submit(id, revision, chosen.clone(), &mut rules) {
+            Submitted::Applied => accepted(Standing::Applied),
+            Submitted::Held => accepted(Standing::Settling),
             Submitted::Refused(refusal) => {
                 if let Some(known) = self.partner_mut(id) {
-                    known.outcome = superseded;
+                    known.held_applied = superseded;
                 }
                 Err(why(&refusal, revision))
             }
@@ -894,11 +978,7 @@ impl<R> Host<R> {
             if meets && let Some(choice) = self.seats.withdraw(&id) {
                 let me = Controller::Partner(id.clone());
                 self.hold = Some(Hold::new(me, &moment.observation, &choice.id));
-                if let Some(partner) = self.partner_mut(&id)
-                    && partner.submitted == Some(SETTLING)
-                {
-                    partner.submitted = Some("held");
-                }
+                self.stands(&id, &Standing::Settling, Standing::Held);
             }
         }
         let mut rules = Rules {
@@ -908,12 +988,49 @@ impl<R> Host<R> {
             table,
         };
         for settled in self.seats.settle(&mut rules) {
-            if let Some(partner) = self.partner_mut(&settled.session)
-                && partner.submitted == Some(SETTLING)
-            {
-                partner.submitted = settled.applied.then_some("chosen");
-            }
+            let now = if settled.applied {
+                Standing::Applied
+            } else {
+                Standing::Released
+            };
+            self.stands(&settled.session, &Standing::Settling, now);
         }
+    }
+
+    /// The submission the held wait of the session `id` follows stood as `was` and stands
+    /// as `now`. Only one choice of a session's waits for the table, and only one is held,
+    /// each its latest, so `was` says which.
+    fn stands(&mut self, id: &str, was: &Standing, now: Standing) {
+        if let Some(partner) = self.partner_mut(id)
+            && let Purpose::Following(submission) = &mut partner.purpose
+            && submission.standing == *was
+        {
+            submission.standing = now;
+        }
+    }
+
+    /// A submission as the answer to the wait that follows it tells it: the choice it
+    /// named, and how it stands.
+    fn standing(&self, submission: &Submission, session: &Session, id: &str) -> Value {
+        let status = match &submission.standing {
+            Standing::Ready(key) => {
+                let moment = self.moment(session);
+                let me = Controller::Partner(id.to_owned());
+                match moment.pending.iter().find(|pending| pending.key == *key) {
+                    Some(pending) if self.sharing.is_ready(pending, &me) => "ready",
+                    // Another player's change cleared it.
+                    Some(_) => "cleared",
+                    None => "over",
+                }
+            }
+            standing => standing.word(),
+        };
+        let mut choice = json!({"status": status});
+        if let Some((id, label)) = &submission.named {
+            choice["id"] = json!(id);
+            choice["label"] = json!(label);
+        }
+        choice
     }
 
     /// Complete a shared decision whose players are all ready and settle the choices that
@@ -944,34 +1061,48 @@ impl<R> Host<R> {
                 continue;
             };
             let partner = self.partner_mut(&id).expect("A known partner");
-            let submitted = partner.submitted.take();
-            let (status, reason) = match told {
+            let purpose = std::mem::replace(&mut partner.purpose, Purpose::Anything);
+            // What is told again comes with a complete view: the changes of the last went
+            // to a wait nobody may have read.
+            let (status, reason, full) = match told {
                 Told::Elapsed => {
                     let mut answer = nothing_yet(&id);
                     answer["investigator"] = json!(self.plays(&id));
-                    said_with(&mut answer, submitted);
+                    self.said_with(&mut answer, &purpose, table, &id);
                     answers.push((reply, answer));
                     continue;
                 }
-                Told::Released(released) => (RELEASED, Some(unapplied(&released))),
-                Told::Decision => ("decision", None),
-                Told::News(News::Outcome) => partner.outcome.take().expect("Untold"),
+                Told::Released { released, again } => {
+                    ("released", Some(unapplied(&released)), again)
+                }
+                Told::Decision { again } => ("decision", None, again),
+                Told::News(News::HeldApplied) => {
+                    partner.held_applied = false;
+                    (Standing::Applied.word(), None, false)
+                }
                 Told::News(News::GroupChoice) => {
                     partner.told_group = Some(table.session().revision());
-                    ("group_choice", None)
+                    ("group_choice", None, false)
                 }
-                Told::News(News::Shared) => ("shared", None),
-                Told::News(News::TableTalk) => ("table_talk", None),
+                Told::News(News::Shared) => ("shared", None, false),
+                Told::News(News::TableTalk) => ("table_talk", None, false),
             };
             // A released choice's reason is news, not a refusal.
-            let mut answer = self.view_answer(&id, status, None, table, false);
+            let mut answer = self.view_answer(&id, status, None, table, full);
             if let Some(reason) = reason {
                 answer["reason"] = json!(reason);
             }
-            said_with(&mut answer, submitted);
+            self.said_with(&mut answer, &purpose, table, &id);
             answers.push((reply, answer));
         }
         answers
+    }
+
+    /// Say in the answer to a wait that follows a submission how that stands.
+    fn said_with(&self, answer: &mut Value, purpose: &Purpose, table: &impl Table, id: &str) {
+        if let Purpose::Following(submission) = purpose {
+            answer["choice"] = self.standing(submission, table.session(), id);
+        }
     }
 
     /// Every session's identity, in the order they joined.
@@ -1003,21 +1134,22 @@ impl<R> Host<R> {
         (moment.awaits(&me) && self.seats.held(id).is_none()).then_some(moment.observation.revision)
     }
 
-    /// What a held wait of `partner` may answer now, in this order: what became of its
-    /// choice held for the other players' passes and, at a table that has presented its
+    /// What a held wait of `partner` may answer now, in this order: that its choice held
+    /// for the other players' passes was applied and, at a table that has presented its
     /// decision, `moment`, a group choice it has not been told of, news of a shared
-    /// decision it takes part in that changed since its last view, and, unless it
-    /// listens, a decision of its own; then other players' talk, whose answers the
-    /// table's own events carry as well.
+    /// decision it takes part in that changed since its last view, and a decision of its
+    /// own, unless it listens before that one; then other players' talk, whose answers the
+    /// table's own events carry as well. A choice released comes before them all.
     fn events(&self, partner: &Partner, moment: Option<&Moment>) -> Vec<Event<News>> {
         let mut events: Vec<_> = self
             .news(partner, moment)
             .into_iter()
             .map(Event::News)
             .collect();
-        if !partner.listens
-            && let Some(moment) = moment
+        if let Some(moment) = moment
             && moment.awaits(&Controller::Partner(partner.id.clone()))
+            && !matches!(partner.purpose, Purpose::Listening { before }
+                if before == Some(moment.observation.revision))
         {
             let talk = events
                 .iter()
@@ -1031,8 +1163,8 @@ impl<R> Host<R> {
     /// [`Self::events`] but for a decision of `partner`'s own.
     fn news(&self, partner: &Partner, moment: Option<&Moment>) -> Vec<News> {
         let mut news = Vec::new();
-        if partner.outcome.is_some() {
-            news.push(News::Outcome);
+        if partner.held_applied {
+            news.push(News::HeldApplied);
         }
         if let Some(moment) = moment {
             if moment.routing.group().is_some()
@@ -1110,9 +1242,8 @@ impl<R> Host<R> {
             // A player hears what is said from when it sits down.
             told_talk: self.talk.said().len(),
             joined_talk: self.talk.said().len(),
-            outcome: None,
-            listens: false,
-            submitted: None,
+            held_applied: false,
+            purpose: Purpose::Anything,
         });
         self.answer(&id, "joined", None, table, false, now)
     }
@@ -1163,11 +1294,11 @@ impl<R> Host<R> {
         let moment = self.moment(session);
         moment
             .routing
-            .controller(session, &control, &hold.id)
+            .controller(session, &control, &hold.choice.id)
             .as_ref()
             != Some(&hold.player)
             || (settled
-                && !moment.waits_for_window(&self.sharing, &control, &hold.player, &hold.id))
+                && !moment.waits_for_window(&self.sharing, &control, &hold.player, &hold.choice.id))
     }
 
     /// Release the held choice once the decision has moved on or its player no
@@ -1194,7 +1325,7 @@ impl<R> Host<R> {
         let moment = self.moment(session);
         if moment
             .routing
-            .controller(session, &control, &hold.id)
+            .controller(session, &control, &hold.choice.id)
             .as_ref()
             != Some(&hold.player)
         {
@@ -1208,7 +1339,7 @@ impl<R> Host<R> {
             return false;
         }
         if !table.settled()
-            || moment.waits_for_window(&self.sharing, &control, &hold.player, &hold.id)
+            || moment.waits_for_window(&self.sharing, &control, &hold.player, &hold.choice.id)
         {
             return false;
         }
@@ -1217,24 +1348,26 @@ impl<R> Host<R> {
             player @ Controller::Partner(_) => check(
                 player,
                 revision,
-                &hold.id,
+                &hold.choice.id,
                 &moment.routing,
                 &control,
                 session,
             ),
-            _ => match moment.routing.owner(session, &hold.id) {
+            _ => match moment.routing.owner(session, &hold.choice.id) {
                 Some(OptionOwner::Investigator(who)) => Ok(who),
                 _ => session
                     .opportunity_window()
                     .ok_or_else(|| "No decision is pending.".to_owned()),
             },
         };
-        let result = by.and_then(|by| table.commit(revision, &hold.id, by));
+        let result = by.and_then(|by| table.commit(revision, &hold.choice.id, by));
         match (&hold.player, &result) {
             (Controller::Partner(partner), Ok(())) => {
                 if let Some(known) = self.partners.iter_mut().find(|known| known.id == *partner) {
-                    known.outcome = Some(("chosen", None));
+                    known.held_applied = true;
                 }
+                let partner = partner.clone();
+                self.stands(&partner, &Standing::Held, Standing::Applied);
             }
             (Controller::Partner(_), Err(reason)) => self.release(&hold, reason, revision, true),
             (_, Err(error)) => {
@@ -1247,20 +1380,22 @@ impl<R> Host<R> {
     }
 
     /// Tell the holder its held choice was released, not applied, and why: a
-    /// partner through its next wait, the human in his decision display while the
+    /// partner through its next answer, the human in his decision display while the
     /// decision stays at `revision`. The human is asked to choose again only while
     /// the investigator it was for is still his (`still_his`): once he has handed it
     /// to partners, the decision may be theirs.
     fn release(&mut self, hold: &Hold, why: &str, revision: u64, still_his: bool) {
-        let released = format!("Your held choice, {}, was not applied: {why}.", hold.label);
+        let released = format!(
+            "Your held choice, {}, was not applied: {why}.",
+            hold.choice.label
+        );
         match &hold.player {
             Controller::Partner(partner) => {
                 // Its decision is asked for again.
-                self.seats.decided(partner);
-                if let Some(known) = self.partner_mut(partner) {
-                    known.outcome =
-                        Some((RELEASED, Some(format!("{released} Read the current view."))));
-                }
+                let choice = hold.choice.clone();
+                let why = Refusal::Game(why.to_owned());
+                self.seats.release(partner, Released { choice, why });
+                self.stands(partner, &Standing::Held, Standing::Released);
             }
             _ if still_his => {
                 self.human_released = Some((revision, format!("{released} Choose again.")));
@@ -1306,7 +1441,7 @@ impl<R> Host<R> {
         revision: u64,
         id: Option<&str>,
         table: &impl Table,
-    ) -> Result<&'static str, String> {
+    ) -> Result<Submission, String> {
         let me = Controller::Partner(partner.to_owned());
         let moment = self.moment(table.session());
         let result = if revision != moment.observation.revision {
@@ -1345,15 +1480,18 @@ impl<R> Host<R> {
                         .map(|(_, stamp)| *stamp);
                     if seen == Some(pending.stamp) {
                         self.mark_ready(pending, &me, id, &moment.observation)
+                            .map(|()| pending.key.clone())
                     } else {
                         Err("The shared decision changed since your last view; nothing was rebased. Observe it and decide again.".into())
                     }
                 }
             }
         };
-        result.map(|()| {
-            self.seats.decided(partner);
-            "ready"
+        let key = result?;
+        self.seats.decided(partner);
+        Ok(Submission {
+            named: id.map(|id| (id.to_owned(), label(&moment.observation, id))),
+            standing: Standing::Ready(key),
         })
     }
 
@@ -1408,7 +1546,8 @@ impl<R> Host<R> {
     }
 
     /// An answer to a request of a known partner's other than a wait, with its
-    /// investigator and view.
+    /// investigator, its view and the choices of its released that no such answer has told
+    /// it of.
     fn answer(
         &mut self,
         id: &str,
@@ -1419,8 +1558,12 @@ impl<R> Host<R> {
         now: Instant,
     ) -> Value {
         self.seats.heard(id, now);
-        self.seats.read(id);
-        self.view_answer(id, status, error, table, full)
+        let released: Vec<String> = self.seats.read(id).iter().map(unapplied).collect();
+        let mut answer = self.view_answer(id, status, error, table, full);
+        if !released.is_empty() {
+            answer["released"] = json!(released.join(" "));
+        }
+        answer
     }
 
     /// An answer for a known partner, with its investigator and view.
@@ -1547,7 +1690,7 @@ impl<R> Host<R> {
             .as_ref()
             .filter(|hold| hold.player == *me && hold.revision == moment.observation.revision)
         {
-            passes["held"] = json!({"id": hold.id, "label": hold.label});
+            passes["held"] = json!({"id": hold.choice.id, "label": hold.choice.label});
         }
         Some(passes)
     }
@@ -1802,23 +1945,21 @@ fn why(refusal: &Refusal, revision: u64) -> String {
     }
 }
 
-/// Why a choice that waited for the table was not applied.
+/// Why a choice that waited, for the table or for other players' passes, was not applied.
 fn unapplied(released: &Released<Chosen>) -> String {
     let why = match &released.why {
         Refusal::Game(reason) => reason.trim_end_matches('.').to_owned(),
         _ => "the decision moved on before the table settled".to_owned(),
     };
+    let held = if released.choice.for_passes {
+        "held "
+    } else {
+        ""
+    };
     format!(
-        "Your choice, {}, was not applied: {why}. Read the current view.",
+        "Your {held}choice, {}, was not applied: {why}. Read the current view.",
         released.choice.label
     )
-}
-
-/// Say in the answer to a submission's wait how its submission stands.
-fn said_with(answer: &mut Value, submitted: Option<&'static str>) {
-    if let Some(status) = submitted {
-        answer["choice"] = json!(status);
-    }
 }
 
 fn refused(reason: String) -> Value {
@@ -1834,11 +1975,16 @@ pub(crate) fn nothing_yet(partner: &str) -> Value {
     json!({"ok": true, "mode": "partner", "status": "nothing_yet", "partner": partner})
 }
 
-/// A wait its partner replaced with a newer one.
-fn replaced_wait(partner: &str) -> Value {
+/// Why a wait was [replaced](replaced_wait).
+const BY_WAIT: &str = "A newer wait of yours took this one's place: let it be.";
+const BY_CHOICE: &str = "A choice of yours, or your readiness, ended this listening wait: go on from its answer, and wait again when you have nothing to decide.";
+
+/// A wait that its partner's newer wait, or the choice it listened before, took the place
+/// of.
+fn replaced_wait(partner: &str, reason: &str) -> Value {
     json!({
         "ok": true, "mode": "partner", "status": "replaced", "partner": partner,
-        "reason": "A newer wait of yours took this one's place: let it be.",
+        "reason": reason,
     })
 }
 

@@ -325,7 +325,7 @@ fn a_partners_choice_waits_for_the_table_to_settle_and_commits_like_a_click() {
     pump(app, || chosen.is_finished());
     let answer = chosen.join().unwrap();
     assert_eq!(answer[0]["status"], "group_choice", "{}", answer[0]);
-    assert_eq!(answer[0]["choice"], "chosen", "{}", answer[0]);
+    assert_eq!(answer[0]["choice"]["status"], "chosen", "{}", answer[0]);
     assert_eq!(
         app.world().resource::<Table>().session.revision(),
         revision + 1
@@ -1552,9 +1552,18 @@ fn a_wait_the_table_never_answers_is_answered_five_seconds_past_the_period_it_as
     ] {
         let (within, answer) = PartnerProtocol.unanswered(&request.to_string()).unwrap();
         assert_eq!(within.as_secs(), seconds, "{request}");
+        // A submission's names its choice, of which the transport knows no more: the
+        // table may never have read it.
+        let choice = match request["op"].as_str().unwrap() {
+            "choose" => r#""choice":{"id":"undo","status":"unknown"},"#,
+            "ready" => r#""choice":{"status":"unknown"},"#,
+            _ => "",
+        };
         assert_eq!(
             answer,
-            r#"{"mode":"partner","ok":true,"partner":"a1b2","status":"nothing_yet"}"#
+            format!(
+                r#"{{{choice}"mode":"partner","ok":true,"partner":"a1b2","status":"nothing_yet"}}"#
+            )
         );
     }
     for request in [
@@ -1722,4 +1731,103 @@ fn a_request_refused_over_the_socket_changes_neither_the_table_nor_another_seat(
     press(app, "Turn agent partners off");
     pump(app, || tonys_wait.is_finished());
     assert_eq!(tonys_wait.join().unwrap()[0]["status"], "closed");
+}
+
+/// Cuba Libre #201: two joins that reach the table on one frame claim one investigator.
+/// One joins; the other is refused, with nothing of the first's changed, and the next
+/// investigator is open to it still.
+#[test]
+fn two_joins_on_one_frame_claim_an_investigator_once() {
+    let mut partnered = partnered(&[Patrice, Tony]);
+    let wakes = partnered.wakes.load(Ordering::SeqCst);
+    let joins: Vec<_> = (0..2)
+        .map(|_| connect(&partnered.socket, &[joining(Patrice)]))
+        .collect();
+    for _ in 0..1_000 {
+        if partnered.wakes.load(Ordering::SeqCst) >= wakes + 2 {
+            break;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(
+        partnered.wakes.load(Ordering::SeqCst),
+        wakes + 2,
+        "Both have arrived, and no frame has run"
+    );
+    let app = &mut partnered.app;
+    app.update();
+    let control = app.world().resource::<Partners>().host.control();
+    pump(app, || joins.iter().all(JoinHandle::is_finished));
+    let answers: Vec<Value> = joins
+        .into_iter()
+        .map(|join| join.join().unwrap().remove(0))
+        .collect();
+    let of = |status: &str| -> Vec<&Value> {
+        answers
+            .iter()
+            .filter(|answer| answer["status"] == status)
+            .collect()
+    };
+    let (joined, refused) = (of("joined"), of("refused"));
+    assert_eq!((joined.len(), refused.len()), (1, 1), "{answers:?}");
+    let error = refused[0]["error"].as_str().unwrap();
+    assert!(error.contains("already played"), "{error}");
+    assert!(
+        error.contains("Open to partners now: Tony Morgan"),
+        "{error}"
+    );
+    let id = joined[0]["partner"].as_str().unwrap().to_owned();
+    assert_eq!(control.controller(Patrice), Controller::Partner(id));
+    assert_eq!(control.controller(Tony), Controller::Unclaimed);
+    assert_eq!(app.world().resource::<Partners>().host.control(), control);
+}
+
+/// Cuba Libre #201: taking an investigator back, over the socket, cancels its session's
+/// choice that waits for the table. Its wait says so, and nothing of it is applied once
+/// the table settles.
+#[test]
+fn taking_an_investigator_back_cancels_its_choice_that_waits_for_the_table() {
+    let mut partnered = partnered(&[Patrice]);
+    let partner = join(&mut partnered, Patrice);
+    let app = &mut partnered.app;
+    press(app, "Close menu");
+    choose(app, "confirm-mulligan"); // Jacqueline
+    settle(app);
+    choose(app, "confirm-mulligan"); // Tony
+    settle(app);
+    press(app, "Menu");
+    let before = revision(app);
+    let saved = fs::read(&partnered.save).unwrap();
+    let chosen = exchange(
+        app,
+        &partnered.socket,
+        &[
+            json!({"op": "choose", "partner": partner, "revision": before, "id": "confirm-mulligan"}),
+        ],
+    );
+    assert_eq!(chosen[0]["status"], "settling", "{}", chosen[0]);
+    let waiting = connect(
+        &partnered.socket,
+        &[json!({"op": "wait", "partner": partner})],
+    );
+    for _ in 0..20 {
+        app.update();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!waiting.is_finished());
+    press(app, "Patrice Hathaway: a partner plays");
+    pump(app, || waiting.is_finished());
+    let ended = waiting.join().unwrap().remove(0);
+    assert_eq!(ended["status"], "closed", "{ended}");
+    let reason = ended["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("Your choice, ") && reason.contains("was not applied"),
+        "{reason}"
+    );
+    press(app, "Close menu");
+    settle(app);
+    assert_eq!(revision(app), before, "Not applied");
+    assert_eq!(fs::read(&partnered.save).unwrap(), saved);
+    let control = app.world().resource::<Partners>().host.control();
+    assert_eq!(control.controller(Patrice), Controller::Human);
 }

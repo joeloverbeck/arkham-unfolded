@@ -71,8 +71,8 @@ enum Request {
         /// Seconds to wait at most, then answer nothing_yet.
         #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..))]
         timeout: Option<u64>,
-        /// Hear the table before deciding: never answer your own pending decision,
-        /// only another event or nothing_yet.
+        /// Hear the table before deciding: answer anything but your own decision that is
+        /// pending now. Give a --timeout: other players may say nothing.
         #[arg(long)]
         listen: bool,
     },
