@@ -9,7 +9,7 @@
 use crate::process;
 use anyhow::{Error, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -29,13 +29,15 @@ Claude Code and in Codex, shared decisions, table talk and its limits, conduct,
 the notes to keep and the exit codes.
 
   scripts/tools partner join INVESTIGATOR         keep the answer's \"partner\"
-  scripts/tools partner wait PARTNER [--timeout SECONDS]
+  scripts/tools partner wait PARTNER              until something needs you
+  scripts/tools partner wait PARTNER --timeout SECONDS
   scripts/tools partner wait PARTNER --listen     hear the table first
   scripts/tools partner observe PARTNER
   scripts/tools partner observe PARTNER --full    the complete view and recent talk
   scripts/tools partner inspect PARTNER CODE
   scripts/tools partner choose PARTNER REVISION ID
-  scripts/tools partner ready PARTNER REVISION
+  scripts/tools partner choose PARTNER REVISION ID --wait    and then wait
+  scripts/tools partner ready PARTNER REVISION [--wait]
   scripts/tools partner say PARTNER MESSAGE
   scripts/tools partner leave PARTNER";
 
@@ -53,7 +55,8 @@ pub struct Args {
 #[derive(Subcommand)]
 enum Request {
     /// Join the table as one investigator. The table refuses a join that names none or
-    /// several, naming the investigators open to partners.
+    /// several, naming the investigators open to partners. Your tool's identifier of this
+    /// session goes with it, when the tool gives one: one session plays one investigator.
     Join {
         #[arg(value_parser = ["tony", "patrice", "jacqueline"], value_name = "INVESTIGATOR")]
         investigators: Vec<String>,
@@ -62,13 +65,12 @@ enum Request {
         #[arg(long, value_name = "PARTNER")]
         partner: Option<String>,
     },
-    /// Wait for the first thing that concerns you, or answer nothing_yet after the
-    /// timeout.
+    /// Wait, without a time limit, for the first thing that concerns you.
     Wait {
         partner: String,
-        /// Seconds to wait before answering nothing_yet.
-        #[arg(long, default_value_t = 240, value_parser = clap::value_parser!(u64).range(1..=590))]
-        timeout: u64,
+        /// Seconds to wait at most, then answer nothing_yet.
+        #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..))]
+        timeout: Option<u64>,
         /// Hear the table before deciding: never answer your own pending decision,
         /// only another event or nothing_yet.
         #[arg(long)]
@@ -89,9 +91,16 @@ enum Request {
         partner: String,
         revision: u64,
         id: String,
+        #[command(flatten)]
+        then: Then,
     },
     /// Mark yourself ready in the pending shared decision at the view's revision.
-    Ready { partner: String, revision: u64 },
+    Ready {
+        partner: String,
+        revision: u64,
+        #[command(flatten)]
+        then: Then,
+    },
     /// Leave the table, ending your session.
     Leave { partner: String },
     /// Say one short message to the table; its words are joined with spaces.
@@ -102,10 +111,33 @@ enum Request {
     },
 }
 
+/// What a submission does once it is accepted.
+#[derive(ClapArgs)]
+struct Then {
+    /// Then wait, without a time limit, for the next thing that concerns you, and print
+    /// only that. A refusal, or a decision of yours that comes next, is printed at once.
+    #[arg(long)]
+    wait: bool,
+    /// Seconds to wait at most, then answer nothing_yet.
+    #[arg(long, value_name = "SECONDS", requires = "wait", value_parser = clap::value_parser!(u64).range(1..))]
+    timeout: Option<u64>,
+}
+
+impl Then {
+    fn add_to(&self, request: &mut Value) {
+        if self.wait {
+            request["wait"] = json!(true);
+        }
+        if let Some(seconds) = self.timeout {
+            request["timeout_seconds"] = json!(seconds);
+        }
+    }
+}
+
 /// Exit 0 when the table answered, 1 when it refused, 3 when a wait found nothing yet.
 pub fn run(args: Args) -> Result<u8> {
     let socket = args.socket.unwrap_or_else(default_socket);
-    let (request, answer_within) = match args.request {
+    let request = match args.request {
         Request::Join {
             investigators,
             partner,
@@ -114,50 +146,65 @@ pub fn run(args: Args) -> Result<u8> {
             if let Some(partner) = partner {
                 request["partner"] = json!(partner);
             }
-            (request, None)
+            if let Some(session) = client::session() {
+                request["session"] = json!(session);
+            }
+            request
         }
         Request::Wait {
             partner,
             timeout,
             listen,
         } => {
-            let mut request = json!({"op": "wait", "partner": partner, "timeout_seconds": timeout});
+            let mut request = json!({"op": "wait", "partner": partner});
+            if let Some(seconds) = timeout {
+                request["timeout_seconds"] = json!(seconds);
+            }
             if listen {
                 request["listen"] = json!(true);
             }
-            // The table answers at its timeout; this only bounds a table that stops.
-            (request, Some(Duration::from_secs(timeout + 30)))
+            request
         }
         Request::Observe { partner, full } => {
             let mut request = json!({"op": "observe", "partner": partner});
             if full {
                 request["full"] = json!(true);
             }
-            (request, None)
+            request
         }
-        Request::Inspect { partner, code } => (
-            json!({"op": "inspect", "partner": partner, "card": code}),
-            None,
-        ),
+        Request::Inspect { partner, code } => {
+            json!({"op": "inspect", "partner": partner, "card": code})
+        }
         Request::Choose {
             partner,
             revision,
             id,
-        } => (
-            json!({"op": "choose", "partner": partner, "revision": revision, "id": id}),
-            None,
-        ),
-        Request::Ready { partner, revision } => (
-            json!({"op": "ready", "partner": partner, "revision": revision}),
-            None,
-        ),
-        Request::Leave { partner } => (json!({"op": "leave", "partner": partner}), None),
-        Request::Say { partner, words } => (
-            json!({"op": "say", "partner": partner, "text": words.join(" ")}),
-            None,
-        ),
+            then,
+        } => {
+            let mut request =
+                json!({"op": "choose", "partner": partner, "revision": revision, "id": id});
+            then.add_to(&mut request);
+            request
+        }
+        Request::Ready {
+            partner,
+            revision,
+            then,
+        } => {
+            let mut request = json!({"op": "ready", "partner": partner, "revision": revision});
+            then.add_to(&mut request);
+            request
+        }
+        Request::Leave { partner } => json!({"op": "leave", "partner": partner}),
+        Request::Say { partner, words } => {
+            json!({"op": "say", "partner": partner, "text": words.join(" ")})
+        }
     };
-    let deadline = answer_within.map(|within| Instant::now() + within);
+    // The table answers at the period it was asked for; this only bounds a table that
+    // stops.
+    let deadline = request["timeout_seconds"].as_u64().and_then(|seconds| {
+        Instant::now().checked_add(Duration::from_secs(seconds.saturating_add(30)))
+    });
     let answer = client::request(&socket, &request.to_string(), || {
         // An interrupt is honoured during a long wait.
         process::check_interrupt()?;

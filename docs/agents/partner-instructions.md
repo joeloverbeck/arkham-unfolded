@@ -20,7 +20,7 @@ The first run in a checkout builds the tool, which can take a few minutes. The a
 - `investigator` is the one investigator you play, until your session ends. Every answer that carries it says the same one.
 - `view` is your first view of the table, and it is complete (see [The view](#the-view)).
 
-One session plays one investigator. A join is refused, and claims nothing, when it names none or several, or an investigator another partner already plays or the table has not handed to partners; while any is open, the refusal names those open. A join refused because no investigator is open means there is nothing for you to play: stop. To join again, give your last identity too, as in `join patrice --partner PARTNER`: while that identity still plays an investigator, the join is refused and nothing changes.
+One session plays one investigator. A join is refused, and claims nothing, when it names none or several, or an investigator another partner already plays or the table has not handed to partners; while any is open, the refusal names those open. A join refused because no investigator is open means there is nothing for you to play: stop. A join is also refused when this session, as your tool identifies it to the command, already plays an investigator. To join again, give your last identity too, as in `join patrice --partner PARTNER`: while that identity still plays an investigator, the join is refused and nothing changes.
 
 Then start your [notes](#notes) and begin [waiting](#wait).
 
@@ -46,7 +46,9 @@ Keep exactly one `wait` running at a time. When it answers, act on its status, t
 scripts/tools partner wait PARTNER
 ```
 
-It answers with the first thing that concerns you, or with `nothing_yet` once its period ends: 240 s by default, or `--timeout SECONDS` from 1 to 590.
+It answers with the first thing that concerns you, however long that takes: it waits without a time limit unless you ask for one with `--timeout SECONDS`, and answers `nothing_yet` once that period ends. A newer wait of yours ends the older one, which answers `replaced`.
+
+Each decision is told to you once: by the answer to your choice, when its view's `decision.yours` is true, or by a wait. A wait that could tell you only a decision the answer to your choice or another view has shown you is refused, with your view, rather than left waiting for your own move: decide, or [listen first](#listening-first).
 
 | Status | What happened | What you do |
 | --- | --- | --- |
@@ -54,28 +56,29 @@ It answers with the first thing that concerns you, or with `nothing_yet` once it
 | `group_choice` | A [group choice](#group-choices) opened. Every player hears each one once. | When you arbitrate it, decide. Otherwise you may speak before it is made. |
 | `shared` | Another player changed a [shared decision](#shared-decisions) you take part in. | Read `view.shared` and decide again: any readiness you had is cleared. |
 | `table_talk` | Another player spoke. | Read `view.table_talk`, and reply only when it calls for a reply. |
-| `chosen` | The choice that `choose` answered `held` for was applied. | Read the view: when `decision.yours` is true, decide; otherwise wait. |
-| `released` | The choice that `choose` answered `held` for was not applied, and `reason` says why (see [Held choices](#held-choices)). | Read the view: when `decision.yours` is true, decide again; otherwise wait. |
-| `closed` | Your session ended, and `reason` says why: the table took your investigator over, the attempt restarted, partners were turned off, the table closed or you left. It carries no view. | Stop. When the reason says the attempt restarted, join again for your investigator. |
-| `nothing_yet` | The period ended with nothing for you (exit status 3). | Wait again. |
+| `chosen` | The choice that `choose` answered `held` for was applied, or, from a [submission that waits](#decide), your choice was applied and your next decision is here. | Read the view: when `decision.yours` is true, decide; otherwise wait. |
+| `released` | The choice that `choose` answered `held` or `settling` for was not applied, and `reason` says why (see [Decide](#decide) and [Held choices](#held-choices)). | Read the view: when `decision.yours` is true, decide again; otherwise wait. |
+| `closed` | Your session ended, and `reason` says why: the table took your investigator over, the attempt restarted, partners were turned off, the table closed or you left. It carries no view, and answers whatever you ask afterwards. | Stop. When the reason says the attempt restarted, join again for your investigator. |
+| `replaced` | A newer wait of yours took this one's place. | Nothing: the newer one answers. |
+| `nothing_yet` | The period you asked for ended with nothing for you (exit status 3). | Wait again. |
 
 ### Listening first
 
-A plain `wait` answers `decision` at once while one of your decisions is pending. To hear the table before you decide, say what you are weighing if it helps, then listen:
+A plain `wait` answers `decision` at once while a decision you have not been told of is pending. To hear the table before you decide, say what you are weighing if it helps, then listen:
 
 ```sh
 scripts/tools partner wait PARTNER --listen
 ```
 
-A listening wait never answers your own pending decision. It answers another player's message, a group choice opening, a change to a shared decision, what became of a held choice or the end of your session, or `nothing_yet` once its period ends. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
+A listening wait never answers your own pending decision. It answers another player's message, a group choice opening, a change to a shared decision, what became of a held choice or the end of your session, or `nothing_yet` once the period you asked for ends: give one, such as `--timeout 60`, since other players may say nothing. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
 
 ### Waiting in Claude Code
 
-Run `wait` with the Bash tool's `run_in_background` option and `--timeout 590`, then end your turn. Claude Code re-invokes you when the command exits, and you read its output then; waiting this way spends no tokens. Run every other command in the foreground. Give `choose` the Bash tool's longest timeout, 600000 ms, because it [waits for the table to settle](#decide).
+Run `wait`, and `choose` or `ready` with `--wait`, with the Bash tool's `run_in_background` option and without a time limit, then end your turn. Claude Code re-invokes you when the command exits, and you read its output then; waiting this way spends no tokens. Run every other command in the foreground.
 
 ### Waiting in Codex
 
-Run `wait` in the foreground with its default period, 240 s, which ends inside Codex's polling window (`background_terminal_max_timeout`, five minutes by default). When it answers `nothing_yet`, run it again at once; each poll costs a model turn. No Codex session has played through this path yet. If Codex ends a command before it answers, follow [Cut-off commands](#cut-off-commands).
+Run `wait --timeout 240` in the foreground, which ends inside Codex's polling window (`background_terminal_max_timeout`, five minutes by default). When it answers `nothing_yet`, run it again at once; each poll costs a model turn. If Codex ends a command before it answers, follow [Cut-off commands](#cut-off-commands).
 
 ## Decide
 
@@ -92,7 +95,20 @@ scripts/tools partner choose PARTNER REVISION ID
 
 Give the view's `revision` and one option's `id` exactly as listed. An `id` that ends in a placeholder names a value in its place: `<margin>` takes a whole number, for Crystal Pendulum's prediction, and `<contributions>` takes a clue allocation (see [Shared decisions](#shared-decisions)).
 
-The table applies a choice only once it settles: nothing is presenting, and no reading, dialog or menu is open at the window. `choose` waits until then, however long that takes, and answers `chosen` with the new view. When that view's `decision.yours` is true again, decide from it at once; otherwise wait. In your own investigator's decisions, another player's option can also hold your choice: see [Held choices](#held-choices).
+`choose` is answered at once:
+
+- `chosen`: your choice was applied. When the view's `decision.yours` is true again, decide from it at once; otherwise wait.
+- `settling`: the table will apply it once it settles, when nothing is presenting and no reading, dialog or menu is open at the window. Keep waiting; you are told nothing more when it is applied. `decision.settling` names it meanwhile, and a later `choose` replaces it. When the decision moves on first, or the choice is no longer yours to make, a wait answers `released` with the `reason`, and you decide again from the current view. When the table takes your investigator over first, it is not applied, and `closed` says so.
+- `held`: in your own investigator's decisions, another player's option can hold your choice, which is not the same as `settling`: see [Held choices](#held-choices).
+- `refused`: see [Refusals](#refusals).
+
+To choose and then wait in one command:
+
+```sh
+scripts/tools partner choose PARTNER REVISION ID --wait
+```
+
+A refusal, or a decision of yours that comes next at once (`chosen`, with `decision.yours` true), is answered immediately. Otherwise it is your wait, without a time limit or with `--timeout SECONDS`, and answers as `wait` does, with `choice` saying how your choice stands: `chosen`, `settling`, `held` or `ready`. `ready PARTNER REVISION --wait` does the same.
 
 To read a card again, with its current counters:
 
@@ -113,7 +129,7 @@ Another player can hold an option in your own investigator's decision: a fast ca
 - `held` names your held choice, once you have one;
 - `how` gives the next step in brief.
 
-Then your next choice is held, whether an action, a fast play of your own, ending the turn or a reveal; Undo and your part of a shared decision, such as a clue payment, are not. For a held choice, `choose` answers `held` at once. It is not applied yet: keep waiting. A wait answers `chosen` once it is applied, or `released` with a `reason` when it was not: the decision moved on before it could be applied, for example because another player used its option first, and you decide again from the current view. When the table takes your investigator over first, it is not applied, and `closed` says so. A later `choose` replaces the held choice, and a choice of yours that is applied at once, such as Undo, drops it.
+Then your next choice is held for them, whether an action, a fast play of your own, ending the turn or a reveal; Undo and your part of a shared decision, such as a clue payment, are not. For a held choice, `choose` answers `held` at once. It is not applied yet: keep waiting. A wait answers `chosen` once it is applied, or `released` with a `reason` when it was not: the decision moved on before it could be applied, for example because another player used its option first, and you decide again from the current view. When the table takes your investigator over first, it is not applied, and `closed` says so. A later `choose` replaces the held choice, and a choice of yours that is applied at once, such as Undo, drops it.
 
 ## Group choices
 
@@ -177,7 +193,7 @@ This answers `left` and ends your session; your investigator's decisions wait fo
 
 ## The view
 
-Every answer carries `view` from `join` on, except `inspected`, `nothing_yet`, `closed` and `left`.
+Every answer carries `view` from `join` on, except `inspected`, `nothing_yet`, `replaced`, `closed` and `left`.
 
 - **Always whole:** `revision`, `stage`, `you_play`, `round`, `phase`, `turn`, `decision`, `shared`, `test`, `encounter_card`, `harm` and `resolving`.
 - **The board:** `lead`, `investigators` (each one's public state, with `hand` only for yours), `act`, `agenda`, `locations`, `enemies`, the encounter deck's count and discard, `victory`, the chaos bag's count, `outcome` and `last_test`. Your first view and `observe --full` give it whole. Every other view gives only its `changes` since your previous view. Each change's `at` names where, such as `investigators.patrice.resources`, with `was` and `now`, `now` alone (`null` when gone), or `added` and `removed`.
@@ -199,14 +215,15 @@ A request the table cannot accept answers `refused`, with the reason in `error` 
 - your readiness rests on a shared decision that changed since your last view, or you have used your reopenings;
 - a message breaks a table-talk limit;
 - the card is not in your sight;
-- no partner with your identity plays at the table: your session ended while the table stayed open, as when the attempt restarts, so join again.
+- a wait could tell you only a decision you have been shown: decide it;
+- no partner with your identity plays at the table: check the identity in your notes.
 
-`choose` is checked when you send it and again when the table applies it, so a choice that waited can still be refused, for example when another player's choice was applied first. When the table takes your investigator over while your choice waits, it is not applied and its answer is `closed`. Sending the same choice twice at one revision is safe: at most one is applied, and the other is refused as stale or replaces the held one.
+`choose` is checked when you send it and again when the table applies it, so a choice that waited can still be released, for example when another player's choice was applied first. Sending the same choice twice at one revision is safe: at most one is applied, and the other is refused as stale or replaces the one that waits.
 
 ## Cut-off commands
 
-A command that ends before it prints an answer, because it was interrupted or your tool's time limit ended it, may still act at the table: a choice can still be applied. Its answer is lost, with that answer's changes and any table talk it carried. Run `observe PARTNER --full` before you decide again: it gives the board whole and the latest table talk heard since you joined.
+A command that ends before it prints an answer, because it was interrupted or your tool's time limit ended it, may still act at the table: a choice can still be applied. An interrupted tool can also leave a `wait` running that nobody reads. A decision told only to such a wait is told again to your next one. The rest of a lost answer is lost, with its changes and any table talk it carried. Run `observe PARTNER --full` before you decide again: it gives the board whole and the latest table talk heard since you joined.
 
 ## Exit codes
 
-`0`: answered, `closed` included. `1`: refused. `2`: the table cannot be reached, it did not answer a wait in time, or the command is malformed; when this persists, the table no longer hosts partners, so stop. `3`: nothing yet, from `wait` only. `130`: the command was interrupted before its answer arrived (see [Cut-off commands](#cut-off-commands)).
+`0`: answered, `closed` and `replaced` included. `1`: refused. `2`: the table cannot be reached, it did not answer a wait in time, or the command is malformed; when this persists, the table no longer hosts partners, so stop. `3`: nothing yet, from a wait only. `130`: the command was interrupted before its answer arrived (see [Cut-off commands](#cut-off-commands)).

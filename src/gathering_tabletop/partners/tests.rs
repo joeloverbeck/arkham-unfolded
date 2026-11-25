@@ -274,7 +274,8 @@ fn the_humans_controls_hold_only_the_humans_options_and_a_cue_names_the_deciding
 
 /// Ticket #205, Choosing: a partner's choice is applied only once the table has
 /// settled, commits and autosaves through the human's commit path, leaves the
-/// camera where it was, and the action history attributes it to Patrice.
+/// camera where it was, and the action history attributes it to Patrice. Cuba Libre
+/// #201: it is answered at once, and one that then waits is not.
 #[test]
 fn a_partners_choice_waits_for_the_table_to_settle_and_commits_like_a_click() {
     let mut partnered = partnered(&[Patrice]);
@@ -292,10 +293,19 @@ fn a_partners_choice_waits_for_the_table_to_settle_and_commits_like_a_click() {
     app.update();
     let revision = app.world().resource::<Table>().session.revision();
     let camera = app.world().resource::<Orbit>().pose();
-    let chosen = connect(
+    let answered = exchange(
+        app,
         &partnered.socket,
         &[
             json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}),
+        ],
+    );
+    assert_eq!(answered[0]["status"], "settling", "{}", answered[0]);
+    // Chosen again in the second form, it replaces the first and waits.
+    let chosen = connect(
+        &partnered.socket,
+        &[
+            json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan", "wait": true}),
         ],
     );
     for _ in 0..20 {
@@ -314,7 +324,8 @@ fn a_partners_choice_waits_for_the_table_to_settle_and_commits_like_a_click() {
         .push(Action::Close);
     pump(app, || chosen.is_finished());
     let answer = chosen.join().unwrap();
-    assert_eq!(answer[0]["status"], "chosen", "{}", answer[0]);
+    assert_eq!(answer[0]["status"], "group_choice", "{}", answer[0]);
+    assert_eq!(answer[0]["choice"], "chosen", "{}", answer[0]);
     assert_eq!(
         app.world().resource::<Table>().session.revision(),
         revision + 1
@@ -1512,33 +1523,203 @@ fn a_path_something_already_answers_on_is_refused_in_arkhams_own_words() {
     );
 }
 
-/// #205: a seat that runs no frames still answers a wait, with nothing yet, five seconds
-/// past its period (240 seconds unless it asks, at most 590); it answers nothing else.
+/// #205 and Cuba Libre #201: a seat that runs no frames still answers a wait that asked
+/// for a period, with nothing yet, five seconds past it. One that asked for none, and any
+/// other request, waits as long as the table holds it.
 #[test]
-fn a_wait_the_table_never_answers_is_answered_five_seconds_past_its_period() {
+fn a_wait_the_table_never_answers_is_answered_five_seconds_past_the_period_it_asked_for() {
     for (request, seconds) in [
-        (json!({"op": "wait", "partner": "a1b2"}), 245),
         (
             json!({"op": "wait", "partner": "a1b2", "timeout_seconds": 30, "listen": true}),
             35,
         ),
         (
             json!({"op": "wait", "partner": "a1b2", "timeout_seconds": 9_000}),
-            595,
+            9_005,
+        ),
+        (
+            json!({"op": "choose", "partner": "a1b2", "revision": 1, "id": "undo", "wait": true, "timeout_seconds": 60}),
+            65,
+        ),
+        (
+            json!({"op": "ready", "partner": "a1b2", "revision": 1, "wait": true, "timeout_seconds": 60}),
+            65,
+        ),
+        (
+            json!({"op": "wait", "partner": "a1b2", "timeout_seconds": u64::MAX}),
+            u64::MAX,
         ),
     ] {
         let (within, answer) = PartnerProtocol.unanswered(&request.to_string()).unwrap();
-        assert_eq!(within, Duration::from_secs(seconds), "{request}");
+        assert_eq!(within.as_secs(), seconds, "{request}");
         assert_eq!(
             answer,
             r#"{"mode":"partner","ok":true,"partner":"a1b2","status":"nothing_yet"}"#
         );
     }
-    for request in [r#"{"op":"choose","partner":"a1b2"}"#, "{}", "not json"] {
+    for request in [
+        r#"{"op":"wait","partner":"a1b2"}"#,
+        r#"{"op":"choose","partner":"a1b2","wait":true}"#,
+        r#"{"op":"choose","partner":"a1b2","timeout_seconds":60}"#,
+        "{}",
+        "not json",
+    ] {
         assert!(PartnerProtocol.unanswered(request).is_none(), "{request}");
     }
     assert_eq!(
         PartnerProtocol.closed(),
         r#"{"mode":"partner","ok":true,"reason":"The table closed.","status":"closed"}"#
     );
+}
+
+/// Cuba Libre #201, corrections 11 and 19: a killed wait over the socket ends. Its
+/// investigator is thinking no longer but silent from then, the windowless table counts it
+/// as unsettled until it has ended it, and its decision is told to the session's next
+/// wait, without a period.
+#[test]
+fn a_wait_whose_client_was_killed_ends_and_its_decision_reaches_the_next_wait() {
+    let mut partnered = partnered(&[Patrice]);
+    let ahead = Arc::new(Mutex::new(Duration::ZERO));
+    let clock = ahead.clone();
+    partnered
+        .app
+        .insert_resource(PartnerClock(Arc::new(move || {
+            Instant::now() + *clock.lock().unwrap()
+        })));
+    let partner = join(&mut partnered, Patrice);
+    let app = &mut partnered.app;
+    let killed = UnixStream::connect(&partnered.socket).unwrap();
+    writeln!(&killed, "{}", json!({"op": "wait", "partner": partner})).unwrap();
+    // A client that only ended its input, as the command does, is served.
+    killed.shutdown(Shutdown::Write).unwrap();
+    let waits = |app: &App| {
+        let partners = app.world().resource::<Partners>();
+        partners
+            .host
+            .silence(Patrice, Instant::now() + Duration::from_secs(3600))
+            == Some(Duration::ZERO)
+    };
+    for _ in 0..1_000 {
+        app.update();
+        if waits(app) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert!(waits(app), "Its wait is held");
+    let wakes = partnered.wakes.load(Ordering::SeqCst);
+    drop(killed);
+    assert!(
+        app.world()
+            .resource::<Partners>()
+            .host
+            .hung_up(Reply::hung_up),
+        "Work for the table, so its windowless run goes on"
+    );
+    assert_eq!(unsettled(app.world_mut()), Some(Unsettled::PartnerRequest));
+    for _ in 0..1_000 {
+        if partnered.wakes.load(Ordering::SeqCst) > wakes {
+            break;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        partnered.wakes.load(Ordering::SeqCst) > wakes,
+        "A window's frame comes for it"
+    );
+    app.update();
+    assert!(!waits(app), "Its wait ended");
+    choose(app, "confirm-mulligan"); // Jacqueline
+    finish_presentation(app);
+    choose(app, "confirm-mulligan"); // Tony
+    finish_presentation(app);
+    assert_eq!(unsettled(app.world_mut()), None, "Nobody is to be told");
+    *ahead.lock().unwrap() = Duration::from_secs(150);
+    app.update();
+    let shown = rendered_text(app);
+    assert!(shown.contains("SILENT 2 MIN"), "{shown}");
+
+    let told = exchange(
+        app,
+        &partnered.socket,
+        &[json!({"op": "wait", "partner": partner})],
+    );
+    assert_eq!(told[0]["status"], "decision", "{}", told[0]);
+}
+
+/// Cuba Libre #201: a request refused over the socket leaves the position, the save's
+/// bytes, who plays whom and the other session's wait as they were, whether the table is
+/// settled or not.
+#[test]
+fn a_request_refused_over_the_socket_changes_neither_the_table_nor_another_seat() {
+    let mut partnered = partnered(&[Patrice, Tony]);
+    press(&mut partnered.app, "Close menu");
+    let joined = exchange(
+        &mut partnered.app,
+        &partnered.socket,
+        &[json!({"op": "join", "investigators": ["tony"], "session": "CODEX_THREAD_ID=t1"})],
+    );
+    let tonys = joined[0]["partner"].as_str().unwrap().to_owned();
+    let partner = join(&mut partnered, Patrice);
+    let app = &mut partnered.app;
+    choose(app, "confirm-mulligan"); // Jacqueline
+    settle(app);
+    partner_chooses(&mut partnered, &tonys, "confirm-mulligan");
+    let app = &mut partnered.app;
+    settle(app);
+    let tonys_wait = connect(
+        &partnered.socket,
+        &[json!({"op": "wait", "partner": tonys})],
+    );
+    let before = revision(app);
+    let saved = fs::read(&partnered.save).unwrap();
+    let observation = app.world().resource::<Table>().session.observe();
+    let control = app.world().resource::<Partners>().host.control();
+    for dialog in [false, true] {
+        if dialog {
+            app.world_mut()
+                .resource_mut::<Actions>()
+                .0
+                .push(Action::History);
+            app.update();
+        }
+        let refused = exchange(
+            app,
+            &partnered.socket,
+            &[
+                json!({"op": "choose", "partner": tonys, "revision": before, "id": "confirm-mulligan"}),
+                json!({"op": "choose", "partner": partner, "revision": before - 1, "id": "confirm-mulligan"}),
+                json!({"op": "choose", "partner": partner, "revision": before, "id": "turn:end", "wait": true}),
+                json!({"op": "choose", "partner": "0000", "revision": before, "id": "confirm-mulligan"}),
+                json!({"op": "ready", "partner": partner, "revision": before, "wait": true}),
+                json!({"op": "wait", "partner": "0000"}),
+                json!({"op": "join", "investigators": ["tony"]}),
+                json!({"op": "join", "investigators": ["jacqueline"]}),
+                json!({"op": "join", "investigators": ["patrice"], "partner": tonys}),
+                json!({"op": "join", "investigators": ["patrice"], "session": "CODEX_THREAD_ID=t1"}),
+            ],
+        );
+        assert_eq!(refused.len(), 10);
+        for answer in &refused {
+            assert_eq!(answer["status"], "refused", "{answer}");
+        }
+        assert_eq!(
+            app.world().resource::<Table>().session.observe(),
+            observation
+        );
+        assert_eq!(fs::read(&partnered.save).unwrap(), saved);
+        assert_eq!(app.world().resource::<Partners>().host.control(), control);
+        assert!(!tonys_wait.is_finished(), "Tony's wait is as it was");
+    }
+    app.world_mut()
+        .resource_mut::<Actions>()
+        .0
+        .push(Action::Close);
+    app.update();
+    settle(app);
+    assert_eq!(revision(app), before, "Nothing was kept");
+    press(app, "Menu");
+    press(app, "Turn agent partners off");
+    pump(app, || tonys_wait.is_finished());
+    assert_eq!(tonys_wait.join().unwrap()[0]["status"], "closed");
 }

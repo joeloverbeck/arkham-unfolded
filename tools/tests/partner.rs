@@ -31,8 +31,41 @@ fn partner(socket: &Path, args: &[&str]) -> Output {
         .arg(socket)
         .args(args)
         .env_remove("ARKHAM_PARTNER_SOCKET")
+        // Whatever tool runs this test.
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("CODEX_THREAD_ID")
         .output()
         .unwrap()
+}
+
+/// Cuba Libre #201, its correction 18: a join carries the identifiers the tool gives its
+/// session's commands, and no other request does.
+#[test]
+fn a_join_carries_the_tools_identifiers_of_the_session() {
+    for (variable, value) in [
+        ("CODEX_THREAD_ID", "019e-thread"),
+        ("CLAUDE_CODE_SESSION_ID", "3f2b-session"),
+    ] {
+        for (args, joins) in [(&["join", "patrice"][..], true), (&["wait", "a1b2"], false)] {
+            let directory = tempfile::tempdir().unwrap();
+            let socket = directory.path().join("partners.sock");
+            let table = listen(&socket, JOINED);
+            let output = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+                .arg("partner")
+                .arg("--socket")
+                .arg(&socket)
+                .args(args)
+                .env_remove("CLAUDE_CODE_SESSION_ID")
+                .env_remove("CODEX_THREAD_ID")
+                .env(variable, value)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let sent: serde_json::Value = serde_json::from_str(&table.join().unwrap()).unwrap();
+            let expected = serde_json::json!(format!("{variable}={value}"));
+            assert_eq!(sent.get("session"), joins.then_some(&expected), "{sent}");
+        }
+    }
 }
 
 /// What the stand-in received, as JSON, and the command's output.
@@ -61,7 +94,7 @@ fn each_subcommand_sends_its_protocol_request_and_prints_the_answer_unchanged() 
         format!("{JOINED}\n")
     );
 
-    let cases: [(&[&str], serde_json::Value); 12] = [
+    let cases: [(&[&str], serde_json::Value); 16] = [
         // The table refuses these two, naming the investigators open (#295).
         (
             &["join"],
@@ -77,15 +110,19 @@ fn each_subcommand_sends_its_protocol_request_and_prints_the_answer_unchanged() 
         ),
         (
             &["wait", "a1b2"],
-            serde_json::json!({"op": "wait", "partner": "a1b2", "timeout_seconds": 240}),
+            serde_json::json!({"op": "wait", "partner": "a1b2"}),
         ),
         (
             &["wait", "a1b2", "--timeout", "30"],
             serde_json::json!({"op": "wait", "partner": "a1b2", "timeout_seconds": 30}),
         ),
         (
+            &["wait", "a1b2", "--timeout", "18446744073709551615"],
+            serde_json::json!({"op": "wait", "partner": "a1b2", "timeout_seconds": u64::MAX}),
+        ),
+        (
             &["wait", "a1b2", "--listen"],
-            serde_json::json!({"op": "wait", "partner": "a1b2", "timeout_seconds": 240, "listen": true}),
+            serde_json::json!({"op": "wait", "partner": "a1b2", "listen": true}),
         ),
         (
             &["observe", "a1b2"],
@@ -108,6 +145,26 @@ fn each_subcommand_sends_its_protocol_request_and_prints_the_answer_unchanged() 
             serde_json::json!({"op": "ready", "partner": "a1b2", "revision": 17}),
         ),
         (
+            &["choose", "a1b2", "17", "turn:end", "--wait"],
+            serde_json::json!({"op": "choose", "partner": "a1b2", "revision": 17, "id": "turn:end", "wait": true}),
+        ),
+        (
+            &[
+                "choose",
+                "a1b2",
+                "17",
+                "turn:end",
+                "--wait",
+                "--timeout",
+                "900",
+            ],
+            serde_json::json!({"op": "choose", "partner": "a1b2", "revision": 17, "id": "turn:end", "wait": true, "timeout_seconds": 900}),
+        ),
+        (
+            &["ready", "a1b2", "17", "--wait"],
+            serde_json::json!({"op": "ready", "partner": "a1b2", "revision": 17, "wait": true}),
+        ),
+        (
             &["leave", "a1b2"],
             serde_json::json!({"op": "leave", "partner": "a1b2"}),
         ),
@@ -126,6 +183,8 @@ fn a_refusal_exits_1_and_a_wait_with_nothing_yet_exits_3_after_printing_the_answ
         (r#"{"ok":true,"status":"nothing_yet"}"#, 3),
         (r#"{"ok":true,"status":"decision"}"#, 0),
         (r#"{"ok":true,"status":"closed"}"#, 0),
+        // A wait its session replaced with a newer one.
+        (r#"{"ok":true,"status":"replaced"}"#, 0),
         // Review fix G1: a held choice's outcome is news, not a refusal.
         (r#"{"ok":true,"status":"chosen"}"#, 0),
         (r#"{"ok":true,"status":"released","reason":"moved on"}"#, 0),
@@ -142,16 +201,21 @@ fn a_refusal_exits_1_and_a_wait_with_nothing_yet_exits_3_after_printing_the_answ
 
 /// Review fix G1: a choice the turn's player window holds is answered `held` at
 /// once, which the command prints and exits 0 for. How its outcome arrives is the
-/// partner instructions' to say (tested below, #218).
+/// partner instructions' to say (tested below, #218). So is one that waits for the
+/// table, answered `settling` (Cuba Libre #201).
 #[test]
 fn a_held_choice_exits_0() {
-    let answer = r#"{"ok":true,"status":"held"}"#;
-    let (_, output) = exchange(&["choose", "a1b2", "17", "turn:end"], answer);
-    assert_eq!(output.status.code(), Some(0), "{output:?}");
-    assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
-        format!("{answer}\n")
-    );
+    for answer in [
+        r#"{"ok":true,"status":"held"}"#,
+        r#"{"ok":true,"status":"settling"}"#,
+    ] {
+        let (_, output) = exchange(&["choose", "a1b2", "17", "turn:end"], answer);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("{answer}\n")
+        );
+    }
 }
 
 #[test]
@@ -160,7 +224,8 @@ fn malformed_arguments_are_refused_before_connecting() {
     let socket = directory.path().join("partners.sock");
     for args in [
         &["wait", "a1b2", "--timeout", "0"][..],
-        &["wait", "a1b2", "--timeout", "591"],
+        &["choose", "a1b2", "17", "turn:end", "--timeout", "30"],
+        &["ready", "a1b2", "17", "--wait", "--timeout", "0"],
         &["join", "roland"],
         &["choose", "a1b2", "seventeen", "turn:end"],
         &["choose", "a1b2", "17"],
@@ -213,6 +278,7 @@ fn the_default_socket_follows_the_environment_and_help_lists_the_commands() {
         "partner wait PARTNER",
         "wait PARTNER --listen",
         "partner choose PARTNER REVISION ID",
+        "partner choose PARTNER REVISION ID --wait",
         "partner inspect PARTNER CODE",
         "partner ready PARTNER REVISION",
         "observe PARTNER --full",
@@ -222,7 +288,6 @@ fn the_default_socket_follows_the_environment_and_help_lists_the_commands() {
     for rule in [
         "\"held\"",
         "\"released\"",
-        "240 s",
         "three messages",
         "six in an exchange",
         "Exit codes",
@@ -262,6 +327,8 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "observe PARTNER --full",
         "scripts/tools partner inspect PARTNER CODE",
         "scripts/tools partner choose PARTNER REVISION ID",
+        "choose PARTNER REVISION ID --wait",
+        "ready PARTNER REVISION --wait",
         "scripts/tools partner ready PARTNER REVISION",
         "scripts/tools partner say PARTNER MESSAGE",
         "scripts/tools partner leave PARTNER",
@@ -284,12 +351,20 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "chosen",
         "held",
         "released",
+        "settling",
+        "replaced",
         "ready",
         "said",
         "left",
         "refused",
     ];
-    let waiting = ["Claude Code", "run_in_background", "Codex", "240 s", "590"];
+    let waiting = [
+        "Claude Code",
+        "run_in_background",
+        "Codex",
+        "--timeout 240",
+        "without a time limit",
+    ];
     let talk = [
         "280 characters",
         "three messages in a row",
