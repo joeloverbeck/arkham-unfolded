@@ -1815,7 +1815,7 @@ fn taking_an_investigator_back_cancels_its_choice_that_waits_for_the_table() {
         thread::sleep(Duration::from_millis(5));
     }
     assert!(!waiting.is_finished());
-    press(app, "Patrice Hathaway: a partner plays · joined");
+    press(app, "Patrice Hathaway: a partner plays  /  joined");
     pump(app, || waiting.is_finished());
     let ended = waiting.join().unwrap().remove(0);
     assert_eq!(ended["status"], "closed", "{ended}");
