@@ -682,7 +682,12 @@ impl Play {
         let answer = self.wait(step, player);
         assert!(
             ["decision", "shared", "group_choice"]
-                .contains(&answer["status"].as_str().unwrap_or_default()),
+                .contains(&answer["status"].as_str().unwrap_or_default())
+                // Its last answer told it already, so a wait for it is not held.
+                || (answer["status"] == "refused"
+                    && answer["error"]
+                        .as_str()
+                        .is_some_and(|why| why.contains("told of your decision"))),
             "{}: {answer}",
             self.at()
         );

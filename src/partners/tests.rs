@@ -803,10 +803,10 @@ fn a_partners_fast_option_holds_the_humans_turn_action_until_it_passes() {
         Some(&("action:ordinary:resource".to_owned(), Tony))
     );
 
-    // Back in the window before Tony's next action, she plays her Violin instead.
-    let woken = sitting.ask(json!({"op": "wait", "partner": partner}));
-    assert_eq!(woken["status"], "decision", "{woken}");
-    let violin = option_ids(&woken["view"])
+    // Back in the window before Tony's next action, as the answer to her pass told her,
+    // she plays her Violin instead.
+    assert_eq!(passed["view"]["decision"]["yours"], true, "{passed}");
+    let violin = option_ids(&passed["view"])
         .into_iter()
         .find(|id| id.starts_with("violin:") && id.ends_with(":target:patrice:draw"))
         .expect("Her Violin, for herself");
@@ -863,6 +863,12 @@ fn tonys_partner_before_the_humans_violin() -> (Sitting, String) {
     let mut sitting = Sitting::new(session, &[Tony]);
     let partner = sitting.join("tony");
     (sitting, partner)
+}
+
+/// The answer to a submission that waits says how the choice `id` stands, and names it.
+fn stands(answer: &Value, id: &str, status: &str) {
+    assert_eq!(answer["choice"]["id"], id, "{answer}");
+    assert_eq!(answer["choice"]["status"], status, "{answer}");
 }
 
 /// Tony's resources and hand size.
@@ -923,6 +929,169 @@ fn a_choice_held_for_the_turn_window_answers_held_and_wait_tells_when_it_is_appl
         sitting.rules.attributed.last(),
         Some(&("action:ordinary:draw".to_owned(), Tony))
     );
+    // It is told once: the next wait is for his next decision.
+    let next = sitting.wait(&partner);
+    let next = sitting.take(next).expect("His next action is his");
+    assert_eq!(next["status"], "decision", "{next}");
+}
+
+/// Cuba Libre #201 and F1: a choice that waits for the table, and then meets an option no
+/// player has passed on, is held for that pass and not applied over it. Patrice's partner
+/// had passed; taken over while Tony's partner's choice waits, her Violin is the human's,
+/// who has not.
+#[test]
+fn a_settling_choice_that_meets_another_players_option_is_held_for_its_pass() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Tony, Patrice]);
+    let partner = sitting.join("tony");
+    let patrices = sitting.join("patrice");
+    let woken = sitting.wait(&patrices);
+    assert_eq!(sitting.take(woken).unwrap()["status"], "decision");
+    assert_eq!(sitting.ready(&patrices)["status"], "ready");
+    let (revision, before) = (sitting.revision(), tonys_holdings(&sitting));
+    sitting.rules.settled = false;
+    let waits = sitting.send(&json!({
+        "op": "choose", "partner": partner, "revision": revision,
+        "id": "action:ordinary:resource", "wait": true,
+    }));
+    assert!(sitting.take(waits).is_none());
+    sitting.hand(Patrice, false);
+    sitting.rules.settled = true;
+    sitting.poll();
+    assert_eq!(sitting.revision(), revision, "Not applied over her option");
+    assert!(sitting.take(waits).is_none());
+    let view = sitting.ask(json!({"op": "observe", "partner": partner}))["view"].clone();
+    assert_eq!(
+        view["decision"]["waits_for_passes"]["held"]["id"],
+        "action:ordinary:resource"
+    );
+    assert_eq!(view["decision"].get("settling"), None);
+
+    assert_eq!(sitting.human(PASS_BEFORE), HumanChoice::Ready);
+    assert_eq!(sitting.revision(), revision + 1);
+    let told = sitting.take(waits).expect("Its wait tells the outcome");
+    assert_eq!(told["status"], "chosen", "{told}");
+    stands(&told, "action:ordinary:resource", "chosen");
+    assert_eq!(tonys_holdings(&sitting), (before.0 + 1, before.1));
+}
+
+/// Cuba Libre #201: a choice then held for other players' passes takes the place of one
+/// that waited for the table.
+#[test]
+fn a_choice_held_for_passes_replaces_one_that_waits_for_the_table() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Tony, Patrice]);
+    let partner = sitting.join("tony");
+    let patrices = sitting.join("patrice");
+    let woken = sitting.wait(&patrices);
+    assert_eq!(sitting.take(woken).unwrap()["status"], "decision");
+    assert_eq!(sitting.ready(&patrices)["status"], "ready");
+    let (revision, before) = (sitting.revision(), tonys_holdings(&sitting));
+    sitting.rules.settled = false;
+    let settling = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(settling["status"], "settling", "{settling}");
+    sitting.hand(Patrice, false);
+    let held = sitting.choose(&partner, "action:ordinary:draw");
+    assert_eq!(held["status"], "held", "{held}");
+    sitting.rules.settled = true;
+    sitting.poll();
+    assert_eq!(sitting.revision(), revision);
+    assert_eq!(sitting.human(PASS_BEFORE), HumanChoice::Ready);
+    assert_eq!(sitting.revision(), revision + 1);
+    assert_eq!(tonys_holdings(&sitting), (before.0, before.1 + 1));
+}
+
+/// A partner that has passed is asked again when a payment is proposed at the same
+/// revision: it is told so, and then of its decision, as before Cuba Libre #201.
+#[test]
+fn a_partner_that_has_passed_is_told_again_when_a_payment_is_proposed() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    session.place_for_test(Tony, 4, "01111");
+    session.place_for_test(Patrice, 2, "01111");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join("patrice");
+    let woken = sitting.wait(&partner);
+    assert_eq!(sitting.take(woken).unwrap()["status"], "decision");
+    assert_eq!(sitting.ready(&partner)["status"], "ready");
+    let waits = sitting.wait(&partner);
+    assert!(sitting.take(waits).is_none());
+    assert_eq!(sitting.human("act:pay:4:0:0"), HumanChoice::Ready);
+    let proposed = sitting.take(waits).expect("The human proposed");
+    assert_eq!(proposed["status"], "shared", "{proposed}");
+    assert_eq!(proposed["view"]["decision"]["yours"], true, "{proposed}");
+    let waits = sitting.wait(&partner);
+    assert_eq!(sitting.take(waits).unwrap()["status"], "decision");
+}
+
+/// Review fix G1: a choice of its own applied at once, such as Undo, drops the one a
+/// partner holds, and a new choice supersedes the news of an earlier one. Neither is told
+/// to its next wait.
+#[test]
+fn a_choice_applied_at_once_drops_the_held_one_and_a_new_choice_its_news() {
+    let (mut sitting, partner) = tonys_partner_before_the_humans_violin();
+    let first = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(first["status"], "held", "{first}");
+    assert_eq!(sitting.human(PASS_BEFORE), HumanChoice::Ready);
+    // Applied, and no wait has told it.
+    let second = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(second["status"], "held", "{second}");
+    let waits = sitting.wait(&partner);
+    assert!(sitting.take(waits).is_none(), "The first is old news");
+    let undone = sitting.choose(&partner, "undo");
+    assert_eq!(undone["status"], "chosen", "{undone}");
+    sitting.poll();
+    assert!(sitting.take(waits).is_none(), "The second is not released");
+}
+
+/// Partners are off until they are enabled, whoever is chosen for them.
+#[test]
+fn investigators_chosen_for_partners_are_the_humans_until_partners_are_enabled() {
+    let mut host = Host::<u32>::new();
+    let _ = host.set_selected(Patrice, true);
+    assert!(host.control().solo());
+    let _ = host.set_enabled(true);
+    assert_eq!(host.control().controller(Patrice), Controller::Unclaimed);
+    let _ = host.set_enabled(false);
+    assert!(host.control().solo());
+    assert!(host.selected(Patrice), "Remembered for the next time");
+    let _ = host.set_enabled(true);
+    assert_eq!(host.control().controller(Patrice), Controller::Unclaimed);
+}
+
+/// Cuba Libre #201, correction 6: `ready` and a choice held for other players' passes may
+/// wait too, and `held` is never the word for a choice that waits for the table.
+#[test]
+fn readiness_and_a_choice_held_for_passes_may_wait_too() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Tony, Patrice]);
+    let partner = sitting.join("tony");
+    let patrices = sitting.join("patrice");
+    let revision = sitting.revision();
+    let tonys_wait = sitting.send(&json!({
+        "op": "choose", "partner": partner, "revision": revision,
+        "id": "action:ordinary:resource", "wait": true, "timeout_seconds": 60,
+    }));
+    assert!(sitting.take(tonys_wait).is_none(), "Held for her pass");
+    sitting.now += Duration::from_secs(60);
+    sitting.poll();
+    let nothing = sitting.take(tonys_wait).expect("Its period ended");
+    assert_eq!(nothing["status"], "nothing_yet", "{nothing}");
+    stands(&nothing, "action:ordinary:resource", "held");
+
+    let woken = sitting.wait(&patrices);
+    assert_eq!(sitting.take(woken).unwrap()["status"], "decision");
+    let passed = sitting.send(&json!({
+        "op": "ready", "partner": patrices, "revision": revision, "wait": true,
+    }));
+    // Tony's action is applied, and its next window is hers again: told at once.
+    let passed = sitting.take(passed).expect("Her next decision is there");
+    assert_eq!(passed["status"], "ready", "{passed}");
+    assert_eq!(passed["view"]["decision"]["yours"], true, "{passed}");
+    assert_eq!(sitting.revision(), revision + 1);
 }
 
 /// Review fix G1 (F1: a fast play moves the decision on, so the active player
@@ -952,6 +1121,103 @@ fn a_held_choice_is_released_when_a_fast_play_moves_the_decision_on() {
     );
     assert_eq!(told["view"]["decision"]["yours"], true, "{told}");
     assert_eq!(tonys_holdings(&sitting).0, before.0, "Nothing was rebased");
+    // Cuba Libre #201, correction 20: nobody may have read that wait, so the next tells it
+    // again, with a complete view; an answer that is no wait's ends that.
+    let again = sitting.wait(&partner);
+    let again = sitting.take(again).expect("Told again");
+    assert_eq!(again["status"], "released", "{again}");
+    assert_eq!(again["reason"], told["reason"]);
+    assert!(again["view"].get("changes").is_none(), "{again}");
+    let seen = sitting.ask(json!({"op": "observe", "partner": partner}));
+    assert_eq!(seen["released"], told["reason"]);
+    let refused = sitting.wait(&partner);
+    let refused = sitting.take(refused).expect("It knows of its decision");
+    assert_eq!(refused["status"], "refused", "{refused}");
+}
+
+/// Cuba Libre #201, correction 20: a submission that takes the place of a held choice
+/// nobody was told was released tells it; and the choice of a submission's wait is said to
+/// be released when it is.
+#[test]
+fn a_choice_held_for_passes_and_released_is_told_by_the_next_submission() {
+    for waits in [false, true] {
+        let (mut sitting, partner) = tonys_partner_before_the_humans_violin();
+        let revision = sitting.revision();
+        let chosen = sitting.send(&json!({
+            "op": "choose", "partner": partner, "revision": revision,
+            "id": "action:ordinary:resource", "wait": waits,
+        }));
+        let violin = sitting
+            .offered()
+            .into_iter()
+            .find(|id| id.starts_with("violin:") && id.ends_with(":target:patrice:draw"))
+            .expect("Her Violin, for herself");
+        assert_eq!(sitting.human(&violin), HumanChoice::Commit);
+        if waits {
+            let released = sitting.take(chosen).expect("The wait tells the release");
+            assert_eq!(released["status"], "released", "{released}");
+            stands(&released, "action:ordinary:resource", "released");
+            continue;
+        }
+        assert_eq!(sitting.take(chosen).unwrap()["status"], "held");
+        let next = sitting.choose(&partner, "action:ordinary:draw");
+        assert!(
+            next["released"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("Your held choice, ")
+                    && reason.contains("not applied")),
+            "{next}"
+        );
+    }
+}
+
+/// Cuba Libre #201: readiness that waits is said to be cleared once another player's
+/// change has cleared it, and over once its shared decision is.
+#[test]
+fn the_readiness_of_a_wait_is_said_as_it_stands() {
+    let (session, tonys, _) = tonys_commitment_window();
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join("patrice");
+    let ready = |sitting: &mut Sitting, period: u64| {
+        let opened = sitting.ask(json!({"op": "observe", "partner": partner}));
+        let revision = opened["view"]["revision"].clone();
+        sitting.send(&json!({
+            "op": "ready", "partner": partner, "revision": revision, "wait": true,
+            "timeout_seconds": period,
+        }))
+    };
+    let waits = ready(&mut sitting, 60);
+    sitting.now += Duration::from_secs(60);
+    sitting.poll();
+    let nothing = sitting.take(waits).expect("Its period ended");
+    assert_eq!(nothing["choice"], json!({"status": "ready"}), "{nothing}");
+
+    let waits = ready(&mut sitting, 60);
+    sitting.human(&format!("commit:{tonys}"));
+    let cleared = sitting.take(waits).expect("Woken by the change");
+    assert_eq!(cleared["status"], "shared", "{cleared}");
+    assert_eq!(cleared["choice"], json!({"status": "cleared"}), "{cleared}");
+
+    let waits = ready(&mut sitting, 60);
+    sitting.human("commit:confirm");
+    sitting.now += Duration::from_secs(60);
+    sitting.poll();
+    let over = sitting.take(waits).expect("Answered");
+    assert_eq!(over["choice"], json!({"status": "over"}), "{over}");
+}
+
+/// Cuba Libre #201, correction 20: readiness is a submission, and an accepted one ends its
+/// session's listening wait.
+#[test]
+fn accepted_readiness_ends_the_sessions_listening_wait() {
+    let (session, _, _) = tonys_commitment_window();
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join("patrice");
+    let listening = sitting.send(&json!({"op": "wait", "partner": partner, "listen": true}));
+    assert!(sitting.take(listening).is_none());
+    assert_eq!(sitting.ready(&partner)["status"], "ready");
+    let ended = sitting.take(listening).expect("Ended at once");
+    assert_eq!(ended["status"], "replaced", "{ended}");
 }
 
 /// Review round 3, T1 (play contract: Take over returns an investigator at once), as
@@ -1605,4 +1871,39 @@ fn taking_over_the_only_other_player_with_a_fast_option_applies_the_held_choice(
         sitting.rules.attributed.last(),
         Some(&("action:ordinary:resource".to_owned(), Tony))
     );
+}
+
+/// Cuba Libre #201, correction 23: a wait held for news that then went untold, since
+/// another answer showed it, cannot tell a decision already told.
+#[test]
+fn a_partner_whose_wait_was_for_news_it_then_saw_is_silent() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    session.place_for_test(Tony, 4, "01111");
+    session.place_for_test(Patrice, 2, "01111");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join("patrice");
+    assert_eq!(sitting.human("act:pay:4:0:0"), HumanChoice::Ready);
+    // Other news whose view shows the decision tells it as well.
+    let told = sitting.wait(&partner);
+    let told = sitting.take(told).expect("He proposed");
+    assert_eq!(told["status"], "shared", "{told}");
+    assert_eq!(told["view"]["decision"]["yours"], true, "{told}");
+    sitting.ask(json!({"op": "observe", "partner": partner}));
+    let refused = sitting.wait(&partner);
+    assert_eq!(sitting.take(refused).unwrap()["status"], "refused");
+    // He proposes another part while the table presents, so her wait is held for the news.
+    sitting.rules.settled = false;
+    assert_eq!(sitting.human("act:pay:3:0:0"), HumanChoice::Ready);
+    let waiting = sitting.wait(&partner);
+    assert!(sitting.take(waiting).is_none());
+    sitting.ask(json!({"op": "observe", "partner": partner}));
+    sitting.rules.settled = true;
+    sitting.poll();
+    assert!(sitting.take(waiting).is_none(), "The news is gone");
+    sitting.now += Duration::from_secs(150);
+    let silence = sitting
+        .host
+        .silence(Patrice, Some(sitting.revision()), sitting.now);
+    assert_eq!(silence, Some(Duration::from_secs(150)));
 }

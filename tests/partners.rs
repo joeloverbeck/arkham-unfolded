@@ -1236,7 +1236,7 @@ fn a_stale_unlisted_or_unowned_choice_is_refused_with_its_reason_and_the_view() 
 
 /// Ticket #205, Choosing: an accepted choice is applied only once the table
 /// settles, commits and autosaves through the human's commit path, and the history
-/// names its investigator.
+/// names its investigator. Cuba Libre #201: its answer does not wait for that.
 #[test]
 fn an_accepted_choice_waits_for_the_table_then_commits_autosaves_and_is_attributed() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
@@ -1246,8 +1246,13 @@ fn an_accepted_choice_waits_for_the_table_then_commits_autosaves_and_is_attribut
     let revision = sitting.revision();
     sitting.rules.settled = false;
     let chosen = sitting.send(&json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}));
+    let answer = sitting.take(chosen).expect("Answered at once");
+    assert_eq!(answer["status"], "settling", "{answer}");
+    assert_eq!(
+        answer["view"]["decision"]["settling"]["id"],
+        "confirm-mulligan"
+    );
     sitting.poll();
-    assert!(sitting.take(chosen).is_none());
     assert_eq!(
         sitting.revision(),
         revision,
@@ -1256,9 +1261,9 @@ fn an_accepted_choice_waits_for_the_table_then_commits_autosaves_and_is_attribut
 
     sitting.rules.settled = true;
     sitting.poll();
-    let answer = sitting.take(chosen).expect("Applied once settled");
-    assert_eq!(answer["status"], "chosen", "{answer}");
-    assert_eq!(answer["view"]["revision"], revision + 1);
+    assert_eq!(sitting.revision(), revision + 1, "Applied once settled");
+    let view = sitting.view(&partner);
+    assert_eq!(view["decision"].get("settling"), None, "{view}");
     let saved = continuity::load_session(&sitting.rules.save).unwrap();
     assert_eq!(saved.observe().revision, revision + 1, "Autosaved");
     assert_eq!(
@@ -1317,7 +1322,7 @@ fn a_partner_can_only_play_and_every_other_request_is_refused() {
 
 /// Ticket #205, Recovery: Take over in the middle of a partner's decision returns the
 /// investigator to the human at once. Its session is told so and ends (#295): its held
-/// wait and its choice not yet applied are answered with the reason, and nothing it
+/// wait is answered with the reason, naming its choice not yet applied, and nothing it
 /// asks afterwards reaches the table. Another session plays on.
 #[test]
 fn take_over_mid_decision_ends_the_partners_session_and_applies_none_of_its_choices() {
@@ -1331,6 +1336,7 @@ fn take_over_mid_decision_ends_the_partners_session_and_applies_none_of_its_choi
     assert_eq!(sitting.take(waiting).unwrap()["status"], "decision");
     sitting.rules.settled = false;
     let chosen = sitting.send(&json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}));
+    assert_eq!(sitting.take(chosen).unwrap()["status"], "settling");
     let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
     let tonys_wait = sitting.send(&json!({"op": "wait", "partner": tonys}));
 
@@ -1355,8 +1361,15 @@ fn take_over_mid_decision_ends_the_partners_session_and_applies_none_of_its_choi
         );
         assert!(answer.get("view").is_none(), "It plays no one: {answer}");
     };
-    told(&sitting.take(waiting).expect("Its wait is told at once"));
-    told(&sitting.take(chosen).expect("Its choice is told at once"));
+    let ended = sitting.take(waiting).expect("Its wait is told at once");
+    told(&ended);
+    assert!(
+        ended["reason"]
+            .as_str()
+            .unwrap()
+            .contains("was not applied"),
+        "{ended}"
+    );
     sitting.rules.settled = true;
     sitting.poll();
     assert_eq!(sitting.revision(), revision, "Its choice is not applied");
@@ -1527,8 +1540,10 @@ fn turning_partners_off_returns_every_investigator_and_ends_held_waits() {
     }
     assert!(sitting.host.control().solo());
     for partner in partners {
+        // Told again, in case nobody read the wait's answer.
         let after = sitting.ask(json!({"op": "observe", "partner": partner}));
-        assert_eq!(after["status"], "refused", "{after}");
+        assert_eq!(after["status"], "closed", "{after}");
+        assert_eq!(after["reason"], "Agent partners were turned off.");
     }
 }
 
@@ -1617,18 +1632,27 @@ fn a_partner_plays_patrices_mulligan_and_turn_between_waits() {
     sitting.human("turn:patrice");
 
     let mut actions = 0;
+    let mut told: Option<Value> = None;
     let waiting = loop {
-        let waiting =
-            sitting.send(&json!({"op": "wait", "partner": partner, "timeout_seconds": 60}));
-        let Some(answer) = sitting.take(waiting) else {
-            break waiting;
+        // The answer to her last choice tells her next decision, or else a wait does.
+        let answer = match told.take() {
+            Some(answer) => answer,
+            None => {
+                let waiting =
+                    sitting.send(&json!({"op": "wait", "partner": partner, "timeout_seconds": 60}));
+                let Some(answer) = sitting.take(waiting) else {
+                    break waiting;
+                };
+                assert!(["decision", "group_choice"].contains(&answer["status"].as_str().unwrap()));
+                answer
+            }
         };
         if answer["status"] == "group_choice" {
             // Her turn has ended: she hears the human's next-turn choice open.
             assert_eq!(answer["view"]["decision"]["yours"], false, "{answer}");
             continue;
         }
-        assert_eq!(answer["status"], "decision", "{answer}");
+        assert_eq!(answer["view"]["decision"]["yours"], true, "{answer}");
         let view = &answer["view"];
         let ids = option_ids(view);
         assert!(!ids.is_empty(), "{view}");
@@ -1640,6 +1664,9 @@ fn a_partner_plays_patrices_mulligan_and_turn_between_waits() {
         let chosen = sitting
             .ask(json!({"op": "choose", "partner": partner, "revision": revision, "id": id}));
         assert_eq!(chosen["status"], "chosen", "{chosen}");
+        if chosen["view"]["decision"]["yours"] == true {
+            told = Some(chosen);
+        }
         actions += 1;
         assert!(actions < 10, "Patrice's turn ends");
     };
@@ -1662,4 +1689,675 @@ fn a_partner_plays_patrices_mulligan_and_turn_between_waits() {
         "{:?}",
         sitting.rules.attributed
     );
+}
+
+/// Patrice's mulligan, her partner's, before and after the human's two. The session is
+/// at Patrice's decision, which no request of her partner's has been told.
+fn patrices_mulligan() -> (Sitting, String) {
+    let mut sitting = Sitting::after_lead(&[Patrice, Tony]);
+    let partner = sitting.join("patrice");
+    let tonys = sitting.join("tony");
+    sitting.human("confirm-mulligan"); // Jacqueline
+    sitting.partner(&tonys, "confirm-mulligan");
+    (sitting, partner)
+}
+
+/// The answer to a submission that waits says how the choice `id` stands, and names it.
+fn stands(answer: &Value, id: &str, status: &str) {
+    assert_eq!(answer["choice"]["id"], id, "{answer}");
+    assert_eq!(answer["choice"]["status"], status, "{answer}");
+}
+
+/// What a wait of `partner` was answered now, if it was.
+fn told(sitting: &mut Sitting, request: Value) -> Option<Value> {
+    let ticket = sitting.send(&request);
+    sitting.take(ticket)
+}
+
+/// Cuba Libre #201: a wait has no period unless its partner asks for one, however long
+/// the period. A wait that asked for none is answered by the next thing that needs it.
+#[test]
+fn a_wait_has_no_period_unless_its_partner_asks_for_one() {
+    for period in [None, Some(u64::MAX)] {
+        let mut sitting = Sitting::after_lead(&[Patrice]);
+        let partner = sitting.join("patrice");
+        let mut request = json!({"op": "wait", "partner": partner});
+        if let Some(seconds) = period {
+            request["timeout_seconds"] = json!(seconds);
+        }
+        let waiting = sitting.send(&request);
+        sitting.now += Duration::from_secs(48 * 3600);
+        sitting.poll();
+        assert!(sitting.take(waiting).is_none(), "{period:?}");
+        assert!(
+            !sitting
+                .host
+                .due(&sitting.rules.session, true, true, sitting.now)
+        );
+        sitting.human("confirm-mulligan");
+        sitting.human("confirm-mulligan");
+        sitting.poll();
+        assert_eq!(sitting.take(waiting).unwrap()["status"], "decision");
+    }
+}
+
+/// Cuba Libre #201: the first form is answered at once as applied, and the answer tells
+/// the partner's own next decision; the second then waits for the next thing that needs
+/// it, unless its own next decision is there.
+#[test]
+fn a_choice_may_then_wait_for_what_needs_its_partner_next() {
+    let (mut sitting, partner) = patrices_mulligan();
+    let revision = sitting.revision();
+    // The lead's group choice is Jacqueline's, the human's, so nothing needs Patrice's
+    // partner but that it opens.
+    let answer = told(
+        &mut sitting,
+        json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan", "wait": true}),
+    )
+    .expect("The group choice opened");
+    assert_eq!(sitting.revision(), revision + 1);
+    assert_eq!(answer["status"], "group_choice", "{answer}");
+    stands(&answer, "confirm-mulligan", "chosen");
+
+    sitting.human("turn:tony");
+    let Controller::Partner(tonys) = sitting.host.control().controller(Tony) else {
+        panic!("Tony's partner joined")
+    };
+    // Tony's own next decision is in the answer, so there is nothing to wait for.
+    let revision = sitting.revision();
+    let answer = told(
+        &mut sitting,
+        json!({"op": "choose", "partner": tonys, "revision": revision, "id": "action:ordinary:resource", "wait": true}),
+    )
+    .expect("His next action is his");
+    assert_eq!(answer["status"], "chosen", "{answer}");
+    assert_eq!(answer["view"]["decision"]["yours"], true, "{answer}");
+    assert!(answer.get("choice").is_none(), "{answer}");
+
+    // Refused, it waits for nothing and changes nothing.
+    let revision = sitting.revision();
+    let refused = told(
+        &mut sitting,
+        json!({"op": "choose", "partner": partner, "revision": revision, "id": "turn:end", "wait": true}),
+    )
+    .expect("Answered at once");
+    assert_eq!(refused["status"], "refused", "{refused}");
+    assert_eq!(sitting.revision(), revision);
+
+    // Its turn's end needs Tony's partner no more: it waits, for the period it asked.
+    let ending = sitting.send(&json!({
+        "op": "choose", "partner": tonys, "revision": revision, "id": "turn:end",
+        "wait": true, "timeout_seconds": 60,
+    }));
+    let opened = sitting.take(ending).expect("The next group choice opened");
+    assert_eq!(opened["status"], "group_choice", "{opened}");
+    sitting.human("turn:jacqueline");
+    let waiting = sitting.send(&json!({"op": "wait", "partner": tonys, "timeout_seconds": 60}));
+    sitting.now += Duration::from_secs(60);
+    sitting.poll();
+    assert_eq!(sitting.take(waiting).unwrap()["status"], "nothing_yet");
+}
+
+/// Cuba Libre #201, correction 6: a choice made while the table presents is `settling`,
+/// not `held`. The second form's wait outlasts it, and no event is told for its being
+/// applied.
+#[test]
+fn a_settling_choice_is_applied_once_settled_and_its_wait_goes_on() {
+    let (mut sitting, partner) = patrices_mulligan();
+    let revision = sitting.revision();
+    sitting.rules.settled = false;
+    let waiting = sitting.send(&json!({
+        "op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan",
+        "wait": true,
+    }));
+    sitting.poll();
+    assert!(sitting.take(waiting).is_none(), "Its choice waits");
+    assert_eq!(sitting.revision(), revision);
+    // Other news says how its choice stands.
+    sitting
+        .host
+        .human_says("Ready when you are.", &sitting.rules)
+        .unwrap();
+    sitting.poll();
+    let heard = sitting.take(waiting).expect("The human spoke");
+    assert_eq!(heard["status"], "table_talk", "{heard}");
+    stands(&heard, "confirm-mulligan", "settling");
+    assert_eq!(
+        heard["view"]["decision"]["settling"]["id"],
+        "confirm-mulligan"
+    );
+
+    // Its decision is not told to it again while its choice is there.
+    let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
+    assert!(sitting.take(waiting).is_none());
+    // Sent again in the second form, it replaces the first, and its wait the other's.
+    let replaced = waiting;
+    let waiting = sitting.send(&json!({
+        "op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan",
+        "wait": true,
+    }));
+    assert_eq!(sitting.take(replaced).unwrap()["status"], "replaced");
+    assert!(sitting.take(waiting).is_none());
+    sitting.rules.settled = true;
+    assert!(
+        sitting
+            .host
+            .due(&sitting.rules.session, true, true, sitting.now)
+    );
+    sitting.poll();
+    assert_eq!(sitting.revision(), revision + 1, "Applied");
+    let opened = sitting.take(waiting).expect("The group choice opened");
+    assert_eq!(opened["status"], "group_choice", "{opened}");
+    stands(&opened, "confirm-mulligan", "chosen");
+}
+
+/// Patrice's mulligan, settling, with her partner's wait held, and the table that moved
+/// past it: Tony's partner undid his own, so the position is another and not hers. Gives
+/// Patrice's partner, Tony's, and her wait, which has not been polled since.
+fn a_mulligan_the_table_moved_past(waits: &Value) -> (Sitting, String, String, u32) {
+    let (mut sitting, partner) = patrices_mulligan();
+    let revision = sitting.revision();
+    sitting.rules.settled = false;
+    let mut request =
+        json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"});
+    if *waits == json!("then") {
+        request["wait"] = json!(true);
+    }
+    let chosen = sitting.send(&request);
+    let waiting = if *waits == json!("then") {
+        chosen
+    } else {
+        let answer = sitting.take(chosen).expect("Answered at once");
+        assert_eq!(answer["status"], "settling", "{answer}");
+        sitting.send(&json!({"op": "wait", "partner": partner}))
+    };
+    assert!(
+        sitting.take(waiting).is_none(),
+        "Not refused: it waits for the table"
+    );
+    let Controller::Partner(tonys) = sitting.host.control().controller(Tony) else {
+        panic!("Tony's partner joined")
+    };
+    sitting.rules.settled = true;
+    sitting.rules.session.choose(revision, "undo").unwrap();
+    assert_ne!(sitting.revision(), revision);
+    (sitting, partner, tonys, waiting)
+}
+
+fn says_it_moved_on(reason: &Value) {
+    let reason = reason.as_str().expect("The reason");
+    assert!(
+        reason.contains("was not applied") && reason.contains("moved on"),
+        "{reason}"
+    );
+}
+
+/// Whether an answer carries the whole board, and not its changes.
+fn complete(answer: &Value) -> bool {
+    let view = &answer["view"];
+    view.get("changes").is_none() && view.get("investigators").is_some()
+}
+
+/// Cuba Libre #201 and its correction 20: a choice the table has not applied is released,
+/// with the reason, once the position has moved; nothing of it is applied. It is told
+/// once, and told again, with a complete view, when only a wait told it, which nobody may
+/// have read. The session decides again once its decision comes back.
+#[test]
+fn a_settling_choice_the_table_moved_past_is_released_with_the_reason() {
+    let (mut sitting, partner, tonys, waiting) = a_mulligan_the_table_moved_past(&json!("apart"));
+    let moved = sitting.revision();
+    sitting.poll();
+    let released = sitting.take(waiting).expect("Told at once");
+    assert_eq!(released["status"], "released", "{released}");
+    says_it_moved_on(&released["reason"]);
+    assert!(!complete(&released), "{released}");
+    assert_eq!(sitting.revision(), moved, "Nothing was applied");
+    // Nobody read that one.
+    let again = sitting.ask(json!({"op": "wait", "partner": partner}));
+    assert_eq!(again["status"], "released", "{again}");
+    assert_eq!(again["reason"], released["reason"]);
+    assert!(complete(&again), "{again}");
+    // An answer that is no wait's tells it, and it is over.
+    let seen = sitting.ask(json!({"op": "observe", "partner": partner}));
+    says_it_moved_on(&seen["released"]);
+    let seen = sitting.ask(json!({"op": "observe", "partner": partner}));
+    assert!(seen.get("released").is_none(), "{seen}");
+    let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
+    assert!(sitting.take(waiting).is_none());
+    sitting.partner(&tonys, "confirm-mulligan");
+    sitting.poll();
+    assert_eq!(sitting.take(waiting).unwrap()["status"], "decision");
+}
+
+/// Correction 20: a release no wait has told outlives the session's later submission,
+/// whose answer tells it, accepted or refused, and is then over.
+#[test]
+fn a_later_submission_tells_a_release_nobody_was_told_of() {
+    for accepted in [true, false] {
+        let (mut sitting, partner, tonys, waiting) =
+            a_mulligan_the_table_moved_past(&json!("apart"));
+        // Her wait's client died.
+        sitting
+            .host
+            .end_hung_up(|reply| *reply == waiting, sitting.now);
+        sitting.poll();
+        sitting.partner(&tonys, "confirm-mulligan");
+        let revision = sitting.revision();
+        let id = if accepted {
+            "confirm-mulligan"
+        } else {
+            "turn:end"
+        };
+        let answer = told(
+            &mut sitting,
+            json!({"op": "choose", "partner": partner, "revision": revision, "id": id}),
+        )
+        .expect("Answered at once");
+        let status = if accepted { "chosen" } else { "refused" };
+        assert_eq!(answer["status"], status, "{answer}");
+        says_it_moved_on(&answer["released"]);
+        let seen = sitting.ask(json!({"op": "observe", "partner": partner}));
+        assert!(seen.get("released").is_none(), "{seen}");
+    }
+    // In the second form, the wait tells it at once, and says of which choice it speaks.
+    let (mut sitting, partner, tonys, waiting) = a_mulligan_the_table_moved_past(&json!("apart"));
+    sitting
+        .host
+        .end_hung_up(|reply| *reply == waiting, sitting.now);
+    sitting.partner(&tonys, "confirm-mulligan");
+    let revision = sitting.revision();
+    let answer = told(
+        &mut sitting,
+        json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan", "wait": true}),
+    )
+    .expect("The release is told");
+    assert_eq!(answer["status"], "released", "{answer}");
+    says_it_moved_on(&answer["reason"]);
+    stands(&answer, "confirm-mulligan", "chosen");
+}
+
+/// Cuba Libre #201: the answer that tells a release says that its own submission was
+/// released, not how it stood before.
+#[test]
+fn a_released_submission_is_said_to_be_released() {
+    let (mut sitting, _, _, waiting) = a_mulligan_the_table_moved_past(&json!("then"));
+    sitting.poll();
+    let released = sitting.take(waiting).expect("Told at once");
+    assert_eq!(released["status"], "released", "{released}");
+    stands(&released, "confirm-mulligan", "released");
+}
+
+/// Cuba Libre #201: a wait that came with one choice speaks of the one that took its place.
+#[test]
+fn a_waits_choice_is_the_sessions_latest() {
+    let (mut sitting, partner) = patrices_mulligan();
+    let revision = sitting.revision();
+    sitting.rules.settled = false;
+    let waiting = sitting.send(&json!({
+        "op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan",
+        "wait": true, "timeout_seconds": 60,
+    }));
+    let other = sitting.view(&partner)["decision"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|option| option["id"].as_str().unwrap().to_owned())
+        .find(|id| id != "confirm-mulligan")
+        .expect("A card to replace");
+    let replaced = told(
+        &mut sitting,
+        json!({"op": "choose", "partner": partner, "revision": revision, "id": other}),
+    )
+    .unwrap();
+    assert_eq!(replaced["status"], "settling", "{replaced}");
+    sitting.now += Duration::from_secs(60);
+    sitting.poll();
+    let nothing = sitting.take(waiting).expect("Its period ended");
+    assert_eq!(nothing["status"], "nothing_yet", "{nothing}");
+    stands(&nothing, &other, "settling");
+    // A plain wait, though it takes the place of one that came with a choice, came with none.
+    let replaced = sitting.send(&json!({
+        "op": "choose", "partner": partner, "revision": revision, "id": other, "wait": true,
+    }));
+    let waiting = sitting.send(&json!({"op": "wait", "partner": partner, "timeout_seconds": 60}));
+    assert_eq!(sitting.take(replaced).unwrap()["status"], "replaced");
+    sitting.now += Duration::from_secs(60);
+    sitting.poll();
+    let nothing = sitting.take(waiting).expect("Its period ended");
+    assert!(nothing.get("choice").is_none(), "{nothing}");
+}
+
+/// Cuba Libre #201 and its corrections 17, 20 and 21: a decision is told once, and neither
+/// `join` nor `observe` tells it. One told only to a wait, which an interrupted tool may
+/// have left for nobody to read, is told again to the next wait, with a complete view. One
+/// told and then shown by another answer is not held for.
+#[test]
+fn a_decision_is_told_once_and_again_only_after_a_wait_nobody_may_have_read() {
+    let (mut sitting, partner) = patrices_mulligan();
+    let wait = json!({"op": "wait", "partner": partner});
+    let seen = sitting.ask(json!({"op": "observe", "partner": partner}));
+    assert_eq!(seen["view"]["decision"]["yours"], true, "{seen}");
+    for again in [false, true] {
+        let answer = told(&mut sitting, wait.clone()).expect("Pending");
+        assert_eq!(answer["status"], "decision", "{answer}");
+        assert_eq!(complete(&answer), again, "{answer}");
+    }
+    // A complete observation always shows it.
+    let seen = sitting.ask(json!({"op": "observe", "partner": partner, "full": true}));
+    assert_eq!(seen["view"]["decision"]["yours"], true, "{seen}");
+    let refused = told(&mut sitting, wait.clone()).expect("It would wait for itself");
+    assert_eq!(refused["status"], "refused", "{refused}");
+    assert_eq!(refused["view"]["decision"]["yours"], true, "{refused}");
+    // Listening is for what others do.
+    let listening = sitting.send(&json!({"op": "wait", "partner": partner, "listen": true}));
+    assert!(sitting.take(listening).is_none());
+    // Once it has decided, a wait is for what comes next.
+    sitting.partner(&partner, "confirm-mulligan");
+    let opened = told(&mut sitting, wait.clone()).expect("The group choice opened");
+    assert_eq!(opened["status"], "group_choice", "{opened}");
+    let waiting = sitting.send(&wait);
+    assert!(sitting.take(waiting).is_none());
+}
+
+/// Cuba Libre #201, correction 20: an accepted choice ends its session's listening wait,
+/// which would otherwise never tell its next decision; a refused one, and any other
+/// request, do not.
+#[test]
+fn an_accepted_choice_ends_the_sessions_listening_wait() {
+    for settled in [true, false] {
+        let (mut sitting, partner) = patrices_mulligan();
+        let revision = sitting.revision();
+        let listening = sitting.send(&json!({"op": "wait", "partner": partner, "listen": true}));
+        assert!(sitting.take(listening).is_none());
+        for request in [
+            json!({"op": "observe", "partner": partner}),
+            json!({"op": "choose", "partner": partner, "revision": revision, "id": "turn:end"}),
+            json!({"op": "ready", "partner": partner, "revision": revision}),
+        ] {
+            sitting.ask(request);
+            assert!(sitting.take(listening).is_none());
+        }
+        sitting.rules.settled = settled;
+        let chosen = sitting.ask(json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}));
+        let status = if settled { "chosen" } else { "settling" };
+        assert_eq!(chosen["status"], status, "{chosen}");
+        let ended = sitting.take(listening).expect("Ended at once");
+        assert_eq!(ended["status"], "replaced", "{ended}");
+        assert!(
+            ended["reason"].as_str().unwrap().contains("choice"),
+            "{ended}"
+        );
+    }
+    // A wait that does not listen stays.
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join("patrice");
+    sitting.human("confirm-mulligan");
+    sitting.human("confirm-mulligan");
+    sitting.partner(&partner, "confirm-mulligan");
+    let opened = sitting.ask(json!({"op": "wait", "partner": partner}));
+    assert_eq!(opened["status"], "group_choice", "{opened}");
+    let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
+    sitting.human("turn:patrice");
+    sitting.poll();
+    assert_eq!(sitting.take(waiting).unwrap()["status"], "decision");
+}
+
+/// Cuba Libre #201: a listening wait hears the table before the decision pending as it
+/// began. A decision at a later position is told, so without a period it cannot stay held
+/// over a decision its session was never told of.
+#[test]
+fn a_listening_wait_is_told_a_decision_it_was_not_listening_before() {
+    // None was pending.
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join("patrice");
+    let listening = sitting.send(&json!({"op": "wait", "partner": partner, "listen": true}));
+    sitting.human("confirm-mulligan");
+    sitting.poll();
+    assert!(sitting.take(listening).is_none());
+    sitting.human("confirm-mulligan");
+    sitting.poll();
+    let heard = sitting.take(listening).expect("Her decision came");
+    assert_eq!(heard["status"], "decision", "{heard}");
+
+    // Hers was, and went away as another player undid what came before it.
+    let (mut sitting, partner) = patrices_mulligan();
+    let Controller::Partner(tonys) = sitting.host.control().controller(Tony) else {
+        panic!("Tony's partner joined")
+    };
+    let listening = sitting.send(&json!({"op": "wait", "partner": partner, "listen": true}));
+    sitting.poll();
+    assert!(sitting.take(listening).is_none());
+    sitting.partner(&tonys, "undo");
+    sitting.poll();
+    assert!(sitting.take(listening).is_none());
+    sitting.partner(&tonys, "confirm-mulligan");
+    sitting.poll();
+    let heard = sitting.take(listening).expect("Her decision came again");
+    assert_eq!(heard["status"], "decision", "{heard}");
+}
+
+/// Cuba Libre #201, correction 17: a session has one wait, and the other session's is
+/// its own.
+#[test]
+fn a_partners_newer_wait_replaces_its_older() {
+    let mut sitting = Sitting::after_lead(&[Patrice, Tony]);
+    let partner = sitting.join("patrice");
+    let tonys = sitting.join("tony");
+    let tonys_wait = sitting.send(&json!({"op": "wait", "partner": tonys}));
+    let older = sitting.send(&json!({"op": "wait", "partner": partner}));
+    let newer = sitting.send(&json!({"op": "wait", "partner": partner}));
+    let replaced = sitting.take(older).expect("Replaced");
+    assert_eq!(replaced["status"], "replaced", "{replaced}");
+    assert_eq!(replaced["ok"], true, "{replaced}");
+    assert!(sitting.take(newer).is_none());
+    assert!(sitting.take(tonys_wait).is_none());
+    sitting.human("confirm-mulligan");
+    sitting.partner(&tonys, "confirm-mulligan");
+    sitting.poll();
+    assert_eq!(sitting.take(newer).unwrap()["status"], "decision");
+}
+
+/// Cuba Libre #201, corrections 11 and 19: a wait whose client died ends. It neither
+/// holds its investigator as thinking nor is told the decision, which the session's next
+/// wait is.
+#[test]
+fn a_wait_whose_client_died_ends_and_its_decision_is_told_to_the_next() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join("patrice");
+    let dead = sitting.send(&json!({"op": "wait", "partner": partner}));
+    sitting.now += Duration::from_secs(900);
+    assert_eq!(
+        sitting.host.silence(Patrice, None, sitting.now),
+        Some(Duration::ZERO)
+    );
+    assert!(!sitting.host.hung_up(|reply| *reply != dead));
+    assert!(sitting.host.hung_up(|reply| *reply == dead));
+    sitting
+        .host
+        .end_hung_up(|reply| *reply == dead, sitting.now);
+    assert!(!sitting.host.hung_up(|reply| *reply == dead));
+    sitting.now += Duration::from_secs(120);
+    assert_eq!(
+        sitting.host.silence(Patrice, None, sitting.now),
+        Some(Duration::from_secs(120)),
+        "Silent since its client died"
+    );
+    sitting.human("confirm-mulligan");
+    sitting.human("confirm-mulligan");
+    sitting.poll();
+    assert!(sitting.take(dead).is_none(), "Told to nobody");
+    let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
+    assert_eq!(sitting.take(waiting).unwrap()["status"], "decision");
+}
+
+/// Cuba Libre #201, correction 18: a session that plays an investigator is refused
+/// another by its tool's identifiers, with nothing claimed. They name it at a join only.
+#[test]
+fn a_join_by_a_session_that_already_plays_an_investigator_is_refused() {
+    let mut sitting = Sitting::after_lead(&[Patrice, Tony]);
+    let join = |who: &str, session: &str| json!({"op": "join", "investigators": [who], "session": session});
+    let first = sitting.ask(join("patrice", "CODEX_THREAD_ID=t1"));
+    assert_eq!(first["status"], "joined", "{first}");
+    let control = sitting.host.control();
+    for who in ["tony", "patrice"] {
+        let refused = sitting.ask(join(who, "CODEX_THREAD_ID=t1"));
+        assert_eq!(refused["status"], "refused", "{refused}");
+        let error = refused["error"].as_str().unwrap();
+        assert!(error.contains("already plays Patrice Hathaway"), "{error}");
+        assert!(refused.get("partner").is_none(), "{refused}");
+    }
+    assert_eq!(sitting.host.control(), control);
+    let unknown = sitting.ask(json!({"op": "observe", "partner": "CODEX_THREAD_ID=t1"}));
+    assert_eq!(unknown["status"], "refused", "{unknown}");
+    let other = sitting.ask(join("tony", "CODEX_THREAD_ID=t2"));
+    assert_eq!(other["status"], "joined", "{other}");
+}
+
+/// Cuba Libre #201: a refused request leaves the position, the save, who plays whom and
+/// the other session's wait as they were.
+#[test]
+fn a_refused_request_changes_neither_the_table_nor_another_seat() {
+    let (mut sitting, partner) = patrices_mulligan();
+    let Controller::Partner(tonys) = sitting.host.control().controller(Tony) else {
+        panic!("Tony's partner joined")
+    };
+    let tonys_wait = sitting.send(&json!({"op": "wait", "partner": tonys}));
+    let revision = sitting.revision();
+    let saved = std::fs::read(&sitting.rules.save).unwrap();
+    let observation = sitting.rules.session.observe();
+    let control = sitting.host.control();
+    for settled in [true, false] {
+        sitting.rules.settled = settled;
+        for request in [
+            // Another player's decision, a stale one, one not offered, none's session.
+            json!({"op": "choose", "partner": tonys, "revision": revision, "id": "confirm-mulligan"}),
+            json!({"op": "choose", "partner": partner, "revision": revision - 1, "id": "confirm-mulligan"}),
+            json!({"op": "choose", "partner": partner, "revision": revision, "id": "turn:end", "wait": true}),
+            json!({"op": "choose", "partner": "0000", "revision": revision, "id": "confirm-mulligan"}),
+            json!({"op": "ready", "partner": partner, "revision": revision, "wait": true}),
+            json!({"op": "wait", "partner": "0000"}),
+            json!({"op": "join", "investigators": ["tony"], "partner": partner}),
+            json!({"op": "join", "investigators": ["jacqueline"]}),
+            json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan", "seat": "tony"}),
+        ] {
+            let answer = sitting.ask(request.clone());
+            assert_eq!(answer["status"], "refused", "{request}: {answer}");
+            assert_eq!(sitting.rules.session.observe(), observation, "{request}");
+            assert_eq!(std::fs::read(&sitting.rules.save).unwrap(), saved);
+            assert_eq!(sitting.host.control(), control, "{request}");
+            assert!(sitting.take(tonys_wait).is_none(), "{request}");
+        }
+    }
+    sitting.rules.settled = true;
+    sitting.poll();
+    assert_eq!(sitting.revision(), revision, "Nothing was kept to apply");
+}
+
+/// Cuba Libre #201, correction 17: the end of a session is told again to whatever it
+/// still asks, in case nobody read it.
+#[test]
+fn a_session_ended_by_a_restart_is_told_so_again() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join("patrice");
+    let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
+    let reason = "The table restarted the attempt; join again.";
+    let answers = sitting.host.close(reason);
+    assert_eq!(answers.len(), 1);
+    assert_eq!(answers[0].0, waiting);
+    for op in ["observe", "wait"] {
+        let again = sitting.ask(json!({"op": op, "partner": partner}));
+        assert_eq!(again["status"], "closed", "{again}");
+        assert_eq!(again["reason"], reason);
+    }
+    let joined =
+        sitting.ask(json!({"op": "join", "investigators": ["patrice"], "partner": partner}));
+    assert_eq!(joined["status"], "joined", "{joined}");
+}
+
+/// How long Patrice's partner has been silent, with her decision pending at the revision
+/// now.
+fn silence(sitting: &Sitting) -> Duration {
+    sitting
+        .host
+        .silence(Patrice, Some(sitting.revision()), sitting.now)
+        .expect("Her partner joined")
+}
+
+/// Cuba Libre #201, correction 23: a wait keeps its session from being silent only while
+/// it can tell the pending decision. A listening wait cannot tell the one it listens
+/// before, and the silence counts from the session's last request.
+#[test]
+fn a_partner_that_listens_before_its_decision_is_silent_from_then() {
+    for period in [None, Some(600)] {
+        let (mut sitting, partner) = patrices_mulligan();
+        sitting.now += Duration::from_secs(40);
+        let mut request = json!({"op": "wait", "partner": partner, "listen": true});
+        if let Some(seconds) = period {
+            request["timeout_seconds"] = json!(seconds);
+        }
+        let listening = sitting.send(&request);
+        assert!(sitting.take(listening).is_none());
+        sitting.now += Duration::from_secs(150);
+        assert_eq!(silence(&sitting), Duration::from_secs(150), "{period:?}");
+    }
+}
+
+/// Cuba Libre #201, correction 23: a wait held as the answer to a submission, which its
+/// session may not have read, told its decision is no wait for it.
+#[test]
+fn a_partner_whose_held_wait_cannot_tell_its_told_decision_is_silent() {
+    let mut sitting = Sitting::after_lead(&[Patrice]);
+    let partner = sitting.join("patrice");
+    let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
+    let stale = sitting.revision();
+    sitting.human("confirm-mulligan");
+    sitting.human("confirm-mulligan");
+    // The table has not presented her decision, so her wait has not told it.
+    sitting.rules.settled = false;
+    sitting.poll();
+    assert!(sitting.take(waiting).is_none());
+    sitting.now += Duration::from_secs(600);
+    assert_eq!(silence(&sitting), Duration::ZERO, "Her wait will tell it");
+    let refused = sitting.ask(
+        json!({"op": "choose", "partner": partner, "revision": stale, "id": "confirm-mulligan"}),
+    );
+    assert_eq!(refused["status"], "refused", "{refused}");
+    sitting.rules.settled = true;
+    sitting.poll();
+    assert!(sitting.take(waiting).is_none());
+    sitting.now += Duration::from_secs(150);
+    assert_eq!(silence(&sitting), Duration::from_secs(150));
+    // And what ends it is a wait, which is refused at once with the decision.
+    let refused = sitting.ask(json!({"op": "wait", "partner": partner}));
+    assert_eq!(refused["status"], "refused", "{refused}");
+    assert_eq!(refused["view"]["decision"]["yours"], true, "{refused}");
+}
+
+/// Cuba Libre #201: a listening wait is not for the decision it listens before, so it does
+/// not ask for it to be told again: shown since by another answer, it is known.
+#[test]
+fn listening_before_a_told_decision_does_not_ask_for_it_again() {
+    let (mut sitting, partner) = patrices_mulligan();
+    let wait = json!({"op": "wait", "partner": partner});
+    assert_eq!(sitting.ask(wait.clone())["status"], "decision");
+    let listening = sitting.send(&json!({"op": "wait", "partner": partner, "listen": true}));
+    sitting
+        .host
+        .human_says("Take your time.", &sitting.rules)
+        .unwrap();
+    sitting.poll();
+    assert_eq!(sitting.take(listening).unwrap()["status"], "table_talk");
+    let seen = sitting.ask(json!({"op": "observe", "partner": partner}));
+    assert_eq!(seen["view"]["decision"]["yours"], true, "{seen}");
+    let refused = sitting.ask(wait.clone());
+    assert_eq!(refused["status"], "refused", "{refused}");
+    // Nobody may have read the wait that told it, though the session has listened since.
+    let (mut sitting, partner) = patrices_mulligan();
+    let wait = json!({"op": "wait", "partner": partner});
+    assert_eq!(sitting.ask(wait.clone())["status"], "decision");
+    let listening = sitting.send(&json!({"op": "wait", "partner": partner, "listen": true}));
+    assert!(sitting.take(listening).is_none());
+    let again = sitting.ask(wait);
+    assert_eq!(again["status"], "decision", "{again}");
+    assert!(complete(&again), "{again}");
 }

@@ -25,3 +25,5 @@ The cost is one terminal session, with its own context and quota, for each
 investigator handed over. The rule binds a session only by the identity its join
 gives: a join that gives one already playing an investigator is refused first,
 whatever it names, and any other join counts as a new session's.
+[ADR 0010](0010-seat-ownership-and-waiting-move-to-the-shared-library.md) adds the
+identifiers a tool gives its session.

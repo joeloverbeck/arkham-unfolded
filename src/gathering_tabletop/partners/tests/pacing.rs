@@ -372,16 +372,18 @@ fn a_partners_encounter_choice_waits_for_the_reading_delay() {
     assert_eq!(told[0]["status"], "decision", "{}", told[0]);
     assert!(encounter_up(app), "Told while the card is still read");
     let revision = app.world().resource::<Table>().session.revision();
-    let chosen = connect(
+    let chosen = exchange(
+        app,
         &paced.socket,
         &[
             json!({"op": "choose", "partner": partner, "revision": revision, "id": "revelation:resolve"}),
         ],
     );
+    assert_eq!(chosen[0]["status"], "settling", "{}", chosen[0]);
+    assert!(encounter_up(app), "Answered while the card is still read");
     let mut read = 0.;
     while app.world().resource::<Table>().session.revision() == revision {
         assert!(read < 60., "The choice was never applied");
-        assert!(!chosen.is_finished(), "Held while the card is read");
         wait(app, 0.1);
         thread::sleep(Duration::from_millis(2));
         read += 0.1;
@@ -397,9 +399,6 @@ fn a_partners_encounter_choice_waits_for_the_reading_delay() {
         !encounter_up(app),
         "Applied only once the reading has continued"
     );
-    pump(app, || chosen.is_finished());
-    let answer = chosen.join().unwrap();
-    assert_eq!(answer[0]["status"], "chosen", "{}", answer[0]);
 }
 
 /// Ticket #210, Joel's dialogs: while the human has Inspect or the menu open, a
@@ -428,10 +427,12 @@ fn a_partner_chooses_while_the_human_inspects_and_its_consequences_wait_for_the_
         );
         assert_eq!(told[0]["status"], "decision", "{}", told[0]);
         let revision = app.world().resource::<Table>().session.revision();
-        let chosen = connect(
+        let chosen = exchange(
+            app,
             &partnered.socket,
             &[json!({"op": "choose", "partner": partner, "revision": revision, "id": id})],
         );
+        assert_eq!(chosen[0]["status"], "settling", "{}", chosen[0]);
         for _ in 0..20 {
             wait(app, 0.05);
             thread::sleep(Duration::from_millis(5));
@@ -440,10 +441,9 @@ fn a_partner_chooses_while_the_human_inspects_and_its_consequences_wait_for_the_
         assert!(dialog(table), "The human's dialog stays open");
         assert_eq!(table.session.revision(), revision, "Held behind the dialog");
         assert!(!table.is_presenting(), "No consequence presents behind it");
-        assert!(!chosen.is_finished());
-        chosen
+        revision
     };
-    let chosen = held(&mut partnered, "confirm-mulligan", |table| {
+    let revision = held(&mut partnered, "confirm-mulligan", |table| {
         table.inspection.is_some()
     });
     let app = &mut partnered.app;
@@ -451,21 +451,31 @@ fn a_partner_chooses_while_the_human_inspects_and_its_consequences_wait_for_the_
         .resource_mut::<Actions>()
         .0
         .push(Action::Close);
-    pump(app, || chosen.is_finished());
-    assert_eq!(chosen.join().unwrap()[0]["status"], "chosen");
+    applied(app, revision);
     settle(app);
 
     // Patrice takes the next turn; the human opens the menu while she decides.
     choose(app, "turn:patrice");
     settle(app);
     press(app, "Menu");
-    let chosen = held(&mut partnered, "action:ordinary:resource", |table| {
+    let revision = held(&mut partnered, "action:ordinary:resource", |table| {
         table.menu_open
     });
     let app = &mut partnered.app;
     press(app, "Close menu");
-    pump(app, || chosen.is_finished());
-    assert_eq!(chosen.join().unwrap()[0]["status"], "chosen");
+    applied(app, revision);
+}
+
+/// Run frames until the choice that waited at `revision` is applied.
+fn applied(app: &mut App, revision: u64) {
+    for _ in 0..1_000 {
+        if app.world().resource::<Table>().session.revision() == revision + 1 {
+            return;
+        }
+        app.update();
+        thread::sleep(Duration::from_millis(2));
+    }
+    panic!("The choice was never applied");
 }
 
 /// Run frames until the camera has reached what it frames.

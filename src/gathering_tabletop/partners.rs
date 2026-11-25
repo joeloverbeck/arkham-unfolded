@@ -20,8 +20,7 @@
 use super::*;
 use crate::gathering::CardView;
 use crate::partners::{
-    Control, Controller, DEFAULT_WAIT, Host, HumanChoice, INSTRUCTIONS, LONGEST_WAIT, SharedKind,
-    SharedState,
+    Control, Controller, Host, HumanChoice, INSTRUCTIONS, SharedKind, SharedState, nothing_yet,
 };
 use serde_json::{Value, json};
 use std::{
@@ -351,10 +350,11 @@ impl Default for Partners {
 }
 
 impl Partners {
-    /// Whether the table has partner work it can do now: a request not yet read,
-    /// or a held request whose moment has come.
+    /// Whether the table has partner work it can do now: a request not yet read, a held
+    /// wait whose client has died, or a held request whose moment has come.
     fn due(&self, session: &Session, (presented, settled): (bool, bool), now: Instant) -> bool {
         self.transport.as_ref().is_some_and(Transport::waiting)
+            || self.host.hung_up(Reply::hung_up)
             || self.host.due(session, presented, settled, now)
     }
 
@@ -492,6 +492,8 @@ pub(super) fn serve(world: &mut World) {
                 let said = partners.host.human_says(&text, &sitting);
                 sitting.table.talk.said(said);
             }
+            // Before anything is told to it.
+            partners.host.end_hung_up(Reply::hung_up, now);
             let arrived = partners
                 .transport
                 .as_ref()
@@ -645,7 +647,10 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
                     Controller::Human => return None,
                     Controller::Unclaimed => Deciding::Unclaimed,
                     Controller::Partner(_) => {
-                        let silence = partners.host.silence(who, now).unwrap_or_default();
+                        let silence = partners
+                            .host
+                            .silence(who, Some(revision), now)
+                            .unwrap_or_default();
                         match silence.as_secs() / 60 {
                             0 => Deciding::Thinking,
                             minutes => Deciding::Silent(minutes),
@@ -823,8 +828,8 @@ fn open(path: &Path, waker: Option<Waker>) -> Result<Transport, String> {
 }
 
 /// What the transport says itself, in the partner protocol's words. A wait the table
-/// does not answer within its period plus a margin (a seat that runs no frames) is
-/// answered with nothing yet.
+/// does not answer within the period it asked for plus a margin (a seat that runs no
+/// frames) is answered with nothing yet.
 struct PartnerProtocol;
 
 impl Protocol for PartnerProtocol {
@@ -839,16 +844,21 @@ impl Protocol for PartnerProtocol {
 
     fn unanswered(&self, request: &str) -> Option<(Duration, String)> {
         let request: Value = serde_json::from_str(request).ok()?;
-        (request["op"] == "wait").then(|| {
-            let period = request["timeout_seconds"]
-                .as_u64()
-                .map_or(DEFAULT_WAIT, Duration::from_secs)
-                .min(LONGEST_WAIT);
-            let nothing_yet = json!({
-                "ok": true, "mode": "partner", "status": "nothing_yet",
-                "partner": request["partner"],
-            });
-            (period + Duration::from_secs(5), nothing_yet.to_string())
+        // A submission that waits, `choose` or `ready`, as much as a wait.
+        let waits = request["op"] == "wait" || request["wait"] == true;
+        let period = Duration::from_secs(request["timeout_seconds"].as_u64()?);
+        let partner = request["partner"].as_str()?;
+        waits.then(|| {
+            let within = period.saturating_add(Duration::from_secs(5));
+            let mut answer = nothing_yet(partner);
+            // The table may never have read the choice, so nothing is known of it here.
+            if request["wait"] == true {
+                answer["choice"] = json!({"status": "unknown"});
+                if request["op"] == "choose" {
+                    answer["choice"]["id"] = request["id"].clone();
+                }
+            }
+            (within, answer.to_string())
         })
     }
 }
