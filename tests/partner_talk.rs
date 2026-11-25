@@ -2,10 +2,10 @@
 //! partner drives it: `say` requests and the waits that deliver them. The table is
 //! the rules session with a save file and a settled flag the test sets, as in
 //! `tests/partners.rs`; the window's speech boxes are tested at the table host.
-//! Expectations come from ticket #209, the play contract's "Table talk" policy, the
-//! Rules Reference (p.13 player order from the lead; p.16 Peril) and the Gathering's
-//! seating order, Tony, Patrice, Jacqueline, which the rules session's player order
-//! follows from the lead.
+//! Expectations come from tickets #209 and #296 (whose message ends a wait), the play
+//! contract's "Table talk" policy, the Rules Reference (p.13 player order from the lead;
+//! p.16 Peril) and the Gathering's seating order, Tony, Patrice, Jacqueline, which the
+//! rules session's player order follows from the lead.
 
 use arkham_unfolded_experiment::{
     gathering::{Investigator, Session, continuity},
