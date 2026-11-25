@@ -57,7 +57,7 @@ impl Sitting {
         continuity::save_session(&save, &session).unwrap();
         let mut host = Host::new();
         for who in partners {
-            host.set_selected(*who, true);
+            assert!(host.set_selected(*who, true).is_empty());
         }
         assert!(host.set_enabled(true).is_empty());
         let mut sitting = Self {
@@ -108,8 +108,9 @@ impl Sitting {
             .unwrap_or_else(|error| panic!("{id}: {error}"));
     }
 
-    fn join(&mut self, investigators: &[&str]) -> String {
-        let answer = self.ask(json!({"op": "join", "investigators": investigators}));
+    /// One partner session playing `investigator`.
+    fn join(&mut self, investigator: &str) -> String {
+        let answer = self.ask(json!({"op": "join", "investigators": [investigator]}));
         assert_eq!(answer["status"], "joined", "{answer}");
         answer["partner"].as_str().unwrap().to_owned()
     }
@@ -157,8 +158,8 @@ fn every_message_reaches_every_other_player_named_by_investigator() {
     // Jacqueline leads and is the human's; her mulligan is pending, so nothing but
     // table talk concerns the partners.
     let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
-    let tonys = sitting.join(&["tony"]);
-    let patrices = sitting.join(&["patrice"]);
+    let tonys = sitting.join("tony");
+    let patrices = sitting.join("patrice");
     let tony_waits = sitting.wait(&tonys);
     let patrice_waits = sitting.wait(&patrices);
     assert!(sitting.take(tony_waits).is_none());
@@ -234,8 +235,8 @@ fn a_complete_observe_gives_back_the_talk_heard_since_joining() {
         .host
         .human_says("Before anyone joined.", &sitting.rules)
         .unwrap();
-    let tonys = sitting.join(&["tony"]);
-    let patrices = sitting.join(&["patrice"]);
+    let tonys = sitting.join("tony");
+    let patrices = sitting.join("patrice");
     let lost = sitting.wait(&tonys);
     assert_eq!(
         sitting.say(&patrices, "I'll take the Attic.")["status"],
@@ -274,21 +275,34 @@ fn a_complete_observe_gives_back_the_talk_heard_since_joining() {
     );
 }
 
-/// Ticket #209, Naming: a player who plays several investigators is named by all of
-/// them in player order, from the lead (RR p.13), and a message in play carries
-/// its round.
+/// Ticket #209, Naming: the human, who may play several investigators, is named by all
+/// of them in player order, from the lead (RR p.13), at the table and to a partner, and
+/// a message in play carries its round.
 #[test]
-fn a_player_of_several_investigators_is_named_by_them_in_player_order() {
+fn the_human_playing_several_investigators_is_named_by_them_in_player_order() {
     // Patrice leads: player order is Patrice, Jacqueline, Tony.
-    let mut sitting = Sitting::new(89, Patrice, &[Tony, Patrice]);
-    let partner = sitting.join(&[]);
-    let said = sitting.say(&partner, "Setting up.");
-    assert_eq!(said["status"], "said", "{said}");
+    let mut sitting = Sitting::new(89, Patrice, &[Jacqueline]);
+    let jacquelines = sitting.join("jacqueline");
+    let says = |sitting: &mut Sitting, text: &str| {
+        sitting
+            .host
+            .human_says(text, &sitting.rules)
+            .unwrap_or_else(|reason| panic!("{text}: {reason}"));
+    };
+    says(&mut sitting, "Setting up.");
     for _ in 0..3 {
         sitting.human("confirm-mulligan");
     }
-    let said = sitting.say(&partner, "Round one.");
-    assert_eq!(said["status"], "said", "{said}");
+    says(&mut sitting, "Round one.");
+    let observed = sitting.ask(json!({"op": "observe", "partner": jacquelines}));
+    let speaker = names(&["Patrice Hathaway", "Tony Morgan"]);
+    assert_eq!(
+        heard(&observed),
+        [
+            (speaker.clone(), "Setting up.".to_owned()),
+            (speaker, "Round one.".to_owned())
+        ]
+    );
     let talk = sitting.host.table_talk();
     assert_eq!(talk[0].speaker, [Patrice, Tony]);
     assert_eq!(talk[0].round, None, "Said during setup");
@@ -299,8 +313,8 @@ fn a_player_of_several_investigators_is_named_by_them_in_player_order() {
 /// mulligans: her first draw action draws it, and its revelation resolves at once.
 fn watcher_drawn() -> (Sitting, String, String) {
     let mut sitting = Sitting::new(224, Jacqueline, &[Patrice, Jacqueline]);
-    let patrices = sitting.join(&["patrice"]);
-    let jacquelines = sitting.join(&["jacqueline"]);
+    let patrices = sitting.join("patrice");
+    let jacquelines = sitting.join("jacqueline");
     for _ in 0..3 {
         sitting.human("confirm-mulligan");
     }
@@ -366,8 +380,8 @@ fn table_talk_closes_while_a_peril_encounter_resolves() {
 fn a_partner_speaks_at_most_the_chatter_limit_in_a_row_between_decisions() {
     assert!((2..=5).contains(&CHATTER_LIMIT), "A small fixed number");
     let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
-    let tonys = sitting.join(&["tony"]);
-    let patrices = sitting.join(&["patrice"]);
+    let tonys = sitting.join("tony");
+    let patrices = sitting.join("patrice");
     let talk = |sitting: &mut Sitting, partner: &str, times: usize| {
         for time in 0..times {
             let said = sitting.say(partner, &format!("Thought {time}."));
@@ -414,8 +428,8 @@ fn a_partner_speaks_at_most_the_chatter_limit_in_a_row_between_decisions() {
 fn two_partners_answering_each_other_wait_once_their_exchange_reaches_its_limit() {
     assert!((4..=8).contains(&EXCHANGE_LIMIT), "A small fixed number");
     let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
-    let tonys = sitting.join(&["tony"]);
-    let patrices = sitting.join(&["patrice"]);
+    let tonys = sitting.join("tony");
+    let patrices = sitting.join("patrice");
     let said = |answer: &Value| answer["status"] == "said";
 
     // Tony's partner opens; Patrice's joins the exchange, which counts from her.
@@ -475,14 +489,14 @@ fn two_partners_answering_each_other_wait_once_their_exchange_reaches_its_limit(
     assert!(said(&sitting.say(&patrices, "I'm here too.")), "New to it");
 }
 
-/// Ticket #209: a message is one short line, a partner with no investigator has no
-/// seat to speak from, and neither does the human when partners play all three. A
-/// refused `say` leaves the connection usable. Talk never makes a decision and is
+/// Ticket #209: a message is one short line, a session whose investigator was taken
+/// over has no seat to speak from (#295), and neither does the human when partners play
+/// all three. A refused `say` leaves the connection usable. Talk never makes a decision and is
 /// never saved with the attempt.
 #[test]
 fn talk_is_one_short_message_from_a_seat_and_never_enters_the_attempt() {
     let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
-    let tonys = sitting.join(&["tony"]);
+    let tonys = sitting.join("tony");
     let saved = std::fs::read(&sitting.rules.save).unwrap();
     let revision = sitting.rules.session.observe().revision;
     let history = sitting.rules.session.observe().history;
@@ -507,19 +521,16 @@ fn talk_is_one_short_message_from_a_seat_and_never_enters_the_attempt() {
     assert_eq!(sitting.rules.session.observe().history, history);
     assert_eq!(std::fs::read(&sitting.rules.save).unwrap(), saved);
 
-    sitting.host.set_selected(Tony, false);
-    let seatless = sitting.say(&tonys, "Hello?");
-    assert_eq!(seatless["status"], "refused", "{seatless}");
-    assert!(
-        seatless["error"]
-            .as_str()
-            .unwrap()
-            .contains("no investigator")
-    );
     assert_eq!(
         sitting.ask(json!({"op": "observe", "partner": tonys}))["status"],
-        "observed"
+        "observed",
+        "A refusal ends nothing"
     );
+    let spoken = sitting.host.table_talk().len();
+    assert!(sitting.host.set_selected(Tony, false).is_empty());
+    let seatless = sitting.say(&tonys, "Hello?");
+    assert_eq!(seatless["status"], "closed", "{seatless}");
+    assert_eq!(sitting.host.table_talk().len(), spoken, "Not said");
 
     let mut all = Sitting::new(89, Jacqueline, &[Tony, Patrice, Jacqueline]);
     assert!(all.host.human_says("Hello.", &all.rules).is_err());

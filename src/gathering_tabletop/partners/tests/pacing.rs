@@ -351,7 +351,7 @@ fn a_partners_encounter_choice_waits_for_the_reading_delay() {
         Session::with_hostile_fixture(HostileFixture::PatriceCancellationVision),
         &[Patrice],
     );
-    let joined = exchange(&mut paced.app, &paced.socket, &[json!({"op": "join"})]);
+    let joined = exchange(&mut paced.app, &paced.socket, &[joining(Patrice)]);
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     let app = &mut paced.app;
     let encounter_up = |app: &App| {
@@ -410,7 +410,7 @@ fn a_partners_encounter_choice_waits_for_the_reading_delay() {
 fn a_partner_chooses_while_the_human_inspects_and_its_consequences_wait_for_the_dialog() {
     let mut partnered = partnered(&[Patrice]);
     press(&mut partnered.app, "Close menu");
-    let partner = join(&mut partnered);
+    let partner = join(&mut partnered, Patrice);
     let app = &mut partnered.app;
     choose(app, "confirm-mulligan"); // Jacqueline
     finish_presentation(app);
@@ -487,7 +487,7 @@ fn still_camera(app: &mut App) -> crate::tabletop_camera::Pose {
 fn following() -> (Partnered, String, [crate::tabletop_camera::Pose; 2]) {
     let mut partnered = partnered(&[Patrice]);
     press(&mut partnered.app, "Close menu");
-    let partner = join(&mut partnered);
+    let partner = join(&mut partnered, Patrice);
     let app = &mut partnered.app;
     app.world_mut()
         .resource_mut::<Actions>()
@@ -565,7 +565,7 @@ fn follow_frames_the_humans_decisions_and_tests() {
 #[test]
 fn follow_leaves_the_camera_while_a_partners_test_plays_out() {
     let mut paced = open(quick_thinking_until("test:reveal"), &[Tony]);
-    let joined = exchange(&mut paced.app, &paced.socket, &[json!({"op": "join"})]);
+    let joined = exchange(&mut paced.app, &paced.socket, &[joining(Tony)]);
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     let app = &mut paced.app;
     app.world_mut()

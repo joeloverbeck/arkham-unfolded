@@ -52,7 +52,7 @@ impl Sitting {
     fn new(session: Session, partners: &[Investigator]) -> Self {
         let mut host = Host::new();
         for who in partners {
-            host.set_selected(*who, true);
+            assert!(host.set_selected(*who, true).is_empty());
         }
         assert!(host.set_enabled(true).is_empty());
         Self {
@@ -84,6 +84,12 @@ impl Sitting {
             .unwrap_or_else(|| panic!("{request} is held, not answered"))
     }
 
+    /// Hand `who` to partners, or take it back.
+    fn hand(&mut self, who: Investigator, to_partners: bool) {
+        let answers = self.host.set_selected(who, to_partners);
+        self.answers.extend(answers);
+    }
+
     fn take(&mut self, ticket: u32) -> Option<Value> {
         self.answers.remove(&ticket)
     }
@@ -93,9 +99,9 @@ impl Sitting {
         self.answers.extend(answers);
     }
 
-    /// One partner session playing `investigators` (all open ones when empty).
-    fn join(&mut self, investigators: &[&str]) -> String {
-        let answer = self.ask(json!({"op": "join", "investigators": investigators}));
+    /// One partner session playing `investigator`.
+    fn join(&mut self, investigator: &str) -> String {
+        let answer = self.ask(json!({"op": "join", "investigators": [investigator]}));
         assert_eq!(answer["status"], "joined", "{answer}");
         answer["partner"].as_str().unwrap().to_owned()
     }
@@ -235,7 +241,7 @@ fn tonys_commitment_window() -> (Session, u16, u16) {
 fn a_commitment_shared_by_two_players_goes_ahead_only_when_both_are_ready_on_the_same_cards() {
     let (session, tonys, patrices) = tonys_commitment_window();
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let opened = sitting.ask(json!({"op": "wait", "partner": partner}));
     assert_eq!(
         opened["status"], "decision",
@@ -342,7 +348,7 @@ fn a_player_reopens_a_shared_commitment_only_up_to_the_bound_then_may_only_be_re
     const { assert!(REOPENINGS >= 1 && REOPENINGS <= 5) };
     let (session, tonys, patrices) = tonys_commitment_window();
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.ask(json!({"op": "observe", "partner": partner}));
     let toggle = format!("commit:{patrices}");
     sitting.ready(&partner);
@@ -381,7 +387,7 @@ fn a_player_reopens_a_shared_commitment_only_up_to_the_bound_then_may_only_be_re
     let (session, tonys, _) = tonys_commitment_window();
     let mut sitting = Sitting::new(session, &[Patrice]);
     let toggle = format!("commit:{tonys}");
-    sitting.join(&[]);
+    sitting.join("patrice");
     sitting.human("commit:confirm");
     for _ in 0..REOPENINGS {
         sitting.human(&toggle);
@@ -406,7 +412,7 @@ fn a_group_clue_payment_spends_once_the_requirement_is_met_and_every_contributor
     session.place_for_test(Patrice, 2, "01111");
     session.place_for_test(Jacqueline, 0, "01111");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     assert!(
         sitting
             .offered()
@@ -486,7 +492,7 @@ fn a_window_closes_only_after_every_player_with_an_option_has_passed() {
     session.hand_for_test(Jacqueline, "04199");
     choose(&mut session, "action:ordinary:investigate");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let opened = sitting.ask(json!({"op": "wait", "partner": partner}));
     assert_eq!(opened["status"], "decision", "{opened}");
     let ids = option_ids(&opened["view"]);
@@ -524,7 +530,7 @@ fn an_action_in_a_window_restarts_the_succession_of_passes() {
     let premonition = session.hand_for_test(Jacqueline, "04199");
     choose(&mut session, "action:ordinary:investigate");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.ask(json!({"op": "observe", "partner": partner}));
     assert_eq!(sitting.ready(&partner)["status"], "ready");
     let waiting = sitting.wait(&partner);
@@ -569,8 +575,8 @@ fn a_window_wakes_only_the_partners_whose_investigators_have_an_option_in_it() {
     session.hand_for_test(Patrice, "01093");
     choose(&mut session, "action:ordinary:investigate");
     let mut sitting = Sitting::new(session, &[Tony, Patrice]);
-    let tonys = sitting.join(&["tony"]);
-    let patrices = sitting.join(&["patrice"]);
+    let tonys = sitting.join("tony");
+    let patrices = sitting.join("patrice");
     let tony_waits = sitting.wait(&tonys);
     let patrice_waits = sitting.wait(&patrices);
     sitting.poll();
@@ -605,7 +611,7 @@ fn co_play_adds_no_commitment_the_rules_forbid() {
         choose(&mut session, "window:pass");
     }
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let observed = sitting.ask(json!({"op": "observe", "partner": partner}));
     let ids = option_ids(&observed["view"]);
     assert!(ids.contains(&format!("commit:{violin}")), "{ids:?}");
@@ -639,7 +645,7 @@ fn co_play_adds_no_commitment_the_rules_forbid() {
 fn a_stale_submission_in_a_shared_decision_is_refused_with_the_current_view() {
     let (session, tonys, patrices) = tonys_commitment_window();
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let seen = sitting.ask(json!({"op": "observe", "partner": partner}));
     let old = seen["view"]["revision"].as_u64().unwrap();
     sitting.human(&format!("commit:{tonys}"));
@@ -664,7 +670,7 @@ fn a_stale_submission_in_a_shared_decision_is_refused_with_the_current_view() {
     session.place_for_test(Tony, 4, "01111");
     session.place_for_test(Patrice, 2, "01111");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.ask(json!({"op": "observe", "partner": partner}));
     sitting.human("act:pay:4:0:0");
     let refused = sitting.ready(&partner);
@@ -704,7 +710,7 @@ fn the_human_may_decline_the_barrier_only_when_taking_part_in_its_payment() {
     // Every investigator is in the Hallway with clues: Tony's and Jacqueline's
     // player takes part beside Patrice's partner.
     let mut sitting = Sitting::new(session.clone(), &[Patrice]);
-    sitting.join(&[]);
+    sitting.join("patrice");
     let human = ids(&sitting);
     assert!(
         human.iter().any(|id| id == "round-end:decline-act"),
@@ -719,8 +725,8 @@ fn the_human_may_decline_the_barrier_only_when_taking_part_in_its_payment() {
     session.place_for_test(Patrice, 5, "01112");
     session.place_for_test(Jacqueline, 4, "01112");
     let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
-    sitting.join(&["patrice"]);
-    sitting.join(&["jacqueline"]);
+    sitting.join("patrice");
+    sitting.join("jacqueline");
     let human = ids(&sitting);
     assert!(
         !human
@@ -749,7 +755,7 @@ fn a_partners_fast_option_holds_the_humans_turn_action_until_it_passes() {
     let mut session = turn(Tony);
     session.asset_for_test(Patrice, "06016");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let resources = |sitting: &Sitting| {
         sitting.rules.session.observe().play.unwrap().players[Tony.index()].resources
     };
@@ -841,7 +847,7 @@ fn a_turn_waits_on_no_player_without_a_fast_option() {
     let mut session = turn(Patrice);
     session.asset_for_test(Patrice, "06016");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     assert!(sitting.host.shared(&sitting.rules.session).is_empty());
     let revision = sitting.revision();
     let chosen = sitting.choose(&partner, "action:ordinary:resource");
@@ -855,7 +861,7 @@ fn tonys_partner_before_the_humans_violin() -> (Sitting, String) {
     let mut session = turn(Tony);
     session.asset_for_test(Patrice, "06016");
     let mut sitting = Sitting::new(session, &[Tony]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("tony");
     (sitting, partner)
 }
 
@@ -948,30 +954,27 @@ fn a_held_choice_is_released_when_a_fast_play_moves_the_decision_on() {
     assert_eq!(tonys_holdings(&sitting).0, before.0, "Nothing was rebased");
 }
 
-/// Review round 3, T1 (play contract: Take over returns an investigator at once;
-/// partner instructions, "Refusals": after the table takes the investigator over, a
-/// choice answered `held` is `released`). The partner's choice for Tony is held for
-/// the human's pass; the human takes Tony over instead. Its pending wait answers that
-/// its investigators changed, its next wait answers `released` with the take-over
-/// reason, and the held choice is never applied: Tony's next action is the human's.
+/// Review round 3, T1 (play contract: Take over returns an investigator at once), as
+/// #295 left it. The partner's choice for Tony is held for the human's pass; the human
+/// takes Tony over instead. Its pending wait answers that its session ended, naming the
+/// choice that was not applied, and the held choice is never applied: Tony's next
+/// action is the human's.
 #[test]
-fn taking_over_releases_the_partners_held_choice_unapplied() {
+fn taking_over_leaves_the_partners_held_choice_unapplied() {
     let (mut sitting, partner) = tonys_partner_before_the_humans_violin();
     let (revision, before) = (sitting.revision(), tonys_holdings(&sitting));
     let held = sitting.choose(&partner, "action:ordinary:resource");
     assert_eq!(held["status"], "held", "{held}");
     let waits = sitting.wait(&partner);
 
-    sitting.host.set_selected(Tony, false);
+    sitting.hand(Tony, false);
     sitting.poll();
-    let changed = sitting.take(waits).expect("Control changed");
-    assert_eq!(changed["status"], "control_changed", "{changed}");
-    assert_eq!(changed["investigators"], json!([]), "{changed}");
-    let told = sitting.ask(json!({"op": "wait", "partner": partner}));
-    assert_eq!(told["status"], "released", "{told}");
+    let told = sitting.take(waits).expect("The wait tells the take-over");
+    assert_eq!(told["status"], "closed", "{told}");
+    let reason = told["reason"].as_str().unwrap();
+    assert!(reason.contains("The table took Tony Morgan over"), "{told}");
     assert!(
-        told["reason"].as_str().is_some_and(|reason| reason
-            .contains("was not applied: the investigator it was for is no longer yours")),
+        reason.contains("Your held choice, ") && reason.contains("was not applied"),
         "{told}"
     );
     assert_eq!(sitting.revision(), revision, "Not applied");
@@ -1014,7 +1017,7 @@ fn the_humans_options_in_another_players_turn_window_include_his_pass() {
     let mut session = turn(Tony);
     session.asset_for_test(Patrice, "06016");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    sitting.join(&[]);
+    sitting.join("patrice");
     let human = sitting.host.control().human_choices(&sitting.rules.session);
     assert!(
         !human.iter().any(|choice| choice.id == PASS_BEFORE),
@@ -1038,7 +1041,7 @@ fn a_possible_act_payment_makes_no_one_a_turn_window_participant() {
     session.place_for_test(Patrice, 6, "01111");
     session.place_for_test(Jacqueline, 0, "01111");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     assert!(
         sitting
             .offered()
@@ -1083,7 +1086,7 @@ fn the_turn_window_is_said_beside_a_possible_clue_payment() {
     session.place_for_test(Patrice, 2, "01111");
     session.place_for_test(Jacqueline, 0, "01111");
     let mut sitting = Sitting::new(session, &[Tony]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("tony");
     let observed = sitting.ask(json!({"op": "observe", "partner": partner}));
     let decision = &observed["view"]["decision"];
     assert!(
@@ -1114,10 +1117,10 @@ fn tonys_empty_handed_turn(jacqueline: &str) -> Session {
 
 /// Tony investigates the Study, and the table reaches his chaos-token reveal, each
 /// step taken by whichever player it belongs to: the human, or the one partner,
-/// which plays `partners`.
-fn at_tonys_token_reveal(session: Session, partners: &[Investigator]) -> (Sitting, String) {
-    let mut sitting = Sitting::new(session, partners);
-    let partner = sitting.join(&[]);
+/// which plays `who`.
+fn at_tonys_token_reveal(session: Session, who: Investigator) -> (Sitting, String) {
+    let mut sitting = Sitting::new(session, &[who]);
+    let partner = sitting.join(who.id());
     let step = |sitting: &mut Sitting, id: &str| {
         if sitting.host.control().human_may(&sitting.rules.session, id) {
             assert_eq!(sitting.human(id), HumanChoice::Commit, "{id}");
@@ -1143,7 +1146,7 @@ fn at_tonys_token_reveal(session: Session, partners: &[Investigator]) -> (Sittin
 
 /// Tony's partner at his reveal, with the human's Jacqueline beside him.
 fn tonys_partner_at_his_token_reveal() -> (Sitting, String) {
-    at_tonys_token_reveal(tonys_empty_handed_turn(STUDY), &[Tony])
+    at_tonys_token_reveal(tonys_empty_handed_turn(STUDY), Tony)
 }
 
 const STUDY: &str = "01111";
@@ -1225,8 +1228,7 @@ fn a_partners_held_reveal_is_released_when_the_human_uses_jacquelines_reaction()
 /// the human's reveal is applied.
 #[test]
 fn the_humans_token_reveal_is_held_until_a_partners_jacqueline_passes() {
-    let (mut sitting, partner) =
-        at_tonys_token_reveal(tonys_empty_handed_turn(STUDY), &[Jacqueline]);
+    let (mut sitting, partner) = at_tonys_token_reveal(tonys_empty_handed_turn(STUDY), Jacqueline);
     let revision = sitting.revision();
     assert_eq!(sitting.human("test:reveal"), HumanChoice::Ready);
     assert_eq!(sitting.revision(), revision, "Held for her pass");
@@ -1270,7 +1272,7 @@ fn the_humans_token_reveal_is_held_until_a_partners_jacqueline_passes() {
 /// location"), and the partner's reveal is applied at once.
 #[test]
 fn a_reveal_waits_on_no_player_without_an_option_in_it() {
-    let (mut sitting, partner) = at_tonys_token_reveal(tonys_empty_handed_turn("01112"), &[Tony]);
+    let (mut sitting, partner) = at_tonys_token_reveal(tonys_empty_handed_turn("01112"), Tony);
     assert!(
         !sitting
             .offered()
@@ -1316,7 +1318,7 @@ fn every_list_with_the_humans_option_holds_the_deciding_partners_choice() {
         let mut session = turn(Tony);
         prepare(&mut session);
         let mut sitting = Sitting::new(session, &[Tony]);
-        let partner = sitting.join(&[]);
+        let partner = sitting.join("tony");
         (sitting, partner)
     };
     let (premonition, premonition_partner) = in_tonys_turn(|session| {
@@ -1336,7 +1338,7 @@ fn every_list_with_the_humans_option_holds_the_deciding_partners_choice() {
         session.hand_for_test(Tony, "60513");
         session.place_for_test(Tony, 0, &drawers);
         let mut sitting = Sitting::new(session, &[Patrice]);
-        let partner = sitting.join(&[]);
+        let partner = sitting.join("patrice");
         (sitting, partner)
     };
     let cases = [
@@ -1444,7 +1446,7 @@ fn every_hint_is_one_short_line_that_points_to_the_partner_instructions() {
 
     let (session, _, _) = tonys_commitment_window();
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let view = observe(&mut sitting, &partner);
     let how = shared_how(&view, &|shared| shared["kind"] == "commitment");
     hints.push(("a commitment", how, &[]));
@@ -1454,14 +1456,14 @@ fn every_hint_is_one_short_line_that_points_to_the_partner_instructions() {
     session.hand_for_test(Jacqueline, "04199");
     choose(&mut session, "action:ordinary:investigate");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let view = observe(&mut sitting, &partner);
     hints.push(("a window", shared_how(&view, &plain_window), &[]));
 
     let mut session = turn(Tony);
     session.asset_for_test(Patrice, "06016");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let view = observe(&mut sitting, &partner);
     let how = shared_how(&view, &|shared| shared["before_action_of"] == "Tony Morgan");
     hints.push((
@@ -1470,8 +1472,7 @@ fn every_hint_is_one_short_line_that_points_to_the_partner_instructions() {
         &["Tony Morgan"],
     ));
 
-    let (mut sitting, partner) =
-        at_tonys_token_reveal(tonys_empty_handed_turn(STUDY), &[Jacqueline]);
+    let (mut sitting, partner) = at_tonys_token_reveal(tonys_empty_handed_turn(STUDY), Jacqueline);
     let view = observe(&mut sitting, &partner);
     let how = shared_how(&view, &|shared| {
         shared["before_decision_of"] == "Tony Morgan"
@@ -1487,7 +1488,7 @@ fn every_hint_is_one_short_line_that_points_to_the_partner_instructions() {
     session.place_for_test(Patrice, 2, "01111");
     session.place_for_test(Jacqueline, 0, "01111");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let proposed = sitting.choose(&partner, "act:pay:0:1:0");
     let how = shared_how(&proposed["view"], &|shared| {
         shared["kind"] == "clue_payment"
@@ -1497,7 +1498,7 @@ fn every_hint_is_one_short_line_that_points_to_the_partner_instructions() {
     let session =
         Session::with_hostile_fixture(crate::gathering::HostileFixture::GatheringRoundEnd);
     let mut sitting = Sitting::new(session, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let view = observe(&mut sitting, &partner);
     let how = shared_how(&view, &|shared| shared["kind"] == "clue_payment");
     hints.push(("a clue payment at round end", how, &[]));
@@ -1545,14 +1546,14 @@ fn taking_over_the_only_other_player_with_a_fast_option_applies_the_held_choice(
     let mut session = turn(Tony);
     session.asset_for_test(Patrice, "06016");
     let mut sitting = Sitting::new(session, &[Patrice]);
-    sitting.join(&[]);
+    sitting.join("patrice");
     let revision = sitting.revision();
     assert_eq!(
         sitting.human("action:ordinary:resource"),
         HumanChoice::Ready
     );
     assert_eq!(sitting.revision(), revision);
-    sitting.host.set_selected(Patrice, false);
+    sitting.hand(Patrice, false);
     sitting.poll();
     assert_eq!(sitting.revision(), revision + 1);
     assert_eq!(

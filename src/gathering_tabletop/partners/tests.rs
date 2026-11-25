@@ -111,12 +111,13 @@ fn exchange(app: &mut App, socket: &Path, requests: &[Value]) -> Vec<Value> {
     client.join().unwrap()
 }
 
-fn join(partnered: &mut Partnered) -> String {
-    let joined = exchange(
-        &mut partnered.app,
-        &partnered.socket,
-        &[json!({"op": "join"})],
-    );
+/// A join that names one investigator.
+fn joining(who: Investigator) -> Value {
+    json!({"op": "join", "investigators": [who]})
+}
+
+fn join(partnered: &mut Partnered, who: Investigator) -> String {
+    let joined = exchange(&mut partnered.app, &partnered.socket, &[joining(who)]);
     assert_eq!(joined[0]["status"], "joined", "{}", joined[0]);
     joined[0]["partner"].as_str().unwrap().to_owned()
 }
@@ -137,11 +138,7 @@ fn the_socket_lives_only_while_partners_are_enabled_and_serves_several_partners_
         "The menu shows the line: {shown}"
     );
 
-    let first = exchange(
-        &mut partnered.app,
-        &socket,
-        &[json!({"op": "join", "investigators": ["patrice"]})],
-    );
+    let first = exchange(&mut partnered.app, &socket, &[joining(Patrice)]);
     let patrices = first[0]["partner"].as_str().unwrap().to_owned();
     let waiting = connect(
         &socket,
@@ -149,9 +146,9 @@ fn the_socket_lives_only_while_partners_are_enabled_and_serves_several_partners_
     );
     let wakes = partnered.wakes.load(Ordering::SeqCst);
     // A second partner is served while the first one's wait is held.
-    let second = exchange(&mut partnered.app, &socket, &[json!({"op": "join"})]);
+    let second = exchange(&mut partnered.app, &socket, &[joining(Jacqueline)]);
     assert_eq!(second[0]["status"], "joined", "{}", second[0]);
-    assert_eq!(second[0]["investigators"], json!(["jacqueline"]));
+    assert_eq!(second[0]["investigator"], "jacqueline", "{}", second[0]);
     assert!(!waiting.is_finished(), "Nothing concerns Patrice yet");
     assert!(
         partnered.wakes.load(Ordering::SeqCst) > wakes,
@@ -192,9 +189,13 @@ fn the_pasted_line_points_to_the_partner_instructions_and_names_no_player() {
         "The line points to a document in the repository"
     );
     assert!(
-        line.contains("`scripts/tools partner --socket /run/partners-elsewhere.sock join`"),
+        line.contains(
+            "`scripts/tools partner --socket /run/partners-elsewhere.sock join INVESTIGATOR`"
+        ),
         "{line}"
     );
+    // #295: one line pasted per investigator.
+    assert!(line.contains("one session per investigator"), "{line}");
     let words: Vec<String> = line
         .split(|character: char| !character.is_alphanumeric())
         .map(str::to_lowercase)
@@ -242,7 +243,7 @@ fn the_humans_controls_hold_only_the_humans_options_and_a_cue_names_the_deciding
     choose(app, "confirm-mulligan");
     assert_eq!(app.world().resource::<Table>().session.revision(), revision);
 
-    let partner = join(&mut partnered);
+    let partner = join(&mut partnered, Patrice);
     let app = &mut partnered.app;
     app.update();
     let shown = rendered_text(app);
@@ -264,7 +265,7 @@ fn the_humans_controls_hold_only_the_humans_options_and_a_cue_names_the_deciding
 #[test]
 fn a_partners_choice_waits_for_the_table_to_settle_and_commits_like_a_click() {
     let mut partnered = partnered(&[Patrice]);
-    let partner = join(&mut partnered);
+    let partner = join(&mut partnered, Patrice);
     let app = &mut partnered.app;
     choose(app, "confirm-mulligan"); // Jacqueline
     finish_presentation(app);
@@ -332,18 +333,36 @@ fn a_partners_choice_waits_for_the_table_to_settle_and_commits_like_a_click() {
 }
 
 /// Ticket #205, Recovery: Take over in the middle of a partner's decision returns
-/// Patrice to the human at once, and the partner's later choice is refused as no
-/// longer its own.
+/// Patrice to the human at once. Her session is told so at once, through the wait it
+/// holds, and whatever it asks afterwards is answered the same and changes nothing
+/// (#295).
 #[test]
-fn take_over_returns_the_decision_to_the_human_and_refuses_the_partners_later_choice() {
+fn take_over_returns_the_decision_to_the_human_and_ends_the_partners_session() {
     let mut partnered = partnered(&[Patrice]);
-    let partner = join(&mut partnered);
+    let partner = join(&mut partnered, Patrice);
     let app = &mut partnered.app;
     choose(app, "confirm-mulligan");
     finish_presentation(app);
     choose(app, "confirm-mulligan");
     finish_presentation(app);
     let revision = app.world().resource::<Table>().session.revision();
+    let waiting = connect(
+        &partnered.socket,
+        &[json!({"op": "wait", "partner": partner, "listen": true, "timeout_seconds": 60})],
+    );
+    for _ in 0..1_000 {
+        app.update();
+        let host = &app.world().resource::<Partners>().host;
+        // Zero once its wait is held.
+        if host.silence(Patrice, Instant::now()) == Some(Duration::ZERO) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        !waiting.is_finished(),
+        "It listens, and nothing concerns it"
+    );
     press(app, "Take over Patrice Hathaway");
     assert!(
         offered(app).iter().any(|id| id == "confirm-mulligan"),
@@ -351,25 +370,26 @@ fn take_over_returns_the_decision_to_the_human_and_refuses_the_partners_later_ch
         offered(app)
     );
     assert!(!rendered_text(app).contains("partner thinking"));
-    let refused = exchange(
+    pump(app, || waiting.is_finished());
+    let after = exchange(
         app,
         &partnered.socket,
         &[
             json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}),
+            // The connection stays usable.
             json!({"op": "observe", "partner": partner}),
         ],
     );
-    assert_eq!(refused[0]["status"], "refused", "{}", refused[0]);
-    assert!(
-        refused[0]["error"]
-            .as_str()
-            .unwrap()
-            .contains("no longer yours")
-    );
-    assert_eq!(
-        refused[1]["status"], "observed",
-        "The connection stays usable"
-    );
+    for told in waiting.join().unwrap().into_iter().chain(after) {
+        assert_eq!(told["status"], "closed", "{told}");
+        assert!(
+            told["reason"]
+                .as_str()
+                .unwrap()
+                .contains("The table took Patrice Hathaway over"),
+            "{told}"
+        );
+    }
     assert_eq!(app.world().resource::<Table>().session.revision(), revision);
 }
 
@@ -424,7 +444,7 @@ fn the_humans_controls_leave_a_partner_leads_group_choice_and_its_undo_to_that_p
     let mut partnered = partnered(&[Jacqueline]);
     // An open menu holds the table's presentation, and with it a partner's choice.
     press(&mut partnered.app, "Close menu");
-    let partner = join(&mut partnered);
+    let partner = join(&mut partnered, Jacqueline);
     partner_chooses(&mut partnered, &partner, "confirm-mulligan"); // Jacqueline
     let app = &mut partnered.app;
     choose(app, "confirm-mulligan"); // Tony
@@ -477,7 +497,7 @@ fn the_humans_controls_leave_a_partner_leads_group_choice_and_its_undo_to_that_p
 fn the_human_playing_the_lead_keeps_the_group_choice_at_the_table() {
     let mut partnered = partnered(&[Patrice]);
     press(&mut partnered.app, "Close menu");
-    let partner = join(&mut partnered);
+    let partner = join(&mut partnered, Patrice);
     let app = &mut partnered.app;
     choose(app, "confirm-mulligan"); // Jacqueline
     settle(app);
@@ -513,7 +533,7 @@ fn the_human_playing_the_lead_keeps_the_group_choice_at_the_table() {
 #[test]
 fn leaving_the_table_ends_every_partner_session() {
     let mut partnered = partnered(&[Patrice]);
-    let partner = join(&mut partnered);
+    let partner = join(&mut partnered, Patrice);
     let waiting = connect(
         &partnered.socket,
         &[json!({"op": "wait", "partner": partner})],
@@ -686,7 +706,7 @@ fn a_partners_player_window_in_the_humans_test_names_what_the_partner_may_use() 
     press(&mut app, "Patrice Hathaway: you play");
     press(&mut app, "Enable agent partners");
     press(&mut app, "Close menu");
-    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    let joined = exchange(&mut app, &socket, &[joining(Patrice)]);
     assert_eq!(joined[0]["status"], "joined", "{}", joined[0]);
     let partner = joined[0]["partner"].as_str().unwrap();
     // Her partner is woken for the window, and its options are her Violin and Pass.
@@ -807,7 +827,7 @@ fn captions(app: &mut App) -> Vec<String> {
 fn a_shared_commitment_shows_the_partners_pending_card_and_confirm_is_the_humans_readiness() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, socket, humans, violin) = shared_commitment(directory.path());
-    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    let joined = exchange(&mut app, &socket, &[joining(Patrice)]);
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     assert!(
         !offered(&mut app).contains(&format!("commit:{violin}")),
@@ -953,7 +973,7 @@ fn below_portrait(app: &mut App, who: Investigator) -> Option<(Entity, String)> 
 #[test]
 fn a_deciding_partners_portrait_offers_take_over() {
     let mut partnered = partnered(&[Patrice]);
-    join(&mut partnered);
+    join(&mut partnered, Patrice);
     let app = &mut partnered.app;
     let take_over = |app: &mut App, who: Investigator| {
         below_portrait(app, who)
@@ -999,7 +1019,7 @@ fn a_silent_partner_is_marked_with_its_minutes_until_it_is_heard_from() {
         .insert_resource(PartnerClock(Arc::new(move || {
             Instant::now() + *clock.lock().unwrap()
         })));
-    let partner = join(&mut partnered);
+    let partner = join(&mut partnered, Patrice);
     let app = &mut partnered.app;
     choose(app, "confirm-mulligan"); // Jacqueline
     finish_presentation(app);
@@ -1078,13 +1098,8 @@ fn opened(session: Session, directory: &Path, partners: &[Investigator]) -> (App
 fn the_human_passes_before_a_partners_action_while_holding_a_fast_option() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, socket) = violin_in_jacquelines_turn(directory.path(), &[Jacqueline]);
-    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
-    assert_eq!(
-        joined[0]["investigators"],
-        json!(["jacqueline"]),
-        "{}",
-        joined[0]
-    );
+    let joined = exchange(&mut app, &socket, &[joining(Jacqueline)]);
+    assert_eq!(joined[0]["investigator"], "jacqueline", "{}", joined[0]);
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     app.update();
     let shown = rendered_text(&mut app);
@@ -1152,13 +1167,8 @@ fn without_partners_a_turns_choice_commits_at_once() {
 /// has joined: the partner's identity and the Violin's option for Patrice herself.
 fn patrices_partner_in_jacquelines_turn(directory: &Path) -> (App, PathBuf, String, String) {
     let (mut app, socket) = violin_in_jacquelines_turn(directory, &[Patrice]);
-    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
-    assert_eq!(
-        joined[0]["investigators"],
-        json!(["patrice"]),
-        "{}",
-        joined[0]
-    );
+    let joined = exchange(&mut app, &socket, &[joining(Patrice)]);
+    assert_eq!(joined[0]["investigator"], "patrice", "{}", joined[0]);
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     let violin = joined[0]["view"]["decision"]["options"]
         .as_array()
@@ -1342,8 +1352,8 @@ fn tonys_reveal(directory: &Path, partners: &[Investigator]) -> (App, PathBuf) {
 fn the_human_passes_on_jacquelines_reaction_before_a_partners_reveal() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, socket) = tonys_reveal(directory.path(), &[Tony]);
-    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
-    assert_eq!(joined[0]["investigators"], json!(["tony"]), "{}", joined[0]);
+    let joined = exchange(&mut app, &socket, &[joining(Tony)]);
+    assert_eq!(joined[0]["investigator"], "tony", "{}", joined[0]);
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     app.update();
     let shown = rendered_text(&mut app);
@@ -1391,7 +1401,7 @@ fn the_human_passes_on_jacquelines_reaction_before_a_partners_reveal() {
 fn the_humans_reveal_is_shown_waiting_for_a_partners_jacqueline() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, socket) = tonys_reveal(directory.path(), &[Jacqueline]);
-    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    let joined = exchange(&mut app, &socket, &[joining(Jacqueline)]);
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     app.update();
     let at = revision(&app);
@@ -1432,7 +1442,7 @@ fn the_humans_reveal_is_shown_waiting_for_a_partners_jacqueline() {
 fn a_partners_reveal_window_names_jacquelines_reaction_once() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, socket) = tonys_reveal(directory.path(), &[Jacqueline]);
-    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    let joined = exchange(&mut app, &socket, &[joining(Jacqueline)]);
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     app.update();
     let shown = rendered_text(&mut app);

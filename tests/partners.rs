@@ -66,7 +66,7 @@ impl Sitting {
         continuity::save_session(&save, &session).unwrap();
         let mut host = Host::new();
         for who in partners {
-            host.set_selected(*who, true);
+            assert!(host.set_selected(*who, true).is_empty());
         }
         assert!(host.set_enabled(true).is_empty());
         Self {
@@ -131,8 +131,15 @@ impl Sitting {
             .unwrap_or_else(|error| panic!("{id}: {error}"));
     }
 
-    fn join(&mut self, investigators: &[&str]) -> String {
-        let answer = self.ask(json!({"op": "join", "investigators": investigators}));
+    /// Hand `who` to partners, or take it back.
+    fn hand(&mut self, who: Investigator, to_partners: bool) {
+        let answers = self.host.set_selected(who, to_partners);
+        self.answers.extend(answers);
+    }
+
+    /// One partner session playing `investigator`.
+    fn join(&mut self, investigator: &str) -> String {
+        let answer = self.ask(joining(investigator));
         assert_eq!(answer["status"], "joined", "{answer}");
         answer["partner"].as_str().unwrap().to_owned()
     }
@@ -206,13 +213,9 @@ impl Sitting {
     }
 }
 
-fn investigators(answer: &Value) -> Vec<&str> {
-    answer["investigators"]
-        .as_array()
-        .unwrap_or_else(|| panic!("no investigators: {answer}"))
-        .iter()
-        .map(|who| who.as_str().unwrap())
-        .collect()
+/// A join that names one investigator.
+fn joining(investigator: &str) -> Value {
+    json!({"op": "join", "investigators": [investigator]})
 }
 
 fn option_ids(view: &Value) -> Vec<&str> {
@@ -237,8 +240,8 @@ fn group_choice(answer: &Value) -> &Value {
 fn a_partner_playing_the_lead_chooses_who_takes_the_next_turn_and_every_partner_hears_it_open() {
     let mut sitting = Sitting::new(Session::with_seed(89), &[Patrice, Jacqueline]);
     sitting.human("lead:jacqueline");
-    let lead = sitting.join(&["jacqueline"]);
-    let other = sitting.join(&["patrice"]);
+    let lead = sitting.join("jacqueline");
+    let other = sitting.join("patrice");
     // Mulligans go in player order from the lead (RR p.13): Jacqueline, Tony, Patrice.
     sitting.partner(&lead, "confirm-mulligan");
     let leads = sitting.send(&json!({"op": "wait", "partner": lead, "timeout_seconds": 60}));
@@ -294,8 +297,8 @@ fn a_partner_playing_the_lead_chooses_who_takes_the_next_turn_and_every_partner_
 fn a_listening_wait_lets_the_lead_hear_the_table_before_its_group_choice() {
     let mut sitting = Sitting::new(Session::with_seed(89), &[Patrice, Jacqueline]);
     sitting.human("lead:jacqueline");
-    let lead = sitting.join(&["jacqueline"]);
-    let other = sitting.join(&["patrice"]);
+    let lead = sitting.join("jacqueline");
+    let other = sitting.join("patrice");
     sitting.partner(&lead, "confirm-mulligan");
     sitting.human("confirm-mulligan");
     sitting.partner(&other, "confirm-mulligan");
@@ -342,7 +345,7 @@ fn a_listening_wait_lets_the_lead_hear_the_table_before_its_group_choice() {
 #[test]
 fn the_human_playing_the_lead_makes_the_group_choice_and_a_partner_sees_it_open_without_options() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.human("confirm-mulligan"); // Jacqueline
     sitting.human("confirm-mulligan"); // Tony
     sitting.partner(&partner, "confirm-mulligan");
@@ -388,7 +391,7 @@ fn the_leads_player_receives_the_choices_a_card_gives_the_lead() {
         let session = Session::with_hostile_fixture(fixture);
         let lead = session.observe().lead.expect("A lead");
         let mut sitting = Sitting::new(session.clone(), &[lead]);
-        let partner = sitting.join(&[]);
+        let partner = sitting.join(lead.id());
         let opened = sitting.ask(json!({"op": "wait", "partner": partner}));
         assert_eq!(opened["status"], "group_choice", "{fixture:?}: {opened}");
         assert_eq!(group_choice(&opened)["arbiter"], json!(lead));
@@ -409,7 +412,7 @@ fn the_leads_player_receives_the_choices_a_card_gives_the_lead() {
             .find(|who| *who != lead)
             .unwrap();
         let mut sitting = Sitting::new(session, &[another]);
-        let partner = sitting.join(&[]);
+        let partner = sitting.join(another.id());
         let heard = sitting.ask(json!({"op": "wait", "partner": partner}));
         assert_eq!(heard["status"], "group_choice", "{fixture:?}: {heard}");
         assert_eq!(group_choice(&heard)["arbiter"], json!(lead));
@@ -429,8 +432,8 @@ fn eliminating_the_lead_gives_the_new_lead_choice_to_the_next_investigators_play
         Session::with_hostile_fixture(HostileFixture::Lifecycle(LifecycleFixture::EndTurnDefeat));
     assert_eq!(session.observe().lead, Some(Jacqueline));
     let mut sitting = Sitting::new(session, &[Tony, Patrice]);
-    let tonys = sitting.join(&["tony"]);
-    let patrices = sitting.join(&["patrice"]);
+    let tonys = sitting.join("tony");
+    let patrices = sitting.join("patrice");
     let partners = [tonys.as_str(), patrices.as_str()];
     // Jacqueline takes a resource and the engaged Priest's attack defeats her.
     for id in [
@@ -463,63 +466,169 @@ fn eliminating_the_lead_gives_the_new_lead_choice_to_the_next_investigators_play
     );
 }
 
-/// Ticket #205, Joining: by default a join takes every investigator handed to
-/// partners that no partner holds; a later join finds none left.
+/// #295: a join names exactly one investigator. One that names none, several or the
+/// same one twice is refused, whichever it names, and the refusal names every
+/// investigator open to partners; it claims nothing.
 #[test]
-fn joining_by_default_takes_every_unclaimed_investigator_handed_to_partners() {
+fn a_join_naming_none_or_several_is_refused_and_names_the_investigators_open() {
     let mut sitting = Sitting::after_lead(&[Patrice, Jacqueline]);
-    let joined = sitting.ask(json!({"op": "join"}));
-    assert_eq!(joined["status"], "joined", "{joined}");
-    assert_eq!(investigators(&joined), ["patrice", "jacqueline"]);
-    assert_eq!(joined["view"]["you_play"], json!(["patrice", "jacqueline"]));
-    let partner = joined["partner"].as_str().unwrap().to_owned();
-    assert_eq!(
-        sitting.host.control().controller(Patrice),
-        Controller::Partner(partner)
-    );
-    assert_eq!(sitting.host.control().controller(Tony), Controller::Human);
+    for named in [
+        json!({"op": "join"}),
+        json!({"op": "join", "investigators": []}),
+        json!({"op": "join", "investigators": ["patrice", "jacqueline"]}),
+        json!({"op": "join", "investigators": ["tony", "patrice", "jacqueline"]}),
+        json!({"op": "join", "investigators": ["patrice", "patrice"]}),
+    ] {
+        let refused = sitting.ask(named.clone());
+        assert_eq!(refused["status"], "refused", "{named}: {refused}");
+        assert_eq!(refused["ok"], false);
+        let reason = refused["error"].as_str().unwrap();
+        assert!(reason.contains("one investigator"), "{named}: {reason}");
+        for open in ["Patrice Hathaway (patrice)", "Jacqueline Fine (jacqueline)"] {
+            assert!(reason.contains(open), "{named}: {reason}");
+        }
+        assert!(!reason.contains("Tony"), "{named}: {reason}");
+        for who in [Patrice, Jacqueline] {
+            assert_eq!(
+                sitting.host.control().controller(who),
+                Controller::Unclaimed,
+                "{named} claims no one"
+            );
+        }
+    }
 
-    let late = sitting.ask(json!({"op": "join"}));
-    assert_eq!(late["status"], "refused", "{late}");
-    assert_eq!(late["ok"], false);
-    let reason = late["error"].as_str().unwrap();
+    // Once Patrice has a session, only Jacqueline is open.
+    sitting.join("patrice");
+    let refused = sitting.ask(json!({"op": "join"}));
+    let reason = refused["error"].as_str().unwrap();
     assert!(
-        reason.contains("No investigator is open to partners"),
+        reason.contains("Jacqueline Fine (jacqueline)") && !reason.contains("Patrice"),
         "{reason}"
     );
-    // Review fix E3: a session that has not joined cannot speak at the table, so
-    // the refusal sends it nowhere; it says there is nothing for it to play.
-    assert!(!reason.contains("Ask at the table"), "{reason}");
-    assert!(reason.contains("nothing for you to play"), "{reason}");
 }
 
-/// Ticket #205, Joining: a join naming investigators takes only those no partner
-/// holds; naming one another partner holds, or one not handed to partners, is
-/// refused and claims nothing.
+/// #295: a join takes the one investigator it names, and every answer says which one
+/// the session plays. Once no investigator is open, a join is told that there is
+/// nothing to play, whether it names one or none.
 #[test]
-fn a_named_join_takes_only_unclaimed_investigators_and_a_conflicting_claim_is_refused() {
+fn a_session_plays_the_one_investigator_its_join_names() {
     let mut sitting = Sitting::after_lead(&[Patrice, Jacqueline]);
-    let first = sitting.ask(json!({"op": "join", "investigators": ["patrice"]}));
-    assert_eq!(investigators(&first), ["patrice"]);
-
-    let conflict = sitting.ask(json!({"op": "join", "investigators": ["jacqueline", "patrice"]}));
-    assert_eq!(conflict["status"], "refused", "{conflict}");
-    assert!(
-        conflict["error"]
-            .as_str()
-            .unwrap()
-            .contains("Patrice Hathaway is already played")
-    );
-    let closed = sitting.ask(json!({"op": "join", "investigators": ["tony"]}));
-    assert_eq!(closed["status"], "refused", "{closed}");
+    let joined = sitting.ask(joining("patrice"));
+    assert_eq!(joined["status"], "joined", "{joined}");
+    assert_eq!(joined["investigator"], "patrice", "{joined}");
+    assert_eq!(joined["view"]["you_play"], "patrice", "{joined}");
+    let patrices = joined["partner"].as_str().unwrap().to_owned();
+    let control = sitting.host.control();
     assert_eq!(
-        sitting.host.control().controller(Jacqueline),
-        Controller::Unclaimed
+        control.controller(Patrice),
+        Controller::Partner(patrices.clone())
+    );
+    assert_eq!(control.controller(Jacqueline), Controller::Unclaimed);
+    assert_eq!(control.controller(Tony), Controller::Human);
+
+    let hers = sitting.ask(joining("jacqueline"));
+    assert_eq!(hers["investigator"], "jacqueline", "{hers}");
+    assert_eq!(hers["view"]["you_play"], "jacqueline", "{hers}");
+    assert_ne!(hers["partner"], patrices);
+    for (op, request) in [
+        ("observe", json!({"op": "observe", "partner": patrices})),
+        (
+            "inspect",
+            json!({"op": "inspect", "partner": patrices, "card": "06005"}),
+        ),
+        (
+            "wait",
+            json!({"op": "wait", "partner": patrices, "timeout_seconds": 0}),
+        ),
+    ] {
+        let answer = sitting.ask(request);
+        assert_eq!(answer["investigator"], "patrice", "{op}: {answer}");
+        assert!(answer.get("investigators").is_none(), "{op}: {answer}");
+    }
+
+    for late in [json!({"op": "join"}), joining("jacqueline")] {
+        let late = sitting.ask(late);
+        assert_eq!(late["status"], "refused", "{late}");
+        assert_eq!(late["ok"], false);
+        let reason = late["error"].as_str().unwrap();
+        assert!(
+            reason.contains("No investigator is open to partners"),
+            "{reason}"
+        );
+        // Review fix E3: a session that has not joined cannot speak at the table, so
+        // the refusal sends it nowhere; it says there is nothing for it to play.
+        assert!(!reason.contains("Ask at the table"), "{reason}");
+        assert!(reason.contains("nothing for you to play"), "{reason}");
+    }
+}
+
+/// Ticket #205, Joining: naming an investigator another partner plays, or one not
+/// handed to partners, is refused and claims nothing; the refusal names those open
+/// (#295).
+#[test]
+fn a_join_is_refused_an_investigator_another_partner_or_the_human_plays() {
+    let mut sitting = Sitting::after_lead(&[Patrice, Jacqueline]);
+    let first = sitting.ask(joining("patrice"));
+    assert_eq!(first["investigator"], "patrice", "{first}");
+
+    for (named, why) in [
+        ("patrice", "Patrice Hathaway is already played"),
+        ("tony", "Tony Morgan is not open to partners"),
+    ] {
+        let refused = sitting.ask(joining(named));
+        assert_eq!(refused["status"], "refused", "{refused}");
+        let reason = refused["error"].as_str().unwrap();
+        assert!(reason.contains(why), "{reason}");
+        assert!(reason.contains("Jacqueline Fine (jacqueline)"), "{reason}");
+        assert_eq!(
+            sitting.host.control().controller(Jacqueline),
+            Controller::Unclaimed
+        );
+    }
+
+    let second = sitting.ask(joining("jacqueline"));
+    assert_eq!(second["investigator"], "jacqueline", "{second}");
+    assert_ne!(first["partner"], second["partner"]);
+}
+
+/// #295: a join by an identity that plays an investigator is refused, whichever it
+/// names, with nothing changed: the claims, the attempt and the session stay as they
+/// were. An identity that has left holds none, so it may join.
+#[test]
+fn a_join_by_an_identity_that_plays_an_investigator_is_refused_with_nothing_changed() {
+    let mut sitting = Sitting::after_lead(&[Patrice, Jacqueline]);
+    let patrices = sitting.join("patrice");
+    let control = sitting.host.control();
+    let (revision, saved) = (
+        sitting.revision(),
+        std::fs::read(&sitting.rules.save).unwrap(),
+    );
+    for named in [vec!["jacqueline"], vec!["patrice"], vec!["tony"], vec![]] {
+        let refused =
+            sitting.ask(json!({"op": "join", "partner": patrices, "investigators": named}));
+        assert_eq!(refused["status"], "refused", "{named:?}: {refused}");
+        let reason = refused["error"].as_str().unwrap();
+        assert!(
+            reason.contains("You already play Patrice Hathaway"),
+            "{named:?}: {reason}"
+        );
+        assert_eq!(refused["partner"], patrices, "Its identity: {refused}");
+        assert_eq!(refused["investigator"], "patrice", "{refused}");
+        assert_eq!(sitting.host.control(), control, "{named:?}");
+    }
+    assert_eq!(sitting.revision(), revision);
+    assert_eq!(std::fs::read(&sitting.rules.save).unwrap(), saved);
+    assert_eq!(
+        sitting.ask(json!({"op": "observe", "partner": patrices}))["status"],
+        "observed"
     );
 
-    let second = sitting.ask(json!({"op": "join"}));
-    assert_eq!(investigators(&second), ["jacqueline"]);
-    assert_ne!(first["partner"], second["partner"]);
+    sitting.ask(json!({"op": "leave", "partner": patrices}));
+    let again =
+        sitting.ask(json!({"op": "join", "partner": patrices, "investigators": ["jacqueline"]}));
+    assert_eq!(again["status"], "joined", "{again}");
+    assert_eq!(again["investigator"], "jacqueline", "{again}");
+    assert_ne!(again["partner"], patrices, "An identity is never reused");
 }
 
 /// Ticket #205, Waiting: a wait returns when the player's decision is pending at a
@@ -528,7 +637,7 @@ fn a_named_join_takes_only_unclaimed_investigators_and_a_conflicting_claim_is_re
 #[test]
 fn a_wait_returns_the_players_decision_once_the_table_settles_or_nothing_yet_at_its_timeout() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
 
     // Jacqueline's mulligan is the human's; nothing concerns the partner yet.
     let quiet = sitting.send(&json!({"op": "wait", "partner": partner, "timeout_seconds": 30}));
@@ -568,7 +677,7 @@ fn a_wait_returns_the_players_decision_once_the_table_settles_or_nothing_yet_at_
 #[test]
 fn the_view_holds_only_its_players_hidden_information_and_names_others_by_investigator() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let joined = sitting.ask(json!({"op": "join"}));
+    let joined = sitting.ask(joining("patrice"));
     let partner = joined["partner"].as_str().unwrap().to_owned();
     // Full text on first sight: Patrice's opening hand.
     let opening = sitting.rules.session.observe().investigators[Patrice.index()]
@@ -652,8 +761,8 @@ fn a_watcher_hidden_in_patrices_hand_is_absent_from_another_partners_view() {
         "The fixture holds Watcher in Patrice's hand"
     );
     let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
-    let patrices = sitting.join(&["patrice"]);
-    let jacquelines = sitting.join(&["jacqueline"]);
+    let patrices = sitting.join("patrice");
+    let jacquelines = sitting.join("jacqueline");
     let theirs = sitting.ask(json!({"op": "observe", "partner": jacquelines, "full": true}));
     assert!(!theirs.to_string().contains("06017"), "{theirs}");
     assert!(!theirs.to_string().contains("Watcher"), "{theirs}");
@@ -691,16 +800,14 @@ fn hand_codes(observation: &Observation, who: Investigator) -> Vec<String> {
         .collect()
 }
 
-/// A Gathering in play after every mulligan, with the partner joined for `partners`.
-fn in_play(partners: &[Investigator]) -> (Sitting, String) {
+/// A Gathering in play after every mulligan, with a partner joined for `who`.
+fn in_play(who: Investigator) -> (Sitting, String) {
     let mut sitting = Sitting::after_lead(&[]);
     for _ in Investigator::ALL {
         sitting.human("confirm-mulligan");
     }
-    for who in partners {
-        sitting.host.set_selected(*who, true);
-    }
-    let partner = sitting.join(&[]);
+    sitting.hand(who, true);
+    let partner = sitting.join(who.id());
     (sitting, partner)
 }
 
@@ -709,7 +816,7 @@ fn in_play(partners: &[Investigator]) -> (Sitting, String) {
 /// is refused exactly as a code that names no card, so the refusal reveals nothing.
 #[test]
 fn inspect_gives_a_visible_cards_table_text_and_refuses_a_hidden_card_as_no_card() {
-    let (mut sitting, partner) = in_play(&[Patrice]);
+    let (mut sitting, partner) = in_play(Patrice);
     let observation = sitting.rules.session.observe();
     let table = |code: &str| inspection::table_card(&observation, code, Sight::Table);
     let mine = hand_codes(&observation, Patrice);
@@ -791,8 +898,8 @@ fn inspect_shows_the_text_in_force_with_its_taboo_and_errata_notes() {
         Session::with_hostile_fixture(HostileFixture::Tokens(TokenFixture::VoiceRaGuidance));
     let observation = session.observe();
     let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
-    let patrices = sitting.join(&["patrice"]);
-    let jacquelines = sitting.join(&["jacqueline"]);
+    let patrices = sitting.join("patrice");
+    let jacquelines = sitting.join("jacqueline");
     let katarina = sitting.ask(json!({"op": "inspect", "partner": patrices, "card": "11069"}));
     assert_eq!(katarina["status"], "inspected", "{katarina}");
     assert!(
@@ -820,8 +927,8 @@ fn inspect_shows_the_text_in_force_with_its_taboo_and_errata_notes() {
 fn a_watcher_hidden_in_patrices_hand_cannot_be_inspected_by_another_partner() {
     let session = Session::with_hostile_fixture(HostileFixture::Retry(RetryFixture::HandWatcher));
     let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
-    let patrices = sitting.join(&["patrice"]);
-    let jacquelines = sitting.join(&["jacqueline"]);
+    let patrices = sitting.join("patrice");
+    let jacquelines = sitting.join("jacqueline");
     let theirs = sitting.ask(json!({"op": "inspect", "partner": jacquelines, "card": "06017"}));
     assert_eq!(theirs["status"], "refused", "{theirs}");
     assert!(!theirs.to_string().contains("Watcher"), "{theirs}");
@@ -865,8 +972,8 @@ fn a_watcher_hidden_in_patrices_hand_never_reaches_another_partner() {
         let session = Session::with_hostile_fixture(fixture);
         assert!(watcher_in_patrices_hand(&session), "{fixture:?}");
         let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
-        sitting.join(&["patrice"]);
-        let jacquelines = sitting.ask(json!({"op": "join", "investigators": ["jacqueline"]}));
+        sitting.join("patrice");
+        let jacquelines = sitting.ask(joining("jacqueline"));
         let partner = jacquelines["partner"].as_str().unwrap().to_owned();
         let mut answers = vec![jacquelines];
         let mut step = 0;
@@ -936,7 +1043,7 @@ fn changes_at<'a>(view: &'a Value, at: &str) -> Vec<&'a Value> {
 #[test]
 fn after_the_complete_first_view_each_view_reports_only_what_changed() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let joined = sitting.ask(json!({"op": "join"}));
+    let joined = sitting.ask(joining("patrice"));
     let partner = joined["partner"].as_str().unwrap().to_owned();
     let complete = &joined["view"];
     assert!(complete["investigators"].is_array(), "{complete}");
@@ -980,7 +1087,7 @@ fn after_the_complete_first_view_each_view_reports_only_what_changed() {
 #[test]
 fn a_partners_resource_action_is_answered_with_one_more_resource_and_one_action_fewer() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.human("confirm-mulligan");
     sitting.human("confirm-mulligan");
     let mulligan = sitting.ask(json!({"op": "wait", "partner": partner}));
@@ -1014,7 +1121,7 @@ fn a_partners_resource_action_is_answered_with_one_more_resource_and_one_action_
 #[test]
 fn a_full_observe_and_a_new_session_each_give_the_complete_view_once() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let joined = sitting.ask(json!({"op": "join"}));
+    let joined = sitting.ask(joining("patrice"));
     let partner = joined["partner"].as_str().unwrap().to_owned();
     let complete = joined["view"].clone();
     sitting.ask(json!({"op": "observe", "partner": partner}));
@@ -1025,7 +1132,7 @@ fn a_full_observe_and_a_new_session_each_give_the_complete_view_once() {
     assert_eq!(next["view"]["cards"], json!({}), "{next}");
 
     sitting.ask(json!({"op": "leave", "partner": partner}));
-    let again = sitting.ask(json!({"op": "join"}));
+    let again = sitting.ask(joining("patrice"));
     assert_eq!(again["status"], "joined", "{again}");
     assert_eq!(again["view"], complete, "A new session starts complete");
 }
@@ -1037,7 +1144,7 @@ fn a_full_observe_and_a_new_session_each_give_the_complete_view_once() {
 #[test]
 fn another_players_mulligan_reaches_a_partners_changes_without_naming_a_card() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let opening = sitting.rules.session.observe().investigators[Jacqueline.index()]
         .hand
         .clone();
@@ -1079,7 +1186,7 @@ fn another_players_mulligan_reaches_a_partners_changes_without_naming_a_card() {
 #[test]
 fn a_stale_unlisted_or_unowned_choice_is_refused_with_its_reason_and_the_view() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let revision = sitting.revision();
     let unowned = sitting.ask(
         json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}),
@@ -1133,7 +1240,7 @@ fn a_stale_unlisted_or_unowned_choice_is_refused_with_its_reason_and_the_view() 
 #[test]
 fn an_accepted_choice_waits_for_the_table_then_commits_autosaves_and_is_attributed() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.human("confirm-mulligan");
     sitting.human("confirm-mulligan");
     let revision = sitting.revision();
@@ -1167,7 +1274,7 @@ fn an_accepted_choice_waits_for_the_table_then_commits_autosaves_and_is_attribut
 #[test]
 fn a_partner_can_only_play_and_every_other_request_is_refused() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     let revision = sitting.revision();
     let saved = std::fs::read(&sitting.rules.save).unwrap();
     for op in [
@@ -1208,23 +1315,26 @@ fn a_partner_can_only_play_and_every_other_request_is_refused() {
     );
 }
 
-/// Ticket #205, Recovery: Take over in the middle of a partner's decision returns
-/// the investigator to the human at once; the partner's later choice is refused as
-/// no longer its own, and its wait answers that its control changed.
+/// Ticket #205, Recovery: Take over in the middle of a partner's decision returns the
+/// investigator to the human at once. Its session is told so and ends (#295): its held
+/// wait and its choice not yet applied are answered with the reason, and nothing it
+/// asks afterwards reaches the table. Another session plays on.
 #[test]
-fn take_over_mid_decision_refuses_the_partners_later_choice_as_no_longer_its_own() {
-    let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+fn take_over_mid_decision_ends_the_partners_session_and_applies_none_of_its_choices() {
+    let mut sitting = Sitting::after_lead(&[Tony, Patrice]);
+    let tonys = sitting.join("tony");
+    let partner = sitting.join("patrice");
     sitting.human("confirm-mulligan");
-    sitting.human("confirm-mulligan");
+    sitting.partner(&tonys, "confirm-mulligan");
     let revision = sitting.revision();
     let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
     assert_eq!(sitting.take(waiting).unwrap()["status"], "decision");
     sitting.rules.settled = false;
     let chosen = sitting.send(&json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}));
     let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
+    let tonys_wait = sitting.send(&json!({"op": "wait", "partner": tonys}));
 
-    sitting.host.set_selected(Patrice, false);
+    sitting.hand(Patrice, false);
     assert_eq!(
         sitting.host.control().controller(Patrice),
         Controller::Human
@@ -1235,26 +1345,57 @@ fn take_over_mid_decision_refuses_the_partners_later_choice_as_no_longer_its_own
             .control()
             .human_may(&sitting.rules.session, "confirm-mulligan")
     );
-    sitting.poll();
-    let changed = sitting.take(waiting).expect("Control changed");
-    assert_eq!(changed["status"], "control_changed", "{changed}");
-    assert_eq!(changed["ok"], true, "A change of control is not a refusal");
-    assert_eq!(changed["investigators"], json!([]));
+    let told = |answer: &Value| {
+        assert_eq!(answer["status"], "closed", "{answer}");
+        assert_eq!(answer["ok"], true, "A take-over is not a refusal");
+        let reason = answer["reason"].as_str().unwrap();
+        assert!(
+            reason.contains("The table took Patrice Hathaway over") && reason.contains("stop"),
+            "{answer}"
+        );
+        assert!(answer.get("view").is_none(), "It plays no one: {answer}");
+    };
+    told(&sitting.take(waiting).expect("Its wait is told at once"));
+    told(&sitting.take(chosen).expect("Its choice is told at once"));
     sitting.rules.settled = true;
     sitting.poll();
-    let refused = sitting.take(chosen).expect("Answered once settled");
-    assert_eq!(refused["status"], "refused", "{refused}");
-    assert!(
-        refused["error"]
-            .as_str()
-            .unwrap()
-            .contains("Patrice Hathaway is no longer yours"),
-        "{refused}"
-    );
+    assert_eq!(sitting.revision(), revision, "Its choice is not applied");
+
+    // Whatever it asks afterwards is answered the same, and changes nothing.
+    let control = sitting.host.control();
+    for request in [
+        json!({"op": "wait", "partner": partner}),
+        json!({"op": "observe", "partner": partner, "full": true}),
+        json!({"op": "inspect", "partner": partner, "card": "06005"}),
+        json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}),
+        json!({"op": "ready", "partner": partner, "revision": revision}),
+        json!({"op": "say", "partner": partner, "text": "Hello?"}),
+        json!({"op": "leave", "partner": partner}),
+    ] {
+        told(&sitting.ask(request));
+    }
     assert_eq!(sitting.revision(), revision);
+    assert_eq!(sitting.host.control(), control);
+    assert!(sitting.host.table_talk().is_empty());
+
+    // Tony's session is untouched, its wait still held.
+    assert!(sitting.take(tonys_wait).is_none());
+    let seen = sitting.ask(json!({"op": "observe", "partner": tonys}));
+    assert_eq!(seen["investigator"], "tony", "{seen}");
+
+    // Handed over again, Patrice is open to a join, which is a new session.
+    sitting.hand(Patrice, true);
+    assert_eq!(
+        sitting.host.control().controller(Patrice),
+        Controller::Unclaimed
+    );
+    told(&sitting.ask(json!({"op": "observe", "partner": partner})));
+    let again =
+        sitting.ask(json!({"op": "join", "partner": partner, "investigators": ["patrice"]}));
+    assert_eq!(again["status"], "joined", "{again}");
+    assert_ne!(again["partner"], partner, "{again}");
 }
 
-/// The Undo a partner's view offers, if any.
 fn undo_offered(view: &Value) -> Option<&Value> {
     view["decision"].get("undo")
 }
@@ -1266,7 +1407,7 @@ fn undo_offered(view: &Value) -> Option<&Value> {
 #[test]
 fn each_player_may_undo_only_their_own_latest_decision() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.human("confirm-mulligan"); // Jacqueline
     sitting.human("confirm-mulligan"); // Tony
     sitting.partner(&partner, "confirm-mulligan");
@@ -1316,9 +1457,9 @@ fn each_player_may_undo_only_their_own_latest_decision() {
     // and unclaimed, it is nobody's to undo; without partners, it is the human's.
     sitting.partner(&partner, "action:ordinary:resource");
     assert!(!sitting.human_may("undo"));
-    sitting.host.set_selected(Patrice, false);
+    sitting.hand(Patrice, false);
     assert!(sitting.human_may("undo"));
-    sitting.host.set_selected(Patrice, true);
+    sitting.hand(Patrice, true);
     assert!(!sitting.human_may("undo"));
     let _ = sitting.host.set_enabled(false);
     assert!(sitting.human_may("undo"));
@@ -1329,7 +1470,7 @@ fn each_player_may_undo_only_their_own_latest_decision() {
 #[test]
 fn a_partner_cannot_undo_its_decision_once_another_players_follows_it() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.human("confirm-mulligan");
     sitting.human("confirm-mulligan");
     sitting.partner(&partner, "confirm-mulligan");
@@ -1348,7 +1489,7 @@ fn a_partner_cannot_undo_its_decision_once_another_players_follows_it() {
 #[test]
 fn a_reopened_attempt_still_knows_whose_latest_decision_undo_would_revert() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.human("confirm-mulligan");
     sitting.human("confirm-mulligan");
     sitting.partner(&partner, "confirm-mulligan");
@@ -1358,7 +1499,7 @@ fn a_reopened_attempt_still_knows_whose_latest_decision_undo_would_revert() {
     let reopened = continuity::load_session(&sitting.rules.save).unwrap();
     assert_eq!(reopened, sitting.rules.session);
     let mut sitting = Sitting::new(reopened, &[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     assert!(!sitting.human_may("undo"));
     assert!(undo_offered(&sitting.view(&partner)).is_some());
 }
@@ -1370,16 +1511,24 @@ fn a_reopened_attempt_still_knows_whose_latest_decision_undo_would_revert() {
 fn turning_partners_off_returns_every_investigator_and_ends_held_waits() {
     // Jacqueline leads and is the human's: her mulligan comes first.
     let mut sitting = Sitting::after_lead(&[Tony, Patrice]);
-    let partner = sitting.join(&[]);
-    let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
-    assert!(sitting.take(waiting).is_none());
+    let partners = [sitting.join("tony"), sitting.join("patrice")];
+    let waiting = partners
+        .each_ref()
+        .map(|partner| sitting.send(&json!({"op": "wait", "partner": partner})));
+    for wait in waiting {
+        assert!(sitting.take(wait).is_none());
+    }
     let answers = sitting.host.set_enabled(false);
-    assert_eq!(answers.len(), 1);
-    assert_eq!(answers[0].0, waiting);
-    assert_eq!(answers[0].1["status"], "closed", "{}", answers[0].1);
+    assert_eq!(answers.len(), 2);
+    for (wait, (reply, answer)) in waiting.into_iter().zip(answers) {
+        assert_eq!(reply, wait);
+        assert_eq!(answer["status"], "closed", "{answer}");
+    }
     assert!(sitting.host.control().solo());
-    let after = sitting.ask(json!({"op": "observe", "partner": partner}));
-    assert_eq!(after["status"], "refused", "{after}");
+    for partner in partners {
+        let after = sitting.ask(json!({"op": "observe", "partner": partner}));
+        assert_eq!(after["status"], "refused", "{after}");
+    }
 }
 
 /// Ticket #206: the sizes of the answers a partner receives over a real Gathering
@@ -1400,7 +1549,7 @@ fn partner_answer_sizes_over_a_real_session() {
     let decisions: Vec<String> = serde_json::from_value(payload["decisions"].clone()).unwrap();
     for who in Investigator::ALL {
         let mut sitting = Sitting::new(Session::with_seed(seed), &[who]);
-        let joined = sitting.ask(json!({"op": "join"}));
+        let joined = sitting.ask(joining(who.id()));
         let partner = joined["partner"].as_str().unwrap().to_owned();
         let mut sizes = Vec::new();
         for id in &decisions {
@@ -1450,7 +1599,7 @@ fn partner_answer_sizes_over_a_real_session() {
 #[test]
 fn a_partner_plays_patrices_mulligan_and_turn_between_waits() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
-    let partner = sitting.join(&[]);
+    let partner = sitting.join("patrice");
     sitting.human("confirm-mulligan");
     sitting.human("confirm-mulligan");
     let decision = sitting.ask(json!({"op": "wait", "partner": partner}));

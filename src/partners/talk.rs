@@ -99,10 +99,11 @@ impl Talk {
         table: &impl Table,
     ) -> Result<(), String> {
         if speaker.is_empty() {
-            return Err(match from {
-                Some(_) => "You play no investigator now, so you have no seat at the table to speak from.".into(),
-                None => "Every investigator is played by a partner: take one over to speak at the table.".into(),
-            });
+            // Only the human can have none: a partner has one until its session ends.
+            return Err(
+                "Every investigator is played by a partner: take one over to speak at the table."
+                    .into(),
+            );
         }
         if let Some(reason) = self.closed(table) {
             return Err(reason.into());

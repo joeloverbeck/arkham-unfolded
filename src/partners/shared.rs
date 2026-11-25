@@ -571,9 +571,9 @@ impl Sharing {
                     );
                 }
                 if at_round_end {
-                    "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigators' clues (the others' as pending) to set your part and be ready, or round-end:decline-act to contribute none.".to_owned()
+                    "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigator's clues (the others' as pending) to set your part and be ready, or round-end:decline-act to contribute none.".to_owned()
                 } else {
-                    "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigators' clues (the others' as pending) to set your part and be ready.".to_owned()
+                    "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigator's clues (the others' as pending) to set your part and be ready.".to_owned()
                 }
             }
         };

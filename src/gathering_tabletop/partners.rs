@@ -417,8 +417,9 @@ pub(super) fn default_socket() -> PathBuf {
         .join("arkham-unfolded-partners.sock")
 }
 
-/// The line the human pastes into an agent's terminal. It points to the partner
-/// instructions and names no investigator and no human player (#211).
+/// The line the human pastes into an agent's terminal, once per investigator (#295).
+/// It points to the partner instructions and names no investigator and no human
+/// player (#211).
 pub(super) fn line(socket: &Path) -> String {
     let option =
         if socket == default_socket() && std::env::var_os("ARKHAM_PARTNER_SOCKET").is_none() {
@@ -427,7 +428,7 @@ pub(super) fn line(socket: &Path) -> String {
             format!(" --socket {}", socket.display())
         };
     format!(
-        "Play at the running Arkham Unfolded table as an agent partner: in the arkham-unfolded repository, read {INSTRUCTIONS}, then join with `scripts/tools partner{option} join`."
+        "Play one investigator at the running Arkham Unfolded table as an agent partner, one session per investigator: in the arkham-unfolded repository, read {INSTRUCTIONS}, then join with `scripts/tools partner{option} join INVESTIGATOR`."
     )
 }
 
@@ -489,9 +490,11 @@ pub(super) fn serve(world: &mut World) {
                     }
                     Input::Hand(who) => {
                         let selected = partners.host.selected(who);
-                        partners.host.set_selected(who, !selected);
+                        answers.extend(partners.host.set_selected(who, !selected));
                     }
-                    Input::TakeOver(who) => partners.host.set_selected(who, false),
+                    Input::TakeOver(who) => {
+                        answers.extend(partners.host.set_selected(who, false));
+                    }
                     Input::Speak => table.talk.open(),
                 }
                 table.dirty = true;

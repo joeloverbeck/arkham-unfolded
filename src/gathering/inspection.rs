@@ -10,19 +10,19 @@ pub const HIDDEN_IN_HAND: (&str, Investigator) = ("06017", Investigator::Patrice
 
 /// Whose hidden cards an inspection may show.
 #[derive(Clone, Copy, Debug)]
-pub enum Sight<'a> {
+pub enum Sight {
     /// The window's table, which shows every hand and private pile to the human.
     Table,
-    /// One player: public cards, and the hidden cards of these investigators only.
-    Player(&'a [Investigator]),
+    /// An agent partner: public cards, and the hidden cards of its investigator only.
+    Player(Investigator),
 }
 
-impl Sight<'_> {
+impl Sight {
     /// Whether this sight includes `who`'s hidden cards.
     pub fn sees(self, who: Investigator) -> bool {
         match self {
             Self::Table => true,
-            Self::Player(mine) => mine.contains(&who),
+            Self::Player(mine) => mine == who,
         }
     }
 
@@ -38,7 +38,7 @@ impl Sight<'_> {
 /// card with its full printed fields and effective text, plus the Supply and Key
 /// counters on it. `None` unless a card with this code is visible with `sight`, so
 /// a card in a hand or deck it does not see is answered as a code that names no card.
-pub fn table_card(observation: &Observation, code: &str, sight: Sight<'_>) -> Option<String> {
+pub fn table_card(observation: &Observation, code: &str, sight: Sight) -> Option<String> {
     let Some(play) = observation.play.as_ref() else {
         // Setup: the investigator cards, permanents, the hands this sight includes
         // and the scenario's opening cards.
