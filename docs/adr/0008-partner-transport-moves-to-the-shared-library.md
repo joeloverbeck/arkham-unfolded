@@ -11,7 +11,8 @@ mechanism Arkham's agent partners use, extracted instead of copied. The
 game-neutral half of agent partners therefore moves to `unfolded-tabletop` for
 Cuba Libre. This supersedes the sentence of
 [ADR 0007](0007-agent-partners-join-the-running-table.md) that moved it only when
-mudsong really uses partners. The rest of ADR 0007 stands.
+mudsong really uses partners. This record leaves the rest
+of ADR 0007 as it was.
 
 The boundary is the
 [Cuba Libre extension](../foundation/mission.md#code-shared-with-the-sibling-games)
