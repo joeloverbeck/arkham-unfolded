@@ -55,16 +55,12 @@ fn partner_lines(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table, vi
             .into_iter()
             .map(|(_, label)| label)
             .collect();
-        let what = if uses.is_empty() {
-            "your options".to_owned()
+        let line = if uses.is_empty() {
+            format!("You may use your options before {before}")
         } else {
-            uses.join(", ")
+            partners::available("you", &before, &uses)
         };
-        p.spawn(art.text(
-            format!("You may use {what} before {before}"),
-            15.,
-            OPPORTUNITY,
-        ));
+        p.spawn(art.text(line, 15., OPPORTUNITY));
     }
     if let Some(held) = &table.partners.held {
         p.spawn(art.text(
@@ -1080,13 +1076,7 @@ fn inspection(
                 }
                 if code == talk::LOG {
                     for entry in table.talk.entries() {
-                        body.spawn((
-                            art.text(entry, 18., PAPER),
-                            Node {
-                                width: percent(100),
-                                ..default()
-                            },
-                        ));
+                        body.spawn(talk::entry(entry));
                     }
                     return;
                 }

@@ -9,7 +9,10 @@
 //! keep one width and avoid only the interface: one that would cover the decision
 //! display (which shows a test's reveal), the turn indicator, a menu or a reading
 //! is hidden, and its reading time waits until it shows again. Where the camera is
-//! over the table never narrows or hides one (S3). The message box, while open, holds the keyboard: it runs before Bevy
+//! over the table never narrows or hides one (S3). A message's tail is level with
+//! its speaker's portrait and action lines stack below it; where its column moves to
+//! keep clear, the tail moves along the message, and one that cannot reach the
+//! portrait is not drawn (#217). The message box, while open, holds the keyboard: it runs before Bevy
 //! dispatches keys to the focused control, keeps that focus on itself and clears
 //! the keys the table's own controls read.
 
@@ -25,7 +28,7 @@ use bevy::{
     picking::hover::Hovered,
     ui::UiSystems,
 };
-use std::collections::VecDeque;
+use std::{collections::VecDeque, f32::consts::FRAC_1_SQRT_2};
 
 /// The inspection code under which Menu → Table talk lists the messages.
 pub(super) const LOG: &str = "table-talk";
@@ -41,6 +44,11 @@ const RAIL_RIGHT: f32 = 134.;
 const GAP: f32 = 8.;
 /// Every speech box column's width.
 const WIDEST: f32 = 260.;
+/// A message's border, and its tail: a square, as far from the message's top inside
+/// the border as its rounded corner needs, and as far from its bottom.
+const BORDER: f32 = 1.;
+const TAIL: f32 = 11.;
+const TAIL_TOP: f32 = 9.;
 /// A speech box or action line stays readable for a base time plus a time per
 /// character, about 900 characters a minute, then fades.
 const READ_BASE: f32 = 2.;
@@ -157,6 +165,10 @@ pub(super) enum Kind {
     Line,
 }
 
+/// A speech box's tail, which points at its speaker's portrait.
+#[derive(Component)]
+struct Tail;
+
 #[derive(Component)]
 pub(super) struct MessageBox;
 #[derive(Component)]
@@ -181,6 +193,8 @@ struct Slot {
     shown: Vec<Shown>,
     /// Whether its boxes showed on the last frame.
     visible: bool,
+    /// Where its tail is on its message's side.
+    tail_top: f32,
 }
 
 /// A box's text and how long it has been readable.
@@ -430,6 +444,20 @@ fn text(value: impl Into<String>, size: f32, color: Color, pickable: Pickable) -
     )
 }
 
+/// One Menu → Table talk entry, in the words its player said: table talk's own
+/// text, never the table's rules text, which draws skill and harm words as glyphs
+/// (#217). Its label is the entry as listed.
+pub(super) fn entry(entry: String) -> impl Bundle {
+    (
+        text(entry.clone(), 18., PAPER, Pickable::default()),
+        AccessibleLabel::new(entry),
+        Node {
+            width: percent(100),
+            ..default()
+        },
+    )
+}
+
 /// A node's rectangle in UI units.
 fn rect(node: &ComputedNode, transform: &UiGlobalTransform) -> Rect {
     let center = transform.translation * node.inverse_scale_factor;
@@ -474,6 +502,16 @@ fn speech(
         &mut Visibility,
     )>,
     children: Query<&Children>,
+    kinds: Query<&ComputedNode, With<Kind>>,
+    mut tails: Query<
+        (
+            &ComputedNode,
+            &UiGlobalTransform,
+            &mut Node,
+            &mut Visibility,
+        ),
+        (With<Tail>, Without<SpeechSlot>),
+    >,
     mut faded: Query<(
         &Opaque,
         Option<&mut BackgroundColor>,
@@ -525,7 +563,7 @@ fn speech(
     let protected: Vec<Rect> = panels.iter().copied().chain(covering).collect();
     let height = window.map_or(1000., |window| window.height());
 
-    let mut floor_above = f32::NEG_INFINITY;
+    let mut columns = Vec::new();
     for who in Investigator::ALL {
         let slot = &mut speech.slots[who.index()];
         let portrait = portraits
@@ -578,7 +616,7 @@ fn speech(
                     ))
                     .with_children(|p| {
                         for (shown, opacity) in content.iter().zip(&opacities) {
-                            spawn_box(p, shown, *opacity);
+                            spawn_box(p, shown, *opacity, slot.tail_top);
                         }
                     });
                 slot.shown = content;
@@ -597,7 +635,7 @@ fn speech(
                 .despawn_children()
                 .with_children(|p| {
                     for (shown, opacity) in content.iter().zip(&opacities) {
-                        spawn_box(p, shown, *opacity);
+                        spawn_box(p, shown, *opacity, slot.tail_top);
                     }
                 });
             slot.shown = content;
@@ -614,40 +652,104 @@ fn speech(
                 }
             }
         }
-        let Ok((_, _, mut node, computed, transform, mut visibility)) = slots.get_mut(entity)
-        else {
+        let Ok((_, _, _, computed, transform, _)) = slots.get(entity) else {
             continue;
         };
         let actual = rect(computed, transform);
+        // A column that is not laid out yet, or whose portrait is gone, has no place.
+        let place = portrait
+            .filter(|_| actual.height() > 0.)
+            .map(|(anchor, _)| {
+                // The column's first box is level with the portrait: a message by its
+                // tail, an action line by its middle.
+                let first = children
+                    .get(entity)
+                    .ok()
+                    .and_then(|boxes| boxes.first().copied());
+                let first_height = first
+                    .and_then(|first| kinds.get(first).ok())
+                    .map_or(actual.height(), |node| {
+                        node.size().y * node.inverse_scale_factor
+                    });
+                let tail = first
+                    .and_then(|first| children.get(first).ok())
+                    .and_then(|parts| parts.iter().find(|part| tails.contains(*part)));
+                let level = if tail.is_some() {
+                    tail_centre(TAIL_TOP)
+                } else {
+                    first_height / 2.
+                };
+                // Between the turn indicator and the decision display.
+                let across = Rect::new(RAIL_RIGHT + GAP, 0., RAIL_RIGHT + GAP + WIDEST, height);
+                let place = Place {
+                    top: anchor.center().y - level,
+                    height: actual.height(),
+                    ceiling: panel_edge(&panels, across, anchor.center().y, true).max(GAP),
+                    floor: panel_edge(&panels, across, anchor.center().y, false).min(height - GAP),
+                };
+                (place, anchor, tail, first_height)
+            });
+        columns.push((who, entity, actual, recalled, place));
+    }
+
+    let tops = stack(
+        columns
+            .iter()
+            .filter_map(|(.., place)| Some(&place.as_ref()?.0)),
+    );
+    let mut tops = tops.into_iter();
+    for (who, entity, actual, recalled, place) in columns {
+        let slot = &mut speech.slots[who.index()];
+        let Ok((_, _, mut node, _, _, mut visibility)) = slots.get_mut(entity) else {
+            continue;
+        };
         let mut visible = false;
-        if let Some((anchor, _)) = portrait
-            && actual.height() > 0.
+        if let Some((_, anchor, tail, first_height)) = place
+            && let Some(top) = tops.next().flatten()
         {
             let left = RAIL_RIGHT + GAP;
-            let size = actual.size();
-            // Between the turn indicator and the decision display, and below the
-            // boxes of the portraits above.
-            let column = Rect::new(left, 0., left + WIDEST, height);
-            let ceiling = panel_edge(&panels, column, anchor.center().y, true)
-                .max(floor_above + GAP)
-                .max(GAP);
-            let floor = panel_edge(&panels, column, anchor.center().y, false).min(height - GAP);
-            let top = (anchor.center().y - size.y / 2.)
-                .min(floor - size.y)
-                .max(ceiling);
             node.left = px(left);
             node.top = px(top);
-            let target = Rect::new(left, top, left + size.x, top + size.y);
-            let placed = (actual.min - target.min).length() < 1.;
+            if let Some((part, transform, mut part_node, mut drawn)) =
+                tail.and_then(|tail| tails.get_mut(tail).ok())
+            {
+                // Where the column moved, its tail moves along the message's straight
+                // side to stay level with the portrait.
+                let wanted = (anchor.center().y - top - tail_centre(0.))
+                    .min(first_height - 2. * BORDER - TAIL - TAIL_TOP)
+                    .max(TAIL_TOP);
+                if (slot.tail_top - wanted).abs() > 0.01 {
+                    if let Some(redraw) = redraw.as_mut() {
+                        redraw.request();
+                    }
+                    slot.tail_top = wanted;
+                }
+                part_node.set_if_neq(Node {
+                    top: px(slot.tail_top),
+                    ..tail_node()
+                });
+                // A tail beyond its portrait would point away from its speaker, so it
+                // is not drawn. A square on its corner reaches half its diagonal.
+                let laid = rect(part, transform);
+                let reach = laid.height() * FRAC_1_SQRT_2;
+                let centre = laid.center().y;
+                let pointing =
+                    centre - reach >= anchor.min.y + 1. && centre + reach <= anchor.max.y - 1.;
+                drawn.set_if_neq(if pointing {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                });
+            }
+            let target = Vec2::new(left, top);
+            let placed = (actual.min - target).length() < 1.;
             // A new box waits until it is laid out where it belongs; a shown box
             // stays shown while it moves there, wherever it is clear.
             visible = (placed || slot.visible)
-                && top + size.y <= floor
                 && actual.max.y <= height
                 && !protected
                     .iter()
                     .any(|area| !area.intersect(actual).is_empty());
-            floor_above = floor_above.max(target.max.y);
             if !placed && let Some(redraw) = redraw.as_mut() {
                 // The next frame lays the box out where it belongs.
                 redraw.request();
@@ -684,6 +786,55 @@ fn speech(
             }
         }
     }
+}
+
+/// Where a column of boxes may go, in UI units.
+struct Place {
+    /// Level with its portrait.
+    top: f32,
+    height: f32,
+    /// Clear of the interface above and below.
+    ceiling: f32,
+    floor: f32,
+}
+
+/// The tops of the `columns`, from the rail's top down. Each is level with its
+/// portrait, or below the boxes of the portraits above where those reach it. Columns
+/// that would then run past the floor move up, and those above move up for them. A
+/// column without room for all of it has no top, and moves no other.
+fn stack<'a>(columns: impl Iterator<Item = &'a Place>) -> Vec<Option<f32>> {
+    let columns: Vec<&Place> = columns.collect();
+    let mut lowest = f32::NEG_INFINITY;
+    let fits: Vec<bool> = columns
+        .iter()
+        .map(|place| {
+            let bottom = place.ceiling.max(lowest + GAP) + place.height;
+            let fits = bottom <= place.floor;
+            if fits {
+                lowest = bottom;
+            }
+            fits
+        })
+        .collect();
+    let mut tops = Vec::with_capacity(columns.len());
+    let mut above = f32::NEG_INFINITY;
+    for (place, fits) in columns.iter().zip(&fits) {
+        let top = place.top.max(place.ceiling).max(above + GAP);
+        if *fits {
+            above = top + place.height;
+            tops.push(Some(top));
+        } else {
+            tops.push(None);
+        }
+    }
+    let mut below = f32::INFINITY;
+    for (place, top) in columns.iter().zip(&mut tops).rev() {
+        if let Some(top) = top {
+            *top = top.min(place.floor.min(below - GAP) - place.height);
+            below = *top;
+        }
+    }
+    tops
 }
 
 /// The nearest edge, less a gap, of a panel across `column`: above `y` when
@@ -778,7 +929,23 @@ fn fade((opaque, background, border, text): Colours, opacity: f32) {
     }
 }
 
-fn spawn_box(p: &mut ChildSpawnerCommands, shown: &Shown, opacity: f32) {
+/// A tail's middle below its message's top, for a tail at `top` inside its border.
+fn tail_centre(top: f32) -> f32 {
+    BORDER + top + TAIL / 2.
+}
+
+fn tail_node() -> Node {
+    Node {
+        position_type: PositionType::Absolute,
+        left: px(-6),
+        top: px(TAIL_TOP),
+        width: px(TAIL),
+        height: px(TAIL),
+        ..default()
+    }
+}
+
+fn spawn_box(p: &mut ChildSpawnerCommands, shown: &Shown, opacity: f32, tail_top: f32) {
     let (background, border, ink, radius) = match shown.kind {
         Kind::Speech => (SPEECH, SPEECH, INK, 10.),
         Kind::Line => (INK, GOLD, PAPER, 0.),
@@ -805,15 +972,14 @@ fn spawn_box(p: &mut ChildSpawnerCommands, shown: &Shown, opacity: f32) {
     ))
     .with_children(|p| {
         if shown.kind == Kind::Speech {
-            // The tail points left, at the portrait.
+            // The tail points left, at the portrait; `speech` draws it once the
+            // box is level with its speaker's.
             p.spawn((
+                Tail,
+                Visibility::Hidden,
                 Node {
-                    position_type: PositionType::Absolute,
-                    left: px(-6),
-                    top: px(9),
-                    width: px(11),
-                    height: px(11),
-                    ..default()
+                    top: px(tail_top.max(TAIL_TOP)),
+                    ..tail_node()
                 },
                 UiTransform::from_rotation(Rot2::degrees(45.)),
                 BackgroundColor(background.with_alpha(opacity)),

@@ -919,3 +919,318 @@ fn a_speech_box_fades_as_one_node_whose_opacity_only_falls() {
         "It fades over {FADE} s, one step a frame: {opacities:?}"
     );
 }
+
+/// Record a partner's decision for `by` as the partner host does on its commit
+/// (`partners::serve`; the action-line test above takes that path), in setup, where
+/// no round is counted.
+fn note(app: &mut App, by: Investigator, label: &str) {
+    app.world_mut()
+        .resource_mut::<Table>()
+        .talk
+        .lines
+        .push(Line {
+            by,
+            label: label.into(),
+            round: None,
+        });
+    settle(app);
+}
+
+/// How far up and down the screen the tail of `who`'s speech box reaches, while it
+/// is drawn. The tail is the speech box's part without text, a square turned on its
+/// corner, so it reaches half its diagonal above and below its centre.
+fn tail(app: &mut App, who: Investigator) -> Option<(f32, f32)> {
+    let boxes = shown(app, who);
+    let (_, _, boxed) = boxes.iter().find(|(kind, ..)| *kind == Kind::Speech)?;
+    let world = app.world();
+    let tail = world
+        .get::<Children>(*boxed)?
+        .iter()
+        .find(|part| world.get::<Text>(*part).is_none())?;
+    if !world.get::<InheritedVisibility>(tail)?.get() {
+        return None;
+    }
+    let node = world.get::<ComputedNode>(tail)?;
+    let centre = (world.get::<UiGlobalTransform>(tail)?.translation * node.inverse_scale_factor).y;
+    let reach = node.size().y * node.inverse_scale_factor * std::f32::consts::FRAC_1_SQRT_2;
+    Some((centre - reach, centre + reach))
+}
+
+/// The column beside `who`'s portrait keeps clear of the decision display and the
+/// turn indicator; its rectangle.
+fn clear_column(app: &mut App, who: Investigator, when: &str) -> Rect {
+    let column = slot(app, who).unwrap_or_else(|| panic!("{when}: nothing shows"));
+    let column = screen_rect(app, column);
+    for (panel, shows) in [
+        ("decision display", "LIVE DECISION"),
+        ("turn indicator", "The Gathering · Standard"),
+    ] {
+        let covered = panel_showing(app, shows);
+        assert!(
+            covered.intersect(column).is_empty(),
+            "{when}: the column {column:?} covers the {panel} {covered:?}"
+        );
+    }
+    column
+}
+
+/// #217, finding 1 (the agent seat's run on #202, reproduced at triage): as a
+/// speaker's action lines stacked below its message, its speech box moved up until
+/// its tail pointed at the portrait above, so a reader could take that investigator
+/// as the speaker. Presentation contract, "Speech boxes and action lines": a
+/// message appears "to the right of its speaker's portrait … pointing at the
+/// portrait". For each portrait on the rail, with a partner speaking beside it and
+/// one, two, three and then four action lines appearing: the tail stays within its
+/// speaker's portrait, top to bottom, and so beside no other; the three newest
+/// lines show below the message, clear of the decision display and the turn
+/// indicator. Recalled by hovering the portrait, with the message and all four
+/// lines, it stays there too.
+#[test]
+fn a_speech_tail_stays_at_its_speakers_portrait_as_action_lines_stack() {
+    let labels = [
+        "Investigate the Study",
+        "Commit Guts and confirm",
+        "Resolve the declared token reveal",
+        "Move to the Hallway",
+    ];
+    for speaker in Investigator::ALL {
+        let mut talking = talking(89, &["lead:jacqueline"], &[speaker], true);
+        let partner = join_as(&mut talking, &[]);
+        say(&mut talking, &partner, "I'll take the Attic.");
+        let app = &mut talking.app;
+        settle(app);
+        let attributed = |app: &mut App, lines: &[&str], when: &str| {
+            let when = format!("{} {when}", speaker.name());
+            let boxes = shown(app, speaker);
+            assert_eq!(
+                boxes.first().map(|(kind, ..)| *kind),
+                Some(Kind::Speech),
+                "{when}: {boxes:?}"
+            );
+            let listed: Vec<&str> = boxes[1..]
+                .iter()
+                .map(|(kind, text, _)| {
+                    assert_eq!(*kind, Kind::Line, "{when}");
+                    text.as_str()
+                })
+                .collect();
+            assert_eq!(listed, lines, "{when}");
+            let (top, bottom) =
+                tail(app, speaker).unwrap_or_else(|| panic!("{when}: its tail shows"));
+            for who in Investigator::ALL {
+                let portrait = portrait(app, who);
+                let beside = screen_rect(app, portrait);
+                if who == speaker {
+                    assert!(
+                        top >= beside.min.y && bottom <= beside.max.y,
+                        "{when}: the tail ({top}..{bottom}) leaves its portrait {beside:?}"
+                    );
+                } else {
+                    assert!(
+                        bottom <= beside.min.y || top >= beside.max.y,
+                        "{when}: the tail ({top}..{bottom}) points at {}'s portrait {beside:?}",
+                        who.name()
+                    );
+                }
+            }
+            let column = clear_column(app, speaker, &when);
+            for (_, text, boxed) in &boxes {
+                let laid = screen_rect(app, *boxed);
+                assert!(
+                    laid.height() > 0. && column.contains(laid.min) && column.contains(laid.max),
+                    "{when}: {text} at {laid:?} in {column:?}"
+                );
+            }
+        };
+        attributed(app, &[], "speaking");
+        for count in 1..=labels.len() {
+            note(app, speaker, labels[count - 1]);
+            let newest = &labels[count.saturating_sub(LINES_SHOWN)..count];
+            attributed(app, newest, &format!("with {count} lines"));
+        }
+
+        // Read and gone; hovering the portrait recalls the message and the lines.
+        wait(app, 12.);
+        settle(app);
+        assert!(shown(app, speaker).is_empty(), "{}", rendered_text(app));
+        let hovered = portrait(app, speaker);
+        let centre = screen_rect(app, hovered).center();
+        move_pointer(app, centre);
+        settle(app);
+        attributed(app, &labels, "recalled");
+    }
+}
+
+/// #217, finding 1, where there is no room: recalled lines for the rail's lowest
+/// portrait grow until the column no longer fits below it. The column then moves up
+/// to keep clear of the decision display, as it did; its tail, which would point
+/// away from its speaker, is not drawn. While the tail is drawn it is within its
+/// speaker's portrait.
+#[test]
+fn a_speech_box_that_cannot_stay_at_its_portrait_shows_without_its_tail() {
+    let mut talking = talking(89, &["lead:jacqueline"], &[Jacqueline], true);
+    let partner = join_as(&mut talking, &[]);
+    say(&mut talking, &partner, "I'll take the Attic.");
+    let app = &mut talking.app;
+    settle(app);
+    let hovered = portrait(app, Jacqueline);
+    let beside = screen_rect(app, hovered);
+    move_pointer(app, beside.center());
+    settle(app);
+    let mut untailed = None;
+    for count in 1..60 {
+        note(app, Jacqueline, &format!("Decision {count}"));
+        if slot(app, Jacqueline).is_none() {
+            // Taller than the room between the panels: hidden, as before.
+            break;
+        }
+        clear_column(app, Jacqueline, &format!("With {count} lines"));
+        match tail(app, Jacqueline) {
+            Some((top, bottom)) => {
+                assert!(
+                    top >= beside.min.y && bottom <= beside.max.y,
+                    "With {count} lines the tail ({top}..{bottom}) leaves her portrait {beside:?}"
+                );
+                assert_eq!(untailed, None, "With {count} lines the tail came back");
+            }
+            None => untailed = untailed.or(Some(count)),
+        }
+    }
+    assert!(
+        untailed.is_some(),
+        "The column outgrew the room below her portrait and still showed"
+    );
+}
+
+/// #217, finding 3: a spoken "My Willpower should help with this test" showed the
+/// word in its speech box and the willpower glyph in Menu → Table talk, which drew
+/// the entry as the table's own rules text. What a player says is theirs: both show
+/// the word, in the entry's own text with no glyph run, and the entry keeps its
+/// round, speaker and accessible label.
+#[test]
+fn table_talk_lists_a_message_in_the_words_its_player_said() {
+    let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
+    let partner = join_as(&mut talking, &[]);
+    let said = "My Willpower should help with this test";
+    say(&mut talking, &partner, said);
+    let app = &mut talking.app;
+    settle(app);
+    assert_eq!(shown(app, Patrice)[0].1, format!("\"{said}\""));
+    press(app, "Menu");
+    press(app, "Table talk");
+    let world = app.world_mut();
+    let entries: Vec<(Entity, String, String)> = world
+        .query::<(Entity, &Text, &AccessibleLabel)>()
+        .iter(world)
+        .filter(|(_, _, label)| label.0.contains("Patrice Hathaway: "))
+        .map(|(entity, text, label)| (entity, text.0.clone(), label.0.clone()))
+        .collect();
+    let [(entry, text, label)] = &entries[..] else {
+        panic!("One entry for her message: {entries:?}");
+    };
+    // Labels show "·" as " / ", as the entries above are read.
+    let listed = format!("Setup · Patrice Hathaway: {said}");
+    assert_eq!(
+        text,
+        &crate::tabletop_support::readable_text(listed.clone())
+    );
+    assert_eq!(label, &listed);
+    let spans = world
+        .get::<Children>(*entry)
+        .into_iter()
+        .flatten()
+        .filter(|part| world.get::<TextSpan>(**part).is_some())
+        .count();
+    assert_eq!(spans, 0, "No glyph run stands for a word of hers");
+    crate::tabletop_layout::font_checks::assert_supported(app.world_mut());
+}
+
+/// #217 review: every partner speaks and commits three decisions at once. Their
+/// columns fit between the turn indicator and the decision display, so each shows
+/// in full, none over another; those above move up for those below. A tail that
+/// shows is at its own speaker's portrait, and the topmost box keeps its tail, which
+/// moves down its side as the box moves up.
+#[test]
+fn every_speakers_boxes_show_when_they_fit_together() {
+    let mut talking = talking(89, &["lead:jacqueline"], &Investigator::ALL, true);
+    for code in ["tony", "patrice", "jacqueline"] {
+        let partner = join_as(&mut talking, &[code]);
+        say(
+            &mut talking,
+            &partner,
+            "My Willpower should help with this test, so I will gather resources first, then look.",
+        );
+    }
+    let app = &mut talking.app;
+    settle(app);
+    for who in Investigator::ALL {
+        for _ in 0..LINES_SHOWN {
+            note(app, who, "Spend an action: Investigate this location");
+        }
+    }
+    settle(app);
+    let mut above: Option<Rect> = None;
+    for who in Investigator::ALL {
+        let column = clear_column(app, who, who.name());
+        let boxes = shown(app, who);
+        assert_eq!(boxes.len(), 1 + LINES_SHOWN, "{}: {boxes:?}", who.name());
+        if let Some(above) = above {
+            assert!(
+                above.intersect(column).is_empty(),
+                "{}: {column:?} covers {above:?}",
+                who.name()
+            );
+        }
+        above = Some(column);
+        let portrait = portrait(app, who);
+        let beside = screen_rect(app, portrait);
+        match tail(app, who) {
+            Some((top, bottom)) => assert!(
+                top >= beside.min.y && bottom <= beside.max.y,
+                "{}: the tail ({top}..{bottom}) leaves its portrait {beside:?}",
+                who.name()
+            ),
+            None => assert_ne!(who, Tony, "His box is beside his portrait"),
+        }
+    }
+}
+
+/// #217 review: the column beside the rail's lowest portrait moves up to keep clear
+/// of the decision display while its message is still beside that portrait. The tail
+/// moves down the message's side and stays at the portrait.
+#[test]
+fn a_tail_moves_along_its_box_while_the_box_is_beside_its_portrait() {
+    let mut talking = talking(89, &["lead:jacqueline"], &[Jacqueline], true);
+    let partner = join_as(&mut talking, &[]);
+    say(
+        &mut talking,
+        &partner,
+        "My Willpower should help with this test, so I will gather resources first and let Tony look around the Study while I watch for trouble from the attic and the cellar.",
+    );
+    let app = &mut talking.app;
+    settle(app);
+    let hovered = portrait(app, Jacqueline);
+    let beside = screen_rect(app, hovered);
+    move_pointer(app, beside.center());
+    settle(app);
+    let start = clear_column(app, Jacqueline, "Recalled").min.y;
+    let mut moved = 0;
+    for count in 1..60 {
+        note(app, Jacqueline, &format!("Decision {count}"));
+        if slot(app, Jacqueline).is_none() {
+            break;
+        }
+        let up = start - clear_column(app, Jacqueline, "Growing").min.y;
+        let message = shown(app, Jacqueline)[0].2;
+        let message = screen_rect(app, message);
+        // The message's straight side passes the middle of her portrait.
+        if up >= 1. && message.max.y - 20. >= beside.center().y {
+            let (top, bottom) = tail(app, Jacqueline)
+                .unwrap_or_else(|| panic!("Moved up {up} with {count} lines, no tail"));
+            assert!(top >= beside.min.y && bottom <= beside.max.y);
+            assert!(top >= message.min.y && bottom <= message.max.y);
+            moved += 1;
+        }
+    }
+    assert!(moved > 0, "The column never moved beside her portrait");
+}
