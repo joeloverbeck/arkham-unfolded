@@ -780,44 +780,43 @@ impl<R> Host<R> {
     }
 
     /// Answer a submission of the session `id` with its `status` at once, or, when it
-    /// asked to wait too, for `then` seconds or without a period, and nothing needs it
-    /// yet, with the first thing that does. Then whatever else its submission let be
-    /// answered, after `answers`.
+    /// asked to wait too, for `then` seconds or without a period, and its own next
+    /// decision is not there to tell, hold its wait. Then whatever else its submission
+    /// let be answered, after `answers`.
     fn submitted(
         &mut self,
-        (id, reply): (&str, R),
+        (id, mut reply): (&str, R),
         status: Result<&'static str, String>,
         then: Option<Option<u64>>,
         mut answers: Vec<Answer<R>>,
         table: &impl Table,
         now: Instant,
     ) -> Vec<Answer<R>> {
-        self.seats.heard(id, now);
         let moment = self.moment(table.session());
         let decision = self.own_decision(&moment, id);
-        match (status, then) {
-            (Ok(status), Some(seconds)) if decision.is_none() || self.seats.held(id).is_some() => {
-                let period = seconds.map(Duration::from_secs);
-                if let Waiting::Held { replaced } = self.seats.wait(id, reply, period, None, now) {
-                    answers.extend(replaced.map(|older| (older, replaced_wait(id))));
-                }
-                if let Some(partner) = self.partner_mut(id) {
+        if let Some(revision) = decision {
+            self.seats.told_in_answer(id, revision);
+        }
+        if let (Ok(status), Some(seconds)) = (&status, then) {
+            let period = seconds.map(Duration::from_secs);
+            match self.seats.wait(id, reply, period, decision, now) {
+                Waiting::Held { replaced } => {
+                    let partner = self.partner_mut(id).expect("A known partner");
                     partner.listens = false;
                     partner.submitted = Some(status);
+                    answers.extend(replaced.map(|older| (older, replaced_wait(id))));
+                    answers.extend(self.answer_waits(table, now));
+                    return answers;
                 }
-            }
-            (status, _) => {
-                let (status, error) = match status {
-                    Ok(status) => (status, None),
-                    Err(reason) => ("refused", Some(reason)),
-                };
-                let answer = self.answer(id, status, error, table, false, now);
-                if let Some(revision) = decision {
-                    self.seats.told_in_answer(id, revision);
-                }
-                answers.insert(0, (reply, answer));
+                Waiting::Refused(told) => reply = told,
             }
         }
+        let (status, error) = match status {
+            Ok(status) => (status, None),
+            Err(reason) => ("refused", Some(reason)),
+        };
+        let answer = self.answer(id, status, error, table, false, now);
+        answers.insert(0, (reply, answer));
         answers.extend(self.answer_waits(table, now));
         answers
     }

@@ -21,11 +21,11 @@ tabletop = ["dep:bevy", "unfolded-tabletop/seat"]
 # patch below and `tools`' pins, as `scripts/check-shared-pins` checks. The library,
 # driver and asset build take only the packages that cannot depend on Bevy;
 # `unfolded-tabletop` holds what draws.
-unfolded-agent-players = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "75751bd814d900f2c8d0ab46deca32e2959d42cd" }
-unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "75751bd814d900f2c8d0ab46deca32e2959d42cd" }
-unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "75751bd814d900f2c8d0ab46deca32e2959d42cd" }
-unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "75751bd814d900f2c8d0ab46deca32e2959d42cd" }
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "75751bd814d900f2c8d0ab46deca32e2959d42cd", optional = true }
+unfolded-agent-players = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a00d0a12e7ad0875fc71d91d5907891b59858666" }
+unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a00d0a12e7ad0875fc71d91d5907891b59858666" }
+unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a00d0a12e7ad0875fc71d91d5907891b59858666" }
+unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a00d0a12e7ad0875fc71d91d5907891b59858666" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a00d0a12e7ad0875fc71d91d5907891b59858666", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -79,4 +79,4 @@ debug = "full"
 debug = "full"
 
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "75751bd814d900f2c8d0ab46deca32e2959d42cd" }
+wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a00d0a12e7ad0875fc71d91d5907891b59858666" }
