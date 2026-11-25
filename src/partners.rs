@@ -901,9 +901,7 @@ impl<R> Host<R> {
         let refuse =
             |why: String| refused(format!("{why} Open to partners now: {}.", open.join(", ")));
         let &[plays] = named else {
-            return refuse(
-                "One agent session plays one investigator: join with exactly one named.".into(),
-            );
+            return refuse("One agent session plays one investigator: name exactly one.".into());
         };
         match control.controller(plays) {
             Controller::Unclaimed => {}

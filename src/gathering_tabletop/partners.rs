@@ -428,7 +428,7 @@ pub(super) fn line(socket: &Path) -> String {
             format!(" --socket {}", socket.display())
         };
     format!(
-        "Play one investigator at the running Arkham Unfolded table as an agent partner, one session per investigator: in the arkham-unfolded repository, read {INSTRUCTIONS}, then join with `scripts/tools partner{option} join INVESTIGATOR`."
+        "Play one investigator at the running Arkham Unfolded table, one session per investigator: in the arkham-unfolded repository, read {INSTRUCTIONS}, then join with `scripts/tools partner{option} join INVESTIGATOR`."
     )
 }
 
