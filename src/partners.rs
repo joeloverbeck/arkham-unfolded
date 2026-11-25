@@ -13,7 +13,8 @@
 //! table without being answered its own decision; observes its view,
 //! complete once and then as changes (#206); inspects any card it can see; chooses
 //! an option by identity at the current revision; and leaves. Its session ends when
-//! it leaves or the human takes its investigator back. A choice is
+//! it leaves, the human takes its investigator back or turns partners off, the table
+//! closes or the attempt restarts. A choice is
 //! applied only once the table settles, with nothing of the human's open over it,
 //! through the table's own commit path. A group
 //! choice is its arbiter's player's, and every partner's wait hears it open (#207).
@@ -364,8 +365,9 @@ impl<R> Host<R> {
     }
 
     /// Hand `who` to partners, or return it to the human (Take over). The session
-    /// that plays it ends at once: its held requests, and any later one, are
-    /// answered that it was taken back, and its held choice is not applied.
+    /// that plays it ends at once: its held requests, and any later partner request
+    /// by its identity except a join, are answered that it was taken back, and its
+    /// held choice is not applied.
     #[must_use = "The answers to the ended session's held requests"]
     pub fn set_selected(&mut self, who: Investigator, selected: bool) -> Vec<Answer<R>> {
         self.selected[who.index()] = selected;

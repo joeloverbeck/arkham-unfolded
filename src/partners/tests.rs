@@ -996,6 +996,51 @@ fn taking_over_leaves_the_partners_held_choice_unapplied() {
     );
 }
 
+/// The human's choice for Tony is held for Patrice's player's pass when he hands Tony
+/// over (play contract: he may, during play). The choice is released, not applied,
+/// and he is told why; he is not asked to choose again, since Tony's decision is no
+/// longer his. Her pass afterwards applies nothing.
+#[test]
+fn handing_an_investigator_over_leaves_the_humans_held_choice_for_it_unapplied() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join("patrice");
+    let (revision, before) = (sitting.revision(), tonys_holdings(&sitting));
+    assert_eq!(
+        sitting.human("action:ordinary:resource"),
+        HumanChoice::Ready
+    );
+    assert_eq!(
+        sitting.host.human_held(&sitting.rules.session),
+        Some("action:ordinary:resource")
+    );
+
+    sitting.hand(Tony, true);
+    sitting.poll();
+    assert_eq!(sitting.host.human_held(&sitting.rules.session), None);
+    let told = sitting
+        .host
+        .human_released(&sitting.rules.session)
+        .expect("He is told of the release");
+    assert!(
+        told.contains("was not applied: the investigator it was for is no longer yours"),
+        "{told}"
+    );
+    assert!(!told.contains("Choose again"), "{told}");
+
+    let passed = sitting.choose(&partner, PASS_BEFORE);
+    assert_eq!(passed["status"], "ready", "{passed}");
+    sitting.poll();
+    assert_eq!(sitting.revision(), revision, "Not applied");
+    assert_eq!(tonys_holdings(&sitting), before, "Not applied");
+    assert!(
+        sitting.rules.attributed.is_empty(),
+        "{:?}",
+        sitting.rules.attributed
+    );
+}
+
 /// Review fix G3 (CODING_STANDARDS.md: presentation does not filter, merge or
 /// auto-pick choices). The library gives the human's options in a turn's player
 /// window, his pass among them, and the table only renders them. In Tony's

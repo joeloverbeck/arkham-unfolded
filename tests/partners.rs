@@ -1396,6 +1396,7 @@ fn take_over_mid_decision_ends_the_partners_session_and_applies_none_of_its_choi
     assert_ne!(again["partner"], partner, "{again}");
 }
 
+/// The Undo a partner's view offers, if any.
 fn undo_offered(view: &Value) -> Option<&Value> {
     view["decision"].get("undo")
 }
