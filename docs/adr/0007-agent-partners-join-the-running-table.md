@@ -32,7 +32,7 @@ owns the whole application. Partners are built in this repository first. Their
 game-neutral half moves to the shared library only when mudsong really uses
 partners, under the [third-consumer waiver](../foundation/mission.md#code-shared-with-the-sibling-games).
 [ADR 0008](0008-partner-transport-moves-to-the-shared-library.md) supersedes that
-sentence: the half moves for Cuba Libre, and its transport and client have.
+sentence: the half moves for Cuba Libre.
 
 ## Considered options
 

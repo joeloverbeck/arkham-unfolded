@@ -4,42 +4,25 @@ status: accepted
 
 # The partners' transport and client move to the shared library
 
-Follows from Cuba Libre's spec
-[#197](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/197), which
-Joel accepted and activated on 2026-11-25. It lets Cuba Libre Unfolded play
-against external agents through the mechanism Arkham's partners already use.
-This supersedes the sentence of
-[ADR 0007](0007-agent-partners-join-the-running-table.md) that moved the
-partners' game-neutral half to `unfolded-tabletop` only when mudsong really uses
-partners. The consumer is Cuba Libre, under the
+Joel accepted and activated Cuba Libre's spec
+[#197](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/197) on
+2026-11-25. It has Cuba Libre Unfolded play against external agents through the
+mechanism Arkham's agent partners use, extracted instead of copied. The
+game-neutral half of agent partners therefore moves to `unfolded-tabletop` for
+Cuba Libre. This supersedes the sentence of
+[ADR 0007](0007-agent-partners-join-the-running-table.md) that moved it only when
+mudsong really uses partners. The rest of ADR 0007 stands.
+
+The boundary is the
 [Cuba Libre extension](../foundation/mission.md#code-shared-with-the-sibling-games)
 and Joel's reading of 2026-11-22, which covers a consumer already ticketed in an
-active spec he approved: the faction seat over the socket, ticket
-[#203](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/203). If #197
-ends without #203 using them, the mechanism moves back to Arkham. The rest of
-ADR 0007 stands.
+active spec he approved. The transport and the client are for the faction seat
+over the socket, ticket
+[#203](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/203), which the
+agents' [corrections](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/197#issuecomment-7156606446)
+to #197 name (item 8). If #197 ends without #203 using them, they move back to
+Arkham. The mission states the boundary of what those corrections added.
 
-The first move, [Cuba Libre #199](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/199),
-takes the socket's serving, the client's exchange and the loop of `seat-wait`,
-which a seat needs to host players without a window and which the agents'
-[corrections](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/197#issuecomment-7156606446)
-to #197 added. It changes nothing a partner
-or a seat's driver can send, read or exit with.
-
-| Shared | Arkham's |
-| --- | --- |
-| `unfolded_tabletop::agent_transport`: the claimed socket, one thread for each connection, requests taken by a frame and answered on any later one, the wake of the frame loop, the close | Where the socket is, when it opens and closes, what a refusal to open it says, a wait's period and the answers the transport gives in the partner protocol's words (`src/gathering_tabletop/partners.rs`) |
-| `unfolded_agent_players::client`: one request, one answer, an interrupt or deadline checked while it waits | The commands, the requests they spell, the wording of failures and the exit codes (`tools/src/partner.rs`) |
-| `unfolded_seat_client::hosting`: settling a held seat's table again and again while the partners it hosts play | When `seat-wait` stops, the lines it prints, the wording of failures and the exit codes (`tools/src/seat.rs`) |
-
-Decision ownership, routing, hidden information, shared decisions, talk and the
-partner's view stay in Arkham's Bevy-free library.
-
-A partner's client that dies while its request is held is now noticed by the
-transport, which ends that connection and can say so. Arkham's host does not ask
-it: a wait still ends at its period, as before. Ending such a wait at once is
-for the waits without a period of
-[Cuba Libre #201](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/201).
-
-**Rollback.** Return the pin and these adapters together to the revision before
-this move, which holds the original code. No saved data is involved.
+Arkham keeps decision ownership, routing, hidden information, shared decisions,
+talk and the partner's view in its Bevy-free library, and the requests, answers,
+wording and exit codes of its commands.

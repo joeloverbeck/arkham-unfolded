@@ -534,6 +534,57 @@ fn seat_wait_returns_with_exit_3_once_its_timeout_passes() {
 }
 
 #[test]
+fn seat_wait_notices_only_an_interrupt_between_requests_so_a_stall_there_still_exits_3() {
+    // In the pause after its first answer: stopped until the ten seconds past the
+    // timeout that it awaits an answer are over, and interrupted.
+    for (signal, timeout, stalled, code) in [("STOP", "1", 11_500, 3), ("INT", "60", 0, 130)] {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("seat.sock");
+        let thinking = answer("settled", (9, "playing"), true, None, JACQUELINE_THINKING);
+        let seat = host(&socket, vec![thinking], Then::Repeat);
+        let mut child = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+            .arg("seat-wait")
+            .arg(&socket)
+            .args(["--timeout", timeout])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdout = BufReader::new(child.stdout.take().unwrap());
+        let mut state = String::new();
+        stdout.read_line(&mut state).unwrap();
+        assert!(state.contains("Jacqueline Fine (thinking)"), "{state}");
+        let began = std::time::Instant::now();
+        for (signal, then) in [(signal, stalled), ("CONT", 0)] {
+            let sent = Command::new("kill")
+                .args([&format!("-{signal}"), &child.id().to_string()])
+                .status()
+                .unwrap();
+            assert!(sent.success());
+            thread::sleep(std::time::Duration::from_millis(then));
+        }
+        let mut rest = String::new();
+        std::io::Read::read_to_string(&mut stdout, &mut rest).unwrap();
+        let output = child.wait_with_output().unwrap();
+        let took = began.elapsed();
+        seat.received();
+        assert_eq!(output.status.code(), Some(code), "{output:?}");
+        let error = String::from_utf8(output.stderr).unwrap();
+        if code == 3 {
+            assert_eq!(error, "", "the seat answered every request");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&rest).unwrap(),
+                serde_json::json!({"stopped": "timeout", "revision": 9, "choices": 0})
+            );
+        } else {
+            assert!(took < std::time::Duration::from_secs(5), "{took:?}");
+            assert_eq!(rest, "");
+            assert!(error.contains("interrupted"), "{error}");
+        }
+    }
+}
+
+#[test]
 fn seat_wait_returns_with_exit_4_when_the_seat_goes_away() {
     let thinking = |revision| {
         answer(

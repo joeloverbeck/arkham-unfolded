@@ -289,8 +289,8 @@ impl Shown {
 #[derive(Resource, Clone)]
 pub(super) struct PartnerSocket(pub PathBuf);
 
-/// Wakes the frame loop when a request arrives; native play wakes winit's event
-/// loop, and tests count calls.
+/// Wakes the frame loop when a request arrives and when the client of a held one
+/// hangs up; native play wakes winit's event loop, and tests count calls.
 #[derive(Resource, Clone)]
 pub(super) struct PartnerWaker(pub Waker);
 

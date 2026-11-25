@@ -164,6 +164,7 @@ pub fn wait(args: WaitArgs) -> Result<u8> {
             }
             Ok(())
         },
+        process::pause,
         |answer| {
             let revision = answer["observation"]["revision"]
                 .as_u64()
@@ -229,11 +230,14 @@ fn worded(unkept: Unkept<Error>, socket: &Path) -> Error {
     match unkept {
         Unkept::Stopped(error) => error,
         Unkept::Unreached(error) => cannot_reach(socket, &error),
-        Unkept::Unasked(
+        Unkept::Request(
             error @ (RequestError::NotJson { .. } | RequestError::Unrecognised { .. }),
         ) => error.into(),
-        Unkept::Unasked(error) => {
+        Unkept::Request(error) => {
             Error::new(error).context(format!("the agent seat on {}", socket.display()))
+        }
+        Unkept::Unexpected { request, line } => {
+            anyhow!("the seat answered {request} with: {line}")
         }
         other => anyhow!("{other}"),
     }
