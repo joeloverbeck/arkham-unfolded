@@ -31,6 +31,8 @@ the socket path. It cannot reuse the seat's serving loop, which assumes the seat
 owns the whole application. Partners are built in this repository first. Their
 game-neutral half moves to the shared library only when mudsong really uses
 partners, under the [third-consumer waiver](../foundation/mission.md#code-shared-with-the-sibling-games).
+[ADR 0008](0008-partner-transport-moves-to-the-shared-library.md) supersedes that
+sentence: the half moves for Cuba Libre.
 
 ## Considered options
 
