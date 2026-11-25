@@ -865,7 +865,9 @@ use the pointer, camera, menus or keyboard focus ([ADR 0007](adr/0007-agent-part
 
 **Menu → Agent partners** lists each investigator with whether a partner plays it,
 enables or disables partners, and shows a one-line instruction to paste into an
-agent's terminal, one session per investigator. The instruction does not say which
+agent's terminal, one session per investigator. When the partner folders are absent or
+hold other instructions than this game's, a notice of what to run is shown in its place,
+until agent partners are shown again with the folders ready. The instruction does not say which
 investigators the human plays. A portrait of a partner-played investigator carries a distinct text-bearing
 mark. While a partner is deciding, its portrait and the compact decision display
 say so by investigator name and offer **Take over**. A stalled or disconnected

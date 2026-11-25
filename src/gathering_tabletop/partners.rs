@@ -19,6 +19,7 @@
 
 use super::*;
 use crate::gathering::CardView;
+use crate::partner_folders::{self, Places, folders};
 use crate::partners::{
     Control, Controller, Host, HumanChoice, SharedKind, SharedState, nothing_yet,
 };
@@ -28,7 +29,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use unfolded_agent_players::folder::CODEX_WAIT;
 use unfolded_tabletop::agent_transport::{
     Protocol, Reply, Transport, Unopened, Waker, window_waker,
 };
@@ -72,8 +72,10 @@ pub(super) struct Shown {
     /// The line to paste into an agent's terminal, while partners are enabled and the
     /// partner folders are ready for it.
     pub line: Option<String>,
-    /// Why partners could not be enabled, or what to do before a session joins.
+    /// Why partners could not be enabled.
     pub problem: Option<String>,
+    /// What to do before a session joins, when the partner folders are not ready.
+    pub notice: Option<String>,
     /// Each partner-played investigator the table waits on, and how.
     pub deciding: Vec<(Investigator, Deciding)>,
     /// What each awaited partner's investigator may use in the open window: the
@@ -395,43 +397,27 @@ pub(super) fn default_socket() -> PathBuf {
         .join("arkham-unfolded-partners.sock")
 }
 
-/// Arkham's data directory: `arkham-unfolded` in `$XDG_DATA_HOME`, or in `~/.local/share`.
-/// `scripts/tools partner-folder` writes the partner folders there (Cuba Libre #202), one
-/// for each tool in `partner`, and the client program in `client`.
-fn data() -> Option<PathBuf> {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
-        .filter(|path| path.is_absolute())
-        .map(|data| data.join("arkham-unfolded"))
-}
-
-/// The partner instructions as `scripts/tools partner-folder` writes them.
-fn instructions(client: &Path) -> String {
-    include_str!("../../docs/agents/partner-instructions.md")
-        .replace("arkham-partner", &client.display().to_string())
-        .replace("{CODEX_WAIT}", CODEX_WAIT)
-}
-
-/// What the human is to do when the partner folders in `data` are absent, or hold other
-/// instructions than this game's.
-fn folders_problem(data: Option<&Path>) -> Option<String> {
+/// What the human is to do before a session joins, when the partner folders in `data` are
+/// absent or hold other instructions than this game's. What `partner-folder` wrote
+/// besides, and the program, are not looked at.
+fn folders_notice(data: Option<&Path>) -> Option<String> {
     let current = data.is_some_and(|data| {
-        let expected = instructions(&data.join("client/arkham-partner"));
-        ["claude-code/CLAUDE.md", "codex/AGENTS.md"]
-            .into_iter()
-            .all(|file| {
-                std::fs::read_to_string(data.join("partner").join(file))
-                    .is_ok_and(|held| held == expected)
-            })
+        let places = Places::of(data);
+        let expected = places.instructions();
+        [
+            places.claude_code.join("CLAUDE.md"),
+            places.codex.join("AGENTS.md"),
+        ]
+        .into_iter()
+        .all(|file| std::fs::read_to_string(file).is_ok_and(|held| held == expected))
     });
     (!current).then(|| {
         "The partner folders are absent or not this game's: run scripts/tools partner-folder, then hide and show agent partners here for the line to paste.".to_owned()
     })
 }
 
-/// Where the partner folders are looked for, when it is not [`data`]: a test's own.
+/// Where the partner folders are looked for, when it is not Arkham's data directory: a
+/// test's own.
 #[derive(Resource)]
 pub(super) struct PartnerData(pub(super) PathBuf);
 
@@ -445,9 +431,9 @@ pub(super) fn line(socket: &Path) -> String {
         } else {
             format!(", with `--socket {}` on every command", socket.display())
         };
-    let folder = data().map_or_else(
+    let folder = partner_folders::data().map_or_else(
         || "the partner folder".to_owned(),
-        |data| data.join("partner").display().to_string(),
+        |data| folders(&data).display().to_string(),
     );
     format!(
         "Play one investigator at the Arkham Unfolded table, one session per investigator, started in claude-code or codex (your tool's) in {folder}: follow the instructions there and join{option}."
@@ -481,7 +467,7 @@ pub(super) fn serve(world: &mut World) {
         );
     let partner_data = world
         .get_resource::<PartnerData>()
-        .map_or_else(data, |data| Some(data.0.clone()));
+        .map_or_else(partner_folders::data, |data| Some(data.0.clone()));
     let redraw = world.resource_scope(|world, mut partners: Mut<Partners>| {
         world.resource_scope(|_, mut table: Mut<Table>| {
             let partners = &mut *partners;
@@ -493,7 +479,7 @@ pub(super) fn serve(world: &mut World) {
                     Input::Menu => {
                         table.partners.menu_open = !table.partners.menu_open;
                         if partners.transport.is_some() {
-                            table.partners.problem = folders_problem(partner_data.as_deref());
+                            table.partners.notice = folders_notice(partner_data.as_deref());
                         }
                     }
                     Input::Enable(true) if partners.transport.is_none() => {
@@ -502,10 +488,11 @@ pub(super) fn serve(world: &mut World) {
                                 partners.transport = Some(transport);
                                 answers.extend(partners.host.set_enabled(true));
                                 partners.attempt = table.attempt;
-                                table.partners.problem = folders_problem(partner_data.as_deref());
+                                table.partners.problem = None;
+                                table.partners.notice = folders_notice(partner_data.as_deref());
                                 eprintln!("Agent partners are enabled. {}", line(&socket));
-                                if let Some(problem) = &table.partners.problem {
-                                    eprintln!("{problem}");
+                                if let Some(notice) = &table.partners.notice {
+                                    eprintln!("{notice}");
                                 }
                             }
                             Err(problem) => table.partners.problem = Some(problem),
@@ -514,7 +501,7 @@ pub(super) fn serve(world: &mut World) {
                     Input::Enable(true) => {}
                     Input::Enable(false) => {
                         answers.extend(partners.host.set_enabled(false));
-                        table.partners.problem = None;
+                        table.partners.notice = None;
                         closing = true;
                     }
                     Input::Hand(who) => {
@@ -731,8 +718,9 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         selected: Investigator::ALL.map(|who| partners.host.selected(who)),
         joined: Investigator::ALL
             .map(|who| matches!(control.controller(who), Controller::Partner(_))),
-        line: (enabled && table.partners.problem.is_none()).then(|| line(socket)),
+        line: (enabled && table.partners.notice.is_none()).then(|| line(socket)),
         problem: table.partners.problem.clone(),
+        notice: table.partners.notice.clone(),
         deciding,
         may_use: routed.may_use,
         awaited,

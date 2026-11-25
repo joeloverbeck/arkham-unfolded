@@ -39,11 +39,13 @@ fn partnered(partners: &[Investigator]) -> Partnered {
     let mut app = host(save.clone());
     let wakes = Arc::new(AtomicUsize::new(0));
     let counted = wakes.clone();
-    let held = instructions(&directory.path().join("client/arkham-partner"));
-    for (folder, file) in [("claude-code", "CLAUDE.md"), ("codex", "AGENTS.md")] {
-        let folder = directory.path().join("partner").join(folder);
-        fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join(file), &held).unwrap();
+    let places = Places::of(directory.path());
+    for (folder, file) in [
+        (&places.claude_code, "CLAUDE.md"),
+        (&places.codex, "AGENTS.md"),
+    ] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join(file), places.instructions()).unwrap();
     }
     app.insert_resource(PartnerSocket(socket.clone()))
         .insert_resource(PartnerData(directory.path().to_owned()))
@@ -2115,7 +2117,7 @@ fn the_menu_notices_partner_folders_that_are_absent_or_old() {
     press(&mut app, "Menu");
     press(&mut app, "Agent partners");
     let client = directory.path().join("client/arkham-partner");
-    let held = instructions(&client);
+    let held = Places::of(directory.path()).instructions();
     assert!(held.contains(&format!("{} wait PARTNER", client.display())));
     let folders = ["claude-code/CLAUDE.md", "codex/AGENTS.md"];
     let files = folders.map(|file| directory.path().join("partner").join(file));

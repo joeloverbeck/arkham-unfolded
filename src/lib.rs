@@ -9,6 +9,8 @@ mod attempts;
 pub mod gathering;
 #[cfg(feature = "tabletop")]
 pub mod gathering_tabletop;
+#[cfg(feature = "tabletop")]
+mod partner_folders;
 pub mod partners;
 mod saved_state;
 #[cfg(feature = "tabletop")]

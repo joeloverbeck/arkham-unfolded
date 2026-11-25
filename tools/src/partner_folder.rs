@@ -2,16 +2,17 @@
 //! sessions run in, one for each tool (Cuba Libre #202, ADR 0007). The shared library
 //! writes them (`unfolded_agent_players::folder`); the instructions are this checkout's.
 
+#[path = "../../src/partner_folders.rs"]
+mod partner_folders;
+
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
+use partner_folders::{CLIENT, Places};
 use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-use unfolded_agent_players::folder::{self, CODEX_WAIT, Folders};
-
-const INSTRUCTIONS: &str = include_str!("../../docs/agents/partner-instructions.md");
-const CLIENT: &str = "arkham-partner";
+use unfolded_agent_players::folder::{self, Folders};
 
 #[derive(ClapArgs)]
 pub struct Args {
@@ -21,48 +22,30 @@ pub struct Args {
 }
 
 pub fn run(args: Args) -> Result<u8> {
-    let data = data()?;
-    let client = data.join("client").join(CLIENT);
+    let data = partner_folders::data().context("cannot find the application data directory")?;
+    let places = Places::of(&data);
     let built = match args.built {
         Some(built) => built,
         None => build()?,
     };
-    let (claude_code, codex) = (data.join("partner/claude-code"), data.join("partner/codex"));
     // What the folders hold of no known writing is refused before the program changes.
     Folders {
-        claude_code: &claude_code,
-        codex: &codex,
-        client: &client,
-        instructions: &instructions(&client),
+        claude_code: &places.claude_code,
+        codex: &places.codex,
+        client: &places.client,
+        instructions: &places.instructions(),
     }
     .write()
     .context("cannot write the partner folders")?;
-    folder::install(&built, &client).context("cannot install the partners' client program")?;
-    println!("Claude Code's partner folder: {}", claude_code.display());
-    println!("Codex's partner folder: {}", codex.display());
-    println!("Client program: {}", client.display());
+    folder::install(&built, &places.client)
+        .context("cannot install the partners' client program")?;
+    println!(
+        "Claude Code's partner folder: {}",
+        places.claude_code.display()
+    );
+    println!("Codex's partner folder: {}", places.codex.display());
+    println!("Client program: {}", places.client.display());
     Ok(0)
-}
-
-/// The partner instructions with the program's path in place of its name, and the shared
-/// library's words for how Codex waits. The game compares the folders with the same
-/// (`gathering_tabletop::partners::instructions`).
-fn instructions(client: &Path) -> String {
-    INSTRUCTIONS
-        .replace(CLIENT, &client.display().to_string())
-        .replace("{CODEX_WAIT}", CODEX_WAIT)
-}
-
-/// Arkham's data directory, by the same rule as the game finds the partner folders
-/// (`gathering_tabletop::partners::data`).
-fn data() -> Result<PathBuf> {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
-        .filter(|path| path.is_absolute())
-        .map(|data| data.join("arkham-unfolded"))
-        .context("cannot find the application data directory")
 }
 
 /// Build the client program as `scripts/tools` builds this one.
