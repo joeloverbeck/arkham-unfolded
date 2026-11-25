@@ -99,6 +99,13 @@ pub(super) struct Shown {
     pub attributed: Vec<(usize, Investigator)>,
 }
 
+/// What `who` may use before `before`: a heading and then the titles, since a title
+/// is a card's name or an option's own label, such as "Use Jacqueline — reveal 3
+/// tokens, then cancel" (#217).
+pub(super) fn available(who: &str, before: &str, titles: &[String]) -> String {
+    format!("Available to {who} before {before}: {}", titles.join(" · "))
+}
+
 impl Shown {
     /// Whether a partner plays `who`.
     pub(super) fn partner_plays(&self, who: Investigator) -> bool {
@@ -127,13 +134,7 @@ impl Shown {
     /// Why the table waits on `who`'s partner in a window: what it may use there.
     pub(super) fn uses(&self, who: Investigator) -> Option<String> {
         let (_, titles) = self.may_use.iter().find(|(user, _)| *user == who)?;
-        (!titles.is_empty()).then(|| {
-            format!(
-                "{} may use {} before this window closes",
-                who.name(),
-                titles.join(", ")
-            )
-        })
+        (!titles.is_empty()).then(|| available(who.name(), "this window closes", titles))
     }
 
     /// The human's part in the shared decision `id` completes, when it has one.

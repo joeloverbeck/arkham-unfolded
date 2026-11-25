@@ -909,8 +909,13 @@ option first, his waiting choice is not applied: the decision display says so, a
 he chooses again.
 
 **Speech boxes and action lines.** Each table-talk message appears in a speech box
-to the right of its speaker's portrait on the navigation rail, pointing at the
-portrait and floating over the scene. When a partner commits a decision, its choice
+to the right of its speaker's portrait on the navigation rail, floating over the
+scene, its tail pointing at the portrait wherever one can be drawn there. Action
+lines stack below the message. Unless it must move, a column of boxes is level with
+its portrait. It moves only to keep within the window, between the turn indicator and
+the decision display, or clear of the boxes beside another portrait: its tail then
+moves along the message to stay at the portrait, and is not drawn where it would
+leave the portrait. A column without room is hidden and waits. When a partner commits a decision, its choice
 label, such as `Fight Ghoul Minion`, appears in the same place beside the acting
 investigator's portrait as an action line: a square, edged plate with no tail and
 no quotation marks, a record rather than speech. The human's own decisions get no
@@ -937,7 +942,8 @@ human's speech box. During a peril encounter the message box is unavailable and
 says why. A peril card that resolves within the decision that draws it, such as
 Watcher from Another Dimension, keeps talk closed until the table has presented
 that decision. **Menu → Table talk** lists the session's messages with speaker and
-round; the list is not saved with the attempt.
+round, drawn as in its speech box: a skill or harm word in a message stays a word,
+and a character the interface font lacks shows as a substitute. The list is not saved with the attempt.
 
 ## Text, symbols and diagnostics
 

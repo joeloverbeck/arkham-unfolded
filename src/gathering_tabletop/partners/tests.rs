@@ -719,6 +719,9 @@ fn a_partners_player_window_in_the_humans_test_names_what_the_partner_may_use() 
         names_violin(&shown),
         "The table waits on Patrice's partner without saying what she may use:\n{shown}"
     );
+    // #217: the line reads as English before a card's title as before an option's label.
+    let line = "Available to Patrice Hathaway before this window closes: Patrice's Violin";
+    assert!(shown.lines().any(|shown| shown == line), "{shown}");
 }
 
 /// A table at Tony's commitment window in the Study, where every investigator
@@ -1085,10 +1088,11 @@ fn the_human_passes_before_a_partners_action_while_holding_a_fast_option() {
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     app.update();
     let shown = rendered_text(&mut app);
-    assert!(
-        shown.contains("You may use") && shown.contains("Patrice's Violin"),
-        "{shown}"
+    // #217: a heading and then the option, named by its holder.
+    let line = readable(
+        "Available to you before Jacqueline Fine's action: Patrice Hathaway — Patrice's Violin",
     );
+    assert!(shown.lines().any(|shown| shown == line), "{shown}");
     // Review fix G3: his pass is one of the options the partner library gives the
     // table, rendered as any other choice.
     let pass = "Pass before Jacqueline Fine's action";
@@ -1134,7 +1138,10 @@ fn without_partners_a_turns_choice_commits_at_once() {
     let directory = tempfile::tempdir().unwrap();
     let (mut app, _) = violin_in_jacquelines_turn(directory.path(), &[]);
     let shown = rendered_text(&mut app);
-    assert!(!shown.contains("You may use"), "{shown}");
+    assert!(
+        !shown.contains("Available to you") && !shown.contains("You may use"),
+        "{shown}"
+    );
     assert!(button_with_label(&mut app, "Pass before Jacqueline Fine's action").is_none());
     let at = revision(&app);
     choose(&mut app, "turn:end");
@@ -1340,11 +1347,11 @@ fn the_human_passes_on_jacquelines_reaction_before_a_partners_reveal() {
     let partner = joined[0]["partner"].as_str().unwrap().to_owned();
     app.update();
     let shown = rendered_text(&mut app);
-    assert!(
-        shown.contains("You may use Jacqueline Fine")
-            && shown.contains("reveal 3 tokens, then cancel before Tony Morgan's decision"),
-        "{shown}"
+    // #217: a heading and then her reaction's own label, named once.
+    let line = readable(
+        "Available to you before Tony Morgan's decision: Jacqueline Fine — Use Jacqueline — reveal 3 tokens, then cancel",
     );
+    assert!(shown.lines().any(|shown| shown == line), "{shown}");
     let pass = "Pass before Tony Morgan's decision";
     assert!(button_with_label(&mut app, pass).is_some(), "{shown}");
 
@@ -1413,6 +1420,48 @@ fn the_humans_reveal_is_shown_waiting_for_a_partners_jacqueline() {
         app.update();
     }
     assert_eq!(revision(&app), at + 1, "Applied once she passed");
+}
+
+/// #217, finding 2: with Tony the human's and Jacqueline a partner's, the token
+/// display at Tony's reveal read "Jacqueline Fine may use Use Jacqueline - reveal 3
+/// tokens, then cancel before this window closes": a fixed verb before an option
+/// label that begins with its own. The line names her reaction once, as the option
+/// itself is labelled, after a heading that reads before a card's title too. Her
+/// partner keeps the same options, her reaction and the pass before Tony's decision.
+#[test]
+fn a_partners_reveal_window_names_jacquelines_reaction_once() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut app, socket) = tonys_reveal(directory.path(), &[Jacqueline]);
+    let joined = exchange(&mut app, &socket, &[json!({"op": "join"})]);
+    let partner = joined[0]["partner"].as_str().unwrap().to_owned();
+    app.update();
+    let shown = rendered_text(&mut app);
+    let line = readable(
+        "Available to Jacqueline Fine before this window closes: Use Jacqueline — reveal 3 tokens, then cancel",
+    );
+    assert!(shown.lines().any(|shown| shown == line), "{shown}");
+    assert_eq!(
+        shown.matches("Use Jacqueline").count(),
+        1,
+        "Her reaction is named once:\n{shown}"
+    );
+    let woken = exchange(
+        &mut app,
+        &socket,
+        &[json!({"op": "wait", "partner": partner})],
+    );
+    assert_eq!(woken[0]["status"], "decision", "{}", woken[0]);
+    let options: Vec<&str> = woken[0]["view"]["decision"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|option| option["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        options,
+        ["tokens:jacqueline", crate::partners::PASS_BEFORE],
+        "Her reaction and her pass"
+    );
 }
 
 mod pacing;
