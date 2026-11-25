@@ -4,10 +4,11 @@ status: accepted
 
 # The partners' transport and client move to the shared library
 
-Accepted on 2026-11-25, when Joel activated Cuba Libre's spec
-[#197](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/197). It lets
-Cuba Libre Unfolded play against external agents through the mechanism Arkham's
-partners already use. This supersedes the sentence of
+Follows from Cuba Libre's spec
+[#197](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/197), which
+Joel accepted and activated on 2026-11-25. It lets Cuba Libre Unfolded play
+against external agents through the mechanism Arkham's partners already use.
+This supersedes the sentence of
 [ADR 0007](0007-agent-partners-join-the-running-table.md) that moved the
 partners' game-neutral half to `unfolded-tabletop` only when mudsong really uses
 partners. The consumer is Cuba Libre, under the
@@ -20,7 +21,9 @@ ADR 0007 stands.
 
 The first move, [Cuba Libre #199](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/199),
 takes the socket's serving, the client's exchange and the loop of `seat-wait`,
-which a seat needs to host players without a window. It changes nothing a partner
+which a seat needs to host players without a window and which the agents'
+[corrections](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/197#issuecomment-7156606446)
+to #197 added. It changes nothing a partner
 or a seat's driver can send, read or exit with.
 
 | Shared | Arkham's |
