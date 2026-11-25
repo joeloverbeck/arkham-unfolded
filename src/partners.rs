@@ -51,7 +51,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 use unfolded_agent_players::seats::{
-    Ended, Event, Game, Holder, Joining, Refusal, Released, Seats, Submitted, Told, Unclaimed,
+    ClaimRefused, Ended, Event, Game, Holder, Joining, Refusal, Released, Seats, Submitted, Told,
     Waiting,
 };
 
@@ -860,7 +860,6 @@ impl<R> Host<R> {
                 }
                 Err(why(&refusal, revision))
             }
-            other => unreachable!("A submission's answer: {other:?}"),
         }
     }
 
@@ -1060,14 +1059,14 @@ impl<R> Host<R> {
         now: Instant,
     ) -> Value {
         match (self.seats.recognise(joining), joining.identity) {
-            (Err(Unclaimed::Holds(plays)), Some(id)) => {
+            (Err(ClaimRefused::Holds(plays)), Some(id)) => {
                 let reason = format!(
                     "You already play {}, and one agent session plays one investigator. Nothing changed: go on with your identity.",
                     plays.name()
                 );
                 return self.answer(id, "refused", Some(reason), table, false, now);
             }
-            (Err(Unclaimed::SameSession(plays)), _) => {
+            (Err(ClaimRefused::SameSession(plays)), _) => {
                 return refused(format!(
                     "This session already plays {}, and one agent session plays one investigator. Nothing changed: go on with the identity your join gave you.",
                     plays.name()
@@ -1094,7 +1093,7 @@ impl<R> Host<R> {
         };
         let id = match self.seats.claim(&plays, joining, now) {
             Ok(id) => id,
-            Err(Unclaimed::Held) => {
+            Err(ClaimRefused::Held) => {
                 return refuse(format!(
                     "{} is already played by another partner.",
                     plays.name()
@@ -1799,7 +1798,7 @@ fn why(refusal: &Refusal, revision: u64) -> String {
     match refusal {
         Refusal::Stale { current } => stale(revision, *current),
         Refusal::Game(reason) => reason.clone(),
-        other => format!("The table refused that choice: {other:?}."),
+        Refusal::Unseated => "Your session plays no investigator.".into(),
     }
 }
 

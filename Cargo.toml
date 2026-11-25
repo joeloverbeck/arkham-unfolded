@@ -21,11 +21,11 @@ tabletop = ["dep:bevy", "unfolded-tabletop/seat"]
 # patch below and `tools`' pins, as `scripts/check-shared-pins` checks. The library,
 # driver and asset build take only the packages that cannot depend on Bevy;
 # `unfolded-tabletop` holds what draws.
-unfolded-agent-players = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a75566b27d0385fd1d568e56aea2467e7a57c0e4" }
-unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a75566b27d0385fd1d568e56aea2467e7a57c0e4" }
-unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a75566b27d0385fd1d568e56aea2467e7a57c0e4" }
-unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a75566b27d0385fd1d568e56aea2467e7a57c0e4" }
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a75566b27d0385fd1d568e56aea2467e7a57c0e4", optional = true }
+unfolded-agent-players = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "318e6f2ff96c2a3ec843affb129277825115c0ca" }
+unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "318e6f2ff96c2a3ec843affb129277825115c0ca" }
+unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "318e6f2ff96c2a3ec843affb129277825115c0ca" }
+unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "318e6f2ff96c2a3ec843affb129277825115c0ca" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "318e6f2ff96c2a3ec843affb129277825115c0ca", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -79,4 +79,4 @@ debug = "full"
 debug = "full"
 
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a75566b27d0385fd1d568e56aea2467e7a57c0e4" }
+wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "318e6f2ff96c2a3ec843affb129277825115c0ca" }
