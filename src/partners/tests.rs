@@ -803,10 +803,10 @@ fn a_partners_fast_option_holds_the_humans_turn_action_until_it_passes() {
         Some(&("action:ordinary:resource".to_owned(), Tony))
     );
 
-    // Back in the window before Tony's next action, she plays her Violin instead.
-    let woken = sitting.ask(json!({"op": "wait", "partner": partner}));
-    assert_eq!(woken["status"], "decision", "{woken}");
-    let violin = option_ids(&woken["view"])
+    // Back in the window before Tony's next action, as the answer to her pass told her,
+    // she plays her Violin instead.
+    assert_eq!(passed["view"]["decision"]["yours"], true, "{passed}");
+    let violin = option_ids(&passed["view"])
         .into_iter()
         .find(|id| id.starts_with("violin:") && id.ends_with(":target:patrice:draw"))
         .expect("Her Violin, for herself");

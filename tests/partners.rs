@@ -1236,7 +1236,7 @@ fn a_stale_unlisted_or_unowned_choice_is_refused_with_its_reason_and_the_view() 
 
 /// Ticket #205, Choosing: an accepted choice is applied only once the table
 /// settles, commits and autosaves through the human's commit path, and the history
-/// names its investigator.
+/// names its investigator. Cuba Libre #201: its answer does not wait for that.
 #[test]
 fn an_accepted_choice_waits_for_the_table_then_commits_autosaves_and_is_attributed() {
     let mut sitting = Sitting::after_lead(&[Patrice]);
@@ -1246,8 +1246,13 @@ fn an_accepted_choice_waits_for_the_table_then_commits_autosaves_and_is_attribut
     let revision = sitting.revision();
     sitting.rules.settled = false;
     let chosen = sitting.send(&json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}));
+    let answer = sitting.take(chosen).expect("Answered at once");
+    assert_eq!(answer["status"], "settling", "{answer}");
+    assert_eq!(
+        answer["view"]["decision"]["settling"]["id"],
+        "confirm-mulligan"
+    );
     sitting.poll();
-    assert!(sitting.take(chosen).is_none());
     assert_eq!(
         sitting.revision(),
         revision,
@@ -1256,9 +1261,9 @@ fn an_accepted_choice_waits_for_the_table_then_commits_autosaves_and_is_attribut
 
     sitting.rules.settled = true;
     sitting.poll();
-    let answer = sitting.take(chosen).expect("Applied once settled");
-    assert_eq!(answer["status"], "chosen", "{answer}");
-    assert_eq!(answer["view"]["revision"], revision + 1);
+    assert_eq!(sitting.revision(), revision + 1, "Applied once settled");
+    let view = sitting.view(&partner);
+    assert_eq!(view["decision"].get("settling"), None, "{view}");
     let saved = continuity::load_session(&sitting.rules.save).unwrap();
     assert_eq!(saved.observe().revision, revision + 1, "Autosaved");
     assert_eq!(
@@ -1317,7 +1322,7 @@ fn a_partner_can_only_play_and_every_other_request_is_refused() {
 
 /// Ticket #205, Recovery: Take over in the middle of a partner's decision returns the
 /// investigator to the human at once. Its session is told so and ends (#295): its held
-/// wait and its choice not yet applied are answered with the reason, and nothing it
+/// wait is answered with the reason, naming its choice not yet applied, and nothing it
 /// asks afterwards reaches the table. Another session plays on.
 #[test]
 fn take_over_mid_decision_ends_the_partners_session_and_applies_none_of_its_choices() {
@@ -1331,6 +1336,7 @@ fn take_over_mid_decision_ends_the_partners_session_and_applies_none_of_its_choi
     assert_eq!(sitting.take(waiting).unwrap()["status"], "decision");
     sitting.rules.settled = false;
     let chosen = sitting.send(&json!({"op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan"}));
+    assert_eq!(sitting.take(chosen).unwrap()["status"], "settling");
     let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
     let tonys_wait = sitting.send(&json!({"op": "wait", "partner": tonys}));
 
@@ -1355,8 +1361,15 @@ fn take_over_mid_decision_ends_the_partners_session_and_applies_none_of_its_choi
         );
         assert!(answer.get("view").is_none(), "It plays no one: {answer}");
     };
-    told(&sitting.take(waiting).expect("Its wait is told at once"));
-    told(&sitting.take(chosen).expect("Its choice is told at once"));
+    let ended = sitting.take(waiting).expect("Its wait is told at once");
+    told(&ended);
+    assert!(
+        ended["reason"]
+            .as_str()
+            .unwrap()
+            .contains("was not applied"),
+        "{ended}"
+    );
     sitting.rules.settled = true;
     sitting.poll();
     assert_eq!(sitting.revision(), revision, "Its choice is not applied");
@@ -1527,8 +1540,10 @@ fn turning_partners_off_returns_every_investigator_and_ends_held_waits() {
     }
     assert!(sitting.host.control().solo());
     for partner in partners {
+        // Told again, in case nobody read the wait's answer.
         let after = sitting.ask(json!({"op": "observe", "partner": partner}));
-        assert_eq!(after["status"], "refused", "{after}");
+        assert_eq!(after["status"], "closed", "{after}");
+        assert_eq!(after["reason"], "Agent partners were turned off.");
     }
 }
 
@@ -1617,18 +1632,27 @@ fn a_partner_plays_patrices_mulligan_and_turn_between_waits() {
     sitting.human("turn:patrice");
 
     let mut actions = 0;
+    let mut told: Option<Value> = None;
     let waiting = loop {
-        let waiting =
-            sitting.send(&json!({"op": "wait", "partner": partner, "timeout_seconds": 60}));
-        let Some(answer) = sitting.take(waiting) else {
-            break waiting;
+        // The answer to her last choice tells her next decision, or else a wait does.
+        let answer = match told.take() {
+            Some(answer) => answer,
+            None => {
+                let waiting =
+                    sitting.send(&json!({"op": "wait", "partner": partner, "timeout_seconds": 60}));
+                let Some(answer) = sitting.take(waiting) else {
+                    break waiting;
+                };
+                assert!(["decision", "group_choice"].contains(&answer["status"].as_str().unwrap()));
+                answer
+            }
         };
         if answer["status"] == "group_choice" {
             // Her turn has ended: she hears the human's next-turn choice open.
             assert_eq!(answer["view"]["decision"]["yours"], false, "{answer}");
             continue;
         }
-        assert_eq!(answer["status"], "decision", "{answer}");
+        assert_eq!(answer["view"]["decision"]["yours"], true, "{answer}");
         let view = &answer["view"];
         let ids = option_ids(view);
         assert!(!ids.is_empty(), "{view}");
@@ -1640,6 +1664,9 @@ fn a_partner_plays_patrices_mulligan_and_turn_between_waits() {
         let chosen = sitting
             .ask(json!({"op": "choose", "partner": partner, "revision": revision, "id": id}));
         assert_eq!(chosen["status"], "chosen", "{chosen}");
+        if chosen["view"]["decision"]["yours"] == true {
+            told = Some(chosen);
+        }
         actions += 1;
         assert!(actions < 10, "Patrice's turn ends");
     };
