@@ -188,6 +188,10 @@ _Avoid_: Seat, user, controller when referring to the participant
 An agent playing one investigator as a player in a running game alongside the human player, seeing and choosing only what that player can. It is distinct from the agent seat, which operates the whole table in order to test it.
 _Avoid_: Agent seat, bot, AI opponent
 
+**Partner folder**:
+A folder outside the checkout where one tool's agent partner sessions run. It holds the partner instructions, that tool's permission for the one client program, and the sessions' notes.
+_Avoid_: Checkout, workspace
+
 **Group choice**:
 A choice the rules leave to the investigators collectively, or give to the lead investigator, such as who takes the next turn. The lead investigator's player is its final arbiter.
 _Avoid_: Shared decision, vote

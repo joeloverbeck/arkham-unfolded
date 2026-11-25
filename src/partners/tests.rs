@@ -1877,7 +1877,7 @@ fn every_hint_is_one_short_line_that_points_to_the_partner_instructions() {
     let how = view["decision"]["waits_for_passes"]["how"].clone();
     hints.push(("passes before its own reveal", how, &["Jacqueline Fine"]));
 
-    let pointer = format!(" in {INSTRUCTIONS}.");
+    let pointer = " in the partner instructions.";
     for (situation, how, awaited) in hints {
         let how = how
             .as_str()
@@ -1887,7 +1887,7 @@ fn every_hint_is_one_short_line_that_points_to_the_partner_instructions() {
             "{situation}: one short line, not the rules: {how}"
         );
         let section = how
-            .strip_suffix(&pointer)
+            .strip_suffix(pointer)
             .and_then(|start| start.rsplit_once("See "))
             .map(|(_, section)| section)
             .unwrap_or_else(|| panic!("{situation}: ends with the rules' section: {how}"));

@@ -905,8 +905,8 @@ fn partners_menu(p: &mut ChildSpawnerCommands, art: &art::Art, table: &Table) {
         },
         Action::Partners(partners::Input::Enable(!shown.enabled)),
     );
-    if let Some(problem) = &shown.problem {
-        p.spawn(art.text(problem, 12., GOLD));
+    for said in [&shown.problem, &shown.notice].into_iter().flatten() {
+        p.spawn(art.text(said, 12., GOLD));
     }
     if let Some(line) = &shown.line {
         p.spawn(art.text(

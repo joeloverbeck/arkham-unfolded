@@ -1,6 +1,7 @@
-//! The `partner` command's contract against a minimal listener standing in for the
+//! `arkham-partner`'s contract against a minimal listener standing in for the
 //! table's partner socket (#205): the request line each subcommand sends, the answer
-//! printed unchanged, the exit codes, and argument refusals.
+//! printed unchanged, the exit codes, and argument refusals; and the partner folder
+//! (Cuba Libre #202).
 
 use std::{
     io::{BufRead, BufReader, Write},
@@ -9,6 +10,7 @@ use std::{
     process::{Command, Output},
     thread,
 };
+use unfolded_agent_players::folder::CODEX_WAIT;
 
 /// A stand-in table answering one connection's one request with one canned line.
 fn listen(socket: &Path, answer: &'static str) -> thread::JoinHandle<String> {
@@ -25,8 +27,7 @@ fn listen(socket: &Path, answer: &'static str) -> thread::JoinHandle<String> {
 }
 
 fn partner(socket: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
-        .arg("partner")
+    Command::new(env!("CARGO_BIN_EXE_arkham-partner"))
         .arg("--socket")
         .arg(socket)
         .args(args)
@@ -50,8 +51,7 @@ fn a_join_carries_the_tools_identifiers_of_the_session() {
             let directory = tempfile::tempdir().unwrap();
             let socket = directory.path().join("partners.sock");
             let table = listen(&socket, JOINED);
-            let output = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
-                .arg("partner")
+            let output = Command::new(env!("CARGO_BIN_EXE_arkham-partner"))
                 .arg("--socket")
                 .arg(&socket)
                 .args(args)
@@ -262,8 +262,8 @@ fn the_default_socket_follows_the_environment_and_help_lists_the_commands() {
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("elsewhere.sock");
     let table = listen(&socket, JOINED);
-    let output = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
-        .args(["partner", "join", "patrice"])
+    let output = Command::new(env!("CARGO_BIN_EXE_arkham-partner"))
+        .args(["join", "patrice"])
         .env("ARKHAM_PARTNER_SOCKET", &socket)
         .output()
         .unwrap();
@@ -273,14 +273,14 @@ fn the_default_socket_follows_the_environment_and_help_lists_the_commands() {
 
     let help = help();
     for step in [
-        INSTRUCTIONS,
-        "partner join INVESTIGATOR",
-        "partner wait PARTNER",
+        "the partner instructions",
+        "arkham-partner join INVESTIGATOR",
+        "arkham-partner wait PARTNER",
         "wait PARTNER --listen",
-        "partner choose PARTNER REVISION ID",
-        "partner choose PARTNER REVISION ID --wait",
-        "partner inspect PARTNER CODE",
-        "partner ready PARTNER REVISION",
+        "arkham-partner choose PARTNER REVISION ID",
+        "arkham-partner choose PARTNER REVISION ID --wait",
+        "arkham-partner inspect PARTNER CODE",
+        "arkham-partner ready PARTNER REVISION",
         "observe PARTNER --full",
     ] {
         assert!(help.contains(step), "{step} in {help}");
@@ -299,12 +299,13 @@ fn the_default_socket_follows_the_environment_and_help_lists_the_commands() {
     }
 }
 
-/// The partner instructions every pasted line and `--help` point to (#211).
+/// The partner instructions, which the partner folder holds and the pasted line and
+/// `--help` point to (#211, Cuba Libre #202).
 const INSTRUCTIONS: &str = "docs/agents/partner-instructions.md";
 
 fn help() -> String {
-    let help = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
-        .args(["partner", "--help"])
+    let help = Command::new(env!("CARGO_BIN_EXE_arkham-partner"))
+        .arg("--help")
         .output()
         .unwrap();
     String::from_utf8(help.stdout).unwrap()
@@ -318,20 +319,20 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let instructions = std::fs::read_to_string(repository.join(INSTRUCTIONS)).unwrap();
     let requests = [
-        "scripts/tools partner join INVESTIGATOR",
+        "arkham-partner join INVESTIGATOR",
         "join patrice",
         "join patrice --partner PARTNER",
-        "scripts/tools partner wait PARTNER",
+        "arkham-partner wait PARTNER",
         "wait PARTNER --listen",
-        "scripts/tools partner observe PARTNER",
+        "arkham-partner observe PARTNER",
         "observe PARTNER --full",
-        "scripts/tools partner inspect PARTNER CODE",
-        "scripts/tools partner choose PARTNER REVISION ID",
+        "arkham-partner inspect PARTNER CODE",
+        "arkham-partner choose PARTNER REVISION ID",
         "choose PARTNER REVISION ID --wait",
         "ready PARTNER REVISION --wait",
-        "scripts/tools partner ready PARTNER REVISION",
-        "scripts/tools partner say PARTNER MESSAGE",
-        "scripts/tools partner leave PARTNER",
+        "arkham-partner ready PARTNER REVISION",
+        "arkham-partner say PARTNER MESSAGE",
+        "arkham-partner leave PARTNER",
         "decision.undo",
         "before_action_of",
         "before_decision_of",
@@ -362,8 +363,9 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "Claude Code",
         "run_in_background",
         "Codex",
-        "--timeout 240",
         "without a time limit",
+        "without a timeout",
+        "{CODEX_WAIT}",
     ];
     let talk = [
         "280 characters",
@@ -371,7 +373,7 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "six messages",
         "peril",
     ];
-    let notes = ["compacted", "local/partners/"];
+    let notes = ["compacted", "notes/PARTNER.md"];
     // #218: what help and the in-protocol hints no longer restate.
     let moved = [
         "`changes`",
@@ -426,5 +428,76 @@ fn say_sends_one_message_and_help_names_it() {
     );
 
     let help = help();
-    assert!(help.contains("partner say PARTNER MESSAGE"), "{help}");
+    assert!(
+        help.contains("arkham-partner say PARTNER MESSAGE"),
+        "{help}"
+    );
+}
+
+/// The partner folders written under `data`, or what refused them.
+fn partner_folders(data: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+        .args(["partner-folder", "--built"])
+        .arg(env!("CARGO_BIN_EXE_arkham-partner"))
+        .env("XDG_DATA_HOME", data)
+        .output()
+        .unwrap()
+}
+
+/// Cuba Libre #202: each tool has a partner folder outside the checkout, which holds the
+/// partner instructions, naming the installed client program by its path and no other
+/// way, and that tool's permission for that program, which lies outside the folders and
+/// runs. Neither folder holds a file the other tool reads.
+#[test]
+fn each_tool_has_a_partner_folder_and_the_permission_for_the_installed_client() {
+    let data = tempfile::tempdir().unwrap();
+    let output = partner_folders(data.path());
+    assert!(output.status.success(), "{output:?}");
+    let root = data.path().join("arkham-unfolded");
+    let client = root.join("client/arkham-partner");
+    let path = client.to_str().unwrap();
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let instructions = std::fs::read_to_string(repository.join(INSTRUCTIONS)).unwrap();
+    for (file, permission, allowed, other) in [
+        (
+            "claude-code/CLAUDE.md",
+            "claude-code/.claude/settings.json",
+            format!("Bash({path}:*)"),
+            ["claude-code/AGENTS.md", "claude-code/.codex"],
+        ),
+        (
+            "codex/AGENTS.md",
+            "codex/.codex/rules/player.rules",
+            format!("[\"{path}\"]"),
+            ["codex/CLAUDE.md", "codex/.claude"],
+        ),
+    ] {
+        let read = |name: &str| std::fs::read_to_string(root.join("partner").join(name)).unwrap();
+        let written = read(file);
+        assert_eq!(
+            written
+                .replace(path, "arkham-partner")
+                .replace(CODEX_WAIT, "{CODEX_WAIT}"),
+            instructions
+        );
+        assert!(!written.replace(path, "").contains("arkham-partner"));
+        assert!(written.contains(CODEX_WAIT));
+        assert!(!written.contains("](../"), "No link leaves the folder");
+        assert!(read(permission).contains(&allowed));
+        for other in other {
+            assert!(!root.join("partner").join(other).exists(), "{other}");
+        }
+    }
+    let help = Command::new(&client).arg("--help").output().unwrap();
+    assert!(help.status.success(), "{help:?}");
+    assert!(String::from_utf8(help.stdout).unwrap().contains("wait"));
+
+    let planted = root.join("partner/codex/.mcp.json");
+    std::fs::write(&planted, "{}").unwrap();
+    let output = partner_folders(data.path());
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains(planted.to_str().unwrap()), "{error}");
+    std::fs::remove_file(planted).unwrap();
+    assert!(partner_folders(data.path()).status.success());
 }

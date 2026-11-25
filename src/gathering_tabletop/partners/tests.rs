@@ -20,6 +20,7 @@ use std::{
     },
     thread::{self, JoinHandle},
 };
+use unfolded_agent_players::client;
 
 struct Partnered {
     app: App,
@@ -38,7 +39,16 @@ fn partnered(partners: &[Investigator]) -> Partnered {
     let mut app = host(save.clone());
     let wakes = Arc::new(AtomicUsize::new(0));
     let counted = wakes.clone();
+    let places = Places::of(directory.path());
+    for (folder, file) in [
+        (&places.claude_code, "CLAUDE.md"),
+        (&places.codex, "AGENTS.md"),
+    ] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join(file), places.instructions()).unwrap();
+    }
     app.insert_resource(PartnerSocket(socket.clone()))
+        .insert_resource(PartnerData(directory.path().to_owned()))
         .insert_resource(PartnerWaker(Arc::new(move || {
             counted.fetch_add(1, Ordering::SeqCst);
         })));
@@ -190,24 +200,20 @@ fn the_socket_lives_only_while_partners_are_enabled_and_serves_several_partners_
     );
 }
 
-/// Ticket #211, the pasted line's final form: it points to the partner instructions
-/// in this repository and gives the join command with the table's socket, and it
+/// Ticket #211 with Cuba Libre #202, the pasted line: it points to the instructions in
+/// each tool's partner folder, outside the checkout, and gives the table's socket, and it
 /// names no investigator and no human player (play contract, Agent partners).
 #[test]
-fn the_pasted_line_points_to_the_partner_instructions_and_names_no_player() {
-    let instructions = "docs/agents/partner-instructions.md";
+fn the_pasted_line_points_to_the_partner_folders_and_names_no_player() {
     let line = line(Path::new("/run/partners-elsewhere.sock"));
-    assert!(line.contains(instructions), "{line}");
     assert!(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(instructions)
-            .is_file(),
-        "The line points to a document in the repository"
+        line.contains("claude-code or codex (your tool's) in /"),
+        "{line}"
     );
+    assert!(line.contains("/arkham-unfolded/partner:"), "{line}");
+    assert!(!line.contains(env!("CARGO_MANIFEST_DIR")), "{line}");
     assert!(
-        line.contains(
-            "`scripts/tools partner --socket /run/partners-elsewhere.sock join INVESTIGATOR`"
-        ),
+        line.contains("with `--socket /run/partners-elsewhere.sock` on every command"),
         "{line}"
     );
     // #295: one line pasted per investigator.
@@ -1836,8 +1842,7 @@ fn taking_an_investigator_back_cancels_its_choice_that_waits_for_the_table() {
 }
 
 /// Cuba Libre #201, correction 23: a partner that listens, without a period, before its
-/// own decision is shown thinking for a minute and then silent, until its choice; one
-/// whose wait can tell the decision is not.
+/// own decision is shown thinking for a minute and then silent, until its choice.
 #[test]
 fn a_partner_that_listens_before_its_decision_is_marked_silent() {
     let mut partnered = partnered(&[Patrice]);
@@ -1873,7 +1878,7 @@ fn a_partner_that_listens_before_its_decision_is_marked_silent() {
     let shown = rendered_text(app);
     assert!(shown.contains("SILENT 2 MIN"), "{shown}");
     assert!(!listening.is_finished(), "Its wait goes on");
-    // A wait that is to tell her decision: the same table, and not silent while it waits.
+    // Her choice ends the wait, and the silence.
     press(app, "Close menu");
     let revision = revision(app);
     let chosen = exchange(
@@ -1887,4 +1892,266 @@ fn a_partner_that_listens_before_its_decision_is_marked_silent() {
     pump(app, || listening.is_finished());
     assert_eq!(listening.join().unwrap()[0]["status"], "replaced");
     assert!(!rendered_text(app).contains("SILENT"));
+}
+
+/// A stand-in for a Codex session that waits as the partner instructions say: one request
+/// at a time over the socket, by the shared library's client in this process, each held
+/// until the table answers it. Codex calls its model when a command ends and at no other time, so
+/// each answer is one wake. Woken with its decision, it makes the next of its choices
+/// and waits in that same command; woken by its session's end, it ends its turn.
+struct Codex {
+    wakes: Arc<Mutex<Vec<Value>>>,
+    turn: JoinHandle<()>,
+}
+
+impl Codex {
+    /// A session whose `choices` are each the first option listed that begins so.
+    fn waiting(socket: &Path, partner: &str, choices: &[&'static str]) -> Self {
+        let wakes = Arc::new(Mutex::new(Vec::new()));
+        let (socket, partner) = (socket.to_owned(), partner.to_owned());
+        let (told, choices) = (wakes.clone(), choices.to_vec());
+        let turn = thread::spawn(move || {
+            let mut choices = choices.into_iter();
+            let mut command = json!({"op": "wait", "partner": partner});
+            loop {
+                let answer = client::request(&socket, &command.to_string(), || Ok::<_, ()>(()));
+                let Ok(answer) = answer else { return };
+                let mut line = Vec::new();
+                answer.write_to(&mut line).unwrap();
+                let answer: Value = serde_json::from_slice(&line).unwrap();
+                told.lock().unwrap().push(answer.clone());
+                if ["closed", "refused"].contains(&answer["status"].as_str().unwrap()) {
+                    return;
+                }
+                let decision = &answer["view"]["decision"];
+                command = if decision["yours"] == true {
+                    let Some(choice) = choices.next() else {
+                        return;
+                    };
+                    let id = decision["options"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter_map(|option| option["id"].as_str())
+                        .find(|id| id.starts_with(choice))
+                        .unwrap_or_else(|| panic!("No {choice}: {decision}"));
+                    json!({
+                        "op": "choose", "partner": partner, "id": id, "wait": true,
+                        "revision": answer["view"]["revision"],
+                    })
+                } else {
+                    json!({"op": "wait", "partner": partner})
+                };
+            }
+        });
+        Self { wakes, turn }
+    }
+
+    /// Each wake so far: its status, and whether its view has the session's decision.
+    fn woken(&self) -> Vec<(String, bool)> {
+        let wakes = self.wakes.lock().unwrap();
+        wakes
+            .iter()
+            .map(|wake| {
+                (
+                    wake["status"].as_str().unwrap().to_owned(),
+                    wake["view"]["decision"]["yours"] == true,
+                )
+            })
+            .collect()
+    }
+
+    /// Run frames until it has been woken `count` times.
+    fn pump(&self, app: &mut App, count: usize) {
+        for _ in 0..1_000 {
+            if self.woken().len() >= count {
+                return;
+            }
+            app.update();
+            finish_presentation(app);
+            thread::sleep(Duration::from_millis(2));
+        }
+        panic!("Woken {:?}\n{}", self.woken(), rendered_text(app));
+    }
+
+    /// Run frames for a while, in which nothing wakes it.
+    fn rests(&self, app: &mut App) {
+        let before = self.woken();
+        for _ in 0..40 {
+            app.update();
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(self.woken(), before);
+        assert!(!self.turn.is_finished(), "It waits");
+    }
+}
+
+/// Cuba Libre #202: one wake for each event, and none while nothing needs the session.
+#[test]
+fn a_codex_session_is_woken_once_for_each_event_and_by_nothing_else() {
+    let mut partnered = partnered(&[Patrice]);
+    let partner = join(&mut partnered, Patrice);
+    let app = &mut partnered.app;
+    let codex = Codex::waiting(
+        &partnered.socket,
+        &partner,
+        &["mulligan:", "confirm-mulligan"],
+    );
+    codex.rests(app);
+    choose(app, "confirm-mulligan"); // Jacqueline
+    finish_presentation(app);
+    codex.rests(app);
+    assert_eq!(codex.woken(), [], "Others' decisions are not its own");
+
+    choose(app, "confirm-mulligan"); // Tony
+    finish_presentation(app);
+    // Her mulligan. Her choice in it waits while the menu is open, which wakes nobody.
+    codex.pump(app, 1);
+    codex.rests(app);
+    press(app, "Close menu");
+    // The decision her choice leaves her; and, once she has confirmed, the group choice
+    // that opens: one wake each.
+    codex.pump(app, 3);
+    let woken = [
+        ("decision".to_owned(), true),
+        ("decision".to_owned(), true),
+        ("group_choice".to_owned(), false),
+    ];
+    assert_eq!(codex.woken(), woken);
+    codex.rests(app);
+    assert_eq!(codex.woken(), woken, "And none again");
+
+    press(app, "Menu");
+    press(app, "Turn agent partners off");
+    codex.pump(app, 4);
+    assert_eq!(codex.woken()[3], ("closed".to_owned(), false));
+}
+
+/// Cuba Libre #202: a decision that the answer to its own choice told a Codex session wakes
+/// it no more. A wait it starts all the same is answered at once, with nothing to tell.
+#[test]
+fn a_codex_session_is_not_woken_for_what_its_answer_told() {
+    let mut partnered = partnered(&[Patrice]);
+    let partner = join(&mut partnered, Patrice);
+    let app = &mut partnered.app;
+    choose(app, "confirm-mulligan"); // Jacqueline
+    finish_presentation(app);
+    choose(app, "confirm-mulligan"); // Tony
+    finish_presentation(app);
+    press(app, "Close menu");
+    let codex = Codex::waiting(&partnered.socket, &partner, &[]);
+    codex.pump(app, 1);
+    let decision = codex.wakes.lock().unwrap()[0]["view"].clone();
+    let mulligan = decision["decision"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|option| option["id"].as_str().unwrap().starts_with("mulligan:"))
+        .unwrap();
+    let chosen = exchange(
+        app,
+        &partnered.socket,
+        &[json!({
+            "op": "choose", "partner": partner, "id": mulligan["id"],
+            "revision": decision["revision"],
+        })],
+    );
+    assert_eq!(chosen[0]["status"], "chosen", "{}", chosen[0]);
+    assert_eq!(
+        chosen[0]["view"]["decision"]["yours"], true,
+        "{}",
+        chosen[0]
+    );
+    let again = Codex::waiting(&partnered.socket, &partner, &[]);
+    again.pump(app, 1);
+    assert_eq!(again.woken(), [("refused".to_owned(), true)]);
+}
+
+/// Cuba Libre #202, the end conditions: the session leaves, loses its investigator, or the
+/// table closes. Its wait ends with one wake, and nothing of it goes on waiting.
+#[test]
+fn a_codex_sessions_wait_ends_when_it_leaves_loses_its_investigator_or_the_table_closes() {
+    type End = fn(&mut App, &Path, &str);
+    let ends: [(&str, End); 3] = [
+        ("You left the table", |app, socket, partner| {
+            let left = exchange(app, socket, &[json!({"op": "leave", "partner": partner})]);
+            assert_eq!(left[0]["status"], "left", "{}", left[0]);
+        }),
+        ("took Patrice Hathaway over", |app, _, _| {
+            press(app, "Patrice Hathaway: a partner plays  /  joined");
+        }),
+        ("closed", |app, _, _| {
+            app.world_mut()
+                .resource_mut::<Actions>()
+                .0
+                .push(Action::ReturnToSelection);
+        }),
+    ];
+    for (why, end) in ends {
+        let mut partnered = partnered(&[Patrice]);
+        let partner = join(&mut partnered, Patrice);
+        let app = &mut partnered.app;
+        let codex = Codex::waiting(&partnered.socket, &partner, &[]);
+        codex.rests(app);
+        end(app, &partnered.socket, &partner);
+        pump(app, || codex.turn.is_finished());
+        assert_eq!(codex.woken(), [("closed".to_owned(), false)], "{why}");
+        let reason = codex.wakes.lock().unwrap()[0]["reason"].clone();
+        assert!(reason.as_str().unwrap().contains(why), "{why}: {reason}");
+        let held = app.world().resource::<Partners>().host.hung_up(|_| true);
+        assert!(!held, "{why}: the table holds no wait");
+    }
+}
+
+/// Cuba Libre #202: the menu says so, in place of the line to paste, when the partner
+/// folders are absent or hold other instructions than this game's, and gives the line once
+/// they hold them, at the latest when agent partners are shown again.
+#[test]
+fn the_menu_notices_partner_folders_that_are_absent_or_old() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host(directory.path().join("partners.session.json"));
+    app.insert_resource(PartnerSocket(directory.path().join("partners.sock")))
+        .insert_resource(PartnerData(directory.path().to_owned()));
+    choose(&mut app, "lead:jacqueline");
+    finish_presentation(&mut app);
+    press(&mut app, "Menu");
+    press(&mut app, "Agent partners");
+    let client = directory.path().join("client/arkham-partner");
+    let held = Places::of(directory.path()).instructions();
+    assert!(held.contains(&format!("{} wait PARTNER", client.display())));
+    let folders = ["claude-code/CLAUDE.md", "codex/AGENTS.md"];
+    let files = folders.map(|file| directory.path().join("partner").join(file));
+    let notice = "run scripts/tools partner-folder";
+    for (claude_code, codex, noticed) in [
+        (None, None, true),
+        (Some(held.as_str()), None, true),
+        (Some(held.as_str()), Some("An older game's."), true),
+        (Some(held.as_str()), Some(held.as_str()), false),
+        (Some("An older game's."), Some(held.as_str()), true),
+    ] {
+        for (file, text) in files.iter().zip([claude_code, codex]) {
+            if let Some(text) = text {
+                fs::create_dir_all(file.parent().unwrap()).unwrap();
+                fs::write(file, text).unwrap();
+            }
+        }
+        press(&mut app, "Enable agent partners");
+        let line = line(&directory.path().join("partners.sock"));
+        let shown = rendered_text(&mut app);
+        assert_eq!(shown.contains(notice), noticed, "{shown}");
+        assert_eq!(shown.contains(&line), !noticed, "{shown}");
+        for file in &files {
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, &held).unwrap();
+        }
+        press(&mut app, "Hide agent partners");
+        press(&mut app, "Agent partners");
+        let shown = rendered_text(&mut app);
+        assert!(shown.contains(&line) && !shown.contains(notice), "{shown}");
+        for file in &files {
+            fs::remove_file(file).unwrap();
+        }
+        press(&mut app, "Turn agent partners off");
+        assert!(!rendered_text(&mut app).contains(notice));
+    }
 }

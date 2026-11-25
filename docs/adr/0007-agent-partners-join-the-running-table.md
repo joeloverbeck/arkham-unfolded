@@ -43,6 +43,20 @@ sentence: the half moves for Cuba Libre, as
   protocol.** It would put two pointers and one camera in conflict.
 - **Not selected for the first increment: an MCP server, or a wrapper process
   driving Codex's app server.** Either would add a second interface to maintain.
-  One shell command lets Claude Code and Codex share the same path. Claude Code
-  can wait for it in the background without spending tokens; Codex re-checks it
-  periodically.
+  One command lets Claude Code and Codex share the same path.
+
+## Waiting
+
+A partner's session is woken by its waiting command ending, and does not poll. Until
+2026-11-25 only Claude Code waited so; Codex re-checked at intervals, each a model call.
+Joel accepted that sessions are woken and do not poll, with a folder outside the checkout
+and a permission for one client program, with Cuba Libre's spec
+[#197](https://github.com/joeloverbeck/cuba-libre-unfolded/issues/197). How each tool
+waits, why, and what was rejected is the shared library's decision record,
+[agent sessions are woken](https://github.com/joeloverbeck/unfolded-tabletop/blob/main/docs/adr/0001-agent-sessions-are-woken.md).
+A session runs in its tool's partner folder with the permission for `arkham-partner`,
+which lies outside both folders. What keeps a session from writing that program in each
+tool, as far as it was measured, is the documentation of `unfolded_agent_players::folder`.
+The [partner instructions](../agents/partner-instructions.md#how-your-tool-waits) say how
+to wait in each tool. If #197 ends without Cuba Libre using the folders, they move here
+from the shared library.
