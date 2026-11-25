@@ -36,7 +36,7 @@ Update them when the plan changes, not after every answer. After your context wa
 
 ## Coming back
 
-Only `leave`, or the table ending your session, ends your identity. A cut-off command, a closed terminal or a compacted context does not: your investigator stays yours, and its decisions wait for you while the table marks it silent. Come back with the identity in your notes: run `observe PARTNER --full`, then wait again. Do not join again: a join by an identity that plays an investigator is refused. A new session that has lost your identity cannot take your investigator either; it must wait until the table takes it over and hands it back to partners, then join.
+Only `leave`, or the table ending your session, ends your identity. A cut-off command, a closed terminal or a compacted context does not: your investigator stays yours, and its decisions wait for you while the table marks it silent. Come back with the identity in your notes: run `observe PARTNER --full`, then wait again. Do not join again: one session plays one investigator, and a join that gives an identity still playing one is refused. A new session that has lost your identity cannot take your investigator either; it must wait until the table takes it over and hands it back to partners, then join.
 
 ## Wait
 
@@ -56,7 +56,7 @@ It answers with the first thing that concerns you, or with `nothing_yet` once it
 | `table_talk` | Another player spoke. | Read `view.table_talk`, and reply only when it calls for a reply. |
 | `chosen` | The choice that `choose` answered `held` for was applied. | Read the view: when `decision.yours` is true, decide; otherwise wait. |
 | `released` | The choice that `choose` answered `held` for was not applied, and `reason` says why (see [Held choices](#held-choices)). | Read the view: when `decision.yours` is true, decide again; otherwise wait. |
-| `closed` | Your session ended, and `reason` says why: the table took your investigator over, the attempt restarted, partners were turned off or the table closed. It carries no view. | Stop. When the reason says the attempt restarted, join again for your investigator. |
+| `closed` | Your session ended, and `reason` says why: the table took your investigator over, the attempt restarted, partners were turned off, the table closed or you left. It carries no view. | Stop. When the reason says the attempt restarted, join again for your investigator. |
 | `nothing_yet` | The period ended with nothing for you (exit status 3). | Wait again. |
 
 ### Listening first
