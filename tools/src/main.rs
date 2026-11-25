@@ -89,9 +89,10 @@ enum Command {
     /// reached, or the timeout passes.
     #[command(after_help = seat::WAIT_HELP)]
     SeatWait(seat::WaitArgs),
-    /// Install the agent partners' client program and write the folder their sessions run
-    /// in: the partner instructions and, for Claude Code and Codex, the permission for that
-    /// one program. Run it again after the checkout changes.
+    /// Install the agent partners' client program and write the folders their sessions run
+    /// in, one for Claude Code and one for Codex: the partner instructions and that tool's
+    /// permission for that one program. Run it again after the checkout changes. It refuses
+    /// a folder that holds anything else but notes.
     PartnerFolder(partner_folder::Args),
     /// Add or remove checkouts that build into the owner's Cargo target.
     #[command(

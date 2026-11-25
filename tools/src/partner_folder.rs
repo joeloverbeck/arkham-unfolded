@@ -1,7 +1,6 @@
-//! `partner-folder`: the agent partners' client program, installed, and the folder their
-//! sessions run in (Cuba Libre #202, ADR 0007). The shared library writes both
-//! (`unfolded_agent_players::folder`); the instructions are this checkout's, with the
-//! program's path in place of its name.
+//! `partner-folder`: the agent partners' client program, installed, and the folders their
+//! sessions run in, one for each tool (Cuba Libre #202, ADR 0007). The shared library
+//! writes them (`unfolded_agent_players::folder`); the instructions are this checkout's.
 
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
@@ -9,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-use unfolded_agent_players::folder::{self, Player};
+use unfolded_agent_players::folder::{self, CODEX_WAIT, Folders};
 
 const INSTRUCTIONS: &str = include_str!("../../docs/agents/partner-instructions.md");
 const CLIENT: &str = "arkham-partner";
@@ -23,26 +22,39 @@ pub struct Args {
 
 pub fn run(args: Args) -> Result<u8> {
     let data = data()?;
-    let (partner, client) = (data.join("partner"), data.join("client").join(CLIENT));
+    let client = data.join("client").join(CLIENT);
     let built = match args.built {
         Some(built) => built,
         None => build()?,
     };
-    folder::install(&built, &client).context("cannot install the partners' client program")?;
-    Player {
-        folder: &partner,
+    let (claude_code, codex) = (data.join("partner/claude-code"), data.join("partner/codex"));
+    // What the folders hold of no known writing is refused before the program changes.
+    Folders {
+        claude_code: &claude_code,
+        codex: &codex,
         client: &client,
-        instructions: &INSTRUCTIONS.replace(CLIENT, &client.display().to_string()),
+        instructions: &instructions(&client),
     }
     .write()
-    .context("cannot write the partner folder")?;
-    println!("Partner folder: {}", partner.display());
+    .context("cannot write the partner folders")?;
+    folder::install(&built, &client).context("cannot install the partners' client program")?;
+    println!("Claude Code's partner folder: {}", claude_code.display());
+    println!("Codex's partner folder: {}", codex.display());
     println!("Client program: {}", client.display());
     Ok(0)
 }
 
-/// Arkham's data directory, where the game keeps its saves and names the partner folder
-/// (`gathering_tabletop::partners::folder`).
+/// The partner instructions with the program's path in place of its name, and the shared
+/// library's words for how Codex waits. The game compares the folders with the same
+/// (`gathering_tabletop::partners::instructions`).
+fn instructions(client: &Path) -> String {
+    INSTRUCTIONS
+        .replace(CLIENT, &client.display().to_string())
+        .replace("{CODEX_WAIT}", CODEX_WAIT)
+}
+
+/// Arkham's data directory, by the same rule as the game finds the partner folders
+/// (`gathering_tabletop::partners::data`).
 fn data() -> Result<PathBuf> {
     std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)

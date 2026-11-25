@@ -5,7 +5,7 @@
 //! as the table wrote it. The protocol and the view belong to the game
 //! (`src/partners.rs`); this command only spells requests, words failures and maps
 //! answers to exit codes. Deleting this file, `bin/arkham-partner.rs`, `partner_folder.rs`,
-//! `tools/tests/partner.rs` and the lines in `main.rs` that name the second removes it.
+//! `tools/tests/partner.rs` and the lines in `main.rs` that name `partner_folder` removes it.
 
 use crate::process;
 use anyhow::{Error, Result, anyhow, bail};
@@ -23,7 +23,7 @@ use unfolded_agent_players::client::{self, Unanswered};
 const GUIDE: &str = "\
 You are an agent partner: a player at a running Arkham Horror: The Card Game table
 in the Arkham Unfolded window. Before you join, read the partner instructions,
-AGENTS.md in the partner folder, and read them again after your context is
+which your folder holds, and read them again after your context is
 compacted. They state the rules of every command: what each answer and status
 means, which choices wait for other players, waiting in Claude Code and in
 Codex, shared decisions, table talk and its limits, conduct, the notes to keep

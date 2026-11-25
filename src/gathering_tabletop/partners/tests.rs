@@ -192,15 +192,15 @@ fn the_socket_lives_only_while_partners_are_enabled_and_serves_several_partners_
 }
 
 /// Ticket #211 with Cuba Libre #202, the pasted line: it points to the instructions in
-/// the partner folder, outside the checkout, and gives the table's socket, and it
+/// each tool's partner folder, outside the checkout, and gives the table's socket, and it
 /// names no investigator and no human player (play contract, Agent partners).
 #[test]
-fn the_pasted_line_points_to_the_partner_folder_and_names_no_player() {
+fn the_pasted_line_points_to_the_partner_folders_and_names_no_player() {
     let line = line(Path::new("/run/partners-elsewhere.sock"));
-    assert!(
-        line.contains("/arkham-unfolded/partner: follow the instructions in its AGENTS.md"),
-        "{line}"
-    );
+    for tool in ["claude-code", "codex"] {
+        let folder = format!("/arkham-unfolded/partner/{tool}");
+        assert!(line.contains(&folder), "{line}");
+    }
     assert!(!line.contains(env!("CARGO_MANIFEST_DIR")), "{line}");
     assert!(
         line.contains("with `--socket /run/partners-elsewhere.sock` on every command"),
@@ -1884,9 +1884,9 @@ fn a_partner_that_listens_before_its_decision_is_marked_silent() {
     assert!(!rendered_text(app).contains("SILENT"));
 }
 
-/// A stand-in for a Codex session that waits as the partner instructions say: one command
-/// at a time, through the partners' own client and over the socket, each held until the
-/// table answers it. Codex calls its model when a command ends and at no other time, so
+/// A stand-in for a Codex session that waits as the partner instructions say: one request
+/// at a time over the socket, by the shared library's client in this process, each held
+/// until the table answers it. Codex calls its model when a command ends and at no other time, so
 /// each answer is one wake. Woken with its decision, it makes the next of its choices
 /// and waits in that same command; woken by its session's end, it ends its turn.
 struct Codex {
@@ -2057,10 +2057,10 @@ fn a_codex_session_is_not_woken_for_what_its_answer_told() {
     assert_eq!(again.woken(), [("refused".to_owned(), true)]);
 }
 
-/// Cuba Libre #202, the end conditions: the session leaves, loses its seat, or the table
-/// closes. Its wait ends with one wake, and nothing of it goes on waiting.
+/// Cuba Libre #202, the end conditions: the session leaves, loses its investigator, or the
+/// table closes. Its wait ends with one wake, and nothing of it goes on waiting.
 #[test]
-fn a_codex_sessions_wait_ends_when_it_leaves_loses_its_seat_or_the_table_closes() {
+fn a_codex_sessions_wait_ends_when_it_leaves_loses_its_investigator_or_the_table_closes() {
     type End = fn(&mut App, &Path, &str);
     let ends: [(&str, End); 3] = [
         ("You left the table", |app, socket, partner| {
@@ -2090,5 +2090,44 @@ fn a_codex_sessions_wait_ends_when_it_leaves_loses_its_seat_or_the_table_closes(
         assert!(reason.as_str().unwrap().contains(why), "{why}: {reason}");
         let held = app.world().resource::<Partners>().host.hung_up(|_| true);
         assert!(!held, "{why}: the table holds no wait");
+    }
+}
+
+/// Cuba Libre #202: the menu says so when the partner folders are absent or hold other
+/// instructions than this game's, and is silent about folders that hold them.
+#[test]
+fn the_menu_notices_partner_folders_that_are_absent_or_old() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = host(directory.path().join("partners.session.json"));
+    app.insert_resource(PartnerSocket(directory.path().join("partners.sock")))
+        .insert_resource(PartnerData(directory.path().to_owned()));
+    choose(&mut app, "lead:jacqueline");
+    finish_presentation(&mut app);
+    press(&mut app, "Menu");
+    press(&mut app, "Agent partners");
+    let client = directory.path().join("client/arkham-partner");
+    let held = instructions(&client);
+    assert!(held.contains(&format!("{} wait PARTNER", client.display())));
+    let folders = ["claude-code/CLAUDE.md", "codex/AGENTS.md"];
+    let files = folders.map(|file| directory.path().join("partner").join(file));
+    let notice = "run scripts/tools partner-folder";
+    for (claude_code, codex, noticed) in [
+        (None, None, true),
+        (Some(held.as_str()), None, true),
+        (Some(held.as_str()), Some("An older game's."), true),
+        (Some(held.as_str()), Some(held.as_str()), false),
+        (Some("An older game's."), Some(held.as_str()), true),
+    ] {
+        for (file, text) in files.iter().zip([claude_code, codex]) {
+            if let Some(text) = text {
+                fs::create_dir_all(file.parent().unwrap()).unwrap();
+                fs::write(file, text).unwrap();
+            }
+        }
+        press(&mut app, "Enable agent partners");
+        let shown = rendered_text(&mut app);
+        assert_eq!(shown.contains(notice), noticed, "{shown}");
+        press(&mut app, "Turn agent partners off");
+        assert!(!rendered_text(&mut app).contains(notice));
     }
 }

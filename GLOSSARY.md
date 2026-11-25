@@ -189,7 +189,7 @@ An agent playing one investigator as a player in a running game alongside the hu
 _Avoid_: Agent seat, bot, AI opponent
 
 **Partner folder**:
-The folder outside the checkout where an agent partner's session runs. It holds the partner instructions, each tool's permission for the one client program, and the session's notes.
+A folder outside the checkout where one tool's agent partner sessions run. It holds the partner instructions, that tool's permission for the one client program, and the sessions' notes.
 _Avoid_: Checkout, workspace
 
 **Group choice**:

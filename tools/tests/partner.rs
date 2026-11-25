@@ -273,7 +273,7 @@ fn the_default_socket_follows_the_environment_and_help_lists_the_commands() {
 
     let help = help();
     for step in [
-        "AGENTS.md in the partner folder",
+        "the partner instructions",
         "arkham-partner join INVESTIGATOR",
         "arkham-partner wait PARTNER",
         "wait PARTNER --listen",
@@ -365,7 +365,7 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "Codex",
         "without a time limit",
         "without a timeout",
-        CODEX_WAIT,
+        "{CODEX_WAIT}",
     ];
     let talk = [
         "280 characters",
@@ -434,36 +434,70 @@ fn say_sends_one_message_and_help_names_it() {
     );
 }
 
-/// Cuba Libre #202: the partner folder lies outside the checkout and holds the partner
-/// instructions, which name the installed client program by its path and no other way,
-/// and each tool's permission for that program, which lies outside the folder and runs.
-#[test]
-fn the_partner_folder_holds_the_instructions_and_the_permission_for_the_installed_client() {
-    let data = tempfile::tempdir().unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
+/// The partner folders written under `data`, or what refused them.
+fn partner_folders(data: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
         .args(["partner-folder", "--built"])
         .arg(env!("CARGO_BIN_EXE_arkham-partner"))
-        .env("XDG_DATA_HOME", data.path())
+        .env("XDG_DATA_HOME", data)
         .output()
-        .unwrap();
+        .unwrap()
+}
+
+/// Cuba Libre #202: each tool has a partner folder outside the checkout, which holds the
+/// partner instructions, naming the installed client program by its path and no other
+/// way, and that tool's permission for that program, which lies outside the folders and
+/// runs. Neither folder holds a file the other tool reads.
+#[test]
+fn each_tool_has_a_partner_folder_and_the_permission_for_the_installed_client() {
+    let data = tempfile::tempdir().unwrap();
+    let output = partner_folders(data.path());
     assert!(output.status.success(), "{output:?}");
-    let folder = data.path().join("arkham-unfolded/partner");
-    let client = data.path().join("arkham-unfolded/client/arkham-partner");
-    let read = |name: &str| std::fs::read_to_string(folder.join(name)).unwrap();
-
-    let written = read("AGENTS.md");
+    let root = data.path().join("arkham-unfolded");
+    let client = root.join("client/arkham-partner");
     let path = client.to_str().unwrap();
-    assert_eq!(written.replace(path, "arkham-partner"), {
-        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        std::fs::read_to_string(repository.join(INSTRUCTIONS)).unwrap()
-    });
-    assert!(!written.replace(path, "").contains("arkham-partner"));
-    assert!(!written.contains("](../"), "No link leaves the folder");
-    assert_eq!(read("CLAUDE.md"), written);
-    assert!(read(".codex/rules/player.rules").contains(&format!("[\"{path}\"]")));
-    assert!(read(".claude/settings.json").contains(&format!("Bash({path}:*)")));
-
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let instructions = std::fs::read_to_string(repository.join(INSTRUCTIONS)).unwrap();
+    for (file, permission, allowed, other) in [
+        (
+            "claude-code/CLAUDE.md",
+            "claude-code/.claude/settings.json",
+            format!("Bash({path}:*)"),
+            ["claude-code/AGENTS.md", "claude-code/.codex"],
+        ),
+        (
+            "codex/AGENTS.md",
+            "codex/.codex/rules/player.rules",
+            format!("[\"{path}\"]"),
+            ["codex/CLAUDE.md", "codex/.claude"],
+        ),
+    ] {
+        let read = |name: &str| std::fs::read_to_string(root.join("partner").join(name)).unwrap();
+        let written = read(file);
+        assert_eq!(
+            written
+                .replace(path, "arkham-partner")
+                .replace(CODEX_WAIT, "{CODEX_WAIT}"),
+            instructions
+        );
+        assert!(!written.replace(path, "").contains("arkham-partner"));
+        assert!(written.contains(CODEX_WAIT));
+        assert!(!written.contains("](../"), "No link leaves the folder");
+        assert!(read(permission).contains(&allowed));
+        for other in other {
+            assert!(!root.join("partner").join(other).exists(), "{other}");
+        }
+    }
     let help = Command::new(&client).arg("--help").output().unwrap();
     assert!(help.status.success(), "{help:?}");
     assert!(String::from_utf8(help.stdout).unwrap().contains("wait"));
+
+    let planted = root.join("partner/codex/.mcp.json");
+    std::fs::write(&planted, "{}").unwrap();
+    let output = partner_folders(data.path());
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains(planted.to_str().unwrap()), "{error}");
+    std::fs::remove_file(planted).unwrap();
+    assert!(partner_folders(data.path()).status.success());
 }
