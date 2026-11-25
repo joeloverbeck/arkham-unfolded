@@ -69,7 +69,8 @@ pub(super) struct Shown {
     pub selected: [bool; 3],
     /// Whether a partner has joined to play each investigator.
     pub joined: [bool; 3],
-    /// The line to paste into an agent's terminal, while partners are enabled.
+    /// The line to paste into an agent's terminal, while partners are enabled and the
+    /// partner folders are ready for it.
     pub line: Option<String>,
     /// Why partners could not be enabled, or what to do before a session joins.
     pub problem: Option<String>,
@@ -426,7 +427,7 @@ fn folders_problem(data: Option<&Path>) -> Option<String> {
             })
     });
     (!current).then(|| {
-        "The partner folders are absent or not this game's: run scripts/tools partner-folder before you paste the line.".to_owned()
+        "The partner folders are absent or not this game's: run scripts/tools partner-folder, then hide and show agent partners here for the line to paste.".to_owned()
     })
 }
 
@@ -449,7 +450,7 @@ pub(super) fn line(socket: &Path) -> String {
         |data| data.join("partner").display().to_string(),
     );
     format!(
-        "Play one investigator at the running Arkham Unfolded table, one session per investigator, from a session started in {folder}/claude-code or {folder}/codex, its tool's own folder: follow the instructions there, and join{option}."
+        "Play one investigator at the Arkham Unfolded table, one session per investigator, started in claude-code or codex (your tool's) in {folder}: follow the instructions there and join{option}."
     )
 }
 
@@ -489,7 +490,12 @@ pub(super) fn serve(world: &mut World) {
             let mut closing = false;
             for input in std::mem::take(&mut table.partners.inputs) {
                 match input {
-                    Input::Menu => table.partners.menu_open = !table.partners.menu_open,
+                    Input::Menu => {
+                        table.partners.menu_open = !table.partners.menu_open;
+                        if partners.transport.is_some() {
+                            table.partners.problem = folders_problem(partner_data.as_deref());
+                        }
+                    }
                     Input::Enable(true) if partners.transport.is_none() => {
                         match open(&socket, waker.clone()) {
                             Ok(transport) => {
@@ -725,7 +731,7 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
         selected: Investigator::ALL.map(|who| partners.host.selected(who)),
         joined: Investigator::ALL
             .map(|who| matches!(control.controller(who), Controller::Partner(_))),
-        line: enabled.then(|| line(socket)),
+        line: (enabled && table.partners.problem.is_none()).then(|| line(socket)),
         problem: table.partners.problem.clone(),
         deciding,
         may_use: routed.may_use,

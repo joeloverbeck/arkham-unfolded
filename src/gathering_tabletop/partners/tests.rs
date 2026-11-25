@@ -39,7 +39,14 @@ fn partnered(partners: &[Investigator]) -> Partnered {
     let mut app = host(save.clone());
     let wakes = Arc::new(AtomicUsize::new(0));
     let counted = wakes.clone();
+    let held = instructions(&directory.path().join("client/arkham-partner"));
+    for (folder, file) in [("claude-code", "CLAUDE.md"), ("codex", "AGENTS.md")] {
+        let folder = directory.path().join("partner").join(folder);
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join(file), &held).unwrap();
+    }
     app.insert_resource(PartnerSocket(socket.clone()))
+        .insert_resource(PartnerData(directory.path().to_owned()))
         .insert_resource(PartnerWaker(Arc::new(move || {
             counted.fetch_add(1, Ordering::SeqCst);
         })));
@@ -197,10 +204,11 @@ fn the_socket_lives_only_while_partners_are_enabled_and_serves_several_partners_
 #[test]
 fn the_pasted_line_points_to_the_partner_folders_and_names_no_player() {
     let line = line(Path::new("/run/partners-elsewhere.sock"));
-    for tool in ["claude-code", "codex"] {
-        let folder = format!("/arkham-unfolded/partner/{tool}");
-        assert!(line.contains(&folder), "{line}");
-    }
+    assert!(
+        line.contains("claude-code or codex (your tool's) in /"),
+        "{line}"
+    );
+    assert!(line.contains("/arkham-unfolded/partner:"), "{line}");
     assert!(!line.contains(env!("CARGO_MANIFEST_DIR")), "{line}");
     assert!(
         line.contains("with `--socket /run/partners-elsewhere.sock` on every command"),
@@ -2093,8 +2101,9 @@ fn a_codex_sessions_wait_ends_when_it_leaves_loses_its_investigator_or_the_table
     }
 }
 
-/// Cuba Libre #202: the menu says so when the partner folders are absent or hold other
-/// instructions than this game's, and is silent about folders that hold them.
+/// Cuba Libre #202: the menu says so, in place of the line to paste, when the partner
+/// folders are absent or hold other instructions than this game's, and gives the line once
+/// they hold them, at the latest when agent partners are shown again.
 #[test]
 fn the_menu_notices_partner_folders_that_are_absent_or_old() {
     let directory = tempfile::tempdir().unwrap();
@@ -2125,8 +2134,21 @@ fn the_menu_notices_partner_folders_that_are_absent_or_old() {
             }
         }
         press(&mut app, "Enable agent partners");
+        let line = line(&directory.path().join("partners.sock"));
         let shown = rendered_text(&mut app);
         assert_eq!(shown.contains(notice), noticed, "{shown}");
+        assert_eq!(shown.contains(&line), !noticed, "{shown}");
+        for file in &files {
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, &held).unwrap();
+        }
+        press(&mut app, "Hide agent partners");
+        press(&mut app, "Agent partners");
+        let shown = rendered_text(&mut app);
+        assert!(shown.contains(&line) && !shown.contains(notice), "{shown}");
+        for file in &files {
+            fs::remove_file(file).unwrap();
+        }
         press(&mut app, "Turn agent partners off");
         assert!(!rendered_text(&mut app).contains(notice));
     }
