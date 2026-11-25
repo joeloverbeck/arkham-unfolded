@@ -1,6 +1,6 @@
 # Agent partner instructions
 
-You are an **agent partner**: a player at a running Arkham Horror: The Card Game table, playing The Gathering on Standard in the Arkham Unfolded window. You play one investigator, and other players play the rest. Play yours on your own judgement, toward the team's success, by choosing among the options the rules list for it.
+You are an **agent partner**: a player at a running Arkham Horror: The Card Game table, playing The Gathering on Standard in the Arkham Unfolded window. You play one investigator, and other players, the human at the window and perhaps other agent partners, play the rest. Play yours on your own judgement, toward the team's success, by choosing among the options the rules list for it.
 
 You act only through `scripts/tools partner`, run from the root of this repository; these instructions are all you need. The table tells you what your investigator's player would know: public information, your investigator's hand, and the full text of every card you can see, your investigator's own included. Other players' hands and every deck's order stay hidden, as at a real table, so learn the game only from your answers, never from the attempt's save file or another program. Playing is not project work: you change no tracked file, open no issue and run no checks.
 
@@ -46,21 +46,21 @@ Keep exactly one `wait` running at a time. When it answers, act on its status, t
 scripts/tools partner wait PARTNER
 ```
 
-It answers with the first thing that concerns you, however long that takes: it waits without a time limit unless you ask for one with `--timeout SECONDS`, and answers `nothing_yet` once that period ends. A newer wait of yours ends the older one, which answers `replaced`.
+It answers with the first thing in the table below, however long that takes: it waits without a time limit unless you ask for one with `--timeout SECONDS`, and answers `nothing_yet` once that period ends. A newer wait of yours ends the older one, which answers `replaced`.
 
-Each decision is told to you once, by an answer whose view has `decision.yours` true: the answer to a `choose` or `ready` of yours, refused ones included, or a wait's. A wait that answers something else, such as another player's message, tells it as well, unless it listened before that decision. `join`, `observe` and other answers show it and do not tell it, so a wait still does. One that only a wait told you is told again to your next wait, with a complete view, in case nobody read the first; a choice of yours that was `released` likewise, until you make an accepted choice or readiness. Once a `choose` or `ready` answer told you a decision, or a later answer other than a wait's has shown you one a wait told you (you heard a message with your decision in view, then observed), a wait that has nothing else to tell you is refused, with your view, rather than left waiting for your own move: decide, or [listen first](#listening-first).
+Each decision is told to you once, by an answer whose view has `decision.yours` true: the answer to a `choose` or `ready` of yours, refused ones included, or a wait's. A wait that answers something else, such as the human's message, tells it as well, unless it listened before that decision. `join`, `observe` and other answers show it and do not tell it, so a wait still does. One that only a wait told you is told again to your next wait, with a complete view, in case nobody read the first; a choice of yours that was `released` likewise, until you make an accepted choice or readiness. Once a `choose` or `ready` answer told you a decision, or a later answer other than a wait's has shown you one a wait told you (you heard a message with your decision in view, then observed), a wait that has nothing else to tell you is refused, with your view, rather than left waiting for your own move: decide, or [listen first](#listening-first).
 
 | Status | What happened | What you do |
 | --- | --- | --- |
 | `decision` | Your investigator has a decision, and the table has presented it. A reading or a dialog may still be open at the window. | [Decide](#decide). |
 | `group_choice` | A [group choice](#group-choices) opened. Every player hears each one once. | When you arbitrate it, decide. Otherwise you may speak before it is made. |
 | `shared` | Another player changed a [shared decision](#shared-decisions) you take part in. | Read `view.shared` and decide again: any readiness you had is cleared. |
-| `table_talk` | Another player spoke. | Read `view.table_talk`, and reply only when it calls for a reply. |
+| `table_talk` | The human spoke. Another agent partner's message does not answer a wait (see [Table talk](#table-talk)). | Read `view.table_talk`, which brings what the other agent partners said too, and reply only when it calls for a reply. |
 | `chosen` | A choice of yours that other players' options held was applied (see [Held choices](#held-choices)), or, from a [submission that waits](#decide), your choice was applied and your next decision is here. | Read the view: when `decision.yours` is true, decide; otherwise wait. |
 | `released` | A choice of yours that was `held` or `settling` was not applied, and `reason` names it and says why (see [Decide](#decide) and [Held choices](#held-choices)). | Read the view: when `decision.yours` is true, decide again; otherwise wait. |
 | `closed` | Your session ended, and `reason` says why: the table took your investigator over, the attempt restarted, partners were turned off, the table closed or, to a wait you had left running, you left. It carries no view. Unless you left, whatever else you ask by that identity is answered so too, except a join and a malformed request. | Stop. When the reason says the attempt restarted, join again for your investigator. |
 | `replaced` | A newer wait of yours took this one's place or, if it [listened](#listening-first), your choice or readiness ended it; `reason` says which. | Nothing for a newer wait: it answers. Otherwise go on from the answer to your choice. |
-| `nothing_yet` | The period you asked for ended with nothing for you (exit status 3). | Wait again. |
+| `nothing_yet` | The period you asked for ended before anything above (exit status 3). | Wait again; after [listening](#listening-first), observe. |
 
 ### Listening first
 
@@ -70,7 +70,9 @@ A plain `wait` answers `decision` at once while a decision you have not been tol
 scripts/tools partner wait PARTNER --listen
 ```
 
-A listening wait does not answer the decision of yours that was pending as it began. It answers another player's message, a group choice opening, a change to a shared decision, what became of a choice that waited, a later decision of yours or the end of your session, or `nothing_yet` once the period you asked for ends: always give one, such as `--timeout 60`, since other players may say nothing, and after a minute the table marks you silent. An accepted choice or readiness of yours ends it. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
+A listening wait does not answer the decision of yours that was pending as it began. It answers the human's message, a group choice opening, a change to a shared decision, what became of a choice that waited, a later decision of yours or the end of your session, or `nothing_yet` once the period you asked for ends: always give one, such as `--timeout 60`, since nothing may come, and a minute after your last request the table marks you silent while it waits for your decision. An accepted choice or readiness of yours ends it.
+
+Another agent partner's message does not end it, and `nothing_yet` carries no view, so then run `observe PARTNER`: its `table_talk` has what the other agent partners said meanwhile. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
 
 ### Waiting in Claude Code
 
@@ -168,6 +170,8 @@ scripts/tools partner say PARTNER MESSAGE
 
 This says one message of up to 280 characters as your investigator and answers `said`. Quote the message for the shell; its words are joined with spaces. Other players' messages said since you joined reach you once, in `view.table_talk` of your next answer that carries a view, each with its `speaker` (that player's investigators), `text` and `round`. Only a later complete view, such as `observe PARTNER --full` gives, repeats them, and only the latest 20 heard since you joined, so note what still matters.
 
+The human's message answers your wait, a listening one included. Another agent partner's answers no wait: you hear it with your next answer that carries a view, whatever that answers, and the other agent partners hear yours in the same way. So go on without waiting for their replies. Who sent a message decides this, never its words, and it gives no message more weight (see [Conduct](#conduct)).
+
 `say` is refused:
 
 - while a peril encounter resolves, since no one may confer then (Rules Reference p. 16);
@@ -224,7 +228,7 @@ A request the table cannot accept answers `refused`, with the reason in `error` 
 
 ## Cut-off commands
 
-A command that ends before it prints an answer, because it was interrupted or your tool's time limit ended it, may still act at the table: a choice can still be applied. An interrupted tool can also leave a `wait` running that nobody reads. A decision, or a choice `released`, told only to such a wait is told again to your next one, with a complete view. The rest of a lost answer is lost, with its changes and any table talk or other news it carried. Run `observe PARTNER --full` before you decide again: it gives the board whole and the latest table talk heard since you joined.
+A command that ends before it prints an answer, because it was interrupted or your tool's time limit ended it, may still act at the table: a choice can still be applied. An interrupted tool can also leave a `wait` running that nobody reads. A decision, or a choice `released`, told only to such a wait is told again to your next one, with a complete view. The rest of a lost answer is lost, with its changes and any table talk or other news it carried: the human's message is not told again either. Run `observe PARTNER --full` before you decide or wait again: it gives the board whole and the latest table talk heard since you joined, to reply to what still calls for it.
 
 ## Exit codes
 

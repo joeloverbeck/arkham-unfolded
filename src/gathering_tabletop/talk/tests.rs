@@ -22,7 +22,7 @@ use std::{
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
     sync::Arc,
-    thread,
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
@@ -80,12 +80,11 @@ fn press(app: &mut App, label: &str) {
     app.update();
 }
 
-/// One partner connection: send `requests`, run frames until every answer is in.
-/// The presentation clock does not move, so speech boxes keep their age.
-fn exchange(app: &mut App, socket: &Path, requests: &[Value]) -> Vec<Value> {
+/// One partner connection: send `requests`, then read every answer.
+fn connect(socket: &Path, requests: &[Value]) -> JoinHandle<Vec<Value>> {
     let socket = socket.to_owned();
     let lines: Vec<String> = requests.iter().map(Value::to_string).collect();
-    let client = thread::spawn(move || {
+    thread::spawn(move || {
         let stream = UnixStream::connect(&socket).expect("The partner socket answers");
         let mut writer = &stream;
         for line in &lines {
@@ -95,8 +94,13 @@ fn exchange(app: &mut App, socket: &Path, requests: &[Value]) -> Vec<Value> {
         BufReader::new(&stream)
             .lines()
             .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
-            .collect::<Vec<Value>>()
-    });
+            .collect()
+    })
+}
+
+/// Run frames until every answer is in. The presentation clock does not move, so speech
+/// boxes keep their age.
+fn finish(app: &mut App, client: JoinHandle<Vec<Value>>) -> Vec<Value> {
     for _ in 0..1_000 {
         if client.is_finished() {
             break;
@@ -105,6 +109,12 @@ fn exchange(app: &mut App, socket: &Path, requests: &[Value]) -> Vec<Value> {
         thread::sleep(Duration::from_millis(2));
     }
     client.join().unwrap()
+}
+
+/// One partner connection's requests, answered.
+fn exchange(app: &mut App, socket: &Path, requests: &[Value]) -> Vec<Value> {
+    let client = connect(socket, requests);
+    finish(app, client)
 }
 
 fn join_as(talking: &mut Talking, who: Investigator) -> String {
@@ -635,6 +645,35 @@ fn the_message_box_holds_the_keyboard_and_sends_with_enter() {
         assert!(listed.contains(&shown), "{shown} in {listed}");
     }
     assert_eq!(std::fs::read(&talking.save).unwrap(), saved, "Never saved");
+}
+
+/// #296, over the real socket and the production message box: a partner's message leaves
+/// another partner's wait held and gives a table without a window nothing to run for. The
+/// human's, typed and sent with Enter, answers it, and the answer brings both.
+#[test]
+fn a_partners_message_leaves_anothers_wait_held_and_the_humans_answers_it() {
+    let mut talking = talking(89, &["lead:jacqueline"], &[Tony, Patrice], false);
+    let tonys = join_as(&mut talking, Tony);
+    let patrices = join_as(&mut talking, Patrice);
+    let waiting = connect(&talking.socket, &[json!({"op": "wait", "partner": tonys})]);
+    say(&mut talking, &patrices, "I'll take the Attic.");
+    let app = &mut talking.app;
+    for _ in 0..20 {
+        app.update();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!waiting.is_finished(), "A partner's message ends no wait");
+    assert_eq!(super::super::partners::unsettled(app.world_mut()), None);
+
+    tap(app, KeyCode::KeyT, Key::Character("t".into()));
+    app.update();
+    type_text(app, "Hi");
+    tap(app, KeyCode::Enter, Key::Enter);
+    let answers = finish(app, waiting);
+    assert_eq!(answers[0]["status"], "table_talk", "{}", answers[0]);
+    let talk = &answers[0]["view"]["table_talk"];
+    assert_eq!(talk[0]["text"], "I'll take the Attic.", "{talk}");
+    assert_eq!(talk[1]["text"], "Hi", "{talk}");
 }
 
 /// S2, Joel's co-play session 2 (#202): the message box's header showed empty boxes

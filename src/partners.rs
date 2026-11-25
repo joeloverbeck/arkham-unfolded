@@ -27,7 +27,8 @@
 //! its own investigator's and no pass, such as before each action of a turn, the
 //! deciding investigator's player's choice waits until every other player with an
 //! option there has passed (F1, S1). Every player may speak, and every other
-//! player hears each message (#209, `talk`).
+//! player hears each message (#209, `talk`); the human's ends a partner's wait, and a
+//! partner's does not (#296).
 //!
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
 //! [ADR 0009]: ../../docs/adr/0009-one-agent-session-plays-one-investigator.md
@@ -324,6 +325,7 @@ enum News {
     HeldApplied,
     GroupChoice,
     Shared,
+    /// The human spoke.
     TableTalk,
 }
 
@@ -337,7 +339,8 @@ struct Partner {
     told_group: Option<u64>,
     /// The shared decisions this partner's last view showed, and their state then.
     seen: Vec<(shared::Key, shared::Stamp)>,
-    /// The table talk this partner has been told: messages before this index.
+    /// The table talk this partner has been told, if only by a wait nobody may have read:
+    /// messages before this index.
     told_talk: usize,
     /// The table talk said before this partner sat down: messages before this index.
     joined_talk: usize,
@@ -369,8 +372,9 @@ enum Request {
         partner: String,
         #[serde(default)]
         timeout_seconds: Option<u64>,
-        /// Hear the table while a decision of this partner's waits: answer anything else,
-        /// a later decision of its own included, or the period's end (stories 28-29).
+        /// Hear the table while a decision of this partner's waits: answer anything else
+        /// that ends a wait, a later decision of its own included, or the period's end
+        /// (stories 28-29).
         #[serde(default)]
         listen: bool,
     },
@@ -755,10 +759,7 @@ impl<R> Host<R> {
                     Ok(()) => self.answer(&id, "said", None, table, false, now),
                     Err(reason) => self.answer(&id, "refused", Some(reason), table, false, now),
                 };
-                // Every other partner's wait hears it now.
-                let mut answers = vec![(reply, answer)];
-                answers.extend(self.poll(table, now));
-                answers
+                vec![(reply, answer)]
             }
             Request::Leave { .. } => {
                 let left = self.seats.leave(&id);
@@ -1064,7 +1065,7 @@ impl<R> Host<R> {
     /// waited for the table, then answer every wait whose moment has come: its partner's
     /// choice was released, or it hears a group choice open, has news of a shared decision
     /// or has a decision it has not been told of, once the table has presented it, has
-    /// table talk to hear, or the period it asked for ran out.
+    /// a message of the human's to hear, or the period it asked for ran out.
     pub fn poll(&mut self, table: &mut impl Table, now: Instant) -> Vec<Answer<R>> {
         self.advance(table);
         self.answer_waits(table, now)
@@ -1165,8 +1166,8 @@ impl<R> Host<R> {
     /// for the other players' passes was applied and, at a table that has presented its
     /// decision, `moment`, a group choice it has not been told of, news of a shared
     /// decision it takes part in that changed since its last view, and a decision of its
-    /// own; then other players' talk, whose answers the table's own events carry as well.
-    /// A choice released comes before them all.
+    /// own; then the human's talk, which the table's own events carry as well, as each
+    /// does other partners'. A choice released comes before them all.
     fn events(&self, partner: &Partner, moment: Option<&Moment>) -> Vec<Event<News>> {
         let mut events: Vec<_> = self
             .news(partner, moment)
@@ -1201,7 +1202,7 @@ impl<R> Host<R> {
                 news.push(News::Shared);
             }
         }
-        if self.talk.unheard(partner.told_talk, &partner.id) {
+        if self.talk.wakes(partner.told_talk) {
             news.push(News::TableTalk);
         }
         news
