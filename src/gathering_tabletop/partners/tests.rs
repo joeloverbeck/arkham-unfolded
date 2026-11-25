@@ -1582,7 +1582,7 @@ fn a_wait_the_table_never_answers_is_answered_five_seconds_past_the_period_it_as
 }
 
 /// Cuba Libre #201, corrections 11 and 19: a killed wait over the socket ends. Its
-/// investigator is thinking no longer but silent from then, the windowless table counts it
+/// investigator's silence counts from then, the windowless table counts it
 /// as unsettled until it has ended it, and its decision is told to the session's next
 /// wait, without a period.
 #[test]
@@ -1815,7 +1815,7 @@ fn taking_an_investigator_back_cancels_its_choice_that_waits_for_the_table() {
         thread::sleep(Duration::from_millis(5));
     }
     assert!(!waiting.is_finished());
-    press(app, "Patrice Hathaway: a partner plays");
+    press(app, "Patrice Hathaway: a partner plays · joined");
     pump(app, || waiting.is_finished());
     let ended = waiting.join().unwrap().remove(0);
     assert_eq!(ended["status"], "closed", "{ended}");
