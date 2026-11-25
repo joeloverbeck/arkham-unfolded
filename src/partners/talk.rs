@@ -9,7 +9,9 @@
 //! its words. A message is told once, to a wait that nobody reads as to one that is read:
 //! a partner that heard it and has nothing to reply waits again just as one whose wait
 //! nobody read, so telling the human's again would wake the first for nothing. A complete
-//! view gives it back.
+//! view has every message still unheard, those only waits have told the partner since it
+//! was last answered something else included, and at least the latest
+//! [`RECOVERED_TALK`](super::RECOVERED_TALK) since it joined.
 //!
 //! No one speaks while a peril encounter resolves (play contract, after RR p.16).
 //! Partners' messages are limited at each decision, until play moves on. Between
@@ -18,8 +20,8 @@
 //! [`EXCHANGE_LIMIT`] messages have been said since the latest message of a player
 //! new to that decision's talk, the partners that have spoken at it wait until play
 //! moves on or a player who has not spoken at it speaks. Every player's messages count alike, so the limits
-//! reveal nothing of who is human, as a wait that a message ends does; only the human is
-//! never refused.
+//! reveal nothing of who is human. A wait that table talk ended can, since only the human's
+//! message ends one. Only the human is never refused.
 
 use super::Table;
 use crate::gathering::{Investigator, Peril, Session};

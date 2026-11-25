@@ -453,9 +453,10 @@ fn the_humans_message_ends_a_wait_whatever_the_table_is_doing() {
 /// #296 (Cuba Libre #197, correction 20): an interrupted tool can leave a wait that nobody
 /// reads. The human's message told only to such a wait ends no later one, since the same
 /// requests come from a partner that heard it and had nothing to reply, which it would
-/// wake again for nothing. A complete view gives it back: one the partner asks for, or the
-/// one a decision told again comes with. A wait that ended before the message takes none
-/// of it.
+/// wake again for nothing. A complete view gives it back, one the partner asks for or the
+/// one a decision told again comes with: whenever it is among the latest RECOVERED_TALK
+/// messages, and else until an answer other than a wait's has followed. A wait that ended
+/// before the message takes none of it.
 #[test]
 fn a_message_only_an_unread_wait_told_is_given_back_by_a_complete_view_and_wakes_nobody_again() {
     let mut sitting = Sitting::new(89, Jacqueline, &[Tony]);
@@ -514,8 +515,8 @@ fn a_message_only_an_unread_wait_told_is_given_back_by_a_complete_view_and_wakes
 
 /// Review fix E2 (partner instructions, Cut-off commands): an answer lost to a
 /// cut-off command carried table talk that nothing repeats. A complete observe
-/// gives back the talk the partner has heard since it joined, at most the latest
-/// RECOVERED_TALK messages, and never what was said before it sat down.
+/// gives back the talk the partner has heard since it joined, of what it had heard the
+/// latest RECOVERED_TALK messages, and never what was said before it sat down.
 #[test]
 fn a_complete_observe_gives_back_the_talk_heard_since_joining() {
     let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
@@ -551,11 +552,95 @@ fn a_complete_observe_gives_back_the_talk_heard_since_joining() {
     for said in 0..RECOVERED_TALK + 3 {
         sitting.human_says(&format!("Note {said}."));
     }
-    let recovered = heard(&sitting.observe(&tonys, true));
-    assert_eq!(recovered.len(), RECOVERED_TALK);
+    // #296's review: more than that unheard are all heard, and then the latest of them.
+    for count in [RECOVERED_TALK + 3, RECOVERED_TALK] {
+        let recovered = heard(&sitting.observe(&tonys, true));
+        assert_eq!(recovered.len(), count);
+        assert_eq!(
+            recovered.last().unwrap().1,
+            format!("Note {}.", RECOVERED_TALK + 2)
+        );
+    }
+}
+
+/// A Gathering that Tony leads, with a partner for each investigator: Tony's, Patrice's and
+/// Jacqueline's.
+fn three_partners() -> (Sitting, [String; 3]) {
+    let mut sitting = Sitting::new(89, Tony, &[Tony, Patrice, Jacqueline]);
+    let partners = ["tony", "patrice", "jacqueline"].map(|who| sitting.join(who));
+    (sitting, partners)
+}
+
+/// Tony's and Patrice's partners say as much as the limits allow at each of three decisions
+/// of Tony's mulligan, none of which concerns Jacqueline's: 27 messages.
+fn say_twenty_seven(sitting: &mut Sitting, tonys: &str, patrices: &str) -> Vec<String> {
+    let mut said = Vec::new();
+    for toggle in 0..3 {
+        if toggle > 0 {
+            let card =
+                sitting.observe(tonys, false)["view"]["decision"]["options"][0]["id"].clone();
+            sitting.choose(tonys, card.as_str().unwrap());
+        }
+        for partner in [tonys, patrices, tonys] {
+            for _ in 0..CHATTER_LIMIT {
+                let text = format!("Message {}.", said.len());
+                let answer = sitting.say(partner, &text);
+                assert_eq!(answer["status"], "said", "{answer}");
+                said.push(text);
+            }
+        }
+        for partner in [tonys, patrices] {
+            assert_eq!(sitting.say(partner, "More.")["status"], "refused");
+        }
+    }
+    assert!(said.len() > RECOVERED_TALK, "{}", said.len());
+    said
+}
+
+fn texts(answer: &Value) -> Vec<String> {
+    heard(answer).into_iter().map(|(_, text)| text).collect()
+}
+
+/// #296's review ("Every player still hears every message"): partners' messages wake
+/// nobody, so more of them than a complete view gives back can wait for one partner. A
+/// complete view loses none: one that is the partner's first answer since its wait's
+/// client died, and one that comes with a decision told again after a wait nobody read,
+/// which told them all. The next gives back the latest.
+#[test]
+fn a_complete_view_gives_every_message_its_partner_has_not_heard() {
+    let (mut sitting, [tonys, patrices, jacquelines]) = three_partners();
+    let dead = sitting.send(&json!({"op": "wait", "partner": jacquelines}));
+    let said = say_twenty_seven(&mut sitting, &tonys, &patrices);
+    sitting.poll();
+    assert!(sitting.take(dead).is_none(), "Nothing woke her");
+    sitting
+        .host
+        .end_hung_up(|reply| *reply == dead, sitting.now);
+    assert_eq!(texts(&sitting.observe(&jacquelines, true)), said);
     assert_eq!(
-        recovered.last().unwrap().1,
-        format!("Note {}.", RECOVERED_TALK + 2)
+        texts(&sitting.observe(&jacquelines, true)),
+        said[said.len() - RECOVERED_TALK..]
+    );
+
+    let (mut sitting, [tonys, patrices, jacquelines]) = three_partners();
+    let unread = sitting.send(&json!({"op": "wait", "partner": jacquelines}));
+    let said = say_twenty_seven(&mut sitting, &tonys, &patrices);
+    sitting.choose(&tonys, "confirm-mulligan");
+    sitting.choose(&patrices, "confirm-mulligan");
+    sitting.poll();
+    let told = sitting.take(unread).expect("Her mulligan");
+    assert_eq!(told["status"], "decision", "{told}");
+    assert_eq!(texts(&told), said);
+    // The wait that tells it again may go unread too.
+    for _ in 0..2 {
+        let again = sitting.ask(json!({"op": "wait", "partner": jacquelines}));
+        assert_eq!(again["status"], "decision", "{again}");
+        assert_eq!(texts(&again), said);
+    }
+    assert_eq!(texts(&sitting.observe(&jacquelines, true)), said);
+    assert_eq!(
+        texts(&sitting.observe(&jacquelines, true)),
+        said[said.len() - RECOVERED_TALK..]
     );
 }
 

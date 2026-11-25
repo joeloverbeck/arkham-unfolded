@@ -6,7 +6,7 @@
 //! show, not by the markers speech boxes read. Prior art: the phase-banner and
 //! partner tests on this host.
 
-use super::super::partners::{Input, PartnerSocket, PartnerWaker};
+use super::super::partners::{Input, PartnerSocket, PartnerWaker, tests::connect};
 use super::super::tests::{button_with_label, finish_presentation, host_with_table, rendered_text};
 use super::*;
 use crate::gathering::Investigator::{Jacqueline, Patrice, Tony};
@@ -17,9 +17,6 @@ use bevy::{
 };
 use serde_json::{Value, json};
 use std::{
-    io::{BufRead, BufReader, Write},
-    net::Shutdown,
-    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     sync::Arc,
     thread::{self, JoinHandle},
@@ -78,24 +75,6 @@ fn press(app: &mut App, label: &str) {
         .unwrap_or_else(|| panic!("No button {label}:\n{}", rendered_text(app)));
     app.world_mut().trigger(Activate { entity });
     app.update();
-}
-
-/// One partner connection: send `requests`, then read every answer.
-fn connect(socket: &Path, requests: &[Value]) -> JoinHandle<Vec<Value>> {
-    let socket = socket.to_owned();
-    let lines: Vec<String> = requests.iter().map(Value::to_string).collect();
-    thread::spawn(move || {
-        let stream = UnixStream::connect(&socket).expect("The partner socket answers");
-        let mut writer = &stream;
-        for line in &lines {
-            writeln!(writer, "{line}").unwrap();
-        }
-        stream.shutdown(Shutdown::Write).unwrap();
-        BufReader::new(&stream)
-            .lines()
-            .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
-            .collect()
-    })
 }
 
 /// Run frames until every answer is in. The presentation clock does not move, so speech

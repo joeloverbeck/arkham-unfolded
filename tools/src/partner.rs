@@ -31,7 +31,7 @@ the notes to keep and the exit codes.
   scripts/tools partner join INVESTIGATOR         keep the answer's \"partner\"
   scripts/tools partner wait PARTNER              until something needs you
   scripts/tools partner wait PARTNER --timeout SECONDS
-  scripts/tools partner wait PARTNER --listen     hear the table first
+  scripts/tools partner wait PARTNER --listen     before you decide
   scripts/tools partner observe PARTNER
   scripts/tools partner observe PARTNER --full    the complete view and recent talk
   scripts/tools partner inspect PARTNER CODE
@@ -65,14 +65,16 @@ enum Request {
         #[arg(long, value_name = "PARTNER")]
         partner: Option<String>,
     },
-    /// Wait, without a time limit, for the first thing that concerns you.
+    /// Wait, without a time limit unless you give one, for a decision of yours or another
+    /// event for you, such as the human's message. Another agent partner's message is none.
     Wait {
         partner: String,
         /// Seconds to wait at most, then answer nothing_yet.
         #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..))]
         timeout: Option<u64>,
-        /// Hear the table before deciding: answer anything that ends a wait but your own
-        /// decision that is pending now. Give a --timeout: nothing may come.
+        /// Wait before you decide: your decision that is pending now does not end this
+        /// wait, and every other event for you does. Give a --timeout, since there may be
+        /// no event.
         #[arg(long)]
         listen: bool,
     },
@@ -114,7 +116,7 @@ enum Request {
 /// What a submission does once it is accepted.
 #[derive(ClapArgs)]
 struct Then {
-    /// Then wait, without a time limit, for the next thing that concerns you, and print
+    /// Then wait, without a time limit, for the next event for you, as `wait` does, and print
     /// only that. A refusal, or a decision of yours that comes next, is printed at once.
     #[arg(long)]
     wait: bool,
