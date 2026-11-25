@@ -10,7 +10,7 @@
 //! handed to partners: one session plays one investigator (#295, [ADR 0009]). It
 //! waits until that investigator has a decision pending once the table has presented
 //! it (a reading or the human's dialog may still be open, #210) or something else ends
-//! its wait, or listens, which anything but that decision ends; observes its view,
+//! its wait, or listens, a wait which that decision does not end; observes its view,
 //! complete once and then as changes (#206); inspects any card it can see; chooses
 //! an option by identity at the current revision; and leaves. Its session ends when
 //! it leaves, the human takes its investigator back or turns partners off, the table

@@ -9,8 +9,8 @@
 //! its words. A message is told once, to a wait that nobody reads as to one that is read:
 //! a partner that heard it and has nothing to reply waits again just as one whose wait
 //! nobody read, so telling the human's again would wake the first for nothing. A complete
-//! view has every message still unheard, those only waits have told the partner since it
-//! was last answered something else included, and at least the latest
+//! view has every message still unheard, those only waits have told the partner since its
+//! last answer with a view that was no wait's included, and at least the latest
 //! [`RECOVERED_TALK`](super::RECOVERED_TALK) since it joined.
 //!
 //! No one speaks while a peril encounter resolves (play contract, after RR p.16).

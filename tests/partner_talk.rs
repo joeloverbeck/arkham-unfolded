@@ -455,8 +455,8 @@ fn the_humans_message_ends_a_wait_whatever_the_table_is_doing() {
 /// requests come from a partner that heard it and had nothing to reply, which it would
 /// wake again for nothing. A complete view gives it back, one the partner asks for or the
 /// one a decision told again comes with: whenever it is among the latest RECOVERED_TALK
-/// messages, and else until an answer other than a wait's has followed. A wait that ended
-/// before the message takes none of it.
+/// messages, and else until an answer with a view other than a wait's has followed. A wait
+/// that ended before the message takes none of it.
 #[test]
 fn a_message_only_an_unread_wait_told_is_given_back_by_a_complete_view_and_wakes_nobody_again() {
     let mut sitting = Sitting::new(89, Jacqueline, &[Tony]);

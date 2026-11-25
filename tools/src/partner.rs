@@ -82,7 +82,7 @@ enum Request {
     Observe {
         partner: String,
         /// Print the complete view, every visible card's text and the latest table
-        /// talk heard since joining again.
+        /// talk since joining, heard before or not.
         #[arg(long)]
         full: bool,
     },
