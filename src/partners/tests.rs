@@ -966,6 +966,91 @@ fn a_settling_choice_that_meets_another_players_option_is_held_for_its_pass() {
     assert_eq!(tonys_holdings(&sitting), (before.0 + 1, before.1));
 }
 
+/// Cuba Libre #201: a choice then held for other players' passes takes the place of one
+/// that waited for the table.
+#[test]
+fn a_choice_held_for_passes_replaces_one_that_waits_for_the_table() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    let mut sitting = Sitting::new(session, &[Tony, Patrice]);
+    let partner = sitting.join("tony");
+    let patrices = sitting.join("patrice");
+    let woken = sitting.wait(&patrices);
+    assert_eq!(sitting.take(woken).unwrap()["status"], "decision");
+    assert_eq!(sitting.ready(&patrices)["status"], "ready");
+    let (revision, before) = (sitting.revision(), tonys_holdings(&sitting));
+    sitting.rules.settled = false;
+    let settling = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(settling["status"], "settling", "{settling}");
+    sitting.hand(Patrice, false);
+    let held = sitting.choose(&partner, "action:ordinary:draw");
+    assert_eq!(held["status"], "held", "{held}");
+    sitting.rules.settled = true;
+    sitting.poll();
+    assert_eq!(sitting.revision(), revision);
+    assert_eq!(sitting.human(PASS_BEFORE), HumanChoice::Ready);
+    assert_eq!(sitting.revision(), revision + 1);
+    assert_eq!(tonys_holdings(&sitting), (before.0, before.1 + 1));
+}
+
+/// A partner that has passed is asked again when a payment is proposed at the same
+/// revision: it is told so, and then of its decision, as before Cuba Libre #201.
+#[test]
+fn a_partner_that_has_passed_is_told_again_when_a_payment_is_proposed() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    session.place_for_test(Tony, 4, "01111");
+    session.place_for_test(Patrice, 2, "01111");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join("patrice");
+    let woken = sitting.wait(&partner);
+    assert_eq!(sitting.take(woken).unwrap()["status"], "decision");
+    assert_eq!(sitting.ready(&partner)["status"], "ready");
+    let waits = sitting.wait(&partner);
+    assert!(sitting.take(waits).is_none());
+    assert_eq!(sitting.human("act:pay:4:0:0"), HumanChoice::Ready);
+    let proposed = sitting.take(waits).expect("The human proposed");
+    assert_eq!(proposed["status"], "shared", "{proposed}");
+    assert_eq!(proposed["view"]["decision"]["yours"], true, "{proposed}");
+    let waits = sitting.wait(&partner);
+    assert_eq!(sitting.take(waits).unwrap()["status"], "decision");
+}
+
+/// Review fix G1: a choice of its own applied at once, such as Undo, drops the one a
+/// partner holds, and a new choice supersedes the news of an earlier one. Neither is told
+/// to its next wait.
+#[test]
+fn a_choice_applied_at_once_drops_the_held_one_and_a_new_choice_its_news() {
+    let (mut sitting, partner) = tonys_partner_before_the_humans_violin();
+    let first = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(first["status"], "held", "{first}");
+    assert_eq!(sitting.human(PASS_BEFORE), HumanChoice::Ready);
+    // Applied, and no wait has told it.
+    let second = sitting.choose(&partner, "action:ordinary:resource");
+    assert_eq!(second["status"], "held", "{second}");
+    let waits = sitting.wait(&partner);
+    assert!(sitting.take(waits).is_none(), "The first is old news");
+    let undone = sitting.choose(&partner, "undo");
+    assert_eq!(undone["status"], "chosen", "{undone}");
+    sitting.poll();
+    assert!(sitting.take(waits).is_none(), "The second is not released");
+}
+
+/// Partners are off until they are enabled, whoever is chosen for them.
+#[test]
+fn investigators_chosen_for_partners_are_the_humans_until_partners_are_enabled() {
+    let mut host = Host::<u32>::new();
+    let _ = host.set_selected(Patrice, true);
+    assert!(host.control().solo());
+    let _ = host.set_enabled(true);
+    assert_eq!(host.control().controller(Patrice), Controller::Unclaimed);
+    let _ = host.set_enabled(false);
+    assert!(host.control().solo());
+    assert!(host.selected(Patrice), "Remembered for the next time");
+    let _ = host.set_enabled(true);
+    assert_eq!(host.control().controller(Patrice), Controller::Unclaimed);
+}
+
 /// Cuba Libre #201, correction 6: `ready` and a choice held for other players' passes may
 /// wait too, and `held` is never the word for a choice that waits for the table.
 #[test]

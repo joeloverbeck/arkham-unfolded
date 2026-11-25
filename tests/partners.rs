@@ -1824,6 +1824,14 @@ fn a_settling_choice_is_applied_once_settled_and_its_wait_goes_on() {
     // Its decision is not told to it again while its choice is there.
     let waiting = sitting.send(&json!({"op": "wait", "partner": partner}));
     assert!(sitting.take(waiting).is_none());
+    // Sent again in the second form, it replaces the first, and its wait the other's.
+    let replaced = waiting;
+    let waiting = sitting.send(&json!({
+        "op": "choose", "partner": partner, "revision": revision, "id": "confirm-mulligan",
+        "wait": true,
+    }));
+    assert_eq!(sitting.take(replaced).unwrap()["status"], "replaced");
+    assert!(sitting.take(waiting).is_none());
     sitting.rules.settled = true;
     assert!(
         sitting
@@ -1834,6 +1842,7 @@ fn a_settling_choice_is_applied_once_settled_and_its_wait_goes_on() {
     assert_eq!(sitting.revision(), revision + 1, "Applied");
     let opened = sitting.take(waiting).expect("The group choice opened");
     assert_eq!(opened["status"], "group_choice", "{opened}");
+    assert_eq!(opened["choice"], "chosen", "{opened}");
 }
 
 /// Cuba Libre #201: a choice the table has not applied is released, with the reason, once
