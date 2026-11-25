@@ -2184,7 +2184,11 @@ fn a_hosted_partner_is_shown_to_seat_wait_by_take_over_and_its_cue() {
         ]
     );
 
-    let joined = hosted(&mut seat, &socket, json!({"op": "join"}));
+    let joined = hosted(
+        &mut seat,
+        &socket,
+        json!({"op": "join", "investigators": ["jacqueline"]}),
+    );
     assert_eq!(joined["status"], "joined", "{joined}");
     let thinking = seat.ask(json!({"op": "settle"}));
     assert_eq!(

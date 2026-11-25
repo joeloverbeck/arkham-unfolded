@@ -12,6 +12,8 @@ revision, through the same save-then-present path as the human's clicks. A
 choice is applied only once the table has settled. Partners never drive the
 pointer, camera, menus or keyboard focus. The [agent seat](../agents/agent-seat.md)
 remains a separate windowless process for testing the table.
+[ADR 0009](0009-one-agent-session-plays-one-investigator.md) amends how many
+investigators a partner plays: one.
 
 The seat could not be reused for this. It owns its process, camera and pointer
 and acts by clicking. In the human's window, that would fight their pointer and

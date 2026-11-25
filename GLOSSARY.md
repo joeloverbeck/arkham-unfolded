@@ -181,11 +181,11 @@ An agent's place at the real 3D table, where it sees and chooses only what a pla
 _Avoid_: Headless player driver, remote desktop control, agent partner
 
 **Player**:
-A participant who controls one or more investigators and makes their genuine decisions. The human at the window and each agent partner are players; investigators, not players, take turns and perform tests.
+A participant who controls one or more investigators and makes their genuine decisions. The human at the window, who may control several, and each agent partner, who plays one, are players; investigators, not players, take turns and perform tests.
 _Avoid_: Seat, user, controller when referring to the participant
 
 **Agent partner**:
-An agent playing one or more investigators as a player in a running game alongside the human player, seeing and choosing only what that player can. It is distinct from the agent seat, which operates the whole table in order to test it.
+An agent playing one investigator as a player in a running game alongside the human player, seeing and choosing only what that player can. It is distinct from the agent seat, which operates the whole table in order to test it.
 _Avoid_: Agent seat, bot, AI opponent
 
 **Group choice**:

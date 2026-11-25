@@ -1,7 +1,7 @@
-//! A partner's view: what a player of its investigators would see. It is built
+//! A partner's view: what a player of its investigator would see. It is built
 //! field by field from the rules session's observation, so nothing reaches it by
 //! default: public information, and the hidden information of the partner's own
-//! investigators only. Other hands, deck order and the encounter deck are absent.
+//! investigator only. Other hands, deck order and the encounter deck are absent.
 //! Other players are named only by their investigators.
 //!
 //! A partner session's first view is complete. Every later view carries the fields
@@ -60,6 +60,8 @@ const SETUP_CARDS: [(&str, bool); 4] = [
 
 pub(super) struct Viewer<'a> {
     pub partner: &'a str,
+    /// The one investigator this partner plays.
+    pub plays: Investigator,
     /// Card text already sent to this partner, by code and visible face.
     pub sent: &'a mut BTreeSet<String>,
     /// The board of the last view this partner received; none before its first.
@@ -77,11 +79,8 @@ pub(super) fn build(
     shared: &[SharedPart<'_>],
 ) -> Value {
     let me = Controller::Partner(viewer.partner.to_owned());
-    let mine: Vec<_> = Investigator::ALL
-        .into_iter()
-        .filter(|who| control.controller(*who) == me)
-        .collect();
-    let is_mine = |who: Investigator| mine.contains(&who);
+    let mine = viewer.plays;
+    let is_mine = |who: Investigator| who == mine;
     let observation = session.observe();
     let full = viewer.full || viewer.board.is_none();
     let mut cards = Cards::new(viewer.sent, full);
@@ -188,7 +187,7 @@ pub(super) fn build(
         "stage": observation.stage,
         "you_play": mine,
         "lead": observation.lead,
-        "decision": decision(control, routing, &me, &mine, &observation, awaited, shared),
+        "decision": decision(control, routing, &me, mine, &observation, awaited, shared),
         "investigators": investigators,
     });
     let fields = view.as_object_mut().expect("An object");
@@ -248,7 +247,7 @@ pub(super) fn build(
             "chaos_bag_count": play.bag_count,
             "outcome": scenario.outcome,
         })));
-        let sight = Sight::Player(&mine);
+        let sight = Sight::Player(mine);
         if let Some(revelation) = play
             .pending_revelation
             .as_ref()
@@ -287,9 +286,10 @@ pub(super) fn build(
             fields.insert("harm".into(), value);
         }
         if let Some(test) = &play.test {
-            let own: Vec<u16> = mine
+            let own: Vec<u16> = play.players[mine.index()]
+                .hand
                 .iter()
-                .flat_map(|who| play.players[who.index()].hand.iter().map(|card| card.id))
+                .map(|card| card.id)
                 .collect();
             let mut value = json!(test);
             if let Some(source) = &test.source_card {
@@ -512,7 +512,7 @@ fn decision(
     control: &Control,
     routing: &Routing,
     me: &Controller,
-    mine: &[Investigator],
+    mine: Investigator,
     observation: &crate::gathering::Observation,
     awaited: &[(Controller, Option<Investigator>)],
     shared: &[SharedPart<'_>],
@@ -549,7 +549,7 @@ fn decision(
         let investigator = decision
             .participants
             .iter()
-            .find(|who| mine.contains(who))
+            .find(|who| **who == mine)
             .copied();
         let mut ids = vec![decision.close.as_str()];
         if decision.kind == (SharedKind::Payment { at_round_end: true }) {
@@ -569,7 +569,7 @@ fn decision(
     for (player, who) in awaited {
         if let Some(who) = who
             && player != me
-            && !mine.contains(who)
+            && *who != mine
         {
             others.insert(who.index());
         }
@@ -609,7 +609,7 @@ fn decision(
         Some("The lead investigator is chosen at the table.")
     } else if shared.iter().any(|part| !part.waits) {
         Some(
-            "A group clue payment is possible: choose an allocation to propose your investigators' part.",
+            "A group clue payment is possible: choose an allocation to propose your investigator's part.",
         )
     } else {
         None

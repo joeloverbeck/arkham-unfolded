@@ -3,7 +3,8 @@
 //! protocol and the human's controls, as in the tests above, are what is checked.
 //! Each seeded play-through of The Gathering picks among the listed options at
 //! random, and every assignment of the three investigators to the human and one,
-//! two or three partners takes each choice through the players it belongs to.
+//! two or three partners, each playing one (#295), takes each choice through the
+//! players it belongs to.
 //!
 //! Expectations come from the play contract's "Shared decisions" (Joel's strict
 //! windows, F1 and S1 of #202: whenever the pending decision lists an option of a
@@ -58,35 +59,20 @@ use std::rc::Rc;
 /// scan of the reference play-through when it does.
 const SEEDS: [u64; 3] = [126, 235, 102];
 /// How many decisions each play-through takes at most. Each assignment takes
-/// every one, so 3 seeds give 270 decisions checked at 14 assignments each.
+/// every one, so 3 seeds give 270 decisions checked at 7 assignments each.
 const DECISIONS: usize = 90;
 
-/// Every investigator in [`Investigator::ALL`] order: `None` for the human,
-/// `Some(k)` for partner `k`.
-type Assignment = [Option<usize>; 3];
+/// Whether a partner plays each investigator, in [`Investigator::ALL`] order. The
+/// human plays the others.
+type Assignment = [bool; 3];
 
 /// Every assignment of the investigators to the human and partners, at least one,
-/// each partner holding at least one investigator, up to the partners' names: seven
-/// with one partner, six with two, and one with three, each joined by naming its
-/// investigator.
+/// each partner playing the one investigator its join names (#295): three with one
+/// partner, three with two, and one with three. The human plays the rest, up to two.
 fn assignments() -> Vec<Assignment> {
-    let mut all = Vec::new();
-    for code in 0..64_usize {
-        let assignment: Assignment =
-            [code % 4, code / 4 % 4, code / 16].map(|player| player.checked_sub(1));
-        // Partners are named in the order they first hold an investigator.
-        let mut named = 0;
-        let canonical = assignment.iter().flatten().all(|partner| {
-            if *partner == named {
-                named += 1;
-            }
-            *partner < named
-        });
-        if canonical && named > 0 {
-            all.push(assignment);
-        }
-    }
-    all
+    (1..8)
+        .map(|code| [code & 1, code & 2, code & 4].map(|played| played != 0))
+        .collect()
 }
 
 /// SplitMix64: deterministic picks.
@@ -458,7 +444,7 @@ impl Play {
     fn new(seed: u64, assignment: Assignment, session: &Session) -> Self {
         let mut host = Host::new();
         for who in Investigator::ALL {
-            host.set_selected(who, assignment[who.index()].is_some());
+            assert!(host.set_selected(who, assignment[who.index()]).is_empty());
         }
         assert!(host.set_enabled(true).is_empty());
         let mut play = Self {
@@ -476,14 +462,9 @@ impl Play {
             next: 0,
             answers: BTreeMap::new(),
         };
-        for partner in 0..Investigator::ALL.len() {
-            let theirs: Vec<&str> = Investigator::ALL
-                .into_iter()
-                .filter(|who| assignment[who.index()] == Some(partner))
-                .map(Investigator::id)
-                .collect();
-            if !theirs.is_empty() {
-                let joined = play.ask(&json!({"op": "join", "investigators": theirs}));
+        for who in Investigator::ALL {
+            if assignment[who.index()] {
+                let joined = play.ask(&json!({"op": "join", "investigators": [who]}));
                 assert_eq!(joined["status"], "joined", "{joined}");
                 let id = joined["partner"].as_str().unwrap().to_owned();
                 play.players.push(Controller::Partner(id));
@@ -1013,9 +994,9 @@ impl Play {
 }
 
 fn assignment_code(assignment: Assignment) -> u64 {
-    assignment.iter().fold(0, |code, held| {
-        code * 4 + held.map_or(0, |partner| partner as u64 + 1)
-    })
+    assignment
+        .iter()
+        .fold(0, |code, played| code * 2 + u64::from(*played))
 }
 
 /// The reference play-through's next decision: an option picked at random, its
@@ -1111,7 +1092,7 @@ fn play_through(seed: u64, decisions: usize) -> Tally {
 /// that is not theirs.
 #[test]
 fn seeded_co_play_never_skips_another_players_opportunity() {
-    assert_eq!(assignments().len(), 14);
+    assert_eq!(assignments().len(), 7);
     let tallies: Vec<Tally> = std::thread::scope(|scope| {
         let runs: Vec<_> = SEEDS
             .map(|seed| scope.spawn(move || play_through(seed, DECISIONS)))

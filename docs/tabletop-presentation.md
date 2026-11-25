@@ -865,8 +865,8 @@ use the pointer, camera, menus or keyboard focus ([ADR 0007](adr/0007-agent-part
 
 **Menu → Agent partners** lists each investigator with whether a partner plays it,
 enables or disables partners, and shows a one-line instruction to paste into an
-agent's terminal. The instruction does not say which investigators the human
-plays. A portrait of a partner-played investigator carries a distinct text-bearing
+agent's terminal, one session per investigator. The instruction does not say which
+investigators the human plays. A portrait of a partner-played investigator carries a distinct text-bearing
 mark. While a partner is deciding, its portrait and the compact decision display
 say so by investigator name and offer **Take over**. A stalled or disconnected
 partner stays shown as such until it returns or is taken over.
@@ -878,7 +878,7 @@ partner thinks. The partner learns of its decision meanwhile, but its choice
 waits until Inspect, the history, the menu or a card's menu closes. Its
 consequences therefore never start behind a dialog.
 
-A partner's own test results, and the encounter cards its investigators draw, are
+A partner's own test results, and the encounter cards its investigator draws, are
 shown as usual. They then continue on their own after a reading delay
 proportional to their text, with a countdown and a progress bar. The pointer over
 the reading holds it, a click on it holds it until Continue, and Enter continues
@@ -931,7 +931,7 @@ at once, stacked with that speaker's message, so table talk never delays it; the
 three newest lines show together. Hovering or focusing a portrait shows its latest
 message again and its investigator's action lines for the round; **Action history**
 remains the complete record. Rebuilding the table's panels dismisses neither. A
-player who plays several investigators speaks beside the first of them in player
+human who plays several investigators speaks beside the first of them in player
 order. Both name investigators only.
 
 The human opens a message box from **Speak** on the rail or with T, types one

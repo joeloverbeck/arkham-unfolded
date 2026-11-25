@@ -152,7 +152,7 @@ A seat that receives no request for 30 minutes ends itself as `quit` does: the a
 
 ## Hosting an agent partner
 
-A held seat hosts [agent partners](../playing.md#play-with-agent-partners) as the window does. Enable them through the menu: `Tab` to **Menu**, then **Agent partners**, an investigator's `you play` row and **Enable agent partners**, pressing `Enter` naming each in `focused`, then close the menu with `Escape`: while it is open, the command below returns at once. The line to paste is in the seat log, after `Agent partners are enabled.`; give it to the partner's session. Because the seat runs frames only inside its own requests, run this between the seat's own decisions:
+A held seat hosts [agent partners](../playing.md#play-with-agent-partners) as the window does. Enable them through the menu: `Tab` to **Menu**, then **Agent partners**, an investigator's `you play` row and **Enable agent partners**, pressing `Enter` naming each in `focused`, then close the menu with `Escape`: while it is open, the command below returns at once. The line to paste is in the seat log, after `Agent partners are enabled.`; give it to one partner session per investigator, saying which that session plays. Because the seat runs frames only inside its own requests, run this between the seat's own decisions:
 
 ```sh
 scripts/tools seat-wait /absolute/path/to/seat.sock

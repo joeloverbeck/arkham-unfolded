@@ -107,11 +107,11 @@ fn exchange(app: &mut App, socket: &Path, requests: &[Value]) -> Vec<Value> {
     client.join().unwrap()
 }
 
-fn join_as(talking: &mut Talking, investigators: &[&str]) -> String {
+fn join_as(talking: &mut Talking, who: Investigator) -> String {
     let joined = exchange(
         &mut talking.app,
         &talking.socket,
-        &[json!({"op": "join", "investigators": investigators})],
+        &[json!({"op": "join", "investigators": [who]})],
     );
     assert_eq!(joined[0]["status"], "joined", "{}", joined[0]);
     joined[0]["partner"].as_str().unwrap().to_owned()
@@ -293,7 +293,7 @@ fn move_pointer(app: &mut App, position: Vec2) {
 fn a_partners_message_shows_beside_its_portrait_and_takes_no_input() {
     // Jacqueline leads; Patrice is the partner's.
     let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], true);
-    let partner = join_as(&mut talking, &[]);
+    let partner = join_as(&mut talking, Patrice);
     let focus_before = talking.app.world().resource::<InputFocus>().get();
     say(&mut talking, &partner, "I'll take the Attic.");
     let app = &mut talking.app;
@@ -384,8 +384,8 @@ fn a_partners_message_shows_beside_its_portrait_and_takes_no_input() {
 #[test]
 fn speech_boxes_read_queue_fade_and_are_recalled_by_hovering() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Tony, Patrice], true);
-    let tonys = join_as(&mut talking, &["tony"]);
-    let patrices = join_as(&mut talking, &["patrice"]);
+    let tonys = join_as(&mut talking, Tony);
+    let patrices = join_as(&mut talking, Patrice);
     say(&mut talking, &tonys, "Short.");
     say(
         &mut talking,
@@ -468,7 +468,7 @@ fn speech_boxes_read_queue_fade_and_are_recalled_by_hovering() {
 #[test]
 fn a_partners_decision_shows_as_an_action_line_and_the_humans_does_not() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
-    let partner = join_as(&mut talking, &[]);
+    let partner = join_as(&mut talking, Patrice);
     let app = &mut talking.app;
     choose(app, "confirm-mulligan"); // Jacqueline, the human's
     finish_presentation(app);
@@ -550,7 +550,7 @@ fn a_partners_decision_shows_as_an_action_line_and_the_humans_does_not() {
 #[test]
 fn the_message_box_holds_the_keyboard_and_sends_with_enter() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
-    let partner = join_as(&mut talking, &[]);
+    let partner = join_as(&mut talking, Patrice);
     say(&mut talking, &partner, "Hello, table.");
     let saved = std::fs::read(&talking.save).unwrap();
     let app = &mut talking.app;
@@ -649,7 +649,7 @@ fn the_message_box_holds_the_keyboard_and_sends_with_enter() {
 #[test]
 fn table_talk_draws_only_characters_its_face_has() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
-    let partner = join_as(&mut talking, &[]);
+    let partner = join_as(&mut talking, Patrice);
     say(&mut talking, &partner, "“Don’t go — it’s cold…” naïve ✓");
     let app = &mut talking.app;
     settle(app);
@@ -747,7 +747,7 @@ fn the_message_box_is_unavailable_during_a_peril_encounter_and_says_why() {
 #[test]
 fn a_reading_hides_a_speech_box_and_holds_its_time() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
-    let partner = join_as(&mut talking, &[]);
+    let partner = join_as(&mut talking, Patrice);
     say(&mut talking, &partner, "Look at this.");
     let app = &mut talking.app;
     settle(app);
@@ -857,7 +857,7 @@ fn a_speech_box_keeps_its_width_and_shows_wherever_the_camera_is() {
 #[test]
 fn a_speech_box_fades_as_one_node_whose_opacity_only_falls() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
-    let partner = join_as(&mut talking, &[]);
+    let partner = join_as(&mut talking, Patrice);
     say(&mut talking, &partner, "Short.");
     let app = &mut talking.app;
     settle(app);
@@ -995,7 +995,7 @@ fn a_speech_tail_stays_at_its_speakers_portrait_as_action_lines_stack() {
     ];
     for speaker in Investigator::ALL {
         let mut talking = talking(89, &["lead:jacqueline"], &[speaker], true);
-        let partner = join_as(&mut talking, &[]);
+        let partner = join_as(&mut talking, speaker);
         say(&mut talking, &partner, "I'll take the Attic.");
         let app = &mut talking.app;
         settle(app);
@@ -1069,7 +1069,7 @@ fn a_speech_tail_stays_at_its_speakers_portrait_as_action_lines_stack() {
 #[test]
 fn a_speech_box_that_cannot_stay_at_its_portrait_shows_without_its_tail() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Jacqueline], true);
-    let partner = join_as(&mut talking, &[]);
+    let partner = join_as(&mut talking, Jacqueline);
     say(&mut talking, &partner, "I'll take the Attic.");
     let app = &mut talking.app;
     settle(app);
@@ -1110,7 +1110,7 @@ fn a_speech_box_that_cannot_stay_at_its_portrait_shows_without_its_tail() {
 #[test]
 fn table_talk_lists_a_message_in_the_words_its_player_said() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Patrice], false);
-    let partner = join_as(&mut talking, &[]);
+    let partner = join_as(&mut talking, Patrice);
     let said = "My Willpower should help with this test";
     say(&mut talking, &partner, said);
     let app = &mut talking.app;
@@ -1153,8 +1153,8 @@ fn table_talk_lists_a_message_in_the_words_its_player_said() {
 #[test]
 fn every_speakers_boxes_show_when_they_fit_together() {
     let mut talking = talking(89, &["lead:jacqueline"], &Investigator::ALL, true);
-    for code in ["tony", "patrice", "jacqueline"] {
-        let partner = join_as(&mut talking, &[code]);
+    for who in Investigator::ALL {
+        let partner = join_as(&mut talking, who);
         say(
             &mut talking,
             &partner,
@@ -1201,7 +1201,7 @@ fn every_speakers_boxes_show_when_they_fit_together() {
 #[test]
 fn a_tail_moves_along_its_box_while_the_box_is_beside_its_portrait() {
     let mut talking = talking(89, &["lead:jacqueline"], &[Jacqueline], true);
-    let partner = join_as(&mut talking, &[]);
+    let partner = join_as(&mut talking, Jacqueline);
     say(
         &mut talking,
         &partner,

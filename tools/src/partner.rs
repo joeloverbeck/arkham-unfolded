@@ -28,7 +28,7 @@ answer and status means, which choices wait for other players, waiting in
 Claude Code and in Codex, shared decisions, table talk and its limits, conduct,
 the notes to keep and the exit codes.
 
-  scripts/tools partner join [INVESTIGATOR...]    keep the answer's \"partner\"
+  scripts/tools partner join INVESTIGATOR         keep the answer's \"partner\"
   scripts/tools partner wait PARTNER [--timeout SECONDS]
   scripts/tools partner wait PARTNER --listen     hear the table first
   scripts/tools partner observe PARTNER
@@ -52,11 +52,15 @@ pub struct Args {
 
 #[derive(Subcommand)]
 enum Request {
-    /// Join the table: take every investigator handed to partners that no partner
-    /// plays, or only the named ones.
+    /// Join the table as one investigator. The table refuses a join that names none or
+    /// several, naming the investigators open to partners.
     Join {
-        #[arg(value_parser = ["tony", "patrice", "jacqueline"])]
+        #[arg(value_parser = ["tony", "patrice", "jacqueline"], value_name = "INVESTIGATOR")]
         investigators: Vec<String>,
+        /// Your identity, when you have joined before: a join by an identity that still
+        /// plays an investigator is refused.
+        #[arg(long, value_name = "PARTNER")]
+        partner: Option<String>,
     },
     /// Wait for the first thing that concerns you, or answer nothing_yet after the
     /// timeout.
@@ -102,8 +106,15 @@ enum Request {
 pub fn run(args: Args) -> Result<u8> {
     let socket = args.socket.unwrap_or_else(default_socket);
     let (request, answer_within) = match args.request {
-        Request::Join { investigators } => {
-            (json!({"op": "join", "investigators": investigators}), None)
+        Request::Join {
+            investigators,
+            partner,
+        } => {
+            let mut request = json!({"op": "join", "investigators": investigators});
+            if let Some(partner) = partner {
+                request["partner"] = json!(partner);
+            }
+            (request, None)
         }
         Request::Wait {
             partner,

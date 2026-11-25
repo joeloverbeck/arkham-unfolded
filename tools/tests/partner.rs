@@ -50,18 +50,30 @@ const JOINED: &str = r#"{"ok":true,  "status":"joined","mode":"partner","partner
 
 #[test]
 fn each_subcommand_sends_its_protocol_request_and_prints_the_answer_unchanged() {
-    let (sent, output) = exchange(&["join"], JOINED);
-    assert_eq!(sent, serde_json::json!({"op": "join", "investigators": []}));
+    let (sent, output) = exchange(&["join", "patrice"], JOINED);
+    assert_eq!(
+        sent,
+        serde_json::json!({"op": "join", "investigators": ["patrice"]})
+    );
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
         format!("{JOINED}\n")
     );
 
-    let cases: [(&[&str], serde_json::Value); 10] = [
+    let cases: [(&[&str], serde_json::Value); 12] = [
+        // The table refuses these two, naming the investigators open (#295).
+        (
+            &["join"],
+            serde_json::json!({"op": "join", "investigators": []}),
+        ),
         (
             &["join", "patrice", "jacqueline"],
             serde_json::json!({"op": "join", "investigators": ["patrice", "jacqueline"]}),
+        ),
+        (
+            &["join", "patrice", "--partner", "a1b2"],
+            serde_json::json!({"op": "join", "investigators": ["patrice"], "partner": "a1b2"}),
         ),
         (
             &["wait", "a1b2"],
@@ -169,7 +181,7 @@ fn malformed_arguments_are_refused_before_connecting() {
 fn no_table_listening_names_the_path_and_says_how_partners_are_enabled() {
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("partners.sock");
-    let output = partner(&socket, &["join"]);
+    let output = partner(&socket, &["join", "patrice"]);
     assert_eq!(output.status.code(), Some(2), "{output:?}");
     assert!(output.stdout.is_empty());
     let error = String::from_utf8(output.stderr).unwrap();
@@ -186,7 +198,7 @@ fn the_default_socket_follows_the_environment_and_help_lists_the_commands() {
     let socket = directory.path().join("elsewhere.sock");
     let table = listen(&socket, JOINED);
     let output = Command::new(env!("CARGO_BIN_EXE_arkham-tools"))
-        .args(["partner", "join"])
+        .args(["partner", "join", "patrice"])
         .env("ARKHAM_PARTNER_SOCKET", &socket)
         .output()
         .unwrap();
@@ -197,7 +209,7 @@ fn the_default_socket_follows_the_environment_and_help_lists_the_commands() {
     let help = help();
     for step in [
         INSTRUCTIONS,
-        "partner join",
+        "partner join INVESTIGATOR",
         "partner wait PARTNER",
         "wait PARTNER --listen",
         "partner choose PARTNER REVISION ID",
@@ -241,8 +253,9 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let instructions = std::fs::read_to_string(repository.join(INSTRUCTIONS)).unwrap();
     let requests = [
-        "scripts/tools partner join",
+        "scripts/tools partner join INVESTIGATOR",
         "join patrice",
+        "join patrice --partner PARTNER",
         "scripts/tools partner wait PARTNER",
         "wait PARTNER --listen",
         "scripts/tools partner observe PARTNER",
@@ -264,7 +277,6 @@ fn the_partner_instructions_describe_every_request_status_and_waiting_loop() {
         "group_choice",
         "shared",
         "table_talk",
-        "control_changed",
         "closed",
         "nothing_yet",
         "observed",
