@@ -1,13 +1,12 @@
 //! The window's side of agent partners (#205, [ADR 0007]): the private socket, the
-//! threads that carry request lines to the frame loop, the human's controls for
-//! partners, and what the table shows of them. What a partner may do and see is
-//! `crate::partners`, which this host drives once per frame against the table.
+//! human's controls for partners, and what the table shows of them. What a partner may
+//! do and see is `crate::partners`, which this host drives once per frame against the
+//! table.
 //!
-//! The socket exists only while partners are enabled. It is claimed through
-//! `unfolded-tabletop`'s shared path claiming (a private directory, owner-only
-//! access, replacement of a dead socket); the seat's serving loop is not used.
-//! A listener thread accepts any number of connections, one thread each; every
-//! request line crosses a channel polled by [`serve`], which wakes the frame loop.
+//! The socket exists only while partners are enabled. `unfolded-tabletop`'s
+//! [`agent_transport`](unfolded_tabletop::agent_transport) claims it, accepts any number
+//! of connections, carries their request lines to [`serve`] and wakes the frame loop
+//! ([ADR 0008]); this module gives it the partner protocol's own words.
 //! Held waits and choices never block a frame. A wait tells a partner of its
 //! decision once the table has presented it, while the human may still be reading
 //! or browsing; its choice is applied only once the table has settled with none of
@@ -16,6 +15,7 @@
 //! The host is part of [`install`], so the agent seat can host partners too.
 //!
 //! [ADR 0007]: ../../docs/adr/0007-agent-partners-join-the-running-table.md
+//! [ADR 0008]: ../../docs/adr/0008-partner-transport-moves-to-the-shared-library.md
 
 use super::*;
 use crate::gathering::CardView;
@@ -25,17 +25,12 @@ use crate::partners::{
 };
 use serde_json::{Value, json};
 use std::{
-    io::{BufRead, BufReader, ErrorKind, Write},
-    net::Shutdown,
-    os::unix::net::UnixStream,
     path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        mpsc,
-    },
-    thread::{self, JoinHandle},
+    sync::Arc,
     time::{Duration, Instant},
+};
+use unfolded_tabletop::agent_transport::{
+    Protocol, Reply, Transport, Unopened, Waker, window_waker,
 };
 
 /// What the human does with partners.
@@ -297,7 +292,7 @@ pub(super) struct PartnerSocket(pub PathBuf);
 /// Wakes the frame loop when a request arrives; native play wakes winit's event
 /// loop, and tests count calls.
 #[derive(Resource, Clone)]
-pub(super) struct PartnerWaker(pub Arc<dyn Fn() + Send + Sync>);
+pub(super) struct PartnerWaker(pub Waker);
 
 /// The partner host's clock, for waits, silence and pacing of partner work: the
 /// monotonic clock natively; tests set it ahead to show a silent partner.
@@ -310,20 +305,11 @@ fn now(world: &World) -> Instant {
         .map_or_else(Instant::now, |clock| (clock.0)())
 }
 
-/// One request line and where its answer goes.
-pub(super) struct Incoming {
-    pub line: String,
-    pub reply: mpsc::Sender<String>,
-}
-
 /// The partner host at this table.
 #[derive(Resource)]
 pub(super) struct Partners {
-    host: Host<mpsc::Sender<String>>,
-    inbox: Mutex<mpsc::Receiver<Incoming>>,
-    outbox: mpsc::Sender<Incoming>,
-    /// Requests sent by connection threads and not yet drained.
-    queued: Arc<AtomicUsize>,
+    host: Host<Reply>,
+    /// The socket while partners are enabled.
     transport: Option<Transport>,
     /// The attempt the partner sessions joined; a restart ends them.
     attempt: u64,
@@ -355,12 +341,8 @@ struct Routed {
 
 impl Default for Partners {
     fn default() -> Self {
-        let (outbox, inbox) = mpsc::channel();
         Self {
             host: Host::new(),
-            inbox: Mutex::new(inbox),
-            outbox,
-            queued: Arc::new(AtomicUsize::new(0)),
             transport: None,
             attempt: 0,
             routed: None,
@@ -372,14 +354,8 @@ impl Partners {
     /// Whether the table has partner work it can do now: a request not yet read,
     /// or a held request whose moment has come.
     fn due(&self, session: &Session, (presented, settled): (bool, bool), now: Instant) -> bool {
-        self.queued.load(Ordering::Acquire) > 0 || self.host.due(session, presented, settled, now)
-    }
-
-    fn drain(&self) -> Vec<Incoming> {
-        let inbox = self.inbox.lock().expect("Partner inbox");
-        let incoming: Vec<_> = inbox.try_iter().collect();
-        self.queued.fetch_sub(incoming.len(), Ordering::AcqRel);
-        incoming
+        self.transport.as_ref().is_some_and(Transport::waiting)
+            || self.host.due(session, presented, settled, now)
     }
 
     /// What the human's choice of `id` does: commit it as usual, or record the
@@ -399,7 +375,7 @@ impl Drop for Partners {
     fn drop(&mut self) {
         // Leaving the table ends every partner session before the socket goes.
         for (reply, answer) in self.host.close("The table closed.") {
-            let _ = reply.send(answer.to_string());
+            reply.send(answer.to_string());
         }
         self.transport = None;
     }
@@ -466,12 +442,7 @@ pub(super) fn serve(world: &mut World) {
                 match input {
                     Input::Menu => table.partners.menu_open = !table.partners.menu_open,
                     Input::Enable(true) if partners.transport.is_none() => {
-                        match Transport::open(
-                            &socket,
-                            partners.outbox.clone(),
-                            partners.queued.clone(),
-                            waker.clone(),
-                        ) {
+                        match open(&socket, waker.clone()) {
                             Ok(transport) => {
                                 partners.transport = Some(transport);
                                 answers.extend(partners.host.set_enabled(true));
@@ -518,7 +489,12 @@ pub(super) fn serve(world: &mut World) {
                 let said = partners.host.human_says(&text, &sitting);
                 sitting.table.talk.said(said);
             }
-            for incoming in partners.drain() {
+            let arrived = partners
+                .transport
+                .as_ref()
+                .map(Transport::take)
+                .unwrap_or_default();
+            for incoming in arrived {
                 answers.extend(partners.host.receive(
                     &incoming.line,
                     incoming.reply,
@@ -539,7 +515,7 @@ pub(super) fn serve(world: &mut World) {
                 table.dirty = true;
             }
             for (reply, answer) in answers {
-                let _ = reply.send(answer.to_string());
+                reply.send(answer.to_string());
             }
             if closing {
                 partners.transport = None;
@@ -613,15 +589,11 @@ pub(super) fn unsettled(world: &mut World) -> Option<Unsettled> {
         .then_some(Unsettled::PartnerRequest)
 }
 
-fn waker(world: &World) -> Option<PartnerWaker> {
-    if let Some(waker) = world.get_resource::<PartnerWaker>() {
-        return Some(waker.clone());
-    }
-    let proxy = world.get_resource::<bevy::winit::EventLoopProxyWrapper>()?;
-    let proxy = (**proxy).clone();
-    Some(PartnerWaker(Arc::new(move || {
-        let _ = proxy.send_event(bevy::winit::WinitUserEvent::WakeUp);
-    })))
+fn waker(world: &World) -> Option<Waker> {
+    world
+        .get_resource::<PartnerWaker>()
+        .map(|waker| waker.0.clone())
+        .or_else(|| window_waker(world))
 }
 
 /// Refresh what the table shows of partners, marking the scene for a rebuild only
@@ -716,7 +688,7 @@ fn show(partners: &mut Partners, table: &mut Table, socket: &Path, now: Instant)
 /// Route the pending decision for the display: whom it waits for, what each
 /// awaited partner may use in a window (the line the table shows without
 /// partners as "Available now"), and its shared decisions.
-fn route(host: &Host<mpsc::Sender<String>>, session: &Session, control: &Control) -> Routed {
+fn route(host: &Host<Reply>, session: &Session, control: &Control) -> Routed {
     let awaited = host.awaited(session);
     let observation = session.observe();
     let shared = host.shared(session);
@@ -831,215 +803,51 @@ impl crate::partners::Table for Sitting<'_> {
     }
 }
 
-/// The socket while partners are enabled: the claimed path, its listener thread
-/// and the connections it accepted. Dropping it ends them and removes the path.
-struct Transport {
-    stop: Arc<AtomicBool>,
-    listener: Option<JoinHandle<()>>,
-    connections: Connections,
+/// Open the partners' socket, or say why not.
+fn open(path: &Path, waker: Option<Waker>) -> Result<Transport, String> {
+    Transport::open(path, PartnerProtocol, waker).map_err(|refused| match refused {
+        Unopened::Unclaimed(refused) => match refused.cause() {
+            crate::agent_seat::socket::Unclaimable::Answered => format!(
+                "Cannot listen on {}: something already answers there and was left untouched; turn agent partners off in that game, or quit the agent seat using that path",
+                refused.path().display()
+            ),
+            _ => refused.to_string(),
+        },
+        Unopened::Unaccepting(error) => format!("Cannot listen on {}: {error}", path.display()),
+        Unopened::Unstarted(error) => format!("Cannot start the agent-partner listener: {error}"),
+        other => other.to_string(),
+    })
 }
 
-/// The connections being served, by number, kept to cut them when partners end.
-type Connections = Arc<Mutex<Vec<(u64, UnixStream)>>>;
+/// What the transport says itself, in the partner protocol's words. A wait the table
+/// does not answer within its period plus a margin (a seat that runs no frames) is
+/// answered with nothing yet.
+struct PartnerProtocol;
 
-impl Transport {
-    fn open(
-        path: &Path,
-        outbox: mpsc::Sender<Incoming>,
-        queued: Arc<AtomicUsize>,
-        waker: Option<PartnerWaker>,
-    ) -> Result<Self, String> {
-        let claimed =
-            crate::agent_seat::socket::Listener::claim(path).map_err(|refused| {
-                match refused.cause() {
-                    crate::agent_seat::socket::Unclaimable::Answered => format!(
-                        "Cannot listen on {}: something already answers there and was left untouched; turn agent partners off in that game, or quit the agent seat using that path",
-                        refused.path().display()
-                    ),
-                    _ => refused.to_string(),
-                }
-            })?;
-        claimed
-            .unix_listener()
-            .set_nonblocking(true)
-            .map_err(|error| format!("Cannot listen on {}: {error}", path.display()))?;
-        let stop = Arc::new(AtomicBool::new(false));
-        let connections: Connections = Arc::new(Mutex::new(Vec::new()));
-        let listener = {
-            let (stop, connections) = (stop.clone(), connections.clone());
-            thread::Builder::new()
-                .name("agent partners".into())
-                .spawn(move || {
-                    // The claim lives as long as this thread and is dropped with it.
-                    let claimed = claimed;
-                    let mut number = 0;
-                    while !stop.load(Ordering::Acquire) {
-                        match claimed.unix_listener().accept() {
-                            Ok((stream, _)) => {
-                                number += 1;
-                                accept(
-                                    number,
-                                    stream,
-                                    &connections,
-                                    &outbox,
-                                    &queued,
-                                    waker.as_ref(),
-                                );
-                            }
-                            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                                thread::sleep(Duration::from_millis(20));
-                            }
-                            Err(error) => {
-                                eprintln!("Agent partners: a connection failed: {error}");
-                                thread::sleep(Duration::from_millis(100));
-                            }
-                        }
-                    }
-                })
-                .map_err(|error| format!("Cannot start the agent-partner listener: {error}"))?
-        };
-        Ok(Self {
-            stop,
-            listener: Some(listener),
-            connections,
-        })
+impl Protocol for PartnerProtocol {
+    fn players(&self) -> &str {
+        "Agent partners"
     }
-}
 
-/// Serve one accepted connection on a thread of its own.
-fn accept(
-    number: u64,
-    stream: UnixStream,
-    connections: &Connections,
-    outbox: &mpsc::Sender<Incoming>,
-    queued: &Arc<AtomicUsize>,
-    waker: Option<&PartnerWaker>,
-) {
-    let Ok(kept) = stream.try_clone() else {
-        return;
-    };
-    if stream.set_nonblocking(false).is_err() {
-        return;
+    fn closed(&self) -> String {
+        json!({"ok": true, "mode": "partner", "status": "closed", "reason": "The table closed."})
+            .to_string()
     }
-    connections
-        .lock()
-        .expect("Partner connections")
-        .push((number, kept));
-    let (registry, outbox, queued, waker) = (
-        connections.clone(),
-        outbox.clone(),
-        queued.clone(),
-        waker.cloned(),
-    );
-    let spawned = thread::Builder::new()
-        .name("agent partner".into())
-        .spawn(move || {
-            converse(&stream, &outbox, &queued, waker.as_ref());
-            // Every answer is written: end the connection for its partner too.
-            let _ = stream.shutdown(Shutdown::Both);
-            registry
-                .lock()
-                .expect("Partner connections")
-                .retain(|(kept, _)| *kept != number);
-        });
-    if spawned.is_err() {
-        connections
-            .lock()
-            .expect("Partner connections")
-            .retain(|(kept, _)| *kept != number);
-    }
-}
 
-impl Drop for Transport {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        if let Some(listener) = self.listener.take() {
-            let _ = listener.join();
-        }
-        // Connections write the answers already sent to them, then end when their
-        // partner closes its side; a connection still open after a second is cut.
-        let deadline = Instant::now() + Duration::from_secs(1);
-        while !self
-            .connections
-            .lock()
-            .expect("Partner connections")
-            .is_empty()
-            && Instant::now() < deadline
-        {
-            thread::sleep(Duration::from_millis(10));
-        }
-        for (_, stream) in self
-            .connections
-            .lock()
-            .expect("Partner connections")
-            .drain(..)
-        {
-            let _ = stream.shutdown(Shutdown::Both);
-        }
-    }
-}
-
-/// One connection: each request line goes to the frame loop, and its answer comes
-/// back as one line. A wait the table does not answer within its period plus a
-/// margin (a seat that runs no frames) is answered here with nothing yet.
-fn converse(
-    stream: &UnixStream,
-    outbox: &mpsc::Sender<Incoming>,
-    queued: &AtomicUsize,
-    waker: Option<&PartnerWaker>,
-) {
-    let mut writer = stream;
-    for line in BufReader::new(stream).lines() {
-        let Ok(line) = line else {
-            return;
-        };
-        if line.trim().is_empty() {
-            continue;
-        }
-        let request: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
-        let limit = (request["op"] == "wait").then(|| {
-            request["timeout_seconds"]
+    fn unanswered(&self, request: &str) -> Option<(Duration, String)> {
+        let request: Value = serde_json::from_str(request).ok()?;
+        (request["op"] == "wait").then(|| {
+            let period = request["timeout_seconds"]
                 .as_u64()
                 .map_or(DEFAULT_WAIT, Duration::from_secs)
-                .min(LONGEST_WAIT)
-                + Duration::from_secs(5)
-        });
-        let (reply, answer) = mpsc::channel();
-        queued.fetch_add(1, Ordering::AcqRel);
-        if outbox.send(Incoming { line, reply }).is_err() {
-            queued.fetch_sub(1, Ordering::AcqRel);
-            let _ = writeln!(writer, "{}", closed());
-            return;
-        }
-        if let Some(waker) = waker {
-            (waker.0)();
-        }
-        let answer = match limit {
-            Some(limit) => answer.recv_timeout(limit).map_err(|error| match error {
-                mpsc::RecvTimeoutError::Timeout => json!({
-                    "ok": true, "mode": "partner", "status": "nothing_yet",
-                    "partner": request["partner"],
-                })
-                .to_string(),
-                mpsc::RecvTimeoutError::Disconnected => closed(),
-            }),
-            None => answer.recv().map_err(|_| closed()),
-        };
-        let ended = answer.is_err();
-        let text = answer.unwrap_or_else(|text| text);
-        if writeln!(writer, "{text}")
-            .and_then(|()| writer.flush())
-            .is_err()
-            || (ended && text.contains("\"closed\""))
-        {
-            return;
-        }
+                .min(LONGEST_WAIT);
+            let nothing_yet = json!({
+                "ok": true, "mode": "partner", "status": "nothing_yet",
+                "partner": request["partner"],
+            });
+            (period + Duration::from_secs(5), nothing_yet.to_string())
+        })
     }
-}
-
-fn closed() -> String {
-    json!({"ok": true, "mode": "partner", "status": "closed", "reason": "The table closed."})
-        .to_string()
 }
 
 #[cfg(test)]

@@ -6,7 +6,20 @@
 use super::super::tests::{button_with_label, finish_presentation, host, rendered_text};
 use super::*;
 use crate::gathering::Investigator::{Jacqueline, Patrice, Tony};
-use std::{fs, os::unix::fs::FileTypeExt, os::unix::fs::PermissionsExt};
+use std::{
+    fs,
+    io::{BufRead, BufReader, Write},
+    net::Shutdown,
+    os::unix::{
+        fs::{FileTypeExt, PermissionsExt},
+        net::UnixStream,
+    },
+    sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread::{self, JoinHandle},
+};
 
 struct Partnered {
     app: App,
@@ -1471,8 +1484,7 @@ fn a_path_something_already_answers_on_is_refused_in_arkhams_own_words() {
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("partners.sock");
     let _answering = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-    let (outbox, _inbox) = mpsc::channel();
-    let refused = Transport::open(&socket, outbox, Arc::new(AtomicUsize::new(0)), None)
+    let refused = open(&socket, None)
         .err()
         .expect("something already answers there");
     assert_eq!(
