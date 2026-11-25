@@ -2015,8 +2015,12 @@ fn a_waits_choice_is_the_sessions_latest() {
     let nothing = sitting.take(waiting).expect("Its period ended");
     assert_eq!(nothing["status"], "nothing_yet", "{nothing}");
     stands(&nothing, &other, "settling");
-    // A plain wait came with no choice.
+    // A plain wait, though it takes the place of one that came with a choice, came with none.
+    let replaced = sitting.send(&json!({
+        "op": "choose", "partner": partner, "revision": revision, "id": other, "wait": true,
+    }));
     let waiting = sitting.send(&json!({"op": "wait", "partner": partner, "timeout_seconds": 60}));
+    assert_eq!(sitting.take(replaced).unwrap()["status"], "replaced");
     sitting.now += Duration::from_secs(60);
     sitting.poll();
     let nothing = sitting.take(waiting).expect("Its period ended");

@@ -929,6 +929,10 @@ fn a_choice_held_for_the_turn_window_answers_held_and_wait_tells_when_it_is_appl
         sitting.rules.attributed.last(),
         Some(&("action:ordinary:draw".to_owned(), Tony))
     );
+    // It is told once: the next wait is for his next decision.
+    let next = sitting.wait(&partner);
+    let next = sitting.take(next).expect("His next action is his");
+    assert_eq!(next["status"], "decision", "{next}");
 }
 
 /// Cuba Libre #201 and F1: a choice that waits for the table, and then meets an option no
