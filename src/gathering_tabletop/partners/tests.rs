@@ -102,7 +102,10 @@ fn pump(app: &mut App, done: impl Fn() -> bool) {
 }
 
 /// A partner connection sending `requests`, then reading every answer.
-fn connect(socket: &Path, requests: &[Value]) -> JoinHandle<Vec<Value>> {
+pub(in crate::gathering_tabletop) fn connect(
+    socket: &Path,
+    requests: &[Value],
+) -> JoinHandle<Vec<Value>> {
     let socket = socket.to_owned();
     let lines: Vec<String> = requests.iter().map(Value::to_string).collect();
     thread::spawn(move || {

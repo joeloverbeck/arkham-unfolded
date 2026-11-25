@@ -32,7 +32,7 @@ and the exit codes.
   arkham-partner join INVESTIGATOR         keep the answer's \"partner\"
   arkham-partner wait PARTNER              until something needs you
   arkham-partner wait PARTNER --timeout SECONDS
-  arkham-partner wait PARTNER --listen     hear the table first
+  arkham-partner wait PARTNER --listen     before you decide
   arkham-partner observe PARTNER
   arkham-partner observe PARTNER --full    the complete view and recent talk
   arkham-partner inspect PARTNER CODE
@@ -70,14 +70,16 @@ enum Request {
         #[arg(long, value_name = "PARTNER")]
         partner: Option<String>,
     },
-    /// Wait, without a time limit, for the first thing that concerns you.
+    /// Wait, without a time limit unless you give one, for a decision of yours or another
+    /// event for you, such as the human's message. Another agent partner's message is none.
     Wait {
         partner: String,
         /// Seconds to wait at most, then answer nothing_yet.
         #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..))]
         timeout: Option<u64>,
-        /// Hear the table before deciding: answer anything but your own decision that is
-        /// pending now. Give a --timeout: other players may say nothing.
+        /// Wait before you decide: your decision that is pending now does not end this
+        /// wait, and every other event for you does. Give a --timeout, since there may be
+        /// no event.
         #[arg(long)]
         listen: bool,
     },
@@ -85,7 +87,7 @@ enum Request {
     Observe {
         partner: String,
         /// Print the complete view, every visible card's text and the latest table
-        /// talk heard since joining again.
+        /// talk since joining, heard before or not.
         #[arg(long)]
         full: bool,
     },
@@ -119,7 +121,7 @@ enum Request {
 /// What a submission does once it is accepted.
 #[derive(ClapArgs)]
 struct Then {
-    /// Then wait, without a time limit, for the next thing that concerns you, and print
+    /// Then wait, without a time limit, for the next event for you, as `wait` does, and print
     /// only that. A refusal, or a decision of yours that comes next, is printed at once.
     #[arg(long)]
     wait: bool,

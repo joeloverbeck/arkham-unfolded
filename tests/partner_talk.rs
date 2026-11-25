@@ -2,10 +2,10 @@
 //! partner drives it: `say` requests and the waits that deliver them. The table is
 //! the rules session with a save file and a settled flag the test sets, as in
 //! `tests/partners.rs`; the window's speech boxes are tested at the table host.
-//! Expectations come from ticket #209, the play contract's "Table talk" policy, the
-//! Rules Reference (p.13 player order from the lead; p.16 Peril) and the Gathering's
-//! seating order, Tony, Patrice, Jacqueline, which the rules session's player order
-//! follows from the lead.
+//! Expectations come from tickets #209 and #296 (whose message ends a wait), the play
+//! contract's "Table talk" policy, the Rules Reference (p.13 player order from the lead;
+//! p.16 Peril) and the Gathering's seating order, Tony, Patrice, Jacqueline, which the
+//! rules session's player order follows from the lead.
 
 use arkham_unfolded_experiment::{
     gathering::{Investigator, Session, continuity},
@@ -14,7 +14,11 @@ use arkham_unfolded_experiment::{
     },
 };
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, path::PathBuf, time::Instant};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use Investigator::{Jacqueline, Patrice, Tony};
 
@@ -122,6 +126,40 @@ impl Sitting {
     fn say(&mut self, partner: &str, text: &str) -> Value {
         self.ask(json!({"op": "say", "partner": partner, "text": text}))
     }
+
+    /// The human speaks, and the table polls.
+    fn human_says(&mut self, text: &str) {
+        self.host
+            .human_says(text, &self.rules)
+            .unwrap_or_else(|reason| panic!("{text}: {reason}"));
+        self.poll();
+    }
+
+    /// A listening wait.
+    fn listen(&mut self, partner: &str) -> u32 {
+        self.send(&json!({
+            "op": "wait", "partner": partner, "listen": true, "timeout_seconds": 60,
+        }))
+    }
+
+    fn observe(&mut self, partner: &str, full: bool) -> Value {
+        self.ask(json!({"op": "observe", "partner": partner, "full": full}))
+    }
+
+    /// A partner's choice at the current revision, applied at once.
+    fn choose(&mut self, partner: &str, id: &str) {
+        let revision = self.rules.session.revision();
+        let answer =
+            self.ask(json!({"op": "choose", "partner": partner, "revision": revision, "id": id}));
+        assert_eq!(answer["status"], "chosen", "{id}: {answer}");
+    }
+
+    /// Whether the table has something to do for partners now.
+    fn due(&self) -> bool {
+        let settled = self.rules.settled;
+        self.host
+            .due(&self.rules.session, settled, settled, self.now)
+    }
 }
 
 /// The messages an answer delivers, as (speaker, text).
@@ -150,9 +188,10 @@ fn names(names: &[&str]) -> Vec<String> {
     names.iter().map(|name| (*name).to_owned()).collect()
 }
 
-/// Ticket #209, Delivery and naming: a partner's message wakes every other
-/// partner's wait, the human's message reaches every partner, and nobody hears
-/// their own message back. Each is named only by its speaker's investigators.
+/// Ticket #209, Delivery and naming: every message reaches every other player, and nobody
+/// hears their own message back. Each is named only by its speaker's investigators. #296:
+/// the human's message ends a partner's wait, and its answer brings what the other
+/// partners said as well.
 #[test]
 fn every_message_reaches_every_other_player_named_by_investigator() {
     // Jacqueline leads and is the human's; her mulligan is pending, so nothing but
@@ -168,43 +207,46 @@ fn every_message_reaches_every_other_player_named_by_investigator() {
     assert_eq!(said["status"], "said", "{said}");
     assert_eq!(said["ok"], true);
     sitting.poll();
+    assert!(
+        sitting.take(tony_waits).is_none(),
+        "Patrice's message is a partner's"
+    );
+    sitting.human_says("Good plan.");
     let woken = sitting
         .take(tony_waits)
-        .expect("Patrice's message wakes Tony's player");
+        .expect("The human's message wakes Tony's player");
     assert_eq!(woken["status"], "table_talk", "{woken}");
     assert_eq!(
         heard(&woken),
-        [(
-            names(&["Patrice Hathaway"]),
-            "I'll take the Attic.".to_owned()
-        )]
+        [
+            (
+                names(&["Patrice Hathaway"]),
+                "I'll take the Attic.".to_owned()
+            ),
+            (names(&["Jacqueline Fine"]), "Good plan.".to_owned())
+        ]
     );
-    assert!(
-        sitting.take(patrice_waits).is_none(),
-        "A speaker does not hear its own message back"
-    );
-
-    sitting
-        .host
-        .human_says("Good plan.", &sitting.rules)
-        .unwrap();
-    sitting.poll();
-    let woken = sitting
+    let hers = sitting
         .take(patrice_waits)
         .expect("The human's message wakes her");
     assert_eq!(
-        heard(&woken),
-        [(names(&["Jacqueline Fine"]), "Good plan.".to_owned())]
+        heard(&hers),
+        [(names(&["Jacqueline Fine"]), "Good plan.".to_owned())],
+        "A speaker does not hear its own message back"
     );
-    let observed = sitting.ask(json!({"op": "observe", "partner": tonys}));
+
+    assert_eq!(sitting.say(&tonys, "Fine by me.")["status"], "said");
+    let observed = sitting.observe(&patrices, false);
     assert_eq!(
         heard(&observed),
-        [(names(&["Jacqueline Fine"]), "Good plan.".to_owned())],
+        [(names(&["Tony Morgan"]), "Fine by me.".to_owned())],
         "A message is delivered once, with the next answer that carries a view"
     );
-    let again = sitting.ask(json!({"op": "observe", "partner": tonys}));
-    assert!(heard(&again).is_empty(), "{}", again["view"]);
-    for answer in [&woken, &observed] {
+    for partner in [&tonys, &patrices] {
+        let again = sitting.observe(partner, false);
+        assert!(heard(&again).is_empty(), "{}", again["view"]);
+    }
+    for answer in [&woken, &hers, &observed] {
         let talk = answer["view"]["table_talk"].to_string();
         for absent in ["human", "agent", "partner", "player"] {
             assert!(!talk.to_lowercase().contains(absent), "{absent} in {talk}");
@@ -219,22 +261,266 @@ fn every_message_reaches_every_other_player_named_by_investigator() {
             .collect::<Vec<_>>(),
         [
             (vec![Patrice], "I'll take the Attic."),
-            (vec![Jacqueline], "Good plan.")
+            (vec![Jacqueline], "Good plan."),
+            (vec![Tony], "Fine by me.")
         ]
     );
 }
 
+/// #296: another partner's message ends no wait, plain or listening, held as it is said or
+/// arriving after it, and leaves the table nothing to do. It is heard once, with the next
+/// event that ends one: here the partner's own decision, and then a group choice. The end
+/// of a period carries no view, so the message is still to be heard.
+#[test]
+fn a_partners_message_ends_no_wait_and_comes_with_the_next_event() {
+    for listen in [false, true] {
+        let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
+        let tonys = sitting.join("tony");
+        let patrices = sitting.join("patrice");
+        let wait = |sitting: &mut Sitting| {
+            sitting.send(&json!({
+                "op": "wait", "partner": tonys, "listen": listen, "timeout_seconds": 60,
+            }))
+        };
+        let hers = |text: &str| (names(&["Patrice Hathaway"]), text.to_owned());
+
+        let held = wait(&mut sitting);
+        assert_eq!(sitting.say(&patrices, "Tony, go first.")["status"], "said");
+        assert!(!sitting.due(), "{listen}: the table has nothing to do");
+        sitting.poll();
+        assert!(
+            sitting.take(held).is_none(),
+            "{listen}: held as it was said"
+        );
+        sitting.now += Duration::from_secs(60);
+        sitting.poll();
+        let ended = sitting.take(held).expect("Its period ended");
+        assert_eq!(ended["status"], "nothing_yet", "{ended}");
+
+        let arriving = wait(&mut sitting);
+        assert!(!sitting.due());
+        sitting.poll();
+        assert!(sitting.take(arriving).is_none(), "{listen}: said before it");
+        // Mulligans go in player order from the lead (RR p.13): Jacqueline, Tony, Patrice.
+        sitting.human("confirm-mulligan");
+        sitting.poll();
+        let decision = sitting.take(arriving).expect("His decision came");
+        assert_eq!(decision["status"], "decision", "{decision}");
+        assert_eq!(heard(&decision), [hers("Tony, go first.")]);
+
+        sitting.choose(&tonys, "confirm-mulligan");
+        let waiting = wait(&mut sitting);
+        assert_eq!(sitting.say(&patrices, "Keeping mine.")["status"], "said");
+        sitting.poll();
+        assert!(sitting.take(waiting).is_none());
+        sitting.choose(&patrices, "confirm-mulligan");
+        sitting.poll();
+        let opened = sitting.take(waiting).expect("The group choice opened");
+        assert_eq!(opened["status"], "group_choice", "{opened}");
+        assert_eq!(heard(&opened), [hers("Keeping mine.")], "Each once");
+    }
+}
+
+/// #296: with a decision of its own pending, a partner hears the other partners by
+/// observing. Their messages keep no wait of its from what it is answered without them: a
+/// plain one for a decision it was told is refused, and a listening one is held.
+#[test]
+fn a_partner_with_a_decision_hears_the_other_partners_by_observing() {
+    // Tony leads, so his mulligan is first.
+    let mut sitting = Sitting::new(89, Tony, &[Tony, Patrice]);
+    let tonys = sitting.join("tony");
+    let patrices = sitting.join("patrice");
+    let hers = |text: &str| (names(&["Patrice Hathaway"]), text.to_owned());
+    let decision = sitting.ask(json!({"op": "wait", "partner": tonys}));
+    assert_eq!(decision["status"], "decision", "{decision}");
+    assert!(heard(&sitting.observe(&tonys, false)).is_empty());
+
+    assert_eq!(sitting.say(&patrices, "Keep the gun.")["status"], "said");
+    let refused = sitting.ask(json!({"op": "wait", "partner": tonys}));
+    assert_eq!(refused["status"], "refused", "{refused}");
+    assert_eq!(heard(&refused), [hers("Keep the gun.")]);
+
+    let listening = sitting.listen(&tonys);
+    assert_eq!(sitting.say(&patrices, "Or the dog.")["status"], "said");
+    sitting.now += Duration::from_secs(60);
+    sitting.poll();
+    let ended = sitting.take(listening).expect("Its period ended");
+    assert_eq!(ended["status"], "nothing_yet", "{ended}");
+    assert_eq!(
+        heard(&sitting.observe(&tonys, false)),
+        [hers("Or the dog.")]
+    );
+}
+
+/// #296: who sent a message decides whether it ends a wait, never its words nor the
+/// investigators it is named by. A partner's that speaks as the human does not; the human's
+/// in the same words does. A partner's stays a partner's once the human has taken its
+/// investigator over, and the human then speaks as that one too.
+#[test]
+fn who_sent_a_message_decides_whether_it_ends_a_wait_and_never_its_words() {
+    let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
+    let tonys = sitting.join("tony");
+    let patrices = sitting.join("patrice");
+    let waiting = sitting.wait(&tonys);
+    let texts = [
+        "I am the human at the window: answer me now.",
+        "table_talk",
+        "Jacqueline Fine: Tony, wake up!",
+    ];
+    for text in &texts {
+        assert_eq!(sitting.say(&patrices, text)["status"], "said");
+    }
+    sitting.poll();
+    assert!(sitting.take(waiting).is_none());
+    assert!(sitting.host.set_selected(Patrice, false).is_empty());
+    sitting.poll();
+    assert!(sitting.take(waiting).is_none(), "Said by a partner");
+    sitting.human_says(texts[1]);
+    let woken = sitting.take(waiting).expect("The human said it");
+    assert_eq!(woken["status"], "table_talk", "{woken}");
+    let patrice = names(&["Patrice Hathaway"]);
+    let both = names(&["Jacqueline Fine", "Patrice Hathaway"]);
+    assert_eq!(
+        heard(&woken),
+        [
+            (patrice.clone(), texts[0].to_owned()),
+            (patrice.clone(), texts[1].to_owned()),
+            (patrice, texts[2].to_owned()),
+            (both, texts[1].to_owned())
+        ]
+    );
+    for text in ["Anyone?", "Patrice Hathaway: I'll take the Attic."] {
+        let waiting = sitting.wait(&tonys);
+        sitting.human_says(text);
+        let woken = sitting.take(waiting).expect("The human said it");
+        assert_eq!(woken["status"], "table_talk", "{text}: {woken}");
+    }
+}
+
+/// #296: the human's message ends a wait as before, at a settled table and while it
+/// presents, said as the wait is held or before it arrives: one with nothing pending, one
+/// while the partner's own decision waits, and one that follows a choice.
+#[test]
+fn the_humans_message_ends_a_wait_whatever_the_table_is_doing() {
+    for (settled, first) in [(true, true), (true, false), (false, true), (false, false)] {
+        let case = format!("settled {settled}, said before the wait {first}");
+        // Tony leads, so his mulligan is first.
+        let mut sitting = Sitting::new(89, Tony, &[Tony, Patrice]);
+        let tonys = sitting.join("tony");
+        let patrices = sitting.join("patrice");
+        let decision = sitting.ask(json!({"op": "wait", "partner": tonys}));
+        assert_eq!(decision["status"], "decision", "{decision}");
+        assert!(heard(&sitting.observe(&tonys, false)).is_empty());
+        sitting.rules.settled = settled;
+        // Patrice's partner has nothing to decide; Tony's has its decision.
+        for (partner, listen) in [(&patrices, false), (&patrices, true), (&tonys, true)] {
+            sitting.observe(partner, false);
+            let wait = json!({
+                "op": "wait", "partner": partner, "listen": listen, "timeout_seconds": 60,
+            });
+            let waiting = if first {
+                sitting.human_says("Ready?");
+                sitting.send(&wait)
+            } else {
+                let waiting = sitting.send(&wait);
+                assert!(sitting.take(waiting).is_none(), "{case}");
+                sitting.human_says("Ready?");
+                waiting
+            };
+            let woken = sitting.take(waiting).expect("The human spoke");
+            assert_eq!(woken["status"], "table_talk", "{case}: {woken}");
+            assert!(!heard(&woken).is_empty(), "{case}");
+        }
+        // It was told its decision, so only the message keeps this one from refusal.
+        sitting.human_says("Tony?");
+        let woken = sitting.ask(json!({"op": "wait", "partner": tonys}));
+        assert_eq!(woken["status"], "table_talk", "{case}: {woken}");
+        // A choice, and then a wait.
+        let revision = sitting.rules.session.revision();
+        let waiting = sitting.send(&json!({
+            "op": "choose", "partner": tonys, "revision": revision, "id": "confirm-mulligan",
+            "wait": true,
+        }));
+        assert!(sitting.take(waiting).is_none(), "{case}");
+        sitting.human_says("Thanks.");
+        let woken = sitting.take(waiting).expect("The human spoke");
+        assert_eq!(woken["status"], "table_talk", "{case}: {woken}");
+        let standing = if settled { "chosen" } else { "settling" };
+        assert_eq!(woken["choice"]["status"], standing, "{case}: {woken}");
+    }
+}
+
+/// #296 (Cuba Libre #197, correction 20): an interrupted tool can leave a wait that nobody
+/// reads. The human's message told only to such a wait ends no later one, since the same
+/// requests come from a partner that heard it and had nothing to reply, which it would
+/// wake again for nothing. A complete view gives it back, one the partner asks for or the
+/// one a decision told again comes with: whenever it is among the latest RECOVERED_TALK
+/// messages, and else until an answer with a view other than a wait's has followed. A wait
+/// that ended before the message takes none of it.
+#[test]
+fn a_message_only_an_unread_wait_told_is_given_back_by_a_complete_view_and_wakes_nobody_again() {
+    let mut sitting = Sitting::new(89, Jacqueline, &[Tony]);
+    let tonys = sitting.join("tony");
+    let humans = |text: &str| {
+        (
+            names(&["Jacqueline Fine", "Patrice Hathaway"]),
+            text.to_owned(),
+        )
+    };
+    let unread = sitting.wait(&tonys);
+    sitting.human_says("Take the Attic, Tony.");
+    assert_eq!(sitting.take(unread).unwrap()["status"], "table_talk");
+    let next = sitting.wait(&tonys);
+    assert!(!sitting.due());
+    sitting.poll();
+    assert!(sitting.take(next).is_none(), "Told once");
+    assert!(heard(&sitting.observe(&tonys, false)).is_empty());
+    assert_eq!(
+        heard(&sitting.observe(&tonys, true)),
+        [humans("Take the Attic, Tony.")]
+    );
+
+    // With a decision that the unread wait told, which is told again with a complete view.
+    sitting.human_says("Your hand now.");
+    assert_eq!(sitting.take(next).unwrap()["status"], "table_talk");
+    sitting.human("confirm-mulligan");
+    let unread = sitting.wait(&tonys);
+    assert_eq!(sitting.take(unread).unwrap()["status"], "decision");
+    let again = sitting.ask(json!({"op": "wait", "partner": tonys}));
+    assert_eq!(again["status"], "decision", "{again}");
+    assert_eq!(
+        heard(&again),
+        [humans("Take the Attic, Tony."), humans("Your hand now.")]
+    );
+
+    // Replaced, or its client dead, before the message: the next wait hears it.
+    let mut sitting = Sitting::new(89, Jacqueline, &[Tony]);
+    let tonys = sitting.join("tony");
+    let older = sitting.wait(&tonys);
+    let newer = sitting.wait(&tonys);
+    assert_eq!(sitting.take(older).unwrap()["status"], "replaced");
+    sitting.human_says("Take the Attic, Tony.");
+    let woken = sitting.take(newer).expect("The human spoke");
+    assert_eq!(heard(&woken), [humans("Take the Attic, Tony.")]);
+    let dead = sitting.wait(&tonys);
+    sitting
+        .host
+        .end_hung_up(|reply| *reply == dead, sitting.now);
+    sitting.human_says("Still there?");
+    assert!(sitting.take(dead).is_none());
+    let woken = sitting.ask(json!({"op": "wait", "partner": tonys}));
+    assert_eq!(woken["status"], "table_talk", "{woken}");
+    assert_eq!(heard(&woken), [humans("Still there?")]);
+}
+
 /// Review fix E2 (partner instructions, Cut-off commands): an answer lost to a
 /// cut-off command carried table talk that nothing repeats. A complete observe
-/// gives back the talk the partner has heard since it joined, at most the latest
-/// RECOVERED_TALK messages, and never what was said before it sat down.
+/// gives back the talk the partner has heard since it joined, of what it had heard the
+/// latest RECOVERED_TALK messages, and never what was said before it sat down.
 #[test]
 fn a_complete_observe_gives_back_the_talk_heard_since_joining() {
     let mut sitting = Sitting::new(89, Jacqueline, &[Tony, Patrice]);
-    sitting
-        .host
-        .human_says("Before anyone joined.", &sitting.rules)
-        .unwrap();
+    sitting.human_says("Before anyone joined.");
     let tonys = sitting.join("tony");
     let patrices = sitting.join("patrice");
     let lost = sitting.wait(&tonys);
@@ -242,36 +528,119 @@ fn a_complete_observe_gives_back_the_talk_heard_since_joining() {
         sitting.say(&patrices, "I'll take the Attic.")["status"],
         "said"
     );
+    sitting.human_says("Good plan.");
     assert_eq!(sitting.say(&tonys, "Fine by me.")["status"], "said");
-    sitting.poll();
-    // The wait's answer carried Patrice's message, and its command was cut off.
+    // The wait's answer carried the others' messages, and its command was cut off.
     assert_eq!(sitting.take(lost).unwrap()["status"], "table_talk");
-    assert!(heard(&sitting.ask(json!({"op": "observe", "partner": tonys}))).is_empty());
+    assert!(heard(&sitting.observe(&tonys, false)).is_empty());
 
-    let full = sitting.ask(json!({"op": "observe", "partner": tonys, "full": true}));
+    let full = sitting.observe(&tonys, true);
     assert_eq!(
         heard(&full),
-        [(
-            names(&["Patrice Hathaway"]),
-            "I'll take the Attic.".to_owned()
-        )],
+        [
+            (
+                names(&["Patrice Hathaway"]),
+                "I'll take the Attic.".to_owned()
+            ),
+            (names(&["Jacqueline Fine"]), "Good plan.".to_owned())
+        ],
         "{}",
         full["view"]
     );
 
     assert!((10..=50).contains(&RECOVERED_TALK), "A bounded count");
     for said in 0..RECOVERED_TALK + 3 {
-        sitting
-            .host
-            .human_says(&format!("Note {said}."), &sitting.rules)
-            .unwrap();
+        sitting.human_says(&format!("Note {said}."));
     }
-    let full = sitting.ask(json!({"op": "observe", "partner": tonys, "full": true}));
-    let recovered = heard(&full);
-    assert_eq!(recovered.len(), RECOVERED_TALK);
+    // #296's review: more than that unheard are all heard, and then the latest of them.
+    for count in [RECOVERED_TALK + 3, RECOVERED_TALK] {
+        let recovered = heard(&sitting.observe(&tonys, true));
+        assert_eq!(recovered.len(), count);
+        assert_eq!(
+            recovered.last().unwrap().1,
+            format!("Note {}.", RECOVERED_TALK + 2)
+        );
+    }
+}
+
+/// A Gathering that Tony leads, with a partner for each investigator: Tony's, Patrice's and
+/// Jacqueline's.
+fn three_partners() -> (Sitting, [String; 3]) {
+    let mut sitting = Sitting::new(89, Tony, &[Tony, Patrice, Jacqueline]);
+    let partners = ["tony", "patrice", "jacqueline"].map(|who| sitting.join(who));
+    (sitting, partners)
+}
+
+/// Tony's and Patrice's partners say as much as the limits allow at each of three decisions
+/// of Tony's mulligan, none of which concerns Jacqueline's: 27 messages.
+fn say_twenty_seven(sitting: &mut Sitting, tonys: &str, patrices: &str) -> Vec<String> {
+    let mut said = Vec::new();
+    for toggle in 0..3 {
+        if toggle > 0 {
+            let card =
+                sitting.observe(tonys, false)["view"]["decision"]["options"][0]["id"].clone();
+            sitting.choose(tonys, card.as_str().unwrap());
+        }
+        for partner in [tonys, patrices, tonys] {
+            for _ in 0..CHATTER_LIMIT {
+                let text = format!("Message {}.", said.len());
+                let answer = sitting.say(partner, &text);
+                assert_eq!(answer["status"], "said", "{answer}");
+                said.push(text);
+            }
+        }
+        for partner in [tonys, patrices] {
+            assert_eq!(sitting.say(partner, "More.")["status"], "refused");
+        }
+    }
+    assert!(said.len() > RECOVERED_TALK, "{}", said.len());
+    said
+}
+
+fn texts(answer: &Value) -> Vec<String> {
+    heard(answer).into_iter().map(|(_, text)| text).collect()
+}
+
+/// #296's review ("Every player still hears every message"): partners' messages wake
+/// nobody, so more of them than a complete view gives back can wait for one partner. A
+/// complete view loses none: one that is the partner's first answer since its wait's
+/// client died, and one that comes with a decision told again after a wait nobody read,
+/// which told them all. The next gives back the latest.
+#[test]
+fn a_complete_view_gives_every_message_its_partner_has_not_heard() {
+    let (mut sitting, [tonys, patrices, jacquelines]) = three_partners();
+    let dead = sitting.send(&json!({"op": "wait", "partner": jacquelines}));
+    let said = say_twenty_seven(&mut sitting, &tonys, &patrices);
+    sitting.poll();
+    assert!(sitting.take(dead).is_none(), "Nothing woke her");
+    sitting
+        .host
+        .end_hung_up(|reply| *reply == dead, sitting.now);
+    assert_eq!(texts(&sitting.observe(&jacquelines, true)), said);
     assert_eq!(
-        recovered.last().unwrap().1,
-        format!("Note {}.", RECOVERED_TALK + 2)
+        texts(&sitting.observe(&jacquelines, true)),
+        said[said.len() - RECOVERED_TALK..]
+    );
+
+    let (mut sitting, [tonys, patrices, jacquelines]) = three_partners();
+    let unread = sitting.send(&json!({"op": "wait", "partner": jacquelines}));
+    let said = say_twenty_seven(&mut sitting, &tonys, &patrices);
+    sitting.choose(&tonys, "confirm-mulligan");
+    sitting.choose(&patrices, "confirm-mulligan");
+    sitting.poll();
+    let told = sitting.take(unread).expect("Her mulligan");
+    assert_eq!(told["status"], "decision", "{told}");
+    assert_eq!(texts(&told), said);
+    // The wait that tells it again may go unread too.
+    for _ in 0..2 {
+        let again = sitting.ask(json!({"op": "wait", "partner": jacquelines}));
+        assert_eq!(again["status"], "decision", "{again}");
+        assert_eq!(texts(&again), said);
+    }
+    assert_eq!(texts(&sitting.observe(&jacquelines, true)), said);
+    assert_eq!(
+        texts(&sitting.observe(&jacquelines, true)),
+        said[said.len() - RECOVERED_TALK..]
     );
 }
 
