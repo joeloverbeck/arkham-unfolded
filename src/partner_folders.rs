@@ -32,11 +32,17 @@ impl Places {
         }
     }
 
-    /// The partner instructions with the program's path in place of its name, and the
-    /// shared library's words for how Codex waits.
+    /// The partner instructions with the program's path in place of its name, each
+    /// tool's folder by its path (#306), and the shared library's words for how Codex
+    /// waits.
     pub fn instructions(&self) -> String {
         include_str!("../docs/agents/partner-instructions.md")
             .replace(CLIENT, &self.client.display().to_string())
+            .replace(
+                "{CLAUDE_CODE_FOLDER}",
+                &self.claude_code.display().to_string(),
+            )
+            .replace("{CODEX_FOLDER}", &self.codex.display().to_string())
             .replace("{CODEX_WAIT}", CODEX_WAIT)
     }
 }

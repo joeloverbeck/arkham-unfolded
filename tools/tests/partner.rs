@@ -474,9 +474,20 @@ fn each_tool_has_a_partner_folder_and_the_permission_for_the_installed_client() 
     ] {
         let read = |name: &str| std::fs::read_to_string(root.join("partner").join(name)).unwrap();
         let written = read(file);
+        // #306: each tool's folder is named by its full path, in both folders.
+        let claude_code = root.join("partner/claude-code");
+        let codex = root.join("partner/codex");
+        for folder in [&claude_code, &codex] {
+            assert!(
+                written.contains(&format!("`{}`", folder.display())),
+                "{file} names {folder:?}"
+            );
+        }
         assert_eq!(
             written
                 .replace(path, "arkham-partner")
+                .replace(&claude_code.display().to_string(), "{CLAUDE_CODE_FOLDER}")
+                .replace(&codex.display().to_string(), "{CODEX_FOLDER}")
                 .replace(CODEX_WAIT, "{CODEX_WAIT}"),
             instructions
         );

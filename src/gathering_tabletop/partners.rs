@@ -19,7 +19,7 @@
 
 use super::*;
 use crate::gathering::CardView;
-use crate::partner_folders::{self, Places, folders};
+use crate::partner_folders::{self, Places};
 use crate::partners::{
     Control, Controller, Host, HumanChoice, SharedKind, SharedState, nothing_yet,
 };
@@ -422,8 +422,8 @@ fn folders_notice(data: Option<&Path>) -> Option<String> {
 pub(super) struct PartnerData(pub(super) PathBuf);
 
 /// The line the human pastes into an agent's terminal, once per investigator (#295).
-/// It points to the partner folders' instructions and names no investigator and no human
-/// player (#211).
+/// It points to the partner folders' instructions, each tool's folder by its full path
+/// (#306), and names no investigator and no human player (#211).
 pub(super) fn line(socket: &Path) -> String {
     let option =
         if socket == default_socket() && std::env::var_os("ARKHAM_PARTNER_SOCKET").is_none() {
@@ -431,12 +431,19 @@ pub(super) fn line(socket: &Path) -> String {
         } else {
             format!(", with `--socket {}` on every command", socket.display())
         };
-    let folder = partner_folders::data().map_or_else(
-        || "the partner folder".to_owned(),
-        |data| folders(&data).display().to_string(),
+    let started = partner_folders::data().map_or_else(
+        || "started in Claude Code or Codex in that tool's partner folder".to_owned(),
+        |data| {
+            let places = Places::of(&data);
+            format!(
+                "started in Claude Code in {} or in Codex in {}",
+                places.claude_code.display(),
+                places.codex.display()
+            )
+        },
     );
     format!(
-        "Play one investigator at the Arkham Unfolded table, one session per investigator, started in claude-code or codex (your tool's) in {folder}: follow the instructions there and join{option}."
+        "Play one investigator at the Arkham Unfolded table, one session per investigator, {started}: follow the instructions there and join{option}."
     )
 }
 

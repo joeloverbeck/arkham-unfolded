@@ -6,6 +6,8 @@ You act only through one program, `arkham-partner`; these instructions are all y
 
 ## Join
 
+First check the folder your session runs in, which your tool tells you; run no command to learn it. A Claude Code session runs in `{CLAUDE_CODE_FOLDER}` and a Codex session in `{CODEX_FOLDER}`: only its own folder gives your tool its permission for the program. Anywhere else, including the folder that holds both, the program cannot reach the table. There, join nothing and run nothing: tell the human to start your tool again in its folder, and name that folder in full.
+
 If the line you were given names `--socket PATH`, put it on every command, right after the program, as in `arkham-partner --socket PATH wait PARTNER`.
 
 ```sh
