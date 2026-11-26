@@ -254,6 +254,45 @@ fn no_table_listening_names_the_path_and_says_how_partners_are_enabled() {
     assert!(error.contains("Agent partners"), "{error}");
 }
 
+/// #306: a command that cannot reach the table from outside both partner folders, as from
+/// the folder that holds them, names each tool's folder to start a session in; from inside
+/// a tool's folder it does not.
+#[test]
+fn an_unreached_table_names_the_partner_folders_when_run_outside_them() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("partners.sock");
+    let partners = directory.path().join("arkham-unfolded/partner");
+    let (claude_code, codex) = (partners.join("claude-code"), partners.join("codex"));
+    std::fs::create_dir_all(&claude_code).unwrap();
+    std::fs::create_dir_all(codex.join("notes")).unwrap();
+    let from = |here: &Path| {
+        let output = Command::new(env!("CARGO_BIN_EXE_arkham-partner"))
+            .arg("--socket")
+            .arg(&socket)
+            .args(["join", "patrice"])
+            .current_dir(here)
+            .env("XDG_DATA_HOME", directory.path())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        String::from_utf8(output.stderr).unwrap()
+    };
+    let outside = from(&partners);
+    let real = |path: &Path| std::fs::canonicalize(path).unwrap();
+    for named in [
+        format!("ran in {}, outside", real(&partners).display()),
+        format!("in Claude Code in {} ", claude_code.display()),
+        format!("in Codex in {}, then join", codex.display()),
+    ] {
+        assert!(outside.contains(&named), "{named} in {outside}");
+    }
+    for inside in [&claude_code, &codex, &codex.join("notes")] {
+        let error = from(inside);
+        assert!(error.contains("Agent partners"), "{error}");
+        assert!(!error.contains("outside the partner folders"), "{error}");
+    }
+}
+
 /// #218: help lists the commands and points to the partner instructions, which
 /// alone state the protocol's rules: what a wait answers and when, which choices
 /// are held, table talk's limits and the exit codes.

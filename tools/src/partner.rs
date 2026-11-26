@@ -233,11 +233,16 @@ pub fn run(args: Args) -> Result<u8> {
 fn worded(unanswered: Unanswered<Error>, socket: &Path) -> Error {
     match unanswered {
         Unanswered::NotListening(error) => anyhow!(
-            "No Arkham table hosts agent partners on {} ({error}). Partners are enabled in the game (Menu, Agent partners); use the --socket the pasted line names, if any.",
-            socket.display()
+            "No Arkham table hosts agent partners on {} ({error}). Partners are enabled in the game (Menu, Agent partners); use the --socket the pasted line names, if any.{}",
+            socket.display(),
+            outside_partner_folders(),
         ),
         Unanswered::Unreached(error) => {
-            anyhow!("cannot reach the table on {}: {error}", socket.display())
+            anyhow!(
+                "cannot reach the table on {}: {error}{}",
+                socket.display(),
+                outside_partner_folders(),
+            )
         }
         Unanswered::Unsent(error) => {
             Error::new(error).context("cannot send the request to the table")
@@ -249,6 +254,31 @@ fn worded(unanswered: Unanswered<Error>, socket: &Path) -> Error {
         Unanswered::Closed => anyhow!("the table closed the connection without answering"),
         other => anyhow!("{other}"),
     }
+}
+
+/// #306: a command run outside both partner folders lacks its tool's permission for this
+/// program, and the tool's sandbox can refuse the table's socket, so an unreached table
+/// names where a partner session starts. Inside either folder, or when Arkham's data
+/// directory is unknown, it adds nothing.
+fn outside_partner_folders() -> String {
+    let (Some(data), Ok(here)) = (crate::partner_folders::data(), std::env::current_dir()) else {
+        return String::new();
+    };
+    let places = crate::partner_folders::Places::of(&data);
+    let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    let here = real(&here);
+    if [&places.claude_code, &places.codex]
+        .into_iter()
+        .any(|folder| here.starts_with(real(folder)))
+    {
+        return String::new();
+    }
+    format!(
+        " This command ran in {}, outside the partner folders, where neither tool loads its permission for this program: start a partner session in Claude Code in {} or in Codex in {}, then join.",
+        here.display(),
+        places.claude_code.display(),
+        places.codex.display()
+    )
 }
 
 /// The socket the game opens unless told otherwise; the game's
