@@ -485,8 +485,11 @@ impl Sharing {
         control: &Control,
         me: &Controller,
         observation: &Observation,
+        owes_fast_window: bool,
     ) -> Value {
         let state = self.state(pending, control);
+        let waiting_for = state.outstanding();
+        let mine = state.of(me);
         let kind = match state.kind {
             SharedKind::Commitment => "commitment",
             SharedKind::Window | SharedKind::Before { .. } => "window",
@@ -510,9 +513,9 @@ impl Sharing {
             "kind": kind,
             "ready_with": state.close,
             "players": players,
-            "waiting_for": state.outstanding().iter().map(|who| who.name()).collect::<Vec<_>>(),
+            "waiting_for": waiting_for.iter().map(|who| who.name()).collect::<Vec<_>>(),
         });
-        if let Some(mine) = state.of(me) {
+        if let Some(mine) = mine {
             value["you_are_ready"] = json!(mine.ready);
             if let Some(changer) = &mine.cleared_by {
                 value["cleared_by"] =
@@ -570,7 +573,13 @@ impl Sharing {
                             .collect(),
                     );
                 }
-                if at_round_end {
+                if mine.is_some_and(|mine| mine.ready) && !waiting_for.is_empty() {
+                    if owes_fast_window {
+                        "Your clue contribution is ready. Use an option or pass in your other pending window before waiting for contributors.".to_owned()
+                    } else {
+                        "Your part is ready. To wait for the other contributors, use one wait PARTNER --listen without a timeout. You may take an available action.".to_owned()
+                    }
+                } else if at_round_end {
                     "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigator's clues (the others' as pending) to set your part and be ready, or round-end:decline-act to contribute none.".to_owned()
                 } else {
                     "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigator's clues (the others' as pending) to set your part and be ready.".to_owned()
