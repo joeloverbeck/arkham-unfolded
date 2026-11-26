@@ -5,10 +5,19 @@ use crate::{
     tabletop_counters as counters, tabletop_feedback as feedback, tabletop_layout as layout,
 };
 use bevy::prelude::*;
+use unfolded_tabletop::card::TurningCard;
+
 pub(crate) mod card_shape;
 
 pub(crate) const CARD_WIDTH: f32 = 1.35;
 pub(crate) const CARD_LENGTH: f32 = 1.89;
+pub(crate) const TURNING_CARD: TurningCard = TurningCard::new(
+    CARD_WIDTH,
+    CARD_LENGTH,
+    card_shape::CORNER_FRACTION,
+    0.005,
+    0.001,
+);
 /// One card's share of a deck's height; the deck's side shows a seam between each two.
 const CARD_THICKNESS: f32 = 0.0065;
 const PAPER: Color = Color::srgb(0.91, 0.89, 0.81);
@@ -74,7 +83,7 @@ pub(crate) fn card(
     let entity = commands
         .spawn((
             Name::new(title.into()),
-            Mesh3d(meshes.add(card_shape::face(CARD_WIDTH, CARD_LENGTH))),
+            Mesh3d(meshes.add(TURNING_CARD.face_mesh())),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color_texture: image,
                 unlit: true,
