@@ -202,15 +202,18 @@ fn the_socket_lives_only_while_partners_are_enabled_and_serves_several_partners_
 
 /// Ticket #211 with Cuba Libre #202, the pasted line: it points to the instructions in
 /// each tool's partner folder, outside the checkout, and gives the table's socket, and it
-/// names no investigator and no human player (play contract, Agent partners).
+/// names no investigator and no human player (play contract, Agent partners). #306: it
+/// names each tool's folder by its full path, so no session starts in the folder that
+/// holds both.
 #[test]
 fn the_pasted_line_points_to_the_partner_folders_and_names_no_player() {
     let line = line(Path::new("/run/partners-elsewhere.sock"));
-    assert!(
-        line.contains("claude-code or codex (your tool's) in /"),
-        "{line}"
-    );
-    assert!(line.contains("/arkham-unfolded/partner:"), "{line}");
+    let places = Places::of(&crate::partner_folders::data().unwrap());
+    let claude_code = format!("in Claude Code in {} ", places.claude_code.display());
+    let codex = format!("in Codex in {}:", places.codex.display());
+    assert!(line.contains(&claude_code), "{line}");
+    assert!(line.contains(&codex), "{line}");
+    assert!(line.contains("/arkham-unfolded/partner/codex:"), "{line}");
     assert!(!line.contains(env!("CARGO_MANIFEST_DIR")), "{line}");
     assert!(
         line.contains("with `--socket /run/partners-elsewhere.sock` on every command"),
