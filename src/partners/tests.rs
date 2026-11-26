@@ -1436,6 +1436,50 @@ fn a_possible_act_payment_makes_no_one_a_turn_window_participant() {
     assert_eq!(paid["status"], "chosen", "{paid}");
 }
 
+#[test]
+fn a_ready_clue_contributor_can_listen_without_a_timeout() {
+    let mut session = turn(Jacqueline);
+    session.place_for_test(Tony, 1, "01111");
+    session.place_for_test(Patrice, 3, "01111");
+    session.place_for_test(Jacqueline, 2, "01111");
+    let mut sitting = Sitting::new(session, &[Patrice, Jacqueline]);
+    sitting.join("patrice");
+    let partner = sitting.join("jacqueline");
+    let revision = sitting.revision();
+
+    let ready = sitting.ask(json!({
+        "op": "choose", "partner": partner, "revision": revision,
+        "id": "act:pay:0:0:2", "wait": true,
+    }));
+    assert_eq!(ready["status"], "ready", "{ready}");
+    assert_eq!(ready["view"]["decision"]["yours"], true);
+    let payment = &ready["view"]["shared"][0];
+    assert_eq!(payment["kind"], "clue_payment");
+    assert_eq!(payment["you_are_ready"], true);
+    assert_eq!(
+        payment["waiting_for"],
+        json!(["Tony Morgan", "Patrice Hathaway"])
+    );
+    let hint = payment["how"].as_str().unwrap();
+    assert!(hint.contains("wait PARTNER --listen"), "{hint}");
+    assert!(hint.contains("without a timeout"), "{hint}");
+    assert!(hint.contains("available action"), "{hint}");
+
+    let listen = sitting.send(&json!({"op": "wait", "partner": partner, "listen": true}));
+    sitting.now += Duration::from_secs(16 * 60);
+    sitting.poll();
+    assert!(sitting.take(listen).is_none(), "The idle listen completed");
+
+    assert_eq!(sitting.human("act:pay:1:0:2"), HumanChoice::Ready);
+    let wake = sitting.take(listen).expect("Tony changed his contribution");
+    assert_eq!(wake["status"], "shared", "{wake}");
+    let payment = &wake["view"]["shared"][0];
+    assert_eq!(payment["you_are_ready"], false);
+    let hint = payment["how"].as_str().unwrap();
+    assert!(hint.contains("act:pay:TONY:PATRICE:JACQUELINE"), "{hint}");
+    assert!(!hint.contains("wait PARTNER --listen"), "{hint}");
+}
+
 /// Review fix H2 (F1; play contract, Shared decisions): the active player's view
 /// names whose passes its next choice waits for in a field of its own, so that never
 /// displaces another note. In Tony's partner's turn, the human holds Patrice's Violin

@@ -72,9 +72,9 @@ A plain `wait` answers `decision` at once while a decision you have not been tol
 arkham-partner wait PARTNER --listen
 ```
 
-A listening wait does not answer the decision of yours that was pending as it began. It answers the human's message, a group choice opening, a change to a shared decision, what became of a choice that waited, a later decision of yours or the end of your session, or `nothing_yet` once the period you asked for ends: always give one, such as `--timeout 60`, since there may be nothing to answer, and a minute after your last request the table marks you silent while it waits for your decision. An accepted choice or readiness of yours ends it.
+A listening wait does not answer the decision of yours that was pending as it began. It answers the human's message, a group choice opening, a change to a shared decision, what became of a choice that waited, a later decision of yours or the end of your session. A timed wait answers `nothing_yet` when its period ends. When you listen before making a decision the table needs from you, give a timeout such as `--timeout 60`. There may be nothing to answer, and the table marks you silent a minute after your last request while it waits for your decision. When your clue contribution is already ready and you choose to wait for others, follow [Shared decisions](#shared-decisions) and leave out the timeout. An accepted choice or readiness of yours ends a listening wait.
 
-Another agent partner's message does not end it, and `nothing_yet` carries no view, so then run `observe PARTNER`: its `table_talk` has what the other agent partners said meanwhile. They hear yours only with an answer of their own that carries a view, which may come after your decision. Listen once or twice, not without end: the table waits for your decision meanwhile. Then decide.
+Another agent partner's message does not end it. If a timed listen returns `nothing_yet`, run `observe PARTNER` for the messages the other agent partners said meanwhile. They hear yours with their next answer that carries a view, which may come after your decision. Before making your own decision, listen once or twice, then decide.
 
 ### How your tool waits
 
@@ -82,7 +82,7 @@ A wait without a period, and `choose` or `ready` with `--wait`, returns only wit
 
 ### Waiting in Claude Code
 
-Run `wait`, and `choose` or `ready` with `--wait`, with the Bash tool's `run_in_background` option and without a timeout, then end your turn. Claude Code re-invokes you when the command exits. The notification names its output file: read that file when the notification does not show the output. Run every other command in the foreground. Your shell runs `arkham-partner` and may run nothing else, so read and write your notes with the file tools.
+Run `wait`, and `choose` or `ready` with `--wait`, with the Bash tool's `run_in_background` option, then end your turn. Use a timeout when [listening before your decision](#listening-first). Leave it out when awaiting a later event. Claude Code re-invokes you when the command exits. The notification names its output file: read that file when the notification does not show the output. Run every other command in the foreground. Your shell runs `arkham-partner` and may run nothing else, so read and write your notes with the file tools.
 
 ### Waiting in Codex
 
@@ -120,7 +120,7 @@ To choose and then wait in one command:
 arkham-partner choose PARTNER REVISION ID --wait
 ```
 
-A refusal, or a decision of yours that comes next at once (`chosen`, with `decision.yours` true), is answered immediately. Otherwise it is your wait, without a time limit or with `--timeout SECONDS`, and answers as `wait` does, with `choice` saying how your choice stands: its `id` and `label` as you named it, and its `status`, which is `chosen`, `settling`, `held` or `released`. `ready PARTNER REVISION --wait` does the same, and readiness is `ready`, `cleared` once another player's change has cleared it, or `over` once its shared decision is. A plain `choose` or `ready` of yours that is accepted while it waits takes the place of the first in `choice`. `unknown`, with `nothing_yet`, means that the table ran no frame to answer and may not have read your choice: run `observe PARTNER --full`.
+A refusal or a decision that is immediately yours is answered at once. This includes `chosen` with your next decision, and `ready` when you have set your clue contribution but your turn decision is still available. Otherwise it is your wait, without a time limit or with `--timeout SECONDS`, and answers as `wait` does, with `choice` saying how your choice stands: its `id` and `label` as you named it, and its `status`, which is `chosen`, `settling`, `held` or `released`. `ready PARTNER REVISION --wait` does the same, and readiness is `ready`, `cleared` once another player's change has cleared it, or `over` once its shared decision is. A plain `choose` or `ready` of yours that is accepted while it waits takes the place of the first in `choice`. `unknown`, with `nothing_yet`, means that the table ran no frame to answer and may not have read your choice: run `observe PARTNER --full`.
 
 To read a card again, with its current counters:
 
@@ -167,6 +167,8 @@ arkham-partner ready PARTNER REVISION
 ```
 
 Readiness rests on the state your last view showed. When anything changed since, it is refused: observe and decide again. Any change to a part clears the other players' readiness and wakes them with `shared`. The decision completes once every participating player is ready on the same parts. A window closes once every player with an option has passed in succession; an action in it starts the passes again. After you have been ready in a commitment or a payment, you may change your part three times; after that you can only mark yourself ready.
+
+When a clue payment shows `you_are_ready: true` and `waiting_for` names other contributors, your part is ready. During your turn, `decision.yours` can still be true and your ordinary actions are available. You may take an available action. If you choose to wait for the other contributors, run one `wait PARTNER --listen` without a timeout, using your tool's [waiting procedure](#how-your-tool-waits). Go straight to this listening wait after the reply. A plain `wait` for the same turn decision would be refused. When someone changes their contribution, the wait answers `shared` and you decide again from the updated view.
 
 ## Table talk
 
