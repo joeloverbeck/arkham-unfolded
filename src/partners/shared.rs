@@ -485,6 +485,7 @@ impl Sharing {
         control: &Control,
         me: &Controller,
         observation: &Observation,
+        owes_fast_window: bool,
     ) -> Value {
         let state = self.state(pending, control);
         let waiting_for = state.outstanding();
@@ -573,7 +574,11 @@ impl Sharing {
                     );
                 }
                 if mine.is_some_and(|mine| mine.ready) && !waiting_for.is_empty() {
-                    "Your part is ready. To wait for the other contributors, use one wait PARTNER --listen without a timeout. You may take an available action.".to_owned()
+                    if owes_fast_window {
+                        "Your clue contribution is ready. Use an option or pass in your other pending window before waiting for contributors.".to_owned()
+                    } else {
+                        "Your part is ready. To wait for the other contributors, use one wait PARTNER --listen without a timeout. You may take an available action.".to_owned()
+                    }
                 } else if at_round_end {
                     "Choose act:pay:TONY:PATRICE:JACQUELINE with your investigator's clues (the others' as pending) to set your part and be ready, or round-end:decline-act to contribute none.".to_owned()
                 } else {

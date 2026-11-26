@@ -1480,6 +1480,49 @@ fn a_ready_clue_contributor_can_listen_without_a_timeout() {
     assert!(!hint.contains("wait PARTNER --listen"), "{hint}");
 }
 
+#[test]
+fn a_ready_clue_contributor_must_first_answer_their_fast_window() {
+    let mut session = turn(Tony);
+    session.asset_for_test(Patrice, "06016");
+    session.place_for_test(Tony, 4, "01111");
+    session.place_for_test(Patrice, 2, "01111");
+    session.place_for_test(Jacqueline, 0, "01111");
+    let mut sitting = Sitting::new(session, &[Patrice]);
+    let partner = sitting.join("patrice");
+
+    let ready = sitting.choose(&partner, "act:pay:0:2:0");
+    assert_eq!(ready["status"], "ready", "{ready}");
+    let shared = ready["view"]["shared"].as_array().unwrap();
+    let window = shared
+        .iter()
+        .find(|entry| entry["before_action_of"] == "Tony Morgan")
+        .expect("Patrice still has her Violin option before Tony's action");
+    assert_eq!(window["you_are_ready"], false);
+    let payment = shared
+        .iter()
+        .find(|entry| entry["kind"] == "clue_payment")
+        .unwrap();
+    assert_eq!(payment["you_are_ready"], true);
+    let hint = payment["how"].as_str().unwrap();
+    assert!(hint.contains("Use an option or pass"), "{hint}");
+    assert!(!hint.contains("--listen"), "{hint}");
+
+    let pass = sitting.choose(&partner, window["ready_with"].as_str().unwrap());
+    assert_eq!(pass["status"], "ready", "{pass}");
+    let payment = pass["view"]["shared"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["kind"] == "clue_payment")
+        .unwrap();
+    assert_eq!(payment["you_are_ready"], true);
+    let hint = payment["how"].as_str().unwrap();
+    assert!(
+        hint.contains("wait PARTNER --listen without a timeout"),
+        "{hint}"
+    );
+}
+
 /// Review fix H2 (F1; play contract, Shared decisions): the active player's view
 /// names whose passes its next choice waits for in a field of its own, so that never
 /// displaces another note. In Tony's partner's turn, the human holds Patrice's Violin

@@ -1613,15 +1613,29 @@ impl<R> Host<R> {
         let control = self.control();
         let moment = self.moment(table.session());
         let me = Controller::Partner(id.to_owned());
+        let owes_fast_window = moment.pending.iter().any(|pending| {
+            matches!(
+                pending.decision.kind,
+                SharedKind::Window | SharedKind::Before { .. }
+            ) && self
+                .sharing
+                .waiting(pending, &control)
+                .iter()
+                .any(|(player, _)| *player == me)
+        });
         let shared: Vec<view::SharedPart> = moment
             .pending
             .iter()
             .filter(|pending| pending.decision.players(&control).contains(&me))
             .map(|pending| view::SharedPart {
                 decision: &pending.decision,
-                view: self
-                    .sharing
-                    .view(pending, &control, &me, &moment.observation),
+                view: self.sharing.view(
+                    pending,
+                    &control,
+                    &me,
+                    &moment.observation,
+                    owes_fast_window,
+                ),
                 waits: self.sharing.active(pending),
             })
             .collect();
