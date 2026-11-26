@@ -70,6 +70,9 @@ fn main() -> ExitCode {
         if args.iter().any(|arg| arg == "check-tracked-files") {
             return ExitCode::from(Command::new(env::var_os("ARKHAM_FIXTURE_TOOLS").unwrap()).arg("check-tracked-files").status().unwrap().code().unwrap_or(1) as u8);
         }
+        if let Some(at) = args.iter().position(|arg| arg == "target-prune") {
+            return ExitCode::from(Command::new(env::var_os("ARKHAM_FIXTURE_TOOLS").unwrap()).args(&args[at..]).status().unwrap().code().unwrap_or(1) as u8);
+        }
         return ExitCode::SUCCESS;
     }
     if let Ok(mode) = env::var("ARKHAM_FIXTURE_PROFILE") {

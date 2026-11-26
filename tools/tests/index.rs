@@ -4,6 +4,7 @@ use std::{
     os::unix::ffi::OsStrExt,
     path::Path,
     process::{Command, Output},
+    time::UNIX_EPOCH,
 };
 mod support;
 
@@ -192,11 +193,49 @@ fn actual_repository_gate_stops_at_a_forbidden_index_before_later_checks() {
 }
 
 #[test]
-fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
+fn linked_worktree_gate_preserves_owner_cache_and_matches_ci() {
     let directory = tempfile::tempdir().unwrap();
-    let root = directory.path();
-    git(root, &[OsStr::new("init"), OsStr::new("--quiet")]);
+    let owner = directory.path().join("owner");
+    fs::create_dir(&owner).unwrap();
+    git(&owner, &["init".as_ref(), "--quiet".as_ref()]);
+    fs::write(owner.join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
+    git(&owner, &["add".as_ref(), "Cargo.toml".as_ref()]);
+    git(
+        &owner,
+        &[
+            "-c".as_ref(),
+            "user.name=Check fixture".as_ref(),
+            "-c".as_ref(),
+            "user.email=fixture@example.invalid".as_ref(),
+            "commit".as_ref(),
+            "--quiet".as_ref(),
+            "-m".as_ref(),
+            "Base".as_ref(),
+        ],
+    );
+    let cache = owner.join("target/debug/incremental/demo-old");
+    fs::create_dir_all(cache.join("s-session")).unwrap();
+    fs::write(cache.join("s-session/query-cache.bin"), b"owner cache").unwrap();
+    fs::write(cache.join("s-session.lock"), b"").unwrap();
+    fs::File::open(&cache)
+        .unwrap()
+        .set_modified(UNIX_EPOCH)
+        .unwrap();
+    let checkout = directory.path().join("checkout");
+    git(
+        &owner,
+        &[
+            "worktree".as_ref(),
+            "add".as_ref(),
+            "--quiet".as_ref(),
+            "--detach".as_ref(),
+            checkout.as_os_str(),
+        ],
+    );
+    let root = checkout.as_path();
     copy_gate(root);
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    fs::copy(repository.join("scripts/tools"), root.join("scripts/tools")).unwrap();
     let bin = root.join("bin");
     fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink(support::fixture().join("child"), bin.join("cargo")).unwrap();
@@ -219,6 +258,7 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
             )
             .env("ARKHAM_FIXTURE_TOOLS", env!("CARGO_BIN_EXE_arkham-tools"))
             .env("ARKHAM_FIXTURE_TRACE", &trace)
+            .env("CARGO_TARGET_DIR", root.join("target"))
             .current_dir(root)
             .output()
             .unwrap()
@@ -236,6 +276,10 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
     ];
     assert!(run("check", 0, false).status.success());
     assert_eq!(
+        fs::read(cache.join("s-session/query-cache.bin")).expect("the owner cache survived"),
+        b"owner cache"
+    );
+    assert_eq!(
         fs::read_to_string(&trace)
             .unwrap()
             .lines()
@@ -243,7 +287,6 @@ fn local_gate_and_ci_run_the_same_ordered_commands_and_stop_at_failure() {
         expected
     );
 
-    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let workflow = fs::read_to_string(repository.join(".github/workflows/check.yml")).unwrap();
     let phases: Vec<_> = workflow
         .lines()
