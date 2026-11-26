@@ -3,6 +3,12 @@
 
 #[path = "../partner.rs"]
 mod partner;
+#[path = "../../../src/partner_folders.rs"]
+#[expect(
+    dead_code,
+    reason = "the client needs only where the partner folders lie, not their instructions"
+)]
+mod partner_folders;
 use arkham_tools::process;
 
 use clap::Parser;
