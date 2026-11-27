@@ -8,7 +8,7 @@ use bevy::{
     prelude::*,
     render::{
         Render, RenderApp, RenderSystems,
-        render_resource::{CachedPipelineState, PipelineCache},
+        render_resource::PipelineCache,
         renderer::{RenderQueue, render_system},
         view::window::ExtractedWindow,
     },
@@ -24,7 +24,7 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-use unfolded_tabletop::window_size::WindowSizeLogPlugin;
+use unfolded_tabletop::{pipeline, window_size::WindowSizeLogPlugin};
 
 mod seat;
 pub(crate) use seat::{SeatAdmissionPlugin, admission, admission_blocker};
@@ -707,13 +707,10 @@ fn observe_surface(
         .iter()
         .any(|window| window.swap_chain_texture.is_some())
         .then(|| progress.ticket());
-    progress.0.pipelines_pending.store(
-        pipelines.waiting_pipelines().next().is_some()
-            || pipelines
-                .pipelines()
-                .any(|pipeline| !matches!(pipeline.state, CachedPipelineState::Ok(_))),
-        Ordering::Release,
-    );
+    progress
+        .0
+        .pipelines_pending
+        .store(!pipeline::is_ready(&pipelines), Ordering::Release);
 }
 
 fn acknowledge_gpu_work(

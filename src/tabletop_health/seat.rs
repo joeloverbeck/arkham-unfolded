@@ -181,10 +181,7 @@ fn observe_image(
     progress: Res<ImageProgress>,
     mut frame: ResMut<ImageFrame>,
 ) {
-    let pending = pipelines.waiting_pipelines().next().is_some()
-        || pipelines
-            .pipelines()
-            .any(|pipeline| !matches!(pipeline.state, CachedPipelineState::Ok(_)));
+    let pending = !pipeline::is_ready(&pipelines);
     progress
         .0
         .pipelines_pending
