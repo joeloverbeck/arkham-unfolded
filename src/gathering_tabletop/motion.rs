@@ -254,26 +254,28 @@ pub(super) fn attach_reverse(
     image: Option<Handle<Image>>,
     name: &'static str,
 ) {
-    use crate::tabletop_pieces::{CARD_LENGTH, CARD_WIDTH, card_shape};
+    use crate::tabletop_pieces::TURNING_CARD;
+    use unfolded_tabletop::card::CardPivot;
+
+    let poses = TURNING_CARD.poses(CardPivot::Front);
     commands.spawn((
         Name::new(name),
-        Mesh3d(meshes.add(card_shape::face(CARD_WIDTH, CARD_LENGTH))),
+        Mesh3d(meshes.add(TURNING_CARD.face_mesh())),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::WHITE,
             base_color_texture: image,
             unlit: true,
             ..default()
         })),
-        Transform::from_xyz(0., -0.007, 0.)
-            .with_rotation(Quat::from_rotation_z(std::f32::consts::PI)),
+        poses.back,
         Pickable::IGNORE,
         ChildOf(parent),
     ));
     commands.spawn((
         Name::new("Drawn card edge"),
-        Mesh3d(meshes.add(card_shape::body(CARD_WIDTH, 0.005, CARD_LENGTH))),
+        Mesh3d(meshes.add(TURNING_CARD.paper_mesh())),
         MeshMaterial3d(materials.add(PAPER)),
-        Transform::from_xyz(0., -0.0035, 0.),
+        poses.paper,
         Pickable::IGNORE,
         ChildOf(parent),
     ));

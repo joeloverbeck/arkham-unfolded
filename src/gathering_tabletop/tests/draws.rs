@@ -27,18 +27,25 @@ pub(super) fn physical(app: &mut App, id: u16) -> Transform {
 fn back_rotation(app: &mut App, id: u16) -> Quat {
     let face = physical(app, id);
     let world = app.world_mut();
-    let back = world
-        .query::<(&Name, &Transform, &ChildOf)>()
+    let (entity, _) = world
+        .query::<(Entity, &motion::PhysicalCard)>()
         .iter(world)
-        .find_map(|(name, transform, parent)| {
-            (name.as_str() == "Drawn card back"
-                && world
-                    .get::<motion::PhysicalCard>(parent.parent())
-                    .is_some_and(|card| card.0 == id))
-            .then_some(transform.rotation)
-        })
-        .expect("The moving card has its physical back attached");
-    face.rotation * back
+        .find(|(_, card)| card.0 == id)
+        .expect("The moving front still owns the physical card");
+    assert!(world.get::<Mesh3d>(entity).is_some());
+    assert!(world.get::<CardFeedback>(entity).is_some());
+    let pickable = world.get::<Pickable>(entity).copied().unwrap_or_default();
+    assert!(pickable.is_hoverable && pickable.should_block_lower);
+    let [back, _paper] = ["Drawn card back", "Drawn card edge"].map(|part| {
+        let (_, transform, pickable, _) = world
+            .query::<(&Name, &Transform, &Pickable, &ChildOf)>()
+            .iter(world)
+            .find(|(name, _, _, parent)| name.as_str() == part && parent.parent() == entity)
+            .expect("The moving front owns its reverse and paper");
+        assert!(!pickable.is_hoverable && !pickable.should_block_lower);
+        *transform
+    });
+    face.rotation * back.rotation
 }
 
 #[test]

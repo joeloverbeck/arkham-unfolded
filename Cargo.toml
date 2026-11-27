@@ -21,11 +21,11 @@ tabletop = ["dep:bevy", "unfolded-tabletop/seat"]
 # patch below and `tools`' pins, as `scripts/check-shared-pins` checks. The library,
 # driver and asset build take only the packages that cannot depend on Bevy;
 # `unfolded-tabletop` holds what draws.
-unfolded-agent-players = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a7342b4ed9c343af2d2b8473cc17db4275556efb" }
-unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a7342b4ed9c343af2d2b8473cc17db4275556efb" }
-unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a7342b4ed9c343af2d2b8473cc17db4275556efb" }
-unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a7342b4ed9c343af2d2b8473cc17db4275556efb" }
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a7342b4ed9c343af2d2b8473cc17db4275556efb", optional = true }
+unfolded-agent-players = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "416ae3b387d1b48e8922f60ec09c94149e615317" }
+unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "416ae3b387d1b48e8922f60ec09c94149e615317" }
+unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "416ae3b387d1b48e8922f60ec09c94149e615317" }
+unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "416ae3b387d1b48e8922f60ec09c94149e615317" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "416ae3b387d1b48e8922f60ec09c94149e615317", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -79,4 +79,4 @@ debug = "full"
 debug = "full"
 
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "a7342b4ed9c343af2d2b8473cc17db4275556efb" }
+wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "416ae3b387d1b48e8922f60ec09c94149e615317" }
