@@ -21,11 +21,11 @@ tabletop = ["dep:bevy", "unfolded-tabletop/seat"]
 # patch below and `tools`' pins, as `scripts/check-shared-pins` checks. The library,
 # driver and asset build take only the packages that cannot depend on Bevy;
 # `unfolded-tabletop` holds what draws.
-unfolded-agent-players = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "adcade75ca84bc7b4b06423bed033e58c3996fb2" }
-unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "adcade75ca84bc7b4b06423bed033e58c3996fb2" }
-unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "adcade75ca84bc7b4b06423bed033e58c3996fb2" }
-unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "adcade75ca84bc7b4b06423bed033e58c3996fb2" }
-unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "adcade75ca84bc7b4b06423bed033e58c3996fb2", optional = true }
+unfolded-agent-players = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "8e5c109edacbc2c8dc8a6c44a194bffc03e32ba2" }
+unfolded-assets = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "8e5c109edacbc2c8dc8a6c44a194bffc03e32ba2" }
+unfolded-random = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "8e5c109edacbc2c8dc8a6c44a194bffc03e32ba2" }
+unfolded-record-replacement = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "8e5c109edacbc2c8dc8a6c44a194bffc03e32ba2" }
+unfolded-tabletop = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "8e5c109edacbc2c8dc8a6c44a194bffc03e32ba2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -79,4 +79,4 @@ debug = "full"
 debug = "full"
 
 [patch.crates-io]
-wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "adcade75ca84bc7b4b06423bed033e58c3996fb2" }
+wgpu-hal = { git = "https://github.com/joeloverbeck/unfolded-tabletop", rev = "8e5c109edacbc2c8dc8a6c44a194bffc03e32ba2" }
